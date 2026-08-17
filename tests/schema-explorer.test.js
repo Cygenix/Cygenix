@@ -175,6 +175,76 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     vm.runInContext('cvCompositeWhyNot()', sb));
 }
 
+// ── Field trace ────────────────────────────────────────────────────────────
+// "Who references this field?" — smComputeTrace collapses the diagram to the
+// owning table plus every table whose foreign key points at the field.
+// Pure function, executed from the shipped source.
+{
+  const tStart = html.indexOf('function smComputeTrace');
+  const tEnd = html.indexOf('\n}', tStart);
+  if (tStart < 0 || tEnd < 0) { check('smComputeTrace exists', false); }
+  else {
+    const sb2 = { String, Set, Map, Array };
+    vm.createContext(sb2);
+    vm.runInContext(html.slice(tStart, tEnd + 2), sb2);
+    const E = (from, fc, to, tc) => ({ from, fromColumn: fc, to, toColumn: tc });
+    const G = {
+      ok: true,
+      edges: [
+        E('dbo.orders', 'CustomerId', 'dbo.customers', 'Id'),
+        E('dbo.order_items', 'OrderId', 'dbo.orders', 'Id'),
+        E('dbo.invoices', 'OrderId', 'dbo.orders', 'Id'),
+        E('dbo.notes', 'NoteId', 'dbo.notes', 'NoteId', ),
+      ],
+    };
+    G.edges[3].self = true;
+    const trace = (q) => vm.runInContext('smComputeTrace', sb2)(G, q);
+
+    let t = trace('CustomerId');
+    check('a referencing column finds its owner',
+      t && !t.empty && [...t.owners].join() === 'dbo.customers');
+    check('and both sides of the reference are members',
+      [...t.members].sort().join() === 'dbo.customers,dbo.orders');
+    check('the traced columns are recorded on both tables',
+      t.colHits.get('dbo.customers').has('Id') && t.colHits.get('dbo.orders').has('CustomerId'));
+
+    t = trace('Id');
+    check('a shared field name pulls in every owner that has it',
+      [...t.owners].sort().join() === 'dbo.customers,dbo.orders');
+    check('with every referencing table alongside', t.members.size === 4);
+
+    t = trace('orders.Id');
+    check('table.field disambiguates a shared name',
+      [...t.owners].join() === 'dbo.orders'
+      && [...t.members].sort().join() === 'dbo.invoices,dbo.order_items,dbo.orders');
+    check('and only the traced edges survive',
+      t.edgeKeys.size === 2 && ![...t.edgeKeys].some(k => k.includes('customers')));
+
+    check('matching is case-insensitive', !trace('customerid').empty);
+    check('a contains fallback catches a partial name',
+      trace('ustomer') && !trace('ustomer').empty);
+    check('an unknown field reports empty instead of blanking the map',
+      trace('zzz').empty === true);
+    check('an empty query means no trace', trace('') === null);
+    check('a self-referencing edge is ignored', trace('NoteId').empty === true);
+  }
+
+  check('the trace input is in the toolbar', /id="sm-trace"/.test(html));
+  check('the owner is visibly distinct — different border, declared after .sel so it wins',
+    html.indexOf('.sm-box.sel{') < html.indexOf('.sm-box.owner{')
+    && /\.sm-box\.owner\{border:2px solid var\(--amber\)/.test(html));
+  check('referencing columns are highlighted', /sm-col-hit/.test(html));
+  check('traced columns are promoted above the fold, with anchors following',
+    /function smShownCols/.test(html)
+    && /smShownCols\(node\)\.map\(c => c\.name\)/.test(html));
+  check('the trace overrides the exclusion filters, so the answer is complete',
+    /SM\.trace\.members\.has\(t\.key\)/.test(html));
+  check('untraced edges between visible tables are not drawn',
+    /SM\.trace && !SM\.trace\.edgeKeys\.has/.test(html));
+  check('a schema reload drops the trace',
+    /SM\.trace = null;\s*\{ const tr = \$\('sm-trace'\)/.test(html));
+}
+
 // ── Exclusion rules ────────────────────────────────────────────────────────
 // The predicate that decides what the diagram draws. Extracted from the page
 // and run against a stub SM, so the rules under test are the shipped ones.
