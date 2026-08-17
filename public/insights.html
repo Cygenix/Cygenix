@@ -7,6 +7,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
      Reads from cygenix_app_prefs (same key the Settings page writes to). -->
@@ -289,7 +290,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 <body>
 
 <div id="cyg-sidebar-mount" data-active="insights"></div>
-<script src="/cygenix-sidebar.js?v=3484f77c84" defer></script>
+<script src="/cygenix-sidebar.js?v=571667f2d7" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.

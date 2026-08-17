@@ -1000,6 +1000,61 @@
   }
 
   // ── Mount ───────────────────────────────────────────────────────────────
+  // ── Mobile drawer ───────────────────────────────────────────────────────
+  // Below 820px the rail becomes an off-canvas drawer: a hamburger opens
+  // it, a backdrop and Escape close it, and following a link closes it so
+  // the destination page isn't hidden behind the menu. All of the styling
+  // lives in cygenix-mobile.css inside a media query, and every element
+  // added here is inert at desktop width — the desktop sidebar keeps the
+  // exact behaviour it had.
+  const MOBILE_Q = '(max-width: 820px)';
+
+  function wireMobileDrawer(aside){
+    if (document.getElementById('cyg-mobile-menu-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'cyg-mobile-menu-btn';
+    btn.className = 'cyg-mobile-menu-btn';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Open menu');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = '☰';
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'cyg-mobile-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+
+    const setOpen = (open) => {
+      document.body.classList.toggle('cyg-mobile-open', open);
+      btn.setAttribute('aria-expanded', String(open));
+      btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      btn.innerHTML = open ? '✕' : '☰';
+    };
+
+    btn.addEventListener('click', () => setOpen(!document.body.classList.contains('cyg-mobile-open')));
+    backdrop.addEventListener('click', () => setOpen(false));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('cyg-mobile-open')) setOpen(false);
+    });
+    // Navigating away: close so the new page isn't behind the drawer.
+    aside.addEventListener('click', (e) => {
+      if (e.target.closest('a[href]')) setOpen(false);
+    });
+
+    document.body.appendChild(backdrop);
+    document.body.appendChild(btn);
+
+    // Only claim header space (and only exist as a control) on mobile.
+    const mq = window.matchMedia(MOBILE_Q);
+    const sync = () => {
+      document.body.classList.toggle('cyg-has-mobile-menu', mq.matches);
+      if (!mq.matches) setOpen(false);      // leaving mobile clears the drawer state
+    };
+    sync();
+    if (mq.addEventListener) mq.addEventListener('change', sync);
+    else if (mq.addListener) mq.addListener(sync);
+  }
+
   function mount(){
     injectStyles();
     const host = document.getElementById(MOUNT_ID);
@@ -1026,6 +1081,7 @@
     wireProjectSwitcher(aside);
     hideTopbarUserPill();
     ensureA11y();
+    wireMobileDrawer(aside);
     // Preload the Drive overlay so the first click is instant (skip the
     // co-worker page, which ships its own native Drive). Idle-scheduled the
     // same way loadDriveSyncWhenIdle already is: injecting 53KB of modal at

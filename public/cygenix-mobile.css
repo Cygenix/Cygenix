@@ -1,0 +1,305 @@
+/* cygenix-mobile.css — phone and small-tablet layout for the console.
+ *
+ * THE ONE RULE THIS FILE OBEYS
+ * Every declaration lives inside a @media (max-width: …) block. Nothing
+ * here can reach a desktop viewport, so the desktop appearance is
+ * unchanged by construction rather than by careful review. The test
+ * suite pins that property (tests/mobile-css.test.js): a bare rule
+ * outside a media query fails the build.
+ *
+ * WHAT IT FIXES
+ * The console was built for a 1500px workspace: a 230px fixed sidebar
+ * with the page pushed over by padding-left, two- and three-column
+ * grids, wide data tables and toolbars that assume horizontal room. On
+ * a 390px phone that produced a page shoved off-screen, unreachable
+ * controls and pinch-zoom on every input. So, below 820px:
+ *
+ *   - the sidebar becomes an off-canvas drawer with a hamburger and a
+ *     backdrop (behaviour wired in cygenix-sidebar.js, also gated to
+ *     mobile), and the page reclaims the full width
+ *   - multi-column grids — including the 54 inline `grid-template-
+ *     columns` styles across the pages — collapse to one column
+ *   - data tables scroll horizontally inside their own box instead of
+ *     stretching the page
+ *   - toolbars, tab bars and button rows wrap; tap targets reach 40px
+ *   - form controls render at 16px, which is what stops iOS zooming in
+ *     on focus and leaving the layout scrolled sideways
+ *   - full-height canvas/split views (Schema Explorer, SQL Editor,
+ *     Object Mapping, Execute) stack and take a workable height
+ *
+ * Breakpoints: 820px is the phone/small-tablet line (below the 900-ish
+ * width the two-column layouts need); 480px adds a few tighter rules
+ * for small phones. Landscape phones above 820px keep the desktop
+ * layout, which is the right call for a console this dense.
+ */
+
+@media (max-width: 820px) {
+
+  /* ── Page shell ─────────────────────────────────────────────────────
+     Pages push themselves clear of the fixed sidebar with padding-left
+     (230px open, 54px collapsed). On mobile the sidebar is a drawer
+     over the content, so the page takes the whole width. */
+  body {
+    padding-left: 0 !important;
+    overflow-x: hidden;
+  }
+  body.cyg-collapsed { padding-left: 0 !important; }
+
+  /* App-shell pages (projects, coworker…) grid a 230px rail beside the
+     workspace; and one sets an explicit calc() width. */
+  .app {
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .app > .sidebar { display: none; }
+
+  /* Split workspaces: Execute (300px jobs rail), Object Mapping,
+     SQL Editor (260/270px), reports (1fr 340px). All stack. */
+  .layout {
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0.75rem !important;
+    gap: 0.75rem !important;
+  }
+  .app-wrap { height: auto !important; overflow: visible !important; }
+
+  .page,
+  .main,
+  .main-body { padding: 0.9rem !important; }
+
+  /* ── Sidebar as an off-canvas drawer ────────────────────────────────
+     Slides out of view by default; cygenix-sidebar.js adds
+     body.cyg-mobile-open to bring it back with the backdrop. Never
+     rendered collapsed-to-icons on mobile — a 54px icon rail on a phone
+     is neither readable nor tappable. */
+  .cyg-sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.24s cubic-bezier(.4, 0, .2, 1);
+    width: 268px !important;
+    z-index: 1200;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  body.cyg-mobile-open .cyg-sidebar { transform: translateX(0); }
+  /* Undo the icon-rail treatment so the drawer always shows labels. */
+  .cyg-sidebar.collapsed { width: 268px !important; }
+  .cyg-sidebar.collapsed .cyg-nav-label,
+  .cyg-sidebar.collapsed .cyg-nav-item-label,
+  .cyg-sidebar.collapsed .cyg-brand,
+  .cyg-sidebar.collapsed .cyg-brand-word,
+  .cyg-sidebar.collapsed .cyg-user-meta,
+  .cyg-sidebar.collapsed .cyg-user-chev { display: revert !important; }
+  .cyg-sidebar.collapsed .cyg-nav-item { justify-content: flex-start !important; padding: 9px 14px !important; gap: 10px !important; }
+  .cyg-sidebar.collapsed .cyg-nav-children { display: revert !important; }
+  .cyg-sidebar.collapsed .cyg-nav-children:not(.open) { display: none !important; }
+  /* The desktop collapse chevron makes no sense over a drawer. */
+  .cyg-sidebar-toggle { display: none !important; }
+
+  /* Hamburger + backdrop, both injected by cygenix-sidebar.js. */
+  .cyg-mobile-menu-btn {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 1300;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: #14161f;
+    color: #fff;
+    font-size: 17px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  }
+  .cyg-mobile-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  body.cyg-mobile-open .cyg-mobile-backdrop { opacity: 1; pointer-events: auto; }
+  /* The burger occupies the top-left corner, so anything that starts
+     there needs to step aside — sticky top bars first (they sit under
+     it), then the first block of the page/main column. */
+  body.cyg-has-mobile-menu .topbar,
+  body.cyg-has-mobile-menu .top-bar,
+  body.cyg-has-mobile-menu header.topbar { padding-left: 58px !important; min-height: 52px; flex-wrap: wrap; }
+  body.cyg-has-mobile-menu .page > :first-child,
+  body.cyg-has-mobile-menu .main > :first-child { padding-left: 46px; }
+  /* The brand block in a top bar shrinks rather than pushing the row. */
+  .topbar .logo, .topbar .logo-console { font-size: 0.95rem !important; white-space: nowrap; }
+  .topbar .logo-console { display: none; }
+
+  /* ── Grids collapse to one column ───────────────────────────────────
+     Class-based grids first, then the inline `style="…grid-template-
+     columns…"` ones the pages use heavily — an attribute selector is
+     the only way to reach an inline style, and !important the only way
+     to win against it. */
+  .stats-row,
+  .conn-row,
+  .projects-grid,
+  .grid-2,
+  .cards-grid,
+  .kpi-row { grid-template-columns: 1fr !important; }
+
+  [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+
+  /* Flex rows that assume width: let them wrap rather than overflow. */
+  .panel-head,
+  .page-header,
+  .filter-bar,
+  .toolbar,
+  .btn-row,
+  .modal-actions,
+  .step-card-header,
+  .plan-select-bar { flex-wrap: wrap !important; }
+
+  /* ── Tab bars and segmented controls scroll sideways ────────────────*/
+  .cx-tabs,
+  .mode-bar,
+  .se-tabs,
+  .tab-bar,
+  .step-tabs {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
+  }
+  .cx-tabs::-webkit-scrollbar,
+  .mode-bar::-webkit-scrollbar,
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .cx-tab,
+  .mode-btn,
+  .step-tab { white-space: nowrap; flex: 0 0 auto; }
+
+  /* ── Fixed-width flex children ──────────────────────────────────────
+     A child sized for the desktop (a 520px segmented control, a 180px
+     filter box) with flex:none cannot shrink, so it pushes the page
+     sideways. Let these shrink and, where they hold a row of controls,
+     scroll internally instead. min-width:0 is the part that actually
+     lets a flex item go narrower than its content. */
+  .mode-bar,
+  .se-tabs,
+  .visual-toolbar,
+  .panel-head > *,
+  .page-header > * {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex-shrink: 1 !important;
+  }
+  .mode-bar { flex: 1 1 auto !important; }
+  /* Inline flex rows (button groups, header actions) were laid out for a
+     wide viewport and hold their line by default. On a phone, wrapping is
+     the wanted behaviour everywhere — a row only wraps when it genuinely
+     does not fit. Scrolling tab bars opt out above.
+     Note: deliberately NOT zeroing inline min-width here. Several rows
+     use `flex:1;min-width:240px` precisely so they drop to their own
+     line rather than being squeezed to one word per line — removing that
+     floor is what broke the cookie banner during development. */
+  [style*="display:flex"]:not(.cx-tabs):not(.mode-bar):not(.cyg-sidebar) { flex-wrap: wrap; }
+  /* Fixed-width form controls from the page markup fill the row instead. */
+  [style*="width:180px"], [style*="width:110px"], [style*="width:120px"],
+  [style*="width:140px"], [style*="width:160px"], [style*="width:200px"],
+  [style*="width:260px"], [style*="width:320px"] { width: 100% !important; max-width: 100% !important; }
+
+  /* ── Data tables scroll inside their own box ────────────────────────
+     Rather than stretching the page to the widest row. The table keeps
+     its internal layout; only the outer box becomes scrollable. */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+    white-space: nowrap;
+  }
+  table thead, table tbody, table tr { width: max-content; min-width: 100%; }
+
+  /* ── Forms: 16px is what stops iOS zooming on focus ─────────────────*/
+  input, select, textarea {
+    font-size: 16px !important;
+    max-width: 100%;
+  }
+  input[type="checkbox"], input[type="radio"] { font-size: inherit !important; }
+  .form-input, .search-input, .conn-input { width: 100% !important; }
+
+  /* ── Tap targets ────────────────────────────────────────────────────*/
+  .btn, button, .cx-tab {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Nav rows get the height but keep their icon-then-label alignment —
+     centring them turns the menu into a ragged column. */
+  .cyg-nav-item, .cyg-nav-parent {
+    min-height: 42px;
+    justify-content: flex-start !important;
+    text-align: left;
+  }
+  .btn-sm { min-height: 34px; }
+  /* Icon-only close/remove buttons keep their compact footprint. */
+  .btn[style*="padding:2px"], .btn[style*="padding:3px"] { min-height: 32px; }
+
+  /* ── Modals and drawers go full-width ───────────────────────────────*/
+  .modal, .modal-content, .cx-modal, .drawer, .side-drawer {
+    width: 96vw !important;
+    max-width: 96vw !important;
+    max-height: 88vh !important;
+    overflow-y: auto;
+  }
+  #lineage-drawer { width: 100vw !important; max-width: 100vw !important; }
+
+  /* ── Canvas / diagram views ─────────────────────────────────────────
+     Built for a wide viewport with fixed heights; give them a usable
+     portrait height and let their side panels stack. */
+  #se-view-atlas,
+  #se-view-schema,
+  #se-view-coverage,
+  .da-view,
+  .sm-view,
+  .cv-view { height: auto !important; min-height: 60vh; }
+  .da-body,
+  .sm-body { flex-direction: column !important; }
+  .da-rail,
+  .sm-tree,
+  .sm-inspector,
+  .da-mapwrap { width: 100% !important; max-width: 100% !important; }
+  .da-mapwrap, .sm-canvas-wrap { min-height: 52vh; }
+
+  /* Editors: a fixed-height code pane on a phone leaves no room. */
+  .sql-editor, .code-pane, .CodeMirror, textarea.sql { min-height: 40vh !important; }
+
+  /* ── Long strings (connection strings, paths, SQL) ──────────────────*/
+  pre, code, .mono-wrap { white-space: pre-wrap !important; word-break: break-word; }
+
+  /* Cookie banner: stack the copy above the buttons and cap its height,
+     so it never eats half a small screen. */
+  #cc-banner > div { padding: 0.8rem 0.9rem !important; gap: 0.6rem !important; max-height: 46vh; overflow-y: auto; }
+  #cc-banner > div > div:first-child { min-width: 100% !important; }
+  #cc-banner button { flex: 1 1 auto; min-height: 38px; }
+
+  /* Stat cards: one per row is right, but not one per screen. */
+  .stat-card { padding: 0.7rem 0.85rem !important; }
+  .stat-val { font-size: 1.4rem !important; margin: 2px 0 !important; }
+  .stats-row { gap: 0.5rem !important; margin-bottom: 1rem !important; }
+}
+
+/* ── Small phones ─────────────────────────────────────────────────────*/
+@media (max-width: 480px) {
+  .page, .main, .main-body { padding: 0.65rem !important; }
+  .page-title, .panel-title { font-size: 1.05rem !important; }
+  .stat-val { font-size: 1.5rem !important; }
+  /* Button rows: full-width stacked actions read better than a wrap. */
+  .modal-actions .btn { width: 100%; }
+  .cyg-sidebar { width: 86vw !important; }
+  .cyg-sidebar.collapsed { width: 86vw !important; }
+}

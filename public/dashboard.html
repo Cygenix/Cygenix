@@ -10,6 +10,7 @@
      This must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-history.css">
 <meta name="theme-color" content="#FFFFFF">
 <!-- Theme pre-paint: read the user's saved theme and apply it to <html> BEFORE
@@ -1324,7 +1325,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        initial showView in startup code. Updated dynamically via
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
-  <script src="/cygenix-sidebar.js?v=3484f77c84" defer></script>
+  <script src="/cygenix-sidebar.js?v=571667f2d7" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
   <script src="/dashboard-app.js?v=efc442653d" defer></script>
