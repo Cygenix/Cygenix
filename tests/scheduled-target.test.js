@@ -336,6 +336,40 @@ console.log('Scheduled runs — Azure Function mode targets\n');
     /return expandParamTokens\(m\.literalValue, m\.tgtCol\)/.test(pb));
 }
 
+
+// ── Cron dispatch: an aborted ack is not a failed run ───────────────────────
+// Aborting our own fetch does not cancel the runner. If the POST arrived, the
+// migration is executing regardless of whether we heard the 202 — and the
+// runner claims the record immediately (status 'running', runnerHost). So a
+// timed-out ack must be checked against the record before it is called a
+// failure: marking a live run 'failed' invites a re-run, and a migration
+// executed twice is real damage.
+{
+  const sr = fs.readFileSync(__dirname + '/../netlify/functions/scheduled-runner.js', 'utf8');
+
+  check('the ack deadline covers an Azure cold start',
+    /setTimeout\(\(\) => ctl\.abort\(\), 8_000\)/.test(sr) && !/abort\(\), 4_000/.test(sr));
+  check('an abort is distinguished from other dispatch errors',
+    /e\.name === 'AbortError'/.test(sr));
+  check('and the run record is consulted before declaring failure',
+    /containers\.runs\.item\(runId, schedule\.id\)\.read\(\)/.test(sr));
+  check('a run the runner already claimed counts as fired',
+    /latest\.status !== 'queued'[\s\S]{0,220}fired: true/.test(sr));
+  check('a still-queued run after an abort is failed with an actionable reason',
+    /did not acknowledge within 8s and had not started/.test(sr)
+    && /cold start or a wrong runner URL/.test(sr));
+  check('the claim-check cannot itself break dispatch handling',
+    /\} catch \(_\) \{ \/\* fall through to the failure path \*\/ \}/.test(sr));
+  // The runner has to actually make that claim, or the check reads nothing.
+  const rm = fs.readFileSync(__dirname + '/../azure-function/src/run-migration.js', 'utf8');
+  check('the runner claims the run before doing any work',
+    /run\.status = 'running';[\s\S]{0,200}runnerHost = 'azure-function'/.test(rm)
+    && rm.indexOf("run.status = 'running'") < rm.indexOf('for (let i = 0; i < stepsToRun.length'));
+  // Wall-clock: the tick still has to finish inside the function ceiling.
+  check('dispatch stays batched so the longer deadline cannot blow the tick',
+    /i \+= 5\)/.test(sr) && /ceil\(n\/5\) x 8s/.test(sr));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
