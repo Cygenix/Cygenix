@@ -1325,7 +1325,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-sidebar.js?v=3484f77c84" defer></script>
-  <script src="/dashboard-app.js?v=3e2f70662a" defer></script>
+  <script src="/cygenix-preflight.js?v=e7ffb9d93b" defer></script>
+  <script src="/dashboard-app.js?v=c7d3b52429" defer></script>
 
 
   <!-- MAIN -->
@@ -1341,7 +1342,17 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="stat-card"><div class="stat-label">Analysed</div><div class="stat-val" id="stat-analysed" style="color:var(--purple)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--purple)"></span>Schema ready</div></div>
         <div class="stat-card"><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Ready to run</div></div>
         <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
+        <!-- Cutover Confidence — one number rolling up mapping confidence,
+             the latest Preflight forecast and delivery state. Click for the
+             component breakdown. Rendered by renderCutoverConfidence(). -->
+        <div class="stat-card" style="cursor:pointer" onclick="toggleConfidenceDetail()"
+             title="Mapping confidence + Preflight risk + jobs ready, weighted over the components that have data. Click for the breakdown.">
+          <div class="stat-label">Cutover Confidence</div>
+          <div class="stat-val" id="stat-confidence">—</div>
+          <div class="stat-sub" id="stat-confidence-sub">No signals yet</div>
+        </div>
       </div>
+      <div id="confidence-detail" class="panel" style="display:none;padding:0.8rem 1rem;margin-bottom:1rem"></div>
 
       <!-- ACTIVE PROJECT SUMMARY — read-only snapshot of the currently
            active project so the user always knows which one they're working

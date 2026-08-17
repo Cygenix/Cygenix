@@ -282,6 +282,9 @@ function hydrateProjectIntoUI(){
   renderSteps();
   renderJobs();
   refreshTaskStaleness();
+  // The last preflight forecast for THIS project, if one exists — dated in
+  // its footnote, hidden when the active project has none.
+  restorePreflightReport();
   // Surface any cross-project pollution: steps in this project's groups whose
   // underlying job records actually belong to a different project. Runs every
   // time we hydrate so switching projects re-evaluates the warning.
@@ -3160,6 +3163,115 @@ async function runSingleStep(gi, si) {
   renderSteps();
   const btn2 = document.getElementById(btnId);
   if (btn2) { btn2.disabled=false; btn2.textContent='▶ Run'; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Preflight Simulator
+// ─────────────────────────────────────────────────────────────────────────────
+// Forecast before flight: sample the selected steps' real source data
+// against the real target schema and report what will reject and why,
+// projected over the full load, with an estimated runtime. Read-only —
+// the engine (cygenix-preflight.js) issues SELECTs through the same
+// dbCall the runner uses, and nothing else.
+
+async function runPreflight() {
+  if (isRunning) return;
+  if (typeof CygenixPreflight === 'undefined') { alert('Preflight module not loaded — refresh the page.'); return; }
+  saveProject();
+  const flat = getAllStepsFlat().filter(x => isStepEnabled(x.step));
+  if (!flat.length) { alert('Nothing selected to preflight. Tick at least one job.'); return; }
+  const srcConn = effectiveSrcConn();
+  const tgtConn = effectiveTgtConn();
+  if (!srcConn || !tgtConn) { alert('Configure source and target connections first.'); return; }
+
+  const btn = document.getElementById('preflight-btn');
+  const box = document.getElementById('preflight-report');
+  if (btn) btn.disabled = true;
+  box.style.display = '';
+  box.innerHTML = '<div class="pf-panel"><div class="pf-progress">🛫 Preflight: sampling source data…</div></div>';
+  try {
+    const report = await CygenixPreflight.pfRunPreflight(flat.map(x => x.step), {
+      srcConn, tgtConn, dbCall, sampleSize: 1000,
+      onProgress: (done, total, jr) => {
+        const p = box.querySelector('.pf-progress');
+        if (p) p.textContent = '🛫 Preflight: ' + done + ' of ' + total + ' analysed — ' + jr.name;
+      },
+    });
+    CygenixPreflight.pfSave(project.id, report);
+    renderPreflightReport(report);
+  } catch (e) {
+    box.innerHTML = '<div class="pf-panel"><div style="color:var(--red);font-size:13px">Preflight failed: '
+      + esc(e.message) + '</div></div>';
+  }
+  if (btn) btn.disabled = false;
+}
+
+function renderPreflightReport(report) {
+  const box = document.getElementById('preflight-report');
+  if (!box || !report) return;
+  const P = CygenixPreflight;
+  const BANNER = {
+    green:   ['🟢', 'Clear to run', 'no projected rejections in the sample'],
+    amber:   ['🟠', 'Loads, with silent changes', 'rows will load but some values change (rounding, truncated fractions, character substitution)'],
+    red:     ['🔴', 'Will reject rows', 'the load is forecast to fail rows — fix the findings below before running'],
+    unknown: ['⚪', 'Not fully analysed', 'some jobs could not be simulated'],
+  };
+  const [icon, title, subtitle] = BANNER[report.verdict] || BANNER.unknown;
+  const totRows = report.jobs.reduce((a, j) => a + (j.totalRows || 0), 0);
+  const totEst = report.jobs.reduce((a, j) => a + ((j.est && j.est.seconds) || 0), 0);
+
+  const jobHtml = report.jobs.map(j => {
+    const meta = j.skipped
+      ? esc(j.skipped)
+      : j.totalRows.toLocaleString('en-GB') + ' rows · sampled ' + j.sampled.toLocaleString('en-GB')
+        + ' · est. run ' + P.pfFmtDuration(j.est && j.est.seconds);
+    const rows = (j.findings || []).map(f => {
+      const m = P.CHECK_META[f.code] || { label: f.code, why: '' };
+      const sev = P.pfSeverity(f.code);
+      return '<tr>'
+        + '<td><b>' + esc(m.label) + '</b><div class="pf-why">' + esc(f.detail || m.why) + '</div></td>'
+        + '<td class="mono" style="font-size:11px">' + esc(f.column || '') + (f.tgtType ? '<div class="pf-why">' + esc(f.tgtType) + '</div>' : '') + '</td>'
+        + '<td class="pf-proj ' + sev + '">' + (f.projected === null ? '—' : ('~' + (f.projected || 0).toLocaleString('en-GB')))
+        + (f.sampleFails ? '<div class="pf-why">' + f.sampleFails + ' in sample</div>' : '') + '</td>'
+        + '<td class="pf-ex">' + (f.examples || []).map(esc).join('<br>') + (f.authority ? '<div class="pf-why">checked against ' + esc(f.authority) + '</div>' : '') + '</td>'
+        + '</tr>';
+    }).join('');
+    return '<div class="pf-job">'
+      + '<div class="pf-job-head"><span class="pf-pill ' + j.verdict + '">' + j.verdict.toUpperCase() + '</span>'
+      + '<span class="pf-job-name">' + esc(j.name) + '</span>'
+      + '<span class="mono" style="font-size:11px;color:var(--text2)">' + esc(j.srcTable) + ' → ' + esc(j.tgtTable) + '</span>'
+      + '<span class="pf-job-meta">' + meta + '</span></div>'
+      + (rows ? '<table class="pf-table"><thead><tr><th>Finding</th><th>Column</th><th>Projected rows</th><th>Examples</th></tr></thead><tbody>' + rows + '</tbody></table>'
+              : (j.skipped ? '' : '<div class="pf-why" style="margin-top:0.4rem">No issues found in the sample.</div>'))
+      + '</div>';
+  }).join('');
+
+  box.style.display = '';
+  box.innerHTML = '<div class="pf-panel">'
+    + '<div class="pf-banner ' + report.verdict + '"><span>' + icon + '</span><span>' + title
+    + ' <span class="sub">— ' + subtitle + '</span></span>'
+    + '<span style="margin-left:auto;font-weight:400;font-size:11.5px;font-family:var(--mono)">'
+    + totRows.toLocaleString('en-GB') + ' rows · est. total ' + P.pfFmtDuration(totEst)
+    + (report.projectedFailures ? ' · ~' + report.projectedFailures.toLocaleString('en-GB') + ' rows forecast to reject' : '')
+    + '</span></div>'
+    + jobHtml
+    + '<div class="pf-footnote">Forecast from a ' + report.sampleSize.toLocaleString('en-GB')
+    + '-row sample per job, read-only, generated ' + new Date(report.generatedAt).toLocaleString('en-GB')
+    + '. Projections scale the sample failure rate to the full row count — treat them as estimates, not guarantees.'
+    + ' <a href="#" onclick="document.getElementById(\'preflight-report\').style.display=\'none\';return false" style="color:var(--text3)">Hide</a></div>'
+    + '</div>';
+}
+
+// Re-show the last forecast for this project on load, so a preflight run
+// yesterday is still on screen (clearly dated) when the page reopens.
+function restorePreflightReport() {
+  try {
+    if (typeof CygenixPreflight === 'undefined') return;
+    const box = document.getElementById('preflight-report');
+    const r = CygenixPreflight.pfLoad(project.id);
+    if (r) renderPreflightReport(r);
+    else if (box) box.style.display = 'none';
+  } catch {}
 }
 
 async function runProject() {
