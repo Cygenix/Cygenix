@@ -279,6 +279,63 @@ console.log('Scheduled runs — Azure Function mode targets\n');
     /stored when it was created, which may differ from Connections/.test(dash));
 }
 
+
+// ── Column literals must not reach the target as raw @@tokens ───────────────
+// A migration step is NOT executed from insertSQL: the runner rebuilds each
+// INSERT from columnMapping, reading literalValue/fixedValue per row. Version
+// capture substituted the SQL fields only, so a mapping with "@@date" showed
+// the resolved date in the generated SQL on screen and wrote the text
+// "@@date" into the customer's data on a scheduled run.
+{
+  const vmx = require('vm');
+  const rm = fs.readFileSync(__dirname + '/../azure-function/src/run-migration.js', 'utf8');
+  const grab = (name) => {
+    const i = rm.indexOf('function ' + name + '(');
+    const j = rm.indexOf('\n}', i);
+    return (i < 0 || j < 0) ? '' : rm.slice(i, j + 2);
+  };
+  const src = ['setParamResolveMap', 'resolveParamTokens', 'applyMappingTransform'].map(grab);
+  if (src.some(x => !x)) { check('parameter-resolution helpers are present', false); }
+  else {
+    const sbx = { Map, Array, String };
+    vmx.createContext(sbx);
+    vmx.runInContext('let _paramResolveMap = null;\n' + src.join('\n'), sbx);
+    const set = (t) => vmx.runInContext('setParamResolveMap', sbx)(t);
+    const apply = (m, v) => vmx.runInContext('applyMappingTransform', sbx)(m, v);
+
+    set([{ token: '@@date', resolved: '20260101' }, { token: '@@Client', resolved: 'Acme Ltd' }]);
+    check('a literal @@token resolves to its value', apply({ literalValue: '@@date' }, 'x'), '20260101');
+    check('fixedValue resolves too', apply({ fixedValue: '@@Client' }, 'x'), 'Acme Ltd');
+    check('a token embedded in text resolves in place',
+      apply({ literalValue: 'as of @@date ok' }, 'x'), 'as of 20260101 ok');
+    // The sigil is shared with T-SQL globals; only the user's own parameters
+    // may be replaced or a mapping of @@ROWCOUNT would be silently rewritten.
+    check('a T-SQL global is left alone', apply({ literalValue: '@@ROWCOUNT' }, 'x'), '@@ROWCOUNT');
+    check('an undefined token is left alone', apply({ literalValue: '@@nope' }, 'x'), '@@nope');
+    check('a plain literal is unchanged', apply({ literalValue: 'hello' }, 'x'), 'hello');
+    check('with no literal the source value still wins', apply({ srcCol: 'a' }, 'srcval'), 'srcval');
+    set([]);
+    check('with no substitution table nothing is invented',
+      apply({ literalValue: '@@date' }, 'x'), '@@date');
+  }
+
+  check('the runner primes the table from the pinned snapshot',
+    /setParamResolveMap\(snap && snap\._substitutedTokens\)/.test(rm));
+
+  // The durable fix: capture resolves the literals so new snapshots are clean.
+  const dash = fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8');
+  check('version capture substitutes composite child column literals',
+    /step\.columnMapping\.forEach\(m => \{[\s\S]{0,200}m\.literalValue = trySub\(m\.literalValue\)/.test(dash));
+  check('and single-map job literals at the top level',
+    /snapshot\.columnMapping\.forEach\(m => \{[\s\S]{0,200}m\.literalValue = trySub\(m\.literalValue\)/.test(dash));
+  check('and a top-level srcWhere', /snapshot\.srcWhere = trySub\(snapshot\.srcWhere\)/.test(dash));
+
+  // The browser runner already did this; the comment there names the bug.
+  const pb = fs.readFileSync(__dirname + '/../public/project-builder-app.js', 'utf8');
+  check('the in-browser runner still expands literals per row',
+    /return expandParamTokens\(m\.literalValue, m\.tgtCol\)/.test(pb));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

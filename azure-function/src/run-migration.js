@@ -189,10 +189,40 @@ function fmtVal(v) {
   if (isSqlExpression(s))        return s;
   return "N'" + s.replace(/'/g, "''") + "'";
 }
+// Resolve any @@token left in a column literal.
+//
+// A migration step is not executed from insertSQL — the INSERT is rebuilt
+// from columnMapping, reading literalValue/fixedValue per row. Version
+// snapshots taken before those fields were substituted at capture time still
+// carry raw tokens, and writing "@@date" into a customer's data is a silent
+// corruption, so resolve them here too from the substitution table the
+// snapshot records.
+//
+// Only tokens the user actually defined are replaced — the map comes from
+// their own parameters — so T-SQL globals like @@ROWCOUNT and @@IDENTITY,
+// which are not parameters, are left untouched.
+let _paramResolveMap = null;
+function setParamResolveMap(substitutedTokens) {
+  _paramResolveMap = new Map();
+  (Array.isArray(substitutedTokens) ? substitutedTokens : []).forEach(t => {
+    if (!t || t.resolved == null) return;
+    const bare = String(t.token || '').replace(/^@@/, '').replace(/[{}]/g, '').trim();
+    if (bare) _paramResolveMap.set(bare.toLowerCase(), String(t.resolved));
+  });
+}
+function resolveParamTokens(value) {
+  if (typeof value !== 'string' || !value.includes('@@')) return value;
+  if (!_paramResolveMap || !_paramResolveMap.size) return value;
+  return value.replace(/@@([A-Za-z_][A-Za-z_0-9]*)/g, (whole, name) => {
+    const hit = _paramResolveMap.get(String(name).toLowerCase());
+    return hit === undefined ? whole : hit;
+  });
+}
+
 function applyMappingTransform(m, v) {
   if (!m) return v;
-  if (m.literalValue != null && m.literalValue !== '') return m.literalValue;
-  if (m.fixedValue   != null && m.fixedValue   !== '') return m.fixedValue;
+  if (m.literalValue != null && m.literalValue !== '') return resolveParamTokens(m.literalValue);
+  if (m.fixedValue   != null && m.fixedValue   !== '') return resolveParamTokens(m.fixedValue);
   let out = v;
   if (Array.isArray(m.wasisRules) && m.wasisRules.length && out != null) {
     const sv = String(out);
@@ -1085,6 +1115,11 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   const stepResults = [];
   let totalRows = 0;
   let firstFailure = null;
+  // Prime the parameter resolution table from the snapshot, so column
+  // literals that were captured before substitution covered them still
+  // resolve rather than writing "@@token" into the target.
+  setParamResolveMap(snap && snap._substitutedTokens);
+
   // Stamp the resolved target onto the run before anything executes, so even
   // a first-step failure records where it was pointed.
   await recordEndpoints();

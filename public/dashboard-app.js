@@ -17124,8 +17124,32 @@ async function ta_createVersionFromSelected() {
       if (step.sql)       step.sql       = trySub(step.sql);
       if (step.insertSQL) step.insertSQL = trySub(step.insertSQL);
       if (step.srcWhere)  step.srcWhere  = trySub(step.srcWhere);
+      // Column literals. A migration step is NOT executed from insertSQL —
+      // the runner rebuilds each INSERT from columnMapping, reading
+      // literalValue/fixedValue per row. Substituting only the SQL fields
+      // left those literals raw, so a mapping with "@@date" wrote the text
+      // "@@date" into the target while the generated SQL on screen showed
+      // the resolved value. The browser runner already expands them
+      // per row (see applyColumnMappingValue); this is the same resolution
+      // for the snapshot a scheduled run executes.
+      if (Array.isArray(step.columnMapping)) {
+        step.columnMapping.forEach(m => {
+          if (!m) return;
+          if (m.literalValue) m.literalValue = trySub(m.literalValue);
+          if (m.fixedValue)   m.fixedValue   = trySub(m.fixedValue);
+        });
+      }
     });
   }
+  // Single-map jobs carry the mapping at the top level.
+  if (Array.isArray(snapshot.columnMapping)) {
+    snapshot.columnMapping.forEach(m => {
+      if (!m) return;
+      if (m.literalValue) m.literalValue = trySub(m.literalValue);
+      if (m.fixedValue)   m.fixedValue   = trySub(m.fixedValue);
+    });
+  }
+  if (snapshot.srcWhere) snapshot.srcWhere = trySub(snapshot.srcWhere);
   // Stamp the snapshot with substitution metadata so phase 2b's runner —
   // and any future audit — can see what was resolved and when.
   snapshot._capturedAt          = new Date().toISOString();
