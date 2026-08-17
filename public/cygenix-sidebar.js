@@ -113,7 +113,9 @@
       { key:'reports-group', label:'Reports', icon: iconReport(), children: [
         { key:'report-builder',           label:'Report Builder',    href:'/reports.html',            color:'var(--amber)',  icon: iconReportBuilder() },
         { key:'reports',                  label:'Conversion Report', view:'reports',                  color:'var(--purple)', icon: iconReport() },
-        { key:'project-summary-document', label:'Project Summary',   view:'project-summary-document', color:'var(--purple)', icon: iconDocument() },
+        // 'Project Summary' was removed on request (17-Aug-2026). The view
+        // itself still loads on dashboard.html and answers to
+        // #goto=project-summary-document for old bookmarks.
       ]},
       { key:'inventory',        label:'Project Artifacts', view:'inventory',        icon: iconGrid() },
       { key:'privacy-security', label:'Governance',        view:'privacy-security', color:'var(--red)',   icon: iconShield() },
@@ -174,13 +176,9 @@
   function iconClock(){        return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4v4l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconReport(){       return svg('<path d="M4 2h6l3 3v9H4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v3h3M6 8h4M6 11h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'); }
   // Document with embedded bar chart — Report Builder produces ad-hoc tabular
-  // and visual reports, distinct from iconReport (Conversion Report, fixed
-  // layout) and iconDocument (Project Summary, signed deliverable).
+  // and visual reports, distinct from iconReport (the fixed-layout Conversion
+  // Report).
   function iconReportBuilder(){return svg('<path d="M4 2h6l3 3v9H4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v3h3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/><rect x="6" y="10" width="1.2" height="2" fill="currentColor"/><rect x="8" y="8.5" width="1.2" height="3.5" fill="currentColor"/><rect x="10" y="9.5" width="1.2" height="2.5" fill="currentColor"/>'); }
-  // Document with signature line — used for the Project Summary Document, the
-  // "deliverable" output (signed off, sent to clients) vs iconReport which is
-  // the day-to-day Conversion Report.
-  function iconDocument(){     return svg('<path d="M4 1.5h5.5L13 5v9.5H4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9.5 1.5V5H13" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 7.5h5M6 9.5h5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M6 12h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconAlert(){        return svg('<path d="M8 2l6 11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3M8 11v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconCookie(){       return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/>'); }
   function iconSearch(){       return svg('<circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
