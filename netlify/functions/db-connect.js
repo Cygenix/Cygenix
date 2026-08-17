@@ -41,6 +41,8 @@ const { Client: PgClient } = require('pg');
 const { verifyAuthHeader } = require('./lib/entra-auth');
 const { applyEntraAuth, resolveSqlConfig, connectWithRetry } = require('./lib/sql-entra');
 const { shouldRelay, createRelayPool } = require('./lib/azure-sql-relay');
+const { can, connKey, detectDestructive, isReadOnlySql } = require('./lib/rbac');
+const { orgStore, resolveActor, classificationFor, appendAudit } = require('./lib/org-store');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type-formatting helpers (shared across MSSQL + Postgres schema endpoints)
@@ -106,8 +108,9 @@ exports.handler = async function (event) {
   // unauthenticated, it is an open SQL relay anyone on the internet can use.
   // Require a signed-in Cygenix user (verified Entra token). The front-end
   // attaches the token automatically via cygenix-auth-token.js.
+  let authed;
   try {
-    await verifyAuthHeader(event);
+    authed = await verifyAuthHeader(event);
   } catch (e) {
     return err('Auth error: ' + e.message, 'Sign in and retry — the browser attaches your session token automatically.', 401);
   }
@@ -121,17 +124,120 @@ exports.handler = async function (event) {
 
   const dialect = (body.dialect || detectDialect(connectionString)).toLowerCase();
 
+  // ── Authorisation (RBAC spec §11) ────────────────────────────────────────
+  // Authentication above says who is calling; this decides whether that
+  // actor may do this to this target. The target's environment comes from
+  // the administrator-set classification, defaulting to PROD (§7.1). The
+  // decision — and every denial — is auditable server-side.
+  let guardrail = null;
   try {
-    if (dialect === 'postgres') {
-      return await handlePostgres(action, connectionString, database, body);
+    const gate = await rbacGate(authed, action, dialect, connectionString, database, body);
+    if (gate.denied) return gate.denied;
+    guardrail = gate.guardrail || null;
+  } catch (e) {
+    // Fail closed: no policy decision, no database access (§3 principle 1).
+    return err('Authorisation unavailable: ' + e.message, 'Retry shortly — the policy service could not be reached.', e.statusCode || 503);
+  }
+
+  try {
+    const res = dialect === 'postgres'
+      ? await handlePostgres(action, connectionString, database, body)
+      : await handleMssql(action, connectionString, database, body);
+    // Surface the Production guardrail analysis (R-17) alongside a
+    // successful write so the interface can show what just ran where.
+    if (guardrail && res && res.statusCode === 200) {
+      try {
+        const data = JSON.parse(res.body);
+        data.guardrail = guardrail;
+        res.body = JSON.stringify(data);
+      } catch { /* body not JSON — leave it */ }
     }
-    return await handleMssql(action, connectionString, database, body);
+    return res;
   } catch (e) {
     // Dialect handlers throw when connection or auth fails — catch here so
     // we always return a clean JSON error instead of a 500 stack trace.
     return err(e.message || String(e), e.hint || null, e.statusCode || 500);
   }
 };
+
+// ── RBAC gate ────────────────────────────────────────────────────────────────
+// Maps a db-connect action onto a policy action, resolves the actor's
+// effective roles and the target's environment classification, evaluates
+// can(), and audits what matters: every denial, and every write. Schema
+// reads are gated but not individually audited — a 12k-table browse would
+// drown the trail in noise that evidences nothing.
+
+const RBAC_ACTION = {
+  'test': 'connection.test',
+  'schema': 'schema.read', 'schema-tables': 'schema.read',
+  'schema-columns': 'schema.read', 'schema-fks': 'schema.read',
+  'fetch-page': 'sql.read', 'rowcounts': 'schema.read',
+};
+
+async function rbacGate(authed, action, dialect, connectionString, database, body) {
+  const store = orgStore();
+  const actor = await resolveActor(store, authed, authed);
+
+  // Where does this point? Server + database, from the same parsers the
+  // handlers use, so the classification key always matches.
+  let server = '', db = '';
+  try {
+    if (dialect === 'postgres') {
+      const cfg = parsePostgresConnectionString(connectionString, database);
+      server = cfg.host; db = cfg.database;
+    } else {
+      const cfg = parseMssqlConnectionString(connectionString, database);
+      server = cfg.server; db = cfg.database;
+    }
+  } catch { /* unparseable — handlers will reject it; classify as unknown → PROD */ }
+  const environment = await classificationFor(store, server, db);
+
+  // execute/batch carry SQL: reads stay reads, anything else is a write.
+  let policyAction = RBAC_ACTION[action] || null;
+  let sqlText = '';
+  if (action === 'execute' || action === 'batch') {
+    sqlText = action === 'batch'
+      ? (Array.isArray(body.batchSql) ? body.batchSql.join(';\n') : '')
+      : (body.sql || '');
+    policyAction = isReadOnlySql(sqlText) ? 'sql.read' : 'sql.write';
+  } else if (action === 'fetch-page' && body.sql && !isReadOnlySql(body.sql)) {
+    // fetch-page wraps caller SQL in a paging SELECT; a write smuggled in
+    // through it must gate as the write it is, not the read it claims.
+    policyAction = 'sql.write';
+    sqlText = body.sql;
+  }
+  if (!policyAction) policyAction = 'sql.write';   // unknown action: gate hardest, handler 400s after
+
+  const mutating = policyAction === 'sql.write';
+  const decision = can(actor, policyAction, { environment, mutating });
+  const base = {
+    actorOid: actor.oid, actorEmail: actor.email, effectiveRoles: actor.roles,
+    resourceType: 'connection', resourceId: connKey(server, db), environment,
+    detail: { dbAction: action, policyAction },
+  };
+
+  if (!decision.allow) {
+    await appendAudit(store, { ...base, action: policyAction, outcome: 'denied',
+      severity: decision.severity, detail: { ...base.detail, reason: decision.reason } });
+    return { denied: err('Not permitted: ' + decision.reason,
+      environment === 'PROD'
+        ? 'This target is classified Production. Execution there needs the Migration Lead role; classification is set by a Platform Administrator on the Users & Roles page.'
+        : 'Your roles do not grant this action. A Platform Administrator can adjust them on the Users & Roles page.',
+      403) };
+  }
+
+  let guardrail = null;
+  if (mutating) {
+    const destructive = detectDestructive(sqlText);
+    await appendAudit(store, { ...base, action: policyAction, outcome: 'allowed',
+      severity: decision.severity,
+      detail: { ...base.detail, destructive: destructive.length ? destructive : undefined } });
+    if (environment === 'PROD' || environment === 'STAGING') {
+      guardrail = { environment, destructive };
+    }
+  }
+  return { guardrail };
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SQL SERVER (existing code path — untouched except for error routing)

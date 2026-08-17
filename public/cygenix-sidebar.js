@@ -72,6 +72,7 @@
         { key:'project-settings',  label:'General',           view:'project-settings',  color:'var(--amber)',  icon: iconSettings() },
         { key:'notifications',     label:'Notifications',     view:'notifications',     color:'var(--teal)',   icon: iconBell() },
         { key:'system-parameters', label:'System Parameters', view:'system-parameters', color:'var(--accent)', icon: iconParams() },
+        { key:'user-roles',        label:'Users & Roles',     href:'/user_roles.html',  color:'var(--accent)', icon: iconUsers() },
       ]},
     ]},
     { section: 'Map & Build', group:'build', items: [
@@ -182,6 +183,8 @@
   function iconAlert(){        return svg('<path d="M8 2l6 11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3M8 11v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconCookie(){       return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/>'); }
   function iconSearch(){       return svg('<circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
+  // Two figures — Users & Roles, the access-control directory.
+  function iconUsers(){        return svg('<circle cx="6" cy="5.5" r="2.2" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 13c0-2 1.6-3.4 3.5-3.4S9.5 11 9.5 13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="11" cy="6.5" r="1.7" stroke="currentColor" stroke-width="1.1"/><path d="M10.6 9.8c1.7 0.2 2.9 1.5 2.9 3.2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'); }
   function iconAuditLog(){     return svg('<rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconInfo(){         return svg('<circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'); }
   function iconPulse(){        return svg('<path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (t === 'auto') t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) { document.documentElement.setAttribute('data-theme', 'light'); }
+})();
+</script>
+<title>Cygenix – Users &amp; Roles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/cygenix-auth-token.js?v=8ed8e00fad"></script>
+<script src="/cygenix-rbac.js?v=78965846c4" defer></script>
+<style>
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent2:#3D4EC4;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.08);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.08);
+  --amber:#f5a623;--amber-bg:rgba(245,166,35,0.08);
+  --purple:#a86dff;--purple-bg:rgba(168,109,255,0.08);
+  --teal:#17827C;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:10px;--r-lg:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;padding-left:230px}
+body.cyg-collapsed{padding-left:54px}
+.page{max-width:1180px;margin:0 auto;padding:1.75rem}
+.page-header{margin-bottom:1.5rem}
+.page-title{font-size:1.3rem;font-weight:600;letter-spacing:-0.02em;display:flex;align-items:center;gap:8px}
+.page-sub{font-size:13px;color:var(--text2);margin-top:4px;max-width:74ch}
+
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem}
+.panel-title{font-size:14px;font-weight:600;margin-bottom:2px}
+.panel-sub{font-size:12px;color:var(--text2);margin-bottom:0.9rem;max-width:80ch}
+.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;font-size:12px;font-family:var(--serif);font-weight:500;border:0.5px solid;cursor:pointer;transition:all 0.15s;text-decoration:none}
+.btn-primary{background:var(--accent);border-color:var(--accent2);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-ghost{background:transparent;border-color:var(--border2);color:var(--text2)}
+.btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-sm{padding:3px 8px;font-size:11px}
+.btn[disabled]{opacity:0.45;cursor:not-allowed}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;text-align:left;font-family:var(--mono);padding:6px 10px;border-bottom:0.5px solid var(--border2)}
+td{padding:8px 10px;border-bottom:0.5px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.mono{font-family:var(--mono)}
+.muted{color:var(--text2)}
+.small{font-size:11px}
+
+.role-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:100px;font-size:10.5px;font-weight:500;font-family:var(--mono);border:0.5px solid var(--border2);background:var(--bg3);color:var(--text);margin:1px 2px 1px 0;white-space:nowrap}
+.role-chip .x{cursor:pointer;color:var(--text2);font-weight:600}
+.role-chip .x:hover{color:var(--red)}
+.role-chip.rc-OW,.role-chip.rc-PA{border-color:rgba(74,91,214,0.4);color:var(--accent);background:var(--accent-glow)}
+.role-chip.rc-AU{border-color:rgba(23,130,124,0.45);color:var(--teal)}
+.role-chip.rc-AP,.role-chip.rc-DO{border-color:rgba(168,109,255,0.4);color:var(--purple);background:var(--purple-bg)}
+
+.env-badge{display:inline-flex;padding:2px 9px;border-radius:100px;font-size:10px;font-weight:600;font-family:var(--mono);letter-spacing:0.05em;border:0.5px solid}
+.env-PROD{background:var(--red-bg);color:var(--red);border-color:rgba(240,70,70,0.35)}
+.env-STAGING{background:var(--amber-bg);color:var(--amber);border-color:rgba(245,166,35,0.35)}
+.env-TEST{background:var(--accent-glow);color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.env-DEV{background:var(--green-bg);color:var(--green);border-color:rgba(34,201,122,0.35)}
+
+.warn-strip{display:flex;gap:8px;align-items:flex-start;background:var(--amber-bg);border:0.5px solid rgba(245,166,35,0.3);border-radius:var(--r);padding:9px 12px;font-size:12px;margin-top:0.75rem}
+.note-strip{display:flex;gap:8px;align-items:flex-start;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:9px 12px;font-size:12px;color:var(--text2);margin-top:0.75rem}
+
+.audit-row td{font-size:11.5px}
+.sev{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
+.sev-high{background:var(--red)}.sev-notice{background:var(--amber)}.sev-info{background:var(--text3)}
+.outcome-denied{color:var(--red);font-weight:600}
+.outcome-allowed{color:var(--green)}
+
+select,input[type=text]{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:5px 9px;font-size:12px;color:var(--text);font-family:var(--serif);outline:none}
+select:focus,input[type=text]:focus{border-color:var(--accent)}
+
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+@media (max-width:960px){.grid-2{grid-template-columns:1fr}body{padding-left:0}}
+.loading{color:var(--text2);font-size:12.5px;padding:0.75rem 0}
+.toast{position:fixed;right:18px;bottom:18px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:10px 14px;font-size:12.5px;display:none;z-index:60}
+.toast.on{display:block}
+.qr td:first-child{white-space:nowrap;font-weight:600}
+</style>
+</head>
+<body>
+<div id="cyg-sidebar-mount" data-active="user-roles"></div>
+<script src="/cygenix-sidebar.js?v=3484f77c84" defer></script>
+
+<div class="page">
+  <div class="page-header">
+    <div class="page-title">Users &amp; Roles</div>
+    <div class="page-sub">Who can reach this organisation, what each of them may do, and which databases count as
+      Production. Every grant, revocation and refusal here is recorded in the tamper-evident audit trail below.
+      The interface hides what your roles cannot do; the server refuses it either way.</div>
+  </div>
+
+  <!-- Your access -->
+  <div class="panel" id="me-panel">
+    <div class="panel-title">Your access</div>
+    <div class="panel-sub" id="me-sub">Resolving your roles…</div>
+    <div id="me-chips"></div>
+    <div id="me-collapsed"></div>
+  </div>
+
+  <!-- Users -->
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <div class="panel-title">Users</div>
+        <div class="panel-sub">Everyone who has signed in to this organisation. Roles are assigned here (or asserted
+          by your Entra tenant as <span class="mono small">Cygenix.*</span> app roles — both count). Deactivating a
+          user takes effect on their next request, not their next sign-in.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadUsers()">↻ Refresh</button>
+    </div>
+    <div id="users-wrap" class="loading">Loading users…</div>
+    <div class="note-strip" id="users-note" style="display:none">
+      <span>ℹ️</span><span>New teammates appear here automatically the first time they sign in. Invite them by
+      granting access in your Microsoft Entra tenant (the application requires assignment), then assign roles here
+      once they show up. Read-only view — role changes need the Organisation Owner or a Platform Administrator.</span>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Environment classification -->
+    <div class="panel">
+      <div class="panel-title">Environment classification</div>
+      <div class="panel-sub">Every connection carries a classification set here by a Platform Administrator.
+        <b>Anything unlisted counts as PROD</b> — the safe default — which restricts execution against it to the
+        Migration Lead role and flags every write at high severity. Downgrade deliberately.</div>
+      <div id="class-wrap" class="loading">Loading classifications…</div>
+      <div id="class-add" style="display:none;margin-top:0.9rem;padding-top:0.9rem;border-top:0.5px solid var(--border)">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="cl-server" placeholder="server / host" style="flex:2;min-width:150px">
+          <input type="text" id="cl-db" placeholder="database" style="flex:1.5;min-width:110px">
+          <select id="cl-env"></select>
+          <button class="btn btn-primary btn-sm" onclick="classify()">Classify</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Role quick reference -->
+    <div class="panel">
+      <div class="panel-title">Role quick reference</div>
+      <div class="panel-sub">From the access-control specification. A person may hold several roles; conflicting
+        pairs are still refused per act and surfaced as a warning.</div>
+      <table class="qr"><tbody id="qr-body"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Audit trail -->
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <div class="panel-title">Audit trail</div>
+        <div class="panel-sub">Server-side, append-only and hash-chained: every gated write, every role change and
+          every refusal, with actor and environment. No role — including administrators — can edit or delete an
+          entry.</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" id="verify-btn" onclick="verifyChain()" data-rbac-role="OW,PA,AU">⛓ Verify chain</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportAudit()" data-rbac-role="PA,AU">⬇ Export</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadAudit()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="audit-wrap" class="loading">Loading audit trail…</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const API = '/.netlify/functions/rbac-admin';
+let ME = null, USERS = [], ROLE_META = {};
+
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'), 3200); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function api(qs, body){
+  const token = getCygenixIdToken();
+  const r = await fetch(API + (qs||''), body
+    ? { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+token }, body: JSON.stringify(body) }
+    : { headers:{ Authorization:'Bearer '+token } });
+  const data = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP '+r.status));
+  return data;
+}
+
+// ── Your access ───────────────────────────────────────────────────────────
+async function loadMe(){
+  try {
+    ME = await api('?what=me');
+    if (ME.roleRef) ROLE_META = ME.roleRef;
+    document.getElementById('me-sub').innerHTML = 'Signed in as <b>'+esc(ME.email)+'</b>. Roles apply on every server call.';
+    document.getElementById('me-chips').innerHTML = (ME.roles||[]).map((r,i) =>
+      '<span class="role-chip rc-'+r+'">'+r+' · '+esc((ME.roleNames||[])[i]||r)+'</span>').join('')
+      || '<span class="muted small">No roles yet — a Platform Administrator needs to assign you one. You can sign in and view, nothing more.</span>';
+    const col = ME.collapsed || [];
+    document.getElementById('me-collapsed').innerHTML = col.length
+      ? '<div class="warn-strip"><span>⚠️</span><span><b>Collapsed segregation:</b> you hold role pairs the model keeps apart ('
+        + col.map(c=>esc(c.note)).join('; ')
+        + '). Conflicting acts are still refused individually and this state is recorded — on a multi-person project, spread these roles out.</span></div>'
+      : '';
+  } catch (e) {
+    document.getElementById('me-sub').textContent = 'Could not resolve your roles: ' + e.message;
+  }
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────
+const ASSIGNABLE = ['ML','EN','AP','DO','VA','AU','MB','PA','OW'];
+async function loadUsers(){
+  const wrap = document.getElementById('users-wrap');
+  try {
+    const d = await api('?what=users');
+    USERS = d.users || []; ROLE_META = d.roles || {};
+    const canAssign = ME && (ME.roles||[]).some(r => r==='OW'||r==='PA');
+    document.getElementById('users-note').style.display = '';
+    wrap.className='';
+    wrap.innerHTML = '<table><thead><tr><th>User</th><th>Roles</th><th>Last seen</th><th></th></tr></thead><tbody>'
+      + USERS.map(u => {
+        const chips = u.roles.map(r =>
+          '<span class="role-chip rc-'+r+'" title="'+esc((ROLE_META[r]||{}).name||r)+'">'+r
+          + (canAssign ? ' <span class="x" onclick="revoke(\''+esc(u.oid)+'\',\''+r+'\')" title="Revoke '+r+'">×</span>' : '')
+          + '</span>').join('');
+        const collapsed = (u.collapsed && u.collapsed.length)
+          ? ' <span title="Holds role pairs the model separates: '+esc(u.collapsed.map(c=>c.note).join('; '))+'" style="cursor:help">⚠️</span>' : '';
+        const assign = canAssign
+          ? '<select id="as-'+esc(u.oid)+'" class="btn-sm"><option value="">+ role…</option>'
+            + ASSIGNABLE.filter(r=>!u.roles.includes(r)).map(r=>'<option value="'+r+'">'+r+' — '+esc((ROLE_META[r]||{}).name||r)+'</option>').join('')
+            + '</select> <button class="btn btn-ghost btn-sm" onclick="assign(\''+esc(u.oid)+'\')">Assign</button> '
+            + (u.oid !== ME.oid
+               ? '<button class="btn btn-ghost btn-sm" onclick="toggleActive(\''+esc(u.oid)+'\','+(u.isActive?'false':'true')+')">'+(u.isActive?'Deactivate':'Reactivate')+'</button>'
+               : '')
+          : '';
+        return '<tr'+(u.isActive?'':' style="opacity:0.5"')+'><td><b>'+esc(u.name||u.email)+'</b>'+collapsed
+          + '<div class="muted small mono">'+esc(u.email)+(u.isActive?'':' · deactivated')+'</div></td>'
+          + '<td>'+ (chips || '<span class="muted small">none</span>') +'</td>'
+          + '<td class="muted small mono">'+esc((u.lastSeenAt||'').slice(0,16).replace('T',' '))+'</td>'
+          + '<td style="white-space:nowrap">'+assign+'</td></tr>';
+      }).join('') + '</tbody></table>';
+  } catch (e) {
+    wrap.className=''; wrap.innerHTML = '<div class="muted small">'+esc(e.message)+'</div>';
+  }
+}
+async function assign(oid){
+  const sel = document.getElementById('as-'+oid);
+  if (!sel || !sel.value) return;
+  try { await api('', { op:'assign', oid, role: sel.value }); toast('Role assigned'); CygenixRBAC.invalidate(); loadUsers(); loadAudit(); }
+  catch (e) { toast(e.message); }
+}
+async function revoke(oid, role){
+  try { await api('', { op:'revoke', oid, role }); toast('Role revoked'); CygenixRBAC.invalidate(); loadUsers(); loadAudit(); }
+  catch (e) { toast(e.message); }
+}
+async function toggleActive(oid, activate){
+  try { await api('', { op: activate==='true'||activate===true ? 'activate':'deactivate', oid }); toast('Updated'); loadUsers(); loadAudit(); }
+  catch (e) { toast(e.message); }
+}
+
+// ── Classifications ───────────────────────────────────────────────────────
+async function loadClassifications(){
+  const wrap = document.getElementById('class-wrap');
+  try {
+    const d = await api('?what=classifications');
+    const entries = Object.entries(d.classifications || {});
+    const sel = document.getElementById('cl-env');
+    sel.innerHTML = (d.environments||[]).map(e=>'<option'+(e==='DEV'?' selected':'')+'>'+e+'</option>').join('');
+    document.getElementById('class-add').style.display = d.canClassify ? '' : 'none';
+    wrap.className='';
+    wrap.innerHTML = entries.length
+      ? '<table><thead><tr><th>Server</th><th>Database</th><th>Class</th></tr></thead><tbody>'
+        + entries.map(([k,c]) => '<tr><td class="mono small">'+esc(c.server||k.split('|')[0])+'</td>'
+          + '<td class="mono small">'+esc(c.database||k.split('|')[1]||'')+'</td>'
+          + '<td><span class="env-badge env-'+esc(c.environment)+'">'+esc(c.environment)+'</span></td></tr>').join('')
+        + '</tbody></table>'
+      : '<div class="muted small">Nothing classified yet — every connection currently counts as <span class="env-badge env-PROD">PROD</span>.'
+        + (d.canClassify ? ' Add your development and test servers below to unlock free execution against them.' : '') + '</div>';
+  } catch (e) {
+    wrap.className=''; wrap.innerHTML = '<div class="muted small">'+esc(e.message)+'</div>';
+  }
+}
+async function classify(){
+  const server = document.getElementById('cl-server').value.trim();
+  const database = document.getElementById('cl-db').value.trim();
+  const environment = document.getElementById('cl-env').value;
+  if (!server) return toast('Server is required');
+  try { await api('', { op:'classify', server, database, environment }); toast('Classified '+environment); loadClassifications(); loadAudit(); }
+  catch (e) { toast(e.message); }
+}
+
+// ── Role quick reference ──────────────────────────────────────────────────
+function renderQuickRef(){
+  const order = ['OW','PA','ML','EN','AP','DO','VA','AU','MB','SP'];
+  document.getElementById('qr-body').innerHTML = order.map(c => {
+    const r = ROLE_META[c]; if (!r) return '';
+    return '<tr><td><span class="role-chip rc-'+c+'">'+c+'</span> '+esc(r.name)+'</td>'
+      + '<td class="muted small">'+esc(r.summary)+' <span class="mono">('+esc(r.scope)+')</span></td></tr>';
+  }).join('');
+}
+
+// ── Audit trail ───────────────────────────────────────────────────────────
+async function loadAudit(){
+  const wrap = document.getElementById('audit-wrap');
+  try {
+    const d = await api('?what=audit&limit=100');
+    wrap.className='';
+    wrap.innerHTML = (d.entries && d.entries.length)
+      ? '<table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Env</th><th>Outcome</th></tr></thead><tbody>'
+        + d.entries.map(e => '<tr class="audit-row">'
+          + '<td class="mono muted">'+esc((e.occurredAt||'').slice(0,19).replace('T',' '))+'</td>'
+          + '<td>'+esc(e.actorEmail||'—')+'</td>'
+          + '<td class="mono"><span class="sev sev-'+esc(e.severity||'info')+'"></span>'+esc(e.action)+'</td>'
+          + '<td class="mono muted small">'+esc(e.resourceId||'')+'</td>'
+          + '<td>'+(e.environment?'<span class="env-badge env-'+esc(e.environment)+'">'+esc(e.environment)+'</span>':'')+'</td>'
+          + '<td class="outcome-'+esc(e.outcome)+'">'+esc(e.outcome)
+          + (e.detail && e.detail.reason ? '<div class="muted small" style="font-weight:400">'+esc(e.detail.reason)+'</div>' : '')
+          + '</td></tr>').join('')
+        + '</tbody></table>'
+        + '<div class="muted small" style="margin-top:6px">'+d.total+' entr'+(d.total===1?'y':'ies')+' total · showing latest '+d.entries.length+'</div>'
+      : '<div class="muted small">No entries yet. Gated actions — role changes, classified writes, refusals — will appear here as they happen.</div>';
+  } catch (e) {
+    wrap.className=''; wrap.innerHTML = '<div class="muted small">'+esc(e.message)+'</div>';
+  }
+}
+async function verifyChain(){
+  const btn = document.getElementById('verify-btn');
+  btn.disabled = true;
+  try {
+    const v = await api('?what=audit&verify=1');
+    toast(v.ok ? '⛓ Chain intact — '+v.count+' entries verified' : '⚠ Chain BROKEN at entry '+v.brokenAt+' ('+v.reason+')');
+  } catch (e) { toast(e.message); }
+  btn.disabled = false;
+}
+async function exportAudit(){
+  try {
+    const d = await api('?what=audit&export=1');
+    const blob = new Blob([JSON.stringify(d.entries, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cygenix-audit-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click(); URL.revokeObjectURL(a.href);
+  } catch (e) { toast(e.message); }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadMe();          // also delivers the role reference (roleRef)
+  renderQuickRef();
+  loadUsers(); loadClassifications(); loadAudit();
+  if (window.CygenixRBAC) CygenixRBAC.applyGates();
+});
+</script>
+</body>
+</html>
