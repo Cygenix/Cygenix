@@ -281,7 +281,7 @@ body.cyg-collapsed{padding-left:54px}
 .da-crumb .cur{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 .da-meta{font-size:11px;color:var(--text3);font-family:var(--mono)}
 
-.da-mapwrap{position:relative;flex:1;min-height:0;padding:6px}
+.da-mapwrap{position:relative;flex:1;min-height:0;padding:6px;overflow:hidden}
 #da-map{display:block;width:100%;height:100%;border-radius:8px;cursor:pointer}
 .da-tip{position:absolute;pointer-events:none;z-index:20;background:var(--bg4);color:var(--text);
   border:0.5px solid var(--border2);border-radius:9px;padding:8px 10px;font-size:11.5px;line-height:1.5;
@@ -2077,15 +2077,37 @@ function daBuildTables(graph){
   });
 }
 
+// The stylesheet's height:calc(100vh - 118px) assumes the chrome above the
+// atlas is exactly 118px tall. Zoom, a wrapping header row or a different
+// font make it taller, and the map's bottom edge slid below the fold —
+// which read as "tables hidden off-screen that I cannot scroll to".
+// Measure where the view actually starts and pin its bottom to the
+// viewport instead.
+function daSizeView(){
+  const el = $('se-view-atlas');
+  if (!el || el.style.display === 'none') return;
+  el.style.height = Math.max(480, window.innerHeight - el.getBoundingClientRect().top - 14) + 'px';
+}
+
 let _daEnsured = false;
 function daEnsure(){
   daLens();
   if (!_daEnsured){
     _daEnsured = true;
     daWireCanvas();
+    window.addEventListener('resize', () => {
+      if (seTab !== 'atlas') return;
+      daSizeView();
+      if (DA.view === 'map') daResize();
+    });
   }
+  daSizeView();
   if (DA.loaded !== DA.side) daLoad();
   else { daResize(); }
+  // The tab was display:none a moment ago; measure again once layout has
+  // actually settled, or the canvas keeps the size of a box that no longer
+  // exists and paints past the panel edge.
+  requestAnimationFrame(() => { daSizeView(); if (DA.view === 'map') daResize(); });
 }
 
 async function daLoad(){
@@ -2316,10 +2338,27 @@ function daBuildCells(){
       .map(t => ({ v: daVal(t), t, leaf: true, label: t.name, sub: t.schema }))
       .filter(o => o.v > 0)
       .sort((a, b) => b.v - a.v);
-    const mx = items.length ? items[0].v : 1;
+    // Same pooling as the top level — a big group on a 12k-table estate still
+    // has a long sub-pixel tail. Already drilled, so the remainder's way in is
+    // the Table view, not another zoom.
+    const area = daW * daH, gv = items.reduce((s, o) => s + o.v, 0) || 1;
+    const keep = []; let rest = 0, hidden = 0;
+    for (const o of items){
+      if (o.v / gv * area > 26 && keep.length < 220) keep.push(o);
+      else { rest += o.v; hidden++; }
+    }
+    if (rest > 0 && keep.length){
+      // The pool's honest area can itself be sub-pixel next to million-row
+      // heads — and it is the only way in to the tail, so floor it at ~1.5%
+      // of the frame. v is layout-only; tv keeps the truth for the tooltip.
+      keep.push({ v: Math.max(rest, gv * 0.015), tv: rest, rest: true, hidden,
+                  label: hidden + ' smaller tables', cat });
+    }
+    const mx = keep.length ? keep[0].v : 1;
     const amp = daLens()[DA.lens].ordinal ? 0 : 0.46;
-    items.forEach(o => { o.c = daMixw(cat.c, amp * Math.pow(1 - o.v / mx, 0.75)); });
-    daCells = daSquarify(items, { x:0, y:0, w:daW, h:daH });
+    keep.forEach(o => { o.c = o.rest ? daMixw(cat.c, amp ? 0.66 : 0.30)
+                            : daMixw(cat.c, amp * Math.pow(1 - o.v / mx, 0.75)); });
+    daCells = daSquarify(keep, { x:0, y:0, w:daW, h:daH });
     return;
   }
   // Nested: group containers first, then their member tables inside.
@@ -2349,7 +2388,8 @@ function daBuildCells(){
       if (k.v / gv * area > 26 && keep.length < 160) keep.push(k); else rest += k.v;
     }
     const hidden = kids.length - keep.length;
-    if (rest > 0 && keep.length) keep.push({ v:rest, rest:true, hidden, label:hidden + ' smaller tables', cat:f.d.cat });
+    // Floored like the drilled remainder: an invisible way in is no way in.
+    if (rest > 0 && keep.length) keep.push({ v:Math.max(rest, gv * 0.015), tv:rest, rest:true, hidden, label:hidden + ' smaller tables', cat:f.d.cat });
     const mx = keep.length ? keep[0].v : 1;
     const amp = daLens()[DA.lens].ordinal ? 0 : 0.42;
     keep.forEach(o => { o.c = o.rest ? daMixw(f.d.cat.c, amp ? 0.66 : 0.30)
@@ -2476,6 +2516,7 @@ function daResize(){
   if (!wrap || !canvas) return;
   const r = wrap.getBoundingClientRect();
   if (r.width < 20 || r.height < 20) return;      // hidden tab — nothing to size against
+  // eslint-disable-next-line no-unused-vars -- kept for parity with schema map
   daDPR = Math.min(2, window.devicePixelRatio || 1);
   daW = Math.max(10, r.width - 12); daH = Math.max(10, r.height - 12);
   canvas.width = daW * daDPR; canvas.height = daH * daDPR;
@@ -2505,10 +2546,12 @@ function daWireCanvas(){
     let html;
     const dot = (c) => '<span class="da-dot" style="background:' + c + '"></span>';
     if (d.rest){
+      const tv = d.tv !== undefined ? d.tv : d.v;   // v is floored for layout
       html = '<div class="tt">' + dot(d.c) + daInt(d.hidden) + ' smaller tables</div>'
-        + '<div class="r"><span>Combined</span><b>' + daM(d.v) + '</b></div>'
-        + '<div class="r"><span>Share</span><b>' + daPct(d.v / daTotal() * 100) + '</b></div>'
-        + '<div class="hint">Too small to draw at this scale — click to open the group</div>';
+        + '<div class="r"><span>Combined</span><b>' + daM(tv) + '</b></div>'
+        + '<div class="r"><span>Share</span><b>' + daPct(tv / daTotal() * 100) + '</b></div>'
+        + '<div class="hint">Too small to draw at this scale — click to '
+        + (DA.drill ? 'list them in the Table view' : 'open the group') + '</div>';
     } else if (d.leaf){
       const t = d.t, share = daVal(t) / daTotal() * 100;
       html = '<div class="tt">' + dot(d.c) + esc(t.name) + '</div>'
@@ -2541,6 +2584,12 @@ function daWireCanvas(){
     if (i < 0) return;
     const c = daCells[i], d = c.d;
     if (d.leaf){ DA.sel = d.t; daRenderRail(); daDraw(); return; }
+    if (d.rest && DA.drill){
+      // Already inside the group — the pooled tail lists out, it doesn't zoom.
+      tip.classList.remove('on'); daHover = -1;
+      daSetView('table');
+      return;
+    }
     if (d.rest || d.group){
       const from = { x:c.x, y:c.y, w:c.w, h:c.h };
       DA.drill = d.cat.id; DA.sel = null;
@@ -2575,12 +2624,7 @@ function daWireCanvas(){
     if (b.dataset.daSide){ press(); DA.side = b.dataset.daSide; daLoad(); }
     else if (b.dataset.daMeasure){ press(); DA.measure = b.dataset.daMeasure; daRefresh(true); }
     else if (b.dataset.daLens){ press(); DA.lens = b.dataset.daLens; DA.drill = null; DA.sel = null; DA.off = {}; daRefresh(true); }
-    else if (b.dataset.daView){
-      press(); DA.view = b.dataset.daView;
-      $('da-mapwrap').style.display = DA.view === 'map' ? '' : 'none';
-      $('da-tblwrap').style.display = DA.view === 'table' ? '' : 'none';
-      if (DA.view === 'table') daRenderTable(); else daResize();
-    }
+    else if (b.dataset.daView){ daSetView(b.dataset.daView); }
     else if (b.dataset.daUp){ DA.drill = null; DA.sel = null; daRefresh(true); }
     else if (b.classList.contains('da-lg') && b.dataset.daCat){
       const k = DA.lens + ':' + b.dataset.daCat;
@@ -2600,6 +2644,17 @@ function daWireCanvas(){
 }
 
 function daClearSel(){ DA.sel = null; daRenderRail(); daDraw(); }
+
+// Switch Map/Table programmatically as well as from the segmented control —
+// the drilled remainder cell routes here, so the buttons must follow suit.
+function daSetView(v){
+  DA.view = v;
+  document.querySelectorAll('#se-view-atlas [data-da-view]')
+    .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.daView === v)));
+  $('da-mapwrap').style.display = v === 'map' ? '' : 'none';
+  $('da-tblwrap').style.display = v === 'table' ? '' : 'none';
+  if (v === 'table') daRenderTable(); else daResize();
+}
 
 // ── Aggregates ────────────────────────────────────────────────────────────
 let _daTot = {};
@@ -2671,9 +2726,14 @@ function daRenderChrome(){
       + '<span class="da-dot" style="background:' + d.c + '"></span>'
       + '<span class="cur">' + esc(d.name) + '</span>';
   } else c.innerHTML = '<span class="cur">Whole estate</span>';
-  let n = 0; for (const cell of daCells) if (cell.d.leaf) n++;
+  let n = 0, pooled = 0;
+  for (const cell of daCells){
+    if (cell.d.leaf) n++;
+    else if (cell.d.rest && cell.d.hidden) pooled += cell.d.hidden;
+  }
   $('da-map-meta').textContent = DA.drill
-    ? daInt(n) + ' of ' + daInt(daVisible().filter(t => daCatOf(t) === DA.drill).length) + ' tables hold rows · shade tracks size'
+    ? daInt(n) + ' largest of ' + daInt(daVisible().filter(t => daCatOf(t) === DA.drill).length) + ' tables drawn'
+      + (pooled ? ' · ' + daInt(pooled) + ' pooled — Table view lists all' : '') + ' · shade tracks size'
     : 'sized by ' + (DA.measure === 'rows' ? 'row count' : 'estimated volume');
 }
 
@@ -2791,7 +2851,10 @@ async function daRenderRail(){
 // ── Table view ────────────────────────────────────────────────────────────
 let daSortKey = 'rows', daSortDir = -1;
 function daRenderTable(){
-  const list = daVisible().filter(daMatches).slice();
+  // Honour the drill: the crumb says "in <group>", so the table shows that
+  // group only — including its zero-row tables the map can't give area to.
+  let list = daVisible().filter(daMatches);
+  if (DA.drill) list = list.filter(t => daCatOf(t) === DA.drill);
   const tot = daTotal();
   const catName = (lens, id) => DA_CAT[lens + ':' + id].name;
   list.sort((a, b) => {
