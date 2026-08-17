@@ -10891,6 +10891,302 @@ function impSetAbortVisible(visible){
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Restore Database tab (Connections) — UI over cygenix-restore.js
+// ═════════════════════════════════════════════════════════════════════════════
+// The engine holds all the decisions (capability matrix, guardrails, SQL);
+// this layer probes the target, drives the capability-aware controls, and
+// polls progress. Everything the server runs goes through db-connect where
+// the RBAC gate enforces restore.inspect / restore.execute.
+
+const rstState = { caps: null, family: null, probe: null, header: null, files: null,
+                   moves: null, validated: false, polling: null };
+
+function rstTargetConn(){
+  const c = (window.CygenixConnections && CygenixConnections.get && CygenixConnections.get()) || {};
+  const fn = c.tgtFnUrl || '';
+  if (fn) return c.tgtFnKey ? fn + '?code=' + encodeURIComponent(c.tgtFnKey) : fn;
+  return c.tgtConnString || '';
+}
+function rstTargetLabel(){
+  const c = (window.CygenixConnections && CygenixConnections.get && CygenixConnections.get()) || {};
+  if (c.tgtFnUrl) return 'Azure Function target';
+  const m = /\/([^/?]+)(\?|$)/.exec(c.tgtConnString || '');
+  return (m && m[1]) ? m[1] : (c.tgtConnString ? 'Direct target' : 'no target configured');
+}
+function rstSourceDbName(){
+  const c = (window.CygenixConnections && CygenixConnections.get && CygenixConnections.get()) || {};
+  const m = /\/([^/?]+)(\?|$)/.exec(c.srcConnString || '');
+  return (m && m[1]) || '';
+}
+async function rstDbCall(body){
+  const conn = rstTargetConn();
+  if (!conn) throw new Error('No target connection configured — set one on the Database connections tab.');
+  const isFn = /^https?:\/\//i.test(conn);
+  const url = isFn ? conn : '/.netlify/functions/db-connect';
+  const payload = isFn ? body : { ...body, connectionString: conn };
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload), signal: AbortSignal.timeout(120000) });
+  const data = await res.json().catch(() => ({ error: 'Non-JSON (' + res.status + ')' }));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
+function rstInit(){
+  $('rst-target-name').textContent = rstTargetLabel();
+  if (!rstState.caps) rstProbe(false);
+  else rstRenderCaps();
+  rstModeChanged(); rstOptionsChanged();
+}
+
+async function rstProbe(force){
+  const R = CygenixRestore;
+  const btn = $('rst-probe-btn');
+  if (rstState.caps && !force) return;
+  if (btn){ btn.disabled = true; btn.textContent = '🔍 Probing…'; }
+  try {
+    const r = await rstDbCall({ action: 'execute', sql: R.rdProbeSql });
+    const row = (r.recordset && r.recordset[0]) || {};
+    const cls = R.rdClassifyEngine(row.engine_edition);
+    rstState.probe = row; rstState.family = cls.family;
+    rstState.caps = R.rdCapabilities(cls.family);
+    $('rst-target-family').textContent = cls.label;
+    rstRenderCaps();
+  } catch (e) {
+    rstState.caps = CygenixRestore.rdCapabilities('unknown');
+    $('rst-target-family').textContent = 'probe failed';
+    $('rst-caps').textContent = e.message;
+    rstRenderCaps();
+  }
+  if (btn){ btn.disabled = false; btn.textContent = '🔍 Detect capabilities'; }
+}
+
+// Disable — never hide — what the target cannot do, with the reason.
+function rstRenderCaps(){
+  const caps = rstState.caps || CygenixRestore.rdCapabilities('unknown');
+  const chip = (label, v) => v === true
+    ? '<span style="color:var(--green)">' + label + ' ✓</span>'
+    : '<span style="color:var(--text3)" title="' + escHtml(String(v)) + '">' + label + ' ✗</span>';
+  $('rst-caps').innerHTML = [chip('FROM DISK', caps.fromDisk), chip('FROM URL', caps.fromUrl),
+    chip('REPLACE', caps.replace), chip('WITH MOVE', caps.withMove), chip('Log chain', caps.logChain)]
+    .join(' · ');
+  const setRadio = (sel, cap) => {
+    const label = document.getElementById(sel);
+    if (!label) return;
+    const input = label.querySelector('input');
+    const ok = cap === true;
+    input.disabled = !ok;
+    label.style.opacity = ok ? '1' : '0.5';
+    label.title = ok ? '' : String(cap);
+    if (!ok && input.checked){
+      const alt = document.querySelector('input[name="' + input.name + '"]:not(:disabled)');
+      if (alt) alt.checked = true;
+    }
+  };
+  setRadio('rst-mode-disk-label', caps.fromDisk);
+  setRadio('rst-mode-url-label', caps.fromUrl);
+  setRadio('rst-as-overwrite-label', caps.replace);
+  rstModeChanged();
+}
+
+function rstMode(){ return (document.querySelector('input[name="rst-mode"]:checked') || {}).value || 'disk'; }
+function rstModeChanged(){
+  const url = rstMode() === 'url';
+  $('rst-path').placeholder = url
+    ? 'https://account.blob.core.windows.net/backups/Conversion_DM.bak'
+    : 'D:\\backups\\Conversion_DM.bak';
+  $('rst-cred-help').style.display = url ? '' : 'none';
+  if (url){
+    const container = String($('rst-path').value || 'https://account.blob.core.windows.net/backups/x.bak').replace(/\/[^/]*$/, '');
+    $('rst-cred-sql').textContent = CygenixRestore.rdCredentialSql(container);
+  }
+  rstState.validated = false; $('rst-run-btn').disabled = true;
+}
+function rstOptionsChanged(){
+  const overwrite = (document.querySelector('input[name="rst-as"]:checked') || {}).value === 'overwrite';
+  $('rst-confirm-wrap').style.display = overwrite ? '' : 'none';
+  $('rst-newname').placeholder = overwrite
+    ? 'Existing database name to overwrite'
+    : 'Restored database name, e.g. Conversion_DM_r1';
+  rstState.validated = false; $('rst-run-btn').disabled = true;
+}
+
+// ── Inspect (never restore a file blind) ─────────────────────────────────
+async function rstInspect(){
+  const R = CygenixRestore;
+  const path = String($('rst-path').value || '').trim();
+  const status = $('rst-inspect-status');
+  if (!path){ status.textContent = 'Enter a backup path or URL first.'; return; }
+  const source = { kind: rstMode(), path };
+  const sqls = R.rdInspectSql(source);
+  const btn = $('rst-inspect-btn');
+  btn.disabled = true; status.textContent = 'Inspecting…';
+  try {
+    const h = await rstDbCall({ action: 'execute', sql: sqls.headerSql });
+    rstState.header = R.rdParseHeaderOnly(h.recordset || []);
+    const f = await rstDbCall({ action: 'execute', sql: sqls.fileListSql });
+    rstState.files = R.rdParseFileList(f.recordset || []);
+    let verified = '';
+    try { await rstDbCall({ action: 'execute', sql: sqls.verifySql }); verified = ' · checksum verified ✓'; }
+    catch (e) { verified = ' · ⚠ VERIFYONLY failed: ' + (R.rdTranslateError(e.message).friendly || e.message); }
+    status.textContent = rstState.header.length + ' backup set(s), ' + rstState.files.length + ' file(s)' + verified;
+    rstRenderContents();
+    // Suggest the restored name BEFORE building the moves, so the file
+    // paths are named for the destination database, not a placeholder.
+    if (!$('rst-newname').value && rstState.header[0]){
+      $('rst-newname').value = rstState.header[0].databaseName + '_r1';
+    }
+    rstRenderMoves();
+    // Version downgrade — surfaced immediately, not at run time.
+    const tgtMajor = rstState.probe && rstState.probe.major_version;
+    const v = R.rdVersionBlock(rstState.header[0] && rstState.header[0].softwareVersionMajor, tgtMajor);
+    if (v.blocked) status.innerHTML = '<span style="color:var(--red)">⛔ ' + escHtml(v.message) + '</span>';
+  } catch (e) {
+    const t = R.rdTranslateError(e.message);
+    status.innerHTML = '<span style="color:var(--red)">' + escHtml(t.friendly || e.message) + '</span>';
+    rstState.header = null; rstState.files = null;
+  }
+  btn.disabled = false;
+  rstState.validated = false; $('rst-run-btn').disabled = true;
+}
+
+function rstRenderContents(){
+  const rows = (rstState.header || []).map((s, i) =>
+    '<tr><td><input type="radio" name="rst-set" value="' + s.position + '" ' + (i === 0 ? 'checked' : '') + '></td>'
+    + '<td style="font-family:var(--mono)">' + escHtml(s.databaseName) + '</td>'
+    + '<td>' + escHtml(s.type) + '</td>'
+    + '<td style="font-family:var(--mono);font-size:11px">' + escHtml(String(s.startedAt || '').slice(0, 19).replace('T', ' ')) + '</td>'
+    + '<td style="font-family:var(--mono);font-size:11px">' + escHtml(s.recoveryModel) + '</td>'
+    + '<td style="font-family:var(--mono);font-size:11px">v' + s.softwareVersionMajor + ' · compat ' + s.compatibilityLevel + '</td>'
+    + '<td style="font-family:var(--mono);font-size:11px">' + (s.sizeBytes ? (s.sizeBytes / 1048576).toFixed(0) + ' MB' : '—') + '</td></tr>').join('');
+  $('rst-contents').innerHTML = rows
+    ? '<table class="jobs-table" style="font-size:12px"><thead><tr><th></th><th>Database</th><th>Type</th><th>Started</th><th>Recovery</th><th>Version</th><th>Size</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    : '<div style="font-size:12px;color:var(--text3)">Nothing inspected yet.</div>';
+  $('rst-contents-panel').style.display = rows ? '' : 'none';
+}
+
+function rstRenderMoves(){
+  const caps = rstState.caps || {};
+  if (caps.withMove !== true || !rstState.files || !rstState.files.length){
+    $('rst-moves-wrap').style.display = 'none'; rstState.moves = null; return;
+  }
+  const p = rstState.probe || {};
+  rstState.moves = CygenixRestore.rdBuildMoves(rstState.files, p.data_path || 'C:\\SQLData\\', p.log_path || p.data_path || 'C:\\SQLLogs\\',
+    $('rst-newname').value || 'restored');
+  $('rst-moves').innerHTML = rstState.moves.map((m, i) =>
+    '<div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:2px">'
+    + '<span style="color:var(--text3);min-width:140px">' + escHtml(m.logicalName) + ' →</span>'
+    + '<input class="form-input" style="flex:1;font-family:var(--mono);font-size:11px;padding:2px 6px" value="' + escHtml(m.physicalPath) + '"'
+    + ' oninput="rstState.moves[' + i + '].physicalPath=this.value">'
+    + '</div>').join('');
+  $('rst-moves-wrap').style.display = '';
+}
+
+// ── Plan, validate, run ──────────────────────────────────────────────────
+function rstCollectPlan(){
+  const asOverwrite = (document.querySelector('input[name="rst-as"]:checked') || {}).value === 'overwrite';
+  const name = String($('rst-newname').value || '').trim();
+  return {
+    targetDb: name, mode: rstMode(),
+    source: { kind: rstMode(), path: String($('rst-path').value || '').trim() },
+    restoreAs: asOverwrite ? { kind: 'overwrite' } : { kind: 'newDatabase', name },
+    replace: asOverwrite,
+    confirmName: String(($('rst-confirm') || {}).value || '').trim(),
+    recovery: (document.querySelector('input[name="rst-recovery"]:checked') || {}).value || 'RECOVERY',
+    fileIndex: Number((document.querySelector('input[name="rst-set"]:checked') || {}).value || 1),
+    moves: rstState.moves || [],
+  };
+}
+
+function rstValidate(){
+  const R = CygenixRestore;
+  const plan = rstCollectPlan();
+  const hdr = (rstState.header || [])[0];
+  const v = R.rdValidatePlan(plan, {
+    capabilities: rstState.caps || R.rdCapabilities('unknown'),
+    sourceDbName: rstSourceDbName(),
+    backupMajor: hdr && hdr.softwareVersionMajor,
+    targetMajor: rstState.probe && rstState.probe.major_version,
+    headerType: hdr && hdr.typeCode,
+  });
+  if (!rstState.header) v.warnings.unshift('The backup has not been inspected — Inspect first so the restore is not blind.');
+  const box = $('rst-validation');
+  box.innerHTML =
+    v.errors.map(e => '<div style="font-size:12px;color:var(--red);margin-bottom:2px">✕ ' + escHtml(e) + '</div>').join('')
+    + v.warnings.map(w => '<div style="font-size:12px;color:var(--amber);margin-bottom:2px">⚠ ' + escHtml(w) + '</div>').join('')
+    + (v.ok ? '<div style="font-size:12px;color:var(--green)">✓ Plan is valid for this target.</div>' : '');
+  if (v.ok){
+    $('rst-sql').textContent = R.rdBuildRestoreSql(plan);
+    $('rst-sql-wrap').style.display = '';
+  }
+  rstState.validated = v.ok && !!rstState.header;
+  $('rst-run-btn').disabled = !rstState.validated;
+  return v.ok;
+}
+
+async function rstRun(){
+  if (!rstState.validated){ if (!rstValidate()) return; }
+  const R = CygenixRestore;
+  const plan = rstCollectPlan();
+  const sql = R.rdBuildRestoreSql(plan);
+  const status = $('rst-run-status');
+  $('rst-run-btn').disabled = true;
+  status.textContent = 'Restoring… (progress polls every 5s; large restores keep running server-side)';
+  $('rst-progress').style.display = '';
+  rstStartPolling();
+  try {
+    await rstDbCall({ action: 'execute', sql });
+    rstStopPolling();
+    $('rst-progress-bar').style.width = '100%';
+    status.innerHTML = '<span style="color:var(--green)">✓ Restore completed'
+      + (plan.recovery === 'NORECOVERY' ? ' — database left in RESTORING (use Bring online when the chain is done)' : '') + '</span>';
+    if (plan.recovery === 'NORECOVERY') $('rst-online-btn').style.display = '';
+  } catch (e) {
+    const t = R.rdTranslateError(e.message);
+    if (t.stillRunning){
+      status.innerHTML = '<span style="color:var(--amber)">' + escHtml(t.friendly) + '</span>';
+      return;                                    // keep polling — MI async rule
+    }
+    rstStopPolling();
+    $('rst-progress').style.display = 'none';
+    status.innerHTML = '<span style="color:var(--red)">✕ ' + escHtml(t.friendly || e.message) + '</span>'
+      + (t.friendly ? '<div style="font-size:10.5px;color:var(--text3);margin-top:2px">' + escHtml(String(e.message).slice(0, 200)) + '</div>' : '');
+    $('rst-online-btn').style.display = '';      // a failed chain can leave RESTORING
+  }
+  $('rst-run-btn').disabled = false;
+}
+
+function rstStartPolling(){
+  rstStopPolling();
+  rstState.polling = setInterval(async () => {
+    try {
+      const r = await rstDbCall({ action: 'execute', sql: CygenixRestore.rdProgressSql });
+      const row = (r.recordset || [])[0];
+      if (row){
+        const pct = Math.round(Number(row.pct) || 0);
+        $('rst-progress-bar').style.width = pct + '%';
+        $('rst-progress-label').textContent = (row.command || 'RESTORE') + ' — ' + pct + '%'
+          + (row.eta_ms ? ' · ~' + Math.round(row.eta_ms / 60000) + ' min remaining' : '');
+      }
+    } catch { /* polling is best-effort */ }
+  }, 5000);
+}
+function rstStopPolling(){ if (rstState.polling){ clearInterval(rstState.polling); rstState.polling = null; } }
+
+async function rstBringOnline(){
+  const name = String($('rst-newname').value || '').trim();
+  if (!name) return;
+  const status = $('rst-run-status');
+  try {
+    await rstDbCall({ action: 'execute', sql: CygenixRestore.rdBringOnlineSql(name) });
+    status.innerHTML = '<span style="color:var(--green)">✓ ' + escHtml(name) + ' brought online.</span>';
+    $('rst-online-btn').style.display = 'none';
+  } catch (e) {
+    status.innerHTML = '<span style="color:var(--red)">✕ ' + escHtml(e.message) + '</span>';
+  }
+}
+
 function switchConnTab(tab){
   document.querySelectorAll('#view-connections .cx-tab').forEach(el => {
     el.classList.toggle('cx-tab-active', el.dataset.tab === tab);
@@ -10899,10 +11195,13 @@ function switchConnTab(tab){
   const im = document.getElementById('conn-tab-import');
   const lk = document.getElementById('conn-tab-linked');
   const bl = document.getElementById('conn-tab-blob');
+  const rs = document.getElementById('conn-tab-restore');
   if (db) db.style.display = tab === 'databases' ? 'block' : 'none';
   if (im) im.style.display = tab === 'import'    ? 'block' : 'none';
   if (lk) lk.style.display = tab === 'linked'    ? 'block' : 'none';
   if (bl) bl.style.display = tab === 'blob'      ? 'block' : 'none';
+  if (rs) rs.style.display = tab === 'restore'   ? 'block' : 'none';
+  if (tab === 'restore') { try { rstInit(); } catch(e){ console.warn('[restore] init:', e); } }
   // Hide save/clear buttons when not on db connections tab
   const s = document.getElementById('conn-tab-save-btn');
   const c = document.getElementById('conn-tab-clear-btn');

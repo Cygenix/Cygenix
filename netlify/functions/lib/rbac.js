@@ -102,6 +102,11 @@ const MATRIX = {
   // treated as run execution and inherit the environment conditions.
   'sql.write':             { ML: 'F', EN: 'F' },
   'run.execute':           { ML: 'F', EN: 'F' },                        // environment rule bars EN from STAGING(restricted)/PROD
+  // Restore Database module: inspecting a backup (HEADERONLY/FILELISTONLY/
+  // VERIFYONLY) is read-shaped; executing a RESTORE or BACKUP overwrites
+  // whole databases — Lead only, and PROD-conditioned like any write.
+  'restore.inspect':       { ML: 'F', EN: 'F' },
+  'restore.execute':       { ML: 'F' },
   'run.cancel':            { PA: 'F', ML: 'F', EN: 'L' },               // SoD-3 carve-out: PA cancel is incident response, audited notice
   'run.rollback':          { ML: 'F', EN: 'L' },
   'schedule.create':       { ML: 'F', EN: 'L' },                        // EN may author, never enable
