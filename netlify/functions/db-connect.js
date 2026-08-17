@@ -199,7 +199,16 @@ async function rbacGate(authed, action, dialect, connectionString, database, bod
     sqlText = action === 'batch'
       ? (Array.isArray(body.batchSql) ? body.batchSql.join(';\n') : '')
       : (body.sql || '');
-    policyAction = isReadOnlySql(sqlText) ? 'sql.read' : 'sql.write';
+    // RESTORE/BACKUP statements are their own permission (spec §8.8):
+    // inspecting a backup file is read-shaped and open to Engineers;
+    // actually restoring or backing up a database is Lead-only.
+    if (/^\s*RESTORE\s+(HEADERONLY|FILELISTONLY|VERIFYONLY|LABELONLY)\b/i.test(sqlText)) {
+      policyAction = 'restore.inspect';
+    } else if (/^\s*(RESTORE\s+(DATABASE|LOG)|BACKUP\s+(DATABASE|LOG))\b/i.test(sqlText)) {
+      policyAction = 'restore.execute';
+    } else {
+      policyAction = isReadOnlySql(sqlText) ? 'sql.read' : 'sql.write';
+    }
   } else if (action === 'fetch-page' && body.sql && !isReadOnlySql(body.sql)) {
     // fetch-page wraps caller SQL in a paging SELECT; a write smuggled in
     // through it must gate as the write it is, not the read it claims.
@@ -208,7 +217,7 @@ async function rbacGate(authed, action, dialect, connectionString, database, bod
   }
   if (!policyAction) policyAction = 'sql.write';   // unknown action: gate hardest, handler 400s after
 
-  const mutating = policyAction === 'sql.write';
+  const mutating = policyAction === 'sql.write' || policyAction === 'restore.execute';
   const decision = can(actor, policyAction, { environment, mutating });
   const base = {
     actorOid: actor.oid, actorEmail: actor.email, effectiveRoles: actor.roles,

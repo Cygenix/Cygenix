@@ -1325,8 +1325,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-sidebar.js?v=3484f77c84" defer></script>
+  <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
-  <script src="/dashboard-app.js?v=c7d3b52429" defer></script>
+  <script src="/dashboard-app.js?v=efc442653d" defer></script>
 
 
   <!-- MAIN -->
@@ -2439,6 +2440,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <button class="cx-tab" data-tab="import" onclick="switchConnTab('import')">
           ⬆ Data import
         </button>
+        <button class="cx-tab" data-tab="restore" onclick="switchConnTab('restore')" title="Restore a database onto the configured target, or roll back a migration.">
+          ♻ Restore database
+        </button>
         <button class="cx-tab" data-tab="linked" onclick="switchConnTab('linked')">
           🔗 Linked servers
         </button>
@@ -2545,6 +2549,118 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                 Saved target connections <span id="sconn-tgt-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">0</span>
               </div>
               <div id="sconn-tgt-list" style="display:flex;flex-wrap:wrap;gap:0.4rem;min-height:20px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Restore database — capability-driven per the restore module
+           spec: SQL Server, Managed Instance and Azure SQL Database support
+           DIFFERENT restore operations, so the whole pane is rendered from
+           the probed EngineEdition; unsupported modes are disabled with the
+           reason, never hidden. Engine: cygenix-restore.js; logic: rst* in
+           dashboard-app.js. Enforcement is server-side (restore.execute /
+           restore.inspect in the db-connect RBAC gate). -->
+      <div id="conn-tab-restore" style="display:none">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:1rem;max-width:86ch">
+          Restore a database onto the configured target — from a backup file on the target's disk, or from an
+          Azure Blob URL. The backup is always <b>inspected before</b> a restore is offered, unsupported operations
+          are disabled with the platform reason, and overwrites need the database name typed to confirm.
+        </div>
+
+        <!-- Restore target banner (inherits the configured Target — no second picker) -->
+        <div class="panel" style="padding:0.8rem 1rem;margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:700;letter-spacing:0.07em;color:var(--text3);font-family:var(--mono)">TARGET</span>
+            <b id="rst-target-name" style="font-size:13px">—</b>
+            <span id="rst-target-family" style="font-size:10px;font-weight:600;font-family:var(--mono);padding:2px 8px;border-radius:100px;border:0.5px solid var(--border2);color:var(--text2)">not probed</span>
+            <span id="rst-caps" style="font-size:11px;color:var(--text2)"></span>
+            <span style="margin-left:auto;display:flex;gap:0.5rem">
+              <button class="btn btn-ghost btn-sm" onclick="rstProbe(true)" id="rst-probe-btn">🔍 Detect capabilities</button>
+              <a href="#" class="btn btn-ghost btn-sm" onclick="switchConnTab('databases');return false" style="text-decoration:none">Change target →</a>
+            </span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+          <!-- Restore source -->
+          <div class="panel" style="padding:1rem">
+            <div style="font-size:13px;font-weight:600;margin-bottom:0.6rem">Restore source</div>
+            <label id="rst-mode-disk-label" style="display:flex;gap:0.5rem;align-items:center;font-size:12.5px;margin-bottom:0.4rem;cursor:pointer">
+              <input type="radio" name="rst-mode" value="disk" checked onchange="rstModeChanged()"> Backup file on the target server (.bak / .trn / .dif)
+            </label>
+            <label id="rst-mode-url-label" style="display:flex;gap:0.5rem;align-items:center;font-size:12.5px;margin-bottom:0.6rem;cursor:pointer">
+              <input type="radio" name="rst-mode" value="url" onchange="rstModeChanged()"> Azure Blob URL (block blob, SAS credential on the server)
+            </label>
+            <input id="rst-path" class="form-input" style="width:100%;font-family:var(--mono);font-size:12px"
+                   placeholder="D:\backups\Conversion_DM.bak">
+            <div id="rst-cred-help" style="display:none;margin-top:0.5rem">
+              <details><summary style="font-size:11px;color:var(--text3);cursor:pointer">Blob prerequisite: the server needs a SAS credential — show the SQL</summary>
+              <pre id="rst-cred-sql" style="font-size:10.5px;color:var(--text2);white-space:pre-wrap;margin-top:0.35rem"></pre></details>
+            </div>
+            <div style="margin-top:0.7rem;display:flex;gap:0.5rem;align-items:center">
+              <button class="btn btn-primary btn-sm" onclick="rstInspect()" id="rst-inspect-btn">🔍 Inspect backup</button>
+              <span id="rst-inspect-status" style="font-size:11.5px;color:var(--text3)"></span>
+            </div>
+          </div>
+
+          <!-- Restore options -->
+          <div class="panel" style="padding:1rem">
+            <div style="font-size:13px;font-weight:600;margin-bottom:0.6rem">Restore options</div>
+            <div style="display:flex;gap:1rem;font-size:12.5px;margin-bottom:0.5rem">
+              <label style="display:flex;gap:0.4rem;align-items:center;cursor:pointer">
+                <input type="radio" name="rst-as" value="new" checked onchange="rstOptionsChanged()"> New database
+              </label>
+              <label id="rst-as-overwrite-label" style="display:flex;gap:0.4rem;align-items:center;cursor:pointer">
+                <input type="radio" name="rst-as" value="overwrite" onchange="rstOptionsChanged()"> Overwrite existing
+              </label>
+            </div>
+            <input id="rst-newname" class="form-input" style="width:100%;font-family:var(--mono);font-size:12px" placeholder="Restored database name, e.g. Conversion_DM_r1">
+            <div id="rst-confirm-wrap" style="display:none;margin-top:0.5rem">
+              <div style="font-size:11px;color:var(--red);margin-bottom:3px">Overwriting is destructive — type the database name to confirm:</div>
+              <input id="rst-confirm" class="form-input" style="width:100%;font-family:var(--mono);font-size:12px" placeholder="Type the exact database name">
+            </div>
+            <div style="display:flex;gap:1rem;font-size:12.5px;margin:0.6rem 0 0.3rem">
+              <label style="display:flex;gap:0.4rem;align-items:center;cursor:pointer" title="Bring the database online when this restore completes">
+                <input type="radio" name="rst-recovery" value="RECOVERY" checked> RECOVERY
+              </label>
+              <label style="display:flex;gap:0.4rem;align-items:center;cursor:pointer" title="Leave the database RESTORING so differential/log backups can be applied afterwards">
+                <input type="radio" name="rst-recovery" value="NORECOVERY"> NORECOVERY
+              </label>
+            </div>
+            <div id="rst-moves-wrap" style="margin-top:0.5rem;display:none">
+              <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:3px">File relocation (WITH MOVE) — auto-populated from the backup:</div>
+              <div id="rst-moves" style="font-size:11px;font-family:var(--mono)"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Backup contents (populated by Inspect) -->
+        <div class="panel" id="rst-contents-panel" style="padding:1rem;margin-bottom:1rem;display:none">
+          <div style="font-size:13px;font-weight:600;margin-bottom:0.5rem">Backup contents</div>
+          <div id="rst-contents"></div>
+        </div>
+
+        <!-- Validation + run -->
+        <div class="panel" style="padding:1rem">
+          <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="rstValidate()" id="rst-validate-btn">✔ Validate only</button>
+            <button class="btn btn-sm" onclick="rstRun()" id="rst-run-btn" disabled
+                    style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.4);font-weight:600">
+              ♻ Run restore
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="rstBringOnline()" id="rst-online-btn" style="display:none" title="RESTORE DATABASE ... WITH RECOVERY — brings a database stuck in RESTORING online">⤴ Bring online</button>
+            <span id="rst-run-status" style="font-size:12px;color:var(--text2)"></span>
+          </div>
+          <div id="rst-validation" style="margin-top:0.6rem"></div>
+          <details id="rst-sql-wrap" style="display:none;margin-top:0.5rem">
+            <summary style="font-size:11px;color:var(--text3);cursor:pointer">Generated SQL</summary>
+            <pre id="rst-sql" style="font-size:11px;color:var(--text2);white-space:pre-wrap;margin-top:0.35rem"></pre>
+          </details>
+          <div id="rst-progress" style="margin-top:0.6rem;display:none">
+            <div style="font-size:11.5px;color:var(--text2)" id="rst-progress-label"></div>
+            <div style="height:6px;background:var(--bg3);border-radius:4px;margin-top:4px;overflow:hidden">
+              <div id="rst-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width 0.4s"></div>
             </div>
           </div>
         </div>
