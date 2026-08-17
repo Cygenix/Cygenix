@@ -25,8 +25,10 @@
 //   2. Bumps their nextRunAt forward (so a slow tick doesn't double-fire)
 //   3. Creates a queued run record
 //   4. Fires the background runner
-// Total time per schedule: ~200ms. We can handle dozens of due schedules
-// inside one tick before bumping against the function timeout.
+// Total time per schedule: ~200ms when the runner is warm. A cold runner can
+// take seconds to ack, so dispatches go out in batches of 5 concurrently and
+// each has an 8s ceiling — worst case ceil(n/5) x 8s, which keeps a tick
+// inside the function timeout even when every schedule finds a cold host.
 //
 // ── Why we bump nextRunAt BEFORE running ────────────────────────────────
 // If this minute's tick takes 30 seconds and the next minute's tick fires
@@ -207,11 +209,20 @@ async function fireSchedule(containers, schedule, now) {
     dispatchBody = { runId, scheduleId: schedule.id, userId: schedule.userId };
   }
 
-  // 4. Fire-and-forget. Short timeout because we only need the 202 ack,
-  //    not the actual work to finish.
+  // 4. Fire-and-forget: we only need the ack, not the work to finish.
+  //
+  //    The deadline still has to cover a COLD START, though. The runner is an
+  //    Azure Function that may have been idle for an hour, and it cannot ack
+  //    until an instance is up — several seconds. Trimming this to 4s aborted
+  //    the fetch mid-cold-start and surfaced as "Cron dispatch failed: This
+  //    operation was aborted", on a run that had often already begun. Back to
+  //    the value that worked; going HIGHER is not the answer either, since
+  //    this whole tick has to finish inside Netlify's function ceiling (see
+  //    the note at the top of this file) — the claim-check below is what
+  //    actually removes the sensitivity to this number.
   try {
     const ctl = new AbortController();
-    const to  = setTimeout(() => ctl.abort(), 4_000);
+    const to  = setTimeout(() => ctl.abort(), 8_000);
     const res = await fetch(bgUrl, {
       method: 'POST',
       headers: {
@@ -229,18 +240,38 @@ async function fireSchedule(containers, schedule, now) {
     // failure never surfaced in Run History.
     if (!res.ok) throw new Error(`Runner endpoint responded ${res.status}`);
   } catch (e) {
-    // Dispatch failed — mark the run record failed synchronously so
-    // the dashboard's run history shows a stable state instead of a
-    // permanently-queued ghost.
+    // Aborting OUR fetch does not cancel the runner: if the POST arrived, the
+    // run is executing regardless of whether we heard the ack. The runner
+    // claims the record the moment it starts (status 'running', runnerHost),
+    // so ask the record itself before calling this a failure. Marking a live
+    // run 'failed' is worse than a slow ack — it invites a re-run, and a
+    // migration executed twice is real damage.
+    const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
+    if (aborted) {
+      try {
+        const { resource: latest } = await containers.runs.item(runId, schedule.id).read();
+        if (latest && latest.status && latest.status !== 'queued') {
+          console.log('[scheduled-runner] ack timed out but runner claimed', runId,
+                      '— status', latest.status);
+          return { fired: true, runId, note: 'ack timed out; runner already started' };
+        }
+      } catch (_) { /* fall through to the failure path */ }
+    }
+    // Genuinely undispatched — mark the run failed synchronously so run
+    // history shows a stable state instead of a permanently-queued ghost.
+    const why = aborted
+      ? 'Cron dispatch failed: the runner did not acknowledge within 8s and had not started. '
+        + 'This is usually an Azure Function cold start or a wrong runner URL.'
+      : 'Cron dispatch failed: ' + (e.message || e);
     try {
       await containers.runs.item(runId, schedule.id).replace({
         ...runDoc,
         status:       'failed',
         finishedAt:   nowIso(),
-        errorMessage: 'Cron dispatch failed: ' + (e.message || e),
+        errorMessage: why,
       });
     } catch {}
-    return { fired: false, reason: 'dispatch failed: ' + (e.message || e), runId };
+    return { fired: false, reason: why, runId };
   }
 
   return { fired: true, runId };
