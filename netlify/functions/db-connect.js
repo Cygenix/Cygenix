@@ -582,7 +582,12 @@ async function handleMssql(action, connectionString, database, body) {
       case 'batch': {
         const batchSql = body.batchSql;
         if (!Array.isArray(batchSql)||!batchSql.length) return err('batchSql array required', null, 400);
-        let totalRows=0, errors=0;
+        // stopOnError: halt at the first failing statement instead of running
+        // the rest. The self-healing resume path depends on this — with it,
+        // everything staged is CONTIGUOUS up to the failure, so the run can
+        // restart from an exact row offset with no duplicates and no holes.
+        const stopOnError = body.stopOnError === true;
+        let totalRows=0, errors=0, firstErrorIndex=-1, firstErrorMsg='';
         const results=[];
         for (let i=0;i<batchSql.length;i++) {
           try {
@@ -592,10 +597,15 @@ async function handleMssql(action, connectionString, database, body) {
             results.push({index:i,success:true,rowsAffected:rows});
           } catch(e) {
             errors++;
+            if (firstErrorIndex < 0){ firstErrorIndex = i; firstErrorMsg = e.message; }
             results.push({index:i,success:false,error:e.message,sql:batchSql[i].slice(0,120)});
+            if (stopOnError) break;
           }
         }
-        result = { success:errors===0, totalBatches:batchSql.length, totalRowsAffected:totalRows, errors, results };
+        result = { success:errors===0, totalBatches:batchSql.length, totalRowsAffected:totalRows, errors, results,
+                   stoppedEarly: stopOnError && errors > 0,
+                   firstErrorIndex: firstErrorIndex >= 0 ? firstErrorIndex : undefined,
+                   errorMessage: firstErrorMsg || undefined };
         break;
       }
 
@@ -947,7 +957,8 @@ async function handlePostgres(action, connectionString, database, body) {
       case 'batch': {
         const batchSql = body.batchSql;
         if (!Array.isArray(batchSql) || !batchSql.length) return err('batchSql array required', null, 400);
-        let totalRows = 0, errors = 0;
+        const stopOnError = body.stopOnError === true;   // see mssql batch: contiguity for resume
+        let totalRows = 0, errors = 0, firstErrorIndex = -1, firstErrorMsg = '';
         const results = [];
         for (let i = 0; i < batchSql.length; i++) {
           try {
@@ -957,10 +968,15 @@ async function handlePostgres(action, connectionString, database, body) {
             results.push({ index: i, success: true, rowsAffected: rows });
           } catch (e) {
             errors++;
+            if (firstErrorIndex < 0) { firstErrorIndex = i; firstErrorMsg = e.message; }
             results.push({ index: i, success: false, error: e.message, sql: batchSql[i].slice(0, 120) });
+            if (stopOnError) break;
           }
         }
-        result = { success: errors === 0, totalBatches: batchSql.length, totalRowsAffected: totalRows, errors, results };
+        result = { success: errors === 0, totalBatches: batchSql.length, totalRowsAffected: totalRows, errors, results,
+                   stoppedEarly: stopOnError && errors > 0,
+                   firstErrorIndex: firstErrorIndex >= 0 ? firstErrorIndex : undefined,
+                   errorMessage: firstErrorMsg || undefined };
         break;
       }
 
