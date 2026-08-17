@@ -161,6 +161,14 @@ body.cyg-collapsed{padding-left:54px}
 .sm-box{position:absolute;width:210px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.18);overflow:hidden}
 .sm-box.dim{opacity:0.22}
 .sm-box.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
+/* Field trace: the table that OWNS the traced field. Amber border on its own
+   is not enough at small zoom, so the header band carries it too. Declared
+   after .sel so the owner cue wins even on a selected box — it is the whole
+   point of the trace. */
+.sm-box.owner{border:2px solid var(--amber);box-shadow:0 0 0 3px var(--amber-bg),0 2px 14px rgba(245,158,11,0.25)}
+.sm-box.owner .sm-box-head{background:var(--amber-bg);border-bottom-color:var(--amber)}
+.sm-col.sm-col-hit{background:var(--amber-bg)}
+.sm-col.sm-col-hit span{color:var(--amber);font-weight:600}
 .sm-box-head{display:flex;align-items:center;gap:0.4rem;padding:6px 8px;cursor:grab;background:var(--bg3);border-bottom:0.5px solid var(--border);font-size:11.5px;font-weight:600}
 .sm-box-head:active{cursor:grabbing}
 .sm-box-swatch{width:7px;height:7px;border-radius:2px;flex:none}
@@ -435,6 +443,10 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
             <button class="btn" id="sm-focus-2" onclick="smSetFocus(2)">2 hops</button>
             <span class="sm-toolbar-sep"></span>
             <button class="btn" id="sm-join-btn" onclick="smJoinToggle()" title="Pick two tables and get the shortest join path">⤳ Join path</button>
+            <input class="sm-filter" id="sm-trace" type="search" style="width:150px;flex:none"
+                   placeholder="Trace field…" aria-label="Trace a field: show only tables referencing it"
+                   title="Type a field name (or table.field) to show only the tables whose foreign keys reference it. The owning table is outlined in amber."
+                   oninput="smTraceInput()">
             <button class="btn" id="sm-filters-btn" onclick="smFiltersToggle()" aria-expanded="false"
                     aria-controls="sm-filters" title="Hide tables you do not want on the diagram">Filters</button>
             <span class="sm-toolbar-sep"></span>
@@ -708,6 +720,7 @@ const SM = {
   joinPick: [],
   joinResult: null,
   panels: { tree: true, insp: true },
+  trace: null,             // { q, owners, members, edgeKeys, colHits } — see smComputeTrace
   // Exclusion rules. Applied to the diagram and its table list only — see the
   // note on the markup for why the Coverage map does not honour them.
   filters: { hideEmpty:false, hideViews:false, hideIsolated:false, rules: [] },
@@ -784,6 +797,106 @@ function smHidden(t, rules){
   return false;
 }
 
+// ── Field trace ───────────────────────────────────────────────────────────
+// "Who references this field?" answered from the FK graph: type a field name
+// and the diagram collapses to the table that OWNS it (the referenced side,
+// outlined in amber) plus every table whose foreign key points at it — and
+// nothing else. Deliberately independent of the exclusion filters and the
+// hop-focus control: a trace is a question about the whole schema, and a
+// referencing table hidden by a _draft rule would silently falsify the
+// answer.
+//
+// Pure function so the tests run the shipped logic directly. Accepts a bare
+// field name or table.field to disambiguate; exact (case-insensitive) match
+// first, contains as a fallback.
+function smComputeTrace(graph, query){
+  const q = String(query || '').trim().toLowerCase();
+  if (!q || !graph || !graph.ok) return null;
+  let tableQ = '', fieldQ = q;
+  if (q.includes('.')){
+    const at = q.lastIndexOf('.');
+    tableQ = q.slice(0, at);
+    fieldQ = q.slice(at + 1);
+  }
+  const tableMatches = (key) => {
+    if (!tableQ) return true;
+    const k = key.toLowerCase();
+    return k === tableQ || k.endsWith('.' + tableQ);
+  };
+  const pick = (test) => graph.edges.filter(e => !e.self
+    && ((test(e.toColumn) && tableMatches(e.to)) || (test(e.fromColumn) && tableMatches(e.from))));
+  let hits = pick(c => String(c || '').toLowerCase() === fieldQ);
+  if (!hits.length) hits = pick(c => String(c || '').toLowerCase().includes(fieldQ));
+  if (!hits.length) return { q, empty: true };
+
+  const owners = new Set(), members = new Set(), edgeKeys = new Set();
+  const colHits = new Map();
+  const addCol = (key, col) => {
+    if (!colHits.has(key)) colHits.set(key, new Set());
+    colHits.get(key).add(col);
+  };
+  for (const e of hits){
+    owners.add(e.to);
+    members.add(e.to); members.add(e.from);
+    edgeKeys.add(e.from + '|' + e.fromColumn + '|' + e.to + '|' + e.toColumn);
+    addCol(e.to, e.toColumn);
+    addCol(e.from, e.fromColumn);
+  }
+  return { q, empty: false, owners, members, edgeKeys, colHits };
+}
+
+let _traceTimer = null;
+function smTraceInput(){
+  if (_traceTimer) clearTimeout(_traceTimer);
+  _traceTimer = setTimeout(smTraceApply, 250);
+}
+function smTraceApply(){
+  const el = $('sm-trace');
+  const q = el ? el.value : '';
+  const t = smComputeTrace(SM.graph, q);
+  if (t && t.empty){
+    // Nothing matched: say so and leave the diagram alone rather than
+    // blanking it under the user's cursor.
+    SM.trace = null;
+    smStatus('No foreign key references a field matching “' + q.trim() + '”');
+  } else {
+    SM.trace = t;
+    if (t){
+      const ownerNames = [...t.owners].sort();
+      smStatus('“' + t.q + '” · owner ' + ownerNames.join(', ')
+        + ' · ' + (t.members.size - t.owners.size) + ' referencing table'
+        + ((t.members.size - t.owners.size) === 1 ? '' : 's'));
+    } else smStatus('');
+  }
+  if (SM.selected && SM.trace && !SM.trace.members.has(SM.selected)){
+    SM.selected = null;
+    smRenderInspector();
+  }
+  smAutoLayout(false);
+  smFit();
+  smRenderTree();
+}
+function smTraceClear(){
+  const el = $('sm-trace');
+  if (el) el.value = '';
+  if (SM.trace){ SM.trace = null; smStatus(''); smAutoLayout(false); smFit(); smRenderTree(); }
+}
+
+// The columns a box actually shows. With a trace active the hit columns are
+// promoted above the fold — the referencing column being row 40 of 60 would
+// otherwise hide the very thing the trace is pointing at. smAnchor uses the
+// same list, so edges keep meeting their rows.
+function smShownCols(node){
+  const base = node.columns && node.columns.length
+    ? node.columns
+    : node.fkColumns.concat(node.refColumns).map(n => ({ name:n, type:'', _fk:true }));
+  const hits = SM.trace && SM.trace.colHits.get(node.key);
+  if (!hits || !hits.size) return base.slice(0, MAX_ROWS);
+  const hit = [], rest = [];
+  for (const c of base) (hits.has(c.name) ? hit : rest).push(c);
+  return hit.concat(rest).slice(0, MAX_ROWS);
+}
+
 // The tables the diagram, the tree, the layout and the palette all work from.
 //
 // Memoised on the filter state: dragging a box re-renders on every mousemove,
@@ -794,10 +907,18 @@ let _filterCache = null;
 function smTables(){
   const g = SM.graph;
   if (!g || !g.ok) return [];
-  const sig = JSON.stringify(SM.filters) + '|' + SM.side + '|' + g.tables.length;
+  const traceSig = SM.trace ? '|trace:' + SM.trace.q + ':' + SM.trace.members.size : '';
+  const sig = JSON.stringify(SM.filters) + '|' + SM.side + '|' + g.tables.length + traceSig;
   if (_filterCache && _filterCache.sig === sig) return _filterCache.tables;
-  const rules = smCompileRules();
-  const tables = g.tables.filter(t => !smHidden(t, rules));
+  let tables;
+  if (SM.trace){
+    // Exactly the trace members, from the FULL graph — see smComputeTrace on
+    // why the exclusion rules do not apply here.
+    tables = g.tables.filter(t => SM.trace.members.has(t.key));
+  } else {
+    const rules = smCompileRules();
+    tables = g.tables.filter(t => !smHidden(t, rules));
+  }
   _filterCache = { sig, tables, keys: new Set(tables.map(t => t.key)) };
   return tables;
 }
@@ -835,6 +956,8 @@ async function smEnsureLoaded(force){
   }
   SM.loading = false;
   _filterCache = null;
+  SM.trace = null;
+  { const tr = $('sm-trace'); if (tr) tr.value = ''; }
   SM.pos = {};
   SM.selected = null;
   SM.joinResult = null;
@@ -1065,24 +1188,25 @@ function smRenderCanvas(){
     const p = SM.pos[t.key] || { x:0, y:0 };
     const dim = visible && !visible.has(t.key) ? ' dim' : '';
     const sel = SM.selected === t.key ? ' sel' : '';
+    // The table that owns the traced field gets the amber treatment.
+    const owner = SM.trace && SM.trace.owners.has(t.key) ? ' owner' : '';
     const cols = t.columns || [];
-    const shown = cols.length ? cols.slice(0, MAX_ROWS) : [];
-    // Before the columns arrive the FK columns are still known from the edge
-    // list, so the box is never an empty rectangle.
-    const placeholder = !cols.length
-      ? t.fkColumns.concat(t.refColumns).slice(0, MAX_ROWS).map(n => ({ name:n, type:'', _fk:true }))
-      : [];
-    const rows = (shown.length ? shown : placeholder).map(c => {
+    // smShownCols promotes traced columns above the fold and falls back to
+    // the FK columns before the real columns arrive, so the box is never an
+    // empty rectangle. smAnchor uses the same list, keeping edges on-row.
+    const traceHits = SM.trace && SM.trace.colHits.get(t.key);
+    const rows = smShownCols(t).map(c => {
       const isPk = (t.primaryKeys || []).indexOf(c.name) >= 0;
       const isFk = t.fkColumns.indexOf(c.name) >= 0;
-      return '<div class="sm-col" data-col="' + esc(c.name) + '">'
+      const isHit = traceHits && traceHits.has(c.name);
+      return '<div class="sm-col' + (isHit ? ' sm-col-hit' : '') + '" data-col="' + esc(c.name) + '">'
         + '<span class="sm-col-key">' + (isPk ? '🔑' : (isFk ? '↗' : '')) + '</span>'
         + '<span class="' + (isFk ? 'sm-col-fk' : '') + '">' + esc(c.name) + '</span>'
         + (c.type ? '<span class="sm-col-type">' + esc(c.type) + '</span>' : '')
         + '</div>';
     }).join('');
     const more = cols.length > MAX_ROWS ? '<div class="sm-box-more">+' + (cols.length - MAX_ROWS) + ' more</div>' : '';
-    return '<div class="sm-box' + dim + sel + '" data-key="' + esc(t.key) + '"'
+    return '<div class="sm-box' + dim + sel + owner + '" data-key="' + esc(t.key) + '"'
       + ' style="left:' + p.x + 'px;top:' + p.y + 'px">'
       + '<div class="sm-box-head" data-drag="' + esc(t.key) + '" title="' + esc(t.key) + '">'
       + '<span class="sm-box-swatch" style="background:' + schemaColour(t.schema) + '"></span>'
@@ -1098,6 +1222,9 @@ function smRenderCanvas(){
     // An edge to a table the filters removed has nothing to point at.
     if (!shownKeys.has(e.from) || !shownKeys.has(e.to)) continue;
     if (visible && (!visible.has(e.from) || !visible.has(e.to))) continue;
+    // While tracing, two visible tables may share OTHER foreign keys; drawing
+    // those would put lines on screen the trace is not about.
+    if (SM.trace && !SM.trace.edgeKeys.has(e.from + '|' + e.fromColumn + '|' + e.to + '|' + e.toColumn)) continue;
     const a = smAnchor(e.from, e.fromColumn), b = smAnchor(e.to, e.toColumn);
     if (!a || !b) continue;
     const onPath = SM.joinResult && smEdgeOnPath(e);
@@ -1122,9 +1249,7 @@ function smAnchor(key, colName){
   const p = SM.pos[key], node = SM.graph.byKey[key];
   if (!p || !node) return null;
   let y = p.y + HEAD_H + 6;
-  const cols = node.columns && node.columns.length
-    ? node.columns.slice(0, MAX_ROWS).map(c => c.name)
-    : node.fkColumns.concat(node.refColumns).slice(0, MAX_ROWS);
+  const cols = smShownCols(node).map(c => c.name);
   const i = cols.indexOf(colName);
   if (i >= 0) y = p.y + HEAD_H + i * ROW_H + ROW_H/2;
   else y = p.y + boxHeight(node)/2;
@@ -1142,6 +1267,7 @@ function smEdgeOnPath(e){
 
 // Which tables the focus control leaves undimmed. null = everything.
 function smVisibleSet(shownKeys){
+  if (SM.trace) return null;                 // a trace already IS the focus
   if (SM.focusDepth == null || !SM.selected) return null;
   const n = CygenixSchemaGraph.neighbourhood(SM.graph, [SM.selected], SM.focusDepth);
   // The neighbourhood walks the whole graph, so it can reach through a table
@@ -1714,6 +1840,12 @@ document.addEventListener('keydown', (ev) => {
     ev.preventDefault();
     if (seTab === 'atlas'){ const q = $('da-q'); if (q){ q.focus(); q.select(); return; } }
     sePaletteOpen();
+    return;
+  }
+  if (ev.key === 'Escape' && seTab === 'schema' && SM.trace
+      && !$('se-palette').classList.contains('show')
+      && !($('sm-filters') && $('sm-filters').classList.contains('show'))){
+    smTraceClear();
     return;
   }
   if (ev.key === 'Escape' && seTab === 'atlas' && !$('se-palette').classList.contains('show')){
