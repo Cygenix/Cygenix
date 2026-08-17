@@ -2005,6 +2005,93 @@ function clearMapFilter(){
   applyMapFilter();
 }
 
+// ── Lineage & impact drawer ──────────────────────────────────────────────────
+// Click a target column name → the full path back to source, hop by hop,
+// then the other direction: every downstream object a change here affects,
+// by name. All from CygenixLineage over metadata already in the browser.
+
+function openLineage(i){
+  if (typeof CygenixLineage === 'undefined') { alert('Lineage module not loaded — refresh the page.'); return; }
+  const m = columnMapping[i];
+  if (!m || !tgtTable) return;
+  // The editor's live (possibly unsaved) state IS the job for lineage
+  // purposes — what you see is what gets analysed.
+  const liveJob = {
+    id: editJobId || 'editor', name: 'This mapping',
+    sourceTable: srcTable ? (srcTable.fullName || srcTable.name) : '',
+    targetTable: tgtTable.fullName || tgtTable.name,
+    srcWhere: (typeof getWhereClause === 'function' ? getWhereClause() : '') || '',
+    columnMapping,
+  };
+  const ctx = CygenixLineage.buildContext();
+  // Saved twin: impact must also see the persisted job (tasks reference its
+  // id), so analyse against whichever stored job matches this table pair.
+  const saved = (ctx.jobs || []).find(j =>
+    CygenixLineage.sameTable(j.targetTable, liveJob.targetTable)
+    && CygenixLineage.sameTable(j.sourceTable, liveJob.sourceTable)
+    && j.jobType !== 'composite');
+  const jobForImpact = saved ? { ...saved, columnMapping } : liveJob;
+
+  const chain = CygenixLineage.lnColumnLineage(liveJob, m.tgtCol, ctx);
+  const impact = CygenixLineage.lnImpact(jobForImpact, m.tgtCol, ctx);
+
+  $('lineage-subtitle').textContent = liveJob.targetTable + '.' + m.tgtCol;
+  $('lineage-body').innerHTML = renderLineageHtml(chain, impact);
+  $('lineage-overlay').style.display = '';
+  $('lineage-drawer').style.display = '';
+}
+
+function closeLineage(){
+  $('lineage-overlay').style.display = 'none';
+  $('lineage-drawer').style.display = 'none';
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('lineage-drawer') && $('lineage-drawer').style.display !== 'none') closeLineage();
+});
+
+function renderLineageHtml(chain, impact){
+  const hop = (icon, title, body) =>
+    '<div style="display:flex;gap:0.6rem;margin-bottom:0.15rem">'
+    + '<div style="width:20px;text-align:center;font-size:13px">' + icon + '</div>'
+    + '<div style="flex:1;padding-bottom:0.55rem;border-left:0.5px solid var(--border2);margin-left:-13px;padding-left:16px">'
+    + '<div style="font-size:12px;font-weight:600">' + title + '</div>'
+    + (body ? '<div style="font-size:11px;color:var(--text2);margin-top:1px">' + body + '</div>' : '')
+    + '</div></div>';
+
+  let chainHtml = '';
+  for (const h of chain){
+    if (h.kind === 'target') chainHtml += hop('🎯', esc(h.table) + '.<b>' + esc(h.column) + '</b>', 'target column');
+    else if (h.kind === 'transform') chainHtml += hop('⚙️', 'Transform: ' + esc(h.transform), 'applied per row during the load');
+    else if (h.kind === 'literal') chainHtml += hop('📌', 'Fixed value: <span style="font-family:var(--mono);color:var(--teal)">' + esc(h.value) + '</span>', esc(h.note || ''));
+    else if (h.kind === 'wasis') chainHtml += hop('🔁', h.rules.length + ' Was/Is rule' + (h.rules.length === 1 ? '' : 's'),
+      h.rules.slice(0, 6).map(r => '<span style="font-family:var(--mono)">' + esc(r.oldVal) + ' → ' + esc(r.newVal) + '</span>').join(' · ')
+      + (h.rules.length > 6 ? ' · +' + (h.rules.length - 6) + ' more' : ''));
+    else if (h.kind === 'source') chainHtml += hop('🗄', esc(h.table) + '.<b>' + esc(h.column) + '</b>',
+      'source column' + (h.fromJoin ? ' — arrives via a JOIN' : ''));
+    else if (h.kind === 'filter') chainHtml += hop('🚦', 'Source filter',
+      (h.where ? 'WHERE <span style="font-family:var(--mono)">' + esc(h.where) + '</span>' : '')
+      + (h.groupBy ? (h.where ? ' · ' : '') + 'GROUP BY <span style="font-family:var(--mono)">' + esc(h.groupBy) + '</span>' : ''));
+    else if (h.kind === 'unmapped') chainHtml += hop('∅', 'Unmapped', 'nothing feeds this column — if it is NOT NULL without a default, every row rejects');
+  }
+
+  const head = CygenixLineage.lnHeadline(impact);
+  const impactHtml = impact.length
+    ? impact.map(x => {
+        const meta = CygenixLineage.TYPE_META[x.type] || { icon: '•', label: x.type };
+        return '<div style="border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.6rem;margin-bottom:0.4rem">'
+          + '<div style="font-size:11.5px;font-weight:600">' + meta.icon + ' ' + esc(x.name)
+          + ' <span style="font-weight:400;color:var(--text3);font-size:10px">' + esc(meta.label) + '</span></div>'
+          + '<div style="font-size:11px;color:var(--text2);margin-top:1px">' + esc(x.detail || '') + '</div></div>';
+      }).join('')
+    : '';
+
+  return '<div style="font-size:10px;font-weight:600;letter-spacing:0.06em;color:var(--text3);text-transform:uppercase;margin-bottom:0.5rem">Path back to source</div>'
+    + chainHtml
+    + '<div style="font-size:10px;font-weight:600;letter-spacing:0.06em;color:var(--text3);text-transform:uppercase;margin:0.9rem 0 0.4rem">Impact of changing this</div>'
+    + '<div style="font-size:12px;font-weight:600;color:' + (impact.length ? 'var(--amber)' : 'var(--green)') + ';margin-bottom:0.5rem">' + esc(head) + '</div>'
+    + impactHtml;
+}
+
 // ── Evidence-based auto-mapping ──────────────────────────────────────────────
 // Where autoMap guesses from names, this measures: both tables are sampled
 // (read-only TOP-N through the normal db-connect path) and profiled —
@@ -2258,7 +2345,8 @@ function renderMappingTable(){
       </td>
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
       <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">
-        ${esc(m.tgtCol)}
+        <span onclick="openLineage(${i})" style="cursor:pointer;border-bottom:1px dotted var(--border2)"
+              title="Lineage & impact — the path back to source, and what a change here would affect">${esc(m.tgtCol)}</span>
         ${notNullMsgHtml}
       </td>
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">

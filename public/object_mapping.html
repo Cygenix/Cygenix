@@ -411,8 +411,9 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
+<script src="/cygenix-lineage.js?v=2105daad19" defer></script>
 <script src="/cygenix-evidence-map.js?v=09bc776038" defer></script>
-<script src="/object-mapping-app.js?v=80f7d0466f" defer></script>
+<script src="/object-mapping-app.js?v=ece9266a70" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script>
 // Belt-and-braces second layer: even with the fetch guard, also patch the
@@ -967,6 +968,23 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 </div>
 
+
+<!-- ═══ LINEAGE & IMPACT DRAWER ═══════════════════════════════════════════
+     Opened by clicking a target column name in the mapping table. Shows the
+     full path back to source (transform, Was/Is rules, join, WHERE) and the
+     downstream objects a change to this mapping would affect. Rendered by
+     openLineage() in object-mapping-app.js from CygenixLineage. -->
+<div id="lineage-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:8999" onclick="closeLineage()"></div>
+<div id="lineage-drawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:440px;max-width:92vw;background:var(--bg2);border-left:0.5px solid var(--border2);z-index:9000;overflow-y:auto;box-shadow:-18px 0 50px rgba(0,0,0,0.45)">
+  <div style="padding:0.9rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg2);z-index:1">
+    <div>
+      <div style="font-size:13px;font-weight:600">🧭 Lineage &amp; impact</div>
+      <div id="lineage-subtitle" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></div>
+    </div>
+    <button onclick="closeLineage()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:17px" title="Close (Esc)">✕</button>
+  </div>
+  <div id="lineage-body" style="padding:1rem 1.1rem"></div>
+</div>
 
 <script src="/cookie-consent.js?v=8bc63de620" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
