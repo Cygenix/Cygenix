@@ -433,6 +433,34 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('and the atlas view flexes to the viewport instead of a fixed offset',
     /\.da-view\{display:flex;flex-direction:column;height:calc\(100vh/.test(html)
     && /\.da-body\{[^}]*flex:1;min-height:0\}/.test(html));
+  // A mid-layout measurement can leave the canvas wider than its wrap; the
+  // wrap clips so a stale canvas can never paint under the rail.
+  check('the map wrap clips overdrawn canvas frames',
+    /\.da-mapwrap\{[^}]*overflow:hidden/.test(html));
+  // The CSS calc() offset guesses at the chrome height; daSizeView measures
+  // the real top edge so the map bottom never falls below the fold.
+  check('the atlas view is sized from a live measurement, not a magic offset',
+    /function daSizeView\(\)/.test(html)
+    && /window\.innerHeight - el\.getBoundingClientRect\(\)\.top/.test(html));
+  // On a 12k-table estate a drilled group still has a sub-pixel tail. It
+  // pools like the top level does, and — already drilled, nowhere deeper —
+  // the pooled cell routes to the Table view, which honours the drill.
+  const atlasJs = html.slice(html.indexOf('VIEW 1.5'), html.indexOf('// ═══ VIEW 2'));
+  check('the drilled map pools its sub-pixel tail instead of dropping it',
+    /keep\.length < 220/.test(atlasJs));
+  // 2,600 near-empty tables next to million-row heads pool to a cell 0.7px
+  // wide — an invisible way in is no way in. Layout v is floored; tv keeps
+  // the honest total for the tooltip.
+  check('the pooled remainder is floored so it stays visible and clickable',
+    (atlasJs.match(/Math\.max\(rest, gv \* 0\.015\)/g) || []).length === 2
+    && /tv !== undefined \? d\.tv : d\.v/.test(atlasJs));
+  check('clicking the drilled remainder lists the tables it pooled',
+    /d\.rest && DA\.drill\)[\s\S]{0,220}daSetView\('table'\)/.test(atlasJs));
+  check('the table view honours the drill the crumb says it is in',
+    /if \(DA\.drill\) list = list\.filter\(t => daCatOf\(t\) === DA\.drill\);/.test(atlasJs));
+  check('the view switcher is one function, so buttons stay in step',
+    /function daSetView\(v\)[\s\S]{0,400}aria-pressed/.test(atlasJs)
+    && /daSetView\(b\.dataset\.daView\)/.test(atlasJs));
   // The filter bridge reuses the Schema map's own predicate, and only when
   // both views look at the same database.
   check('the atlas can apply the Schema map filters via the same predicate',
