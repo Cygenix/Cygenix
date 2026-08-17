@@ -284,11 +284,17 @@
     input = input || {};
     const parts = [];
 
-    // Mapping health: average match confidence over mapped columns.
+    // Mapping health: average match confidence over mapped columns. The
+    // editor writes grades (HIGH/MEDIUM/LOW, or an evidence score); older
+    // AI-produced jobs carry numbers. Both count.
+    const GRADE_SCORE = { HIGH: 95, MEDIUM: 70, LOW: 40, auto: 85 };
     const jobs = input.jobs || [];
     const matches = [];
     jobs.forEach(j => (j.columnMapping || []).forEach(m => {
-      if (m && m.tgtCol && typeof m.match === 'number') matches.push(Math.max(0, Math.min(100, m.match)));
+      if (!m || !m.tgtCol) return;
+      if (m.evidence && typeof m.evidence.score === 'number') matches.push(Math.max(0, Math.min(100, m.evidence.score)));
+      else if (typeof m.match === 'number') matches.push(Math.max(0, Math.min(100, m.match)));
+      else if (GRADE_SCORE[m.match]) matches.push(GRADE_SCORE[m.match]);
     }));
     parts.push({
       key: 'mapping', label: 'Mapping confidence', weight: 30,

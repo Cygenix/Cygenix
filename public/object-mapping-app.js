@@ -2005,6 +2005,44 @@ function clearMapFilter(){
   applyMapFilter();
 }
 
+// ── Evidence-based auto-mapping ──────────────────────────────────────────────
+// Where autoMap guesses from names, this measures: both tables are sampled
+// (read-only TOP-N through the normal db-connect path) and profiled —
+// cardinality, format fingerprints, type behaviour, and value overlap when
+// the target already holds data. Proposals land in the same columnMapping
+// rows the rest of the editor uses, carrying {evidence:{score, reasons}}
+// which the Match column renders as a hoverable score.
+async function runEvidenceMap(){
+  if (typeof CygenixEvidenceMap === 'undefined') { alert('Evidence-map module not loaded — refresh the page.'); return; }
+  if (!srcTable || !tgtTable) { alert('Pick a source and a target table first.'); return; }
+  const hasEdits = columnMapping.some(m => m.srcCol || m.literalValue);
+  if (hasEdits && !confirm('Replace the current mapping with evidence-based proposals? Fixed values and manual picks will be overwritten.')) return;
+
+  const btn = $('evidence-map-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '🧬 Sampling…'; }
+  showStatus('Evidence map: sampling both tables…', 'info');
+  try {
+    const res = await CygenixEvidenceMap.emRun(srcTable, tgtTable, {
+      srcConn, tgtConn, dbCall, sampleSize: 400,
+    });
+    columnMapping = ensureAllTargetCols(res.proposals, tgtTable);
+    renderMappingTable();
+    renderSrcColList();
+    tryAutoGenSQL();
+    const proposed = columnMapping.filter(m => m.srcCol).length;
+    const high = columnMapping.filter(m => m.match === 'HIGH').length;
+    showStatus('Evidence map: ' + proposed + ' of ' + columnMapping.length + ' columns proposed ('
+      + high + ' HIGH) from ' + res.sampledSrc + ' sampled source rows'
+      + (res.tgtHasData
+          ? ' — target holds data, so value overlap was measured'
+          : ' — target is empty, so proposals rest on shape, type and names')
+      + '. Hover a score in the Match column for the reasoning.', 'success');
+  } catch (e) {
+    showStatus('Evidence map failed: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🧬 Evidence map'; }
+}
+
 function autoMap(src, tgt){
   // Drive off TARGET columns so every target field appears in the mapping table.
   // We now INCLUDE identity columns in the table — they show as disabled rows
@@ -2238,7 +2276,10 @@ function renderMappingTable(){
           oninput="columnMapping[${i}].literalValue=this.value.trim();tryAutoGenSQL()"
           title="Fixed SQL value — overrides source column. Leave blank to use source.">
       </td>
-      <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${identityLocked?'<span style="color:var(--text3)">auto</span>':(m.match||'—')}</span></td>
+      <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${identityLocked?'<span style="color:var(--text3)">auto</span>':(m.match||'—')}</span>${
+        (!identityLocked && m.evidence)
+          ? ` <span style="font-size:10px;color:var(--text3);cursor:help;font-family:var(--mono)" title="${esc((m.evidence.reasons||[]).join('\n'))}">${m.evidence.score}% ⓘ</span>`
+          : ''}</td>
       <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
     </tr>`;
   }).join('');

@@ -411,7 +411,8 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
-<script src="/object-mapping-app.js?v=83ba834300" defer></script>
+<script src="/cygenix-evidence-map.js?v=09bc776038" defer></script>
+<script src="/object-mapping-app.js?v=80f7d0466f" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script>
 // Belt-and-braces second layer: even with the fetch guard, also patch the
@@ -665,6 +666,15 @@ document.addEventListener('DOMContentLoaded', function(){
                 </select>
                 <button class="btn btn-ghost btn-sm" id="btn-toggle-unmapped" onclick="toggleUnmappedCols()" title="Show or hide rows with no source column and no fixed value">👁 Hide Unmapped</button>
                 <button class="btn btn-ghost btn-sm" onclick="clearMapFilter()" title="Clear filter">✕ Clear</button>
+                <!-- Evidence-based auto-mapping: profiles a sample of real
+                     values on both sides (cardinality, format fingerprints,
+                     value overlap where the target holds data) and proposes
+                     mappings with the reasoning on each row. Read-only. -->
+                <button class="btn btn-ghost btn-sm" id="evidence-map-btn" onclick="runEvidenceMap()"
+                        style="color:var(--purple);border-color:rgba(107,78,142,0.35)"
+                        title="Propose mappings from measured evidence — value overlap, format fingerprints, cardinality and type behaviour on a sample of real data — instead of name matching. Each proposal shows its reasoning; hover the score in the Match column.">
+                  🧬 Evidence map
+                </button>
                 <span id="map-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
               </div>
               <div style="overflow-x:auto">

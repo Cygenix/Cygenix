@@ -161,6 +161,15 @@ check('components without data are excluded from the weighting',
     const c = P.pfConfidence({ jobs: [{ status: 'complete', columnMapping: [] }] });  // only delivery has data
     return c.score === 100 && c.parts.filter(p => p.hasData).length === 1;
   })());
+check('editor grades (HIGH/MEDIUM) and evidence scores count as mapping data',
+  (() => {
+    const c = P.pfConfidence({ jobs: [{ status: 'draft', columnMapping: [
+      { tgtCol: 'a', match: 'HIGH' }, { tgtCol: 'b', match: 'MEDIUM' },
+      { tgtCol: 'c', match: 'LOW', evidence: { score: 44 } },
+    ] }] });
+    const m = c.parts.find(p => p.key === 'mapping');
+    return m.hasData && m.score === Math.round((95 + 70 + 44) / 3);
+  })());
 
 // ── Orchestrator over a stubbed wire ──────────────────────────────────────
 (async () => {
