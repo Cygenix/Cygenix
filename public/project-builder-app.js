@@ -1224,7 +1224,8 @@ function renderSteps() {
               ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${gi},${si})" style="padding:3px 8px">Log</button>` : ''}
             </div>
           </div>
-          ${step.log ? `<div class="step-log-area" id="${logId}"><div class="step-log">${esc(step.log)}</div></div>` : ''}`;
+          ${step.log ? `<div class="step-log-area" id="${logId}"><div class="step-log">${esc(step.log)}</div></div>` : ''}
+          ${step.status === 'failed' ? resumeCardHtml(gi, si, step) : ''}`;
 
 
         // Step drag
@@ -3748,6 +3749,151 @@ async function runReconAfter(step, tgtConn, preResult) {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Self-healing resume — capture, card and actions
+// ─────────────────────────────────────────────────────────────────────────────
+// When a load dies, the runner still holds the failing rows. Capture the
+// moment: classify the error, scan those rows with the preflight checkers
+// to name the culprit column, propose one of the editor's safe transforms
+// as a patch, and compute the exact offset the run can restart from — or
+// say honestly why it can't. The point persists per step, so the offer
+// survives a reload.
+
+async function captureResumePoint(a) {
+  const { step, errorMsg, rows, results, stoppedEarly, thrown, phase,
+          pageStartOffset, srcRowKeyCol, stagingFull, runCtx, totalRows,
+          stagedSoFar, tgtConn, mapping, add } = a;
+  const batchSize = a.batchSize || 100;
+  const R = CygenixResume;
+  const classified = R.rsClassifyError(errorMsg);
+
+  // The failing rows, checked value-by-value against the target types.
+  let scan = [];
+  try {
+    if (rows && rows.length && typeof CygenixPreflight !== 'undefined') {
+      const parts = String(step.tgtTable || '').replace(/[[\]]/g, '').split('.');
+      const r = await dbCall(tgtConn, { action: 'schema-columns',
+        schemaName: parts.length > 1 ? parts[0] : 'dbo', tableName: parts[parts.length - 1] });
+      const byName = {};
+      ((r.table && r.table.columns) || []).forEach(c => { byName[c.name.toLowerCase()] = c; });
+      scan = R.rsScanRows(rows, mapping, byName, CygenixPreflight);
+    }
+  } catch { /* diagnosis is best-effort — the plan still stands */ }
+
+  const patch = R.rsProposePatch(classified, scan);
+  const plan = phase === 'fetch'
+    ? { resumable: true, resumeOffset: pageStartOffset, cleanupKeysFrom: null,
+        reason: 'the failure happened reading the source — nothing from this page was staged' }
+    : R.rsResumePlan({ pageStartOffset, results, stoppedEarly, thrown,
+        keyed: !!srcRowKeyCol, batchSize });
+
+  let cleanup = null;
+  if (plan.resumable && plan.cleanupKeysFrom !== null && plan.cleanupKeysFrom !== undefined && srcRowKeyCol) {
+    const keys = (rows || []).slice(plan.cleanupKeysFrom)
+      .map(r => r[srcRowKeyCol]).filter(v => v !== null && v !== undefined).map(String);
+    if (keys.length) cleanup = { chunks: R.rsCleanupSql(stagingFull, runCtx.runId, keys), keys: keys.length };
+  }
+
+  const point = {
+    failedAt: new Date().toISOString(), error: String(errorMsg || '').slice(0, 500),
+    classified, patch, plan, cleanup,
+    offset: plan.resumable ? plan.resumeOffset : null,
+    runId: runCtx.runId, stagingFull,
+    totalRows: totalRows || 0, stagedSoFar: stagedSoFar || 0,
+  };
+  R.rsSave(project.id, step, point);
+  step._resumePoint = point;
+  if (plan.resumable) {
+    add('⛑ Resume point: row ' + plan.resumeOffset.toLocaleString()
+      + (point.totalRows ? ' of ' + point.totalRows.toLocaleString() : '')
+      + ' — ' + plan.reason);
+    if (patch.kind === 'patch') add('⛑ Proposed patch: ' + patch.transform + ' on ' + patch.srcCol + ' → ' + patch.tgtCol + ' (' + patch.why + ')');
+  } else {
+    add('⛑ Resume not offered: ' + plan.reason);
+  }
+  return point;
+}
+
+// The card renderSteps paints under a failed step that has a saved point.
+function resumeCardHtml(gi, si, step) {
+  if (typeof CygenixResume === 'undefined') return '';
+  const p = step._resumePoint || CygenixResume.rsLoad(project.id, step);
+  if (!p) return '';
+  step._resumePoint = p;
+  const when = new Date(p.failedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const cause = p.patch && p.patch.why ? p.patch.why : (p.classified && p.classified.code) || 'unknown';
+  const where = p.plan && p.plan.resumable
+    ? 'row ' + Number(p.offset).toLocaleString() + (p.totalRows ? ' of ' + Number(p.totalRows).toLocaleString() : '')
+    : null;
+  const buttons = !p.plan || !p.plan.resumable
+    ? '<span style="color:var(--text3)">' + esc((p.plan && p.plan.reason) || '') + '</span>'
+    : (p.patch && p.patch.kind === 'patch'
+        ? `<button class="btn btn-sm" onclick="applyResumePatchAndGo(${gi},${si})" style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.3);padding:3px 9px">⚡ Apply ${esc(p.patch.transform)} &amp; resume</button>`
+        : '')
+      + `<button class="btn btn-ghost btn-sm" onclick="resumeStepNow(${gi},${si})" style="padding:3px 9px">▶ Resume from ${where ? esc(where.split(' of ')[0]) : 'failure'}</button>`;
+  return `<div class="resume-card" style="display:block;border-top:0.5px dashed rgba(245,158,11,0.4);background:rgba(245,158,11,0.05);padding:0.55rem 0.8rem;border-radius:0 0 var(--r) var(--r)">
+    <div style="font-size:11.5px;font-weight:600;color:var(--amber)">⛑ Self-healing resume <span style="font-weight:400;color:var(--text3)">· failed ${esc(when)}${where ? ' · resume at ' + esc(where) : ''}</span></div>
+    <div style="font-size:11px;color:var(--text2);margin:3px 0 6px">${esc(String(p.error).slice(0, 180))}</div>
+    ${p.patch && p.patch.kind !== 'none' ? `<div style="font-size:11px;margin-bottom:6px"><b>${p.patch.kind === 'patch' ? 'Patch' : p.patch.kind === 'retry' ? 'Diagnosis' : 'Advice'}:</b> ${esc(p.patch.why || '')}</div>` : ''}
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center">
+      ${buttons}
+      <button class="btn btn-ghost btn-sm" onclick="dismissResumePoint(${gi},${si})" style="padding:3px 9px;color:var(--text3)">✕ Dismiss</button>
+    </div>
+  </div>`;
+}
+
+// Apply the proposed transform to the step AND its underlying job record,
+// then resume. The job record matters: without it the next full run (and
+// any re-created task) reverts to the failing mapping.
+function applyResumePatchAndGo(gi, si) {
+  const step = project.groups[gi] && project.groups[gi].steps[si];
+  const p = step && step._resumePoint;
+  if (!step || !p || !p.patch || p.patch.kind !== 'patch') return;
+  const apply = (mapping) => {
+    const row = (mapping || []).find(m => m && m.tgtCol && m.tgtCol.toLowerCase() === p.patch.tgtCol.toLowerCase());
+    if (row) row.transform = p.patch.transform;
+    return !!row;
+  };
+  apply(step.columnMapping);
+  if (step.jobId) {
+    try {
+      const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+      const j = jobs.find(x => x.id === step.jobId);
+      if (j && apply(j.columnMapping)) localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+    } catch {}
+  }
+  saveProject();
+  showToast('Applied ' + p.patch.transform + ' to ' + p.patch.tgtCol + ' — resuming…');
+  resumeStepNow(gi, si);
+}
+
+async function resumeStepNow(gi, si) {
+  const step = project.groups[gi] && project.groups[gi].steps[si];
+  const p = step && (step._resumePoint || CygenixResume.rsLoad(project.id, step));
+  if (!step || !p || !p.plan || !p.plan.resumable) return;
+  step._resume = { offset: p.offset, runId: p.runId, cleanup: p.cleanup };
+  // Pin the ORIGINAL run id so resumed staging joins the earlier rows and
+  // one load moves them together. Never reload-reset on a resume.
+  const prevRun = window._currentRun;
+  window._currentRun = { runId: p.runId, reload: false, resetTables: new Set(),
+                         auditSource: prevRun ? prevRun.auditSource : false };
+  try {
+    await runSingleStep(gi, si);
+  } finally {
+    delete step._resume;
+    window._currentRun = prevRun;
+    renderSteps();
+  }
+}
+
+function dismissResumePoint(gi, si) {
+  const step = project.groups[gi] && project.groups[gi].steps[si];
+  if (!step) return;
+  try { CygenixResume.rsClear(project.id, step); } catch {}
+  delete step._resumePoint;
+  renderSteps();
+}
+
 async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
@@ -4104,8 +4250,17 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   let colList = '';
   let totalInserted = 0;
   let pageNum = 0;
-  let offset = 0;
+  // ── Self-healing resume ──────────────────────────────────────────────────
+  // A saved resume point (step._resume, set by resumeStepNow) restarts the
+  // read at the exact failure offset under the ORIGINAL run id, so staging
+  // and the final load see one continuous run. resumeBase feeds progress
+  // maths; firstPage replaces the old `offset === 0` setup trigger.
+  const resume = step._resume || null;
+  const resumeBase = resume ? resume.offset : 0;
+  let offset = resumeBase;
+  let firstPage = true;
   let hasMore = true;
+  if (resume) add('⛑ Resuming from row ' + resumeBase.toLocaleString() + ' (run ' + (resume.runId || '?') + ') — earlier rows are already staged');
   // ── Staging context ────────────────────────────────────────────────────
   // Set up the per-step staging context. runCtx pulls the run-id and
   // reload flag from the top-level runProject call. When this function is
@@ -4129,10 +4284,24 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   // the step at the end if any occurred.
   let batchErrorCount = 0;
   let firstBatchErrorMsg = '';
+  // Failure-context capture for self-healing resume: which phase died and
+  // the rows in flight when it did.
+  let phase = 'fetch';
+  let curRows = [];
+  let curPageStart = 0;
+
+  // A keyed resume can carry a staging cleanup (rows staged past the
+  // failure point on the failing page, deleted by source key so staging is
+  // contiguous again before rereading).
+  if (resume && resume.cleanup && Array.isArray(resume.cleanup.chunks) && resume.cleanup.chunks.length) {
+    add('⛑ Cleaning ' + resume.cleanup.keys + ' possibly-staged row(s) from the failing page (by source key) before resuming…');
+    for (const sql of resume.cleanup.chunks) await dbCall(tgtConn, { action: 'execute', sql });
+  }
 
   try {
     while (hasMore) {
       // Fetch one page of source rows
+      phase = 'fetch'; curPageStart = offset;
       const pageRes = await dbCall(srcConn, {
         action: 'fetch-page',
         sql: srcSelectSQL,
@@ -4140,13 +4309,14 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
         pageSize: PAGE_SIZE
       });
       const rows = pageRes.rows || [];
+      curRows = rows;
       hasMore = pageRes.hasMore && rows.length === PAGE_SIZE;
       pageNum++;
 
       if (!rows.length) break;
 
       // Build mapping on first page
-      if (offset === 0) {
+      if (firstPage) {
         if (!mapping.length) {
           mapping = Object.keys(rows[0]).map(c => ({ srcCol:c, tgtCol:c, transform:'NONE' }));
           add('Auto-mapping ' + mapping.length + ' columns by name');
@@ -4206,6 +4376,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
         }
         srcRowKeyCol = StagingArea.pickSourceRowKey(step, mapping);
         add('Staging into ' + stagingFull + ' (run_id=' + runCtx.runId + (runCtx.reload ? ', mode=reload' : ', mode=incremental') + ')');
+        firstPage = false;
       }
 
       // Split page into INSERT batches.
@@ -4243,22 +4414,26 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
         if (pageNum === 1) add(formatSQLForLog(batches[0], ctx, 'preview'));
       }
 
-      const pageRes2 = await dbCall(tgtConn, { action:'batch', batchSql: batches });
+      // stopOnError keeps staging CONTIGUOUS up to a failure — the property
+      // self-healing resume depends on. Backends that ignore the flag are
+      // handled by the keyed-cleanup path in the resume plan.
+      phase = 'stage';
+      const pageRes2 = await dbCall(tgtConn, { action:'batch', batchSql: batches, stopOnError: true });
       const inserted = pageRes2.totalRowsAffected || 0;
       totalInserted += inserted;
 
-      const pct = totalRows > 0 ? ' (' + Math.round(totalInserted/totalRows*100) + '%)' : '';
+      const pct = totalRows > 0 ? ' (' + Math.round((resumeBase + totalInserted)/totalRows*100) + '%)' : '';
       // "Staged" not "inserted" — rows are in dm_staging at this point,
       // not yet in the final target. The load-from-staging step after the
       // loop completes is what actually moves them.
-      add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, staged ' + inserted.toLocaleString() + ' — total staged ' + totalInserted.toLocaleString() + pct);
+      add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, staged ' + inserted.toLocaleString() + ' — total staged ' + (resumeBase + totalInserted).toLocaleString() + pct);
       // Update the in-card progress bar. totalPages is best-effort — if
       // we didn't get a count earlier, we leave it 0 and the renderer
       // falls back to showing just the page number.
       const totalPages = totalRows > 0 ? Math.ceil(totalRows / PAGE_SIZE) : 0;
       reportProgress({
         phase: 'staging',
-        rowsDone: totalInserted,
+        rowsDone: resumeBase + totalInserted,
         rowsTotal: totalRows,
         pageNum,
         totalPages,
@@ -4331,6 +4506,22 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
           const keys = Object.keys(pageRes2).filter(k => k !== 'rows').slice(0, 20);
           if (keys.length) add('Backend response keys: ' + keys.join(', '));
         } catch {}
+
+        // ── Self-healing resume: capture, diagnose, stop ──────────────────
+        // Continuing past a known-failing page just burns hours on a run
+        // that will fail anyway. Stop here, work out the exact safe restart
+        // offset, diagnose the failing rows, and save the resume point the
+        // step card offers to act on.
+        if (typeof CygenixResume !== 'undefined') {
+          await captureResumePoint({
+            step, errorMsg: firstBatchErrorMsg, rows, results: pageRes2.results || [],
+            stoppedEarly: !!pageRes2.stoppedEarly, thrown: false, phase: 'stage',
+            pageStartOffset: curPageStart, srcRowKeyCol, stagingFull, batchSize: INSERT_BATCH,
+            runCtx, totalRows, stagedSoFar: resumeBase + totalInserted, tgtConn, mapping, add,
+          });
+          add('⛑ Stopping at the first failing page — a resume point has been saved on this step.');
+          hasMore = false;
+        }
       }
 
       offset += rows.length;
@@ -4349,6 +4540,20 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
     // of the page that threw into the debug buffer, so the user can grab it
     // with "Copy last SQL" without any extra work here.
     if (window._lastExecutedSQL) add('▸ Last executed SQL captured — click "Copy last SQL" to inspect');
+    // Self-healing resume on a thrown call. A death during 'fetch' leaves
+    // staging contiguous (nothing of the page went out); a death during
+    // 'stage' leaves it unknown, which the plan handles by keyed cleanup —
+    // or refuses, with the reason.
+    if (typeof CygenixResume !== 'undefined' && stagingFull) {
+      try {
+        await captureResumePoint({
+          step, errorMsg: e.message, rows: curRows, results: null,
+          stoppedEarly: false, thrown: phase === 'stage', phase,
+          pageStartOffset: curPageStart, srcRowKeyCol, stagingFull, batchSize: INSERT_BATCH,
+          runCtx, totalRows, stagedSoFar: resumeBase + totalInserted, tgtConn, mapping, add,
+        });
+      } catch (e2) { add('⚠ Could not save a resume point: ' + e2.message); }
+    }
     step.rowsInserted = totalInserted;
     return { ok:false, log:stepLog, error:e.message, rowsInserted: totalInserted };
   }
@@ -4430,6 +4635,13 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
 
   add('Complete — ' + loadedRowCount.toLocaleString() + ' rows loaded into ' + step.tgtTable +
       ' (staged ' + totalInserted.toLocaleString() + ' from ' + pageNum + ' page(s))');
+
+  // A completed run — resumed or fresh — retires any saved resume point.
+  if (typeof CygenixResume !== 'undefined') {
+    try { CygenixResume.rsClear(project.id, step); } catch {}
+    delete step._resume;
+    delete step._resumePoint;
+  }
 
   // ── Audit Source: capture WHERE-excluded rows ────────────────────────────
   // Only runs when:
