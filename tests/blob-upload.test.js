@@ -202,5 +202,93 @@ const SAS = 'https://acct.blob.core.windows.net/cont?sv=2024-01-01&sr=c&sp=racwl
     /window\.blobUploadStart\s*=\s*blobUploadStart;/.test(app));
 }
 
+// ── Copy path / URL, and the shortcut into restore ──────────────────────────
+{
+  const app  = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8');
+
+  // Run the shipped path helpers against a stub state, so the encoding under
+  // test is the encoding that ships.
+  const vm = require('vm');
+  const slice = app.slice(app.indexOf('function blobSourceIsBackup'),
+                          app.indexOf('// Copy text, wherever the browser allows it'));
+  const sb = { String, encodeURIComponent };
+  sb.BlobSourceState = { activeParsed: { accountName: 'lesece20269drow', containerName: 'backupcontainer' } };
+  vm.createContext(sb);
+  vm.runInContext(slice, sb);
+  const rel = (n) => vm.runInContext('blobSourceRelativePath', sb)(n);
+  const url = (n) => vm.runInContext('blobSourceBlobUrl', sb)(n);
+  const isBak = (n) => vm.runInContext('blobSourceIsBackup', sb)(n);
+
+  check('the relative path is the blob path, unencoded',
+    rel('AdventureWorks2025 (2).bak') === 'AdventureWorks2025 (2).bak');
+  check('a nested path keeps its slashes', rel('Staging/KY/foo.bak') === 'Staging/KY/foo.bak');
+  check('a trailing slash is stripped', rel('folder/file.bak/') === 'folder/file.bak');
+
+  check('the full URL is account + container + encoded path',
+    url('AdventureWorks2025 (2).bak')
+      === 'https://lesece20269drow.blob.core.windows.net/backupcontainer/AdventureWorks2025%20(2).bak');
+  check('spaces encode to %20', /%20/.test(url('a b.bak')));
+  check('virtual-directory slashes survive encoding',
+    url('Staging/KY/foo.bak').endsWith('/backupcontainer/Staging/KY/foo.bak'));
+
+  // encodeURI would leave these intact and truncate the URL at the query or
+  // fragment boundary — a link to the wrong blob, or to none.
+  check('a question mark in a filename is encoded, not left to start a query',
+    url('what?.bak').includes('what%3F.bak'));
+  check('a hash is encoded, not left to start a fragment',
+    url('v#2.bak').includes('v%232.bak'));
+  check('a plus sign is encoded', url('a+b.bak').includes('a%2Bb.bak'));
+
+  check('no SAS token reaches either copied value',
+    !url('x.bak').includes('sig=') && !url('x.bak').includes('?'));
+  check('the helper refuses to invent a URL with no source open',
+    (() => { const saved = sb.BlobSourceState.activeParsed;
+             sb.BlobSourceState.activeParsed = null;
+             const out = url('x.bak');
+             sb.BlobSourceState.activeParsed = saved;
+             return out === ''; })());
+
+  check('.bak, .trn and .dif are restore sources',
+    isBak('a.bak') && isBak('a.trn') && isBak('a.dif') && isBak('A.BAK'));
+  check('a CSV is not', !isBak('a.csv') && !isBak('a.bak.csv'));
+
+  // Wiring.
+  check('every row offers both copy values, URL first',
+    app.indexOf(">⧉ Copy URL<") > -1 && app.indexOf(">⧉ Path<") > -1
+    && app.indexOf(">⧉ Copy URL<") < app.indexOf(">⧉ Path<"));
+  check('the copy buttons sit in the same action cell as Download',
+    /importBtn \+ restoreBtn \+ downloadBtn \+ copyBtns/.test(app));
+  check('copy confirmation lands on the row that was clicked',
+    /function blobSourceFlashCopied/.test(app) && /blobSourceCopyBlobPath\(this,/.test(app));
+  check('the confirmation is transient and restores the original label',
+    /btn\.innerHTML = btn\._copyLabel;/.test(app) && /}, 1400\);/.test(app));
+  check('copy falls back for non-secure contexts',
+    /document\.execCommand\('copy'\)/.test(app) && /navigator\.clipboard\.writeText/.test(app));
+
+  check('the restore shortcut is offered for backups only',
+    /blobSourceIsBackup\(b\.name\)\s*\?\s*'<button/.test(app));
+  check('and is not gated on the 100MB cap — the server pulls the blob itself',
+    !/tooBig[^\n]*restoreBtn|restoreBtn[^\n]*tooBig/.test(app));
+  check('it switches tab, picks the Azure Blob URL radio and fills the path',
+    /switchConnTab\('restore'\)/.test(app)
+    && /input\[name="rst-mode"\]\[value="url"\]/.test(app)
+    && /input\.value = url;/.test(app));
+  check('it prefills only — never Inspect, never Run',
+    (() => { const fn = app.slice(app.indexOf('function blobSourceUseInRestore'),
+                                  app.indexOf('// What a SAS is allowed to do'));
+             return !/rstInspect\(|rstRun\(|rstValidate\(/.test(fn); })());
+  check('the handlers are exposed for the inline onclick attributes',
+    /window\.blobSourceCopyBlobPath\s*=/.test(app) && /window\.blobSourceUseInRestore\s*=/.test(app));
+
+  // An apostrophe in a filename used to break every button on its row: these
+  // values sit in single-quoted JS strings inside an onclick attribute, and
+  // encodeURIComponent does not escape "'".
+  check('an apostrophe in a filename cannot break the row\'s onclick handlers',
+    /encodeURIComponent\(b\.name\)\.replace\(\/'\/g, '%27'\)/.test(app));
+
+  check('azcopy still carries the SAS — it has no other way to authenticate',
+    /blobSourceBlobUrl\(cleanName\) \+ '\?' \+ parsed\.sasToken/.test(app));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

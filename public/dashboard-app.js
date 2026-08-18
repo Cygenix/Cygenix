@@ -11438,6 +11438,124 @@ function blobSourceIsImportable(name){
   return /\.(csv|tsv|txt|xlsx|xls)$/i.test(name || '');
 }
 
+// Backup files SQL Server can restore from — the ones worth offering a
+// shortcut into the Restore tab for.
+function blobSourceIsBackup(name){
+  return /\.(bak|trn|dif)$/i.test(name || '');
+}
+
+// The blob's path inside its container, unencoded — what a person reads and
+// what azcopy takes. Trailing slashes go for the same reason the azcopy
+// builder strips them: some upload tools list files with one, and a trailing
+// slash makes the name read as a directory.
+function blobSourceRelativePath(blobName){
+  return String(blobName || '').replace(/\/+$/, '');
+}
+
+// Encode a blob path for a URL: each segment encoded, the virtual-directory
+// slashes left alone.
+//
+// encodeURI is NOT usable here. It leaves '?' and '#' intact, and a filename
+// containing either would truncate the URL at the query or fragment boundary —
+// silently handing the user a link to the wrong blob, or to no blob at all.
+function blobSourceEncodePath(blobName){
+  return blobSourceRelativePath(blobName).split('/').map(encodeURIComponent).join('/');
+}
+
+// The blob's URL — deliberately WITHOUT the SAS token.
+//
+// The Restore tab wants a bare URL because SQL Server holds the credential
+// server-side, and a SAS on the clipboard is a live credential that leaks
+// into tickets, chat messages and screen shares. The azcopy command is the
+// single exception: it authenticates with nothing else.
+function blobSourceBlobUrl(blobName){
+  const parsed = BlobSourceState.activeParsed;
+  if (!parsed) return '';
+  return 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName) + '/' + blobSourceEncodePath(blobName);
+}
+
+// Copy text, wherever the browser allows it. navigator.clipboard needs a
+// secure context and a user gesture; on an http:// origin or an older browser
+// it is simply absent, and the textarea fallback keeps copy working there.
+async function blobSourceCopyText(text){
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const copied = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return copied;
+  } catch { return false; }
+}
+
+// Transient confirmation in the button itself, so the feedback lands on the
+// row the user clicked rather than in a status line somewhere else. Nothing
+// re-renders the table on a copy, so nothing races the restore.
+function blobSourceFlashCopied(btn){
+  if (!btn) return;
+  if (btn._copyTimer) clearTimeout(btn._copyTimer);
+  else btn._copyLabel = btn.innerHTML;
+  btn.innerHTML = '✓ Copied';
+  btn._copyTimer = setTimeout(() => {
+    btn.innerHTML = btn._copyLabel;
+    btn._copyTimer = null;
+  }, 1400);
+}
+
+// Copy one of the two values the row offers. `which` is 'url' (the full blob
+// URL, the primary) or 'path' (the container-relative path).
+async function blobSourceCopyBlobPath(btn, blobNameEncoded, which){
+  if (!BlobSourceState.activeParsed) return;
+  const blobName = decodeURIComponent(blobNameEncoded);
+  const text = which === 'path'
+    ? blobSourceRelativePath(blobName)
+    : blobSourceBlobUrl(blobName);
+  if (!text) return;
+  const copied = await blobSourceCopyText(text);
+  if (copied) blobSourceFlashCopied(btn);
+  // Clipboard refused — surface the value so it can be copied by hand, the
+  // same fallback the azcopy button uses.
+  else { try { window.prompt('Copy this:', text); } catch {} }
+}
+
+// Hand a backup blob to the Restore database tab: switch, pick the Azure Blob
+// URL source, fill the path in. Nothing else.
+function blobSourceUseInRestore(blobNameEncoded){
+  if (!BlobSourceState.activeParsed){ alert('No blob source is open.'); return; }
+  const url = blobSourceBlobUrl(decodeURIComponent(blobNameEncoded));
+  if (!url) return;
+
+  // Switch first: switchConnTab('restore') runs rstInit(), which calls
+  // rstModeChanged() off the radio as it stands. Setting the radio and the
+  // value afterwards, then calling rstModeChanged() again, leaves the panel
+  // describing the source we actually chose.
+  try { switchConnTab('restore'); }
+  catch (e){ console.warn('[blob-source] could not switch tab:', e); }
+
+  const radio = document.querySelector('input[name="rst-mode"][value="url"]');
+  if (radio) radio.checked = true;
+  const input = document.getElementById('rst-path');
+  if (input) input.value = url;
+  try { rstModeChanged(); }
+  catch (e){ console.warn('[blob-source] rstModeChanged failed:', e); }
+
+  // Prefill ONLY. Inspect reads the backup header and Run restore writes to
+  // the server; both stay the user's decision, and rstModeChanged has just
+  // re-disabled Run until the plan is validated again.
+  if (input){
+    input.focus();
+    if (typeof input.scrollIntoView === 'function'){
+      input.scrollIntoView({ behavior:'smooth', block:'center' });
+    }
+  }
+}
+
 // What a SAS is allowed to do, read off its `sp=` parameter. Azure's letters:
 // r read, w write, l list, c create, d delete, a add.
 //
@@ -11792,7 +11910,12 @@ function blobSourceRenderFiles(){
     // ≤ proxy cap), or "azcopy command" (files over the cap — proxy can't
     // handle them, so we hand the user a one-line command they can paste
     // into PowerShell/Terminal to download direct from Azure).
-    const enc = encodeURIComponent(b.name);
+    //
+    // encodeURIComponent leaves an apostrophe alone, and these values sit
+    // inside single-quoted JS string literals in an onclick attribute — one
+    // file called "it's.bak" would break every button on its row. %27 decodes
+    // back to the same character on the far side.
+    const enc = encodeURIComponent(b.name).replace(/'/g, '%27');
     const importBtn = (usable && !tooBig)
       ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)" onclick="blobSourceImportFile(\'' + enc + '\')">⬆ Import</button>'
       : '';
@@ -11800,7 +11923,27 @@ function blobSourceRenderFiles(){
       ? '<button class="btn btn-ghost btn-sm" onclick="blobSourceDownloadFile(\'' + enc + '\')" title="Download to your machine">⬇ Download</button>'
       : '<button class="btn btn-sm" style="background:rgba(245,158,11,0.12);color:var(--amber);border:0.5px solid rgba(245,158,11,0.35)" onclick="blobSourceCopyAzcopy(\'' + enc + '\')" title="File is over 100MB. Click to copy an azcopy command to your clipboard — paste into PowerShell or Terminal to download directly from Azure.">📋 Copy azcopy</button>';
 
-    const actionCell = '<div style="display:inline-flex;gap:0.4rem;align-items:center;justify-content:flex-end">' + importBtn + downloadBtn + '</div>';
+    // Straight into the Restore tab for the file types SQL Server restores
+    // from. Not gated on the 100MB cap: nothing transfers through us here —
+    // the server pulls the blob itself — so this is the ONLY route that works
+    // for the multi-GB .bak files that are the whole point of the tab.
+    const restoreBtn = blobSourceIsBackup(b.name)
+      ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)"'
+        + ' onclick="blobSourceUseInRestore(\'' + enc + '\')"'
+        + ' title="Open the Restore database tab with this blob URL filled in. Prefills only — nothing runs.">Use in restore →</button>'
+      : '';
+
+    // Copy controls. Neither value carries the SAS token — see
+    // blobSourceBlobUrl. Full URL leads because it is what the Restore tab and
+    // the Azure tooling want, and it is the one nobody can retype from memory.
+    const copyBtns =
+        '<button class="btn btn-ghost btn-sm" onclick="blobSourceCopyBlobPath(this,\'' + enc + '\',\'url\')"'
+      + ' title="Copy the full blob URL — https://account.blob.core.windows.net/container/path, no SAS token">⧉ Copy URL</button>'
+      + '<button class="btn btn-ghost btn-sm" onclick="blobSourceCopyBlobPath(this,\'' + enc + '\',\'path\')"'
+      + ' title="Copy the path inside the container, unencoded — for azcopy and for reading">⧉ Path</button>';
+
+    const actionCell = '<div style="display:inline-flex;gap:0.4rem;align-items:center;justify-content:flex-end;flex-wrap:wrap">'
+      + importBtn + restoreBtn + downloadBtn + copyBtns + '</div>';
 
     // Rows for non-importable files are no longer dimmed — they're still
     // useful (downloadable) so full opacity is correct.
@@ -12066,40 +12209,23 @@ async function blobSourceCopyAzcopy(blobNameEncoded){
   // Some Azure listings include blob names with a trailing slash (artefact
   // of certain upload tools). Trailing slashes make azcopy interpret the
   // target as a directory and fail with "cannot use directory as source
-  // without --recursive". Strip them — real files never end in '/'.
-  const cleanName = blobName.replace(/\/+$/, '');
+  // without --recursive". blobSourceRelativePath strips them — real files
+  // never end in '/' — and blobSourceBlobUrl encodes each segment so
+  // virtual-directory slashes survive but spaces do not.
+  const cleanName = blobSourceRelativePath(blobName);
 
-  // Encode each path segment so virtual-directory slashes survive but
-  // spaces/special characters in filenames get escaped properly.
-  const encodedBlob = cleanName.split('/').map(encodeURIComponent).join('/');
-  const fileUrl = 'https://' + parsed.accountName + '.blob.core.windows.net/'
-    + encodeURIComponent(parsed.containerName) + '/' + encodedBlob
-    + '?' + parsed.sasToken;
+  // The one place the SAS belongs on the clipboard: azcopy has no other way
+  // to authenticate. The Copy URL / Copy Path buttons never include it.
+  const fileUrl = blobSourceBlobUrl(cleanName) + '?' + parsed.sasToken;
 
   // Quote the URL with double-quotes — works in both PowerShell and bash.
   // Destination "." downloads to the user's current working directory.
   const cmd = 'azcopy copy "' + fileUrl + '" "."';
 
   const resultEl = document.getElementById('blob-browser-result');
-  let copied = false;
-  try {
-    await navigator.clipboard.writeText(cmd);
-    copied = true;
-  } catch (e) {
-    // Fallback: temporary textarea + execCommand. Some browsers refuse the
-    // Clipboard API outside a user gesture or on insecure origins; the
-    // legacy path keeps working.
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = cmd;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      copied = document.execCommand('copy');
-      document.body.removeChild(ta);
-    } catch {}
-  }
+  // Shared with the Copy URL / Copy Path buttons: Clipboard API first, then
+  // the textarea + execCommand path for insecure origins and older browsers.
+  const copied = await blobSourceCopyText(cmd);
 
   if (resultEl){
     if (copied){
@@ -12494,6 +12620,8 @@ if (typeof window !== 'undefined'){
   window.blobSourceCopyAzcopy     = blobSourceCopyAzcopy;
   window.blobSourceRenderFiles    = blobSourceRenderFiles;
   window.blobSourceSetTypeFilter  = blobSourceSetTypeFilter;
+  window.blobSourceCopyBlobPath   = blobSourceCopyBlobPath;
+  window.blobSourceUseInRestore   = blobSourceUseInRestore;
 }
 
 function impDragOver(e){ e.preventDefault(); document.getElementById('imp-drop')?.classList.add('drag-over'); }
