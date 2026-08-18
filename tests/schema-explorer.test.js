@@ -387,6 +387,33 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   }
 }
 
+// ── Inferred relationships (FK-less databases) ─────────────────────────────
+// The engine itself is tested in infer-schema.test.js; these pin the wiring.
+{
+  check('the inference engine is loaded', /cygenix-infer-schema\.js/.test(html));
+  check('there is an Infer button in the toolbar', /id="sm-infer-btn"/.test(html));
+  check('a FK-less database is detected automatically — tables but zero declared edges',
+    /g\.tables\.length >= 8 && g\.edges\.length === 0/.test(html)
+    && /id="sm-infer-banner"/.test(html));
+  const merge = html.slice(html.indexOf('function smInferMerge'), html.indexOf('function smInferFkless'));
+  check('inferred edges live beside the graph, never inside it — the graph is cached as fact',
+    merge.length > 0 && !/g\.edges\.push/.test(merge) && /SM\.infEdges\.push/.test(merge));
+  check('the renderer concats declared and inferred edges',
+    /g\.edges\.concat\(SM\.infEdges/.test(html));
+  check('join paths and hop focus walk confirmed + probable only',
+    /e\.tier === 'confirmed' \|\| e\.tier === 'probable'/.test(html));
+  check('tiers are styled: possible dashed, hypothesis dotted and off by default',
+    /\.sm-edge\.inf-possible\{stroke-dasharray/.test(html)
+    && /\.sm-edge\.inf-hypothesis\{stroke-dasharray/.test(html)
+    && /showHypothesis: false/.test(html));
+  check('the inspector offers accept and reject on inferred edges',
+    /data-v="accept"/.test(html) && /data-v="reject"/.test(html)
+    && /onclick="smInferDecide\(this\)"/.test(html));
+  check('the trace answers over inferred edges too',
+    /SM\.graph\.edges\.concat\(SM\.infEdges \|\| \[\]\) \}/.test(html)
+    || /edges: SM\.graph\.edges\.concat\(SM\.infEdges/.test(html));
+}
+
 // ── Normalisation and thresholds ───────────────────────────────────────────
 {
   const sb = build({});

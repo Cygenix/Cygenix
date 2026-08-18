@@ -376,6 +376,17 @@
     }
   }
 
+  // ── execute ─────────────────────────────────────────────────────────────
+  // A raw statement on a side's connection, for the inference engine's capped
+  // catalog reads and containment probes. Same transport as sample(); every
+  // statement the engine builds is a SELECT, and the server-side gate
+  // classifies and refuses writes regardless of what a caller passes.
+  async function execute(side, sql) {
+    const conn = connFor(side);
+    if (!conn) throw new Error('No ' + (side === 'src' ? 'source' : 'target') + ' connection configured');
+    return dbCall(conn, { action: 'execute', sql });
+  }
+
   // ── Saved maps ──────────────────────────────────────────────────────────
   // The brief names cygenix_conv_project.id as the project filter. That is the
   // legacy single-project key, read only during migration (project-builder.js
@@ -610,7 +621,7 @@
 
   window.CygenixSchemaGraph = {
     load, reload: (side) => { const c = connFor(side); if (c) dropCache(c); delete _graphs[side]; return load(side, { force: true }); },
-    columns, columnsFor, sample,
+    columns, columnsFor, sample, execute,
     savedMaps, activeProjectId, activeProjectName,
     loadOrder, joinPath, joinSql, neighbourhood,
     hasConnection: (side) => !!connFor(side),
