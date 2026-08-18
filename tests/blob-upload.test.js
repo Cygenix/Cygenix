@@ -290,5 +290,97 @@ const SAS = 'https://acct.blob.core.windows.net/cont?sv=2024-01-01&sr=c&sp=racwl
     /blobSourceBlobUrl\(cleanName\) \+ '\?' \+ parsed\.sasToken/.test(app));
 }
 
+// ── Rename and delete ───────────────────────────────────────────────────────
+{
+  const idx = fs.readFileSync(path.join(__dirname, '..', 'azure-function', 'src', 'index.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8');
+
+  // Permissions. Delete needs 'd'; rename needs create/write AND delete,
+  // because Azure has no rename.
+  check('a read-list SAS can neither delete nor rename',
+    !B.canDelete(B.sasPermissions('sp=rl')) && !B.canRename(B.sasPermissions('sp=rl')));
+  check('create+write without delete can upload but not rename',
+    B.canUpload(B.sasPermissions('sp=racwl')) && !B.canRename(B.sasPermissions('sp=racwl')));
+  check('delete without write can delete but not rename',
+    B.canDelete(B.sasPermissions('sp=rdl')) && !B.canRename(B.sasPermissions('sp=rdl')));
+  check('racwdl can do both', B.canDelete(B.sasPermissions('sp=racwdl')) && B.canRename(B.sasPermissions('sp=racwdl')));
+  check('an undeclared sp stays unknown, not denied',
+    B.canDelete(B.sasPermissions('sv=2024')) && B.canRename(B.sasPermissions('sv=2024')));
+  check('403 on a delete names the Delete permission',
+    /Delete permission/.test(B.describeBlobError(403, '', '', { delete: true })));
+  check('a name clash during rename says pick another name, not tick overwrite',
+    /Pick a different name/.test(B.describeBlobError(409, '', '', { rename: true })));
+
+  const del = idx.slice(idx.indexOf("case 'blob-delete':"), idx.indexOf("case 'blob-rename':"));
+  const renStart = idx.indexOf("case 'blob-rename':");
+  const ren = idx.slice(renStart, idx.indexOf("\n        default:", renStart));
+
+  check('blob-delete exists and issues a DELETE', del.length > 0 && /method: 'DELETE'/.test(del));
+  check('it validates the SAS and the blob name first',
+    del.indexOf('validateContainerSas') < del.indexOf('fetch(')
+    && /validateBlobName/.test(del));
+  check('it refuses a SAS without Delete before calling Azure',
+    del.indexOf('canDelete(perms)') < del.indexOf('fetch('));
+  check('an already-deleted blob is success, not an error', /alreadyGone: resp\.status === 404/.test(del));
+
+  // The safety property of rename: copy, verify, and only then delete.
+  check('blob-rename exists', ren.length > 0);
+  check('it copies server-side with x-ms-copy-source', /'x-ms-copy-source': sourceUrl/.test(ren));
+  check('the copy cannot overwrite an unrelated blob at the new name',
+    /'If-None-Match': '\*'/.test(ren));
+  check('THE ORDER: the copy is issued before the delete',
+    ren.indexOf("method: 'PUT'") < ren.indexOf("method: 'DELETE'"));
+  check('and the delete is gated on the copy having succeeded',
+    ren.indexOf("copyStatus !== 'success'") < ren.indexOf("method: 'DELETE'"));
+  check('a pending copy leaves the original alone and says so',
+    /copyPending: true/.test(ren) && /has NOT been deleted/.test(ren));
+  check('a failed copy reports the original is untouched',
+    /The original is untouched/.test(ren));
+  check('a copy that worked but a delete that did not is reported as a duplicate, not a rename',
+    /renamed: false, copied: true/.test(ren) && /Both names now exist/.test(ren));
+  check('renaming to the same name is refused', /the same as the old one/.test(ren));
+  check('a SAS that cannot rename is refused up front',
+    ren.indexOf('canRename(perms)') < ren.indexOf("method: 'PUT'"));
+  check('both actions are named in the unknown-action list',
+    /blob-upload, blob-delete, blob-rename/.test(idx));
+
+  // Front end.
+  check('the row offers Rename and Delete',
+    />✎ Rename<\/button>/.test(app) && /blobSourceDeleteFile\(/.test(app));
+  check('the delete control is styled destructively and carries an accessible name',
+    /style="color:var\(--red\)"[^']*blobSourceDeleteFile|aria-label="Delete this file"/.test(app));
+  check('both are disabled with a reason when the SAS cannot do them, never hidden',
+    /const canRen = !perms \|\| perms\.unknown \|\| \(perms\.canUpload && perms\.delete\);/.test(app)
+    && /const canDel = !perms \|\| perms\.unknown \|\| perms\.delete;/.test(app)
+    && /This SAS cannot rename/.test(app) && /This SAS cannot delete/.test(app));
+  check('deleting asks first, naming the file and the container',
+    /confirm\('Delete "' \+ blobName/.test(app) && /parsed\.accountName \+ '\/' \+ parsed\.containerName/.test(app));
+  check('and claims nothing about recovery it cannot back',
+    /soft delete enabled/.test(app) && /Cygenix cannot undo this/.test(app));
+  check('rename is edited inline, not through a prompt that makes you retype the path',
+    /id="blob-rename-input"/.test(app) && /BlobSourceState\.renaming === b\.name/.test(app));
+  check('the row being renamed shows Save and Cancel instead of a live Delete',
+    /blobSourceCommitRename\(/.test(app) && /blobSourceCancelRename\(\)/.test(app)
+    && /colspan="3"/.test(app));
+  check('Enter commits and Escape cancels',
+    /ev\.key === 'Enter'/.test(app) && /ev\.key === 'Escape'/.test(app));
+  check('a name that already exists is caught before the round trip',
+    /already exists in this container/.test(app));
+  check('an invalid new name is refused client-side too',
+    /no "\.\.", no backslashes, no leading or trailing slash/.test(app));
+  check('a half-finished rename is reported amber, not as done',
+    /r\.renamed\) say\('✓ Renamed/.test(app) && /var\(--amber\)/.test(app));
+  check('the listing refreshes after both operations',
+    (app.match(/await blobSourceReloadFiles\(\);/g) || []).length >= 3);
+  check('the rename editor is dropped when the source changes or closes',
+    (app.match(/BlobSourceState\.renaming = '';/g) || []).length >= 3);
+  check('list, delete and rename share one proxy call',
+    /async function blobSourceProxyJson/.test(app)
+    && /blobSourceProxyJson\('blob-delete'/.test(app)
+    && /blobSourceProxyJson\('blob-rename'/.test(app));
+  check('the new handlers are exposed for the inline onclick attributes',
+    /window\.blobSourceStartRename\s*=/.test(app) && /window\.blobSourceDeleteFile\s*=/.test(app));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

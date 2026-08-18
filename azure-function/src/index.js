@@ -79,7 +79,7 @@ const { enforceAuth, logWarn, logErr } = require('./entra-auth');
 // host we fetch. See blob-helpers.js for why each check is there.
 const {
   validateContainerSas, validateBlobName, blobUrl,
-  sasPermissions, canUpload, canOverwrite, describeBlobError,
+  sasPermissions, canUpload, canOverwrite, canDelete, canRename, describeBlobError,
 } = require('./blob-helpers');
 
 const ok  = (body)       => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
@@ -3067,8 +3067,167 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           });
         }
 
+        // ── BLOB-DELETE: remove one blob from the client's container ─────────
+        // POST /api/data/blob-delete
+        // Body: { sasUrl, blobName }
+        //
+        // Irreversible from here. Whether the bytes survive at all is the
+        // storage account's business — if soft delete is enabled Azure keeps
+        // them for the retention window, and if it is not they are gone. We
+        // cannot see which from a container SAS, so we never promise either.
+        // The confirmation the user gave in the browser is the only gate.
+        case 'blob-delete': {
+          const body = await req.json().catch(() => null);
+          if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
+
+          const sas = validateContainerSas(body.sasUrl);
+          if (!sas.ok) return err(400, sas.error);
+          const nameCheck = validateBlobName(body.blobName);
+          if (!nameCheck.ok) return err(400, nameCheck.error);
+
+          const perms = sasPermissions(sas.sasToken);
+          if (!canDelete(perms)) {
+            return err(403, 'This SAS cannot delete: it grants "' + (perms.raw || 'no permissions')
+              + '". Deleting needs the Delete permission (sp=…d…).');
+          }
+
+          let resp;
+          try {
+            resp = await fetch(blobUrl(sas, nameCheck.encoded), { method: 'DELETE' });
+          } catch (e) {
+            logErr(ctx, 'blob-delete fetch failed:', e.message);
+            return err(502, 'Upstream delete failed: ' + (e.message || String(e)));
+          }
+
+          // 202 Accepted is the success answer; 404 means it was already gone,
+          // which is the outcome the caller wanted either way.
+          if (!resp.ok && resp.status !== 404) {
+            let bodyText = '';
+            try { bodyText = await resp.text(); } catch {}
+            const msg = describeBlobError(resp.status, bodyText,
+              resp.headers.get('x-ms-error-code') || '', { delete: true });
+            return err(resp.status === 403 ? 403 : 502, msg);
+          }
+
+          return ok({ deleted: true, blobName: nameCheck.name, alreadyGone: resp.status === 404 });
+        }
+
+        // ── BLOB-RENAME: move one blob to a new name ─────────────────────────
+        // POST /api/data/blob-rename
+        // Body: { sasUrl, blobName, newName }
+        //
+        // Azure Blob Storage HAS NO RENAME. This is a server-side Copy Blob
+        // followed by a Delete of the original, and the ORDER IS THE SAFETY
+        // PROPERTY: copy first, verify it succeeded, only then delete. Deleting
+        // first — or deleting without checking the copy — turns a rename into
+        // data loss the moment anything goes wrong. If the delete fails after a
+        // good copy the caller is told plainly that both names now exist, which
+        // is a tidy-up job rather than a lost file.
+        //
+        // The destination carries If-None-Match: * so a rename can never
+        // overwrite an unrelated blob that happens to share the new name.
+        case 'blob-rename': {
+          const body = await req.json().catch(() => null);
+          if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
+
+          const sas = validateContainerSas(body.sasUrl);
+          if (!sas.ok) return err(400, sas.error);
+          const from = validateBlobName(body.blobName);
+          if (!from.ok) return err(400, 'Source name: ' + from.error);
+          const to = validateBlobName(body.newName);
+          if (!to.ok) return err(400, 'New name: ' + to.error);
+          if (from.name === to.name) return err(400, 'The new name is the same as the old one');
+
+          const perms = sasPermissions(sas.sasToken);
+          if (!canRename(perms)) {
+            return err(403, 'This SAS cannot rename: it grants "' + (perms.raw || 'no permissions')
+              + '". A rename is a copy plus a delete, so it needs Create/Write AND Delete (sp=…cwd…).');
+          }
+
+          const sourceUrl = blobUrl(sas, from.encoded);
+          const destUrl   = blobUrl(sas, to.encoded);
+
+          // Step 1: copy. The source URL carries the SAS because Azure fetches
+          // it itself; this never leaves the server.
+          let copyResp;
+          try {
+            copyResp = await fetch(destUrl, {
+              method: 'PUT',
+              headers: { 'x-ms-copy-source': sourceUrl, 'If-None-Match': '*', 'Content-Length': '0' },
+            });
+          } catch (e) {
+            logErr(ctx, 'blob-rename copy failed:', e.message);
+            return err(502, 'Copy step failed: ' + (e.message || String(e)));
+          }
+
+          if (!copyResp.ok) {
+            let bodyText = '';
+            try { bodyText = await copyResp.text(); } catch {}
+            const msg = describeBlobError(copyResp.status, bodyText,
+              copyResp.headers.get('x-ms-error-code') || '', { write: true, rename: true });
+            const status = (copyResp.status === 409 || copyResp.status === 412) ? 409
+                         : (copyResp.status === 403 || copyResp.status === 404) ? copyResp.status
+                         : 502;
+            // Nothing was deleted, so the original is untouched either way.
+            return err(status, msg);
+          }
+
+          // Step 2: a same-account copy of a block blob is usually finished by
+          // the time the PUT returns, but Azure is entitled to answer
+          // "pending". Poll the destination until it settles rather than
+          // deleting a source whose copy has not landed.
+          let copyStatus = copyResp.headers.get('x-ms-copy-status') || 'success';
+          for (let i = 0; i < 25 && copyStatus === 'pending'; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            try {
+              const head = await fetch(destUrl, { method: 'HEAD' });
+              copyStatus = head.headers.get('x-ms-copy-status') || copyStatus;
+            } catch { break; }
+          }
+          if (copyStatus === 'pending') {
+            return ok({
+              renamed: false, copyPending: true,
+              blobName: from.name, newName: to.name,
+              message: 'Azure is still copying to the new name. The original has NOT been deleted — '
+                + 'refresh in a moment and delete it by hand once the copy shows up.',
+            });
+          }
+          if (copyStatus !== 'success') {
+            return err(502, 'The copy did not complete (status: ' + copyStatus
+              + '). The original is untouched.');
+          }
+
+          // Step 3: only now remove the original.
+          let delResp;
+          try {
+            delResp = await fetch(sourceUrl, { method: 'DELETE' });
+          } catch (e) {
+            logErr(ctx, 'blob-rename delete failed:', e.message);
+            return ok({
+              renamed: false, copied: true,
+              blobName: from.name, newName: to.name,
+              message: 'Copied to the new name, but removing the original failed ('
+                + (e.message || String(e)) + '). Both names now exist — delete the old one by hand.',
+            });
+          }
+          if (!delResp.ok && delResp.status !== 404) {
+            let bodyText = '';
+            try { bodyText = await delResp.text(); } catch {}
+            return ok({
+              renamed: false, copied: true,
+              blobName: from.name, newName: to.name,
+              message: 'Copied to the new name, but removing the original failed: '
+                + describeBlobError(delResp.status, bodyText,
+                    delResp.headers.get('x-ms-error-code') || '', { delete: true })
+                + ' Both names now exist — delete the old one by hand.',
+            });
+          }
+
+          return ok({ renamed: true, blobName: from.name, newName: to.name });
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects, blob-list, blob-download, blob-upload`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects, blob-list, blob-download, blob-upload, blob-delete, blob-rename`);
       }
 
     } catch (e) {
