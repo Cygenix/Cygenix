@@ -11438,6 +11438,31 @@ function blobSourceIsImportable(name){
   return /\.(csv|tsv|txt|xlsx|xls)$/i.test(name || '');
 }
 
+// What a SAS is allowed to do, read off its `sp=` parameter. Azure's letters:
+// r read, w write, l list, c create, d delete, a add.
+//
+// Upload needs create OR write — `c` alone covers a new blob, `w` is required
+// to replace one. Reading this in the browser lets the UI say "your SAS is
+// read-only, ask for one with Create and Write" before the user picks files,
+// rather than after a 403 comes back from Azure.
+//
+// `sp` is absent from user-delegation SAS variants and some older tokens.
+// Unknown is not denied: we let the attempt run and report what Azure says,
+// because guessing "no" would block a SAS that actually works.
+function blobSourceSasPerms(sasToken){
+  let sp = '';
+  try { sp = new URLSearchParams(String(sasToken || '')).get('sp') || ''; } catch {}
+  const has = (ch) => sp.toLowerCase().includes(ch);
+  const unknown = !sp;
+  return {
+    raw: sp, unknown,
+    read: has('r'), write: has('w'), list: has('l'),
+    create: has('c'), delete: has('d'), add: has('a'),
+    canUpload:    unknown || has('c') || has('w'),
+    canOverwrite: unknown || has('w'),
+  };
+}
+
 // ── UI: form actions ────────────────────────────────────────────────────────
 
 function blobSourceClearForm(){
@@ -11555,12 +11580,23 @@ function blobSourceRenderSaved(){
     } else {
       expiryHtml = '<span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">SAS expiry unknown</span>';
     }
+    // Whether this SAS can be uploaded through, shown on the chip so the
+    // answer is visible before the container is opened.
+    const p = blobSourceParseSas(e.sasUrl);
+    const perms = p.ok ? blobSourceSasPerms(p.sasToken) : null;
+    const permHtml = (perms && !perms.unknown)
+      ? (perms.canUpload
+          ? '<span style="color:var(--green);font-family:var(--mono);font-size:10.5px">read + write</span>'
+          : '<span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">read-only</span>')
+      : '';
+
     return ''
       + '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.75rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r)">'
       +   '<div style="flex:1;min-width:0">'
       +     '<div style="font-size:12.5px;font-weight:500;color:var(--text);margin-bottom:2px">' + escP(e.name) + '</div>'
       +     '<div style="font-family:var(--mono);font-size:10.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
       +       escP(e.accountName) + ' / ' + escP(e.containerName) + ' &nbsp;·&nbsp; ' + expiryHtml
+      +       (permHtml ? ' &nbsp;·&nbsp; ' + permHtml : '')
       +     '</div>'
       +   '</div>'
       +   '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)" onclick="blobSourceOpenBrowser(\'' + e.id + '\')">📂 Browse files</button>'
@@ -11571,6 +11607,10 @@ function blobSourceRenderSaved(){
 
 function blobSourceDelete(id){
   if (!id) return;
+  if (BlobUploadState.running && BlobSourceState.activeId === id){
+    alert('An upload to this source is still running. Wait for it to finish first.');
+    return;
+  }
   const entries = blobSourceReadAll();
   const target = entries.find(e => e.id === id);
   if (!target) return;
@@ -11613,6 +11653,10 @@ async function blobSourceOpenBrowser(id){
   BlobSourceState.activeId = id;
   BlobSourceState.activeParsed = parsed;
   BlobSourceState.activeBlobs = [];
+  // A queue carried over from another container would upload the previous
+  // source's files into this one.
+  BlobUploadState.queue = [];
+  blobUploadSetStatus('');
 
   const wrap = document.getElementById('blob-browser-wrap');
   const nameEl = document.getElementById('blob-browser-source-name');
@@ -11624,6 +11668,11 @@ async function blobSourceOpenBrowser(id){
   if (metaEl) metaEl.textContent = parsed.accountName + ' / ' + parsed.containerName;
   if (resultEl){ resultEl.textContent = '⏳ Listing files…'; resultEl.style.color = 'var(--text3)'; }
   if (tbody) tbody.innerHTML = '';
+
+  // Upload panel: available as soon as the container is open, so an empty
+  // container is somewhere you can put files rather than a dead end.
+  blobUploadWireDrop();
+  blobUploadSyncPanel();
 
   await blobSourceReloadFiles();
 
@@ -11775,11 +11824,20 @@ function blobSourceSetTypeFilter(type){
 }
 
 function blobSourceCloseBrowser(){
+  // Closing mid-upload would leave the run writing into a container the UI no
+  // longer shows, with no way to watch it finish.
+  if (BlobUploadState.running){
+    blobUploadSetStatus('Upload in progress — wait for it to finish before closing.', 'warn');
+    return;
+  }
   BlobSourceState.activeId = '';
   BlobSourceState.activeParsed = null;
   BlobSourceState.activeBlobs = [];
   BlobSourceState.orderedBlobs = [];
   BlobSourceState.typeFilter = 'all';
+  BlobUploadState.queue = [];
+  blobUploadSetStatus('');
+  blobUploadRenderQueue();
   const wrap = document.getElementById('blob-browser-wrap');
   if (wrap) wrap.style.display = 'none';
 }
@@ -12058,10 +12116,372 @@ async function blobSourceCopyAzcopy(blobNameEncoded){
   }
 }
 
+// ── UPLOAD ──────────────────────────────────────────────────────────────────
+// Files go up through the same Cygenix proxy the download path uses, for the
+// same reason: the client's storage account almost certainly has no CORS rule
+// for cygenix.co.uk, and we reach these clients through SaaS without a channel
+// to their Azure admins. The proxy PUTs server-to-server.
+//
+// Two things are deliberate, because this writes into somebody else's storage
+// account and a lost file there is not an error anyone gets to retry:
+//
+//   * Overwrite is opt-in, and the guarantee is enforced by Azure, not by us —
+//     the proxy sends `If-None-Match: *` unless overwrite is ticked, so a blob
+//     created between our listing and the PUT still cannot be clobbered.
+//   * A SAS that cannot write says so before the user picks anything, and the
+//     Upload button stays visibly disabled with the reason attached, rather
+//     than disappearing (a missing control reads as a broken page).
+//
+// Progress comes from XMLHttpRequest rather than fetch: fetch still has no
+// upload-progress event, and a 100MB file with no feedback looks like a hang.
+const BlobUploadState = {
+  queue: [],        // [{ id, file, status, pct, error }]
+  running: false,
+};
+
+let _blobUploadSeq = 0;
+
+function blobUploadPerms(){
+  const parsed = BlobSourceState.activeParsed;
+  return parsed ? blobSourceSasPerms(parsed.sasToken) : null;
+}
+
+// Show or hide the whole upload panel and describe what the SAS allows.
+// Called whenever a source is opened.
+function blobUploadSyncPanel(){
+  const panel = document.getElementById('blob-upload-panel');
+  const permEl = document.getElementById('blob-upload-perm');
+  if (!panel) return;
+  const parsed = BlobSourceState.activeParsed;
+  if (!parsed){ panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  const perms = blobUploadPerms();
+  if (permEl){
+    if (!perms || perms.unknown){
+      permEl.textContent = 'SAS permissions not declared — upload will be attempted and Azure has the final word.';
+      permEl.style.color = 'var(--text3)';
+    } else if (!perms.canUpload){
+      permEl.textContent = 'This SAS is read-only (sp=' + perms.raw + ') — ask for one with Create and Write to upload.';
+      permEl.style.color = 'var(--amber)';
+    } else if (!perms.canOverwrite){
+      permEl.textContent = 'sp=' + perms.raw + ' — can create new files, cannot replace existing ones.';
+      permEl.style.color = 'var(--text3)';
+    } else {
+      permEl.textContent = 'sp=' + perms.raw + ' — create and replace allowed.';
+      permEl.style.color = 'var(--text3)';
+    }
+  }
+  blobUploadRenderQueue();
+}
+
+function blobUploadToggle(){
+  const body = document.getElementById('blob-upload-body');
+  const btn  = document.getElementById('blob-upload-toggle');
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? 'block' : 'none';
+  if (btn) btn.textContent = hidden ? 'Hide' : 'Show';
+}
+
+// Accept files from the picker or a drop. Appends rather than replaces, so a
+// second drop adds to the queue instead of discarding the first.
+function blobUploadPick(fileList){
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  for (const f of files){
+    BlobUploadState.queue.push({
+      id: 'up_' + (++_blobUploadSeq),
+      file: f,
+      status: 'queued',   // queued | uploading | done | error | skipped
+      pct: 0,
+      error: '',
+    });
+  }
+  // Let the same file be picked twice in a row — the input keeps its value
+  // otherwise and onchange never fires again.
+  const input = document.getElementById('blob-upload-input');
+  if (input) input.value = '';
+  blobUploadRenderQueue();
+}
+
+function blobUploadClearQueue(){
+  if (BlobUploadState.running) return;
+  BlobUploadState.queue = [];
+  const st = document.getElementById('blob-upload-status');
+  if (st) st.textContent = '';
+  blobUploadRenderQueue();
+}
+
+// The destination folder, normalised: no leading slash, exactly one trailing
+// slash, '..' refused outright (the proxy refuses it too, but a message here
+// beats a 400 after the upload starts).
+function blobUploadPrefix(){
+  let p = (document.getElementById('blob-upload-prefix')?.value || '').trim();
+  if (!p) return { ok:true, prefix:'' };
+  p = p.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!p) return { ok:true, prefix:'' };
+  if (p.split('/').some(seg => seg === '..')){
+    return { ok:false, error:'Destination folder cannot contain "..".' };
+  }
+  return { ok:true, prefix: p + '/' };
+}
+
+function blobUploadTargetName(item){
+  const pre = blobUploadPrefix();
+  const base = (item.file.name || 'upload').split(/[\\/]/).pop();
+  return (pre.ok ? pre.prefix : '') + base;
+}
+
+const BLOB_UPLOAD_MAX = 100 * 1024 * 1024;
+
+function blobUploadRenderQueue(){
+  const host = document.getElementById('blob-upload-queue');
+  const go   = document.getElementById('blob-upload-go');
+  if (!host) return;
+
+  const q = BlobUploadState.queue;
+  host.style.display = q.length ? 'flex' : 'none';
+
+  const perms = blobUploadPerms();
+  const overwrite = !!document.getElementById('blob-upload-overwrite')?.checked;
+  // Names already in the container — used to warn before a collision rather
+  // than after one. The listing can be stale, which is exactly why the proxy
+  // also sends a precondition.
+  const existing = new Set((BlobSourceState.activeBlobs || []).map(b => b.name));
+
+  host.innerHTML = q.map(item => {
+    const target = blobUploadTargetName(item);
+    const tooBig = item.file.size > BLOB_UPLOAD_MAX;
+    const clash  = existing.has(target);
+
+    let note = '', noteColour = 'var(--text3)';
+    if (item.status === 'error'){ note = item.error; noteColour = 'var(--red)'; }
+    else if (item.status === 'done'){ note = 'uploaded'; noteColour = 'var(--green)'; }
+    else if (item.status === 'skipped'){ note = item.error || 'skipped'; noteColour = 'var(--amber)'; }
+    else if (tooBig){ note = 'over 100MB — use azcopy for this one'; noteColour = 'var(--red)'; }
+    else if (clash && overwrite){ note = 'will REPLACE the existing file'; noteColour = 'var(--amber)'; }
+    else if (clash){ note = 'already exists — tick Overwrite to replace'; noteColour = 'var(--amber)'; }
+    else if (item.status === 'uploading'){ note = item.pct + '%'; }
+
+    const bar = item.status === 'uploading'
+      ? '<div style="height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:4px">'
+        + '<div style="height:100%;width:' + item.pct + '%;background:var(--accent);transition:width 0.2s"></div></div>'
+      : '';
+
+    const icon = item.status === 'done' ? '✓'
+               : item.status === 'error' ? '🔴'
+               : item.status === 'skipped' ? '⚠'
+               : item.status === 'uploading' ? '⏳' : '·';
+
+    return ''
+      + '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.45rem 0.6rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r)">'
+      +   '<span style="font-size:11px;width:14px;text-align:center">' + icon + '</span>'
+      +   '<div style="flex:1;min-width:0">'
+      +     '<div style="font-family:var(--mono);font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escP(target) + '</div>'
+      +     (note ? '<div style="font-size:10.5px;color:' + noteColour + '">' + escP(note) + '</div>' : '')
+      +     bar
+      +   '</div>'
+      +   '<span style="font-family:var(--mono);font-size:10.5px;color:var(--text3);white-space:nowrap">' + blobSourceFormatSize(item.file.size) + '</span>'
+      +   (BlobUploadState.running ? ''
+          : '<button class="btn btn-ghost btn-sm" style="color:var(--red);padding:2px 6px" onclick="blobUploadRemove(\'' + item.id + '\')" title="Remove from queue" aria-label="Remove from queue">✕</button>')
+      + '</div>';
+  }).join('');
+
+  // The button carries its own reason for being disabled — a control that is
+  // dead with no explanation is the thing users file bugs about.
+  if (go){
+    const pending = q.filter(i => i.status === 'queued' || i.status === 'error').length;
+    let reason = '';
+    if (BlobUploadState.running) reason = 'Upload in progress…';
+    else if (!pending) reason = q.length ? 'Nothing left to upload.' : 'Choose files first.';
+    else if (perms && !perms.canUpload) reason = 'This SAS cannot write. Ask for one with Create and Write permission.';
+    else if (overwrite && perms && !perms.canOverwrite) reason = 'This SAS cannot replace existing files (needs Write).';
+    go.disabled = !!reason;
+    go.title = reason || ('Upload ' + pending + ' file' + (pending === 1 ? '' : 's'));
+    go.textContent = pending > 1 ? ('⬆ Upload ' + pending + ' files') : '⬆ Upload';
+  }
+}
+
+function blobUploadRemove(id){
+  if (BlobUploadState.running) return;
+  BlobUploadState.queue = BlobUploadState.queue.filter(i => i.id !== id);
+  blobUploadRenderQueue();
+}
+
+function blobUploadSetStatus(msg, kind){
+  const el = document.getElementById('blob-upload-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.color = kind === 'err' ? 'var(--red)'
+                 : kind === 'ok'  ? 'var(--green)'
+                 : kind === 'warn'? 'var(--amber)' : 'var(--text3)';
+}
+
+// One file, one PUT through the proxy. XHR because it reports upload
+// progress; fetch does not. Resolves { ok, error, status } — never rejects,
+// so one bad file cannot abandon the rest of the queue.
+function blobUploadOne(item, sasUrl, userId, overwrite){
+  return new Promise((resolve) => {
+    const target = blobUploadTargetName(item);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', BLOB_PROXY_BASE + '/blob-upload?code=' + encodeURIComponent(BLOB_PROXY_CODE), true);
+    xhr.setRequestHeader('x-user-id', userId);
+    xhr.setRequestHeader('x-blob-sas', sasUrl);
+    // Header values must be latin-1; unicode filenames survive as percent-
+    // encoding, which the proxy decodes.
+    xhr.setRequestHeader('x-blob-name', encodeURIComponent(target));
+    xhr.setRequestHeader('x-blob-overwrite', overwrite ? '1' : '0');
+    xhr.setRequestHeader('Content-Type', item.file.type || 'application/octet-stream');
+
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      item.pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+      blobUploadRenderQueue();
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300){
+        item.pct = 100;
+        resolve({ ok: true });
+        return;
+      }
+      let msg = 'HTTP ' + xhr.status;
+      try {
+        const payload = JSON.parse(xhr.responseText || '{}');
+        if (payload && payload.error) msg = payload.error;
+      } catch {}
+      resolve({ ok: false, error: msg, status: xhr.status });
+    };
+    xhr.onerror = () => resolve({ ok: false, error: 'Network error reaching the Cygenix proxy.' });
+    xhr.ontimeout = () => resolve({ ok: false, error: 'Upload timed out.' });
+    // A 100MB file over a slow line legitimately takes minutes.
+    xhr.timeout = 15 * 60 * 1000;
+    xhr.send(item.file);
+  });
+}
+
+// Run the queue one file at a time. Sequential rather than parallel: the
+// proxy buffers each file whole, and several 100MB uploads at once is how a
+// Function App runs out of memory.
+async function blobUploadStart(){
+  if (BlobUploadState.running) return;
+  const parsed = BlobSourceState.activeParsed;
+  if (!parsed){ alert('No blob source is open.'); return; }
+
+  const pre = blobUploadPrefix();
+  if (!pre.ok){ blobUploadSetStatus('🔴 ' + pre.error, 'err'); return; }
+
+  const userId = blobSourceCurrentUserId();
+  if (!userId){ blobUploadSetStatus('🔴 You need to be signed in to upload.', 'err'); return; }
+
+  const overwrite = !!document.getElementById('blob-upload-overwrite')?.checked;
+  const pending = BlobUploadState.queue.filter(i => i.status === 'queued' || i.status === 'error');
+  if (!pending.length){ blobUploadSetStatus('Nothing to upload.', 'warn'); return; }
+
+  // Replacing a client's file is worth one explicit confirmation, naming the
+  // files that would be destroyed.
+  if (overwrite){
+    const existing = new Set((BlobSourceState.activeBlobs || []).map(b => b.name));
+    const clashes = pending.map(blobUploadTargetName).filter(n => existing.has(n));
+    if (clashes.length){
+      const list = clashes.slice(0, 8).join('\n  ') + (clashes.length > 8 ? '\n  …and ' + (clashes.length - 8) + ' more' : '');
+      if (!confirm('Overwrite ' + clashes.length + ' existing file' + (clashes.length === 1 ? '' : 's')
+        + ' in ' + parsed.accountName + '/' + parsed.containerName + '?\n\n  ' + list
+        + '\n\nThe current contents will be replaced and cannot be recovered by Cygenix.')) return;
+    }
+  }
+
+  const sasUrl = 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName) + '?' + parsed.sasToken;
+
+  BlobUploadState.running = true;
+  blobUploadRenderQueue();
+
+  let done = 0, failed = 0;
+  for (const item of pending){
+    if (item.file.size > BLOB_UPLOAD_MAX){
+      item.status = 'skipped';
+      item.error = 'over the 100MB proxy limit — use azcopy for this file';
+      failed++;
+      blobUploadRenderQueue();
+      continue;
+    }
+    item.status = 'uploading';
+    item.pct = 0;
+    item.error = '';
+    blobUploadSetStatus('⏳ Uploading ' + blobUploadTargetName(item) + ' (' + (done + failed + 1) + ' of ' + pending.length + ')…');
+    blobUploadRenderQueue();
+
+    const r = await blobUploadOne(item, sasUrl, userId, overwrite);
+    if (r.ok){ item.status = 'done'; done++; }
+    else {
+      // 409 is "already there", which is the expected answer to a
+      // non-overwriting upload — not a failure of the tool.
+      item.status = r.status === 409 ? 'skipped' : 'error';
+      item.error = r.error || 'Upload failed';
+      failed++;
+    }
+    blobUploadRenderQueue();
+  }
+
+  BlobUploadState.running = false;
+
+  if (done && !failed)      blobUploadSetStatus('✓ Uploaded ' + done + ' file' + (done === 1 ? '' : 's') + '.', 'ok');
+  else if (done && failed)  blobUploadSetStatus('✓ ' + done + ' uploaded · ' + failed + ' not uploaded — see the list.', 'warn');
+  else                      blobUploadSetStatus('🔴 Nothing uploaded — see the list for why.', 'err');
+
+  // Refresh the listing so the new files appear (and so a later overwrite
+  // check is made against reality rather than a pre-upload snapshot).
+  if (done) await blobSourceReloadFiles();
+  blobUploadRenderQueue();
+}
+
+// Drag and drop onto the upload zone. Wired on first browser open rather than
+// inline, so the handlers can preventDefault on dragover — without that the
+// browser navigates away to the dropped file and the page is simply gone.
+let _blobDropWired = false;
+function blobUploadWireDrop(){
+  if (_blobDropWired) return;
+  const zone = document.getElementById('blob-upload-drop');
+  if (!zone) return;
+  _blobDropWired = true;
+  const on = (el, ev, fn) => el.addEventListener(ev, fn);
+  on(zone, 'dragover', (e) => {
+    e.preventDefault();
+    zone.style.background = 'var(--accent-glow)';
+    zone.style.borderColor = 'var(--accent)';
+  });
+  on(zone, 'dragleave', () => {
+    zone.style.background = '';
+    zone.style.borderColor = '';
+  });
+  on(zone, 'drop', (e) => {
+    e.preventDefault();
+    zone.style.background = '';
+    zone.style.borderColor = '';
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) blobUploadPick(files);
+  });
+  // Keyboard route to the same picker — the zone is a button, so Enter and
+  // Space must do what a click does.
+  on(zone, 'keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      document.getElementById('blob-upload-input')?.click();
+    }
+  });
+}
+
 // Expose for inline onclick handlers — same defensive pattern used elsewhere
 // in this file because function declarations don't reliably hoist across
 // <script> block boundaries.
 if (typeof window !== 'undefined'){
+  window.blobUploadToggle       = blobUploadToggle;
+  window.blobUploadPick         = blobUploadPick;
+  window.blobUploadStart        = blobUploadStart;
+  window.blobUploadClearQueue   = blobUploadClearQueue;
+  window.blobUploadRemove       = blobUploadRemove;
+  window.blobUploadRenderQueue  = blobUploadRenderQueue;
   window.blobSourceTest          = blobSourceTest;
   window.blobSourceClearForm     = blobSourceClearForm;
   window.blobSourceRenderSaved   = blobSourceRenderSaved;

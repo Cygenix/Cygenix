@@ -1328,7 +1328,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-sidebar.js?v=571667f2d7" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
-  <script src="/dashboard-app.js?v=efc442653d" defer></script>
+  <script src="/dashboard-app.js?v=690b0bf6d2" defer></script>
 
 
   <!-- MAIN -->
@@ -2914,7 +2914,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <button class="btn btn-primary btn-sm" onclick="blobSourceTest()">🔌 Test &amp; save</button>
             <button class="btn btn-ghost btn-sm" onclick="blobSourceClearForm()">✕ Clear</button>
             <span style="font-size:10.5px;color:var(--text3);margin-left:auto">
-              Required SAS perms: <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Read</code> + <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">List</code> · File transfer goes via Cygenix to bypass storage-account CORS restrictions. 100MB cap per file.
+              SAS perms: <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Read</code> + <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">List</code> to browse and download · add <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Create</code> + <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Write</code> to upload · File transfer goes via Cygenix to bypass storage-account CORS restrictions. 100MB cap per file.
             </span>
           </div>
         </div>
@@ -2940,6 +2940,51 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <button class="btn btn-ghost btn-sm" onclick="blobSourceCloseBrowser()">✕ Close</button>
           </div>
           <div id="blob-browser-result" style="font-size:11.5px;color:var(--text3);font-family:var(--mono);min-height:18px;margin-bottom:0.75rem"></div>
+
+          <!-- Upload. Writing into someone else's storage account, so two
+               things are deliberate: overwrite is opt-in and enforced by a
+               precondition on the PUT (never a check-then-write), and a SAS
+               that cannot write is reported as such up front rather than
+               after the user has picked files and waited for a 403. -->
+          <div id="blob-upload-panel" style="display:none;margin-bottom:0.9rem;border:0.5px solid var(--border);border-radius:var(--r);background:var(--bg3)">
+            <div style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.75rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap">
+              <div style="font-size:12px;font-weight:600">⬆ Upload files to this container</div>
+              <span id="blob-upload-perm" style="font-size:10.5px;font-family:var(--mono);color:var(--text3)"></span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="blobUploadToggle()" id="blob-upload-toggle">Hide</button>
+            </div>
+            <div id="blob-upload-body" style="padding:0.75rem">
+              <div id="blob-upload-drop"
+                   style="border:1px dashed var(--border2);border-radius:var(--r);padding:1.1rem;text-align:center;cursor:pointer;transition:background 0.15s,border-color 0.15s"
+                   onclick="document.getElementById('blob-upload-input').click()"
+                   role="button" tabindex="0"
+                   aria-label="Choose files to upload, or drop them here">
+                <div style="font-size:12.5px;color:var(--text2);margin-bottom:2px">Drop files here, or <span style="color:var(--accent)">browse</span></div>
+                <div style="font-size:10.5px;color:var(--text3);font-family:var(--mono)">Any file type · 100MB per file · larger files: use azcopy</div>
+              </div>
+              <input type="file" id="blob-upload-input" multiple style="display:none" onchange="blobUploadPick(this.files)">
+
+              <div style="display:grid;grid-template-columns:1fr auto;gap:0.75rem;align-items:end;margin-top:0.75rem">
+                <div>
+                  <label class="form-label" for="blob-upload-prefix">Destination folder <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+                  <input id="blob-upload-prefix" class="form-input" style="font-family:var(--mono);font-size:11.5px"
+                         placeholder="e.g. Staging/KY — leave blank for the container root"
+                         oninput="blobUploadRenderQueue()">
+                </div>
+                <label style="display:flex;align-items:center;gap:0.4rem;font-size:11.5px;color:var(--text2);white-space:nowrap;padding-bottom:0.5rem;cursor:pointer">
+                  <input type="checkbox" id="blob-upload-overwrite" onchange="blobUploadRenderQueue()">
+                  Overwrite existing files
+                </label>
+              </div>
+
+              <div id="blob-upload-queue" style="margin-top:0.75rem;display:none;flex-direction:column;gap:0.4rem"></div>
+
+              <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.75rem;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" id="blob-upload-go" onclick="blobUploadStart()" disabled>⬆ Upload</button>
+                <button class="btn btn-ghost btn-sm" onclick="blobUploadClearQueue()">✕ Clear</button>
+                <span id="blob-upload-status" style="font-size:11.5px;font-family:var(--mono);color:var(--text3);margin-left:auto"></span>
+              </div>
+            </div>
+          </div>
 
           <!-- Filter toolbar: search + type chips. Both filters compose (AND).
                Filtering is client-side over the already-fetched blob list —
