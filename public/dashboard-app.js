@@ -11556,6 +11556,148 @@ function blobSourceUseInRestore(blobNameEncoded){
   }
 }
 
+// One POST to the Cygenix proxy with a JSON body and a JSON answer — the
+// shape blob-list, blob-delete and blob-rename all share. Never throws:
+// callers get { ok:false, error } and put it on screen.
+async function blobSourceProxyJson(action, payload){
+  const userId = blobSourceCurrentUserId();
+  if (!userId) return { ok:false, error:'You need to be signed in.' };
+  const parsed = BlobSourceState.activeParsed;
+  if (!parsed) return { ok:false, error:'No blob source is open.' };
+  const sasUrl = 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName) + '?' + parsed.sasToken;
+
+  let resp;
+  try {
+    resp = await fetch(BLOB_PROXY_BASE + '/' + action + '?code=' + encodeURIComponent(BLOB_PROXY_CODE), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body: JSON.stringify(Object.assign({ sasUrl }, payload || {})),
+    });
+  } catch (e){
+    return { ok:false, error:'Could not reach the Cygenix proxy. (' + (e && e.message || e) + ')' };
+  }
+  let data = {};
+  try { data = await resp.json(); } catch {}
+  if (!resp.ok) return { ok:false, error:(data && data.error) || ('HTTP ' + resp.status), status: resp.status };
+  return Object.assign({ ok:true }, data);
+}
+
+// ── Rename ─────────────────────────────────────────────────────────────────
+// Azure Blob Storage HAS NO RENAME: the proxy does a server-side copy and
+// then deletes the original, copy first so a failure leaves a duplicate
+// rather than nothing. The editor is inline in the row — the current path is
+// what you edit, which beats a prompt() that makes you retype it.
+function blobSourceStartRename(blobNameEncoded){
+  const perms = blobUploadPerms();
+  if (perms && !perms.unknown && !(perms.canUpload && perms.delete)){
+    alert('This SAS cannot rename files.\n\nA rename is a copy plus a delete, so it needs Create/Write and Delete '
+      + '(sp=…cwd…). This one grants "' + perms.raw + '".');
+    return;
+  }
+  BlobSourceState.renaming = decodeURIComponent(blobNameEncoded);
+  blobSourceRenderFiles();
+  const input = document.getElementById('blob-rename-input');
+  if (input){
+    input.focus();
+    // Select the file's own name, leaving any folder prefix alone — renaming
+    // usually means the last segment, and moving it is still possible by
+    // editing the rest.
+    const cut = input.value.lastIndexOf('/');
+    const dot = input.value.lastIndexOf('.');
+    input.setSelectionRange(cut + 1, dot > cut ? dot : input.value.length);
+  }
+}
+
+function blobSourceCancelRename(){
+  BlobSourceState.renaming = '';
+  blobSourceRenderFiles();
+}
+
+// Enter commits, Escape cancels — a text field in a table row should behave
+// like every other one.
+function blobSourceRenameKey(ev, blobNameEncoded){
+  if (ev.key === 'Enter'){ ev.preventDefault(); blobSourceCommitRename(blobNameEncoded); }
+  else if (ev.key === 'Escape'){ ev.preventDefault(); blobSourceCancelRename(); }
+}
+
+async function blobSourceCommitRename(blobNameEncoded){
+  const oldName = decodeURIComponent(blobNameEncoded);
+  const input = document.getElementById('blob-rename-input');
+  const newName = String(input ? input.value : '').trim();
+  const resultEl = document.getElementById('blob-browser-result');
+  const say = (msg, colour) => {
+    if (!resultEl) return;
+    resultEl.textContent = msg;
+    resultEl.style.color = colour || 'var(--text3)';
+  };
+
+  if (!newName || newName === oldName){ blobSourceCancelRename(); return; }
+  if (newName.includes('..') || newName.includes('\\') || newName.startsWith('/') || newName.endsWith('/')){
+    say('🔴 That name is not valid: no "..", no backslashes, no leading or trailing slash.', 'var(--red)');
+    return;
+  }
+  // The listing can be stale, which is why the proxy also sends a
+  // precondition — but catching it here saves a round trip and says so
+  // without the user losing what they typed.
+  if ((BlobSourceState.activeBlobs || []).some(b => b.name === newName)){
+    say('🔴 "' + newName + '" already exists in this container. Pick a different name.', 'var(--red)');
+    return;
+  }
+
+  say('⏳ Renaming — Azure copies the blob, then removes the original…');
+  const r = await blobSourceProxyJson('blob-rename', { blobName: oldName, newName });
+
+  if (!r.ok){
+    say('🔴 Rename failed: ' + r.error + ' The original is untouched.', 'var(--red)');
+    return;
+  }
+  BlobSourceState.renaming = '';
+  await blobSourceReloadFiles();
+  // A partial rename — copied but the original still there — is reported as
+  // the amber half-success it is, not as done.
+  if (r.renamed) say('✓ Renamed to ' + newName + '.', 'var(--green)');
+  else say('⚠ ' + (r.message || 'The rename did not finish.'), 'var(--amber)');
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────────
+// Irreversible from here, in somebody else's storage account. One explicit
+// confirmation naming the file and the container, and no claim about
+// recoverability we cannot back: whether the bytes survive depends on that
+// account's soft-delete setting, which a container SAS cannot see.
+async function blobSourceDeleteFile(blobNameEncoded){
+  const blobName = decodeURIComponent(blobNameEncoded);
+  const parsed = BlobSourceState.activeParsed;
+  if (!parsed){ alert('No blob source is open.'); return; }
+
+  const perms = blobUploadPerms();
+  if (perms && !perms.unknown && !perms.delete){
+    alert('This SAS cannot delete files.\n\nDeleting needs the Delete permission (sp=…d…). '
+      + 'This one grants "' + perms.raw + '".');
+    return;
+  }
+
+  if (!confirm('Delete "' + blobName + '"?\n\nFrom ' + parsed.accountName + '/' + parsed.containerName
+    + '\n\nCygenix cannot undo this. If the storage account has soft delete enabled, Azure may retain '
+    + 'the file for its retention window; if not, it is gone.')) return;
+
+  const resultEl = document.getElementById('blob-browser-result');
+  if (resultEl){ resultEl.textContent = '⏳ Deleting ' + blobName + '…'; resultEl.style.color = 'var(--text3)'; }
+
+  const r = await blobSourceProxyJson('blob-delete', { blobName });
+  if (!r.ok){
+    if (resultEl){ resultEl.textContent = '🔴 Delete failed: ' + r.error; resultEl.style.color = 'var(--red)'; }
+    return;
+  }
+  await blobSourceReloadFiles();
+  if (resultEl){
+    resultEl.textContent = r.alreadyGone
+      ? '✓ "' + blobName + '" was already gone.'
+      : '✓ Deleted ' + blobName + '.';
+    resultEl.style.color = 'var(--green)';
+  }
+}
+
 // What a SAS is allowed to do, read off its `sp=` parameter. Azure's letters:
 // r read, w write, l list, c create, d delete, a add.
 //
@@ -11753,6 +11895,8 @@ const BlobSourceState = {
   orderedBlobs: [],
   // Current type filter chip. One of: 'all' | 'csv' | 'excel' | 'text'.
   typeFilter: 'all',
+  // Blob name currently open in the inline rename editor, '' when none.
+  renaming: '',
 };
 
 async function blobSourceOpenBrowser(id){
@@ -11771,6 +11915,7 @@ async function blobSourceOpenBrowser(id){
   BlobSourceState.activeId = id;
   BlobSourceState.activeParsed = parsed;
   BlobSourceState.activeBlobs = [];
+  BlobSourceState.renaming = '';
   // A queue carried over from another container would upload the previous
   // source's files into this one.
   BlobUploadState.queue = [];
@@ -11898,6 +12043,10 @@ function blobSourceRenderFiles(){
   // user click and wait for a failed download.
   const MAX_BYTES = 100 * 1024 * 1024;
 
+  // Read once per render, not once per row: what this SAS allows decides
+  // whether Rename and Delete are live on every row alike.
+  const perms = blobUploadPerms();
+
   tbody.innerHTML = filtered.map(b => {
     const usable = blobSourceIsImportable(b.name);
     const tooBig = (b.size || 0) > MAX_BYTES;
@@ -11942,8 +12091,48 @@ function blobSourceRenderFiles(){
       + '<button class="btn btn-ghost btn-sm" onclick="blobSourceCopyBlobPath(this,\'' + enc + '\',\'path\')"'
       + ' title="Copy the path inside the container, unencoded — for azcopy and for reading">⧉ Path</button>';
 
+    // Rename and delete write to the client's container. Both are disabled
+    // rather than hidden when the SAS cannot do them, carrying the reason —
+    // a control that vanishes reads as a broken page. Rename needs
+    // Create/Write AND Delete, because Azure has no rename: it is a copy
+    // followed by a delete of the original.
+    const canRen = !perms || perms.unknown || (perms.canUpload && perms.delete);
+    const canDel = !perms || perms.unknown || perms.delete;
+    const manageBtns =
+        '<button class="btn btn-ghost btn-sm"' + (canRen ? '' : ' disabled')
+      + ' onclick="blobSourceStartRename(\'' + enc + '\')"'
+      + ' title="' + (canRen
+          ? 'Rename this blob. Azure has no rename — Cygenix copies it to the new name, then deletes the original.'
+          : 'This SAS cannot rename: a rename needs Create/Write and Delete (sp=…cwd…).') + '">✎ Rename</button>'
+      + '<button class="btn btn-ghost btn-sm" style="color:var(--red)"' + (canDel ? '' : ' disabled')
+      + ' onclick="blobSourceDeleteFile(\'' + enc + '\')"'
+      + ' aria-label="Delete this file"'
+      + ' title="' + (canDel
+          ? 'Delete this blob from the container. Cygenix cannot undo it.'
+          : 'This SAS cannot delete: it needs the Delete permission (sp=…d…).') + '">🗑</button>';
+
     const actionCell = '<div style="display:inline-flex;gap:0.4rem;align-items:center;justify-content:flex-end;flex-wrap:wrap">'
-      + importBtn + restoreBtn + downloadBtn + copyBtns + '</div>';
+      + importBtn + restoreBtn + downloadBtn + copyBtns + manageBtns + '</div>';
+
+    // The row being renamed swaps its name cell for an editor and its actions
+    // for save/cancel, so there is never a live Delete beside a half-typed
+    // name. The full path is editable: renaming the last segment is the
+    // common case, moving between folders is the same operation to Azure.
+    if (BlobSourceState.renaming === b.name){
+      return ''
+        + '<tr>'
+        +   '<td colspan="3">'
+        +     '<input id="blob-rename-input" class="form-input" style="width:100%;font-family:var(--mono);font-size:11.5px"'
+        +       ' value="' + escP(b.name) + '" aria-label="New blob name"'
+        +       ' onkeydown="blobSourceRenameKey(event,\'' + enc + '\')">'
+        +   '</td>'
+        +   '<td style="text-align:right;white-space:nowrap">'
+        +     '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)"'
+        +       ' onclick="blobSourceCommitRename(\'' + enc + '\')">✓ Save</button> '
+        +     '<button class="btn btn-ghost btn-sm" onclick="blobSourceCancelRename()">✕ Cancel</button>'
+        +   '</td>'
+        + '</tr>';
+    }
 
     // Rows for non-importable files are no longer dimmed — they're still
     // useful (downloadable) so full opacity is correct.
@@ -11978,6 +12167,7 @@ function blobSourceCloseBrowser(){
   BlobSourceState.activeBlobs = [];
   BlobSourceState.orderedBlobs = [];
   BlobSourceState.typeFilter = 'all';
+  BlobSourceState.renaming = '';
   BlobUploadState.queue = [];
   blobUploadSetStatus('');
   blobUploadRenderQueue();
@@ -12622,6 +12812,11 @@ if (typeof window !== 'undefined'){
   window.blobSourceSetTypeFilter  = blobSourceSetTypeFilter;
   window.blobSourceCopyBlobPath   = blobSourceCopyBlobPath;
   window.blobSourceUseInRestore   = blobSourceUseInRestore;
+  window.blobSourceStartRename    = blobSourceStartRename;
+  window.blobSourceCancelRename   = blobSourceCancelRename;
+  window.blobSourceCommitRename   = blobSourceCommitRename;
+  window.blobSourceRenameKey      = blobSourceRenameKey;
+  window.blobSourceDeleteFile     = blobSourceDeleteFile;
 }
 
 function impDragOver(e){ e.preventDefault(); document.getElementById('imp-drop')?.classList.add('drag-over'); }

@@ -107,6 +107,11 @@ function sasPermissions(sasToken) {
 
 function canUpload(perms)    { return !!(perms.unknown || perms.create || perms.write); }
 function canOverwrite(perms) { return !!(perms.unknown || perms.write); }
+function canDelete(perms)    { return !!(perms.unknown || perms.delete); }
+// Azure has no rename. It is a server-side copy followed by a delete of the
+// original, so it needs BOTH permissions — and the copy has to come first, so
+// a failure leaves a duplicate rather than nothing.
+function canRename(perms)    { return canUpload(perms) && canDelete(perms); }
 
 // Turn an Azure Blob REST error into something a person can act on. Azure
 // returns XML with an <Message> element and an x-ms-error-code header; the
@@ -119,20 +124,21 @@ function describeBlobError(status, bodyText, errorCode, opts) {
   const code = String(errorCode || '').trim();
 
   if (status === 403) {
+    if (o.delete) return 'Azure refused the delete (403). The SAS needs Delete permission (sp=…d…) and must not be expired.';
     return o.write
       ? 'Azure refused the write (403). The SAS needs Create and Write permission (sp=…cw…) and must not be expired.'
       : 'Azure refused the request (403). The SAS may be expired, or lack the required permission.';
   }
   if (status === 404) {
+    if (o.delete) return 'That blob no longer exists (404) — someone may have removed it already.';
     return o.write
       ? 'Container not found (404). Check the container name in the SAS URL.'
       : 'Not found (404). The blob or container does not exist.';
   }
-  if (status === 409 || /BlobAlreadyExists/i.test(code)) {
-    return 'A blob with that name already exists. Tick "Overwrite existing files" to replace it.';
-  }
-  if (status === 412) {
-    return 'A blob with that name already exists. Tick "Overwrite existing files" to replace it.';
+  if (status === 409 || status === 412 || /BlobAlreadyExists/i.test(code)) {
+    return o.rename
+      ? 'A blob with that name already exists. Pick a different name.'
+      : 'A blob with that name already exists. Tick "Overwrite existing files" to replace it.';
   }
   if (status === 416 || /InvalidRange/i.test(code)) {
     return 'Azure rejected the range of the upload. Try the file again.';
@@ -148,5 +154,7 @@ module.exports = {
   sasPermissions,
   canUpload,
   canOverwrite,
+  canDelete,
+  canRename,
   describeBlobError,
 };
