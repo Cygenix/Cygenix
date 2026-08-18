@@ -158,6 +158,26 @@ body.cyg-collapsed{padding-left:54px}
 .sm-edge.path{stroke:var(--amber);stroke-width:2.4}
 .sm-edge-dot{fill:var(--border2)}
 .sm-edge.hot+.sm-edge-dot{fill:var(--accent)}
+/* Inferred edges wear their tier: solid means code and data both agreed,
+   dashed means one strong channel, dotted is an unverified guess (hidden
+   unless asked for). The line style IS the confidence statement. */
+.sm-edge.inf-confirmed{stroke:var(--accent)}
+.sm-edge.inf-probable{stroke:var(--accent);opacity:0.55}
+.sm-edge.inf-possible{stroke-dasharray:6 4}
+.sm-edge.inf-hypothesis{stroke-dasharray:2 5;opacity:0.5}
+.sm-infer-banner{position:absolute;left:50%;transform:translateX(-50%);z-index:7;display:none;
+  align-items:center;gap:0.6rem;padding:0.5rem 0.8rem;background:var(--bg2);
+  border:0.5px solid var(--border2);border-radius:var(--r);box-shadow:0 10px 28px rgba(0,0,0,0.35);
+  font-size:12px;color:var(--text2);max-width:calc(100% - 16px)}
+.sm-infer-banner.show{display:flex;flex-wrap:wrap}
+#sm-infer{width:520px}
+.sm-infer-log{font-family:var(--mono);font-size:11px;color:var(--text3);max-height:180px;overflow:auto;
+  white-space:pre-wrap}
+.sm-tier{display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-family:var(--mono);
+  border:0.5px solid var(--border2);color:var(--text2)}
+.sm-tier.confirmed{color:var(--green);border-color:var(--green)}
+.sm-tier.probable{color:var(--accent);border-color:var(--accent)}
+.sm-tier.possible{color:var(--amber);border-color:var(--amber)}
 
 .sm-box{position:absolute;width:210px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.18);overflow:hidden}
 .sm-box.dim{opacity:0.22}
@@ -387,7 +407,8 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-api.js?v=923ff2d8c9" defer></script>
-<script src="/cygenix-schema-graph.js?v=3f4922c426" defer></script>
+<script src="/cygenix-schema-graph.js?v=7342c9d73d" defer></script>
+<script src="/cygenix-infer-schema.js?v=c197ec85e0" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
 <script src="/cygenix-sidebar.js?v=571667f2d7" defer></script>
@@ -450,6 +471,8 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
                    oninput="smTraceInput()">
             <button class="btn" id="sm-filters-btn" onclick="smFiltersToggle()" aria-expanded="false"
                     aria-controls="sm-filters" title="Hide tables you do not want on the diagram">Filters</button>
+            <button class="btn" id="sm-infer-btn" onclick="smInferOpen()" aria-controls="sm-infer"
+                    title="Rebuild missing relationships from code and data evidence — for databases that declare no foreign keys">Infer</button>
             <span class="sm-toolbar-sep"></span>
             <button class="btn" id="sm-tree-btn" onclick="smTogglePanel('tree')"
                     title="Bring the table list back" style="display:none">Show list</button>
@@ -488,6 +511,22 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
               <button class="btn" onclick="smFiltersClear()" title="Clear every rule and show every table again">Reset</button>
               <button class="btn" onclick="smRulePreset()" title="Hide the _draft and _template twins">Preset: drafts &amp; templates</button>
             </div>
+          </div>
+
+          <!-- Inferred relationships. A legacy database that declares no
+               foreign keys draws as a wall of disconnected boxes; this offers
+               to rebuild the edges from evidence — code first, then data.
+               Detection is automatic (tables but zero FK edges); the toolbar
+               button covers the manual case. -->
+          <div class="sm-infer-banner" id="sm-infer-banner" role="status"></div>
+          <div class="sm-filters" id="sm-infer" role="dialog" aria-label="Infer relationships">
+            <div class="sm-filters-head">
+              <div class="panel-title">Infer relationships</div>
+              <span class="sm-filters-count" id="sm-infer-count"></span>
+              <button class="btn" onclick="smInferClose()" aria-label="Close">✕</button>
+            </div>
+            <div class="sm-filters-body" id="sm-infer-body"></div>
+            <div class="sm-filters-foot" id="sm-infer-foot"></div>
           </div>
           <div class="sm-viewport" id="sm-viewport" tabindex="0" role="application"
                aria-label="Schema diagram. Use the toolbar buttons to zoom, fit and lay out; use the tree or search to select a table.">
@@ -723,6 +762,9 @@ const SM = {
   joinResult: null,
   panels: { tree: true, insp: true },
   trace: null,             // { q, owners, members, edgeKeys, colHits } — see smComputeTrace
+  inferred: null,          // the inference catalogue for this side+database
+  infEdges: [],            // merged inferred edges — beside g.edges, never inside (see smInferMerge)
+  showHypothesis: false,
   // Exclusion rules. Applied to the diagram and its table list only — see the
   // note on the markup for why the Coverage map does not honour them.
   filters: { hideEmpty:false, hideViews:false, hideIsolated:false, rules: [] },
@@ -856,7 +898,11 @@ function smTraceInput(){
 function smTraceApply(){
   const el = $('sm-trace');
   const q = el ? el.value : '';
-  const t = smComputeTrace(SM.graph, q);
+  // The trace answers from every edge on the diagram — inferred ones
+  // included, since on a FK-less database they are the only edges there are.
+  const t = smComputeTrace(SM.graph && SM.graph.ok
+    ? { ok: true, edges: SM.graph.edges.concat(SM.infEdges || []) }
+    : SM.graph, q);
   if (t && t.empty){
     // Nothing matched: say so and leave the diagram alone rather than
     // blanking it under the user's cursor.
@@ -981,12 +1027,16 @@ async function smEnsureLoaded(force){
   SM.selected = null;
   SM.joinResult = null;
   smStatus('');
+  // Re-apply any stored inference catalogue before the first layout, so the
+  // inferred edges shape the auto-layout rather than arriving after it.
+  smInferMerge();
   smRenderTree();
   smAutoLayout(false);
   smRenderCanvas();
   smRenderInspector();
   smUpdateSideButtons();
   smFiltersWrite();
+  smInferBannerSync();
   // Columns make the boxes real: the FK anchors and the DDL tab both need
   // them. Fetched in the background, bounded, redrawing as they land.
   if (SM.graph.ok && SM.graph.tables.length){
@@ -1234,9 +1284,11 @@ function smRenderCanvas(){
       + rows + more + '</div>';
   }).join('');
 
-  // Edges, anchored to the column row when the columns are known.
+  // Edges, anchored to the column row when the columns are known. Inferred
+  // edges ride beside the declared ones (SM.infEdges — see smInferMerge for
+  // why they must never enter g.edges) and wear their tier as a class.
   const parts = ['<g id="sm-edges-g">'];
-  for (const e of g.edges){
+  for (const e of g.edges.concat(SM.infEdges || [])){
     if (e.self) continue;
     // An edge to a table the filters removed has nothing to point at.
     if (!shownKeys.has(e.from) || !shownKeys.has(e.to)) continue;
@@ -1248,12 +1300,16 @@ function smRenderCanvas(){
     if (!a || !b) continue;
     const onPath = SM.joinResult && smEdgeOnPath(e);
     const hot = SM.selected && (e.from === SM.selected || e.to === SM.selected);
-    const cls = 'sm-edge' + (onPath ? ' path' : (hot ? ' hot' : ''));
+    const cls = 'sm-edge' + (e.inferred ? ' inf-' + e.tier : '') + (onPath ? ' path' : (hot ? ' hot' : ''));
     // Horizontal-first bezier: the layout is columnar, so a curve that leaves
     // sideways reads as a relationship rather than crossing boxes.
     const dx = Math.max(30, Math.abs(b.x - a.x) * 0.45);
+    const tip = e.inferred
+      ? '<title>' + esc('inferred ' + e.tier + ' · ' + Math.round((e.confidence || 0) * 100) + '%'
+        + (e.orphanRate != null ? ' · orphans ' + (e.orphanRate * 100).toFixed(2) + '%' : '')) + '</title>'
+      : '';
     parts.push('<path class="' + cls + '" d="M' + a.x + ',' + a.y
-      + ' C' + (a.x + dx) + ',' + a.y + ' ' + (b.x - dx) + ',' + b.y + ' ' + b.x + ',' + b.y + '"/>');
+      + ' C' + (a.x + dx) + ',' + a.y + ' ' + (b.x - dx) + ',' + b.y + ' ' + b.x + ',' + b.y + '">' + tip + '</path>');
     parts.push('<circle class="sm-edge-dot" cx="' + b.x + '" cy="' + b.y + '" r="2.2"/>');
   }
   parts.push('</g>');
@@ -1742,18 +1798,37 @@ async function smRenderInspector(){
       out.push('<div class="sm-pre">' + esc(CygenixSchemaGraph.joinSql(SM.graph, SM.joinResult)) + '</div>');
       out.push('<div style="height:0.7rem"></div>');
     }
-    const outgoing = SM.graph.edges.filter(e => e.from === key);
-    const incoming = SM.graph.edges.filter(e => e.to === key && !e.self);
+    const allEdges = SM.graph.edges.concat(SM.infEdges || []);
+    const outgoing = allEdges.filter(e => e.from === key);
+    const incoming = allEdges.filter(e => e.to === key && !e.self);
+    // An inferred edge shows its tier and confidence, and offers the review
+    // loop: accept publishes it as confirmed, reject removes it permanently.
+    // Both are the human's call and inference never overwrites them.
+    const infRow = (e) => {
+      if (!e.inferred) return '';
+      const d = (n, v) => ' data-' + n + '="' + esc(v) + '"';
+      const args = d('c', e.from) + d('cc', e.fromColumn) + d('p', e.to) + d('pc', e.toColumn);
+      const ev = (e.evidence || []).map(x => x.detail).join(' · ');
+      return '<div class="sm-kv" style="gap:0.45rem;justify-content:flex-start">'
+        + '<span class="sm-tier ' + esc(e.tier) + '" title="' + esc(ev) + '">' + esc(e.tier) + '</span>'
+        + '<span style="font-size:10.5px;color:var(--text3)">' + Math.round((e.confidence || 0) * 100) + '%'
+        + (e.orphanRate != null ? ' · orphans ' + (e.orphanRate * 100).toFixed(2) + '%' : '') + '</span>'
+        + '<button class="btn"' + args + ' data-v="accept" onclick="smInferDecide(this)">Accept</button>'
+        + '<button class="btn"' + args + ' data-v="reject" onclick="smInferDecide(this)">Reject</button>'
+        + '</div>';
+    };
     out.push('<div style="font-size:11px;color:var(--text2);margin-bottom:0.3rem">References ('
       + outgoing.length + ')</div>');
     out.push(outgoing.length ? outgoing.map(e =>
-      '<div class="sm-kv"><b>' + esc(e.fromColumn) + '</b><span>→ ' + esc(e.to) + '.' + esc(e.toColumn) + '</span></div>').join('')
+      '<div class="sm-kv"><b>' + esc(e.fromColumn) + '</b><span>→ ' + esc(e.to) + '.' + esc(e.toColumn) + '</span></div>'
+      + infRow(e)).join('')
       : '<div class="muted" style="padding:0 0 0.4rem">None.</div>');
     out.push('<div style="height:0.6rem"></div>');
     out.push('<div style="font-size:11px;color:var(--text2);margin-bottom:0.3rem">Referenced by ('
       + incoming.length + ')</div>');
     out.push(incoming.length ? incoming.map(e =>
-      '<div class="sm-kv"><b>' + esc(e.from) + '</b><span>' + esc(e.fromColumn) + ' → ' + esc(e.toColumn) + '</span></div>').join('')
+      '<div class="sm-kv"><b>' + esc(e.from) + '</b><span>' + esc(e.fromColumn) + ' → ' + esc(e.toColumn) + '</span></div>'
+      + infRow(e)).join('')
       : '<div class="muted" style="padding:0">None.</div>');
     body.innerHTML = out.join('');
     return;
@@ -1910,6 +1985,197 @@ document.addEventListener('mousedown', (ev) => {
 $ && document.addEventListener('click', (ev) => {
   if (ev.target && ev.target.id === 'se-palette') sePaletteClose();
 });
+
+// ── Inferred relationships ────────────────────────────────────────────────
+// The engine lives in cygenix-infer-schema.js; this is the wiring. One rule
+// matters more than the rest: inferred edges NEVER enter SM.graph.edges. The
+// graph object is shared with the Atlas and Coverage views and cached to
+// localStorage, and an inferred edge that reached the cache would rehydrate
+// as a declared foreign key — a hypothesis silently laundered into a fact.
+// They live beside it in SM.infEdges, and the renderers concat.
+
+const INFER_DISMISS_KEY = 'cygenix_infer_dismissed';
+const smInferDb = () => (SM.graph && SM.graph.database) || 'unknown';
+
+function smInferMerge(){
+  const g = SM.graph;
+  SM.infEdges = [];
+  SM.inferred = null;
+  if (!g || !g.ok || !window.CygenixInferSchema) return;
+  // Strip previous inferred adjacency so a re-merge cannot stack entries.
+  for (const k of Object.keys(g.adj)) g.adj[k] = g.adj[k].filter(a => !a.edge.inferred);
+  const cat = CygenixInferSchema.siLoadCatalogue(SM.side, smInferDb());
+  if (!cat || !cat.ok) return;
+  SM.inferred = cat;
+  const dec  = CygenixInferSchema.siLoadDecisions(SM.side, smInferDb());
+  const rels = CygenixInferSchema.siApplyDecisions(cat.relationships, dec);
+  for (const e of CygenixInferSchema.siToEdges({ relationships: rels },
+      { includeHypothesis: SM.showHypothesis })){
+    if (!g.byKey[e.from] || !g.byKey[e.to]) continue;
+    SM.infEdges.push(e);
+    // Join paths and the hop-focus control walk confirmed + probable only: a
+    // dashed "possible" must never silently become a join in generated SQL.
+    if (!e.self && (e.tier === 'confirmed' || e.tier === 'probable')){
+      g.adj[e.from].push({ to: e.to, edge: e, direction: 'out' });
+      g.adj[e.to].push({ to: e.from, edge: e, direction: 'in' });
+    }
+    // Anchor marks. Not persisted — the cache rebuilds these from g.edges.
+    if (g.byKey[e.from].fkColumns.indexOf(e.fromColumn) < 0) g.byKey[e.from].fkColumns.push(e.fromColumn);
+    if (g.byKey[e.to].refColumns.indexOf(e.toColumn) < 0)    g.byKey[e.to].refColumns.push(e.toColumn);
+  }
+}
+
+// The automatic detection the button backs up: tables but zero declared FK
+// edges is what a "non-relational" legacy database looks like from here.
+function smInferFkless(){
+  const g = SM.graph;
+  return !!(g && g.ok && g.tables.length >= 8 && g.edges.length === 0);
+}
+
+function smInferBannerSync(){
+  const el = $('sm-infer-banner'), bar = document.querySelector('.sm-toolbar');
+  if (!el) return;
+  let dismissed = false;
+  try { dismissed = !!JSON.parse(localStorage.getItem(INFER_DISMISS_KEY) || '{}')[SM.side + '|' + smInferDb()]; } catch {}
+  const show = smInferFkless() && !SM.inferred && !dismissed;
+  if (show && bar) el.style.top = (bar.offsetHeight + 12) + 'px';
+  el.classList.toggle('show', show);
+  if (show){
+    el.innerHTML = '<span>This database declares <b>no foreign keys</b> — the map can infer the relationships from code and data evidence.</span>'
+      + '<button class="btn" onclick="smInferOpen()">Infer relationships</button>'
+      + '<button class="btn" onclick="smInferDismiss()" aria-label="Do not offer again for this database">✕</button>';
+  }
+}
+
+function smInferDismiss(){
+  try {
+    const all = JSON.parse(localStorage.getItem(INFER_DISMISS_KEY) || '{}');
+    all[SM.side + '|' + smInferDb()] = true;
+    localStorage.setItem(INFER_DISMISS_KEY, JSON.stringify(all));
+  } catch {}
+  smInferBannerSync();
+}
+
+let _inferRunning = false;
+function smInferOpen(){
+  const el = $('sm-infer'), bar = document.querySelector('.sm-toolbar');
+  if (!el) return;
+  if (bar) el.style.top = (bar.offsetHeight + 12) + 'px';
+  el.classList.add('show');
+  smInferRenderPanel();
+}
+function smInferClose(){
+  // Closing mid-run would orphan a fetch loop with no way to watch it.
+  const el = $('sm-infer');
+  if (el && !_inferRunning) el.classList.remove('show');
+}
+
+function smInferRenderPanel(){
+  const body = $('sm-infer-body'), foot = $('sm-infer-foot'), count = $('sm-infer-count');
+  if (!body || _inferRunning) return;
+  const cat = SM.inferred;
+  if (cat && cat.ok){
+    const t = cat.tiers || {};
+    count.textContent = (cat.relationships || []).length + ' candidates';
+    body.innerHTML =
+      '<div class="sm-kv"><b>Confirmed</b><span>' + (t.confirmed || 0) + ' — code and data both agreed</span></div>'
+      + '<div class="sm-kv"><b>Probable</b><span>' + (t.probable || 0) + '</span></div>'
+      + '<div class="sm-kv"><b>Possible</b><span>' + (t.possible || 0) + ' — drawn dashed</span></div>'
+      + '<div class="sm-kv"><b>Hypothesis</b><span>' + (t.hypothesis || 0) + ' — unverified, hidden below</span></div>'
+      + '<label class="sm-toggle" style="margin-top:0.4rem"><input type="checkbox" '
+      + (SM.showHypothesis ? 'checked' : '') + ' onchange="smInferToggleHyp(this.checked)">'
+      + '<span>Show hypothesis edges<small>Dotted guesses no data has verified. Off by default on purpose.</small></span></label>'
+      + '<div class="sm-section">Coverage</div>'
+      + ((cat.notes || []).map(n => '<div class="muted" style="padding:0.1rem 0;font-size:11px">' + esc(n) + '</div>').join('')
+         || '<div class="muted" style="padding:0.1rem 0;font-size:11px">Nothing was skipped.</div>')
+      + '<div class="muted" style="padding:0.3rem 0 0;font-size:10.5px">Generated ' + esc(cat.generatedAt || '')
+      + ' · ' + cat.stats.modulesParsed + ' modules read · ' + cat.stats.confirms + ' containment tests'
+      + '</div>'
+      + '<div class="muted" style="padding:0.3rem 0 0;font-size:10.5px">Select a table and open Relationships to accept or reject each edge.</div>';
+    foot.innerHTML = '<button class="btn" onclick="smInferRunNow()">Re-run</button>'
+      + '<button class="btn" onclick="smInferRemove()">Remove inferred edges</button>';
+  } else {
+    count.textContent = '';
+    body.innerHTML =
+      '<div style="font-size:12px;color:var(--text2);line-height:1.5">Rebuilds the missing relationships from evidence:'
+      + ' join predicates parsed out of every view, procedure and function on the server;'
+      + ' name matching after learning each table’s column-prefix dialect;'
+      + ' then the top candidates verified against the real data with containment tests.'
+      + ' Nothing publishes above <i>hypothesis</i> unless the data agreed.</div>'
+      + '<div class="muted" style="padding:0.5rem 0 0;font-size:11px">Read-only: capped SELECT statements only.'
+      + ' Large tables are sampled with TOP, and anything skipped is reported, never silent.</div>';
+    foot.innerHTML = '<button class="btn" onclick="smInferRunNow()">Run inference</button>';
+  }
+}
+
+async function smInferRunNow(){
+  if (_inferRunning || !window.CygenixInferSchema) return;
+  const g = SM.graph;
+  if (!g || !g.ok){ smStatus('Load a schema first'); return; }
+  if (!CygenixSchemaGraph.hasConnection(SM.side)){ smStatus('No ' + (SM.side === 'src' ? 'source' : 'target') + ' connection'); return; }
+  _inferRunning = true;
+  const body = $('sm-infer-body'), foot = $('sm-infer-foot');
+  body.innerHTML = '<div class="sm-infer-log" id="sm-infer-log">Starting…</div>';
+  foot.innerHTML = '<span class="muted" style="font-size:11px">Read-only, TOP-capped queries — this can take a minute or two.</span>';
+  const log = (m) => { const el = $('sm-infer-log'); if (el){ el.textContent += '\n' + m; el.scrollTop = el.scrollHeight; } };
+  try {
+    const cat = await CygenixInferSchema.siRun(g, {
+      dbCall: (req) => CygenixSchemaGraph.execute(SM.side, req.sql),
+      columnsFor: (keys) => CygenixSchemaGraph.columnsFor(SM.side, keys),
+      onStatus: log,
+    });
+    _inferRunning = false;
+    if (!cat.ok){
+      log('Stopped: ' + cat.reason);
+      foot.innerHTML = '<button class="btn" onclick="smInferRenderPanel()">Back</button>';
+      return;
+    }
+    CygenixInferSchema.siSaveCatalogue(SM.side, smInferDb(), cat);
+    smInferMerge();
+    smAutoLayout(false); smFit(); smRenderTree(); smRenderInspector();
+    smInferBannerSync();
+    smInferRenderPanel();
+    const shown = (cat.tiers.confirmed || 0) + (cat.tiers.probable || 0) + (cat.tiers.possible || 0);
+    smStatus(shown + ' inferred relationship' + (shown === 1 ? '' : 's') + ' on the diagram');
+  } catch (e) {
+    _inferRunning = false;
+    log('Failed: ' + ((e && e.message) || e));
+    foot.innerHTML = '<button class="btn" onclick="smInferRenderPanel()">Back</button>';
+  }
+}
+
+function smInferRemove(){
+  if (window.CygenixInferSchema) CygenixInferSchema.siClearCatalogue(SM.side, smInferDb());
+  smInferMerge();
+  smAutoLayout(false); smFit(); smRenderTree(); smRenderInspector();
+  smInferRenderPanel();
+  smInferBannerSync();
+}
+
+function smInferToggleHyp(on){
+  SM.showHypothesis = !!on;
+  smInferMerge();
+  smRenderCanvas();
+  smRenderInspector();
+}
+
+// The review loop, from a button in the inspector. Reads the pair off the
+// button's data attributes — table names are user data and do not belong
+// inside an onclick string.
+function smInferDecide(btn){
+  if (!window.CygenixInferSchema || !btn) return;
+  const { c, cc, p, pc, v } = btn.dataset;
+  const dec = CygenixInferSchema.siLoadDecisions(SM.side, smInferDb());
+  const same = (d) => d.child === c && d.childCol === cc && d.parent === p && d.parentCol === pc;
+  dec.accept = (dec.accept || []).filter(d => !same(d));
+  dec.reject = (dec.reject || []).filter(d => !same(d));
+  if (v === 'accept') dec.accept.push({ child: c, childCol: cc, parent: p, parentCol: pc });
+  else if (v === 'reject') dec.reject.push({ child: c, childCol: cc, parent: p, parentCol: pc });
+  CygenixInferSchema.siSaveDecisions(SM.side, smInferDb(), dec);
+  smInferMerge();
+  smRenderCanvas();
+  smRenderInspector();
+}
 
 // ═══ VIEW 1.5 — DATA MAP (Data Atlas) ════════════════════════════════════
 // A zoomable nested treemap of the connected database: every rectangle is a
