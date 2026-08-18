@@ -61,13 +61,26 @@ function getCosmosContainer(containerName) {
 // ── Shared CORS headers ───────────────────────────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization',
+  // x-blob-* carry the upload's SAS, destination name and overwrite flag.
+  // They are headers rather than query params because a SAS is a credential
+  // and query strings are logged; the browser will not send them at all
+  // unless they are named here, so a preflight failure looks like a silent
+  // upload that never starts.
+  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization, x-blob-sas, x-blob-name, x-blob-overwrite',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Content-Type': 'application/json'
 };
 
 // ── Token-based auth (see entra-auth.js for the rollout plan) ────────────────
 const { enforceAuth, logWarn, logErr } = require('./entra-auth');
+
+// ── Client-owned blob storage (blob-list / blob-download / blob-upload) ──────
+// Validation for the one family of endpoints where the CALLER chooses the
+// host we fetch. See blob-helpers.js for why each check is there.
+const {
+  validateContainerSas, validateBlobName, blobUrl,
+  sasPermissions, canUpload, canOverwrite, describeBlobError,
+} = require('./blob-helpers');
 
 const ok  = (body)       => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
 const err = (code, msg)  => ({ status: code, headers: CORS, body: JSON.stringify({ error: msg }) });
@@ -2785,34 +2798,13 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           if (!body || typeof body !== 'object') {
             return err(400, 'Invalid JSON body');
           }
-          const sasUrl = String(body.sasUrl || '').trim();
-          if (!sasUrl) return err(400, 'sasUrl required');
-
           // Parse + validate. Same shape checks as the frontend, server-side
           // copy because we can't trust the browser's prior validation.
-          let parsed;
-          try { parsed = new URL(sasUrl); }
-          catch { return err(400, 'sasUrl is not a valid URL'); }
-          if (parsed.protocol !== 'https:') {
-            return err(400, 'sasUrl must use https');
-          }
-          // Exact-suffix check, not a substring: '.blob.' matched hostnames
-          // like x.blob.core.windows.net.attacker.com, letting callers point
-          // this server-side fetch at arbitrary hosts (SSRF).
-          if (!parsed.hostname.toLowerCase().endsWith('.blob.core.windows.net')) {
-            return err(400, 'sasUrl hostname does not look like Azure Blob Storage');
-          }
-          const segs = parsed.pathname.split('/').filter(Boolean);
-          if (segs.length === 0) return err(400, 'sasUrl is missing the container name');
-          if (segs.length > 1)   return err(400, 'sasUrl looks like a blob URL, not a container URL');
-          const sasToken = parsed.search.startsWith('?') ? parsed.search.slice(1) : parsed.search;
-          if (!sasToken)            return err(400, 'sasUrl has no SAS token');
-          if (!/[?&]sig=/.test('?' + sasToken)) {
-            return err(400, 'SAS token is missing the signature (sig=) parameter');
-          }
+          const sas = validateContainerSas(body.sasUrl);
+          if (!sas.ok) return err(400, sas.error);
 
-          const listUrl = 'https://' + parsed.hostname + parsed.pathname
-            + '?restype=container&comp=list&' + sasToken;
+          const listUrl = 'https://' + sas.hostname + sas.pathname
+            + '?restype=container&comp=list&' + sas.sasToken;
 
           let resp;
           try {
@@ -2877,38 +2869,15 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           if (!body || typeof body !== 'object') {
             return err(400, 'Invalid JSON body');
           }
-          const sasUrl   = String(body.sasUrl   || '').trim();
-          const blobName = String(body.blobName || '').trim();
-          if (!sasUrl)   return err(400, 'sasUrl required');
-          if (!blobName) return err(400, 'blobName required');
+          // Same SAS validation as blob-list; blob names may carry virtual
+          // directories but never '..', backslashes or a leading slash.
+          const sas = validateContainerSas(body.sasUrl);
+          if (!sas.ok) return err(400, sas.error);
+          const nameCheck = validateBlobName(body.blobName);
+          if (!nameCheck.ok) return err(400, nameCheck.error);
+          const blobName = nameCheck.name;
 
-          // Same SAS validation as blob-list.
-          let parsed;
-          try { parsed = new URL(sasUrl); }
-          catch { return err(400, 'sasUrl is not a valid URL'); }
-          if (parsed.protocol !== 'https:') return err(400, 'sasUrl must use https');
-          // Exact-suffix check, not a substring — see blob-list above (SSRF).
-          if (!parsed.hostname.toLowerCase().endsWith('.blob.core.windows.net')) {
-            return err(400, 'sasUrl hostname does not look like Azure Blob Storage');
-          }
-          const segs = parsed.pathname.split('/').filter(Boolean);
-          if (segs.length !== 1) {
-            return err(400, 'sasUrl must be a container SAS (one path segment)');
-          }
-          const sasToken = parsed.search.startsWith('?') ? parsed.search.slice(1) : parsed.search;
-          if (!sasToken || !/[?&]sig=/.test('?' + sasToken)) {
-            return err(400, 'SAS token is missing or malformed');
-          }
-
-          // Refuse path traversal attempts. Blob names can legitimately contain
-          // "/" (virtual directories) but never ".." or backslashes.
-          if (blobName.includes('..') || blobName.includes('\\')) {
-            return err(400, 'blobName contains forbidden characters');
-          }
-
-          const encodedBlob = blobName.split('/').map(encodeURIComponent).join('/');
-          const downloadUrl = 'https://' + parsed.hostname + parsed.pathname
-            + '/' + encodedBlob + '?' + sasToken;
+          const downloadUrl = blobUrl(sas, nameCheck.encoded);
 
           // Step 1: HEAD to check size before downloading. If HEAD is blocked
           // by the SAS permissions (rare; r implies HEAD on Azure Blob), we
@@ -2991,8 +2960,115 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           };
         }
 
+        // ── BLOB-UPLOAD: write one file into the client's container ──────────
+        // POST /api/data/blob-upload
+        // Headers: x-blob-sas       container SAS URL
+        //          x-blob-name      URI-encoded destination blob name
+        //          x-blob-overwrite '1' to allow replacing an existing blob
+        //          Content-Type     the file's type, stored on the blob
+        // Body:    the raw file bytes.
+        //
+        // Metadata rides in headers rather than the query string because the
+        // SAS is a credential and query strings land in request logs. It does
+        // not ride in a JSON body because that would mean base64 — a third
+        // more bytes over the wire and a full copy in Function memory.
+        //
+        // OVERWRITE IS OPT-IN, and enforced by Azure rather than by us: an
+        // upload without it carries `If-None-Match: *`, so if the blob was
+        // created between our existence check and the PUT, Azure rejects it.
+        // A check-then-write with no precondition would silently destroy a
+        // client's file in that window. This is somebody else's storage
+        // account; losing a file there is not an error we get to retry.
+        case 'blob-upload': {
+          const MAX_BYTES = 100 * 1024 * 1024;  // 100 MB — matches blob-download
+
+          const sas = validateContainerSas(req.headers.get('x-blob-sas'));
+          if (!sas.ok) return err(400, sas.error);
+
+          // Header values are latin-1; the client URI-encodes the name so
+          // unicode filenames survive the trip.
+          let rawName = req.headers.get('x-blob-name') || '';
+          try { rawName = decodeURIComponent(rawName); }
+          catch { return err(400, 'x-blob-name is not valid percent-encoding'); }
+          const nameCheck = validateBlobName(rawName);
+          if (!nameCheck.ok) return err(400, nameCheck.error);
+
+          const overwrite = String(req.headers.get('x-blob-overwrite') || '') === '1';
+
+          // Refuse early when the SAS plainly cannot do the job, so the user
+          // gets "your SAS needs Create" rather than a bare 403 from Azure.
+          const perms = sasPermissions(sas.sasToken);
+          if (!canUpload(perms)) {
+            return err(403, 'This SAS cannot upload: it grants "' + (perms.raw || 'no permissions')
+              + '". Ask for a SAS with Create and Write (sp=racwl or similar).');
+          }
+          if (overwrite && !canOverwrite(perms)) {
+            return err(403, 'This SAS can create new blobs but not replace existing ones: it grants "'
+              + perms.raw + '". Overwriting needs Write (w).');
+          }
+
+          const declared = parseInt(req.headers.get('content-length') || '', 10);
+          if (!isNaN(declared) && declared > MAX_BYTES) {
+            return err(413, 'File is ' + declared + ' bytes; limit is ' + MAX_BYTES
+              + ' (100MB). Use azcopy for larger files.');
+          }
+
+          let arrayBuf;
+          try { arrayBuf = await req.arrayBuffer(); }
+          catch (e) { return err(400, 'Could not read the upload body: ' + e.message); }
+          if (!arrayBuf || arrayBuf.byteLength === 0) {
+            return err(400, 'Upload body is empty');
+          }
+          if (arrayBuf.byteLength > MAX_BYTES) {
+            return err(413, 'File is ' + arrayBuf.byteLength + ' bytes; limit is ' + MAX_BYTES + ' (100MB).');
+          }
+
+          const targetUrl = blobUrl(sas, nameCheck.encoded);
+          const putHeaders = {
+            'x-ms-blob-type': 'BlockBlob',
+            'Content-Type':   req.headers.get('content-type') || 'application/octet-stream',
+            'Content-Length': String(arrayBuf.byteLength),
+          };
+          // The precondition that makes "do not overwrite" a guarantee rather
+          // than a hope. Azure answers 409/412 when the blob already exists.
+          if (!overwrite) putHeaders['If-None-Match'] = '*';
+
+          let resp;
+          try {
+            resp = await fetch(targetUrl, {
+              method: 'PUT',
+              headers: putHeaders,
+              body: Buffer.from(arrayBuf),
+            });
+          } catch (e) {
+            logErr(ctx, 'blob-upload fetch failed:', e.message);
+            return err(502, 'Upstream upload failed: ' + (e.message || String(e)));
+          }
+
+          if (!resp.ok) {
+            let bodyText = '';
+            try { bodyText = await resp.text(); } catch {}
+            const code = resp.headers.get('x-ms-error-code') || '';
+            const msg = describeBlobError(resp.status, bodyText, code, { write: true });
+            // 409/412 is "already there", which is a normal answer to a
+            // non-overwriting upload, not a server fault.
+            const status = (resp.status === 409 || resp.status === 412) ? 409
+                         : (resp.status === 403 || resp.status === 404) ? resp.status
+                         : 502;
+            return err(status, msg);
+          }
+
+          return ok({
+            uploaded: true,
+            blobName: nameCheck.name,
+            size: arrayBuf.byteLength,
+            overwritten: overwrite,
+            etag: resp.headers.get('etag') || '',
+          });
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects, blob-list, blob-download`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects, blob-list, blob-download, blob-upload`);
       }
 
     } catch (e) {
