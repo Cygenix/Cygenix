@@ -237,8 +237,13 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('traced columns are promoted above the fold, with anchors following',
     /function smShownCols/.test(html)
     && /smShownCols\(node\)\.map\(c => c\.name\)/.test(html));
-  check('the trace overrides the exclusion filters, so the answer is complete',
-    /SM\.trace\.members\.has\(t\.key\)/.test(html));
+  check('the trace is computed over the whole schema, then drawn through the rules',
+    /SM\.trace\.members\.has\(t\.key\)/.test(html)
+    && /SM\.trace\.owners\.has\(t\.key\) \|\| !smHidden\(t, rules\)/.test(html));
+  check('what the rules removed from a trace is counted in the headline, not silent',
+    /function smTraceStatus/.test(html) && /hidden by your filters/.test(html));
+  check('a filter change refreshes an active trace headline',
+    /if \(SM\.trace\) smTraceStatus\(\);/.test(html));
   check('untraced edges between visible tables are not drawn',
     /SM\.trace && !SM\.trace\.edgeKeys\.has/.test(html));
   check('a schema reload drops the trace',
@@ -362,6 +367,23 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     check('the cache follows a filter change rather than going stale',
       vm.runInContext('const a = smTables().length; SM.filters.hideEmpty = true; a - smTables().length',
         mk({})) === 3);
+
+    // The trace used to bypass the rules entirely — the bug report was a
+    // "contains mx" rule that an acctindex trace ignored. Now the rules thin
+    // the trace too, with one exemption: the owning table is the anchor of
+    // the question and always stays.
+    check('a trace is thinned by the exclusion rules',
+      vm.runInContext(
+        'SM.trace = { q:"cid", owners:new Set(["dbo.Customer"]),'
+        + ' members:new Set(["dbo.Customer","dbo.CftSearchResultEntityOrg","dbo.Orders"]) };'
+        + ' smTables().map(t => t.name).join()',
+        mk({ rules: [{ mode:'starts', text:'Cft', on:true }] })) === 'Customer,Orders');
+    check('but the owning table survives a rule that names it — the anchor stays',
+      vm.runInContext(
+        'SM.trace = { q:"cid", owners:new Set(["dbo.Customer"]),'
+        + ' members:new Set(["dbo.Customer","dbo.Orders"]) };'
+        + ' smTables().map(t => t.name).join()',
+        mk({ rules: [{ mode:'equals', text:'customer', on:true }] })) === 'Customer,Orders');
   }
 }
 
@@ -483,7 +505,17 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     /id="sm-filters-btn"/.test(html)
     && ['contains','starts','ends','equals','regex','schema'].every(m => new RegExp("\\b" + m + ":\\s*\\{").test(html)));
   check('rules survive a reload', /cygenix_schemaexp_filters/.test(html));
-  check('there is always a way back to every table', /Show all/.test(html));
+  check('there is always a way back to every table',
+    /Show all tables/.test(html) && /onclick="smFiltersClear\(\)"[^>]*>Reset</.test(html));
+  check('Apply sits next to Reset in the panel foot, Apply first',
+    (() => {
+      const foot = html.indexOf('sm-filters-foot');
+      const a = html.indexOf('>Apply<', foot), r = html.indexOf('>Reset<', foot);
+      return foot > -1 && a > -1 && r > -1 && a < r;
+    })());
+  check('Apply skips the keystroke debounce and closes the panel',
+    /function smFiltersApplyNow/.test(html)
+    && /smFiltersApplyNow\(\)\{[^]*?clearTimeout\(_filterTimer\)[^]*?smFiltersFlush\(\);[^]*?classList\.remove\('show'\)/.test(html));
   check('the panel is anchored under the toolbar, which wraps at narrow widths',
     /bar\.offsetHeight/.test(html));
 

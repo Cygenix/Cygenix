@@ -484,7 +484,8 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
               <div class="sm-filters-warn" id="sm-filters-warn"></div>
             </div>
             <div class="sm-filters-foot">
-              <button class="btn" onclick="smFiltersClear()">Show all</button>
+              <button class="btn" onclick="smFiltersApplyNow()" title="Apply the rules to the diagram now and close this panel">Apply</button>
+              <button class="btn" onclick="smFiltersClear()" title="Clear every rule and show every table again">Reset</button>
               <button class="btn" onclick="smRulePreset()" title="Hide the _draft and _template twins">Preset: drafts &amp; templates</button>
             </div>
           </div>
@@ -802,10 +803,11 @@ function smHidden(t, rules){
 // "Who references this field?" answered from the FK graph: type a field name
 // and the diagram collapses to the table that OWNS it (the referenced side,
 // outlined in amber) plus every table whose foreign key points at it — and
-// nothing else. Deliberately independent of the exclusion filters and the
-// hop-focus control: a trace is a question about the whole schema, and a
-// referencing table hidden by a _draft rule would silently falsify the
-// answer.
+// nothing else. The trace is COMPUTED over the whole schema, ignoring the
+// exclusion rules and the hop-focus control, so the answer itself is always
+// complete; what is DRAWN then honours the exclusion rules (the owning table
+// excepted — it is the anchor of the question), and the status line says how
+// many referencing tables the rules removed, so nothing vanishes silently.
 //
 // Pure function so the tests run the shipped logic directly. Accepts a bare
 // field name or table.field to disambiguate; exact (case-insensitive) match
@@ -862,12 +864,7 @@ function smTraceApply(){
     smStatus('No foreign key references a field matching “' + q.trim() + '”');
   } else {
     SM.trace = t;
-    if (t){
-      const ownerNames = [...t.owners].sort();
-      smStatus('“' + t.q + '” · owner ' + ownerNames.join(', ')
-        + ' · ' + (t.members.size - t.owners.size) + ' referencing table'
-        + ((t.members.size - t.owners.size) === 1 ? '' : 's'));
-    } else smStatus('');
+    smTraceStatus();
   }
   if (SM.selected && SM.trace && !SM.trace.members.has(SM.selected)){
     SM.selected = null;
@@ -881,6 +878,22 @@ function smTraceClear(){
   const el = $('sm-trace');
   if (el) el.value = '';
   if (SM.trace){ SM.trace = null; smStatus(''); smAutoLayout(false); smFit(); smRenderTree(); }
+}
+
+// The trace headline. Recomputed when the exclusion rules change too, because
+// the rules now thin what a trace draws: "64 referencing tables · 12 hidden by
+// your filters" is the honest version of a diagram showing 52 boxes.
+function smTraceStatus(){
+  const t = SM.trace;
+  if (!t){ smStatus(''); return; }
+  const refs = t.members.size - t.owners.size;
+  const hiddenByRules = t.members.size - smTables().length;
+  const ownerNames = [...t.owners].sort();
+  smStatus('“' + t.q + '” · owner ' + ownerNames.join(', ')
+    + ' · ' + refs + ' referencing table' + (refs === 1 ? '' : 's')
+    + (hiddenByRules > 0
+      ? ' · ' + hiddenByRules + ' hidden by your filters'
+      : ''));
 }
 
 // The columns a box actually shows. With a trace active the hit columns are
@@ -913,9 +926,14 @@ function smTables(){
   if (_filterCache && _filterCache.sig === sig) return _filterCache.tables;
   let tables;
   if (SM.trace){
-    // Exactly the trace members, from the FULL graph — see smComputeTrace on
-    // why the exclusion rules do not apply here.
-    tables = g.tables.filter(t => SM.trace.members.has(t.key));
+    // Trace members intersected with the exclusion rules: a "contains mx"
+    // rule should thin a 60-table trace exactly as it thins the whole
+    // diagram. The owning table is exempt — hiding the anchor of the
+    // question would leave the referencing tables pointing at nothing — and
+    // smTraceStatus reports how many members the rules removed.
+    const rules = smCompileRules();
+    tables = g.tables.filter(t => SM.trace.members.has(t.key)
+      && (SM.trace.owners.has(t.key) || !smHidden(t, rules)));
   } else {
     const rules = smCompileRules();
     tables = g.tables.filter(t => !smHidden(t, rules));
@@ -1577,29 +1595,44 @@ function smFiltersRead(){
 // rather than keep the gaps where the hidden tables were. Debounced, because
 // this fires on every keystroke in a rule box and the layout walks the graph.
 let _filterTimer = null;
+function smFiltersFlush(){
+  // A selection the filters just removed would leave the inspector
+  // describing something not on screen.
+  if (SM.selected && !smVisibleKeys().has(SM.selected)){
+    SM.selected = null;
+    SM.joinResult = null;
+    smRenderInspector();
+  }
+  // A join path with a hidden table on it would draw as disconnected
+  // fragments — the edges into the hidden hop are no longer on screen.
+  if (SM.joinResult && SM.joinResult.tables
+      && !SM.joinResult.tables.every(k => smVisibleKeys().has(k))){
+    SM.joinResult = null;
+  }
+  // The rules thin an active trace too, and its headline counts the removed.
+  if (SM.trace) smTraceStatus();
+  smAutoLayout(false);
+  smFit();
+  smRenderTree();
+}
 function smFiltersApply(){
   smSavePrefs();
   smUpdateFilterBadge();
   if (_filterTimer) clearTimeout(_filterTimer);
-  _filterTimer = setTimeout(() => {
-    _filterTimer = null;
-    // A selection the filters just removed would leave the inspector
-    // describing something not on screen.
-    if (SM.selected && !smVisibleKeys().has(SM.selected)){
-      SM.selected = null;
-      SM.joinResult = null;
-      smRenderInspector();
-    }
-    // A join path with a hidden table on it would draw as disconnected
-    // fragments — the edges into the hidden hop are no longer on screen.
-    if (SM.joinResult && SM.joinResult.tables
-        && !SM.joinResult.tables.every(k => smVisibleKeys().has(k))){
-      SM.joinResult = null;
-    }
-    smAutoLayout(false);
-    smFit();
-    smRenderTree();
-  }, 180);
+  _filterTimer = setTimeout(() => { _filterTimer = null; smFiltersFlush(); }, 180);
+}
+
+// The Apply button: the debounce exists for keystrokes, this is an explicit
+// "do it now" — flush immediately and close the panel so the result is
+// visible rather than sitting behind it.
+function smFiltersApplyNow(){
+  smSavePrefs();
+  smUpdateFilterBadge();
+  if (_filterTimer){ clearTimeout(_filterTimer); _filterTimer = null; }
+  smFiltersFlush();
+  const el = $('sm-filters'), btn = $('sm-filters-btn');
+  if (el) el.classList.remove('show');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
 function smUpdateFilterBadge(){
