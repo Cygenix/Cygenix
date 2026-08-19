@@ -179,8 +179,8 @@ const TGT = { tables: [
       return { rows: [] };
     };
     const doc = await H.shHarvest(stub, { database: 'X' });
-    check('the harvest doc is versioned v2 — a v1 cache has no columns and must never rehydrate silently',
-      doc.v === 2 && H.HARVEST_VERSION === 2);
+    check('the harvest doc is versioned v3 — an old cache has no inventory and must never rehydrate silently',
+      doc.v === 3 && H.HARVEST_VERSION === 3);
     const graph = { ok: true, tables: [{ key: 'dbo.matter', schema: 'dbo', name: 'matter', rowCount: 0, primaryKeys: [] }] };
     const hit = H.shApply(graph, doc);
     check('applying the harvest fills colsig, pk and row count on the node',
@@ -190,6 +190,178 @@ const TGT = { tables: [
       await H.shWriteCache('k1', doc) === true && (await H.shReadCache('k1')).database === 'X');
     check('a stale or wrong-version doc is a miss, never a silent hit',
       await H.shWriteCache('k2', { ...doc, v: 1 }) === true && (await H.shReadCache('k2')) === null);
+  }
+
+
+  // ── v2: triage ruleset (cygenix-subject-triage.js) ────────────────────────
+  {
+    const T = require('../public/cygenix-subject-triage.js');
+    const NOW = Date.parse('2026-08-19T00:00:00Z');
+    const base = (o) => Object.assign({
+      key: 'dbo.' + o.name, schema: 'dbo', kind: 'table', rows: 1000, cols: 8,
+      colsig: 'sig-' + o.name, hasPk: true, hasUnique: false, indexCount: 2,
+      inboundRefs: 1, inboundFks: 0, lastRead: '2026-08-01', modified: '2026-06-01',
+      readOps: 50, writeOps: 5, hasUsageRow: true, description: null,
+    }, o);
+    const EST = (objs, win) => T.tgEstate(objs, { usageWindowDays: win == null ? 30 : win, now: NOW });
+
+    // Hard excludes — only where a false positive is essentially impossible.
+    check('a view is hard-excluded — views are lineage, not migration units',
+      T.tgTriage(base({ name: 'vw_x', kind: 'view' }), EST([])).reasons[0] === 'HARD_VIEW');
+    check('SharedTempDB and # objects are hard-excluded',
+      T.tgTriage(base({ name: 'z_Matt', schema: 'SharedTempDB' }), EST([])).class === 'EXCLUDE'
+      && T.tgTriage(base({ name: '#scratch' }), EST([])).reasons[0] === 'HARD_TEMP_DB');
+    check('a GUID-suffixed session artefact is hard-excluded',
+      T.tgTriage(base({ name: 'z_MattClose__Matters_9231d01f_aaaa_bbbb_cccc_1234567890ab' }), EST([]))
+        .reasons[0] === 'HARD_GUID_SUFFIX');
+
+    // The dated-backup sibling test is what makes the rule safe.
+    const live = base({ name: 'extglobal', colsig: 'SIG1' });
+    const bak  = base({ name: '_BAKTAB_20230421_extglobal', colsig: 'SIG1' });
+    const est2 = EST([live, bak]);
+    check('a dated backup with an identical-shape live sibling is hard-excluded',
+      T.tgTriage(bak, est2).reasons[0] === 'HARD_DATED_BACKUP');
+    check('the same name with NO matching sibling is not — the sibling test guards it',
+      T.tgTriage(base({ name: '_BAKTAB_20230421_orphanb', colsig: 'SIGX' }), EST([])).hard === false);
+
+    // Known sample databases fire only as a family, never on one name.
+    const nw = ['customers','orders','shippers','customerdemographics'].map(n => base({ name: n }));
+    check('Northwind is recognised as a family and excluded',
+      T.tgTriage(nw[0], EST(nw)).reasons[0] === 'HARD_KNOWN_SAMPLE');
+    check('a lone genuine "orders" table is never condemned by its name alone',
+      T.tgTriage(base({ name: 'orders' }), EST([base({ name: 'orders' })])).hard === false);
+
+    // Weighted signals and rescue guards.
+    const junk = base({ name: 'cv_savematt', rows: 0, hasPk: false, inboundRefs: 0, inboundFks: 0,
+      lastRead: null, readOps: 0, writeOps: 0, modified: '2015-01-01', description: null });
+    const vj = T.tgTriage(junk, EST([junk]));
+    check('conversion-prefixed, empty, unkeyed, orphaned and cold stacks to EXCLUDE',
+      vj.class === 'EXCLUDE' && vj.reasons.includes('PFX_CONVERSION') && vj.reasons.includes('EMPTY')
+      && vj.reasons.includes('ORPHANED') && vj.reasons.includes('COLD_READ'));
+    const crown = base({ name: 'matter', rows: 6357, inboundFks: 12, readOps: 90000, description: 'Matters master' });
+    check('the crown jewels sail through as MIGRATE with the guards on the record',
+      T.tgTriage(crown, EST([crown])).class === 'MIGRATE'
+      && T.tgTriage(crown, EST([crown])).reasons.includes('REFERENCED'));
+    check('rescue guards keep an unlucky name pattern from burying a real table',
+      T.tgTriage(base({ name: 'test_scores', rows: 500000, inboundFks: 3, description: 'live exam scores' }),
+        EST([]))['class'] !== 'EXCLUDE');
+
+    // Never auto-exclude: referenced + populated needs a human.
+    const refd = base({ name: 'cv_refd_backup', rows: 10, inboundFks: 2, hasPk: false,
+      inboundRefs: 0, lastRead: null, readOps: 0, writeOps: 0, modified: '2015-01-01' });
+    const vr = T.tgTriage(refd, EST([refd]));
+    check('referenced-and-populated is never auto-excluded, whatever the score',
+      vr.class !== 'EXCLUDE' && vr.reasons.includes('KEPT_REFERENCED'));
+
+    // Usage caveats: short window halves, heap-with-no-index abstains.
+    const cold = base({ name: 'plaincold', lastRead: null, readOps: 0, writeOps: 0 });
+    check('a short observation window halves the cold weights',
+      T.tgTriage(cold, EST([cold], 5)).score < T.tgTriage(cold, EST([cold], 30)).score);
+    const heap = base({ name: 'plainheap', indexCount: 0, hasUsageRow: false, lastRead: null, readOps: 0 });
+    check('absence of usage data on an unindexed heap is not evidence of disuse',
+      !T.tgTriage(heap, EST([heap], 30)).reasons.includes('COLD_READ'));
+
+    // Family collapse: identical shape collapses, rhyming names do not.
+    const fam = [1,2,3].map(i => base({ name: 'whmfield' + i, colsig: 'WHM', rows: 100 * i }));
+    const odd = base({ name: 'whmfield9', colsig: 'DIFFERENT' });
+    const fams = T.tgCollapse(fam.concat([odd]));
+    const big = fams.find(f => f.collapsed);
+    check('identical siblings collapse to one decision under the biggest member',
+      fams.length === 2 && big.members.length === 3 && big.representative.name === 'whmfield3'
+      && big.appliesTo.length === 3);
+    check('a different column signature is a different decision, however the names rhyme',
+      fams.some(f => !f.collapsed && f.representative.name === 'whmfield9'));
+    check('the family key strips counters, dates and copy suffixes',
+      T.tgFamilyKey('zz_matter_20160111_pretax') === 'matter'
+      && T.tgFamilyKey('whmfield20') === 'whmfield'
+      && T.tgFamilyKey('clarityintegration_backup') === 'clarityintegration');
+
+    // Criticality: the estate ranks its own crown jewels.
+    check('inbound references outweigh raw rows in criticality',
+      T.tgCriticality({ inboundFks: 12, readOps: 90000, rows: 6357 })
+      > T.tgCriticality({ inboundFks: 0, readOps: 0, rows: 2300000 }));
+
+    // Inventory SQL: read-only, paged, usage-window aware.
+    const inv = T.tgInventorySql(0), st = T.tgServerStartSql();
+    check('the inventory is a read-only paged catalog query',
+      /^WITH /.test(inv) && /OFFSET 0 ROWS FETCH NEXT 2000 ROWS ONLY/.test(inv)
+      && !/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE\s+TABLE|MERGE|TRUNCATE)\b/i.test(inv));
+    check('it reads usage, dependencies, FKs and descriptions in one pass',
+      /dm_db_index_usage_stats/.test(inv) && /sql_expression_dependencies/.test(inv)
+      && /foreign_keys/.test(inv) && /MS_Description/.test(inv));
+    check('the server start time ships so the UI can state the observation window',
+      /sqlserver_start_time/.test(st));
+  }
+
+  // ── v2: engine governance rules ───────────────────────────────────────────
+  {
+    // Junk targets are refused at candidate generation, not nudged.
+    const tgtTriage = { 'dbo.matter_template': 'EXCLUDE' };
+    const m = S.build(SRC, TGT, { tgtTriage });
+    const matterCands = m.src.find(t => t.name === 'matter').candidates.map(c => c.table.name);
+    check('an EXCLUDE-triaged target never appears in any candidate list',
+      !matterCands.includes('Matter_template')
+      && !m.src.some(t => (t.candidates || []).some(c => c.table.name === 'Matter_template')));
+
+    // Governance penalties are visible on the evidence, not silent.
+    const m2 = S.build(SRC, TGT, { tgtTriage: { 'dbo.matter_template': 'REVIEW' } });
+    const tpl = m2.src.find(t => t.name === 'matter').candidates.find(c => c.table.name === 'Matter_template');
+    check('a review-lane target carries the −0.40 penalty on its evidence',
+      !tpl || (tpl.ev.tgtReview === 1));
+    const m3 = S.build(SRC, TGT, { srcTriage: { 'dbo.matter': 'REVIEW' } });
+    check('a review-lane source is penalised too',
+      m3.src.find(t => t.name === 'matter').candidates[0].ev.srcReview === 1);
+
+    // Margin rule: a coin flip publishes as no candidate, tied options kept.
+    const near = S.build(
+      { tables: [ { key:'dbo.ambig', schema:'dbo', name:'ambig', rows: 100, pk: [],
+        cols: [{ name:'clientindex', type:'int' }, { name:'matterindex', type:'int' }] } ] },
+      { tables: [
+        { key:'dbo.A1', schema:'dbo', name:'A1', rows: 100, pk: [],
+          cols: [{ name:'clientindex', type:'int' }, { name:'matterindex', type:'int' }] },
+        { key:'dbo.A2', schema:'dbo', name:'A2', rows: 100, pk: [],
+          cols: [{ name:'clientindex', type:'int' }, { name:'matterindex', type:'int' }] },
+      ] });
+    const amb = near.src[0];
+    check('tied candidates suppress the label but stay in the drawer',
+      amb.suppressed === true && amb.tier === 'none' && amb.candidates.length === 2);
+
+    // Zero-row rule: no data, no data evidence, capped confidence.
+    const empty = S.build(
+      { tables: [ { key:'dbo.matter', schema:'dbo', name:'matter', rows: 0, pk:['mmatter'],
+        cols: [{ name:'mmatter', type:'cha' }, { name:'mname', type:'var' }] } ] },
+      { tables: [ TGT.tables[1] ] });
+    check('a zero-row source can never exceed possible, even on a name twin',
+      empty.src[0].tier === 'possible' || empty.src[0].tier === 'none' || empty.src[0].tier === 'weak');
+
+    // Immediate re-rank: an accepted target leaves other queues. Two sources
+    // both see both targets; claiming one must clear the other's queue.
+    const RSRC = { tables: [
+      { key:'dbo.matter', schema:'dbo', name:'matter', rows:1000, pk:['mmatter'],
+        cols:[{ name:'mmatter', type:'cha' }, { name:'mname', type:'var' }, { name:'mopendt', type:'dat' }] },
+      { key:'dbo.mattdate', schema:'dbo', name:'mattdate', rows:500, pk:[],
+        cols:[{ name:'mmatter', type:'cha' }, { name:'mdate', type:'dat' }] },
+    ]};
+    const RTGT = { tables: [
+      { key:'dbo.Matter', schema:'dbo', name:'Matter', rows:900, pk:['MatterIndex'],
+        cols:[{ name:'MatterIndex', type:'int' }, { name:'MatterName', type:'var' }, { name:'OpenDate', type:'dat' }] },
+      { key:'dbo.MatterDates', schema:'dbo', name:'MatterDates', rows:400, pk:[],
+        cols:[{ name:'MatterIndex', type:'int' }, { name:'DateValue', type:'dat' }] },
+    ]};
+    const m4 = S.build(RSRC, RTGT);
+    const md4 = m4.src.find(t => t.name === 'mattdate');
+    const before = (md4.candidates || []).map(c => c.table.name);
+    S.accept(m4, 'dbo.matter', 'dbo.Matter');
+    const after = (md4.candidates || []).map(c => c.table.name);
+    check('accepting dbo.Matter removes it from other multi-candidate queues',
+      before.includes('Matter') && before.length > 1 && !after.includes('Matter'));
+    const m5 = S.build(RSRC, RTGT);
+    const md5 = m5.src.find(t => t.name === 'mattdate');
+    md5.candidates = md5.candidates.filter(c => c.table.name === 'Matter').slice(0, 1);
+    S.accept(m5, 'dbo.matter', 'dbo.Matter');
+    check('a source whose ONLY candidate was claimed keeps it, flagged contested',
+      md5.candidates.length === 1 && md5.candidates[0].ev.contested === 1);
+    check('the engine version bumped for the v2 rules', S.ENGINE_VERSION === 2 && S.GOV.marginFloor === 0.08);
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

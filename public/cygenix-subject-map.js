@@ -192,7 +192,17 @@ function tier(e) {
 
 // Bump when scoring, vocabulary or segmentation changes — cached models are
 // keyed on it so a stale build can never masquerade as the current engine.
-const ENGINE_VERSION = 1;
+// v2: triage-gated candidate pools, governance penalties, margin suppression,
+// zero-row confidence ceiling, accept-driven re-rank.
+const ENGINE_VERSION = 2;
+
+// Governance weights (v2 spec §6.3). Junk targets are REFUSED outright at
+// candidate generation; these penalties cover the survivors.
+const GOV = {
+  tgtReviewPenalty: 0.40,   // target is itself triaged as junk-ish
+  srcReviewPenalty: 0.10,   // the source table is under review
+  marginFloor: 0.08,        // below this, publish "no candidate", not a coin flip
+};
 
 /* A manual area assignment (the console's existing override path) is a fact,
    not an estimate: it is applied after profiling and never re-derived. */
@@ -208,6 +218,9 @@ function prepare(source, target, opts) {
   const src = source.tables.map(profile), tgt = target.tables.map(profile);
   applyOverrides(src, opts.srcOverrides);
   applyOverrides(tgt, opts.tgtOverrides);
+  // Triage classes ride on the tables: maps of lowercased key → class.
+  const tag = (list, m) => { for (const t of list) t.triage = (m && m[String(t.key).toLowerCase()]) || 'MIGRATE'; };
+  tag(src, opts.srcTriage); tag(tgt, opts.tgtTriage);
   [...src, ...tgt].forEach(t => { t._tri = trigrams(t.name); });
 
   const all = src.concat(tgt), cdf = new Map();
@@ -220,9 +233,13 @@ function prepare(source, target, opts) {
   }
   const cos = (a, b) => { let d = 0; for (const [c, x] of a._v) { const y = b._v.get(c); if (y) d += x * y; } return d / (a._n * b._n); };
 
-  /* candidates are searched inside the aligned area only — 12k targets → hundreds */
-  const byArea = new Map(); for (const t of tgt) { let a = byArea.get(t.area); if (!a) byArea.set(t.area, a = []); a.push(t); }
-  const nameIdx = new Map(); for (const t of tgt) { const k = t.name.toLowerCase(); let a = nameIdx.get(k); if (!a) nameIdx.set(k, a = []); a.push(t); }
+  /* Candidates are searched inside the aligned area only — 12k targets →
+     hundreds — and a target the triage EXCLUDED never enters a pool at all.
+     adverse_tbl → a GUID-suffixed SharedTempDB object was a "likely" under
+     v1; refusal at generation is the fix, not a ranking nudge. */
+  const pool = tgt.filter(t => t.triage !== 'EXCLUDE');
+  const byArea = new Map(); for (const t of pool) { let a = byArea.get(t.area); if (!a) byArea.set(t.area, a = []); a.push(t); }
+  const nameIdx = new Map(); for (const t of pool) { const k = t.name.toLowerCase(); let a = nameIdx.get(k); if (!a) nameIdx.set(k, a = []); a.push(t); }
   const floor = opts.cosFloor != null ? opts.cosFloor : 0.25;
   return { src, tgt, cos, byArea, nameIdx, floor, topN: opts.topN || 5 };
 }
@@ -249,10 +266,33 @@ function scoreOne(s, ctx) {
   for (const t of pool) { const c = ctx.cos(s, t); if (c < ctx.floor) continue; out.push({ table: t, ev: score(s, t, c) }); }
   for (const t of (ctx.nameIdx.get(s.name.toLowerCase()) || []))   // name twins always considered
     if (!out.some(o => o.table === t)) out.push({ table: t, ev: score(s, t, ctx.cos(s, t)) });
+  // Governance penalties (v2): a surviving-but-suspect target, or a source
+  // that is itself under review, drags the pair down — visibly, on the ev.
+  for (const o of out) {
+    if (o.table.triage === 'REVIEW') { o.ev.tgtReview = 1; o.ev.adj -= GOV.tgtReviewPenalty; }
+    if (s.triage === 'REVIEW') { o.ev.srcReview = 1; o.ev.adj -= GOV.srcReviewPenalty; }
+  }
   out.sort((a, b) => b.ev.adj - a.ev.adj);
   s.candidates = out.slice(0, ctx.topN);
-  s.tier = tier(s.candidates[0] && s.candidates[0].ev);
+  finalizeTier(s);
+}
+
+// Tier, margin rule and zero-row ceiling in one place, so a re-rank after an
+// accept goes through exactly the same gate as the initial scoring.
+function finalizeTier(s) {
   s.margin = s.candidates.length > 1 ? s.candidates[0].ev.adj - s.candidates[1].ev.adj : (s.candidates.length ? 1 : 0);
+  let t = tier(s.candidates[0] && s.candidates[0].ev);
+  s.suppressed = false;
+  // Zero-row rule: with no data there is no data evidence, and the ceiling
+  // says so. A confident label on an empty table is a bluff.
+  if (!(s.rows > 0) && (t === 'strong' || t === 'likely')) t = 'possible';
+  // Margin rule: a lead under the floor is a coin flip, and a coin flip
+  // presented as a recommendation costs more trust than an honest blank.
+  if (s.candidates.length > 1 && s.margin < GOV.marginFloor && t !== 'none' && t !== 'weak') {
+    s.suppressed = true;
+    t = 'none';
+  }
+  s.tier = t;
 }
 
 function assemble(ctx, spineParts) {
@@ -306,13 +346,27 @@ function buildAsync(source, target, opts, onProgress) {
   })();
 }
 
-/* 7 ── decisions. Accepting a pair is evidence: it locks the mapping and
-   promotes same-concept siblings of the accepted target in later ranking. */
+/* 7 ── decisions. Accepting a pair is evidence, twice over: it locks the
+   mapping, promotes same-concept siblings of the accepted target, and —
+   the immediate re-rank loop — removes the claimed target from every OTHER
+   undecided source's candidate list. One target rarely absorbs two source
+   tables; when it genuinely does, the analyst can still find it in the
+   drawer of the source it was removed from, because the removal recomputes
+   rank and tier but the decision record names what was claimed. A source
+   whose ONLY candidate was the claimed target keeps it (flagged contested)
+   rather than being silently blanked. */
 function accept(model, srcKey, tgtKey) {
   model.decisions[srcKey] = { target: tgtKey, at: Date.now(), by: 'analyst' };
   const t = model.tgt.find(x => x.key === tgtKey);
   if (t) for (const s of model.src) {
-    if (model.decisions[s.key] || s.primary !== t.primary) continue;
+    if (s.key === srcKey || model.decisions[s.key]) continue;
+    if (s.candidates && s.candidates.length > 1 && s.candidates.some(c => c.table.key === tgtKey)) {
+      s.candidates = s.candidates.filter(c => c.table.key !== tgtKey);
+      finalizeTier(s);
+    } else if (s.candidates && s.candidates.length === 1 && s.candidates[0].table.key === tgtKey) {
+      s.candidates[0].ev.contested = 1;
+    }
+    if (s.primary !== t.primary) continue;
     for (const c of s.candidates) if (c.table.schema === t.schema) c.ev.adj += 0.02;   // gentle nudge
     s.candidates.sort((a, b) => b.ev.adj - a.ev.adj);
   }
@@ -329,7 +383,7 @@ function coverage(model) {
   return { total, decided, classified, pctDecided: decided / total, pctClassified: classified / total };
 }
 
-const api = { build, buildAsync, accept, reject, coverage, segment, conceptsOf, hubs, profile, tier, AREA, RAW, W, ENGINE_VERSION };
+const api = { build, buildAsync, accept, reject, coverage, segment, conceptsOf, hubs, profile, tier, AREA, RAW, W, GOV, ENGINE_VERSION };
 g.SubjectMap = api;
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -562,8 +562,9 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-api.js?v=923ff2d8c9" defer></script>
 <script src="/cygenix-schema-graph.js?v=7342c9d73d" defer></script>
-<script src="/cygenix-subject-map.js?v=744aabf7bd" defer></script>
-<script src="/cygenix-subject-harvest.js?v=031797de0f" defer></script>
+<script src="/cygenix-subject-map.js?v=aaf7aadbd1" defer></script>
+<script src="/cygenix-subject-harvest.js?v=b15d4ee907" defer></script>
+<script src="/cygenix-subject-triage.js?v=259690e173" defer></script>
 <script src="/cygenix-infer-schema.js?v=c197ec85e0" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
@@ -871,12 +872,17 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
     <div id="am-v-queue" style="display:none">
       <div class="panel" style="margin-bottom:0.9rem;padding:0.7rem 0.9rem">
         <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem">
-          <span class="panel-title">Progress — measured in rows, not tables</span>
+          <span class="panel-title">Progress — weighted by criticality, not by junk</span>
           <span id="am-q-progress-txt" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
         </div>
         <div class="am-meter" style="height:6px"><i class="m-ok" id="am-q-progress-bar" style="width:0%"></i></div>
       </div>
       <div class="am-toolbar">
+        <div class="am-seg" role="group" aria-label="Triage lane">
+          <button class="active" id="am-lane-MIGRATE" onclick="amSetLane('MIGRATE')">Migrate <span class="n" id="am-lane-n-mig"></span></button>
+          <button id="am-lane-REVIEW" onclick="amSetLane('REVIEW')">Review <span class="n" id="am-lane-n-rev"></span></button>
+          <button id="am-lane-EXCLUDE" onclick="amSetLane('EXCLUDE')">Excluded <span class="n" id="am-lane-n-exc"></span></button>
+        </div>
         <div class="am-search" style="margin-left:0"><input id="am-q-q" placeholder="Find a source table…" aria-label="Find a source table" oninput="amQFilterChanged()"></div>
         <select id="am-q-area" class="am-select" onchange="amQFilterChanged()" aria-label="Subject area filter"><option value="">All subject areas</option></select>
         <select id="am-q-tier" class="am-select" onchange="amQFilterChanged()" aria-label="Confidence filter">
@@ -3538,6 +3544,10 @@ const AM = {
   decisions: {},             // srcKey → {target|null, at, by}
   qQ: '', qArea: '', qTier: '', qState: 'open', qSel: 0, qOpen: {},
   spQ: '', spF: '',
+  lane: 'MIGRATE',           // 'MIGRATE' | 'REVIEW' | 'EXCLUDE' — the triage lanes
+  triage: null,              // { src:{byKey,windowDays,inventoryError}, tgt:{...} }
+  harv: {},                  // harvest docs per side (freshness, inventory)
+  families: null,            // family collapse over the source estate
 };
 
 // ── User area assignments ─────────────────────────────────────────────────
@@ -3611,6 +3621,7 @@ function amLinkFor(t){
 function amToSide(graph){
   return { tables: (graph && graph.ok ? graph.tables : []).map(t => ({
     key: t.key, schema: t.schema, name: t.name,
+    colsig: t.colsig || '',
     rows: typeof t.rowCount === 'number' ? t.rowCount : 0,
     pk: t.primaryKeys || [],
     cols: t.colsig
@@ -3679,6 +3690,114 @@ function amCalibrationNote(strongCount, totalCount){
 const amFmt = (n) => Number(n || 0).toLocaleString('en-GB');
 const amEncKey = (k) => encodeURIComponent(k).replace(/'/g, '%27');
 
+// ── Triage (v2): MIGRATE / REVIEW / EXCLUDE lanes ─────────────────────────
+// The ruleset lives in cygenix-subject-triage.js; this wires it to the
+// harvested inventory. Junk is GATED out of the queue here, not nudged — and
+// every hidden object keeps its reason codes and a one-click Restore,
+// because reviewers who cannot audit the hiding will not trust it.
+const AM_TRIAGE_OVERRIDE_KEY = 'cygenix_triage_overrides';
+function amTriageOverrides(side, database){
+  try {
+    const all = JSON.parse(localStorage.getItem(AM_TRIAGE_OVERRIDE_KEY) || '{}');
+    return all[side + '|' + (database || 'unknown')] || {};
+  } catch { return {}; }
+}
+function amSetTriageOverride(side, database, tableKey, value){
+  try {
+    const all = JSON.parse(localStorage.getItem(AM_TRIAGE_OVERRIDE_KEY) || '{}');
+    const k = side + '|' + (database || 'unknown');
+    if (!all[k]) all[k] = {};
+    if (value == null) delete all[k][tableKey.toLowerCase()];
+    else all[k][tableKey.toLowerCase()] = value;
+    localStorage.setItem(AM_TRIAGE_OVERRIDE_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+// Run the ruleset over one side. The observation window for usage signals
+// comes from the server's own start time — dm_db_index_usage_stats resets on
+// restart, and a short window halves the cold-table weights.
+function amTriageSide(side, graph, doc, T){
+  const over = amTriageOverrides(side, graph.database);
+  const objs = graph.tables.map(t => {
+    const h = (doc && doc.tables && (doc.tables[t.key] || doc.tables[t.schema + '.' + t.name])) || {};
+    const inv = h.inv || {};
+    return {
+      key: t.key, name: t.name, schema: t.schema,
+      kind: inv.kind || t.kind || 'table',
+      rows: inv.rows != null ? inv.rows : (t.rowCount || 0),
+      cols: inv.cols || (t.colsig ? t.colsig.split(',').length : 0),
+      colsig: t.colsig || '',
+      hasPk: !!inv.hasPk || (t.primaryKeys || []).length > 0,
+      hasUnique: !!inv.hasUnique,
+      indexCount: inv.indexCount || 0,
+      inboundRefs: inv.inboundRefs || 0, inboundFks: inv.inboundFks || 0,
+      lastRead: inv.lastRead || null, modified: inv.modified || null,
+      readOps: inv.readOps || 0, writeOps: inv.writeOps || 0,
+      hasUsageRow: !!inv.hasUsageRow,
+      description: inv.description || null,
+    };
+  });
+  const windowDays = doc && doc.serverStart
+    ? Math.max(0, Math.floor((Date.now() - new Date(doc.serverStart).getTime()) / 86400000)) : 0;
+  const est = T.tgEstate(objs, { usageWindowDays: windowDays, now: Date.now() });
+  const byKey = {};
+  for (const o of objs){
+    let v = T.tgTriage(o, est);
+    // A human restored it: their decision is final until they change it.
+    if (over[o.key.toLowerCase()] === 'MIGRATE' && v.class !== 'MIGRATE'){
+      v = Object.assign({}, v, { class: 'MIGRATE', restored: true });
+    }
+    byKey[o.key.toLowerCase()] = Object.assign(v, { crit: T.tgCriticality(o) });
+  }
+  return { byKey, windowDays, inventoryError: (doc && doc.inventoryError) || '' };
+}
+function amTriageOf(t){
+  const side = AM.triage && AM.triage.src;
+  return (side && side.byKey[t.key.toLowerCase()]) || { class: 'MIGRATE', score: 0, reasons: [], crit: 1 };
+}
+function amTgtTriageMap(){
+  const out = {};
+  const side = AM.triage && AM.triage.tgt;
+  if (side) for (const [k, v] of Object.entries(side.byKey)) out[k] = v.class;
+  return out;
+}
+function amSrcTriageMap(){
+  const out = {};
+  const side = AM.triage && AM.triage.src;
+  if (side) for (const [k, v] of Object.entries(side.byKey)) out[k] = v.class;
+  return out;
+}
+
+// Family collapse (v2 §4): whmfield1..20 is ONE decision. Computed over the
+// engine's source list (which carries colsig through the adapter), keyed by
+// representative, members recorded so a decision propagates — and the
+// propagation is recorded on each member's decision.
+function amFamilies(T, srcList){
+  const fams = T.tgCollapse(srcList);
+  const byRep = new Map(), memberOf = new Map();
+  for (const f of fams){
+    byRep.set(f.representative.key, f);
+    for (const m of f.members) memberOf.set(m.key, f.representative.key);
+  }
+  return { list: fams, byRep, memberOf };
+}
+
+// Criticality-weighted progress (v2 UI #5): the estate ranks its own crown
+// jewels by inbound FKs and read traffic. Rows become the secondary figure —
+// a 2.3M-row staging table must not be worth 700× dbo.matter on the bar.
+function amCritProgress(srcList, decidedOf, triageOf){
+  let tot = 0, done = 0, totRows = 0, doneRows = 0, totN = 0, doneN = 0;
+  for (const t of srcList){
+    const tr = triageOf(t);
+    if (tr.class !== 'MIGRATE') continue;
+    const c = tr.crit || 1;
+    tot += c; totRows += t.rows; totN++;
+    if (decidedOf(t)){ done += c; doneRows += t.rows; doneN++; }
+  }
+  return { pct: tot ? Math.round(done / tot * 100) : 0,
+           doneRows, totRows, doneN, totN };
+}
+
 // ── Ensure: harvest both sides, build the model off the main thread ───────
 function amBuildUi(show, title, stage, pct){
   const box = $('am-build');
@@ -3698,7 +3817,7 @@ function amBuildFail(msg){
 
 async function amEnsure(force){
   if (AM.loading) return;
-  if (!window.SubjectMap || !window.CygenixSubjectHarvest){
+  if (!window.SubjectMap || !window.CygenixSubjectHarvest || !window.CygenixSubjectTriage){
     amBuildFail('The subject-map engine did not load. Hard-refresh the page.');
     return;
   }
@@ -3731,11 +3850,21 @@ async function amEnsure(force){
         database: graph.database,
         cacheKey: side + '|' + (graph.database || 'unknown'),
         force: !!force,
+        triage: window.CygenixSubjectTriage,
         onProgress: (p) => amBuildUi(true, 'Harvesting ' + (side === 'src' ? 'source' : 'target') + ' metadata…',
           p.stage + ' · ' + amFmt(p.n), side === 'src' ? 15 : 35),
       });
       H.shApply(graph, h);
+      AM.harv[side] = h;
     }
+
+    // Triage both sides BEFORE scoring: excluded targets never enter a
+    // candidate pool, and the source lanes decide what is queue work at all.
+    const T = window.CygenixSubjectTriage;
+    AM.triage = {
+      src: amTriageSide('src', sg, AM.harv.src, T),
+      tgt: amTriageSide('tgt', tg, AM.harv.tgt, T),
+    };
 
     // Adapter + the loud guard, then the chunked build with the user's
     // existing area corrections pinned.
@@ -3744,6 +3873,8 @@ async function amEnsure(force){
     const model = await SubjectMap.buildAsync(srcSide, tgtSide, {
       srcOverrides: amOverrides('src', sg.database),
       tgtOverrides: amOverrides('tgt', tg.database),
+      srcTriage: amSrcTriageMap(),
+      tgtTriage: amTgtTriageMap(),
     }, (p) => {
       if (p.stage === 'scoring') amBuildUi(true, 'Scoring candidates…',
         amFmt(p.done) + ' of ' + amFmt(p.total) + ' source tables', 50 + (p.done / (p.total || 1)) * 48);
@@ -3756,6 +3887,8 @@ async function amEnsure(force){
     AM.links = amMapLinks(CygenixSchemaGraph.savedMaps());
     AM.decisions = amLoadDecisions();
     model.decisions = AM.decisions;
+    AM.families = amFamilies(T, model.src);
+    AM.srcByKey = new Map(model.src.map(x => [x.key, x]));
     AM.ready = true;
     amBuildUi(false);
     amFillAreaSelect();
@@ -3775,13 +3908,22 @@ async function amRebuildModel(){
   AM.loading = true;
   try {
     amBuildUi(true, 'Reclassifying…', '', 40);
+    const T = window.CygenixSubjectTriage;
+    AM.triage = {
+      src: amTriageSide('src', AM.srcGraph, AM.harv.src, T),
+      tgt: amTriageSide('tgt', AM.tgtGraph, AM.harv.tgt, T),
+    };
     const model = await SubjectMap.buildAsync(amToSide(AM.srcGraph), amToSide(AM.tgtGraph), {
       srcOverrides: amOverrides('src', AM.srcGraph.database),
       tgtOverrides: amOverrides('tgt', AM.tgtGraph.database),
+      srcTriage: amSrcTriageMap(),
+      tgtTriage: amTgtTriageMap(),
     }, (p) => { if (p.stage === 'scoring') amBuildUi(true, 'Reclassifying…', amFmt(p.done) + ' / ' + amFmt(p.total), 40 + (p.done / (p.total || 1)) * 58); });
     AM.model = model;
     AM.decisions = amLoadDecisions();
     model.decisions = AM.decisions;
+    AM.families = amFamilies(T, model.src);
+    AM.srcByKey = new Map(model.src.map(x => [x.key, x]));
     amBuildUi(false);
     amRender();
   } catch (e) { amBuildFail((e && e.message) || String(e)); }
@@ -3811,6 +3953,20 @@ function amRenderBar(){
   };
   meta(AM.srcGraph, 'am-src-meta', 'am-src-db');
   meta(AM.tgtGraph, 'am-tgt-meta', 'am-tgt-db');
+  // Freshness: stale metadata should say so where the reviewer looks, and a
+  // short usage window changes how much the cold-table signals can be trusted.
+  const fresh = (side, el) => {
+    const d = AM.harv[side], m = $(el);
+    if (!d || !m) return;
+    const h = Math.round((Date.now() - d.fetchedAt) / 3600000);
+    let note = ' · metadata ' + (h < 1 ? 'fresh' : h + 'h ago');
+    const tr = AM.triage && AM.triage[side];
+    if (tr && tr.windowDays > 0) note += ' · usage over ' + tr.windowDays + 'd';
+    if (tr && tr.inventoryError) note += ' · usage signals unavailable';
+    m.textContent += note;
+  };
+  fresh('src', 'am-src-meta');
+  fresh('tgt', 'am-tgt-meta');
 }
 
 function amAreasWithTargets(){
@@ -3824,9 +3980,13 @@ function amRender(){
   const m = AM.model;
   if (!m) return;
   const link = (t) => amLinkFor(t);
-  const sum = amRowsSummary(m.src, AM.decisions, link, amAreasWithTargets());
-  const tiers = amTierCounts(m.src);
-  const unclassified = m.src.filter(t => t.area === 'Unclassified');
+  // Triage decides what is in the migration at all; the reconciliation runs
+  // over the in-scope estate and the excluded remainder gets its own tile —
+  // gated, counted, and restorable, never silently gone.
+  const inScope = m.src.filter(t => amTriageOf(t).class !== 'EXCLUDE');
+  const excluded = m.src.filter(t => amTriageOf(t).class === 'EXCLUDE');
+  const sum = amRowsSummary(inScope, AM.decisions, link, amAreasWithTargets());
+  const tiers = amTierCounts(inScope);
 
   const kpis = $('am-kpis');
   if (kpis) kpis.innerHTML =
@@ -3836,13 +3996,15 @@ function amRender(){
     + '<div class="am-kpi"><div class="k-lbl">Rows in a shared subject area</div>'
     + '<div class="k-val">' + amFmt(sum.shared) + '</div>'
     + '<div class="k-sub">' + sum.sharedTables + ' tables awaiting a decision. Decided + shared + no home = '
-    + amFmt(sum.decided + sum.shared + sum.noHome) + ' — the whole estate, exactly.</div></div>'
+    + amFmt(sum.decided + sum.shared + sum.noHome) + ' — the in-scope estate, exactly.</div></div>'
     + '<div class="am-kpi' + (sum.noHome ? ' bad' : '') + '"><div class="k-lbl">Rows with no home</div>'
     + '<div class="k-val">' + amFmt(sum.noHome) + '</div>'
     + '<div class="k-sub">' + sum.noHomeTables + ' tables in areas with no target-side content</div></div>'
-    + '<div class="am-kpi' + (unclassified.length ? ' warn' : '') + '"><div class="k-lbl">Unclassified source</div>'
-    + '<div class="k-val">' + unclassified.length + '<small>tables</small></div>'
-    + '<div class="k-sub">' + (unclassified.length ? amFmt(unclassified.reduce((n, t) => n + t.rows, 0)) + ' rows the vocabulary could not place' : 'Everything classified') + '</div></div>';
+    + '<div class="am-kpi' + (excluded.length ? ' warn' : '') + '"><div class="k-lbl">Excluded by triage</div>'
+    + '<div class="k-val">' + excluded.length + '<small>tables</small></div>'
+    + '<div class="k-sub">' + (excluded.length
+        ? amFmt(excluded.reduce((n, t) => n + t.rows, 0)) + ' rows gated with reason codes — audit them in the Excluded lane'
+        : 'Nothing gated') + '</div></div>';
 
   if (AM.sub === 'areas') amRenderAreas();
   else if (AM.sub === 'spine') amRenderSpine();
@@ -3941,8 +4103,22 @@ function amDecisionOf(t){
   const l = amLinkFor(t);
   return l ? { target: l, by: 'saved map' } : null;
 }
+function amFamilyOf(t){
+  return AM.families ? AM.families.byRep.get(t.key) : null;
+}
 function amQueueList(){
+  const memberOf = AM.families ? AM.families.memberOf : new Map();
   return AM.model.queue.filter(t => {
+    const tr = amTriageOf(t);
+    if ((tr.class || 'MIGRATE') !== AM.lane) return false;
+    // Family collapse: only the representative renders; a decision on it
+    // covers every sibling. A member surfaces on its own only when its lane
+    // differs from its representative's.
+    const rep = memberOf.get(t.key);
+    if (rep && rep !== t.key){
+      const repT = AM.srcByKey && AM.srcByKey.get(rep);
+      if (repT && amTriageOf(repT).class === tr.class) return false;
+    }
     const d = amDecisionOf(t);
     if (AM.qState === 'open' && d) return false;
     if (AM.qState === 'done' && !d) return false;
@@ -3951,9 +4127,32 @@ function amQueueList(){
       const tier = t.tier === 'weak' ? 'none' : t.tier;
       if (AM.qTier === 'none' ? (t.candidates || []).length > 0 : tier !== AM.qTier) return false;
     }
-    if (AM.qQ && !t.name.toLowerCase().includes(AM.qQ) && !t.key.toLowerCase().includes(AM.qQ)) return false;
+    if (AM.qQ){
+      const fam = amFamilyOf(t);
+      const hay = t.name.toLowerCase() + '|' + t.key.toLowerCase()
+        + (fam ? '|' + fam.members.map(m => m.name.toLowerCase()).join('|') : '');
+      if (!hay.includes(AM.qQ)) return false;
+    }
     return true;
   });
+}
+function amSetLane(l){
+  AM.lane = l;
+  AM.qSel = 0;
+  for (const k of ['MIGRATE', 'REVIEW', 'EXCLUDE']){
+    const b = $('am-lane-' + k);
+    if (b) b.classList.toggle('active', k === l);
+  }
+  amRenderQueue();
+}
+// Reason chips: the audit trail for every triage verdict. A reviewer must be
+// able to ask "why was this hidden?" and get the codes, not a shrug.
+function amReasonChips(tr, cap){
+  const list = (tr.reasons || []).slice(0, cap || 4);
+  const extra = (tr.reasons || []).length - list.length;
+  return list.map(r => '<span class="am-key" title="triage signal">' + esc(r) + '</span>').join(' ')
+    + (extra > 0 ? ' <span class="am-key">+' + extra + '</span>' : '')
+    + (tr.restored ? ' <span class="am-key" style="color:var(--green)">restored</span>' : '');
 }
 const AM_QUEUE_CAP = 400;
 
@@ -3968,15 +4167,32 @@ function amRenderQueue(){
   const host = $('am-queue');
   if (!host || !AM.model) return;
 
-  // Progress in rows, not tables — deciding the first dozen biggest tables
-  // moves this meter more than a hundred small ones, which is the point.
-  const link = (t) => amLinkFor(t);
-  const sum = amRowsSummary(AM.model.src, AM.decisions, link, amAreasWithTargets());
-  const pct = sum.total ? Math.round(sum.decided / sum.total * 100) : 0;
+  // Progress weighted by criticality — the estate ranks its own crown jewels
+  // by inbound references and read traffic. Rows are the secondary figure:
+  // a bar that rewards deciding a 2.3M-row staging table over dbo.matter is
+  // rewarding junk.
+  const prog = amCritProgress(AM.model.src, (t) => !!amDecisionOf(t), amTriageOf);
   const pt = $('am-q-progress-txt'), pb = $('am-q-progress-bar');
-  if (pt) pt.textContent = amFmt(sum.decided) + ' of ' + amFmt(sum.total) + ' rows decided (' + pct + '%) · '
-    + sum.decidedTables + ' tables';
-  if (pb) pb.style.width = pct + '%';
+  if (pt) pt.textContent = prog.pct + '% of weighted criticality decided · '
+    + prog.doneN + ' of ' + prog.totN + ' migrate-lane tables · rows '
+    + amFmt(prog.doneRows) + ' of ' + amFmt(prog.totRows);
+  if (pb) pb.style.width = prog.pct + '%';
+
+  // Lane counts: representatives only, so the numbers match the rows shown.
+  const laneCount = { MIGRATE: 0, REVIEW: 0, EXCLUDE: 0 };
+  const memberOf = AM.families ? AM.families.memberOf : new Map();
+  for (const t of AM.model.src){
+    const rep = memberOf.get(t.key);
+    if (rep && rep !== t.key){
+      const repT = AM.srcByKey && AM.srcByKey.get(rep);
+      if (repT && amTriageOf(repT).class === amTriageOf(t).class) continue;
+    }
+    laneCount[amTriageOf(t).class] = (laneCount[amTriageOf(t).class] || 0) + 1;
+  }
+  const setLaneN = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  setLaneN('am-lane-n-mig', laneCount.MIGRATE);
+  setLaneN('am-lane-n-rev', laneCount.REVIEW);
+  setLaneN('am-lane-n-exc', laneCount.EXCLUDE);
 
   const list = amQueueList();
   if (AM.qSel >= list.length) AM.qSel = Math.max(0, list.length - 1);
@@ -3985,27 +4201,38 @@ function amRenderQueue(){
   host.innerHTML = shown.map((t, i) => {
     const d = amDecisionOf(t);
     const enc = amEncKey(t.key);
+    const tr = amTriageOf(t);
+    const fam = amFamilyOf(t);
+    const famN = fam && fam.collapsed ? fam.members.length - 1 : 0;
     const top = (t.candidates || [])[0];
     const open = !!AM.qOpen[t.key];
-    const headRight = d
+    const suppressed = !!t.suppressed;
+    const headRight = AM.lane === 'EXCLUDE'
+      ? '<span class="am-margin">junk ' + (tr.hard ? '1.00' : Number(tr.score).toFixed(2)) + '</span>' + amReasonChips(tr, 3)
+      : (d
       ? (d.target
           ? '<span class="am-status ok">✓ ' + esc(d.target) + (d.by === 'saved map' ? ' · saved map' : '') + '</span>'
           : '<span class="am-status triage">⌫ no home — rejected</span>')
-      : (top
+      : (suppressed
+          ? '<span class="am-status triage" title="Top candidates are tied — margin under 0.08. The drawer lists them.">≈ no candidate — tied</span>'
+          : (top
           ? '<span class="am-cand-top">' + esc(top.table.key) + '</span>'
             + amTierChip(t.tier) + '<span class="am-margin" title="Lead over the second candidate">+'
             + (Math.round((t.margin || 0) * 100) / 100).toFixed(2) + '</span>'
-          : amTierChip('none'));
+          : amTierChip('none'))));
     return '<div class="am-q-row' + (i === AM.qSel ? ' sel' : '') + (open ? ' open' : '') + '" data-key="' + esc(t.key) + '">'
       + '<div class="am-q-head" onclick="amQClick(' + i + ',\'' + enc + '\')">'
       +   '<span class="am-chev">▶</span>'
       +   '<span class="am-tname">' + esc(t.name) + '</span>'
+      +   (famN ? '<span class="am-key" title="' + esc(fam.members.map(m => m.name).join(', '))
+          + '">+' + famN + ' identical</span>' : '')
       +   '<span class="am-tschema">' + esc(t.schema) + '</span>'
       +   '<span class="am-area-chip">' + esc(t.area) + (t.areaSource === 'user' ? ' · user' : '') + '</span>'
+      +   (AM.lane === 'REVIEW' ? '<span style="min-width:0;overflow:hidden">' + amReasonChips(tr, 3) + '</span>' : '')
       +   '<span class="am-trows">' + amFmt(t.rows) + ' rows</span>'
       +   '<span class="am-q-right">' + headRight + '</span>'
       + '</div>'
-      + (open ? amQBody(t, d, enc) : '')
+      + (open ? (AM.lane === 'EXCLUDE' ? amQBodyExcluded(t, tr, enc) : amQBody(t, d, enc, tr)) : '')
       + '</div>';
   }).join('') || '<div class="am-empty-col" style="padding:1.6rem">Nothing matches this filter.</div>';
 
@@ -4015,8 +4242,31 @@ function amRenderQueue(){
   }
 }
 
-function amQBody(t, d, enc){
+// The Excluded lane's drawer: the full reason list and the way back. Restore
+// is the audit promise — a hidden object is one click from visible, and the
+// restore persists per side and database.
+function amQBodyExcluded(t, tr, enc){
+  return '<div class="am-q-body">'
+    + '<div style="font-size:11.5px;color:var(--text2);margin-bottom:0.4rem">Triage verdict: <b>'
+    + (tr.hard ? 'hard exclude' : 'junk score ' + Number(tr.score).toFixed(2)) + '</b></div>'
+    + '<div style="margin-bottom:0.5rem">' + amReasonChips(tr, 99) + '</div>'
+    + '<button class="btn" style="padding:2px 9px;font-size:10.5px" onclick="amRestoreObject(\'' + enc + '\')">↩ Restore to the migrate lane</button>'
+    + '</div>';
+}
+function amRestoreObject(encKey){
+  const key = decodeURIComponent(encKey);
+  amSetTriageOverride('src', AM.srcGraph && AM.srcGraph.database, key, 'MIGRATE');
+  amRebuildModel();
+}
+
+function amQBody(t, d, enc, tr){
   const cands = (t.candidates || []).slice(0, 3);
+  const suppressedNote = t.suppressed
+    ? '<div style="font-size:11px;color:var(--text3);margin-bottom:0.4rem">Top candidates are within 0.08 of each other — a coin flip, not a recommendation. The tied options:</div>'
+    : '';
+  const reviewNote = tr && tr.class === 'REVIEW'
+    ? '<div style="margin-bottom:0.4rem">' + amReasonChips(tr, 99) + '</div>'
+    : '';
   const areaBtn =
       '<span class="am-pop-wrap"><button class="btn" style="padding:2px 8px;font-size:10.5px" onclick="amTogglePop(event,this)">Area: '
     + esc(t.area) + ' ▾</button>' + amAreaPop(enc) + '</span>';
@@ -4034,6 +4284,7 @@ function amQBody(t, d, enc){
       + '</div></div>';
   }
   return '<div class="am-q-body">'
+    + reviewNote + suppressedNote
     + (cands.length ? cands.map((c, i) =>
         '<div class="am-cand">'
         + '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.3rem">'
@@ -4041,6 +4292,8 @@ function amQBody(t, d, enc){
         + '<span class="am-tschema">' + amFmt(c.table.rows) + ' rows · ' + (c.table.cols || []).length + ' cols</span>'
         + (c.ev.exact ? '<span class="am-key">name twin</span>' : '')
         + (c.ev.decoy ? '<span class="am-key" style="color:var(--amber)">decoy?</span>' : '')
+        + (c.ev.tgtReview ? '<span class="am-key" style="color:var(--amber)" title="The target itself looks like junk — scored with a −0.40 penalty">target junk −0.40</span>' : '')
+        + (c.ev.contested ? '<span class="am-key" style="color:var(--amber)" title="Another source table was accepted into this target">contested</span>' : '')
         + '<span style="margin-left:auto;font-family:var(--mono);font-size:10.5px">' + c.ev.adj.toFixed(2) + '</span>'
         + '<button class="btn btn-primary" style="padding:2px 9px;font-size:10.5px" onclick="amAccept(\'' + enc + '\',\'' + amEncKey(c.table.key) + '\')">✓ Accept</button>'
         + '</div>' + amEvBars(c.ev) + '</div>').join('')
@@ -4067,11 +4320,25 @@ function amQClick(i, enc){
   AM.qOpen[key] = !AM.qOpen[key];
   amRenderQueue();
 }
+// A decision on a family representative covers every identical sibling —
+// twenty whmfield* tables are ONE decision — and each propagated record
+// names where it came from, so the audit trail shows the inheritance.
+function amPropagateFamily(srcKey, mk){
+  const fam = AM.families && AM.families.byRep.get(srcKey);
+  if (!fam || !fam.collapsed) return;
+  for (const memberKey of fam.appliesTo){
+    if (memberKey === srcKey || AM.decisions[memberKey]) continue;
+    const rec = Object.assign(mk(), { via: 'family', propagatedFrom: srcKey });
+    AM.model.decisions[memberKey] = rec;
+    amSaveDecision(memberKey, rec);
+  }
+}
 function amAccept(encSrc, encTgt){
   const srcKey = decodeURIComponent(encSrc), tgtKey = decodeURIComponent(encTgt);
   SubjectMap.accept(AM.model, srcKey, tgtKey);
   AM.decisions = AM.model.decisions;
   amSaveDecision(srcKey, AM.decisions[srcKey]);
+  amPropagateFamily(srcKey, () => ({ target: tgtKey, at: Date.now(), by: 'analyst' }));
   AM.qOpen[srcKey] = false;
   amRender();
 }
@@ -4080,6 +4347,7 @@ function amReject(encSrc){
   SubjectMap.reject(AM.model, srcKey);
   AM.decisions = AM.model.decisions;
   amSaveDecision(srcKey, AM.decisions[srcKey]);
+  amPropagateFamily(srcKey, () => ({ target: null, at: Date.now(), by: 'analyst' }));
   AM.qOpen[srcKey] = false;
   amRender();
 }
@@ -4171,6 +4439,15 @@ function amRenderMethod(tiers){
     + '<div class="am-ev-bar"><i style="width:' + Math.round(v * 100) + '%"></i></div>'
     + '<b>' + v.toFixed(2) + '</b></div>').join('');
 
+  const gov = $('am-method-weights');
+  if (gov) gov.innerHTML += '<div style="font-size:11px;color:var(--text2);line-height:1.6;margin-top:0.6rem">'
+    + '<b>Governance rules (v2)</b> — junk targets are refused at candidate generation, never merely penalised; '
+    + 'a surviving review-lane target costs −' + SubjectMap.GOV.tgtReviewPenalty.toFixed(2)
+    + ' and a review-lane source −' + SubjectMap.GOV.srcReviewPenalty.toFixed(2) + '. '
+    + 'A lead under ' + SubjectMap.GOV.marginFloor.toFixed(2)
+    + ' publishes as <i>no candidate</i> — a coin flip is not a recommendation. '
+    + 'A zero-row table can never exceed <i>possible</i>: with no data there is no data evidence.</div>';
+
   const c = $('am-method-calib');
   if (c && tiers){
     const warn = amCalibrationNote(tiers.tables.strong, AM.model.src.length);
@@ -4187,11 +4464,15 @@ function amRenderMethod(tiers){
 function amExport(){
   if (!AM.model) return;
   const csvCell = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const head = 'table,schema,rows,area,area_source,tier,top_candidate,score,margin,decision,decided_by\n';
+  const head = 'table,schema,rows,area,area_source,triage,triage_reasons,family_rep,tier,top_candidate,score,margin,decision,decided_by\n';
   const body = AM.model.queue.map(t => {
     const d = amDecisionOf(t);
+    const tr = amTriageOf(t);
+    const rep = AM.families && AM.families.memberOf.get(t.key);
     const top = (t.candidates || [])[0];
-    return [t.name, t.schema, t.rows, t.area, t.areaSource || 'derived', t.tier,
+    return [t.name, t.schema, t.rows, t.area, t.areaSource || 'derived',
+      tr.class, (tr.reasons || []).join(' '), rep && rep !== t.key ? rep : '',
+      t.tier,
       top ? top.table.key : '', top ? top.ev.adj.toFixed(3) : '', (t.margin || 0).toFixed(3),
       d ? (d.target || 'rejected') : '', d ? (d.by || '') : ''].map(csvCell).join(',');
   }).join('\n');
