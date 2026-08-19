@@ -584,131 +584,122 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     /onclick="smZoom/.test(html) && /onclick="smFit\(\)"/.test(html) && /onclick="smAutoLayout/.test(html));
 }
 
-// ── Migration map (Area ledger) ────────────────────────────────────────────
-// The fourth view pairs the two estates by business subject area. The logic
-// under test is the shipped code: the Data map's classifier plus the Migration
-// map's status/coverage/linking functions, evaluated together in a sandbox.
+// ── Migration map (semantic subject mapper) ────────────────────────────────
+// The classifier is now SubjectMap (tested in subject-map.test.js). These
+// tests run the PAGE's own logic — adapter, guard, honest arithmetic — from
+// the shipped source, plus the wiring pins that keep the firewall intact.
 {
-  const clsStart = html.indexOf('const DA_DOMAIN_RULES');
-  const clsEnd   = html.indexOf('function daContentOf');
-  const amStart  = html.indexOf('// ═══ VIEW 1.7 — MIGRATION MAP');
-  const amEnd    = html.indexOf('async function amEnsure');
-  if (clsStart < 0 || amStart < 0 || amEnd < 0){
+  const amStart = html.indexOf('// ═══ VIEW 1.7 — MIGRATION MAP');
+  const amEnd   = html.indexOf('// ── Ensure: harvest both sides');
+  if (amStart < 0 || amEnd < 0){
     console.log('  FAIL  could not locate the migration-map block'); fail++;
   } else {
     const sb = { JSON, Math, String, Number, Array, Object, Map, Set, console,
       localStorage: { _d:{}, getItem(k){ return this._d[k] ?? null; }, setItem(k, v){ this._d[k] = String(v); } } };
     vm.createContext(sb);
-    vm.runInContext(html.slice(clsStart, clsEnd), sb);              // classifier
-    vm.runInContext(html.slice(amStart, amEnd), sb);                // migration map core
+    vm.runInContext(html.slice(amStart, amEnd), sb);
     const g = (name) => vm.runInContext(name, sb);
 
-    // Status ledger, the brief's order, first match wins.
-    const S = g('amStatusOf');
-    const T = (m, oos) => ({ matchedTo: m || null, oos: !!oos, rows: 10 });
-    check('the unclassified area is always triage, whatever else is true',
-      S('oth', [T('x')], [T('y')]).k === 'triage');
-    check('source with no target area is a gap',
-      S('fin', [T()], []).k === 'gap' && /No target area/.test(S('fin', [T()], []).label));
-    check('target with no source is an orphan', S('fin', [], [T()]).k === 'orphan');
-    check('empty on both sides is neither aligned nor a gap',
-      !['ok', 'gap'].includes(S('fin', [], []).k));
-    check('every source table landed is aligned', S('fin', [T('t1')], [T()]).k === 'ok');
-    check('out-of-scope tables do not break alignment, and are counted in the label',
-      S('fin', [T('t1'), T(null, true)], [T()]).k === 'ok'
-      && /1 out of scope/.test(S('fin', [T('t1'), T(null, true)], [T()]).label));
-    check('anything else is partial with the unmatched count',
-      /Partial · 2 unmatched/.test(S('fin', [T('t1'), T(), T()], [T()]).label));
+    // Adapter: cached-graph shape → engine shape.
+    const side = g('amToSide')({ ok: true, tables: [
+      { key: 'dbo.matter', schema: 'dbo', name: 'matter', rowCount: 500,
+        primaryKeys: ['mmatter'], colsig: 'mmatter:cha,mname:var,mopendt:dat' },
+      { key: 'dbo.x', schema: 'dbo', name: 'x', rowCount: 0,
+        columns: [{ name: 'a', type: 'int' }] },
+    ]});
+    check('the adapter turns colsig strings into {name,type} columns',
+      side.tables[0].cols.length === 3 && side.tables[0].cols[0].name === 'mmatter'
+      && side.tables[0].cols[0].type === 'cha' && side.tables[0].pk[0] === 'mmatter'
+      && side.tables[0].rows === 500);
+    check('and falls back to lazily-loaded column arrays',
+      side.tables[1].cols.length === 1 && side.tables[1].cols[0].name === 'a');
 
-    // Coverage honesty.
-    const C = g('amCoverage');
-    const R = (m, rows, oos) => ({ matchedTo: m || null, rows, oos: !!oos });
-    check('coverage is null — an empty meter — when the area has no source tables',
-      C([], 'rows') === null);
-    check('and when everything in it is out of scope',
-      C([R(null, 100, true)], 'rows') === null);
-    check('row-weighted coverage is the share of rows that land',
-      C([R('t', 300), R(null, 100)], 'rows') === 75);
-    check('table-weighted coverage counts tables',
-      C([R('t', 300), R(null, 100)], 'tables') === 50);
-    check('an area of only empty tables falls back to table share, not divide-by-zero',
-      C([R('t', 0), R(null, 0)], 'rows') === 50);
+    // The loud guard: a columnless (stale) cache must fail with the cause,
+    // never render as everything-Unclassified.
+    const A = g('amAssertClassified');
+    const mk = (n, unclassified) => ({ src: Array.from({ length: n }, (_, i) =>
+      ({ area: i < unclassified ? 'Unclassified' : 'Finance & ledger' })) });
+    check('a mostly-unclassified estate fails loudly, naming the harvest',
+      (() => { try { A(mk(100, 60)); return false; }
+               catch (e){ return /harvest/.test(e.message) && /Rebuild/.test(e.message); } })());
+    check('a well-classified estate passes', A(mk(100, 5)) >= 0.8);
+    check('a toy estate is exempt — small fixtures classify poorly by nature',
+      A(mk(10, 10)) === 1);
 
-    // Chip counts are computed from the same data the filters run on.
-    const counts = g('amChipCounts')(
-      [{ id:'fin' }, { id:'tb' }, { id:'oth' }],
-      { fin: [T('t1'), T()], tb: [], oth: [T()] },
-      { fin: [T()], tb: [T()], oth: [] });
-    check('chip counts come from the data, not from literals',
-      counts.all === 3 && counts.gaps === 3 && counts.unmatched === 2 && counts.triage === 1);
+    // Honest arithmetic: three buckets that sum to the total, exactly.
+    const S = g('amRowsSummary');
+    const tables = [
+      { key: 'a', rows: 100, area: 'Finance & ledger' },   // accepted
+      { key: 'b', rows: 50,  area: 'Finance & ledger' },   // saved map writes it
+      { key: 'c', rows: 30,  area: 'Finance & ledger' },   // awaiting decision
+      { key: 'd', rows: 20,  area: 'Nowhere' },            // area has no targets
+      { key: 'e', rows: 7,   area: 'Finance & ledger' },   // human rejected
+    ];
+    const sum = S(tables,
+      { a: { target: 'dw.A' }, e: { target: null } },
+      (t) => t.key === 'b' ? 'dw.B' : null,
+      new Set(['Finance & ledger']));
+    check('decided + shared + no-home equals the total, exactly',
+      sum.decided + sum.shared + sum.noHome === sum.total && sum.total === 207);
+    check('an accepted decision and a saved map both count as decided',
+      sum.decided === 150 && sum.decidedTables === 2);
+    check('a rejection is a no-home decision, not "awaiting"',
+      sum.noHome === 27 && sum.shared === 30);
 
-    // Saved-map links: brackets stripped, bare names resolve, both directions.
-    const L = g('amMapLinks')([
-      { sourceTable: '[dbo].[Invoice_Lines]', targetTables: ['dbo.fct_invoice'] },
-    ]);
+    // Calibration guard from the brief: past ~400 strong the tool is bluffing.
+    const C = g('amCalibrationNote');
+    check('the reference calibration (112 strong of 2,545) raises no warning',
+      C(112, 2545) === '');
+    check('drifted thresholds raise the warning', /bluffing|drifted/i.test(C(500, 2545)));
+    check('small estates never trigger it', C(30, 40) === '');
+
+    // Saved-map links: brackets stripped, bare names resolve.
+    const L = g('amMapLinks')([{ sourceTable: '[dbo].[Invoice_Lines]', targetTables: ['dw.InvoiceFact'] }]);
     check('a bracketed saved map still links the source table',
-      L.bySrc.get('dbo.invoice_lines') === 'dbo.fct_invoice'
-      && L.bySrc.get('invoice_lines') === 'dbo.fct_invoice');
-    check('and the target side sees who feeds it',
-      L.byTgt.get('dbo.fct_invoice') === 'dbo.Invoice_Lines'.replace(/[\[\]]/g, ''));
+      L.bySrc.get('dbo.invoice_lines') === 'dw.InvoiceFact' && L.bySrc.get('invoice_lines') === 'dw.InvoiceFact');
 
-    // Both estates go through THE SAME classifier the Data map uses.
-    const graph = { ok: true, database: 'SrcDb', tables: [
-      { key: 'dbo.Invoice_Lines', name: 'Invoice_Lines', schema: 'dbo', rowCount: 500 },
-      { key: 'dbo.TimeCard',      name: 'TimeCard',      schema: 'dbo', rowCount: 900 },
-      { key: 'dbo.bkp_stuff',     name: 'bkp_stuff',     schema: 'dbo', rowCount: 5 },
-    ]};
-    const build = () => vm.runInContext('amBuildSide', sb)('src', graph, L);
-    let rows = build();
-    check('the classifier is daDomainOf — Invoice_* is Finance on this tab because it is on the Data map',
-      rows.find(r => r.table === 'Invoice_Lines').areaId === 'fin'
-      && rows.find(r => r.table === 'TimeCard').areaId === 'tb'
-      && rows.find(r => r.table === 'bkp_stuff').areaId === 'oth');
-    check('matchedTo comes from the saved maps',
-      rows.find(r => r.table === 'Invoice_Lines').matchedTo === 'dbo.fct_invoice');
-    check('confidence: anchored match HI, no match LO',
-      rows.find(r => r.table === 'Invoice_Lines').confidence === 'HI'
-      && rows.find(r => r.table === 'bkp_stuff').confidence === 'LO');
-    check('a suffix-only match is only MED',
-      g('amConfidence')('CustomAudit_Trail', 'dbo') !== 'HI');
-    check('tables sort largest first', rows[0].table === 'TimeCard');
-
-    // The user's assignment wins over the pattern, and survives via storage.
-    vm.runInContext('amSetOverride', sb)('src', 'SrcDb', 'dbo.bkp_stuff', 'fin');
-    rows = build();
-    const bkp = rows.find(r => r.table === 'bkp_stuff');
-    check('a manual assignment beats the pattern estimate',
-      bkp.areaId === 'fin' && bkp.areaSource === 'user' && bkp.confidence === 'user');
-    vm.runInContext('amSetOverride', sb)('src', 'SrcDb', 'dbo.bkp_stuff', 'oos');
-    check('out of scope is a flag, not a fake area',
-      build().find(r => r.table === 'bkp_stuff').oos === true);
-    vm.runInContext('amSetOverride', sb)('src', 'SrcDb', 'dbo.bkp_stuff', null);
-    check('resetting returns the table to the pattern estimate',
-      build().find(r => r.table === 'bkp_stuff').areaId === 'oth');
+    // Overrides persist per side and database, same store the Data map reads.
+    g('amSetOverride')('src', 'SrcDb', 'dbo.T', 'Finance & ledger');
+    check('area overrides persist per side and database',
+      JSON.parse(sb.localStorage._d['cygenix_area_overrides'])['src|SrcDb']['dbo.t'] === 'Finance & ledger');
   }
 
   // Wiring pins.
-  check('the Migration map is a registered fourth tab',
+  check('the engine and the harvest module are loaded',
+    /cygenix-subject-map\.js/.test(html) && /cygenix-subject-harvest\.js/.test(html));
+  check('the Migration map is still the registered fourth tab',
     /'schema', 'atlas', 'coverage', 'areas'/.test(html)
-    && /id="se-tab-areas"/.test(html) && /id="se-view-areas"/.test(html)
-    && /⇄ Migration map/.test(html));
-  check('the mode bar was widened for the fourth button', /max-width:680px/.test(html));
-  check('every area renders even when one side is empty — the empty sides carry the message',
-    /No source tables classified here/.test(html) && /No target subject area exists/.test(html));
-  check('the meter is honest about areas with nothing to measure',
-    /no source content in this area/.test(html));
-  check('the Data map reads the same assignment store',
-    /amOverrides\(DA\.side, graph\.database\)/.test(html));
-  check('assignments persist per side and database',
-    /cygenix_area_overrides/.test(html));
-  check('an assignment invalidates the built atlas so the Data map recolours',
+    && /id="se-tab-areas"/.test(html) && /⇄ Migration map/.test(html));
+  check('four sub-views in the order the work happens',
+    /id="am-sub-areas"/.test(html) && /id="am-sub-spine"/.test(html)
+    && /id="am-sub-queue"/.test(html) && /id="am-sub-method"/.test(html));
+  check('the build runs chunked with determinate progress, never blocking',
+    /SubjectMap\.buildAsync/.test(html) && /Scoring candidates/.test(html));
+  check('user area corrections are pinned into the build, not re-derived',
+    /srcOverrides: amOverrides\('src', sg\.database\)/.test(html));
+  check('decisions live in their own store, keyed by the estate pair',
+    /cygenix_subjectmap_decisions/.test(html) && /amDecScope/.test(html));
+  check('THE FIREWALL: suggestions are never persisted',
+    /Suggestions are never persisted/.test(html)
+    && !/localStorage\.setItem\([^)]*candidates/.test(html));
+  check('accepting hands off to Object Mapping with the table pair ONLY — columns stay human',
+    /srcFullName: srcKey, tgtFullName: d\.target/.test(html)
+    && /columnMapping: \[\], targetTables: \[\]/.test(html));
+  check('the queue is decided on the keyboard', /j\/k move · a accept · r reject/.test(html));
+  check('progress is measured in rows, not tables',
+    /rows decided/.test(html) && /measured in rows, not tables/i.test(html));
+  check('the scoring weights are on show — a ranking nobody can inspect is not trusted',
+    /SubjectMap\.W/.test(html) && /id="am-method-weights"/.test(html));
+  check('the Data map still reads the same assignment store',
+    /amOverrides\(DA\.side, graph\.database\)/.test(html) && /cygenix_area_overrides/.test(html));
+  check('subject-area override names are translated for the atlas, unknown ones ignored',
+    /DA_FROM_SUBJECT/.test(html) && /DA_ATLAS_IDS\.has\(ov\)/.test(html));
+  check('an area correction still invalidates the built atlas',
     /DA\.loaded = null; DA\.tables = \[\];/.test(html));
-  check('one popover at a time, closed by outside click and Escape',
-    /document\.querySelectorAll\('\.am-pop'\)\.forEach\(x => x\.classList\.remove\('open'\)\)/.test(html)
-    && /e\.key === 'Escape'\) document\.querySelectorAll\('\.am-pop\.open'\)/.test(html));
-  check('the fit report exports both estates', /cygenix-fit-report\.csv/.test(html));
-  check('reload schema refetches both estates on this tab',
+  check('reload schema forces a full re-harvest on this tab',
     /seTab === 'areas'\)\{ AM\.ready = false; amEnsure\(true\); \}/.test(html));
+  check('the fit report export ships every table with its tier and decision',
+    /cygenix-fit-report\.csv/.test(html) && /top_candidate,score,margin,decision/.test(html));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
