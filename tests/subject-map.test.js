@@ -364,6 +364,41 @@ const TGT = { tables: [
     check('the engine version bumped for the v2 rules', S.ENGINE_VERSION === 2 && S.GOV.marginFloor === 0.08);
   }
 
+  // ── Exclusion picker §6: the relative ratio guard ─────────────────────────
+  // The discriminating fact is implausible size MISMATCH, never absolute
+  // size: a third of known-correct mappings land on tiny reference tables,
+  // so an absolute low-row filter deletes correct answers and calls it
+  // progress. The guard must drop the 3-row scaffold from a million-row
+  // source while keeping the 4-row → 4-row lookup mapping untouched.
+  {
+    const GSRC = { tables: [
+      { key:'dbo.timecard', schema:'dbo', name:'timecard', rows:2000000, pk:[],
+        cols:[{ name:'tkinit', type:'cha' }, { name:'tworkhrs', type:'dec' }, { name:'tmatter', type:'cha' }] },
+      { key:'dbo.phonetype', schema:'dbo', name:'phonetype', rows:4, pk:[],
+        cols:[{ name:'phonetypeid', type:'int' }, { name:'phonetypedesc', type:'var' }] },
+    ]};
+    const GTGT = { tables: [
+      { key:'dbo.TimeCardSum', schema:'dbo', name:'TimeCardSum', rows:1800000, pk:[],
+        cols:[{ name:'TimekeeperID', type:'int' }, { name:'WorkHrs', type:'dec' }, { name:'MatterIndex', type:'int' }] },
+      { key:'dbo.TimeCardType', schema:'dbo', name:'TimeCardType', rows:3, pk:[],
+        cols:[{ name:'TimekeeperID', type:'int' }, { name:'WorkHrs', type:'dec' }] },
+      { key:'dbo.PhoneType', schema:'dbo', name:'PhoneType', rows:4, pk:[],
+        cols:[{ name:'PhoneTypeID', type:'int' }, { name:'PhoneTypeDesc', type:'var' }] },
+    ]};
+    const guard = { minSourceRows: 1000, maxRatio: 1000 };
+    const g = S.build(GSRC, GTGT, { ratioGuard: guard });
+    const tc = g.src.find(t => t.name === 'timecard');
+    check('a 3-row scaffold never competes for a 2M-row source, and the drop is counted',
+      !tc.candidates.some(c => c.table.name === 'TimeCardType')
+      && tc.candidates.some(c => c.table.name === 'TimeCardSum')
+      && tc.ratioDropped === 1);
+    check('small sources legitimately map to small reference tables — the guard never fires there',
+      g.src.find(t => t.name === 'phonetype').candidates.some(c => c.table.name === 'PhoneType'));
+    const ug = S.build(GSRC, GTGT);
+    check('without the guard the scaffold competes — the guard is opt-in, not a default',
+      ug.src.find(t => t.name === 'timecard').candidates.some(c => c.table.name === 'TimeCardType'));
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

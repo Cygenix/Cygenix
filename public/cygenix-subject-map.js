@@ -241,7 +241,8 @@ function prepare(source, target, opts) {
   const byArea = new Map(); for (const t of pool) { let a = byArea.get(t.area); if (!a) byArea.set(t.area, a = []); a.push(t); }
   const nameIdx = new Map(); for (const t of pool) { const k = t.name.toLowerCase(); let a = nameIdx.get(k); if (!a) nameIdx.set(k, a = []); a.push(t); }
   const floor = opts.cosFloor != null ? opts.cosFloor : 0.25;
-  return { src, tgt, cos, byArea, nameIdx, floor, topN: opts.topN || 5 };
+  return { src, tgt, cos, byArea, nameIdx, floor, topN: opts.topN || 5,
+           ratio: opts.ratioGuard || null };
 }
 
 function alignSpine(ctx) {
@@ -262,10 +263,22 @@ function alignSpine(ctx) {
 }
 
 function scoreOne(s, ctx) {
-  const pool = ctx.byArea.get(s.area) || [], out = [];
+  const pool = ctx.byArea.get(s.area) || [];
+  let out = [];
   for (const t of pool) { const c = ctx.cos(s, t); if (c < ctx.floor) continue; out.push({ table: t, ev: score(s, t, c) }); }
   for (const t of (ctx.nameIdx.get(s.name.toLowerCase()) || []))   // name twins always considered
     if (!out.some(o => o.table === t)) out.push({ table: t, ev: score(s, t, ctx.cos(s, t)) });
+  // Ratio guard (picker §6): the discriminating fact is implausible size
+  // MISMATCH, never absolute size — a 2-row source legitimately maps to a
+  // 2-row lookup, but a million-row source proposing a 3-row target is
+  // vendor scaffolding manufacturing a tie. Relative and candidate-level by
+  // construction; an absolute low-row filter deletes a third of the correct
+  // answers and reports it as progress.
+  if (ctx.ratio && s.rows > ctx.ratio.minSourceRows) {
+    const before = out.length;
+    out = out.filter(o => (o.table.rows || 0) * ctx.ratio.maxRatio >= s.rows);
+    s.ratioDropped = before - out.length;
+  }
   // Governance penalties (v2): a surviving-but-suspect target, or a source
   // that is itself under review, drags the pair down — visibly, on the ev.
   for (const o of out) {
