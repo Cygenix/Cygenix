@@ -554,7 +554,9 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .am-ev-bar i{display:block;height:100%;background:var(--accent)}
 .am-step{display:flex;gap:0.8rem;font-size:11.5px;color:var(--text2);padding:0.35rem 0;line-height:1.5}
 .am-step b{flex:0 0 150px;color:var(--text)}
-@media(max-width:820px){.am-step b{flex-basis:100px}.am-cand-top{max-width:120px}}
+.am-xp-chip{display:flex;align-items:center;gap:0.5rem;padding:0.32rem 0.6rem;border:0.5px solid var(--border2);border-radius:8px;margin-bottom:0.3rem;background:var(--bg3)}
+.am-xp-chip.on{border-color:var(--accent)}
+@media(max-width:820px){.am-step b{flex-basis:100px}.am-cand-top{max-width:120px}.am-xp-cols{grid-template-columns:1fr !important}}
 </style>
 </head>
 <body>
@@ -562,9 +564,10 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-api.js?v=923ff2d8c9" defer></script>
 <script src="/cygenix-schema-graph.js?v=7342c9d73d" defer></script>
-<script src="/cygenix-subject-map.js?v=aaf7aadbd1" defer></script>
+<script src="/cygenix-subject-map.js?v=dbc44c8eb3" defer></script>
 <script src="/cygenix-subject-harvest.js?v=b15d4ee907" defer></script>
 <script src="/cygenix-subject-triage.js?v=259690e173" defer></script>
+<script src="/cygenix-exclusion-rules.js?v=8e49dbbb79" defer></script>
 <script src="/cygenix-infer-schema.js?v=c197ec85e0" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
@@ -815,6 +818,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
         <button id="am-sub-queue" onclick="amSetSub('queue')">Mapping queue</button>
         <button id="am-sub-method" onclick="amSetSub('method')">How it decides</button>
       </div>
+      <button class="btn" id="am-scope-btn" onclick="xpOpen()" title="Scope the estate before the run — exclude backups, test tables and unlicensed modules by rule, with a preview before anything commits">⊘ Scope</button>
       <button class="btn" onclick="amRebuildAll()" title="Re-harvest both schemas' columns and keys and rebuild the model">↻ Rebuild</button>
       <button class="btn" onclick="amExport()" title="Download the full fit report as CSV — every source table, its area, tier, top candidate and decision">⤓ Export</button>
     </div>
@@ -829,6 +833,20 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
       </div>
       <div class="am-meter" style="height:6px"><i class="m-ok" id="am-build-bar" style="width:0%"></i></div>
       <div id="am-build-err" style="display:none;font-size:11.5px;color:var(--red);line-height:1.5;margin-top:0.5rem"></div>
+    </div>
+
+    <!-- First run against a new connection pair: offer the picker, never
+         force it. Dismiss is remembered per pair. -->
+    <div id="am-xp-offer" class="panel" style="display:none;margin-bottom:0.9rem;padding:0.7rem 0.9rem">
+      <div style="display:flex;align-items:center;gap:0.7rem;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--text2)">First run against this connection pair —
+          scope the estate before mapping. Backups, test tables and unlicensed modules can be
+          excluded by rule in minutes, with a preview before anything commits.</span>
+        <span style="margin-left:auto;display:flex;gap:0.5rem">
+          <button class="btn" onclick="xpOpen()">Open the exclusion picker</button>
+          <button class="btn" onclick="xpDismissOffer()">Not now</button>
+        </span>
+      </div>
     </div>
 
     <div class="am-kpis" id="am-kpis"></div>
@@ -911,6 +929,34 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
       <div class="panel">
         <div class="panel-header"><div class="panel-title">Calibration on this estate</div></div>
         <div id="am-method-calib" style="padding:0.8rem 0.9rem;font-size:11.5px;color:var(--text2);line-height:1.6"></div>
+      </div>
+    </div>
+
+    <!-- Pre-run exclusion picker. Sits between schema load and the build:
+         excluded tables are dropped before segmentation and can never appear
+         as candidates. Committing is gated on the preview — that is the
+         safety mechanism, not a nicety. -->
+    <div id="am-xp" style="display:none;position:fixed;inset:0;background:rgba(10,12,18,0.55);z-index:90;overflow:auto"
+         onclick="if(event.target===this)xpClose()">
+      <div class="panel" role="dialog" aria-modal="true" aria-labelledby="am-xp-title"
+           style="max-width:1060px;margin:4vh auto;padding:1rem 1.1rem;max-height:none">
+        <div style="display:flex;align-items:baseline;gap:0.7rem;margin-bottom:0.7rem">
+          <div>
+            <div class="panel-title" id="am-xp-title">Scope the estate before the run</div>
+            <div class="panel-sub">Rules first, long tail second. Every exclusion is reasoned,
+              previewed, reversible from the Excluded lane, and saved per connection pair.</div>
+          </div>
+          <span style="margin-left:auto;display:flex;gap:0.5rem">
+            <button class="btn" onclick="xpExportProfile()" title="Download this pair's exclusion profile as JSON — shareable between projects">⤓ Profile</button>
+            <button class="btn" onclick="xpClose()" aria-label="Close the picker">✕</button>
+          </span>
+        </div>
+        <div id="am-xp-body"></div>
+        <div id="am-xp-preview" style="margin-top:0.8rem"></div>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.8rem">
+          <button class="btn" onclick="xpClose()">Cancel</button>
+          <button class="btn btn-primary" id="am-xp-commit" onclick="xpCommit()">Exclude and rebuild</button>
+        </div>
       </div>
     </div>
   </div>
@@ -3544,6 +3590,8 @@ const AM = {
   decisions: {},             // srcKey → {target|null, at, by}
   qQ: '', qArea: '', qTier: '', qState: 'open', qSel: 0, qOpen: {},
   spQ: '', spF: '',
+  xp: null,                  // exclusion-picker working state while the modal is open
+  scope: null,               // applied exclusion profile: {ratioGuard, version}
   lane: 'MIGRATE',           // 'MIGRATE' | 'REVIEW' | 'EXCLUDE' — the triage lanes
   triage: null,              // { src:{byKey,windowDays,inventoryError}, tgt:{...} }
   harv: {},                  // harvest docs per side (freshness, inventory)
@@ -3798,6 +3846,416 @@ function amCritProgress(srcList, decidedOf, triageOf){
            doneRows, totRows, doneN, totN };
 }
 
+// ── Pre-run exclusion picker ──────────────────────────────────────────────
+// Scope the estate BEFORE the mapping run: rule chips with live counts, a
+// row-count-sorted long tail, and a preview that gates every commit. The
+// profile persists per connection pair and reapplies after Rebuild and
+// Reload schema. Write-through (one source of truth): the picker writes
+// INTO the triage lanes at build time, so excluded tables carry their rule
+// id in the Excluded lane and restore from there like any other exclusion.
+const XP_STORE = 'cygenix_exclusion_profiles';
+
+function xpPairKey(){
+  return ((AM.srcGraph && AM.srcGraph.database) || '?') + '|'
+       + ((AM.tgtGraph && AM.tgtGraph.database) || '?');
+}
+function xpStoreAll(){
+  try { return JSON.parse(localStorage.getItem(XP_STORE) || '{}'); } catch { return {}; }
+}
+function xpStored(){ return xpStoreAll()[xpPairKey()] || { offered: false, profile: null }; }
+function xpSaveStored(entry){
+  try {
+    const all = xpStoreAll();
+    all[xpPairKey()] = entry;
+    localStorage.setItem(XP_STORE, JSON.stringify(all));
+  } catch (e) {}
+}
+function xpProfileStored(){ return xpStored().profile || null; }
+function xpSaveProfile(prof){
+  const entry = xpStored();
+  prof.version = (prof.version || 0) + 1;
+  prof.updatedAt = Date.now();
+  if (!prof.createdAt) prof.createdAt = prof.updatedAt;
+  entry.profile = prof; entry.offered = true;
+  xpSaveStored(entry);
+}
+function xpUser(){
+  try { return (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || ''; }
+  catch { return ''; }
+}
+
+// The picker's minimal table shape for one side. `lane` is the PURE triage
+// class (preClass survives a picker override) so previews always diff
+// against the automated baseline, never against themselves.
+function xpObjs(side){
+  const graph = side === 'src' ? AM.srcGraph : AM.tgtGraph;
+  const tri = AM.triage && AM.triage[side];
+  if (!graph || !graph.ok) return [];
+  return graph.tables.map(t => {
+    const v = tri && tri.byKey[t.key.toLowerCase()];
+    return { key: t.key, name: t.name, schema: t.schema, rows: t.rowCount || 0,
+      hasPk: (t.primaryKeys || []).length > 0,
+      lane: (v && (v.preClass || v.class)) || 'MIGRATE' };
+  });
+}
+
+// Write-through: fold the stored profile into the freshly computed triage
+// lanes. Runs after amTriageSide on every build, so acceptance 5 holds —
+// the profile reapplies cleanly after ↻ Rebuild and ↻ Reload schema.
+function amApplyScope(){
+  const XR = window.CygenixExclusionRules;
+  AM.scope = { ratioGuard: null, version: 0 };
+  if (!XR || !AM.triage) return;
+  const prof = xpProfileStored();
+  if (!prof) return;
+  const res = XR.xrApply(prof, xpObjs('src'), xpObjs('tgt'));
+  for (const [side, m] of [['src', res.src], ['tgt', res.tgt]]){
+    const byKey = AM.triage[side].byKey;
+    for (const [k, reason] of m){
+      const v = byKey[k] || { class: 'MIGRATE', score: 0, reasons: [], hard: false, crit: 1 };
+      if (v.restored) continue;   // an explicit human restore outranks a rule
+      byKey[k] = Object.assign({}, v, {
+        preClass: v.preClass || v.class, class: 'EXCLUDE',
+        picker: true, reasons: [reason].concat(v.reasons || []),
+      });
+    }
+  }
+  AM.scope = { ratioGuard: res.ratioGuard, version: prof.version || 0 };
+}
+
+// Rescue (first-class, spec §7): pull one table back out of a rule's net
+// without editing the rule. This is what Restore does for picker rows.
+function xpRescue(side, key){
+  const prof = xpProfileStored();
+  if (!prof) return;
+  prof.manual.rescue.push({ key, side, reason: 'restored from the Excluded lane',
+    by: xpUser(), at: Date.now() });
+  prof.manual.exclude = (prof.manual.exclude || []).filter(m => m.key !== key);
+  xpSaveProfile(prof);
+  amRebuildModel();
+}
+
+function xpMaybeOffer(){
+  const el = $('am-xp-offer');
+  if (!el) return;
+  const st = xpStored();
+  el.style.display = (!st.offered && !st.profile && AM.ready) ? '' : 'none';
+}
+function xpDismissOffer(){
+  const entry = xpStored(); entry.offered = true; xpSaveStored(entry);
+  const el = $('am-xp-offer'); if (el) el.style.display = 'none';
+}
+
+function xpOpen(){
+  if (!AM.ready || !window.CygenixExclusionRules) return;
+  const stored = xpProfileStored();
+  const sel = {}, params = {};
+  let custom = '', prefixes = [];
+  if (stored){
+    for (const r of stored.rules || []){
+      if (r.custom != null){ if (r.enabled) custom = r.custom; continue; }
+      sel[r.id] = !!r.enabled;
+      if (r.params) params[r.id] = r.params;
+    }
+    prefixes = (params.tgt_prefix && params.tgt_prefix.prefixes) || [];
+  } else {
+    sel.ratio_guard = true;   // §6: the recommended guard is pre-ticked…
+  }
+  // …and the absolute low-row trap NEVER is.
+  if (!stored) sel.tgt_low_row = false;
+  AM.xp = {
+    sel, params, custom,
+    prefixes: new Set(prefixes.map(p => String(p).toLowerCase())),
+    manual: new Map(((stored && stored.manual.exclude) || [])
+      .map(m => [String(m.key).toLowerCase(), { key: m.key, side: m.side || 'source', reason: m.reason || '' }])),
+    rescued: new Map(((stored && stored.manual.rescue) || [])
+      .map(m => [String(m.key).toLowerCase(), m])),
+    ack: false, expand: {}, tailQ: '',
+  };
+  $('am-xp').style.display = '';
+  xpRender();
+}
+function xpClose(){ AM.xp = null; const el = $('am-xp'); if (el) el.style.display = 'none'; }
+
+// The working selection as profile rules — shared by preview and commit so
+// the preview can never diverge from what a commit would do.
+function xpRules(){
+  const XR = window.CygenixExclusionRules, x = AM.xp, rules = [];
+  for (const d of XR.XR_SOURCE_RULES)
+    rules.push({ id: d.id, side: 'source', enabled: !!x.sel[d.id] });
+  for (const d of XR.XR_TARGET_RULES){
+    const r = { id: d.id, side: 'target', enabled: !!x.sel[d.id] };
+    if (d.id === 'tgt_prefix'){
+      r.params = { prefixes: [...x.prefixes] };
+      r.enabled = r.enabled && r.params.prefixes.length > 0;
+    }
+    rules.push(r);
+  }
+  rules.push({ id: 'ratio_guard', side: 'target', enabled: !!x.sel.ratio_guard,
+    params: XR.XR_RATIO_GUARD.params });
+  if (x.custom && x.custom.trim())
+    rules.push({ id: 'custom', side: 'source', enabled: true, custom: x.custom.trim() });
+  return rules;
+}
+function xpWorkingProfile(){
+  const XR = window.CygenixExclusionRules;
+  const stored = xpProfileStored();
+  const prof = stored || XR.xrNewProfile(
+    AM.srcGraph && AM.srcGraph.database, AM.tgtGraph && AM.tgtGraph.database,
+    xpUser(), window.SubjectMap ? SubjectMap.ENGINE_VERSION : 0);
+  prof.rules = xpRules();
+  prof.manual = {
+    exclude: [...AM.xp.manual.values()].map(m => ({ key: m.key, side: m.side,
+      reason: m.reason || 'manual', by: xpUser() })),
+    rescue: [...AM.xp.rescued.values()],
+  };
+  return prof;
+}
+
+// What the current selection would exclude, diffed against the automated
+// baseline. This feeds the preview panel — the gate on every commit.
+function xpEffect(){
+  const XR = window.CygenixExclusionRules;
+  const srcObjs = xpObjs('src'), tgtObjs = xpObjs('tgt');
+  const res = XR.xrApply(xpWorkingProfile(), srcObjs, tgtObjs);
+  const srcByKey = new Map(srcObjs.map(o => [o.key.toLowerCase(), o]));
+  const tgtByKey = new Map(tgtObjs.map(o => [o.key.toLowerCase(), o]));
+  const pick = (m, byKey) => [...m.entries()]
+    .map(([k, reason]) => Object.assign({ reason }, byKey.get(k)))
+    .filter(o => o.key && o.lane !== 'EXCLUDE');   // already-gated is not news
+  const src = pick(res.src, srcByKey).sort((a, b) => b.rows - a.rows);
+  const tgt = pick(res.tgt, tgtByKey).sort((a, b) => b.rows - a.rows);
+  const inScope = srcObjs.filter(o => o.lane !== 'EXCLUDE');
+  const rows = (l) => l.reduce((n, o) => n + (o.rows || 0), 0);
+  return { src, tgt, res,
+    srcRows: rows(src), inScopeN: inScope.length, inScopeRows: rows(inScope),
+    migrate: src.filter(o => o.lane === 'MIGRATE').length,
+    big: src.concat(tgt).filter(o => (o.rows || 0) >= 1000000),
+    ratioGuard: res.ratioGuard };
+}
+
+function xpToggle(id){ AM.xp.sel[id] = !AM.xp.sel[id]; xpRender(); }
+function xpExpand(id){ AM.xp.expand[id] = !AM.xp.expand[id]; xpRender(); }
+function xpCustom(v){ AM.xp.custom = v; xpRenderPreviewOnly(); }
+function xpTailQ(v){ AM.xp.tailQ = String(v || '').toLowerCase(); xpRenderTail(); }
+function xpAck(el){ AM.xp.ack = !!el.checked; xpRenderPreviewOnly(); }
+function xpTogglePrefix(p){
+  const k = String(p).toLowerCase();
+  if (AM.xp.prefixes.has(k)) AM.xp.prefixes.delete(k); else AM.xp.prefixes.add(k);
+  if (AM.xp.prefixes.size) AM.xp.sel.tgt_prefix = true;
+  xpRender();
+}
+function xpToggleManual(encKey){
+  const key = decodeURIComponent(encKey), k = key.toLowerCase();
+  if (AM.xp.manual.has(k)) AM.xp.manual.delete(k);
+  else AM.xp.manual.set(k, { key, side: 'source', reason: 'manual' });
+  xpRender();
+}
+function xpToggleRescue(encKey, side){
+  const key = decodeURIComponent(encKey), k = key.toLowerCase();
+  if (AM.xp.rescued.has(k)) AM.xp.rescued.delete(k);
+  else AM.xp.rescued.set(k, { key, side: side || 'source',
+    reason: 'rescued in the picker', by: xpUser(), at: Date.now() });
+  xpRender();
+}
+
+function xpChip(rule, count, opts){
+  const o = opts || {};
+  const on = !!AM.xp.sel[rule.id];
+  const enc = esc(rule.id);
+  return '<div class="am-xp-chip' + (on ? ' on' : '') + '" data-rule="' + enc + '">'
+    + '<label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;min-width:0">'
+    + '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="xpToggle(\'' + enc + '\')" '
+    + 'aria-label="' + esc(rule.label) + '">'
+    + '<span style="font-size:12px">' + esc(rule.label) + '</span>'
+    + (o.warn ? '<span style="color:var(--amber);font-size:11px" title="See the warning below before ticking">⚠</span>' : '')
+    + (o.rec ? '<span class="am-key" style="color:var(--green)">recommended</span>' : '')
+    + '</label>'
+    + '<span style="margin-left:auto;font-size:11px;color:var(--text3);font-family:var(--mono)">'
+    + (count ? amFmt(count.n) + ' tables · ' + amFmt(count.rows) + ' rows' : (o.note || '')) + '</span>'
+    + (o.expand ? '<button class="btn" style="padding:1px 7px;font-size:10.5px" onclick="xpExpand(\'' + enc + '\')">'
+        + (AM.xp.expand[rule.id] ? '▾' : '▸') + '</button>' : '')
+    + '</div>';
+}
+
+function xpMatchList(rule, objs, side){
+  const XR = window.CygenixExclusionRules;
+  const hits = objs.filter(o => XR.xrRuleHits(rule, o)).sort((a, b) => b.rows - a.rows).slice(0, 40);
+  if (!hits.length) return '<div style="font-size:11px;color:var(--text3);padding:0.3rem 0.6rem">No matches on this estate.</div>';
+  return '<div style="max-height:190px;overflow:auto;margin:0.2rem 0 0.4rem">' + hits.map(o => {
+    const resc = AM.xp.rescued.has(o.key.toLowerCase());
+    return '<div style="display:flex;gap:0.6rem;align-items:center;padding:0.15rem 0.6rem;font-size:11.5px'
+      + (resc ? ';opacity:0.55' : '') + '">'
+      + '<span class="am-tname">' + esc(o.name) + '</span>'
+      + '<span style="color:var(--text3);font-family:var(--mono)">' + amFmt(o.rows) + ' rows · ' + esc(o.lane) + '</span>'
+      + '<button class="btn" style="margin-left:auto;padding:1px 7px;font-size:10px" '
+      + 'onclick="xpToggleRescue(\'' + amEncKey(o.key) + '\',\'' + (side || 'source') + '\')">'
+      + (resc ? 'undo rescue' : 'rescue') + '</button>'
+      + '</div>';
+  }).join('') + '</div>';
+}
+
+function xpRender(){
+  const XR = window.CygenixExclusionRules, x = AM.xp;
+  if (!x) return;
+  const srcObjs = xpObjs('src'), tgtObjs = xpObjs('tgt');
+  const srcDb = (AM.srcGraph && AM.srcGraph.database) || '—';
+  const tgtDb = (AM.tgtGraph && AM.tgtGraph.database) || '—';
+  const cust = x.custom && x.custom.trim()
+    ? XR.xrCount({ custom: x.custom.trim() }, srcObjs) : { n: 0, rows: 0 };
+  const prefixes = XR.xrPrefixes(tgtObjs, 8);
+  const revN = tgtObjs.filter(o => o.lane === 'REVIEW').length;
+
+  let h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem" class="am-xp-cols">';
+
+  // Source: name rules, then the long tail sorted by rows descending —
+  // the expensive mistakes are the first thing an analyst sees.
+  h += '<div><div class="panel-title" style="font-size:12px;margin-bottom:0.4rem">SOURCE · '
+    + esc(srcDb) + ' — ' + amFmt(srcObjs.length) + ' tables</div>';
+  for (const d of XR.XR_SOURCE_RULES){
+    h += xpChip(d, XR.xrCount(d, srcObjs), { expand: true });
+    if (x.expand[d.id]) h += xpMatchList(d, srcObjs, 'source');
+  }
+  h += '<div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem">'
+    + '<input id="am-xp-custom" class="am-select" style="flex:1" placeholder="Custom rule — regex or glob"'
+    + ' value="' + esc(x.custom) + '" oninput="xpCustom(this.value)" aria-label="Custom exclusion rule">'
+    + '<span style="font-size:11px;color:var(--text3);font-family:var(--mono)">matches '
+    + amFmt(cust.n) + ' tables</span></div>';
+  h += '<div style="margin-top:0.7rem"><div class="panel-sub" style="margin-bottom:0.3rem">'
+    + 'Long tail — everything no rule caught, biggest first</div>'
+    + '<input class="am-select" style="width:100%" placeholder="Filter the long tail…"'
+    + ' oninput="xpTailQ(this.value)" aria-label="Filter the long tail">'
+    + '<div id="am-xp-tail" style="max-height:230px;overflow:auto;margin-top:0.3rem"></div></div>';
+  h += '</div>';
+
+  // Target: a vendor schema is clean by name — different axes.
+  h += '<div><div class="panel-title" style="font-size:12px;margin-bottom:0.4rem">TARGET · '
+    + esc(tgtDb) + ' — ' + amFmt(tgtObjs.length) + ' tables</div>';
+  h += xpChip({ id: 'ratio_guard', label: 'Implausible size mismatch (ratio guard)' }, null,
+    { rec: true, note: 'source > 1,000 rows and ratio > 1,000:1' });
+  h += xpChip(XR.XR_TARGET_RULES[0], XR.xrCount(XR.XR_TARGET_RULES[0], tgtObjs), { expand: true });
+  if (x.expand.tgt_empty) h += xpMatchList(XR.XR_TARGET_RULES[0], tgtObjs, 'target');
+  h += xpChip(XR.XR_TARGET_RULES[1], XR.xrCount(XR.XR_TARGET_RULES[1], tgtObjs), { warn: true });
+  if (x.sel.tgt_low_row){
+    const lowCand = xpLowRowCandidates();
+    h += '<div class="am-xp-warn" style="border:1px solid var(--amber);border-radius:8px;padding:0.5rem 0.7rem;'
+      + 'font-size:11.5px;color:var(--text2);margin:0.3rem 0 0.5rem">⚠ '
+      + amFmt(lowCand) + ' candidate targets under 10 rows would be removed. '
+      + esc(XR.XR_LOW_ROW_WARNING) + '</div>';
+  }
+  h += xpChip(XR.XR_TARGET_RULES[2], { n: revN, rows: 0 }, {});
+  h += '<div style="margin:0.5rem 0 0.2rem;font-size:11.5px;color:var(--text2)">Module / prefix — '
+    + 'a firm not licensing a module drops its whole family in one action:</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:0.35rem">'
+    + (prefixes.length ? prefixes.map(p =>
+        '<button class="btn' + (x.prefixes.has(p.prefix.toLowerCase()) ? ' btn-primary' : '')
+        + '" style="padding:2px 9px;font-size:10.5px" onclick="xpTogglePrefix(\'' + esc(p.prefix) + '\')">'
+        + esc(p.prefix) + '… <span style="opacity:0.7">' + amFmt(p.n) + '</span></button>').join('')
+      : '<span style="font-size:11px;color:var(--text3)">No prefix family is large enough on this estate.</span>')
+    + '</div>';
+  h += '</div></div>';
+
+  $('am-xp-body').innerHTML = h;
+  xpRenderTail();
+  xpRenderPreviewOnly();
+}
+
+// How many distinct candidate targets the low-row rule would delete —
+// the number that makes the §6 trap concrete on THIS estate.
+function xpLowRowCandidates(){
+  if (!AM.model) return 0;
+  const seen = new Set();
+  for (const s of AM.model.src)
+    for (const c of (s.candidates || []))
+      if ((c.table.rows || 0) < 10) seen.add(c.table.key);
+  return seen.size;
+}
+
+function xpRenderTail(){
+  const host = $('am-xp-tail');
+  if (!host || !AM.xp) return;
+  const XR = window.CygenixExclusionRules;
+  const rules = xpRules().filter(r => r.enabled && r.side === 'source')
+    .map(r => r.custom != null ? { custom: r.custom }
+      : Object.assign({}, XR.XR_SOURCE_RULES.find(d => d.id === r.id) || {}, { params: r.params }));
+  const q = AM.xp.tailQ;
+  const tail = xpObjs('src')
+    .filter(o => o.lane !== 'EXCLUDE' && !rules.some(r => XR.xrRuleHits(r, o)))
+    .filter(o => !q || o.name.toLowerCase().includes(q))
+    .sort((a, b) => b.rows - a.rows).slice(0, 100);
+  host.innerHTML = tail.map(o => {
+    const t = AM.srcByKey && AM.srcByKey.get(o.key);
+    const on = AM.xp.manual.has(o.key.toLowerCase());
+    return '<label style="display:flex;gap:0.55rem;align-items:center;padding:0.14rem 0.3rem;font-size:11.5px;cursor:pointer">'
+      + '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="xpToggleManual(\'' + amEncKey(o.key) + '\')">'
+      + '<span class="am-tname">' + esc(o.name) + '</span>'
+      + '<span style="color:var(--text3)">' + esc((t && t.area) || '') + '</span>'
+      + '<span style="margin-left:auto;color:var(--text3);font-family:var(--mono)">'
+      + amFmt(o.rows) + ' rows · ' + (o.hasPk ? 'PK' : 'no PK') + ' · ' + esc(o.lane) + '</span>'
+      + '</label>';
+  }).join('') || '<div style="font-size:11px;color:var(--text3);padding:0.3rem">Nothing left uncaught.</div>';
+}
+
+// The preview is the safety mechanism, not a nicety: nothing commits
+// without table count, row count and the largest affected tables on
+// screen, and any table over 1M rows demands explicit acknowledgement.
+function xpRenderPreviewOnly(){
+  const host = $('am-xp-preview');
+  if (!host || !AM.xp) return;
+  const eff = xpEffect();
+  const pct = eff.inScopeRows ? Math.round(eff.srcRows / eff.inScopeRows * 1000) / 10 : 0;
+  let h = '<div class="panel" style="padding:0.7rem 0.9rem;background:var(--surface2)">'
+    + '<div style="font-size:12.5px;margin-bottom:0.4rem"><b>Excluding '
+    + amFmt(eff.src.length) + ' source tables · ' + amFmt(eff.srcRows) + ' rows · '
+    + pct + '% of in-scope estate</b>'
+    + (eff.tgt.length ? ' — and ' + amFmt(eff.tgt.length) + ' target tables' : '')
+    + (eff.ratioGuard ? ' · ratio guard on' : '') + '</div>';
+  const top = eff.src.concat(eff.tgt).sort((a, b) => b.rows - a.rows).slice(0, 6);
+  if (top.length){
+    h += '<div style="font-size:11px;color:var(--text3);margin-bottom:0.2rem">Largest affected</div>'
+      + top.map(o => '<div style="display:flex;gap:0.7rem;font-size:11.5px;font-family:var(--mono)">'
+        + '<span class="am-tname">' + esc(o.name) + '</span>'
+        + '<span style="margin-left:auto">' + amFmt(o.rows) + '</span>'
+        + '<span style="color:var(--text3);min-width:150px;text-align:right">' + esc(o.reason) + '</span></div>').join('');
+  }
+  if (eff.migrate)
+    h += '<div style="font-size:11.5px;color:var(--amber);margin-top:0.4rem">⚠ '
+      + eff.migrate + ' excluded table' + (eff.migrate === 1 ? ' is' : 's are')
+      + ' currently in the Migrate lane</div>';
+  if (eff.big.length){
+    h += '<div style="font-size:11.5px;color:var(--amber);margin-top:0.2rem">⚠ '
+      + eff.big.map(o => esc(o.name) + ' holds ' + amFmt(o.rows) + ' rows').join(' · ')
+      + ' — confirm these are copies</div>'
+      + '<label style="display:flex;gap:0.45rem;align-items:center;font-size:11.5px;margin-top:0.3rem;cursor:pointer">'
+      + '<input type="checkbox" ' + (AM.xp.ack ? 'checked' : '') + ' onchange="xpAck(this)">'
+      + 'I confirm the tables over 1M rows are copies, not the migration</label>';
+  }
+  h += '</div>';
+  host.innerHTML = h;
+  const btn = $('am-xp-commit');
+  if (btn) btn.disabled = eff.big.length > 0 && !AM.xp.ack;
+}
+
+function xpCommit(){
+  const btn = $('am-xp-commit');
+  if (btn && btn.disabled) return;
+  xpSaveProfile(xpWorkingProfile());
+  xpClose();
+  const el = $('am-xp-offer'); if (el) el.style.display = 'none';
+  amRebuildModel();
+}
+
+function xpExportProfile(){
+  const prof = AM.xp ? xpWorkingProfile() : xpProfileStored();
+  if (!prof) return;
+  const blob = new Blob([JSON.stringify(prof, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cygenix-exclusion-profile.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
 // ── Ensure: harvest both sides, build the model off the main thread ───────
 function amBuildUi(show, title, stage, pct){
   const box = $('am-build');
@@ -3865,6 +4323,7 @@ async function amEnsure(force){
       src: amTriageSide('src', sg, AM.harv.src, T),
       tgt: amTriageSide('tgt', tg, AM.harv.tgt, T),
     };
+    amApplyScope();
 
     // Adapter + the loud guard, then the chunked build with the user's
     // existing area corrections pinned.
@@ -3875,6 +4334,7 @@ async function amEnsure(force){
       tgtOverrides: amOverrides('tgt', tg.database),
       srcTriage: amSrcTriageMap(),
       tgtTriage: amTgtTriageMap(),
+      ratioGuard: AM.scope && AM.scope.ratioGuard,
     }, (p) => {
       if (p.stage === 'scoring') amBuildUi(true, 'Scoring candidates…',
         amFmt(p.done) + ' of ' + amFmt(p.total) + ' source tables', 50 + (p.done / (p.total || 1)) * 48);
@@ -3892,6 +4352,7 @@ async function amEnsure(force){
     AM.ready = true;
     amBuildUi(false);
     amFillAreaSelect();
+    xpMaybeOffer();
     amRender();
   } catch (e) {
     amBuildFail((e && e.message) || String(e));
@@ -3913,11 +4374,13 @@ async function amRebuildModel(){
       src: amTriageSide('src', AM.srcGraph, AM.harv.src, T),
       tgt: amTriageSide('tgt', AM.tgtGraph, AM.harv.tgt, T),
     };
+    amApplyScope();
     const model = await SubjectMap.buildAsync(amToSide(AM.srcGraph), amToSide(AM.tgtGraph), {
       srcOverrides: amOverrides('src', AM.srcGraph.database),
       tgtOverrides: amOverrides('tgt', AM.tgtGraph.database),
       srcTriage: amSrcTriageMap(),
       tgtTriage: amTgtTriageMap(),
+      ratioGuard: AM.scope && AM.scope.ratioGuard,
     }, (p) => { if (p.stage === 'scoring') amBuildUi(true, 'Reclassifying…', amFmt(p.done) + ' / ' + amFmt(p.total), 40 + (p.done / (p.total || 1)) * 58); });
     AM.model = model;
     AM.decisions = amLoadDecisions();
@@ -4000,10 +4463,10 @@ function amRender(){
     + '<div class="am-kpi' + (sum.noHome ? ' bad' : '') + '"><div class="k-lbl">Rows with no home</div>'
     + '<div class="k-val">' + amFmt(sum.noHome) + '</div>'
     + '<div class="k-sub">' + sum.noHomeTables + ' tables in areas with no target-side content</div></div>'
-    + '<div class="am-kpi' + (excluded.length ? ' warn' : '') + '"><div class="k-lbl">Excluded by triage</div>'
+    + '<div class="am-kpi' + (excluded.length ? ' warn' : '') + '"><div class="k-lbl">Excluded from scope</div>'
     + '<div class="k-val">' + excluded.length + '<small>tables</small></div>'
     + '<div class="k-sub">' + (excluded.length
-        ? amFmt(excluded.reduce((n, t) => n + t.rows, 0)) + ' rows gated with reason codes — audit them in the Excluded lane'
+        ? amFmt(excluded.reduce((n, t) => n + t.rows, 0)) + ' rows gated by triage or the scope profile, with reason codes — audit them in the Excluded lane'
         : 'Nothing gated') + '</div></div>';
 
   if (AM.sub === 'areas') amRenderAreas();
@@ -4246,15 +4709,22 @@ function amRenderQueue(){
 // is the audit promise — a hidden object is one click from visible, and the
 // restore persists per side and database.
 function amQBodyExcluded(t, tr, enc){
+  const verdict = tr.picker
+    ? 'scope profile v' + ((AM.scope && AM.scope.version) || 1)
+    : (tr.hard ? 'hard exclude' : 'junk score ' + Number(tr.score).toFixed(2));
   return '<div class="am-q-body">'
-    + '<div style="font-size:11.5px;color:var(--text2);margin-bottom:0.4rem">Triage verdict: <b>'
-    + (tr.hard ? 'hard exclude' : 'junk score ' + Number(tr.score).toFixed(2)) + '</b></div>'
+    + '<div style="font-size:11.5px;color:var(--text2);margin-bottom:0.4rem">'
+    + (tr.picker ? 'Excluded by: ' : 'Triage verdict: ') + '<b>' + verdict + '</b></div>'
     + '<div style="margin-bottom:0.5rem">' + amReasonChips(tr, 99) + '</div>'
     + '<button class="btn" style="padding:2px 9px;font-size:10.5px" onclick="amRestoreObject(\'' + enc + '\')">↩ Restore to the migrate lane</button>'
     + '</div>';
 }
 function amRestoreObject(encKey){
   const key = decodeURIComponent(encKey);
+  const v = AM.triage && AM.triage.src.byKey[key.toLowerCase()];
+  // A picker exclusion restores by RESCUE — the rule stays intact, the
+  // table leaves its net, and the profile records who pulled it back.
+  if (v && v.picker){ xpRescue('source', key); return; }
   amSetTriageOverride('src', AM.srcGraph && AM.srcGraph.database, key, 'MIGRATE');
   amRebuildModel();
 }
@@ -4337,6 +4807,7 @@ function amAccept(encSrc, encTgt){
   const srcKey = decodeURIComponent(encSrc), tgtKey = decodeURIComponent(encTgt);
   SubjectMap.accept(AM.model, srcKey, tgtKey);
   AM.decisions = AM.model.decisions;
+  if (AM.scope && AM.scope.version) AM.decisions[srcKey].profileV = AM.scope.version;
   amSaveDecision(srcKey, AM.decisions[srcKey]);
   amPropagateFamily(srcKey, () => ({ target: tgtKey, at: Date.now(), by: 'analyst' }));
   AM.qOpen[srcKey] = false;
@@ -4346,6 +4817,7 @@ function amReject(encSrc){
   const srcKey = decodeURIComponent(encSrc);
   SubjectMap.reject(AM.model, srcKey);
   AM.decisions = AM.model.decisions;
+  if (AM.scope && AM.scope.version) AM.decisions[srcKey].profileV = AM.scope.version;
   amSaveDecision(srcKey, AM.decisions[srcKey]);
   amPropagateFamily(srcKey, () => ({ target: null, at: Date.now(), by: 'analyst' }));
   AM.qOpen[srcKey] = false;
@@ -4446,7 +4918,13 @@ function amRenderMethod(tiers){
     + ' and a review-lane source −' + SubjectMap.GOV.srcReviewPenalty.toFixed(2) + '. '
     + 'A lead under ' + SubjectMap.GOV.marginFloor.toFixed(2)
     + ' publishes as <i>no candidate</i> — a coin flip is not a recommendation. '
-    + 'A zero-row table can never exceed <i>possible</i>: with no data there is no data evidence.</div>';
+    + 'A zero-row table can never exceed <i>possible</i>: with no data there is no data evidence.</div>'
+    + '<div style="font-size:11px;color:var(--text2);line-height:1.6;margin-top:0.6rem">'
+    + '<b>Pre-run scope</b> — the ⊘ Scope picker excludes by named rule before the build; excluded tables '
+    + 'never enter segmentation or a candidate pool, every one keeps its rule id in the Excluded lane, and '
+    + 'the saved profile reapplies after every rebuild. The ratio guard drops a candidate only on implausible '
+    + 'size mismatch (source over 1,000 rows and more than 1,000× the target) — never on absolute size, '
+    + 'because small sources legitimately map to small reference tables.</div>';
 
   const c = $('am-method-calib');
   if (c && tiers){
@@ -4464,7 +4942,10 @@ function amRenderMethod(tiers){
 function amExport(){
   if (!AM.model) return;
   const csvCell = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const head = 'table,schema,rows,area,area_source,triage,triage_reasons,family_rep,tier,top_candidate,score,margin,decision,decided_by\n';
+  // scope_profile_v makes every export reproducible: it names the exclusion
+  // profile version the model was built under.
+  const profV = (AM.scope && AM.scope.version) || 0;
+  const head = 'table,schema,rows,area,area_source,triage,triage_reasons,family_rep,tier,top_candidate,score,margin,decision,decided_by,scope_profile_v\n';
   const body = AM.model.queue.map(t => {
     const d = amDecisionOf(t);
     const tr = amTriageOf(t);
@@ -4474,7 +4955,7 @@ function amExport(){
       tr.class, (tr.reasons || []).join(' '), rep && rep !== t.key ? rep : '',
       t.tier,
       top ? top.table.key : '', top ? top.ev.adj.toFixed(3) : '', (t.margin || 0).toFixed(3),
-      d ? (d.target || 'rejected') : '', d ? (d.by || '') : ''].map(csvCell).join(',');
+      d ? (d.target || 'rejected') : '', d ? (d.by || '') : '', profV].map(csvCell).join(',');
   }).join('\n');
   const blob = new Blob([head + body + '\n'], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);

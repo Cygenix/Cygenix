@@ -704,7 +704,33 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('a suppressed margin renders as no candidate with the tied options in the drawer',
     /no candidate — tied/.test(html) && /coin flip, not a recommendation/.test(html));
   check('the KPI reconciliation runs over the in-scope estate, with excluded gated and counted',
-    /Excluded by triage/.test(html) && /the in-scope estate, exactly/.test(html));
+    /Excluded from scope/.test(html) && /the in-scope estate, exactly/.test(html));
+
+  // ── The pre-run exclusion picker ─────────────────────────────────────────
+  check('the exclusion-rules module is loaded and the toolbar offers the picker',
+    /cygenix-exclusion-rules\.js/.test(html) && /⊘ Scope/.test(html) && /id="am-xp"/.test(html));
+  check('profiles persist per connection pair and every save bumps the version',
+    /cygenix_exclusion_profiles/.test(html) && /prof\.version = \(prof\.version \|\| 0\) \+ 1/.test(html));
+  check('write-through: the picker folds into the triage lanes, one source of truth',
+    /function amApplyScope/.test(html) && /picker: true/.test(html)
+    && /preClass: v\.preClass \|\| v\.class/.test(html));
+  check('an explicit human restore outranks a profile rule',
+    /if \(v\.restored\) continue;/.test(html));
+  check('the ratio guard rides into BOTH build paths',
+    (html.match(/ratioGuard: AM\.scope && AM\.scope\.ratioGuard/g) || []).length === 2);
+  check('commit is gated on the preview, and 1M-row tables demand acknowledgement',
+    /id="am-xp-commit"/.test(html) && /confirm the tables over 1M rows are copies/.test(html)
+    && /eff\.big\.length > 0 && !AM\.xp\.ack/.test(html));
+  check('the §6 low-row trap carries its warning and is never pre-ticked',
+    /candidate targets under 10 rows would be removed/.test(html)
+    && /sel\.tgt_low_row = false/.test(html) && /sel\.ratio_guard = true/.test(html));
+  check('restore on a picker exclusion rescues — the rule stays intact',
+    /if \(v && v\.picker\)\{ xpRescue\('source', key\); return; \}/.test(html)
+    && /manual\.rescue\.push/.test(html));
+  check('the first run against a new pair offers the picker without forcing it',
+    /id="am-xp-offer"/.test(html) && /function xpMaybeOffer/.test(html) && /xpDismissOffer/.test(html));
+  check('exports carry the scope profile version for reproducibility',
+    /scope_profile_v/.test(html));
   check('metadata freshness and the usage observation window are on the estate bar',
     /metadata ' \+ \(h < 1/.test(html) && /usage over/.test(html));
   check('the scoring weights are on show — a ranking nobody can inspect is not trusted',
