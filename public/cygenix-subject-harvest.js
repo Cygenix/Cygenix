@@ -23,7 +23,7 @@
 (function () {
   'use strict';
 
-  const HARVEST_VERSION = 2;
+  const HARVEST_VERSION = 3;   // v3: + object inventory (usage, deps, descriptions)
   const TTL_MS = 12 * 60 * 60 * 1000;     // matches the graph cache's outlook
   const COL_PAGE = 500;                   // tables per columns page
   const KEY_PAGE = 4000;                  // rows per pk / rowcount page
@@ -120,7 +120,43 @@
       tables[k].r = Number(r.r) || 0;
     }
 
-    return { v: HARVEST_VERSION, fetchedAt: Date.now(), database: o.database || null, tables };
+    // Object inventory for triage (v2 spec §3.1): usage stats, inbound
+    // references and FKs, modify dates, descriptions. Optional — the SQL
+    // builders live in the triage module and ride in via opts — and failure
+    // is tolerated with the reason recorded: dm_* views need VIEW SERVER
+    // STATE on some estates, and triage degrades honestly without them.
+    let serverStart = null, inventoryError = '';
+    if (o.triage) {
+      try {
+        say('inventory', 0);
+        const inv = await shAllPages(execute, o.triage.tgInventorySql, o.invPage || 2000, n => say('inventory', n));
+        for (const r of inv) {
+          const k = key(r.s, r.n);
+          tables[k] = tables[k] || {};
+          tables[k].inv = {
+            kind: /view/i.test(String(r.td || '')) ? 'view' : 'table',
+            created: r.cd || null, modified: r.md || null,
+            rows: Number(r.r) || 0, cols: Number(r.cols) || 0,
+            hasPk: !!Number(r.haspk), hasUnique: !!Number(r.hasuq),
+            indexCount: Number(r.ixn) || 0,
+            inboundRefs: Number(r.inref) || 0, inboundFks: Number(r.infk) || 0,
+            lastRead: r.lseek || r.lscan || null,
+            readOps: Number(r.rops) || 0, writeOps: Number(r.wops) || 0,
+            hasUsageRow: !!Number(r.hasusage),
+            description: r.descr || null,
+          };
+        }
+        try {
+          const st = rows(await execute(o.triage.tgServerStartSql()))[0];
+          serverStart = (st && st.started) || null;
+        } catch (e) { /* start time is a nicety; the window just reads 0 */ }
+      } catch (e) {
+        inventoryError = (e && e.message) || 'inventory unavailable';
+      }
+    }
+
+    return { v: HARVEST_VERSION, fetchedAt: Date.now(), database: o.database || null,
+             serverStart, inventoryError, tables };
   }
 
   // ── IndexedDB cache, in-memory fallback ──────────────────────────────────

@@ -686,8 +686,27 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     /srcFullName: srcKey, tgtFullName: d\.target/.test(html)
     && /columnMapping: \[\], targetTables: \[\]/.test(html));
   check('the queue is decided on the keyboard', /j\/k move · a accept · r reject/.test(html));
-  check('progress is measured in rows, not tables',
-    /rows decided/.test(html) && /measured in rows, not tables/i.test(html));
+  check('progress is criticality-weighted, with rows as the secondary figure',
+    /weighted criticality decided/.test(html) && /weighted by criticality/i.test(html)
+    && /amFmt\(prog\.doneRows\)/.test(html));
+  // v2 triage wiring.
+  check('the triage module is loaded and drives the lanes',
+    /cygenix-subject-triage\.js/.test(html) && /amTriageSide\(/.test(html)
+    && /id="am-lane-MIGRATE"/.test(html) && /id="am-lane-REVIEW"/.test(html)
+    && /id="am-lane-EXCLUDE"/.test(html));
+  check('excluded objects keep their reason codes and a one-click restore',
+    /amReasonChips/.test(html) && /Restore to the migrate lane/.test(html)
+    && /cygenix_triage_overrides/.test(html));
+  check('target-side triage feeds the engine so junk targets are refused',
+    /tgtTriage: amTgtTriageMap\(\)/.test(html));
+  check('family decisions propagate with the inheritance recorded',
+    /amPropagateFamily/.test(html) && /via: 'family', propagatedFrom: srcKey/.test(html));
+  check('a suppressed margin renders as no candidate with the tied options in the drawer',
+    /no candidate — tied/.test(html) && /coin flip, not a recommendation/.test(html));
+  check('the KPI reconciliation runs over the in-scope estate, with excluded gated and counted',
+    /Excluded by triage/.test(html) && /the in-scope estate, exactly/.test(html));
+  check('metadata freshness and the usage observation window are on the estate bar',
+    /metadata ' \+ \(h < 1/.test(html) && /usage over/.test(html));
   check('the scoring weights are on show — a ranking nobody can inspect is not trusted',
     /SubjectMap\.W/.test(html) && /id="am-method-weights"/.test(html));
   check('the Data map still reads the same assignment store',
