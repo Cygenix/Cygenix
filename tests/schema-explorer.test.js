@@ -584,5 +584,132 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     /onclick="smZoom/.test(html) && /onclick="smFit\(\)"/.test(html) && /onclick="smAutoLayout/.test(html));
 }
 
+// ── Migration map (Area ledger) ────────────────────────────────────────────
+// The fourth view pairs the two estates by business subject area. The logic
+// under test is the shipped code: the Data map's classifier plus the Migration
+// map's status/coverage/linking functions, evaluated together in a sandbox.
+{
+  const clsStart = html.indexOf('const DA_DOMAIN_RULES');
+  const clsEnd   = html.indexOf('function daContentOf');
+  const amStart  = html.indexOf('// ═══ VIEW 1.7 — MIGRATION MAP');
+  const amEnd    = html.indexOf('async function amEnsure');
+  if (clsStart < 0 || amStart < 0 || amEnd < 0){
+    console.log('  FAIL  could not locate the migration-map block'); fail++;
+  } else {
+    const sb = { JSON, Math, String, Number, Array, Object, Map, Set, console,
+      localStorage: { _d:{}, getItem(k){ return this._d[k] ?? null; }, setItem(k, v){ this._d[k] = String(v); } } };
+    vm.createContext(sb);
+    vm.runInContext(html.slice(clsStart, clsEnd), sb);              // classifier
+    vm.runInContext(html.slice(amStart, amEnd), sb);                // migration map core
+    const g = (name) => vm.runInContext(name, sb);
+
+    // Status ledger, the brief's order, first match wins.
+    const S = g('amStatusOf');
+    const T = (m, oos) => ({ matchedTo: m || null, oos: !!oos, rows: 10 });
+    check('the unclassified area is always triage, whatever else is true',
+      S('oth', [T('x')], [T('y')]).k === 'triage');
+    check('source with no target area is a gap',
+      S('fin', [T()], []).k === 'gap' && /No target area/.test(S('fin', [T()], []).label));
+    check('target with no source is an orphan', S('fin', [], [T()]).k === 'orphan');
+    check('empty on both sides is neither aligned nor a gap',
+      !['ok', 'gap'].includes(S('fin', [], []).k));
+    check('every source table landed is aligned', S('fin', [T('t1')], [T()]).k === 'ok');
+    check('out-of-scope tables do not break alignment, and are counted in the label',
+      S('fin', [T('t1'), T(null, true)], [T()]).k === 'ok'
+      && /1 out of scope/.test(S('fin', [T('t1'), T(null, true)], [T()]).label));
+    check('anything else is partial with the unmatched count',
+      /Partial · 2 unmatched/.test(S('fin', [T('t1'), T(), T()], [T()]).label));
+
+    // Coverage honesty.
+    const C = g('amCoverage');
+    const R = (m, rows, oos) => ({ matchedTo: m || null, rows, oos: !!oos });
+    check('coverage is null — an empty meter — when the area has no source tables',
+      C([], 'rows') === null);
+    check('and when everything in it is out of scope',
+      C([R(null, 100, true)], 'rows') === null);
+    check('row-weighted coverage is the share of rows that land',
+      C([R('t', 300), R(null, 100)], 'rows') === 75);
+    check('table-weighted coverage counts tables',
+      C([R('t', 300), R(null, 100)], 'tables') === 50);
+    check('an area of only empty tables falls back to table share, not divide-by-zero',
+      C([R('t', 0), R(null, 0)], 'rows') === 50);
+
+    // Chip counts are computed from the same data the filters run on.
+    const counts = g('amChipCounts')(
+      [{ id:'fin' }, { id:'tb' }, { id:'oth' }],
+      { fin: [T('t1'), T()], tb: [], oth: [T()] },
+      { fin: [T()], tb: [T()], oth: [] });
+    check('chip counts come from the data, not from literals',
+      counts.all === 3 && counts.gaps === 3 && counts.unmatched === 2 && counts.triage === 1);
+
+    // Saved-map links: brackets stripped, bare names resolve, both directions.
+    const L = g('amMapLinks')([
+      { sourceTable: '[dbo].[Invoice_Lines]', targetTables: ['dbo.fct_invoice'] },
+    ]);
+    check('a bracketed saved map still links the source table',
+      L.bySrc.get('dbo.invoice_lines') === 'dbo.fct_invoice'
+      && L.bySrc.get('invoice_lines') === 'dbo.fct_invoice');
+    check('and the target side sees who feeds it',
+      L.byTgt.get('dbo.fct_invoice') === 'dbo.Invoice_Lines'.replace(/[\[\]]/g, ''));
+
+    // Both estates go through THE SAME classifier the Data map uses.
+    const graph = { ok: true, database: 'SrcDb', tables: [
+      { key: 'dbo.Invoice_Lines', name: 'Invoice_Lines', schema: 'dbo', rowCount: 500 },
+      { key: 'dbo.TimeCard',      name: 'TimeCard',      schema: 'dbo', rowCount: 900 },
+      { key: 'dbo.bkp_stuff',     name: 'bkp_stuff',     schema: 'dbo', rowCount: 5 },
+    ]};
+    const build = () => vm.runInContext('amBuildSide', sb)('src', graph, L);
+    let rows = build();
+    check('the classifier is daDomainOf — Invoice_* is Finance on this tab because it is on the Data map',
+      rows.find(r => r.table === 'Invoice_Lines').areaId === 'fin'
+      && rows.find(r => r.table === 'TimeCard').areaId === 'tb'
+      && rows.find(r => r.table === 'bkp_stuff').areaId === 'oth');
+    check('matchedTo comes from the saved maps',
+      rows.find(r => r.table === 'Invoice_Lines').matchedTo === 'dbo.fct_invoice');
+    check('confidence: anchored match HI, no match LO',
+      rows.find(r => r.table === 'Invoice_Lines').confidence === 'HI'
+      && rows.find(r => r.table === 'bkp_stuff').confidence === 'LO');
+    check('a suffix-only match is only MED',
+      g('amConfidence')('CustomAudit_Trail', 'dbo') !== 'HI');
+    check('tables sort largest first', rows[0].table === 'TimeCard');
+
+    // The user's assignment wins over the pattern, and survives via storage.
+    vm.runInContext('amSetOverride', sb)('src', 'SrcDb', 'dbo.bkp_stuff', 'fin');
+    rows = build();
+    const bkp = rows.find(r => r.table === 'bkp_stuff');
+    check('a manual assignment beats the pattern estimate',
+      bkp.areaId === 'fin' && bkp.areaSource === 'user' && bkp.confidence === 'user');
+    vm.runInContext('amSetOverride', sb)('src', 'SrcDb', 'dbo.bkp_stuff', 'oos');
+    check('out of scope is a flag, not a fake area',
+      build().find(r => r.table === 'bkp_stuff').oos === true);
+    vm.runInContext('amSetOverride', sb)('src', 'SrcDb', 'dbo.bkp_stuff', null);
+    check('resetting returns the table to the pattern estimate',
+      build().find(r => r.table === 'bkp_stuff').areaId === 'oth');
+  }
+
+  // Wiring pins.
+  check('the Migration map is a registered fourth tab',
+    /'schema', 'atlas', 'coverage', 'areas'/.test(html)
+    && /id="se-tab-areas"/.test(html) && /id="se-view-areas"/.test(html)
+    && /⇄ Migration map/.test(html));
+  check('the mode bar was widened for the fourth button', /max-width:680px/.test(html));
+  check('every area renders even when one side is empty — the empty sides carry the message',
+    /No source tables classified here/.test(html) && /No target subject area exists/.test(html));
+  check('the meter is honest about areas with nothing to measure',
+    /no source content in this area/.test(html));
+  check('the Data map reads the same assignment store',
+    /amOverrides\(DA\.side, graph\.database\)/.test(html));
+  check('assignments persist per side and database',
+    /cygenix_area_overrides/.test(html));
+  check('an assignment invalidates the built atlas so the Data map recolours',
+    /DA\.loaded = null; DA\.tables = \[\];/.test(html));
+  check('one popover at a time, closed by outside click and Escape',
+    /document\.querySelectorAll\('\.am-pop'\)\.forEach\(x => x\.classList\.remove\('open'\)\)/.test(html)
+    && /e\.key === 'Escape'\) document\.querySelectorAll\('\.am-pop\.open'\)/.test(html));
+  check('the fit report exports both estates', /cygenix-fit-report\.csv/.test(html));
+  check('reload schema refetches both estates on this tab',
+    /seTab === 'areas'\)\{ AM\.ready = false; amEnsure\(true\); \}/.test(html));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
