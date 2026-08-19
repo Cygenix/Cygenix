@@ -510,6 +510,51 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .am-note b{color:var(--text2);font-weight:500}
 @media(max-width:1200px){.am-kpis{grid-template-columns:repeat(2,1fr)}.am-grid{grid-template-columns:1fr}}
 @media(max-width:820px){.am-ledger-head,.am-row-head,.am-cols{grid-template-columns:1fr}.am-centre{padding:0.4rem 0}.am-side.right{justify-content:flex-start;text-align:left}.am-search input{width:100%}}
+
+/* Migration map — sub-view additions (tokens only, no raw colour) */
+.am-select{font-family:var(--serif);font-size:11px;padding:0.32rem 0.5rem;border-radius:7px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer}
+.am-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.am-table th{font-size:9.5px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text3);text-align:left;padding:0.45rem 0.7rem;border-bottom:0.5px solid var(--border);background:var(--bg3)}
+.am-table td{padding:0.42rem 0.7rem;border-bottom:0.5px solid var(--border)}
+.am-table tr:last-child td{border-bottom:none}
+.am-table .num,.am-table th.num{text-align:right;font-family:var(--mono);font-size:11px;white-space:nowrap}
+.am-vol{display:flex;flex-direction:column;gap:2px}
+.am-vol i{display:block;height:4px;border-radius:2px;min-width:2px}
+.am-vol .v-src{background:var(--accent)}
+.am-vol .v-tgt{background:var(--teal)}
+.am-mix{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--bg4)}
+.am-mix i{display:block;height:100%}
+.am-mix .x-strong{background:var(--green)}
+.am-mix .x-likely{background:var(--accent)}
+.am-mix .x-possible{background:var(--amber)}
+.am-mix .x-none{background:var(--bg4)}
+.am-key{font-family:var(--mono);font-size:9.5px;border:0.5px solid var(--border2);border-radius:3px;padding:0 0.3rem;color:var(--text2);white-space:nowrap}
+.am-tier{font-family:var(--mono);font-size:9.5px;padding:0.1rem 0.45rem;border-radius:999px;border:0.5px solid var(--border2);white-space:nowrap}
+.am-tier-strong{color:var(--green);border-color:rgba(34,201,122,0.35);background:var(--green-bg)}
+.am-tier-likely{color:var(--accent);border-color:rgba(74,91,214,0.35);background:var(--accent-glow)}
+.am-tier-possible{color:var(--amber);border-color:rgba(245,158,11,0.35);background:var(--amber-bg)}
+.am-tier-none,.am-tier-weak{color:var(--text3)}
+.am-q-row{border-bottom:0.5px solid var(--border)}
+.am-q-row:last-child{border-bottom:none}
+.am-q-row.sel{box-shadow:inset 2px 0 0 var(--accent)}
+.am-q-head{display:flex;align-items:center;gap:0.55rem;padding:0.55rem 0.8rem;cursor:pointer}
+.am-q-head:hover{background:rgba(74,91,214,0.04)}
+.am-q-row.open .am-q-head{background:var(--bg3)}
+.am-q-row.open .am-chev{transform:rotate(90deg)}
+.am-area-chip{font-size:10px;color:var(--text3);border:0.5px solid var(--border2);border-radius:999px;padding:0.08rem 0.5rem;white-space:nowrap}
+.am-q-right{margin-left:auto;display:flex;gap:0.45rem;align-items:center;min-width:0}
+.am-cand-top{font-family:var(--mono);font-size:10.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.am-margin{font-family:var(--mono);font-size:9.5px;color:var(--text3)}
+.am-q-body{padding:0.6rem 0.8rem 0.8rem 2rem;background:var(--bg3)}
+.am-cand{background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:0.55rem 0.7rem;margin-bottom:0.45rem}
+.am-ev{display:flex;align-items:center;gap:0.5rem;font-size:10px;color:var(--text3);margin-top:2px}
+.am-ev span{width:52px;flex:none}
+.am-ev b{font-family:var(--mono);font-weight:500;width:34px;text-align:right}
+.am-ev-bar{flex:1;height:4px;border-radius:2px;background:var(--bg4);overflow:hidden}
+.am-ev-bar i{display:block;height:100%;background:var(--accent)}
+.am-step{display:flex;gap:0.8rem;font-size:11.5px;color:var(--text2);padding:0.35rem 0;line-height:1.5}
+.am-step b{flex:0 0 150px;color:var(--text)}
+@media(max-width:820px){.am-step b{flex-basis:100px}.am-cand-top{max-width:120px}}
 </style>
 </head>
 <body>
@@ -517,6 +562,8 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-api.js?v=923ff2d8c9" defer></script>
 <script src="/cygenix-schema-graph.js?v=7342c9d73d" defer></script>
+<script src="/cygenix-subject-map.js?v=744aabf7bd" defer></script>
+<script src="/cygenix-subject-harvest.js?v=031797de0f" defer></script>
 <script src="/cygenix-infer-schema.js?v=c197ec85e0" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
@@ -739,10 +786,13 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
   </div>
 
   <!-- ══ VIEW 1.7 — MIGRATION MAP ═════════════════════════════════════
-       One row per business subject area, source estate on the left and
-       target on the right, so "all financial tables in source" line up
-       against "all financial tables in target" — and the tables with
-       nowhere to land are the loudest thing on the page. -->
+       Semantic subject-area mapper. Both estates are segmented into a
+       shared business vocabulary and compared in concept space — lexical
+       matching cannot bridge two different products, and the name-pattern
+       classifier this replaces left 88% of a real estate in "needs
+       triage". Four sub-views, in the order the work happens: subject
+       areas, the concept spine (the mapping contract), the mapping queue
+       (decisions by rows at stake), and the method. -->
   <div id="se-view-areas" role="tabpanel" aria-labelledby="se-tab-areas" style="display:none">
 
     <div class="am-bar">
@@ -758,65 +808,104 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
         <span class="meta" id="am-tgt-meta"></span>
       </div>
       <div class="spacer"></div>
-      <div class="am-seg" role="group" aria-label="Size by">
-        <button class="active" id="am-size-rows" onclick="amSetSize('rows')">by rows</button>
-        <button id="am-size-tables" onclick="amSetSize('tables')">by tables</button>
+      <div class="am-seg" role="tablist" aria-label="Migration map views">
+        <button class="active" id="am-sub-areas" onclick="amSetSub('areas')">Subject areas</button>
+        <button id="am-sub-spine" onclick="amSetSub('spine')">Concept spine</button>
+        <button id="am-sub-queue" onclick="amSetSub('queue')">Mapping queue</button>
+        <button id="am-sub-method" onclick="amSetSub('method')">How it decides</button>
       </div>
-      <button class="btn" onclick="amExport()" title="Download the full fit report as CSV — one line per table, both estates">⤓ Export fit report</button>
+      <button class="btn" onclick="amRebuildAll()" title="Re-harvest both schemas' columns and keys and rebuild the model">↻ Rebuild</button>
+      <button class="btn" onclick="amExport()" title="Download the full fit report as CSV — every source table, its area, tier, top candidate and decision">⤓ Export</button>
+    </div>
+
+    <!-- Build progress / failure. The adapter assertion fails LOUDLY here:
+         a stale cache with no columns must never render as "everything
+         Unclassified", which looks exactly like an engine bug. -->
+    <div id="am-build" class="panel" style="display:none;margin-bottom:0.9rem;padding:0.8rem 0.9rem">
+      <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.45rem">
+        <span class="panel-title" id="am-build-title">Building the subject map…</span>
+        <span id="am-build-stage" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
+      </div>
+      <div class="am-meter" style="height:6px"><i class="m-ok" id="am-build-bar" style="width:0%"></i></div>
+      <div id="am-build-err" style="display:none;font-size:11.5px;color:var(--red);line-height:1.5;margin-top:0.5rem"></div>
     </div>
 
     <div class="am-kpis" id="am-kpis"></div>
 
-    <div class="am-toolbar">
-      <button class="am-chip active" data-am-filter="all" onclick="amSetFilter('all')">All areas <span class="n" id="am-n-all"></span></button>
-      <button class="am-chip" data-am-filter="gaps" onclick="amSetFilter('gaps')">Gaps only <span class="n" id="am-n-gaps"></span></button>
-      <button class="am-chip" data-am-filter="unmatched" onclick="amSetFilter('unmatched')">Unmatched tables <span class="n" id="am-n-unmatched"></span></button>
-      <button class="am-chip" data-am-filter="triage" onclick="amSetFilter('triage')">Needs triage <span class="n" id="am-n-triage"></span></button>
-      <button class="btn" style="padding:3px 8px;font-size:10.5px" onclick="amExpandAll(true)">Expand all</button>
-      <button class="btn" style="padding:3px 8px;font-size:10.5px" onclick="amExpandAll(false)">Collapse</button>
-      <div class="am-search"><input id="am-search" placeholder="Filter tables…" aria-label="Filter tables by name" oninput="amSearch(this.value)"></div>
-    </div>
-
-    <div class="am-grid">
+    <!-- Sub-view: subject areas rollup -->
+    <div id="am-v-areas">
       <div class="panel">
         <div class="panel-header">
-          <div><div class="panel-title">Business subject areas · source ⇄ target</div></div>
-          <span style="font-size:10.5px;color:var(--text3);font-family:var(--mono)">name-pattern classification · click a row to open</span>
+          <div><div class="panel-title">Business subject areas · source ⇄ target</div>
+          <div class="panel-sub">Derived from
+            column evidence on both sides, not from table names alone. Confidence mix per area; volumes are rows.</div></div>
         </div>
-        <div class="am-ledger-head">
-          <div id="am-head-src">Source</div>
-          <div class="c">Fit</div>
-          <div class="r" id="am-head-tgt">Target</div>
-        </div>
-        <div id="am-ledger"><div class="am-empty-col" style="padding:2rem">Loading both schemas…</div></div>
+        <div style="overflow-x:auto"><table class="am-table" id="am-areas-table">
+          <thead><tr><th>Subject area</th><th class="num">Src tbl</th><th class="num">Src rows</th>
+          <th style="min-width:140px">Volume</th>
+          <th class="num">Tgt tbl</th><th class="num">Tgt rows</th>
+          <th class="num">Concepts both sides</th><th style="min-width:130px">Confidence mix</th></tr></thead>
+          <tbody></tbody></table></div>
       </div>
+    </div>
 
-      <aside class="panel" aria-label="Fit summary">
-        <div class="panel-header"><span class="panel-title">Fit summary</span></div>
-        <div class="am-rail-sec">
-          <div class="am-rail-lbl">Where source rows land</div>
-          <div class="am-stack" id="am-stack"></div>
-          <div class="am-legend" id="am-stack-legend"></div>
+    <!-- Sub-view: concept spine -->
+    <div id="am-v-spine" style="display:none">
+      <div class="panel">
+        <div class="panel-header">
+          <div><div class="panel-title">Concept spine — the mapping contract</div>
+          <div class="panel-sub">One row per entity concept: its key columns on each side, aligned or not. This is where the two databases overlap, and it is the short list to review first.</div></div>
+          <div class="am-search" style="margin-left:auto"><input id="am-spine-q" placeholder="Filter concepts, keys…" aria-label="Filter concepts" oninput="amSpineFilter()"></div>
+          <select id="am-spine-f" class="am-select" onchange="amSpineFilter()" aria-label="Status filter">
+            <option value="">All statuses</option><option value="aligned">Aligned both sides</option><option value="one">One side only</option>
+          </select>
         </div>
-        <div class="am-rail-sec">
-          <div class="am-rail-lbl">Biggest gaps by rows</div>
-          <div class="am-legend" id="am-gaps-list"></div>
+        <div style="overflow-x:auto"><table class="am-table" id="am-spine-table">
+          <thead><tr><th>Concept</th><th>Business area</th><th class="num">Src tbl</th><th class="num">Src rows</th>
+          <th>Source keys</th><th class="num">Tgt tbl</th><th class="num">Tgt rows</th><th>Target keys</th><th>Status</th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- Sub-view: mapping queue -->
+    <div id="am-v-queue" style="display:none">
+      <div class="panel" style="margin-bottom:0.9rem;padding:0.7rem 0.9rem">
+        <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem">
+          <span class="panel-title">Progress — measured in rows, not tables</span>
+          <span id="am-q-progress-txt" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
         </div>
-        <div class="am-rail-sec">
-          <div class="am-rail-lbl">Triage queue · unclassified</div>
-          <div id="am-queue"></div>
-        </div>
-        <div class="am-rail-sec">
-          <div class="am-rail-lbl">What this view assumes</div>
-          <div class="am-note">
-            Areas are inferred from <b>table name patterns</b> — the same classifier the Data map's
-            Domain lens uses — not from data. A table sits in one area only. Confidence is shown per
-            table, and any assignment you make overrides the estimate, is saved, and recolours the
-            Data map to match. A source table counts as landed when a <b>saved map</b> writes it into
-            a target table.
-          </div>
-        </div>
-      </aside>
+        <div class="am-meter" style="height:6px"><i class="m-ok" id="am-q-progress-bar" style="width:0%"></i></div>
+      </div>
+      <div class="am-toolbar">
+        <div class="am-search" style="margin-left:0"><input id="am-q-q" placeholder="Find a source table…" aria-label="Find a source table" oninput="amQFilterChanged()"></div>
+        <select id="am-q-area" class="am-select" onchange="amQFilterChanged()" aria-label="Subject area filter"><option value="">All subject areas</option></select>
+        <select id="am-q-tier" class="am-select" onchange="amQFilterChanged()" aria-label="Confidence filter">
+          <option value="">All confidence</option><option value="strong">Strong</option><option value="likely">Likely</option>
+          <option value="possible">Possible</option><option value="none">No candidate</option>
+        </select>
+        <select id="am-q-state" class="am-select" onchange="amQFilterChanged()" aria-label="Decision state filter">
+          <option value="open">Undecided</option><option value="">Everything</option><option value="done">Decided</option>
+        </select>
+        <span style="font-size:10.5px;color:var(--text3);font-family:var(--mono);margin-left:auto">keys: j/k move · a accept · r reject · enter expand</span>
+      </div>
+      <div class="panel" id="am-queue"></div>
+    </div>
+
+    <!-- Sub-view: method -->
+    <div id="am-v-method" style="display:none">
+      <div class="panel" style="margin-bottom:0.9rem">
+        <div class="panel-header"><div class="panel-title">Pipeline</div></div>
+        <div id="am-method-pipeline" style="padding:0.8rem 0.9rem"></div>
+      </div>
+      <div class="panel" style="margin-bottom:0.9rem">
+        <div class="panel-header"><div><div class="panel-title">Scoring a candidate pair</div>
+        <div class="panel-sub">A ranking nobody can inspect is a ranking nobody trusts. These are the exact weights the engine ships with.</div></div></div>
+        <div id="am-method-weights" style="padding:0.8rem 0.9rem"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">Calibration on this estate</div></div>
+        <div id="am-method-calib" style="padding:0.8rem 0.9rem;font-size:11.5px;color:var(--text2);line-height:1.6"></div>
+      </div>
     </div>
   </div>
 
@@ -2552,6 +2641,12 @@ function daTypesOf(columns){
 
 // ── Build the estate from the loaded graph ────────────────────────────────
 const DA_FLAT_ROW_WIDTH = 170;          // before real columns arrive
+const DA_ATLAS_IDS = new Set(['fin','tb','mat','doc','hr','ref','sys','oth']);
+const DA_FROM_SUBJECT = {
+  'Matters & clients':'mat', 'People & timekeepers':'hr', 'Time & WIP':'tb',
+  'Billing & AR':'fin', 'Finance & ledger':'fin', 'Documents & content':'doc',
+  'Reference & lookup':'ref', 'System & audit':'sys', 'Staging & conversion':'sys', 'Other':'oth',
+};
 function daBuildTables(graph){
   const mapsIndex = daMapsIndex(DA.side);
   // Manual area assignments from the Migration map win over the pattern
@@ -2565,7 +2660,10 @@ function daBuildTables(graph){
     const cols = known ? node.columns.length : null;
     const bytes = rows * (known ? known.width : DA_FLAT_ROW_WIDTH);
     const ov = areaOv[node.key.toLowerCase()];
-    const domain = (ov && ov !== 'oos') ? ov : daDomainOf(node.name, node.schema);
+    // Overrides written by the Migration map carry its subject-area names,
+    // not atlas domain ids — translate the ones that map, ignore the rest.
+    const ovDomain = ov && ov !== 'oos' ? (DA_ATLAS_IDS.has(ov) ? ov : DA_FROM_SUBJECT[ov]) : null;
+    const domain = ovDomain || daDomainOf(node.name, node.schema);
     return {
       key: node.key, name: node.name, schema: node.schema, kind: node.kind,
       rows, bytes, cols,
@@ -3414,31 +3512,38 @@ function daRefresh(structural){
 }
 
 // ═══ VIEW 1.7 — MIGRATION MAP ════════════════════════════════════════════
-// Both estates classified with THE SAME name-pattern classifier the Data
-// map's Domain lens uses (daDomainOf), then paired area by area. No second
-// taxonomy, no second colour list — if the two tabs ever disagreed about
-// what counts as "Finance & AR", one of them would be lying.
+// Semantic subject-area mapper, replacing the name-pattern classifier that
+// left 88% of a real estate in "needs triage". Both schemas are harvested
+// (columns, keys, row counts — metadata only, no data values), segmented
+// into a shared business vocabulary by SubjectMap (cygenix-subject-map.js),
+// and compared in concept space. The engine proposes ranked candidates with
+// their evidence; a human decides.
 //
-// A source table counts as "landed" when a saved map writes it into a
-// target table (table-level; column-level coverage stays on the Coverage
-// map). Manual assignments are stored per side+database and win over the
-// pattern estimate — and daBuildTables reads the same store, so an
-// assignment made here recolours the Data map too.
+// THE FIREWALL, same rule as the inferred-relationships view: a ranked
+// candidate is a hypothesis. Suggestions are never persisted — they are
+// recomputed from the schemas, so they can never drift out of sync with
+// reality or be mistaken for a decision. Only the decisions store below
+// holds human choices, and only an accepted decision may touch the
+// object-mapping WIP — and then only as a table-pair pre-seed, never as
+// column mappings, because a wrong column mapping writes bad data instead
+// of showing a bad suggestion.
 
 const AM = {
-  size: 'rows',            // 'rows' | 'tables'
-  filter: 'all',           // 'all' | 'gaps' | 'unmatched' | 'triage'
-  q: '',
-  open: {},                // areaId → bool; collapsed by default
-  src: [], tgt: [],
+  sub: 'areas',              // 'areas' | 'spine' | 'queue' | 'method'
+  model: null,
+  modelKey: '',              // srcDb|tgtDb|engineVersion — rebuild when it changes
   srcGraph: null, tgtGraph: null,
   ready: false, loading: false,
+  links: null,               // saved-map table links (already-confirmed reality)
+  decisions: {},             // srcKey → {target|null, at, by}
+  qQ: '', qArea: '', qTier: '', qState: 'open', qSel: 0, qOpen: {},
+  spQ: '', spF: '',
 };
 
-// ── User assignments ──────────────────────────────────────────────────────
-// { 'side|database': { '<table key, lower>': '<areaId>' | 'oos' } }. A user
-// assignment beats the pattern estimate and survives a reload; 'oos' marks
-// the table out of the migration's scope without inventing an area for it.
+// ── User area assignments ─────────────────────────────────────────────────
+// { 'side|database': { '<table key, lower>': '<area name>' | 'oos' } }. The
+// existing human-correction path — SubjectMap treats these as fixed rather
+// than re-deriving them, and the Data map reads the same store.
 const AM_OVERRIDE_KEY = 'cygenix_area_overrides';
 function amOverrides(side, database){
   try {
@@ -3457,68 +3562,35 @@ function amSetOverride(side, database, tableKey, value){
   } catch {}
 }
 
-// ── Pure logic (tests run these directly) ─────────────────────────────────
-// Confidence in the pattern estimate: a rule that anchored at the start of
-// the name is a strong claim, a suffix hit ("…Log") is weaker, and "oth"
-// means the classifier gave up. A user assignment reports as 'user'.
-function amConfidence(name, schema){
-  if (/^(audit|log)$/i.test(schema)) return 'HI';
-  for (const [, re] of DA_DOMAIN_RULES){
-    const m = re.exec(String(name || ''));
-    if (m) return m.index === 0 ? 'HI' : 'MED';
-  }
-  return 'LO';
+// ── Decisions store — separate from suggestions, by design ────────────────
+// cygenix_subjectmap_decisions = { '<srcDb>|<tgtDb>': { v, decisions } }.
+// target:null records a deliberate "no home here" — that is a decision too.
+const AM_DEC_KEY = 'cygenix_subjectmap_decisions';
+function amDecScope(){
+  return ((AM.srcGraph && AM.srcGraph.database) || 'unknown') + '|'
+       + ((AM.tgtGraph && AM.tgtGraph.database) || 'unknown');
+}
+function amLoadDecisions(){
+  try {
+    const all = JSON.parse(localStorage.getItem(AM_DEC_KEY) || '{}');
+    const doc = all[amDecScope()];
+    return (doc && doc.decisions) || {};
+  } catch { return {}; }
+}
+function amSaveDecision(srcKey, rec){
+  try {
+    const all = JSON.parse(localStorage.getItem(AM_DEC_KEY) || '{}');
+    const k = amDecScope();
+    if (!all[k]) all[k] = { v: 1, decisions: {} };
+    if (rec == null) delete all[k].decisions[srcKey];
+    else all[k].decisions[srcKey] = rec;
+    localStorage.setItem(AM_DEC_KEY, JSON.stringify(all));
+  } catch {}
 }
 
-// Fit status per area, first match wins. Out-of-scope tables never make an
-// area look unfinished — they were deliberately excluded, which is an
-// answer, not a gap.
-function amStatusOf(id, src, tgt){
-  if (id === 'oth') return { k:'triage', label:'? Needs triage' };
-  if (src.length && !tgt.length) return { k:'gap', label:'⚠ No target area' };
-  if (!src.length && tgt.length) return { k:'orphan', label:'○ Target only' };
-  if (!src.length && !tgt.length) return { k:'triage', label:'– Empty both sides' };
-  const un  = src.filter(x => !x.matchedTo && !x.oos).length;
-  const oos = src.filter(x => x.oos).length;
-  if (un === 0) return { k:'ok', label:'✓ Aligned' + (oos ? ' · ' + oos + ' out of scope' : '') };
-  return { k:'part', label:'◐ Partial · ' + un + ' unmatched' };
-}
-
-// Share of in-scope source content that has a target home. Returns null for
-// an area with nothing in scope — an empty meter, never a green 100%, which
-// would read as success when nothing was checked.
-function amCoverage(src, mode){
-  const scope = src.filter(x => !x.oos);
-  if (!scope.length) return null;
-  const landed = scope.filter(x => x.matchedTo);
-  if (mode === 'rows'){
-    const tot = scope.reduce((n, x) => n + (x.rows || 0), 0);
-    if (tot > 0) return Math.round(landed.reduce((n, x) => n + (x.rows || 0), 0) / tot * 100);
-    // Every in-scope table is empty: fall through to table share rather than
-    // dividing by zero into a fake answer.
-  }
-  return Math.round(landed.length / scope.length * 100);
-}
-
-// Chip counts are computed from the same data the filters run over — a
-// hard-coded count drifts the first time anything changes.
-function amChipCounts(areas, srcByArea, tgtByArea){
-  const c = { all: areas.length, gaps: 0, unmatched: 0, triage: 0 };
-  for (const a of areas){
-    const s = srcByArea[a.id] || [], t = tgtByArea[a.id] || [];
-    if (amStatusOf(a.id, s, t).k !== 'ok') c.gaps++;
-    c.unmatched += s.filter(x => !x.matchedTo && !x.oos).length;
-    if (a.id === 'oth') c.triage = s.filter(x => !x.oos).length;
-  }
-  return c;
-}
-
+// ── Saved-map links: mappings that already exist are facts, not queue work ─
 const amNorm = (s) => String(s || '').replace(/[\[\]]/g, '').trim().toLowerCase();
 const amBare = (s) => s.includes('.') ? s.split('.').pop() : s;
-
-// Table-level links out of the saved maps — the same source the Coverage map
-// reads. bySrc: source name → first target it lands in; byTgt: target name →
-// first source that feeds it.
 function amMapLinks(maps){
   const bySrc = new Map(), byTgt = new Map();
   const put = (m, k, v) => { const n = amNorm(k); if (n && v){ if (!m.has(n)) m.set(n, v); if (!m.has(amBare(n))) m.set(amBare(n), v); } };
@@ -3530,282 +3602,542 @@ function amMapLinks(maps){
   }
   return { bySrc, byTgt };
 }
+function amLinkFor(t){
+  if (!AM.links) return null;
+  return AM.links.bySrc.get(amNorm(t.key)) || AM.links.bySrc.get(amNorm(t.name)) || null;
+}
 
-// One estate → the brief's table model. The classifier is daDomainOf — the
-// Data map's — with the user override applied on top.
-function amBuildSide(side, graph, links){
-  if (!graph || !graph.ok) return [];
-  const ov = amOverrides(side, graph.database);
-  const dir = side === 'src' ? links.bySrc : links.byTgt;
-  const out = graph.tables.map(node => {
-    const o = ov[node.key.toLowerCase()];
-    const oos = o === 'oos';
-    const user = o && o !== 'oos';
-    const link = dir.get(amNorm(node.key)) || dir.get(amNorm(node.name)) || null;
-    return {
-      key: node.key, table: node.name, schema: node.schema,
-      rows: typeof node.rowCount === 'number' ? node.rowCount : 0,
-      areaId: user ? o : daDomainOf(node.name, node.schema),
-      confidence: user ? 'user' : amConfidence(node.name, node.schema),
-      areaSource: user ? 'user' : 'pattern',
-      oos,
-      matchedTo: link,
-    };
-  });
-  out.sort((a, b) => b.rows - a.rows || a.table.localeCompare(b.table));
+// ── Adapter: cached graph → engine input ──────────────────────────────────
+function amToSide(graph){
+  return { tables: (graph && graph.ok ? graph.tables : []).map(t => ({
+    key: t.key, schema: t.schema, name: t.name,
+    rows: typeof t.rowCount === 'number' ? t.rowCount : 0,
+    pk: t.primaryKeys || [],
+    cols: t.colsig
+      ? t.colsig.split(',').filter(Boolean).map(p => {
+          const i = p.lastIndexOf(':');
+          return { name: i > 0 ? p.slice(0, i) : p, type: i > 0 ? p.slice(i + 1) : '' };
+        })
+      : (t.columns || []).map(c => ({ name: c.name, type: c.type })),
+  })) };
+}
+
+// The single highest-value guard in the whole feature: a graph that reached
+// the engine WITHOUT columns classifies almost nothing, which looks exactly
+// like an engine bug. Fail loudly with the real cause instead.
+function amAssertClassified(model){
+  const n = model.src.length;
+  if (n < 20) return 1;   // a toy estate can legitimately classify poorly
+  const share = model.src.filter(t => t.area !== 'Unclassified').length / n;
+  if (share < 0.8){
+    throw new Error('Only ' + Math.round(share * 100) + '% of source tables were classified. '
+      + 'That almost always means the column harvest is missing — a stale schema cache from before '
+      + 'this feature, or a harvest that returned nothing. Press Rebuild to re-harvest both sides.');
+  }
+  return share;
+}
+
+// ── Honest arithmetic ─────────────────────────────────────────────────────
+// Three buckets that MUST sum to the total, exactly: rows whose destination
+// a human confirmed (or a saved map already writes), rows sitting in a
+// subject area that exists on both sides awaiting a decision, and rows with
+// no home. The retired "8 of 8 areas have target cover" tile could read
+// 100% while nothing mapped; these cannot.
+function amRowsSummary(srcTables, decisions, linkOf, areasWithTargets){
+  const out = { total: 0, decided: 0, decidedTables: 0, shared: 0, sharedTables: 0, noHome: 0, noHomeTables: 0 };
+  for (const t of srcTables){
+    out.total += t.rows;
+    const d = decisions[t.key];
+    if ((d && d.target) || (linkOf && linkOf(t))){ out.decided += t.rows; out.decidedTables++; }
+    // A rejection is a decision that the table has no home — it lands in the
+    // no-home bucket, not back in "awaiting a decision".
+    else if (d && !d.target){ out.noHome += t.rows; out.noHomeTables++; }
+    else if (areasWithTargets.has(t.area)){ out.shared += t.rows; out.sharedTables++; }
+    else { out.noHome += t.rows; out.noHomeTables++; }
+  }
   return out;
 }
-
-function amGroup(list){
-  const g = {};
-  for (const t of (list || [])){ (g[t.areaId] = g[t.areaId] || []).push(t); }
-  return g;
+function amTierCounts(srcTables){
+  const c = { strong: 0, likely: 0, possible: 0, weak: 0, none: 0 };
+  const r = { strong: 0, likely: 0, possible: 0, weak: 0, none: 0 };
+  for (const t of srcTables){
+    const k = c[t.tier] != null ? t.tier : 'none';
+    c[k]++; r[k] += t.rows;
+  }
+  return { tables: c, rows: r };
 }
-
-// ── Data ──────────────────────────────────────────────────────────────────
-async function amEnsure(force){
-  if (AM.loading) return;
-  if (AM.ready && !force){ amRender(); return; }
-  AM.loading = true;
-  const [sg, tg] = await Promise.all([
-    CygenixSchemaGraph.load('src', force ? { force: true } : undefined),
-    CygenixSchemaGraph.load('tgt', force ? { force: true } : undefined),
-  ]);
-  AM.srcGraph = sg; AM.tgtGraph = tg;
-  amRebuild();
-  AM.loading = false;
-  AM.ready = true;
-  amRender();
-}
-function amRebuild(){
-  const links = amMapLinks(CygenixSchemaGraph.savedMaps());
-  AM.src = amBuildSide('src', AM.srcGraph, links);
-  AM.tgt = amBuildSide('tgt', AM.tgtGraph, links);
+// The brief's calibration guard: strong between 50 and 250 on the reference
+// estate; past ~400 the thresholds have drifted and the tool is bluffing.
+function amCalibrationNote(strongCount, totalCount){
+  if (totalCount >= 500 && strongCount > 400){
+    return 'CALIBRATION WARNING: ' + strongCount + ' tables scored "strong" — past the ~400 guard. '
+      + 'Thresholds have drifted; treat machine proposals with suspicion until retuned.';
+  }
+  return '';
 }
 
 const amFmt = (n) => Number(n || 0).toLocaleString('en-GB');
 const amEncKey = (k) => encodeURIComponent(k).replace(/'/g, '%27');
 
+// ── Ensure: harvest both sides, build the model off the main thread ───────
+function amBuildUi(show, title, stage, pct){
+  const box = $('am-build');
+  if (!box) return;
+  box.style.display = show ? '' : 'none';
+  if (title) $('am-build-title').textContent = title;
+  if (stage != null) $('am-build-stage').textContent = stage;
+  if (pct != null) $('am-build-bar').style.width = Math.max(0, Math.min(100, pct)) + '%';
+  if (show) $('am-build-err').style.display = 'none';
+}
+function amBuildFail(msg){
+  const box = $('am-build'), err = $('am-build-err');
+  if (box) box.style.display = '';
+  if ($('am-build-title')) $('am-build-title').textContent = 'The subject map could not be built';
+  if (err){ err.style.display = ''; err.textContent = msg; }
+}
+
+async function amEnsure(force){
+  if (AM.loading) return;
+  if (!window.SubjectMap || !window.CygenixSubjectHarvest){
+    amBuildFail('The subject-map engine did not load. Hard-refresh the page.');
+    return;
+  }
+  AM.loading = true;
+  try {
+    const [sg, tg] = await Promise.all([
+      CygenixSchemaGraph.load('src', force ? { force: true } : undefined),
+      CygenixSchemaGraph.load('tgt', force ? { force: true } : undefined),
+    ]);
+    AM.srcGraph = sg; AM.tgtGraph = tg;
+    amRenderBar();
+    if (!sg.ok || !tg.ok){
+      amBuildFail('Both connections are needed: '
+        + (!sg.ok ? 'source — ' + (sg.reason || 'not loaded') : '')
+        + (!sg.ok && !tg.ok ? ' · ' : '')
+        + (!tg.ok ? 'target — ' + (tg.reason || 'not loaded') : ''));
+      return;
+    }
+    const key = sg.database + '|' + tg.database + '|' + SubjectMap.ENGINE_VERSION;
+    if (!force && AM.ready && AM.model && AM.modelKey === key){ amRender(); return; }
+
+    // Harvest: columns, PKs and row counts for EVERY table, both sides,
+    // paged and cached in IndexedDB. This is what the classifier reasons
+    // with — without it the engine only ever sees table names.
+    amBuildUi(true, 'Harvesting schema metadata…', '', 5);
+    const H = CygenixSubjectHarvest;
+    for (const [side, graph] of [['src', sg], ['tgt', tg]]){
+      const h = await H.shEnsure({
+        execute: (sql) => CygenixSchemaGraph.execute(side, sql),
+        database: graph.database,
+        cacheKey: side + '|' + (graph.database || 'unknown'),
+        force: !!force,
+        onProgress: (p) => amBuildUi(true, 'Harvesting ' + (side === 'src' ? 'source' : 'target') + ' metadata…',
+          p.stage + ' · ' + amFmt(p.n), side === 'src' ? 15 : 35),
+      });
+      H.shApply(graph, h);
+    }
+
+    // Adapter + the loud guard, then the chunked build with the user's
+    // existing area corrections pinned.
+    const srcSide = amToSide(sg), tgtSide = amToSide(tg);
+    amBuildUi(true, 'Building the subject map…', 'profiling', 45);
+    const model = await SubjectMap.buildAsync(srcSide, tgtSide, {
+      srcOverrides: amOverrides('src', sg.database),
+      tgtOverrides: amOverrides('tgt', tg.database),
+    }, (p) => {
+      if (p.stage === 'scoring') amBuildUi(true, 'Scoring candidates…',
+        amFmt(p.done) + ' of ' + amFmt(p.total) + ' source tables', 50 + (p.done / (p.total || 1)) * 48);
+      else amBuildUi(true, 'Building the subject map…', p.stage, p.stage === 'hubs' ? 48 : 46);
+    });
+    amAssertClassified(model);
+
+    AM.model = model;
+    AM.modelKey = key;
+    AM.links = amMapLinks(CygenixSchemaGraph.savedMaps());
+    AM.decisions = amLoadDecisions();
+    model.decisions = AM.decisions;
+    AM.ready = true;
+    amBuildUi(false);
+    amFillAreaSelect();
+    amRender();
+  } catch (e) {
+    amBuildFail((e && e.message) || String(e));
+  } finally {
+    AM.loading = false;
+  }
+}
+function amRebuildAll(){ AM.ready = false; amEnsure(true); }
+
+// Re-run the engine from the harvested inputs already in memory — an area
+// correction changes classification, not the harvest.
+async function amRebuildModel(){
+  if (!AM.srcGraph || !AM.tgtGraph) return;
+  AM.loading = true;
+  try {
+    amBuildUi(true, 'Reclassifying…', '', 40);
+    const model = await SubjectMap.buildAsync(amToSide(AM.srcGraph), amToSide(AM.tgtGraph), {
+      srcOverrides: amOverrides('src', AM.srcGraph.database),
+      tgtOverrides: amOverrides('tgt', AM.tgtGraph.database),
+    }, (p) => { if (p.stage === 'scoring') amBuildUi(true, 'Reclassifying…', amFmt(p.done) + ' / ' + amFmt(p.total), 40 + (p.done / (p.total || 1)) * 58); });
+    AM.model = model;
+    AM.decisions = amLoadDecisions();
+    model.decisions = AM.decisions;
+    amBuildUi(false);
+    amRender();
+  } catch (e) { amBuildFail((e && e.message) || String(e)); }
+  finally { AM.loading = false; }
+}
+
 // ── Render ────────────────────────────────────────────────────────────────
-function amAreaVisible(id, s, t){
-  const st = amStatusOf(id, s, t).k;
-  if (AM.filter === 'gaps')      return st !== 'ok';
-  if (AM.filter === 'unmatched') return s.some(x => !x.matchedTo && !x.oos);
-  if (AM.filter === 'triage')    return id === 'oth';
-  return true;
+function amSetSub(v){
+  AM.sub = v;
+  for (const k of ['areas', 'spine', 'queue', 'method']){
+    const btn = $('am-sub-' + k), view = $('am-v-' + k);
+    if (btn) btn.classList.toggle('active', k === v);
+    if (view) view.style.display = k === v ? '' : 'none';
+  }
+  amRender();
 }
 
-function amPopHtml(kind, ref, label){
-  // kind 'assign' carries a table key; kind 'area' carries an areaId and
-  // bulk-moves every source table in it.
-  const rows = daLens().domain.cats.filter(a => a.id !== 'oth').map(a =>
-    '<button onclick="amPick(event,\'' + kind + '\',\'' + esc(ref) + '\',\'' + a.id + '\')">'
-    + '<span class="am-swatch" style="background:' + a.c + '"></span>' + esc(a.name) + '</button>').join('');
-  return '<div class="am-pop" role="menu">'
-    + '<div class="pop-lbl">' + esc(label) + '</div>' + rows
-    + '<div class="divider"></div>'
-    + (kind === 'assign'
-        ? '<button onclick="amPick(event,\'assign\',\'' + esc(ref) + '\',\'oos\')">⌫ Mark out of scope</button>'
-          + '<button onclick="amPick(event,\'assign\',\'' + esc(ref) + '\',\'\')">↩ Reset to pattern estimate</button>'
-        : '<button onclick="amPick(event,\'area\',\'' + esc(ref) + '\',\'\')">↩ Reset all to pattern estimate</button>')
-    + '</div>';
+function amRenderBar(){
+  const meta = (graph, el, dbEl) => {
+    const db = $(dbEl), m = $(el);
+    if (db) db.textContent = graph && graph.ok ? (graph.database || '(unnamed)') : 'not connected';
+    if (!m) return;
+    if (graph && graph.ok){
+      const rows = graph.tables.reduce((n, t) => n + (t.rowCount || 0), 0);
+      m.textContent = amFmt(graph.tables.length) + ' tables · ' + amFmt(rows) + ' rows';
+    } else m.textContent = (graph && graph.reason) || '';
+  };
+  meta(AM.srcGraph, 'am-src-meta', 'am-src-db');
+  meta(AM.tgtGraph, 'am-tgt-meta', 'am-tgt-db');
 }
 
-function amAssignBtn(t){
-  return '<span class="am-pop-wrap"><button class="btn" style="padding:2px 7px;font-size:10px"'
-    + ' onclick="amTogglePop(event,this)" aria-haspopup="menu">Assign ▾</button>'
-    + amPopHtml('assign', amEncKey(t.key), 'Assign “' + t.table + '” to area') + '</span>';
-}
-
-function amTableRow(t, side){
-  const matched = !!t.matchedTo;
-  const dotCls = side === 'src'
-    ? (t.oos ? 'empty' : (matched ? 'matched' : 'unmatched'))
-    : (matched ? 'matched' : 'empty');
-  const note = side === 'src'
-    ? (matched ? '→ ' + t.matchedTo : (t.oos ? 'out of scope' : ''))
-    : (matched ? '← ' + t.matchedTo : (t.rows > 0 ? 'no source in this migration' : 'awaiting load'));
-  // Assign appears on any source table that still needs a decision — no
-  // home yet, or previously excluded and maybe wrongly so.
-  const assign = side === 'src' && (!matched || t.oos) ? amAssignBtn(t) : '';
-  return '<div class="am-tbl-row" data-name="' + esc(t.table.toLowerCase()) + '">'
-    + '<span class="am-dot ' + dotCls + '"></span>'
-    + '<span class="am-tname" title="' + esc(t.key) + '">' + esc(t.table) + '</span>'
-    + '<span class="am-tschema">' + esc(t.schema) + '</span>'
-    + '<span class="am-conf">' + esc(t.confidence) + '</span>'
-    + '<span class="am-link-note">' + esc(note) + '</span>'
-    + '<span class="am-trows">' + amFmt(t.rows) + '</span>'
-    + assign + '</div>';
+function amAreasWithTargets(){
+  const s = new Set();
+  if (AM.model) for (const a of AM.model.areas) if (a.tgtTables > 0) s.add(a.area);
+  return s;
 }
 
 function amRender(){
-  const host = $('am-ledger');
-  if (!host) return;
-  const areas = daLens().domain.cats;
-  const srcBy = amGroup(AM.src), tgtBy = amGroup(AM.tgt);
+  amRenderBar();
+  const m = AM.model;
+  if (!m) return;
+  const link = (t) => amLinkFor(t);
+  const sum = amRowsSummary(m.src, AM.decisions, link, amAreasWithTargets());
+  const tiers = amTierCounts(m.src);
+  const unclassified = m.src.filter(t => t.area === 'Unclassified');
 
-  // Estate bar. The totals are sums over the same arrays the rows render
-  // from, so they cannot drift apart.
-  const meta = (list, graph, el, dbEl) => {
-    const db = $(dbEl), m = $(el);
-    if (db) db.textContent = graph && graph.ok ? (graph.database || '(unnamed database)') : 'not connected';
-    if (m) m.textContent = graph && graph.ok
-      ? list.length + ' tables · ' + amFmt(list.reduce((n, x) => n + x.rows, 0)) + ' rows'
-      : (graph && graph.reason ? graph.reason : '');
-  };
-  meta(AM.src, AM.srcGraph, 'am-src-meta', 'am-src-db');
-  meta(AM.tgt, AM.tgtGraph, 'am-tgt-meta', 'am-tgt-db');
-  const hs = $('am-head-src'), ht = $('am-head-tgt');
-  if (hs) hs.textContent = 'Source — ' + ((AM.srcGraph && AM.srcGraph.database) || '—');
-  if (ht) ht.textContent = 'Target — ' + ((AM.tgtGraph && AM.tgtGraph.database) || '—');
-
-  // KPIs.
-  const covered = areas.filter(a => (tgtBy[a.id] || []).length > 0);
-  const noHome = AM.src.filter(x => !x.matchedTo && !x.oos);
-  const noHomeRows = noHome.reduce((n, x) => n + x.rows, 0);
-  const totalRows = AM.src.reduce((n, x) => n + x.rows, 0);
-  const orphanAreas = areas.filter(a => !(srcBy[a.id] || []).length && (tgtBy[a.id] || []).length);
-  const triage = (srcBy.oth || []).filter(x => !x.oos);
-  const biggestGap = areas.filter(a => (srcBy[a.id] || []).length && !(tgtBy[a.id] || []).length)
-    .sort((a, b) => (srcBy[b.id] || []).reduce((n, x) => n + x.rows, 0) - (srcBy[a.id] || []).reduce((n, x) => n + x.rows, 0))[0];
   const kpis = $('am-kpis');
   if (kpis) kpis.innerHTML =
-      '<div class="am-kpi"><div class="k-lbl">Areas with target cover</div>'
-    + '<div class="k-val">' + covered.length + '<small>of ' + areas.length + '</small></div>'
-    + '<div class="k-sub">' + (biggestGap ? '<b>' + esc(biggestGap.name) + '</b> has no landing zone at all' : 'Every populated source area has a landing zone') + '</div></div>'
-    + '<div class="am-kpi' + (noHome.length ? ' bad' : '') + '"><div class="k-lbl">Source tables with no home</div>'
-    + '<div class="k-val">' + noHome.length + '<small>tables</small></div>'
-    + '<div class="k-sub">' + amFmt(noHomeRows) + ' rows unaccounted for'
-    + (totalRows ? ' — ' + Math.round(noHomeRows / totalRows * 100) + '% of the source estate' : '') + '</div></div>'
-    + '<div class="am-kpi' + (orphanAreas.length ? ' warn' : '') + '"><div class="k-lbl">Target areas with no source</div>'
-    + '<div class="k-val">' + orphanAreas.length + '<small>area' + (orphanAreas.length === 1 ? '' : 's') + '</small></div>'
-    + '<div class="k-sub">' + (orphanAreas.length ? esc(orphanAreas.map(a => a.name).join(', ')) + ' — fed from outside this migration' : 'None') + '</div></div>'
-    + '<div class="am-kpi' + (triage.length ? ' warn' : '') + '"><div class="k-lbl">Unclassified source</div>'
-    + '<div class="k-val">' + triage.length + '<small>tables</small></div>'
-    + '<div class="k-sub">' + (triage.length ? 'Name pattern gave no confident area — needs triage' : 'Everything classified') + '</div></div>';
+      '<div class="am-kpi"><div class="k-lbl">Rows decided</div>'
+    + '<div class="k-val">' + amFmt(sum.decided) + '</div>'
+    + '<div class="k-sub">' + sum.decidedTables + ' tables — confirmed by a person or an existing saved map</div></div>'
+    + '<div class="am-kpi"><div class="k-lbl">Rows in a shared subject area</div>'
+    + '<div class="k-val">' + amFmt(sum.shared) + '</div>'
+    + '<div class="k-sub">' + sum.sharedTables + ' tables awaiting a decision. Decided + shared + no home = '
+    + amFmt(sum.decided + sum.shared + sum.noHome) + ' — the whole estate, exactly.</div></div>'
+    + '<div class="am-kpi' + (sum.noHome ? ' bad' : '') + '"><div class="k-lbl">Rows with no home</div>'
+    + '<div class="k-val">' + amFmt(sum.noHome) + '</div>'
+    + '<div class="k-sub">' + sum.noHomeTables + ' tables in areas with no target-side content</div></div>'
+    + '<div class="am-kpi' + (unclassified.length ? ' warn' : '') + '"><div class="k-lbl">Unclassified source</div>'
+    + '<div class="k-val">' + unclassified.length + '<small>tables</small></div>'
+    + '<div class="k-sub">' + (unclassified.length ? amFmt(unclassified.reduce((n, t) => n + t.rows, 0)) + ' rows the vocabulary could not place' : 'Everything classified') + '</div></div>';
 
-  // Chip counts.
-  const cc = amChipCounts(areas, srcBy, tgtBy);
-  const setN = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-  setN('am-n-all', cc.all); setN('am-n-gaps', cc.gaps);
-  setN('am-n-unmatched', cc.unmatched); setN('am-n-triage', cc.triage);
+  if (AM.sub === 'areas') amRenderAreas();
+  else if (AM.sub === 'spine') amRenderSpine();
+  else if (AM.sub === 'queue') amRenderQueue();
+  else amRenderMethod(tiers);
+}
 
-  // Ledger. Every area renders even when one side is empty — that IS the
-  // view. Open state survives re-render.
-  host.innerHTML = areas.filter(a => amAreaVisible(a.id, srcBy[a.id] || [], tgtBy[a.id] || [])).map(a => {
-    const s = srcBy[a.id] || [], t = tgtBy[a.id] || [];
-    const st = amStatusOf(a.id, s, t);
-    const cov = amCoverage(s, AM.size);
-    const sMetric = AM.size === 'rows' ? amFmt(s.reduce((n, x) => n + x.rows, 0)) + ' rows' : s.length + ' tables';
-    const tMetric = AM.size === 'rows' ? amFmt(t.reduce((n, x) => n + x.rows, 0)) + ' rows' : t.length + ' tables';
-    const un = s.filter(x => !x.matchedTo && !x.oos).length;
-    const oosN = s.filter(x => x.oos).length;
-    return '<div class="am-row' + (AM.open[a.id] ? ' open' : '') + '" data-area="' + a.id + '">'
-      + '<div class="am-row-head" onclick="amToggleRow(\'' + a.id + '\')">'
-      +   '<div class="am-side"><span class="am-chev">▶</span>'
-      +     '<span class="am-swatch" style="background:' + a.c + '"></span>'
-      +     '<span class="am-area-name">' + esc(a.name) + '</span>'
-      +     '<span class="counts"><b>' + s.length + '</b> tbl · ' + sMetric + '</span></div>'
-      +   '<div class="am-centre"><span class="am-status ' + st.k + '">' + esc(st.label) + '</span>'
-      +     (cov == null
-          ? '<span class="am-meter"></span><span class="pct">no source content in this area</span>'
-          : '<span class="am-meter"><i class="m-ok" style="width:' + cov + '%"></i><i class="m-gap" style="width:' + (100 - cov) + '%"></i></span>'
-            + '<span class="pct">' + cov + '% of source ' + (AM.size === 'rows' ? 'rows' : 'tables') + ' land</span>')
-      +   '</div>'
-      +   '<div class="am-side right"><span class="counts">' + tMetric + ' · <b>' + t.length + '</b> tbl</span>'
-      +     '<span class="am-swatch" style="background:' + a.c + '"></span></div>'
-      + '</div>'
-      + '<div class="am-row-body"><div class="am-cols">'
-      +   '<div class="am-col"><div class="am-col-head">Source tables <span class="r">' + s.length + '</span></div>'
-      +     (s.length ? s.map(x => amTableRow(x, 'src')).join('')
-        : '<div class="am-empty-col"><span class="big">○</span>No source tables classified here.<br>Target-side content comes from outside this migration.</div>')
-      +   '</div>'
-      +   '<div class="am-gutter"><div class="arrows">' + (s.length && t.length ? '⟶<br>⟶<br>⟶' : (s.length ? '⟶ ✕' : '✕ ⟵')) + '</div></div>'
-      +   '<div class="am-col"><div class="am-col-head">Target tables <span class="r">' + t.length + '</span></div>'
-      +     (t.length ? t.map(x => amTableRow(x, 'tgt')).join('')
-        : '<div class="am-empty-col"><span class="big">⚠</span>No target subject area exists.<br>'
-          + s.length + ' source table' + (s.length === 1 ? '' : 's') + ' (' + amFmt(s.reduce((n, x) => n + x.rows, 0)) + ' rows) have nowhere to land.'
-          + '<div style="margin-top:0.6rem"><button class="btn btn-primary" style="padding:3px 9px;font-size:10.5px" onclick="window.location.href=\'/object_mapping.html\'">Open in Object Mapping ↗</button></div></div>')
-      +   '</div>'
-      + '</div>'
-      + '<div class="am-row-foot"><span>Classified by name pattern</span><span class="sep">·</span>'
-      +   '<span>' + un + ' source table' + (un === 1 ? '' : 's') + ' unmatched</span><span class="sep">·</span>'
-      +   (oosN ? '<span>' + oosN + ' marked out of scope</span><span class="sep">·</span>' : '')
-      +   '<span class="am-pop-wrap"><button class="btn" style="padding:2px 8px;font-size:10.5px" onclick="amTogglePop(event,this)">Reclassify area…</button>'
-      +     amPopHtml('area', a.id, 'Move every source table in ' + a.name + ' to') + '</span>'
-      +   '<button class="btn" style="padding:2px 8px;font-size:10.5px" onclick="window.location.href=\'/object_mapping.html\'">Open in Object Mapping ↗</button>'
-      + '</div></div></div>';
-  }).join('') || '<div class="am-empty-col" style="padding:2rem">No areas match this filter.</div>';
+const AM_TIER_LABEL = { strong: 'strong', likely: 'likely', possible: 'possible', weak: 'weak', none: 'no candidate' };
+function amTierChip(t){
+  return '<span class="am-tier am-tier-' + esc(t) + '">' + esc(AM_TIER_LABEL[t] || t) + '</span>';
+}
 
-  // Rail: stacked landed/no-home bar, biggest gaps, triage queue.
-  const landed = AM.src.filter(x => x.matchedTo);
-  const landedV = AM.size === 'rows' ? landed.reduce((n, x) => n + x.rows, 0) : landed.length;
-  const noHomeV = AM.size === 'rows' ? noHomeRows : noHome.length;
-  const tot = landedV + noHomeV;
-  const stack = $('am-stack'), leg = $('am-stack-legend');
-  if (stack) stack.innerHTML = tot
-    ? '<i style="width:' + Math.round(landedV / tot * 100) + '%;background:var(--green)"></i>'
-      + '<i style="width:' + (100 - Math.round(landedV / tot * 100)) + '%;background:rgba(240,70,70,0.55)"></i>'
-    : '';
-  if (leg) leg.innerHTML =
-      '<div><span class="am-dot matched"></span> Lands in a target area <span class="n">' + amFmt(landedV) + '</span></div>'
-    + '<div><span class="am-dot unmatched"></span> No target home <span class="n">' + amFmt(noHomeV) + '</span></div>';
-  const gapsEl = $('am-gaps-list');
-  if (gapsEl){
-    const byGap = areas.map(a => ({ a, v: (srcBy[a.id] || []).filter(x => !x.matchedTo && !x.oos).reduce((n, x) => n + x.rows, 0) }))
-      .filter(x => x.v > 0).sort((x, y) => y.v - x.v).slice(0, 4);
-    gapsEl.innerHTML = byGap.length
-      ? byGap.map(x => '<div><span class="am-swatch" style="background:' + x.a.c + '"></span> ' + esc(x.a.name)
-          + ' <span class="n">' + amFmt(x.v) + '</span></div>').join('')
-      : '<div class="am-note">No unmatched rows anywhere. Good.</div>';
+function amRenderAreas(){
+  const m = AM.model, tbody = document.querySelector('#am-areas-table tbody');
+  if (!tbody) return;
+  const alignedByArea = {};
+  for (const c of m.concepts) if (c.status === 'aligned' && c.concept !== 'none'){
+    alignedByArea[c.area] = (alignedByArea[c.area] || 0) + 1;
   }
-  const queue = $('am-queue');
-  if (queue) queue.innerHTML = triage.length
-    ? triage.map(x => '<div class="am-q-item"><span class="am-dot unmatched"></span>'
-        + '<span class="am-tname">' + esc(x.table) + '</span>'
-        + '<span class="am-trows">' + amFmt(x.rows) + '</span>' + amAssignBtn(x) + '</div>').join('')
-    : '<div class="am-note">Nothing waiting. Every source table has an area.</div>';
-
-  if (AM.q) amApplySearch();
+  const maxRows = Math.max(1, ...m.areas.map(a => Math.max(a.srcRows, a.tgtRows)));
+  tbody.innerHTML = m.areas.map(a => {
+    const srcT = m.src.filter(t => t.area === a.area);
+    const mix = amTierCounts(srcT).tables;
+    const mixTot = Math.max(1, srcT.length);
+    const bar = (n, cls) => n ? '<i class="' + cls + '" style="width:' + (n / mixTot * 100) + '%"></i>' : '';
+    return '<tr>'
+      + '<td><b>' + esc(a.area) + '</b></td>'
+      + '<td class="num">' + amFmt(a.srcTables) + '</td>'
+      + '<td class="num">' + amFmt(a.srcRows) + '</td>'
+      + '<td><div class="am-vol"><i class="v-src" style="width:' + (a.srcRows / maxRows * 100) + '%"></i>'
+      + '<i class="v-tgt" style="width:' + (a.tgtRows / maxRows * 100) + '%"></i></div></td>'
+      + '<td class="num">' + amFmt(a.tgtTables) + '</td>'
+      + '<td class="num">' + amFmt(a.tgtRows) + '</td>'
+      + '<td class="num">' + (alignedByArea[a.area] || 0) + '</td>'
+      + '<td><div class="am-mix">' + bar(mix.strong, 'x-strong') + bar(mix.likely, 'x-likely')
+      + bar(mix.possible, 'x-possible') + bar(mix.weak + mix.none, 'x-none') + '</div></td>'
+      + '</tr>';
+  }).join('');
 }
 
-// ── Interactions ──────────────────────────────────────────────────────────
-function amToggleRow(id){
-  AM.open[id] = !AM.open[id];
-  const row = document.querySelector('.am-row[data-area="' + id + '"]');
-  if (row) row.classList.toggle('open', AM.open[id]);
+function amSpineFilter(){
+  AM.spQ = ($('am-spine-q') && $('am-spine-q').value || '').trim().toLowerCase();
+  AM.spF = ($('am-spine-f') && $('am-spine-f').value) || '';
+  amRenderSpine();
 }
-function amExpandAll(on){
-  for (const a of daLens().domain.cats) AM.open[a.id] = on;
-  document.querySelectorAll('.am-row').forEach(r => r.classList.toggle('open', on));
+function amRenderSpine(){
+  const m = AM.model, tbody = document.querySelector('#am-spine-table tbody');
+  if (!tbody) return;
+  const rows = m.concepts.filter(c => c.concept !== 'none').filter(c => {
+    if (AM.spF === 'aligned' && c.status !== 'aligned') return false;
+    if (AM.spF === 'one' && c.status === 'aligned') return false;
+    if (AM.spQ){
+      const hay = (c.concept + ' ' + c.area + ' ' + c.srcKeys.join(' ') + ' ' + c.tgtKeys.join(' ')).toLowerCase();
+      if (!hay.includes(AM.spQ)) return false;
+    }
+    return true;
+  });
+  const keys = (list) => list.length
+    ? list.slice(0, 3).map(k => '<span class="am-key">' + esc(k) + '</span>').join(' ')
+    : '<span style="color:var(--text3)">—</span>';
+  tbody.innerHTML = rows.map(c =>
+    '<tr>'
+    + '<td><b>' + esc(c.concept) + '</b></td>'
+    + '<td>' + esc(c.area) + '</td>'
+    + '<td class="num">' + amFmt(c.srcTables) + '</td>'
+    + '<td class="num">' + amFmt(c.srcRows) + '</td>'
+    + '<td>' + keys(c.srcKeys) + '</td>'
+    + '<td class="num">' + amFmt(c.tgtTables) + '</td>'
+    + '<td class="num">' + amFmt(c.tgtRows) + '</td>'
+    + '<td>' + keys(c.tgtKeys) + '</td>'
+    + '<td><span class="am-status ' + (c.status === 'aligned' ? 'ok' : (c.srcTables ? 'gap' : 'orphan')) + '">'
+    + esc(c.status) + '</span></td>'
+    + '</tr>').join('')
+    || '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:1rem">Nothing matches.</td></tr>';
 }
-function amSetSize(mode){
-  AM.size = mode;
-  $('am-size-rows').classList.toggle('active', mode === 'rows');
-  $('am-size-tables').classList.toggle('active', mode === 'tables');
+
+// ── Mapping queue ─────────────────────────────────────────────────────────
+function amFillAreaSelect(){
+  const sel = $('am-q-area');
+  if (!sel || !AM.model) return;
+  const areas = [...new Set(AM.model.areas.map(a => a.area))];
+  sel.innerHTML = '<option value="">All subject areas</option>'
+    + areas.map(a => '<option value="' + esc(a) + '">' + esc(a) + '</option>').join('');
+}
+function amQFilterChanged(){
+  AM.qQ = ($('am-q-q') && $('am-q-q').value || '').trim().toLowerCase();
+  AM.qArea = ($('am-q-area') && $('am-q-area').value) || '';
+  AM.qTier = ($('am-q-tier') && $('am-q-tier').value) || '';
+  AM.qState = ($('am-q-state') && $('am-q-state').value) || '';
+  AM.qSel = 0;
+  amRenderQueue();
+}
+function amDecisionOf(t){
+  const d = AM.decisions[t.key];
+  if (d) return d;
+  const l = amLinkFor(t);
+  return l ? { target: l, by: 'saved map' } : null;
+}
+function amQueueList(){
+  return AM.model.queue.filter(t => {
+    const d = amDecisionOf(t);
+    if (AM.qState === 'open' && d) return false;
+    if (AM.qState === 'done' && !d) return false;
+    if (AM.qArea && t.area !== AM.qArea) return false;
+    if (AM.qTier){
+      const tier = t.tier === 'weak' ? 'none' : t.tier;
+      if (AM.qTier === 'none' ? (t.candidates || []).length > 0 : tier !== AM.qTier) return false;
+    }
+    if (AM.qQ && !t.name.toLowerCase().includes(AM.qQ) && !t.key.toLowerCase().includes(AM.qQ)) return false;
+    return true;
+  });
+}
+const AM_QUEUE_CAP = 400;
+
+function amEvBars(ev){
+  const bar = (lbl, v) => '<div class="am-ev"><span>' + lbl + '</span>'
+    + '<div class="am-ev-bar"><i style="width:' + Math.round(Math.max(0, Math.min(1, v)) * 100) + '%"></i></div>'
+    + '<b>' + (Math.round(v * 100) / 100).toFixed(2) + '</b></div>';
+  return bar('concept', ev.cos) + bar('name', ev.nameSim) + bar('shape', ev.colAff) + bar('rows', ev.rowAff);
+}
+
+function amRenderQueue(){
+  const host = $('am-queue');
+  if (!host || !AM.model) return;
+
+  // Progress in rows, not tables — deciding the first dozen biggest tables
+  // moves this meter more than a hundred small ones, which is the point.
+  const link = (t) => amLinkFor(t);
+  const sum = amRowsSummary(AM.model.src, AM.decisions, link, amAreasWithTargets());
+  const pct = sum.total ? Math.round(sum.decided / sum.total * 100) : 0;
+  const pt = $('am-q-progress-txt'), pb = $('am-q-progress-bar');
+  if (pt) pt.textContent = amFmt(sum.decided) + ' of ' + amFmt(sum.total) + ' rows decided (' + pct + '%) · '
+    + sum.decidedTables + ' tables';
+  if (pb) pb.style.width = pct + '%';
+
+  const list = amQueueList();
+  if (AM.qSel >= list.length) AM.qSel = Math.max(0, list.length - 1);
+  const shown = list.slice(0, AM_QUEUE_CAP);
+
+  host.innerHTML = shown.map((t, i) => {
+    const d = amDecisionOf(t);
+    const enc = amEncKey(t.key);
+    const top = (t.candidates || [])[0];
+    const open = !!AM.qOpen[t.key];
+    const headRight = d
+      ? (d.target
+          ? '<span class="am-status ok">✓ ' + esc(d.target) + (d.by === 'saved map' ? ' · saved map' : '') + '</span>'
+          : '<span class="am-status triage">⌫ no home — rejected</span>')
+      : (top
+          ? '<span class="am-cand-top">' + esc(top.table.key) + '</span>'
+            + amTierChip(t.tier) + '<span class="am-margin" title="Lead over the second candidate">+'
+            + (Math.round((t.margin || 0) * 100) / 100).toFixed(2) + '</span>'
+          : amTierChip('none'));
+    return '<div class="am-q-row' + (i === AM.qSel ? ' sel' : '') + (open ? ' open' : '') + '" data-key="' + esc(t.key) + '">'
+      + '<div class="am-q-head" onclick="amQClick(' + i + ',\'' + enc + '\')">'
+      +   '<span class="am-chev">▶</span>'
+      +   '<span class="am-tname">' + esc(t.name) + '</span>'
+      +   '<span class="am-tschema">' + esc(t.schema) + '</span>'
+      +   '<span class="am-area-chip">' + esc(t.area) + (t.areaSource === 'user' ? ' · user' : '') + '</span>'
+      +   '<span class="am-trows">' + amFmt(t.rows) + ' rows</span>'
+      +   '<span class="am-q-right">' + headRight + '</span>'
+      + '</div>'
+      + (open ? amQBody(t, d, enc) : '')
+      + '</div>';
+  }).join('') || '<div class="am-empty-col" style="padding:1.6rem">Nothing matches this filter.</div>';
+
+  if (list.length > AM_QUEUE_CAP){
+    host.innerHTML += '<div class="am-empty-col" style="padding:0.8rem">Showing the first '
+      + AM_QUEUE_CAP + ' of ' + amFmt(list.length) + ' — narrow the filter or decide from the top; the queue is already in rows-at-stake order.</div>';
+  }
+}
+
+function amQBody(t, d, enc){
+  const cands = (t.candidates || []).slice(0, 3);
+  const areaBtn =
+      '<span class="am-pop-wrap"><button class="btn" style="padding:2px 8px;font-size:10.5px" onclick="amTogglePop(event,this)">Area: '
+    + esc(t.area) + ' ▾</button>' + amAreaPop(enc) + '</span>';
+  if (d){
+    return '<div class="am-q-body">'
+      + '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">'
+      + (d.target
+          ? '<span style="font-size:11.5px">Decided → <b class="am-tname">' + esc(d.target) + '</b>'
+            + (d.by === 'saved map' ? ' <span style="color:var(--text3)">(an existing saved map writes this table)</span>' : '') + '</span>'
+          : '<span style="font-size:11.5px">Rejected — no home in this migration.</span>')
+      + (d.by !== 'saved map'
+          ? '<button class="btn" style="padding:2px 8px;font-size:10.5px" onclick="amUndecide(\'' + enc + '\')">↩ Undo</button>' : '')
+      + (d.target && d.by !== 'saved map'
+          ? '<button class="btn btn-primary" style="padding:2px 8px;font-size:10.5px" onclick="amOpenMapping(\'' + enc + '\')">Open in Object Mapping ↗</button>' : '')
+      + '</div></div>';
+  }
+  return '<div class="am-q-body">'
+    + (cands.length ? cands.map((c, i) =>
+        '<div class="am-cand">'
+        + '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.3rem">'
+        + '<b class="am-tname">' + esc(c.table.key) + '</b>'
+        + '<span class="am-tschema">' + amFmt(c.table.rows) + ' rows · ' + (c.table.cols || []).length + ' cols</span>'
+        + (c.ev.exact ? '<span class="am-key">name twin</span>' : '')
+        + (c.ev.decoy ? '<span class="am-key" style="color:var(--amber)">decoy?</span>' : '')
+        + '<span style="margin-left:auto;font-family:var(--mono);font-size:10.5px">' + c.ev.adj.toFixed(2) + '</span>'
+        + '<button class="btn btn-primary" style="padding:2px 9px;font-size:10.5px" onclick="amAccept(\'' + enc + '\',\'' + amEncKey(c.table.key) + '\')">✓ Accept</button>'
+        + '</div>' + amEvBars(c.ev) + '</div>').join('')
+      : '<div style="font-size:11.5px;color:var(--text3);padding:0.3rem 0">No candidate cleared the floor in this area. Reassign the area, or reject.</div>')
+    + '<div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;flex-wrap:wrap">'
+    + '<button class="btn" style="padding:2px 8px;font-size:10.5px;color:var(--red)" onclick="amReject(\'' + enc + '\')">⌫ No home — reject</button>'
+    + areaBtn
+    + '</div></div>';
+}
+
+function amAreaPop(encKey){
+  const areas = [...new Set(Object.values(SubjectMap.AREA))].sort();
+  return '<div class="am-pop" role="menu"><div class="pop-lbl">Move to subject area</div>'
+    + areas.map(a => '<button onclick="amAssignArea(event,\'' + encKey + '\',\'' + esc(a) + '\')">' + esc(a) + '</button>').join('')
+    + '<div class="divider"></div>'
+    + '<button onclick="amAssignArea(event,\'' + encKey + '\',\'\')">↩ Reset to derived area</button>'
+    + '</div>';
+}
+
+// ── Queue interactions ────────────────────────────────────────────────────
+function amQClick(i, enc){
+  AM.qSel = i;
+  const key = decodeURIComponent(enc);
+  AM.qOpen[key] = !AM.qOpen[key];
+  amRenderQueue();
+}
+function amAccept(encSrc, encTgt){
+  const srcKey = decodeURIComponent(encSrc), tgtKey = decodeURIComponent(encTgt);
+  SubjectMap.accept(AM.model, srcKey, tgtKey);
+  AM.decisions = AM.model.decisions;
+  amSaveDecision(srcKey, AM.decisions[srcKey]);
+  AM.qOpen[srcKey] = false;
   amRender();
 }
-function amSetFilter(f){
-  AM.filter = f;
-  document.querySelectorAll('.am-toolbar .am-chip').forEach(b =>
-    b.classList.toggle('active', b.dataset.amFilter === f));
+function amReject(encSrc){
+  const srcKey = decodeURIComponent(encSrc);
+  SubjectMap.reject(AM.model, srcKey);
+  AM.decisions = AM.model.decisions;
+  amSaveDecision(srcKey, AM.decisions[srcKey]);
+  AM.qOpen[srcKey] = false;
   amRender();
 }
-function amSearch(v){ AM.q = String(v || '').trim().toLowerCase(); amApplySearch(); }
-// Search opens exactly the areas that contain a hit and hides the rest; the
-// chip filter has already decided which rows exist at all.
-function amApplySearch(){
-  const q = AM.q;
-  document.querySelectorAll('#am-ledger .am-tbl-row').forEach(r => {
-    r.style.display = !q || r.dataset.name.includes(q) ? '' : 'none';
-  });
-  document.querySelectorAll('#am-ledger .am-row').forEach(r => {
-    if (!q){ r.style.display = ''; r.classList.toggle('open', !!AM.open[r.dataset.area]); return; }
-    const hit = [...r.querySelectorAll('.am-tbl-row')].some(x => x.style.display !== 'none');
-    r.style.display = hit ? '' : 'none';
-    r.classList.toggle('open', hit);
-  });
+function amUndecide(encSrc){
+  const srcKey = decodeURIComponent(encSrc);
+  delete AM.model.decisions[srcKey];
+  AM.decisions = AM.model.decisions;
+  amSaveDecision(srcKey, null);
+  amRender();
 }
+function amAssignArea(e, encKey, area){
+  e.stopPropagation();
+  document.querySelectorAll('.am-pop').forEach(x => x.classList.remove('open'));
+  const key = decodeURIComponent(encKey);
+  amSetOverride('src', AM.srcGraph && AM.srcGraph.database, key, area === '' ? null : area);
+  // The Data map reads the same store; drop its built estate so the next
+  // visit re-classifies instead of showing the stale colouring.
+  DA.loaded = null; DA.tables = [];
+  amRebuildModel();
+}
+
+// Hand-off to Object Mapping: pre-seed the WIP draft with the TABLE PAIR
+// ONLY. Column mappings drive generated SQL, and a wrong entry there writes
+// bad data rather than showing a bad suggestion — so the columns stay the
+// analyst's job, on the screen built for it.
+function amOpenMapping(encSrc){
+  const srcKey = decodeURIComponent(encSrc);
+  const d = AM.decisions[srcKey];
+  if (!d || !d.target) return;
+  try {
+    const scope = localStorage.getItem('cygenix_active_project_id') || 'global';
+    localStorage.setItem('cygenix_objmap_wip_' + scope, JSON.stringify({
+      mode: 'single', savedAt: new Date().toISOString(),
+      editJobId: null, jobNameInput: '', viewMode: 'table',
+      srcFullName: srcKey, tgtFullName: d.target,
+      columnMapping: [], targetTables: [], joinState: null, wasisRules: null,
+      srcWhereConditions: [], srcGroupByCols: [],
+      generatedSQL: { insert: '', schema: '', verify: '' },
+    }));
+  } catch {}
+  window.location.href = '/object_mapping.html';
+}
+
+// Keyboard: j/k move, a accept the top candidate, r reject, Enter expand.
+// Only while this tab's queue is on screen and focus is not in a field.
+document.addEventListener('keydown', (e) => {
+  if (seTab !== 'areas' || AM.sub !== 'queue' || !AM.model) return;
+  if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '')) return;
+  const list = amQueueList();
+  const cur = list[AM.qSel];
+  if (e.key === 'j'){ AM.qSel = Math.min(AM.qSel + 1, Math.min(list.length, AM_QUEUE_CAP) - 1); amRenderQueue(); }
+  else if (e.key === 'k'){ AM.qSel = Math.max(AM.qSel - 1, 0); amRenderQueue(); }
+  else if (e.key === 'Enter' && cur){ AM.qOpen[cur.key] = !AM.qOpen[cur.key]; amRenderQueue(); }
+  else if (e.key === 'a' && cur && !amDecisionOf(cur) && (cur.candidates || [])[0]){
+    amAccept(amEncKey(cur.key), amEncKey(cur.candidates[0].table.key));
+  }
+  else if (e.key === 'r' && cur && !amDecisionOf(cur)){ amReject(amEncKey(cur.key)); }
+});
 
 // One popover open at a time; outside click and Esc both close.
 function amTogglePop(e, btn){
@@ -3819,35 +4151,50 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') document.querySelectorAll('.am-pop.open').forEach(x => x.classList.remove('open'));
 });
 
-// A pick from either popover kind. Everything downstream of an assignment —
-// rows, KPIs, chips, rail, and the Data map's colouring — recomputes now,
-// not on the next visit.
-function amPick(e, kind, ref, value){
-  e.stopPropagation();
-  document.querySelectorAll('.am-pop').forEach(x => x.classList.remove('open'));
-  const db = AM.srcGraph && AM.srcGraph.database;
-  if (kind === 'assign'){
-    amSetOverride('src', db, decodeURIComponent(ref), value === '' ? null : value);
-  } else {
-    for (const t of AM.src.filter(x => x.areaId === ref)){
-      amSetOverride('src', db, t.key, value === '' ? null : value);
-    }
+// ── Method view ───────────────────────────────────────────────────────────
+function amRenderMethod(tiers){
+  const p = $('am-method-pipeline');
+  if (p) p.innerHTML = [
+    ['1 · Segment', 'Every table and column name is split into morphemes against a domain vocabulary — tworkhrs → t · work · hrs. Glued legacy names stop being opaque.'],
+    ['2 · Map to concepts', 'Morphemes resolve to ~45 business concepts, so tkinit, ttk and timekeeperid all become timekeeper. Two products with no shared spelling meet in one space.'],
+    ['3 · Find the entity keys', 'On each side independently: which identifier columns recur across many tables and act as keys? Derived from structure, not a hand-written list.'],
+    ['4 · Align the spine', 'Hubs are matched across sides by concept. That alignment IS the subject-area overlap — the short list to review first.'],
+    ['5 · Inherit and shortlist', 'Each table joins the area of its strongest concept (name ×3, PK ×2, column ×1); candidates are searched only inside the aligned area, scored, top three kept with evidence.'],
+  ].map(x => '<div class="am-step"><b>' + x[0] + '</b><span>' + x[1] + '</span></div>').join('');
+
+  const wLbl = { concept: 'Concept fit (cosine in concept space)', name: 'Name similarity (trigram dice)',
+    cols: 'Shape fit (column-count affinity)', rows: 'Row-magnitude affinity',
+    exactBonus: 'Exact name-twin bonus', decoyPenalty: 'Decoy penalty (_template, _draft, views…)' };
+  const w = $('am-method-weights');
+  if (w) w.innerHTML = Object.entries(SubjectMap.W).map(([k, v]) =>
+    '<div class="am-ev"><span style="width:290px">' + esc(wLbl[k] || k) + '</span>'
+    + '<div class="am-ev-bar"><i style="width:' + Math.round(v * 100) + '%"></i></div>'
+    + '<b>' + v.toFixed(2) + '</b></div>').join('');
+
+  const c = $('am-method-calib');
+  if (c && tiers){
+    const warn = amCalibrationNote(tiers.tables.strong, AM.model.src.length);
+    c.innerHTML = 'Confidence is deliberately conservative — a confidently wrong mapping costs more than a flagged one. '
+      + 'Only <b>strong</b> clears the bar for a machine proposal, and it needs two independent kinds of evidence.<br><br>'
+      + ['strong', 'likely', 'possible', 'none'].map(k =>
+          amTierChip(k) + ' ' + amFmt(tiers.tables[k] + (k === 'none' ? tiers.tables.weak : 0)) + ' tables · '
+          + amFmt(tiers.rows[k] + (k === 'none' ? tiers.rows.weak : 0)) + ' rows').join('<br>')
+      + (warn ? '<br><br><span style="color:var(--red);font-weight:600">' + esc(warn) + '</span>' : '');
   }
-  amRebuild();
-  // The Data map reads the same store; drop its built estate so the next
-  // visit re-classifies instead of showing the stale colouring.
-  DA.loaded = null; DA.tables = [];
-  amRender();
 }
 
-// The full fit report, one line per table across both estates.
+// ── Export: the full fit report ───────────────────────────────────────────
 function amExport(){
-  const head = 'side,area,table,schema,rows,confidence,area_source,out_of_scope,link\n';
-  const nameOf = {}; daLens().domain.cats.forEach(a => { nameOf[a.id] = a.name; });
+  if (!AM.model) return;
   const csvCell = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const line = (side, t) => [side, nameOf[t.areaId] || t.areaId, t.table, t.schema, t.rows,
-    t.confidence, t.areaSource, t.oos ? 'yes' : '', t.matchedTo || ''].map(csvCell).join(',');
-  const body = AM.src.map(t => line('source', t)).concat(AM.tgt.map(t => line('target', t))).join('\n');
+  const head = 'table,schema,rows,area,area_source,tier,top_candidate,score,margin,decision,decided_by\n';
+  const body = AM.model.queue.map(t => {
+    const d = amDecisionOf(t);
+    const top = (t.candidates || [])[0];
+    return [t.name, t.schema, t.rows, t.area, t.areaSource || 'derived', t.tier,
+      top ? top.table.key : '', top ? top.ev.adj.toFixed(3) : '', (t.margin || 0).toFixed(3),
+      d ? (d.target || 'rejected') : '', d ? (d.by || '') : ''].map(csvCell).join(',');
+  }).join('\n');
   const blob = new Blob([head + body + '\n'], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
