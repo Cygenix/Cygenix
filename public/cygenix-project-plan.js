@@ -210,26 +210,30 @@
     const wdPerSlot = (rates.workingDaysPerMonth || 19.5) / PP_WEEKS;
     const resource = (est.meta && est.meta.employee) || '';
 
-    const phase = { id: ppId(), name: ('From estimate: ' + (est.name || 'estimate')).slice(0, 60), color: 1 };
     const doc = {
       v: PP_VERSION,
       name: (o.name || ('Plan — ' + (est.name || 'estimate'))).slice(0, 80),
       timeline: { start, months: 1 },
-      phases: [phase], tasks: [], cells: {},
+      phases: [], tasks: [], cells: {},
     };
 
+    // Each costed USE CASE is a PHASE — its name on the rotated label, each
+    // in its own tint — with its module list as the task beneath it.
     // Sequential bars: each use case takes its share of the working days,
     // starting where the previous one ends — the estimate as a schedule.
     let cursor = 0;
     const spans = [];
-    for (const u of costed) {
-      const def = EstUC(u.id, u.name);
+    for (let i = 0; i < costed.length; i++) {
+      const u = costed[i];
+      const phase = { id: ppId(), name: EstUC(u.id, u.name).slice(0, 60),
+        color: i % PP_PALETTE.length };
+      doc.phases.push(phase);
       const mods = Object.keys(est.ticks || {})
         .filter(k => k.startsWith(u.id + '|')).map(k => k.split('|')[1]);
       const detail = mods.slice(0, 12).map(m => ': ' + m)
         .concat(mods.length > 12 ? [': +' + (mods.length - 12) + ' more'] : []);
       const task = { id: ppId(), phaseId: phase.id,
-        title: [def].concat(detail).join('\n').slice(0, 600),
+        title: [EstUC(u.id, u.name)].concat(detail).join('\n').slice(0, 600),
         resource: String(resource).slice(0, 60),
         comment: (u.fp.toFixed(1) + ' FP' + (u.tc !== 1 ? ' · TC ' + u.tc : '')).slice(0, 200) };
       doc.tasks.push(task);
