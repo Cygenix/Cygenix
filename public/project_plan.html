@@ -145,9 +145,9 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="project-plan-grid"></div>
-<script src="/cygenix-sidebar.js?v=ca28db8c99" defer></script>
+<script src="/cygenix-sidebar.js?v=6aedf745ea" defer></script>
 <script src="/cygenix-project-plan.js?v=44936ce5d4" defer></script>
-<!-- The Effort Estimator's engine: the "From estimator" import computes the
+<!-- The Configurator's engine: the "From Configurator" import computes the
      estimate here rather than duplicating any of its numbers. -->
 <script src="/cygenix-effort-model.js?v=83fd6285f9" defer></script>
 
@@ -163,7 +163,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
     </div>
     <div class="pp-actions" style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
       <select id="pp-plan-sel" class="form-input" onchange="ppSwitchPlan(this.value)" aria-label="Choose a plan"></select>
-      <button class="btn btn-sm" onclick="ppImportEstimate()" title="Build a plan from the Effort Estimator's active estimate — use cases become tasks, the employee becomes the resource, and the work bars follow the model's own working-day rates. A one-way copy: edit it freely afterwards.">⇪ From estimator</button>
+      <button class="btn btn-sm" onclick="ppImportEstimate()" title="Build a plan from the Configurator's active estimate — use cases become tasks, the employee becomes the resource, and the work bars follow the model's own working-day rates. A one-way copy: edit it freely afterwards.">⇪ From Configurator</button>
       <button class="btn btn-sm" onclick="ppNewPlan()">+ New plan</button>
       <button class="btn btn-sm" onclick="ppDeletePlan()">Delete</button>
       <button class="btn btn-sm" onclick="ppExportCsv()">⤓ CSV</button>
@@ -176,7 +176,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
     <div class="panel-head pp-toolbar">
       <span class="panel-title" id="pp-plan-name" style="cursor:pointer" title="Rename this plan" onclick="ppRenamePlan()">Migration plan</span>
       <span id="pp-client" style="font-size:11.5px;color:var(--text2);cursor:pointer"
-            title="The client, as set on the Effort Estimator — click to edit" onclick="ppEditClient()"></span>
+            title="The client, as set on the Configurator — click to edit" onclick="ppEditClient()"></span>
       <div class="pp-seg" role="group" aria-label="Paint tool">
         <button id="pp-tool-work" class="active" onclick="ppSetTool('work')">▮ Work</button>
         <button id="pp-tool-mile" onclick="ppSetTool('mile')">▲ Milestone</button>
@@ -257,8 +257,8 @@ function ppFillPlanSelect(){
     c.textContent = carried ? 'Client: ' + carried : '+ client';
     c.style.fontStyle = (!own && carried) ? 'italic' : '';
     c.title = (!own && carried)
-      ? 'Carried from the Effort Estimator — click to set this plan\'s own client'
-      : 'The client, as set on the Effort Estimator — click to edit';
+      ? 'Carried from the Configurator — click to set this plan\'s own client'
+      : 'The client, as set on the Configurator — click to edit';
   }
 }
 function ppEstimatorClient(){
@@ -311,7 +311,7 @@ function ppImportEstimate(){
   try { store = JSON.parse(localStorage.getItem('cygenix_effort_estimates_v1') || 'null'); } catch (e) {}
   const est = store && store.estimates && store.estimates[store.active];
   if (!est){
-    window.alert('No estimate found. Build one first in Reports → Effort Estimator.');
+    window.alert('No estimate found. Build one first in Project → Configurator.');
     return;
   }
   const norm = EM.emNormalize(est);
