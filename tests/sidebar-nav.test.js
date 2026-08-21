@@ -201,5 +201,31 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
     build.items.map(i => i.key).join(','));
 }
 
+// ── Search order + sidebar favourites ───────────────────────────────────────
+{
+  const top = NAV[0].items.map(i => i.key);
+  check('Search sits between Home and Project',
+    top.indexOf('dashboard') === 0 && top.indexOf('search') === 1
+    && top.indexOf('project-group') === 2, top.join(','));
+
+  const src = require('fs').readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
+  check('the favourites block is appended and exports its surface',
+    typeof SB.getPins === 'function' && typeof SB.togglePin === 'function'
+    && typeof SB.refreshPins === 'function');
+  check('an empty store means no pins, never a throw', Array.isArray(SB.getPins()) && SB.getPins().length === 0);
+  check('pins store per user, capped at eight, with the P shortcut and drag reorder',
+    /cygenix_sidebar_pinned_v1/.test(src) && /MAX_PINS\s*=\s*8/.test(src)
+    && /cyg-fav-dragging/.test(src) && /e\.key !== 'p' && e\.key !== 'P'/.test(src));
+  check('pinned rows are clones that delegate to the real row — no duplicated nav logic',
+    /data-favkey/.test(src) && /target\.click\(\)/.test(src));
+  check('the first-run hint exists and is dismissable',
+    /Hover a menu item and click/.test(src) && /cygenix_sidebar_pinned_hint_v1/.test(src));
+  check('group expanders never get a star — nothing to pin on a folder',
+    /item\.querySelector\('\.cyg-nav-chev'\)\) return;/.test(src));
+  check('the favourites CSS rides in the sidebar\'s own style block',
+    /cyg-fav-star/.test(src) && /cyg-fav-section/.test(src)
+    && /collapsed \.cyg-fav-star/.test(src));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
