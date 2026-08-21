@@ -63,6 +63,8 @@
   const NAV = [
     { section: null, items: [
       { key:'dashboard', label:'Home',   view:'dashboard', icon: iconDashboard() },
+      // Search sits between Home and Project (moved on request, 21-Aug-2026).
+      { key:'search',    label:'Search', view:'search',    icon: iconSearch() },
       // Project sits directly below Home (moved out of Reports on request,
       // 21-Aug-2026): the estimate is where an engagement starts, and the
       // plan follows straight from it. Estimator first, then the Planner.
@@ -73,7 +75,6 @@
         { key:'effort-estimator',  label:'Configurator',     href:'/effort_estimator.html', color:'var(--teal)',  icon: iconEstimator() },
         { key:'project-plan-grid', label:'Project Plan',     href:'/project_plan.html',     color:'var(--green)', icon: iconPlanGrid() },
       ]},
-      { key:'search',    label:'Search', view:'search',    icon: iconSearch() },
     ]},
     { section: 'Connect', group:'connect', items: [
       { key:'connections',  label:'Connections',  view:'connections',  color:'var(--green)', icon: iconPlug() },
@@ -492,6 +493,52 @@
       .cyg-sidebar.collapsed .cyg-drive-area{ padding:6px 0 2px; }
       .cyg-sidebar.collapsed .cyg-drive-btn{ justify-content:center;padding:11px 0;gap:0; }
       .cyg-sidebar.collapsed .cyg-drive-btn .cyg-nav-item-label{ display:none; }
+
+      /* ── Sidebar favourites ("Pinned") ──────────────────────────────────
+         Pinned rows reuse .cyg-nav-item, so hover, active and collapsed-rail
+         styling are inherited rather than redefined. */
+      .cyg-sidebar-scroll .cyg-nav-item > .cyg-nav-item-label{
+        flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+      }
+      .cyg-fav-star{
+        flex:0 0 auto;margin-left:auto;width:20px;height:20px;padding:0;
+        border:0;border-radius:6px;background:transparent;color:var(--cyg-muted);
+        font-size:13px;line-height:18px;text-align:center;cursor:pointer;
+        opacity:0;transition:opacity .12s,color .12s,background .12s;
+      }
+      .cyg-nav-item:hover > .cyg-fav-star,
+      .cyg-nav-item:focus-visible > .cyg-fav-star,
+      .cyg-fav-star:focus-visible,
+      .cyg-fav-star.on{ opacity:1; }
+      .cyg-fav-star:hover{ background:rgba(255,255,255,.09);color:var(--accent); }
+      .cyg-fav-star.on{ color:var(--accent); }
+      @media (hover: none){
+        .cyg-sidebar-scroll .cyg-fav-star{ opacity:.55; }
+      }
+      .cyg-fav-item{ cursor:pointer; }
+      .cyg-fav-item.cyg-fav-dragging{ opacity:.4; }
+      .cyg-fav-item.cyg-fav-drop-before{ box-shadow:inset 0  2px 0 0 var(--accent); }
+      .cyg-fav-item.cyg-fav-drop-after { box-shadow:inset 0 -2px 0 0 var(--accent); }
+      .cyg-fav-hint{
+        position:relative;margin:2px 0 6px;padding:8px 24px 8px 12px;
+        border:1px dashed rgba(255,255,255,.14);border-radius:9px;
+        font-size:11.5px;line-height:1.45;color:var(--cyg-muted);
+      }
+      .cyg-fav-hint-x{
+        position:absolute;top:3px;right:4px;padding:2px 5px;border:0;border-radius:5px;
+        background:transparent;color:var(--cyg-muted);font-size:14px;line-height:1;cursor:pointer;
+      }
+      .cyg-fav-hint-x:hover{ color:var(--cyg-fg); }
+      .cyg-sidebar.collapsed .cyg-fav-star,
+      .cyg-sidebar.collapsed .cyg-fav-hint{ display:none; }
+      /* The "Pinned" heading is hidden in the rail, so mark the block with a
+         rule instead — otherwise the pinned icons read as part of the nav. */
+      .cyg-sidebar.collapsed .cyg-fav-section{
+        margin-bottom:6px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.10);
+      }
+      @media (prefers-reduced-motion: reduce){
+        .cyg-fav-star{ transition:none; }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -1261,4 +1308,323 @@
     else window.addEventListener('load', start, { once:true });
   }
   loadDriveSyncWhenIdle();
+})();
+
+/* ==========================================================================
+   Cygenix — Sidebar favourites ("Pinned")
+   --------------------------------------------------------------------------
+   Append this block to the END of cygenix-sidebar.js, after
+   window.CygenixSidebar is assigned. It is purely additive: it does not
+   change any existing function, and it reuses the sidebar's own nav config,
+   markup and click handling rather than duplicating them.
+
+   Pairs with the rules in cygenix-favourites.css.
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var SB = window.CygenixSidebar;
+  if (!SB) return;
+
+  var MAX_PINS   = 8;
+  var STORE_BASE = 'cygenix_sidebar_pinned_v1';
+  var HINT_KEY   = 'cygenix_sidebar_pinned_hint_v1';
+
+  /* ---------- store (namespaced per signed-in user) ---------------------- */
+
+  function storeKey() {
+    var u = '';
+    try { u = localStorage.getItem('cygenix_active_user') || ''; } catch (e) {}
+    return STORE_BASE + (u ? '::' + u : '');
+  }
+
+  function getPins() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(storeKey()) || '[]');
+      return Array.isArray(raw)
+        ? raw.filter(function (k) { return typeof k === 'string'; }).slice(0, MAX_PINS)
+        : [];
+    } catch (e) { return []; }
+  }
+
+  function savePins(list) {
+    try { localStorage.setItem(storeKey(), JSON.stringify(list.slice(0, MAX_PINS))); } catch (e) {}
+    apply();
+  }
+
+  function togglePin(key) {
+    var pins = getPins(), i = pins.indexOf(key);
+    if (i > -1) { pins.splice(i, 1); }
+    else { if (pins.length >= MAX_PINS) pins.shift(); pins.push(key); dismissHint(); }
+    savePins(pins);
+  }
+
+  function hintDismissed() { try { return localStorage.getItem(HINT_KEY) === '1'; } catch (e) { return true; } }
+  function dismissHint()   { try { localStorage.setItem(HINT_KEY, '1'); } catch (e) {} }
+
+  /* ---------- helpers ---------------------------------------------------- */
+
+  function scrollEl() { return document.querySelector('.cyg-sidebar-scroll'); }
+
+  // The one real nav row for a key. Pinned rows carry data-favkey, never
+  // data-key, so this can never match a clone.
+  function realItem(key) {
+    var k = (window.CSS && CSS.escape) ? CSS.escape(key) : key;
+    return document.querySelector('.cyg-sidebar-scroll .cyg-nav-item[data-key="' + k + '"]');
+  }
+
+  function labelOf(el) {
+    var l = el && el.querySelector('.cyg-nav-item-label');
+    return l ? l.textContent.trim() : '';
+  }
+
+  // Navigate by delegating to the real row: whatever handleClick() does for
+  // href items, view items, instant-nav or active-project scoping keeps
+  // working, with no second copy of that logic here.
+  function go(key) {
+    var target = realItem(key);
+    if (target) target.click();
+  }
+
+  /* ---------- the Pinned section ----------------------------------------- */
+
+  function buildPinNode(key) {
+    var src = realItem(key);
+    // Not rendered right now (AI disabled, role/project gating). Keep the
+    // pin stored so it comes back when the row does.
+    if (!src) return null;
+
+    var node = src.cloneNode(true);
+    node.removeAttribute('data-key');
+    node.removeAttribute('id');
+    node.className = 'cyg-nav-item cyg-fav-item';
+    node.setAttribute('data-favkey', key);
+    node.setAttribute('tabindex', '0');
+    node.setAttribute('role', 'link');
+    node.setAttribute('draggable', 'true');
+    node.title = labelOf(src);
+
+    var chev = node.querySelector('.cyg-nav-chev');   if (chev) chev.remove();
+    var dupe = node.querySelector('.cyg-fav-star');   if (dupe) dupe.remove();
+
+    var unpin = document.createElement('button');
+    unpin.type = 'button';
+    unpin.className = 'cyg-fav-star on';
+    unpin.textContent = '★';
+    unpin.tabIndex = -1;
+    unpin.title = 'Unpin';
+    unpin.setAttribute('aria-label', 'Unpin ' + node.title);
+    unpin.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation(); togglePin(key);
+    });
+    node.appendChild(unpin);
+
+    // stopPropagation keeps the sidebar's own delegated click handler out of
+    // this clone, so a pin can never fire navigation twice.
+    node.addEventListener('click', function (e) {
+      if (e.target.closest('.cyg-fav-star')) return;
+      e.preventDefault(); e.stopPropagation(); go(key);
+    });
+    node.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); go(key); }
+    });
+
+    wireDrag(node, key);
+    return node;
+  }
+
+  function renderPins() {
+    var host = scrollEl();
+    if (!host) return;
+
+    var pins = getPins();
+    var sec  = host.querySelector('.cyg-fav-section');
+
+    if (!pins.length && hintDismissed()) { if (sec) sec.remove(); return; }
+
+    if (!sec) {
+      sec = document.createElement('div');
+      sec.className = 'cyg-nav-section cyg-fav-section';
+      host.insertBefore(sec, host.firstChild);
+    }
+    sec.textContent = '';
+
+    var head = document.createElement('div');
+    head.className = 'cyg-nav-label';
+    head.textContent = 'Pinned';
+    sec.appendChild(head);
+
+    pins.forEach(function (key) {
+      var node = buildPinNode(key);
+      if (node) sec.appendChild(node);
+    });
+
+    if (!pins.length) {
+      var hint = document.createElement('div');
+      hint.className = 'cyg-fav-hint';
+      var txt = document.createElement('span');
+      txt.textContent = 'Hover a menu item and click ☆ to pin it here.';
+      var x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'cyg-fav-hint-x';
+      x.textContent = '×';
+      x.setAttribute('aria-label', 'Dismiss');
+      x.addEventListener('click', function () { dismissHint(); apply(); });
+      hint.appendChild(txt); hint.appendChild(x);
+      sec.appendChild(hint);
+    }
+  }
+
+  /* ---------- the star on every real row --------------------------------- */
+
+  function syncStars() {
+    var pins = getPins();
+    var rows = document.querySelectorAll('.cyg-sidebar-scroll .cyg-nav-item[data-key]');
+    Array.prototype.forEach.call(rows, function (item) {
+      // Adaptation for this sidebar: group expanders (rows with a chevron)
+      // are not destinations — no star, nothing to pin.
+      if (item.querySelector('.cyg-nav-chev')) return;
+      var key = item.getAttribute('data-key');
+      var btn = item.querySelector('.cyg-fav-star');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cyg-fav-star';
+        btn.tabIndex = -1;
+        btn.addEventListener('click', function (e) {
+          e.preventDefault(); e.stopPropagation(); togglePin(key);
+        });
+        item.appendChild(btn);
+      }
+      var on = pins.indexOf(key) > -1;
+      btn.classList.toggle('on', on);
+      btn.textContent = on ? '★' : '☆';
+      btn.title = (on ? 'Unpin from top' : 'Pin to top') + ' (P)';
+      btn.setAttribute('aria-label', (on ? 'Unpin ' : 'Pin ') + labelOf(item));
+    });
+  }
+
+  // Mirror .active onto the pinned copy of the current page.
+  function syncActive() {
+    var clones = document.querySelectorAll('.cyg-fav-item');
+    Array.prototype.forEach.call(clones, function (n) {
+      var r = realItem(n.getAttribute('data-favkey'));
+      n.classList.toggle('active', !!(r && r.classList.contains('active')));
+    });
+  }
+
+  /* ---------- drag to reorder -------------------------------------------- */
+
+  var dragKey = null;
+
+  function clearDropMarks() {
+    var marked = document.querySelectorAll('.cyg-fav-drop-before, .cyg-fav-drop-after');
+    Array.prototype.forEach.call(marked, function (n) {
+      n.classList.remove('cyg-fav-drop-before', 'cyg-fav-drop-after');
+    });
+  }
+
+  function dropsAfter(node, e) {
+    var r = node.getBoundingClientRect();
+    return (e.clientY - r.top) > r.height / 2;
+  }
+
+  function wireDrag(node, key) {
+    node.addEventListener('dragstart', function (e) {
+      dragKey = key;
+      node.classList.add('cyg-fav-dragging');
+      try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); } catch (err) {}
+    });
+    node.addEventListener('dragend', function () {
+      dragKey = null; node.classList.remove('cyg-fav-dragging'); clearDropMarks();
+    });
+    node.addEventListener('dragover', function (e) {
+      if (!dragKey || dragKey === key) return;
+      e.preventDefault();
+      clearDropMarks();
+      node.classList.add(dropsAfter(node, e) ? 'cyg-fav-drop-after' : 'cyg-fav-drop-before');
+    });
+    node.addEventListener('drop', function (e) {
+      if (!dragKey || dragKey === key) return;
+      e.preventDefault(); e.stopPropagation();
+      var after = dropsAfter(node, e);
+      var pins  = getPins();
+      var from  = pins.indexOf(dragKey);
+      if (from < 0) { clearDropMarks(); return; }
+      pins.splice(from, 1);
+      var to = pins.indexOf(key);
+      if (to < 0) to = pins.length - 1;
+      pins.splice(after ? to + 1 : to, 0, dragKey);
+      clearDropMarks();
+      savePins(pins);
+    });
+  }
+
+  /* ---------- keep it alive across sidebar rebuilds ----------------------- */
+
+  var mo = null, applying = false, pending = false;
+
+  function observe() {
+    var aside = document.querySelector('.cyg-sidebar');
+    if (mo && aside) {
+      mo.observe(aside, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
+  }
+
+  function apply() {
+    if (applying) return;
+    applying = true;
+    if (mo) mo.disconnect();                 // our own writes must not re-trigger us
+    try { renderPins(); syncStars(); syncActive(); }
+    catch (e) { if (window.console) console.warn('[cyg-fav]', e); }
+    finally { observe(); applying = false; }
+  }
+
+  function schedule() {
+    if (pending || applying) return;
+    pending = true;
+    requestAnimationFrame(function () { pending = false; apply(); });
+  }
+
+  // mount()/refresh()/setActive() rebuild or restyle the nav — re-apply after.
+  ['mount', 'refresh', 'setActive', 'setCollapsed'].forEach(function (fn) {
+    if (typeof SB[fn] !== 'function') return;
+    var orig = SB[fn];
+    SB[fn] = function () { var out = orig.apply(this, arguments); schedule(); return out; };
+  });
+
+  // Keyboard: P toggles the pin on the focused nav row (no extra tab stops).
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'p' && e.key !== 'P') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var el = document.activeElement;
+    if (!el || !el.classList || !el.classList.contains('cyg-nav-item')) return;
+    var key = el.getAttribute('data-key') || el.getAttribute('data-favkey');
+    if (!key) return;
+    e.preventDefault();
+    togglePin(key);
+  });
+
+  // Pinned in another tab? Follow along.
+  window.addEventListener('storage', function (e) {
+    if (e.key && e.key.indexOf(STORE_BASE) === 0) schedule();
+  });
+
+  var tries = 0;
+  function init() {
+    if (!document.querySelector('.cyg-sidebar-scroll')) {
+      if (tries++ > 60) return;              // sidebar mounts async on some pages
+      return void setTimeout(init, 100);
+    }
+    mo = new MutationObserver(schedule);
+    apply();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+
+  /* ---------- small public surface --------------------------------------- */
+  SB.getPins     = getPins;
+  SB.togglePin   = togglePin;
+  SB.refreshPins = apply;
 })();
