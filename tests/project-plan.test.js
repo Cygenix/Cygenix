@@ -227,7 +227,7 @@ const check = (name, ok, detail) => {
   check('the phase label stands vertical, exactly like the sheet',
     /writing-mode:vertical-rl/.test(html));
   check('the toolbar offers the From-estimator import, one-way and explicit about it',
-    /⇪ From estimator/.test(html) && /ppImportEstimate/.test(html)
+    /⇪ From Configurator/.test(html) && /ppImportEstimate/.test(html)
     && /cygenix-effort-model\.js/.test(html) && /ONE-WAY copy/.test(html)
     && /cygenix_effort_estimates_v1/.test(html));
   check('the client from the estimate shows in the header area, click-to-edit',
@@ -235,7 +235,7 @@ const check = (name, ok, detail) => {
   check('a plan without its own client falls back LIVE to the estimator\'s',
     /function ppEstimatorClient/.test(html)
     && /own \|\| ppEstimatorClient\(\)/.test(html)
-    && /Carried from the Effort Estimator/.test(html));
+    && /Carried from the Configurator/.test(html));
   check('the grid exports to Excel as well as CSV',
     /⤓ Excel/.test(html) && /ppExportExcel/.test(html)
     && /application\/vnd\.ms-excel/.test(html) && /cygenix-project-plan\.xls/.test(html));

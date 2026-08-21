@@ -67,7 +67,10 @@
       // 21-Aug-2026): the estimate is where an engagement starts, and the
       // plan follows straight from it. Estimator first, then the Planner.
       { key:'project-group', label:'Project', icon: iconEstimator(), children: [
-        { key:'effort-estimator',  label:'Effort Estimator', href:'/effort_estimator.html', color:'var(--teal)',  icon: iconEstimator() },
+        // Renamed 'Configurator' on request (21-Aug-2026); the key and page
+        // filename stay effort-estimator / effort_estimator.html so every
+        // data-active mount and bookmark keeps working.
+        { key:'effort-estimator',  label:'Configurator',     href:'/effort_estimator.html', color:'var(--teal)',  icon: iconEstimator() },
         { key:'project-plan-grid', label:'Project Plan',     href:'/project_plan.html',     color:'var(--green)', icon: iconPlanGrid() },
       ]},
       { key:'search',    label:'Search', view:'search',    icon: iconSearch() },

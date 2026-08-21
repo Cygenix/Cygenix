@@ -264,9 +264,9 @@ check('a new estimate starts with NOTHING ticked',
     /Hourly rate/.test(html) && /Estimated cost/.test(html) && /hourlyRate/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
-  check('Effort Estimator leads the Project group below Home',
+  check('the Configurator (nee Effort Estimator) leads the Project group, key unchanged',
     /key:'project-group',\s*label:'Project'/.test(sidebar)
-    && /key:'effort-estimator',\s*label:'Effort Estimator',\s*href:'\/effort_estimator\.html'/.test(sidebar));
+    && /key:'effort-estimator',\s*label:'Configurator',\s*href:'\/effort_estimator\.html'/.test(sidebar));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
