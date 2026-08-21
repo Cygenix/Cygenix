@@ -133,7 +133,7 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
 
 <div id="cyg-sidebar-mount" data-active="effort-estimator"></div>
 <script src="/cygenix-sidebar.js?v=1f0a532ee5" defer></script>
-<script src="/cygenix-effort-model.js?v=d552169597" defer></script>
+<script src="/cygenix-effort-model.js?v=15105cb680" defer></script>
 
 <div class="page">
 
@@ -167,6 +167,7 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
   <div class="panel"><div class="panel-body">
     <div class="es-kpis" id="es-kpis"></div>
     <div id="es-verdict"></div>
+    <div id="es-baseline-note" style="margin-top:0.5rem"></div>
   </div></div>
 
   <!-- Use case estimates -->
@@ -238,8 +239,12 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
       1:N ×1 per module. Total FP × days-per-FP (default 1.37) gives working days; divided by
       19.5 gives calendar months; the delivery date walks forward from the start date over
       working days plus holidays, skipping weekends. The verdict compares working days needed
-      against working days available before the due date. Every weight on this page is visible
-      and editable — an estimate nobody can inspect is an estimate nobody trusts.
+      against working days available before the due date, and the baseline note compares them
+      against the standard quote (days, weeks or months — yours to set). "Calibrate rate to
+      baseline" tunes days-per-FP so a FULLY ticked estimate — every module on every use case —
+      lands exactly on the baseline, so partial scopes price proportionally inside the standard
+      quote. Estimated cost is simply total hours × the hourly rate. Every weight on this page
+      is visible and editable — an estimate nobody can inspect is an estimate nobody trusts.
     </div>
   </div>
 </div>
@@ -314,6 +319,26 @@ function esNum(k, v, lo, hi){
   esSave(); esRenderResults();
 }
 function esRate(k, v, lo){ esDoc().rates[k] = Math.max(lo, Number(v) || lo); esSave(); esRenderResults(); }
+function esBaseline(field, v){
+  const b = esDoc().baseline;
+  if (field === 'value') b.value = Math.max(0, Math.min(9999, Number(v) || 0));
+  else if (window.CygenixEffortModel.EM_BASELINE_UNITS.includes(v)) b.unit = v;
+  esSave(); esRenderResults();
+}
+// Calibrate: tune days-per-FP so that FULL scope — every use case ticked
+// for every module, with the current variables — lands exactly on the
+// baseline. Partial scopes then price proportionally inside the standard
+// quote.
+function esCalibrate(){
+  const EM = window.CygenixEffortModel;
+  const doc = esDoc();
+  const rate = EM.emCalibrateToBaseline(doc);
+  if (rate == null) return;
+  if (!window.confirm('Set days per FP to ' + rate + ' so a fully ticked estimate fits the baseline of '
+    + doc.baseline.value + ' ' + doc.baseline.unit + '?')) return;
+  doc.rates.daysPerFP = rate;
+  esSave(); esRenderRates(); esRenderResults();
+}
 function esFlag(k, on){ esDoc()[k] = !!on; esSave(); esRenderResults(); }
 function esResetTicks(){ esDoc().ticks = {}; esSave(); esRenderGrids(); esRenderResults(); }
 function esResetData(){ esDoc().data = {}; esSave(); esRenderGrids(); esRenderResults(); }
@@ -478,6 +503,18 @@ function esRenderRates(){
     + '<div><span class="form-label">Days per FP</span><input class="form-input" type="number" step="0.01" min="0.01" style="width:88px" value="' + doc.rates.daysPerFP + '" onchange="esRate(\'daysPerFP\', this.value, 0.01)"></div>'
     + '<div><span class="form-label">Working days / month</span><input class="form-input" type="number" step="0.5" min="1" style="width:88px" value="' + doc.rates.workingDaysPerMonth + '" onchange="esRate(\'workingDaysPerMonth\', this.value, 1)"></div>'
     + '<div><span class="form-label">Hours / day</span><input class="form-input" type="number" min="1" max="24" style="width:70px" value="' + doc.rates.hoursPerDay + '" onchange="esRate(\'hoursPerDay\', this.value, 1)"></div>'
+    + '<div><span class="form-label">Hourly rate</span><input class="form-input" type="number" min="0" step="5" style="width:88px" value="' + (doc.rates.hourlyRate || '') + '" placeholder="0"'
+    + ' onchange="esDoc().rates.hourlyRate = Math.max(0, Number(this.value) || 0); esSave(); esRenderResults();" aria-label="Hourly rate"></div>'
+    + '<span style="width:1px;height:26px;background:var(--border2);align-self:center"></span>'
+    + '<div><span class="form-label">Project baseline — the standard quote</span>'
+    + '<div style="display:flex;gap:0.4rem;align-items:center">'
+    + '<input id="es-baseline-value" class="form-input" type="number" min="0" style="width:70px" value="' + doc.baseline.value + '" onchange="esBaseline(\'value\', this.value)" aria-label="Baseline value">'
+    + '<select id="es-baseline-unit" class="form-input" onchange="esBaseline(\'unit\', this.value)" aria-label="Baseline unit">'
+    + window.CygenixEffortModel.EM_BASELINE_UNITS.map(u =>
+        '<option value="' + u + '"' + (doc.baseline.unit === u ? ' selected' : '') + '>' + u + '</option>').join('')
+    + '</select>'
+    + '<button class="btn btn-sm" onclick="esCalibrate()" title="Tune days per FP so that ticking EVERY module on EVERY use case fits exactly into the baseline — partial scopes then price proportionally inside the standard quote">⚖ Calibrate rate to baseline</button>'
+    + '</div></div>'
     + '</div>';
 }
 
@@ -492,6 +529,10 @@ function esRenderResults(){
       kpi('Total FP', r.tfp.toFixed(1), r.tucfp.toFixed(1) + ' use case + ' + r.tdp.toFixed(1) + ' data · variables ×' + r.variableFactor)
     + kpi('Working days', r.wd, r.hours.toLocaleString('en-GB') + ' hours' + (doc.useAccrued ? ' · accrued applied' : ''))
     + kpi('Calendar months', r.cm.toFixed(2), doc.rates.workingDaysPerMonth + ' working days/month')
+    + kpi('Estimated cost', r.cost == null ? 'set a rate' : r.cost.toLocaleString('en-GB'),
+        r.cost == null ? 'hourly rate × total hours' : r.hours.toLocaleString('en-GB') + ' hours × ' + doc.rates.hourlyRate + '/hour')
+    + kpi('Baseline quote', doc.baseline.value + ' ' + doc.baseline.unit,
+        '≈ ' + r.baselineDays + ' working days')
     + kpi('Delivery date', r.delivery || 'set a start date', doc.holidayDays ? '+' + doc.holidayDays + ' holiday days' : '')
     + kpi('Working days available', r.available == null ? 'n/a' : r.available,
         r.available != null && r.available < 0 ? 'due date is before the start' : 'start → due, minus holidays')
@@ -512,6 +553,25 @@ function esRenderResults(){
       + (r.fitsShared ? '. It WOULD fit with ' + doc.resources + ' resources in parallel.' : '.');
   }
   const vf = $('es-vf'); if (vf) vf.textContent = '×' + r.variableFactor;
+
+  // Baseline note: how this estimate sits against the standard quote —
+  // shown whether or not dates are set, because a quote goes out first.
+  const bn = $('es-baseline-note');
+  if (bn){
+    if (r.fitsBaseline == null){
+      bn.innerHTML = '';
+    } else if (r.fitsBaseline){
+      bn.className = 'es-verdict ok';
+      bn.textContent = '✓ Inside the baseline: ' + r.wd + ' working days against the standard '
+        + doc.baseline.value + ' ' + doc.baseline.unit + ' quote (≈' + r.baselineDays
+        + ' days) — ' + r.baselineDelta + ' days of headroom.';
+    } else {
+      bn.className = 'es-verdict bad';
+      bn.textContent = '✗ Exceeds the baseline: ' + r.wd + ' working days against the standard '
+        + doc.baseline.value + ' ' + doc.baseline.unit + ' quote (≈' + r.baselineDays
+        + ' days) — over by ' + Math.abs(r.baselineDelta) + ' days. Quote beyond the standard, or trim scope.';
+    }
+  }
 }
 
 function esRenderAll(){
