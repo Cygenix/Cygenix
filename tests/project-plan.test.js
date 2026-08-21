@@ -114,6 +114,67 @@ const check = (name, ok, detail) => {
     s.phases === 2 && s.tasks === 3 && s.work === 1 && s.miles === 1);
 }
 
+// ── Import from the Effort Estimator ────────────────────────────────────────
+// One source of truth: the estimate's use cases, employee, dates and
+// durations become a plan without maintaining the same data twice.
+{
+  const EM = require('../public/cygenix-effort-model.js');
+  const est = EM.emNewDoc('Corus 3E');
+  for (const m of ['Addresses', 'AP', 'AP Master', 'AR', 'Card Summary', 'Chart of Accounts (GL)'])
+    est.ticks['analysis|' + m] = 1;
+  est.ticks['design|Addresses'] = 1;
+  est.ticks['scripts|Addresses'] = 1;
+  est.meta.employee = 'Curtis';
+  est.meta.startDate = '2026-08-21';
+  est.meta.dueDate = '2027-06-03';
+  const r = EM.emCompute(est);
+  const plan = PP.ppFromEstimate(est, r);
+
+  check('only COSTED use cases become tasks — untouched work is not planned',
+    plan.tasks.length === 3
+    && plan.tasks.map(t => t.title.split('\n')[0]).join(';')
+      === 'Initial analysis, business review, documentation;Design and documentation;Script development');
+  check('the employee becomes every task\'s resource and the FP rides in the comment',
+    plan.tasks.every(t => t.resource === 'Curtis')
+    && plan.tasks[0].comment === '13.5 FP' && plan.tasks[2].comment === '26.5 FP');
+  check('ticked modules become the task\'s detail lines',
+    plan.tasks[0].title.includes(': AP') && plan.tasks[0].title.includes(': Chart of Accounts (GL)')
+    && !plan.tasks[1].title.includes(': AP'));
+  check('the timeline starts on the estimate\'s start month',
+    plan.timeline.start === '2026-08');
+
+  // Sequential bars at the model's own rates: 18.5wd→4 slots, 12.3→3, 36.3→8.
+  const work = Object.entries(plan.cells).filter(([, v]) => v.t === 'work');
+  const byTask = (id) => work.filter(([k]) => k.startsWith(id + '|')).length;
+  check('work bars follow the model: 4 + 3 + 8 sequential week slots',
+    byTask(plan.tasks[0].id) === 4 && byTask(plan.tasks[1].id) === 3
+    && byTask(plan.tasks[2].id) === 8 && work.length === 15);
+  check('bars are sequential, never overlapping — the estimate as a schedule',
+    (() => {
+      const slot = (k) => { const [, ym, w] = k.split('|');
+        const m = PP.ppMonths(plan.timeline.start, plan.timeline.months).findIndex(x => x.ym === ym);
+        return m * PP.PP_WEEKS + Number(w) - 1; };
+      const s0 = work.filter(([k]) => k.startsWith(plan.tasks[0].id)).map(([k]) => slot(k));
+      const s2 = work.filter(([k]) => k.startsWith(plan.tasks[2].id)).map(([k]) => slot(k));
+      return Math.max(...s0) < Math.min(...s2);
+    })());
+
+  const miles = Object.values(plan.cells).filter(v => v.t === 'mile').map(v => v.label).sort();
+  check('the projected delivery and the due date land as milestones',
+    miles.join(',') === 'Due date,Est. delivery');
+  check('the timeline stretches to show the due date',
+    plan.timeline.months === 11
+    && plan.cells[Object.keys(plan.cells).find(k => /2027-06/.test(k))].label === 'Due date');
+  check('the import is a valid plan document — it survives its own normalization',
+    JSON.stringify(PP.ppNormalize(plan)) === JSON.stringify(plan));
+  check('an estimate with nothing ticked imports as null, never an empty husk',
+    PP.ppFromEstimate(EM.emNewDoc('empty'), EM.emCompute(EM.emNewDoc('empty'))) === null);
+  check('date → slot math: whole months plus the day mapped onto the week slots',
+    JSON.stringify(PP.ppSlotForDate('2026-08', '2026-11-25')) === '{"monthIndex":3,"week":4}'
+    && PP.ppSlotForDate('2026-08', '2026-05-01') === null
+    && PP.ppSlotForDate('2026-08', 'garbage') === null);
+}
+
 // ── Page pins ───────────────────────────────────────────────────────────────
 {
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'project_plan.html'), 'utf8');
@@ -135,6 +196,10 @@ const check = (name, ok, detail) => {
     /id="pp-start" type="month"/.test(html) && /id="pp-months" type="number"/.test(html));
   check('the phase label stands vertical, exactly like the sheet',
     /writing-mode:vertical-rl/.test(html));
+  check('the toolbar offers the From-estimator import, one-way and explicit about it',
+    /⇪ From estimator/.test(html) && /ppImportEstimate/.test(html)
+    && /cygenix-effort-model\.js/.test(html) && /ONE-WAY copy/.test(html)
+    && /cygenix_effort_estimates_v1/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
   check('Project Plan lives under Reports in the rail, on its own key',
