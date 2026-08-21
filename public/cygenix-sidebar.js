@@ -461,7 +461,9 @@
       .cyg-sidebar.collapsed .cyg-nav-children{ display:none !important; }
       .cyg-sidebar.collapsed .cyg-nav-parent .cyg-nav-chev{ display:none; }
       /* ── Project switcher ─────────────────────────────────────────── */
-      .cyg-proj-area{ flex-shrink:0;padding:8px 12px 0; }
+      /* The switcher sits inside the Project group's children, so it indents
+         with them rather than spanning the rail's full width. */
+      .cyg-proj-area{ flex-shrink:0;padding:2px 0 4px 18px; }
       .cyg-proj-btn{
         display:flex;align-items:center;gap:9px;width:100%;
         background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);
@@ -477,6 +479,11 @@
       .cyg-sidebar.collapsed .cyg-proj-btn{ justify-content:center;padding:8px 0;gap:0; }
       .cyg-sidebar.collapsed .cyg-proj-btn .cyg-nav-item-label,
       .cyg-sidebar.collapsed .cyg-proj-btn .cyg-proj-chev{ display:none; }
+      /* Collapsed rail: group children are hidden, but the active project is
+         global context and must stay reachable — keep the Project group's
+         wrapper alive for the chip alone, and hide its nav rows. */
+      .cyg-sidebar.collapsed .cyg-nav-children[data-children="project-group"]{ display:block !important; }
+      .cyg-sidebar.collapsed .cyg-nav-children[data-children="project-group"] .cyg-nav-item{ display:none; }
       .cyg-drive-area{ flex-shrink:0;padding:6px 12px 2px; }
       .cyg-drive-btn{
         display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;
@@ -671,7 +678,10 @@
       <button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Collapse sidebar">❮</button>
     </div>`;
     const body = NAV.map(sec => buildSection(sec, activeKey)).join('');
-    return head + buildProjectSwitcher() + buildDriveButton()
+    // The project switcher is no longer pinned above the scroll area — it is
+    // rendered inside the Project group (see buildParent), which also gives
+    // the nav list back that vertical space.
+    return head + buildDriveButton()
       + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter(activeKey);
   }
 
@@ -891,15 +901,35 @@
     const set = new Set(getOpenGroups());
     if (open) set.add(key); else set.delete(key);
     try { localStorage.setItem(OPEN_KEY, JSON.stringify([...set])); } catch {}
+    const shut = new Set(getClosedGroups());
+    if (open) shut.delete(key); else shut.add(key);
+    try { localStorage.setItem(CLOSED_KEY, JSON.stringify([...shut])); } catch {}
+  }
+  // Groups that start open. The Project group holds the active-project
+  // switcher, so a first-time user must never have to hunt for it — but an
+  // explicit collapse is still remembered, hence the closed list.
+  const DEFAULT_OPEN_GROUPS = ['project-group'];
+  const CLOSED_KEY = 'cygenix_sidebar_closed_groups';
+  function getClosedGroups(){
+    try { const a = JSON.parse(localStorage.getItem(CLOSED_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+    catch { return []; }
+  }
+  function isGroupOpen(key){
+    if (getOpenGroups().includes(key)) return true;
+    return DEFAULT_OPEN_GROUPS.includes(key) && !getClosedGroups().includes(key);
   }
 
   function buildParent(item, activeKey){
     const kids = (item.children || []).filter(isItemVisible);
     if (!kids.length) return '';
     const childActive = kids.some(k => k.key === activeKey);
-    const open = childActive || getOpenGroups().includes(item.key);
+    const open = childActive || isGroupOpen(item.key);
     const chev = `<span class="cyg-nav-chev">${open ? '▾' : '▸'}</span>`;
-    const kidsHtml = kids.map(k => buildItem(k, activeKey, true)).join('');
+    // The active-project switcher lives INSIDE the Project group (moved from
+    // the fixed top area on request, 21-Aug-2026) — the project is what the
+    // Configurator and the Planner act on, so it belongs with them.
+    const kidsHtml = (item.key === 'project-group' ? buildProjectSwitcher() : '')
+      + kids.map(k => buildItem(k, activeKey, true)).join('');
     return `
       <div class="cyg-nav-item cyg-nav-parent${childActive ? ' child-active' : ''}"
            data-parent="${item.key}" tabindex="0"
@@ -1202,6 +1232,9 @@
       populateUser(replacement);
       wireUserChip(replacement);
       wireDriveButton(replacement);
+      // refresh() rebuilds the markup, so the switcher needs re-wiring too —
+      // without this its dropdown went dead after a feature-flag refresh.
+      wireProjectSwitcher(replacement);
       hideTopbarUserPill();
     }
   };
