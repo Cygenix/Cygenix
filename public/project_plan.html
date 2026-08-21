@@ -130,6 +130,55 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 
 .pp-stats{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto}
 
+/* ── Portfolio view: every plan on one shared timeline ── */
+:root{--pfwk:15px;--pfleft:330px}
+#pf-view{display:none}
+.pf-seg{display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:2px;gap:2px}
+.pf-seg button{border:none;background:transparent;color:var(--text3);font-size:11.5px;font-family:var(--serif);padding:4px 11px;border-radius:6px;cursor:pointer}
+.pf-seg button.on{background:var(--bg2);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,0.08)}
+.pf-scroller{overflow-x:auto}
+.pf-inner{width:max-content;min-width:100%}
+.pf-row{display:flex;align-items:stretch;border-bottom:0.5px solid var(--border);position:relative}
+.pf-row:last-child{border-bottom:0}
+.pf-left{width:var(--pfleft);flex:0 0 var(--pfleft);position:sticky;left:0;z-index:3;background:var(--bg2);border-right:1px solid var(--border2);display:flex;align-items:center;gap:9px;padding:8px 11px}
+.pf-row.pf-proj{cursor:pointer}
+.pf-row.pf-proj:hover .pf-left{background:var(--bg3)}
+.pf-hdr{border-bottom:1px solid var(--border2);background:var(--bg3)}
+.pf-hdr .pf-left{background:var(--bg3);align-items:flex-end;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-weight:600}
+.pf-mo{border-left:1px solid var(--border2);font-size:10.5px;font-weight:600;padding:5px 0 2px 5px;white-space:nowrap;overflow:hidden;color:var(--text2)}
+.pf-mo.q{background:rgba(0,0,0,0.035)}
+.pf-wk{width:var(--pfwk);flex:0 0 var(--pfwk);border-left:0.5px solid var(--border);font-size:9px;text-align:center;color:var(--text3);padding:1px 0 2px;overflow:hidden;font-family:var(--mono)}
+.pf-wk.m0{border-left:1px solid var(--border2)}
+#pf-view.pf-zoom-mo .pf-wk{font-size:0}
+.pf-track{position:relative;flex:1;display:flex}
+.pf-cells{display:flex;position:relative;z-index:1}
+.pf-c{width:var(--pfwk);flex:0 0 var(--pfwk);border-left:0.5px solid var(--border);min-height:34px}
+.pf-c.m0{border-left:1px solid var(--border2)}
+.pf-c.q{background:rgba(0,0,0,0.022)}
+.pf-c.fill{border-top:1px solid rgba(0,0,0,0.20);border-bottom:1px solid rgba(0,0,0,0.20)}
+.pf-row.pf-sub .pf-c{min-height:24px}
+.pf-row.pf-sub .pf-left{padding-left:34px;background:var(--bg3)}
+.pf-c.clash{position:relative}
+.pf-c.clash::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(192,57,43,0.55) 0 2px,transparent 2px 5px);pointer-events:none}
+.pf-today{position:absolute;top:0;bottom:0;width:0;border-left:2px solid var(--red);z-index:4;pointer-events:none;opacity:0.7}
+.pf-flag{position:absolute;z-index:3;display:flex;align-items:center;gap:3px;pointer-events:none}
+.pf-flag i{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid var(--green);display:block}
+.pf-flag span{font-size:9.5px;color:var(--green);font-weight:600;white-space:nowrap;background:rgba(255,255,255,0.85);padding:0 3px;border-radius:2px}
+.pf-chev{width:12px;flex:0 0 12px;color:var(--text3);font-size:10px;transition:transform 0.12s;text-align:center}
+.pf-row.pf-open .pf-chev{transform:rotate(90deg)}
+.pf-name{font-weight:600;font-size:12px;line-height:1.25}
+.pf-meta{font-size:10.5px;color:var(--text3);margin-top:1px}
+.pf-col{flex:1;min-width:0}
+.pf-stat{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:right;line-height:1.4;white-space:nowrap}
+.pf-stat b{display:block;color:var(--text2);font-weight:500;font-size:11px}
+.pf-dot{width:9px;height:9px;border-radius:2px;flex:0 0 9px;border:0.5px solid rgba(0,0,0,0.3)}
+.pf-swatch{width:11px;height:11px;flex:0 0 11px;border:0.5px solid rgba(0,0,0,0.28)}
+.pf-load{font-family:var(--mono);font-size:10px;padding:1px 5px;border:0.5px solid var(--border2);border-radius:3px;white-space:nowrap}
+.pf-load.hot{background:var(--red-bg);border-color:var(--red);color:var(--red);font-weight:500}
+.pf-legend{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:10px;font-size:10.5px;color:var(--text3);padding:0 0.2rem}
+.pf-legend .k{display:inline-flex;align-items:center;gap:5px}
+.pf-legend .box{width:13px;height:11px;border:0.5px solid rgba(0,0,0,0.28)}
+
 /* ── Print: the grid IS the report ── */
 @media print{
   body{padding-left:0;background:#fff}
@@ -146,7 +195,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 
 <div id="cyg-sidebar-mount" data-active="project-plan-grid"></div>
 <script src="/cygenix-sidebar.js?v=6aedf745ea" defer></script>
-<script src="/cygenix-project-plan.js?v=44936ce5d4" defer></script>
+<script src="/cygenix-project-plan.js?v=5d17d3563d" defer></script>
 <!-- The Configurator's engine: the "From Configurator" import computes the
      estimate here rather than duplicating any of its numbers. -->
 <script src="/cygenix-effort-model.js?v=83fd6285f9" defer></script>
@@ -169,10 +218,38 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
       <button class="btn btn-sm" onclick="ppExportCsv()">⤓ CSV</button>
       <button class="btn btn-sm" onclick="ppExportExcel()" title="Download the grid as an Excel workbook — phase colours, bars and milestones intact">⤓ Excel</button>
       <button class="btn btn-sm" onclick="window.print()">⎙ Print</button>
+      <button class="btn btn-sm" id="pf-open-btn" onclick="pfOpen()" title="Every plan on one shared timeline — one lane per project, striped by phase, with milestones, the today line and a by-resource view that hatches double-bookings">▤ Portfolio</button>
     </div>
   </div>
 
-  <div class="panel">
+  <!-- ── Portfolio view: every plan on one shared timeline ─────────────── -->
+  <div id="pf-view">
+    <div class="panel" style="margin-bottom:0.9rem;padding:0.6rem 0.9rem">
+      <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="pfClose()">← Back to plan</button>
+        <div class="pf-seg" role="group" aria-label="Portfolio mode">
+          <button id="pf-mode-project" class="on" onclick="pfSetMode('project')">▤ By project</button>
+          <button id="pf-mode-resource" onclick="pfSetMode('resource')">☺ By resource</button>
+        </div>
+        <div class="pf-seg" role="group" aria-label="Zoom">
+          <button id="pf-zoom-mo" class="on" onclick="pfSetZoom('mo')">Months</button>
+          <button id="pf-zoom-wk" onclick="pfSetZoom('wk')">Weeks</button>
+        </div>
+        <select id="pf-client" class="form-input" onchange="pfClientChanged(this.value)" aria-label="Client filter">
+          <option value="">All clients</option>
+        </select>
+        <button class="btn btn-sm" onclick="pfExpandAll(true)">Expand all</button>
+        <button class="btn btn-sm" onclick="pfExpandAll(false)">Collapse all</button>
+        <span id="pf-count" style="margin-left:auto;font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="pf-scroller"><div class="pf-inner" id="pf-inner"></div></div>
+    </div>
+    <div class="pf-legend" id="pf-legend"></div>
+  </div>
+
+  <div class="panel" id="pp-single-panel">
     <div class="panel-head pp-toolbar">
       <span class="panel-title" id="pp-plan-name" style="cursor:pointer" title="Rename this plan" onclick="ppRenamePlan()">Migration plan</span>
       <span id="pp-client" style="font-size:11.5px;color:var(--text2);cursor:pointer"
@@ -595,6 +672,214 @@ function ppExportExcel(){
   a.href = url; a.download = 'cygenix-project-plan.xls';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 2000);
+}
+
+// ── Portfolio view ────────────────────────────────────────────────────────
+// Every plan on one shared timeline. Rows are PROJECTS, not phases — the
+// phase tints survive as stripes inside one lane, weeks where phases
+// overlap draw as a split tint, milestones fly green flags, and the
+// resource mode hatches any week a person is booked on two projects at
+// once. The model comes pure from ppPortfolio; this only draws it.
+const PF = { open: false, mode: 'project', zoom: 'mo', client: '', expanded: new Set(), model: null };
+const PF_DOT = ['#9E2A1B', '#2F5D8A', '#3F7D4E', '#6B4E8E', '#B26A00', '#0F6E6C'];
+
+function pfOpen(){
+  const PP = window.CygenixProjectPlan;
+  PF.model = PP.ppPortfolio(PPState.store.plans);
+  if (!PF.model){ window.alert('No plans with tasks yet — build one first.'); return; }
+  PF.open = true;
+  $('pp-single-panel').style.display = 'none';
+  $('pf-view').style.display = 'block';
+  $('pf-view').classList.toggle('pf-zoom-mo', PF.zoom === 'mo');
+  const sel = $('pf-client');
+  const clients = [...new Set(PF.model.projects.map(p => p.client).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All clients</option>'
+    + clients.map(c => '<option value="' + esc(c) + '"' + (c === PF.client ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+  pfRender();
+}
+function pfClose(){
+  PF.open = false;
+  $('pf-view').style.display = 'none';
+  $('pp-single-panel').style.display = '';
+}
+function pfSetMode(m){
+  PF.mode = m;
+  $('pf-mode-project').classList.toggle('on', m === 'project');
+  $('pf-mode-resource').classList.toggle('on', m === 'resource');
+  pfRender();
+}
+function pfSetZoom(z){
+  PF.zoom = z;
+  $('pf-zoom-mo').classList.toggle('on', z === 'mo');
+  $('pf-zoom-wk').classList.toggle('on', z === 'wk');
+  document.documentElement.style.setProperty('--pfwk', z === 'wk' ? '27px' : '15px');
+  $('pf-view').classList.toggle('pf-zoom-mo', z === 'mo');
+  pfRender();
+}
+function pfClientChanged(v){ PF.client = v; pfRender(); }
+function pfExpandAll(on){
+  PF.expanded = on ? new Set(pfVisible().map(p => p.id)) : new Set();
+  pfRender();
+}
+function pfToggle(id){
+  PF.expanded.has(id) ? PF.expanded.delete(id) : PF.expanded.add(id);
+  pfRender();
+}
+function pfVisible(){
+  return PF.model.projects.filter(p => !PF.client || p.client === PF.client);
+}
+function pfTodayWeek(){
+  const PP = window.CygenixProjectPlan;
+  const iso = new Date().toISOString().slice(0, 10);
+  const s = PP.ppSlotForDate(PF.model.start, iso);
+  if (!s) return null;
+  const w = s.monthIndex * PP.PP_WEEKS + (s.week - 1);
+  return w < PF.model.weeks ? w : null;
+}
+function pfMonthLabels(){
+  const PP = window.CygenixProjectPlan;
+  return PP.ppMonths(PF.model.start, PF.model.months);
+}
+
+const pfCellCls = (w) => 'pf-c' + (w % 4 === 0 ? ' m0' : '') + (Math.floor(w / 4) % 2 === 1 ? ' q' : '');
+function pfTint(pal, phases){
+  if (phases.length === 1) return pal[phases[0] % pal.length].bg;
+  const a = pal[phases[0] % pal.length].bg, b = pal[phases[1] % pal.length].bg;
+  return 'linear-gradient(135deg, ' + a + ' 0 46%, rgba(0,0,0,0.18) 46% 54%, ' + b + ' 54% 100%)';
+}
+// One row's cells + milestone flags + the today line.
+function pfTrack(paint, milestones){
+  const w = PF.model.weeks;
+  let cells = '';
+  for (let i = 0; i < w; i++){
+    const info = paint(i);
+    cells += '<div class="' + pfCellCls(i) + (info ? ' fill' : '') + (info && info.clash ? ' clash' : '') + '"'
+      + (info ? ' style="background:' + info.bg + '"' + (info.tip ? ' title="' + esc(info.tip) + '"' : '') : '')
+      + '></div>';
+  }
+  let flags = '';
+  for (const m of (milestones || []))
+    flags += '<div class="pf-flag" style="left:calc(' + m.w + ' * var(--pfwk));top:3px">'
+      + '<i></i><span>' + esc(m.label) + '</span></div>';
+  const tw = pfTodayWeek();
+  const today = tw != null
+    ? '<div class="pf-today" style="left:calc(' + (tw + 0.5) + ' * var(--pfwk))"></div>' : '';
+  return '<div class="pf-track"><div class="pf-cells">' + cells + '</div>' + flags + today + '</div>';
+}
+
+function pfHeaderRow(){
+  const months = pfMonthLabels();
+  let mos = '', wks = '';
+  months.forEach((m, i) => {
+    mos += '<div class="pf-mo' + (i % 2 ? ' q' : '') + '" style="width:calc(4 * var(--pfwk));flex:0 0 calc(4 * var(--pfwk))">' + esc(m.label) + '</div>';
+    for (let j = 0; j < 4; j++) wks += '<div class="pf-wk' + (j === 0 ? ' m0' : '') + '">' + (j + 1) + '</div>';
+  });
+  const tw = pfTodayWeek();
+  return '<div class="pf-row pf-hdr"><div class="pf-left">'
+    + '<span style="flex:1">' + (PF.mode === 'project' ? 'Project' : 'Resource') + '</span>'
+    + '<span>' + (PF.mode === 'project' ? 'Effort · span' : 'Peak load') + '</span></div>'
+    + '<div class="pf-track"><div style="display:flex;flex-direction:column;justify-content:flex-end">'
+    + '<div style="display:flex">' + mos + '</div><div style="display:flex;border-top:0.5px solid var(--border)">' + wks + '</div></div>'
+    + (tw != null ? '<div class="pf-today" style="left:calc(' + (tw + 0.5) + ' * var(--pfwk))"></div>' : '')
+    + '</div></div>';
+}
+
+function pfProjectRow(p){
+  const PP = window.CygenixProjectPlan;
+  const next = p.milestones.find(m => { const tw = pfTodayWeek(); return tw == null || m.w >= tw; });
+  const paint = (w) => {
+    const hits = p.byWeek[w];
+    if (!hits.length) return null;
+    const phases = [...new Set(hits.map(h => h.phase))];
+    const tip = hits.map(h => p.phases[h.phase].name + (h.resource ? ' — ' + h.resource : '')).join('\n');
+    return { bg: pfTint(PP.PP_PALETTE, phases), tip };
+  };
+  return '<div class="pf-row pf-proj' + (PF.expanded.has(p.id) ? ' pf-open' : '') + '" onclick="pfToggle(' + p.id + ')">'
+    + '<div class="pf-left"><div class="pf-chev">▶</div>'
+    + '<div class="pf-dot" style="background:' + PF_DOT[p.id % PF_DOT.length] + '"></div>'
+    + '<div class="pf-col"><div class="pf-name">' + esc(p.name) + '</div>'
+    + '<div class="pf-meta">' + esc(p.client || '—')
+    + (next ? ' · next: ' + esc(next.label) : '') + '</div></div>'
+    + '<div class="pf-stat">' + (p.fp ? '<b>' + p.fp.toFixed(0) + ' FP</b>' : '<b>—</b>') + p.weeks + ' wks</div>'
+    + '</div>' + pfTrack(paint, p.milestones) + '</div>';
+}
+
+function pfPhaseRow(p, ph){
+  const PP = window.CygenixProjectPlan;
+  const pal = PP.PP_PALETTE[ph.color % PP.PP_PALETTE.length];
+  const wk = new Set(ph.weeks);
+  return '<div class="pf-row pf-sub">'
+    + '<div class="pf-left"><div class="pf-swatch" style="background:' + pal.bg + '"></div>'
+    + '<div class="pf-col"><div class="pf-meta" style="color:var(--text2)">' + esc(ph.name) + '</div></div>'
+    + '<div class="pf-stat">' + esc(ph.resources.join(', ') || '—')
+    + (ph.fp ? ' · ' + ph.fp.toFixed(1) + ' FP' : '') + '</div></div>'
+    + pfTrack(w => wk.has(w) ? { bg: pal.bg, tip: ph.name } : null, []) + '</div>';
+}
+
+function pfResourceRows(projects){
+  // Aggregate the FILTERED projects: name → per-week list of project ids.
+  const byName = new Map();
+  for (const p of projects) p.byWeek.forEach((hits, w) => {
+    for (const h of hits){
+      if (!h.resource) continue;
+      let r = byName.get(h.resource);
+      if (!r) byName.set(h.resource, r = Array.from({ length: PF.model.weeks }, () => []));
+      if (!r[w].some(x => x.id === p.id)) r[w].push({ id: p.id, name: p.name, client: p.client });
+    }
+  });
+  return [...byName.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, load]) => {
+    const peak = Math.max(0, ...load.map(a => a.length));
+    const paint = (w) => {
+      const a = load[w];
+      if (!a.length) return null;
+      const c0 = PF_DOT[a[0].id % PF_DOT.length];
+      const bg = a.length === 1 ? pfHex(c0, 0.34)
+        : 'linear-gradient(135deg, ' + pfHex(c0, 0.4) + ' 0 50%, ' + pfHex(PF_DOT[a[1].id % PF_DOT.length], 0.4) + ' 50% 100%)';
+      const tip = a.map(x => x.name + ' (' + (x.client || '—') + ')').join('\n')
+        + (a.length > 1 ? '\n⚠ booked on ' + a.length + ' projects this week' : '');
+      return { bg, clash: a.length > 1, tip };
+    };
+    return '<div class="pf-row"><div class="pf-left"><div class="pf-chev"></div>'
+      + '<div class="pf-col"><div class="pf-name">' + esc(name) + '</div></div>'
+      + '<div class="pf-load' + (peak > 1 ? ' hot' : '') + '">' + (peak > 1 ? '×' + peak + ' overlap' : (peak ? '×1' : '—')) + '</div>'
+      + '</div>' + pfTrack(paint, []) + '</div>';
+  }).join('') || '<div class="pf-row"><div class="pf-left" style="color:var(--text3);font-size:11.5px">No resources named on any painted week.</div><div class="pf-track"></div></div>';
+}
+function pfHex(h, a){
+  const n = parseInt(h.slice(1), 16);
+  return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+
+function pfRender(){
+  if (!PF.model) return;
+  const PP = window.CygenixProjectPlan;
+  const v = pfVisible();
+  let h = pfHeaderRow();
+  if (PF.mode === 'project'){
+    for (const p of v){
+      h += pfProjectRow(p);
+      if (PF.expanded.has(p.id))
+        for (const ph of p.phases) if (ph.weeks.length) h += pfPhaseRow(p, ph);
+    }
+    $('pf-count').textContent = v.length + ' projects · '
+      + v.reduce((s, p) => s + p.phases.filter(x => x.weeks.length).length, 0) + ' phases · '
+      + v.reduce((s, p) => s + p.weeks, 0) + ' work weeks · '
+      + v.reduce((s, p) => s + p.milestones.length, 0) + ' milestones';
+  } else {
+    h += pfResourceRows(v);
+    $('pf-count').textContent = v.length + ' projects in view';
+  }
+  $('pf-inner').innerHTML = h;
+
+  const leg = $('pf-legend');
+  if (PF.mode === 'project'){
+    leg.innerHTML = '<span class="k"><i style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid var(--green);display:inline-block"></i> milestone</span>'
+      + '<span class="k"><span class="box" style="background:linear-gradient(135deg,' + PP.PP_PALETTE[0].bg + ' 0 46%, rgba(0,0,0,0.18) 46% 54%,' + PP.PP_PALETTE[1].bg + ' 54% 100%)"></span> phases overlap</span>'
+      + '<span class="k">phase tints match each plan\'s own grid · click a lane to open its phases</span>';
+  } else {
+    leg.innerHTML = v.map(p => '<span class="k"><span class="box" style="background:' + pfHex(PF_DOT[p.id % PF_DOT.length], 0.34) + '"></span>' + esc(p.name) + '</span>').join('')
+      + '<span class="k"><span class="box" style="background:repeating-linear-gradient(45deg,rgba(192,57,43,0.55) 0 2px,transparent 2px 5px)"></span> double-booked</span>';
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────
