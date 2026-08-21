@@ -85,6 +85,12 @@ const check = (name, ok, detail) => {
   check('erase erases whatever is there', !doc.cells[k]);
   check('milestones are always the one green family, whatever the phase tint',
     /^#/.test(PP.PP_MILESTONE.bg) && PP.PP_PALETTE.length >= 6);
+  check('red is the last tint — the emphasis colour for key deliverables',
+    PP.PP_PALETTE[PP.PP_PALETTE.length - 1].name === 'red'
+    && /^#[0-9A-F]{6}$/i.test(PP.PP_PALETTE[PP.PP_PALETTE.length - 1].bg)
+    && PP.PP_PALETTE.filter(c => c.name === 'red').length === 1);
+  check('auto-assignment stops before it — red is only ever chosen by hand',
+    PP.PP_AUTO_TINTS === PP.PP_PALETTE.length - 1);
 }
 
 // ── Rows and CSV ────────────────────────────────────────────────────────────
@@ -134,6 +140,11 @@ const check = (name, ok, detail) => {
     plan.tasks.length === 3
     && plan.tasks.map(t => t.title.split('\n')[0]).join(';')
       === 'Initial analysis, business review, documentation;Design and documentation;Script development');
+  check('a seven-use-case import never lands on red by accident',
+    (() => { const e2 = EM.emNewDoc('all');
+      for (const uc of EM.EM_USE_CASES) e2.ticks[uc.id + '|AP'] = 1;
+      const p7 = PP.ppFromEstimate(e2, EM.emCompute(e2));
+      return p7.phases.every(ph => PP.PP_PALETTE[ph.color].name !== 'red'); })());
   check('each use case is a PHASE of its own, named after it, in its own tint',
     plan.phases.length === 3
     && plan.phases.map(p => p.name).join(';')
@@ -284,6 +295,10 @@ const check = (name, ok, detail) => {
     /function ppEstimatorClient/.test(html)
     && /own \|\| ppEstimatorClient\(\)/.test(html)
     && /Carried from the Configurator/.test(html));
+  check('the tint picker names red as the key-deliverable colour and rotates past it',
+    /key deliverables \(Go Live, cutover\)/.test(html)
+    && /Red is the emphasis tint/.test(html)
+    && /doc\.phases\.length % PP\.PP_AUTO_TINTS/.test(html));
   check('the grid exports to Excel as well as CSV',
     /⤓ Excel/.test(html) && /ppExportExcel/.test(html)
     && /application\/vnd\.ms-excel/.test(html) && /cygenix-project-plan\.xls/.test(html));
