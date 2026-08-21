@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Cygenix Data Conversion Standard Estimation Model — estimate migration effort in function points, working days and delivery dates.">
+<meta property="og:title" content="Cygenix – Effort Estimator">
+<meta property="og:description" content="Cygenix Data Conversion Standard Estimation Model — estimate migration effort in function points, working days and delivery dates.">
+<meta property="og:url" content="https://cygenix.co.uk/effort_estimator.html">
+<meta property="og:site_name" content="Cygenix">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cygenix – Effort Estimator">
+<meta name="twitter:description" content="Cygenix Data Conversion Standard Estimation Model — estimate migration effort in function points, working days and delivery dates.">
+<title>Cygenix – Effort Estimator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
+  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
+  --text:#1A1D21;--text2:#2A2F38;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#3F7D4E;--green-bg:rgba(63,125,78,0.10);
+  --amber:#B26A00;--amber-bg:rgba(178,106,0,0.10);
+  --red:#C0392B;--red-bg:rgba(192,57,43,0.10);
+  --teal:#0F6E6C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --shade:#E6E0D2;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;--r-lg:14px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+
+.page{padding:1.5rem 2rem;max-width:none}
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
+.page-title{font-size:22px;font-weight:600;letter-spacing:-0.01em;margin-bottom:0.25rem}
+.page-sub{font-size:12px;color:var(--text3);max-width:820px;line-height:1.55}
+
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1rem}
+.panel-head{padding:0.7rem 1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap}
+.panel-title{font-size:13px;font-weight:600;color:var(--text)}
+.panel-sub{font-size:11px;color:var(--text3);line-height:1.5}
+.panel-body{padding:0.9rem 1rem}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.4rem 0.875rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
+.btn:hover{background:var(--bg3);color:var(--text)}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}.btn-primary:hover{opacity:0.9;background:var(--accent);color:#fff}
+.btn-sm{padding:0.22rem 0.6rem;font-size:11px}
+.form-input{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.38rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none}
+.form-input:focus{border-color:var(--accent)}
+.form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:0.25rem}
+
+/* ── The sheet header band ── */
+.es-brand{font-size:30px;font-weight:700;letter-spacing:0.12em;font-family:var(--mono)}
+.es-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.6rem}
+
+/* ── Grids ── */
+.es-wrap{overflow-x:auto}
+table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
+.es th,.es td{border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);padding:2px 5px;background:var(--bg2);text-align:center}
+.es thead th{background:var(--bg3);font-weight:600}
+.es .es-mod{writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;font-weight:600;white-space:nowrap;max-height:170px;padding:6px 2px;vertical-align:bottom}
+.es .es-name{text-align:left;min-width:280px;max-width:340px;font-weight:500;position:sticky;left:0;z-index:2}
+.es thead .es-name{z-index:3;background:var(--bg3)}
+.es .es-cell{width:28px;min-width:28px}
+.es .es-cell input[type=checkbox]{cursor:pointer;accent-color:var(--green)}
+.es .es-num input{width:40px;border:none;background:transparent;font-family:var(--mono);font-size:10.5px;text-align:center;color:var(--text);outline:none}
+.es .es-fp{font-family:var(--mono);background:var(--shade);min-width:64px;font-weight:500}
+.es .es-tc input{width:44px;border:none;background:transparent;font-family:var(--mono);font-size:11px;text-align:center;outline:none;color:var(--text)}
+.es tr.es-total td{background:var(--bg3);font-weight:600;font-family:var(--mono)}
+
+/* ── Variables & modules ── */
+.es-var{display:flex;align-items:center;gap:0.55rem;padding:0.3rem 0.55rem;border:0.5px solid var(--border2);border-radius:8px;margin-bottom:0.3rem;background:var(--bg3)}
+.es-var input[type=number]{width:58px}
+.es-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border:0.5px solid var(--border2);border-radius:100px;font-size:11px;margin:0 0.3rem 0.3rem 0;background:var(--bg3)}
+.es-chip button{border:none;background:none;cursor:pointer;color:var(--text3);font-size:11px;padding:0}
+.es-chip button:hover{color:var(--red)}
+
+/* ── Verdict ── */
+.es-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.7rem;margin-bottom:0.8rem}
+.es-kpi{border:0.5px solid var(--border);border-radius:var(--r);padding:0.55rem 0.7rem;background:var(--bg2)}
+.es-kpi .k-lbl{font-size:9.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em}
+.es-kpi .k-val{font-size:19px;font-family:var(--mono);font-weight:500;margin-top:2px}
+.es-kpi .k-sub{font-size:10px;color:var(--text3);margin-top:2px}
+.es-verdict{border-radius:var(--r);padding:0.7rem 0.9rem;font-size:12.5px;font-weight:600}
+.es-verdict.ok{background:var(--green-bg);color:var(--green);border:0.5px solid var(--green)}
+.es-verdict.bad{background:var(--red-bg);color:var(--red);border:0.5px solid var(--red)}
+.es-verdict.na{background:var(--bg3);color:var(--text3);border:0.5px solid var(--border2)}
+
+@media print{
+  body{padding-left:0;background:#fff}
+  #cyg-sidebar-mount,.page-header .es-actions,.es-config,.pp-noprint{display:none !important}
+  .es-wrap{overflow:visible}
+  .page{padding:0.5rem}
+}
+@media(max-width:900px){.es-meta{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<script src="/connections.js?v=d199ff3358" defer></script>
+<script src="/cygenix-params.js?v=32531717aa" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
+
+<div id="cyg-sidebar-mount" data-active="effort-estimator"></div>
+<script src="/cygenix-sidebar.js?v=1f0a532ee5" defer></script>
+<script src="/cygenix-effort-model.js?v=d552169597" defer></script>
+
+<div class="page">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">∑ Effort Estimator</div>
+      <div class="page-sub">The Data Conversion Standard Estimation Model: tick the modules each
+        use case touches, set the project variables, and the model rolls function points up to
+        working days, calendar months and a delivery date — with an honest verdict on whether it
+        fits the timeline. The use cases are the standard; modules and variables are yours to shape.</div>
+    </div>
+    <div class="es-actions" style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <select id="es-est-sel" class="form-input" onchange="esSwitch(this.value)" aria-label="Choose an estimate"></select>
+      <button class="btn btn-sm" onclick="esNewEstimate()">+ New estimate</button>
+      <button class="btn btn-sm" onclick="esDeleteEstimate()">Delete</button>
+      <button class="btn btn-sm" onclick="esExportCsv()">⤓ CSV</button>
+      <button class="btn btn-sm" onclick="window.print()">⎙ Print</button>
+    </div>
+  </div>
+
+  <!-- The sheet's header band, Cygenix-branded -->
+  <div class="panel"><div class="panel-body" style="display:flex;gap:1.4rem;align-items:flex-start;flex-wrap:wrap">
+    <div class="es-brand">CYGENIX</div>
+    <div style="flex:1;min-width:340px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:0.55rem">Data Conversion Standard Estimation Model</div>
+      <div class="es-meta" id="es-meta"></div>
+    </div>
+  </div></div>
+
+  <!-- Verdict -->
+  <div class="panel"><div class="panel-body">
+    <div class="es-kpis" id="es-kpis"></div>
+    <div id="es-verdict"></div>
+  </div></div>
+
+  <!-- Use case estimates -->
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Use case estimates</div>
+      <div class="panel-sub">The seven standard use cases. Tick the modules each one covers —
+        an untouched use case costs nothing. TC is the technical complexity factor: 1 is standard,
+        up to 99 for fully custom.</div></div>
+      <button class="btn btn-sm" style="margin-left:auto" onclick="esResetTicks()">Reset ticks</button>
+    </div>
+    <div class="es-wrap"><table class="es" id="es-uc"></table></div>
+  </div>
+
+  <!-- Data model estimates -->
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Data model estimates</div>
+      <div class="panel-sub">Counts per module: source systems, attributes and relationships,
+        each weighted into data function points.</div></div>
+      <button class="btn btn-sm" style="margin-left:auto" onclick="esResetData()">Reset counts</button>
+    </div>
+    <div class="es-wrap"><table class="es" id="es-dm"></table></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem" class="es-config-grid">
+    <!-- Variables -->
+    <div class="panel es-config">
+      <div class="panel-head">
+        <div><div class="panel-title">Variables</div>
+        <div class="panel-sub">Project-level multipliers applied to every use case. A scale variable
+          at its minimum is neutral; a flag adds its weight when on. Combined factor:
+          <b id="es-vf" style="font-family:var(--mono)">×1.0</b></div></div>
+        <button class="btn btn-sm" style="margin-left:auto" onclick="esAddVariable()">+ Variable</button>
+      </div>
+      <div class="panel-body" id="es-vars"></div>
+    </div>
+
+    <!-- Modules -->
+    <div class="panel es-config">
+      <div class="panel-head">
+        <div><div class="panel-title">Modules</div>
+        <div class="panel-sub">The product areas in this migration. Removing a module clears its
+          ticks and counts.</div></div>
+        <button class="btn btn-sm" style="margin-left:auto" onclick="esResetModules()">Reset to defaults</button>
+      </div>
+      <div class="panel-body">
+        <div id="es-mods"></div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem">
+          <input id="es-mod-new" class="form-input" style="flex:1" placeholder="Add a module…"
+                 onkeydown="if(event.key==='Enter')esAddModule()" aria-label="New module name">
+          <button class="btn btn-sm" onclick="esAddModule()">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timeline inputs + method -->
+  <div class="panel es-config">
+    <div class="panel-head"><div class="panel-title">Timeline &amp; rates</div></div>
+    <div class="panel-body" id="es-rates"></div>
+  </div>
+
+  <div class="panel pp-noprint">
+    <div class="panel-head"><div class="panel-title">How it estimates</div></div>
+    <div class="panel-body" style="font-size:11.5px;color:var(--text2);line-height:1.7">
+      Use-case FP = (base + per-module × ticked modules) × variables × TC, and zero with nothing
+      ticked. Data FP adds source systems ×3, attributes ×0.05, 1:1 relationships ×0.5 and
+      1:N ×1 per module. Total FP × days-per-FP (default 1.37) gives working days; divided by
+      19.5 gives calendar months; the delivery date walks forward from the start date over
+      working days plus holidays, skipping weekends. The verdict compares working days needed
+      against working days available before the due date. Every weight on this page is visible
+      and editable — an estimate nobody can inspect is an estimate nobody trusts.
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* Effort Estimator page — rendering over CygenixEffortModel (the tested
+ * pure engine). All user text goes through esc(). */
+
+const ES_STORE = 'cygenix_effort_estimates_v1';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const ES = { store: null };
+
+function esLoad(){
+  const EM = window.CygenixEffortModel;
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(ES_STORE) || 'null'); } catch (e) {}
+  if (!s || !s.estimates || !Object.keys(s.estimates).length){
+    const doc = EM.emNewDoc('New estimate');
+    s = { active: doc.name, estimates: {} };
+    s.estimates[doc.name] = doc;
+  }
+  for (const k of Object.keys(s.estimates)) s.estimates[k] = EM.emNormalize(s.estimates[k]);
+  if (!s.estimates[s.active]) s.active = Object.keys(s.estimates)[0];
+  ES.store = s;
+}
+function esSave(){ try { localStorage.setItem(ES_STORE, JSON.stringify(ES.store)); } catch (e) {} }
+function esDoc(){ return ES.store.estimates[ES.store.active]; }
+
+// ── Estimates ─────────────────────────────────────────────────────────────
+function esSwitch(name){ if (ES.store.estimates[name]){ ES.store.active = name; esSave(); esRenderAll(); } }
+function esNewEstimate(){
+  const EM = window.CygenixEffortModel;
+  const name = window.prompt('Name the new estimate:', 'Estimate ' + (Object.keys(ES.store.estimates).length + 1));
+  if (!name || ES.store.estimates[name]) return;
+  ES.store.estimates[name] = EM.emNormalize(EM.emNewDoc(name));
+  ES.store.active = name;
+  esSave(); esRenderAll();
+}
+function esDeleteEstimate(){
+  if (!window.confirm('Delete the estimate "' + ES.store.active + '"?')) return;
+  delete ES.store.estimates[ES.store.active];
+  if (!Object.keys(ES.store.estimates).length){
+    const EM = window.CygenixEffortModel;
+    const doc = EM.emNewDoc('New estimate');
+    ES.store.estimates[doc.name] = doc;
+  }
+  ES.store.active = Object.keys(ES.store.estimates)[0];
+  esSave(); esRenderAll();
+}
+
+// ── Field updates ─────────────────────────────────────────────────────────
+function esMeta(k, v){ esDoc().meta[k] = String(v).slice(0, 120); esSave(); esRenderResults(); }
+function esTick(uc, mod, on){
+  const doc = esDoc();
+  if (on) doc.ticks[uc + '|' + mod] = 1; else delete doc.ticks[uc + '|' + mod];
+  esSave(); esRenderResults(); esRenderUcFps();
+}
+function esTc(uc, v){
+  esDoc().tc[uc] = Math.max(0.1, Math.min(99, Number(v) || 1));
+  esSave(); esRenderResults(); esRenderUcFps();
+}
+function esData(meas, mod, v){
+  const doc = esDoc(); const n = Number(v);
+  if (n > 0) doc.data[meas + '|' + mod] = Math.min(1e6, n); else delete doc.data[meas + '|' + mod];
+  esSave(); esRenderResults(); esRenderUcFps();   // TDP lives in the grid footer
+}
+function esNum(k, v, lo, hi){
+  esDoc()[k] = Math.max(lo, Math.min(hi, Number(v) || lo));
+  esSave(); esRenderResults();
+}
+function esRate(k, v, lo){ esDoc().rates[k] = Math.max(lo, Number(v) || lo); esSave(); esRenderResults(); }
+function esFlag(k, on){ esDoc()[k] = !!on; esSave(); esRenderResults(); }
+function esResetTicks(){ esDoc().ticks = {}; esSave(); esRenderGrids(); esRenderResults(); }
+function esResetData(){ esDoc().data = {}; esSave(); esRenderGrids(); esRenderResults(); }
+
+// ── Modules (configurable) ────────────────────────────────────────────────
+function esAddModule(){
+  const doc = esDoc();
+  const name = $('es-mod-new').value.trim().slice(0, 40);
+  if (!name || doc.modules.includes(name)) return;
+  doc.modules.push(name);
+  $('es-mod-new').value = '';
+  esSave(); esRenderAll();
+}
+function esRemoveModule(name){
+  const EM = window.CygenixEffortModel;
+  const doc = esDoc();
+  doc.modules = doc.modules.filter(m => m !== name);
+  ES.store.estimates[ES.store.active] = EM.emNormalize(doc);   // drops its ticks/counts
+  esSave(); esRenderAll();
+}
+function esResetModules(){
+  const EM = window.CygenixEffortModel;
+  const doc = esDoc();
+  doc.modules = EM.EM_DEFAULT_MODULES.slice();
+  ES.store.estimates[ES.store.active] = EM.emNormalize(doc);
+  esSave(); esRenderAll();
+}
+
+// ── Variables (configurable) ──────────────────────────────────────────────
+function esVarField(id, field, v){
+  const doc = esDoc();
+  const va = doc.variables.find(x => x.id === id);
+  if (!va) return;
+  if (field === 'name') va.name = String(v).slice(0, 60);
+  else if (field === 'value') va.value = Math.max(0, Math.min(99, Number(v) || 0));
+  else if (field === 'weight') va.weight = Math.max(0, Math.min(2, Number(v) || 0));
+  else if (field === 'flagOn') va.value = v ? 1 : 0;
+  esSave(); esRenderResults();
+}
+function esAddVariable(){
+  const EM = window.CygenixEffortModel;
+  esDoc().variables.push({ id: EM.emId(), name: 'New variable', kind: 'scale',
+    weight: 0.1, value: 1, min: 1, max: 99 });
+  esSave(); esRenderVars(); esRenderResults();
+}
+function esRemoveVariable(id){
+  const doc = esDoc();
+  doc.variables = doc.variables.filter(v => v.id !== id);
+  esSave(); esRenderVars(); esRenderResults();
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+function esRenderMeta(){
+  const m = esDoc().meta;
+  const field = (k, label, type) =>
+    '<div><span class="form-label">' + label + '</span>'
+    + '<input class="form-input" style="width:100%" type="' + (type || 'text') + '" value="' + esc(m[k]) + '"'
+    + ' onchange="esMeta(\'' + k + '\', this.value)" aria-label="' + label + '"></div>';
+  $('es-meta').innerHTML =
+      field('date', 'Date', 'date') + field('clientCode', 'Client Code')
+    + field('clientName', 'Client Name') + field('reference', 'Reference')
+    + field('employee', 'Employee')
+    + field('startDate', 'Start date', 'date') + field('dueDate', 'Due Date', 'date');
+}
+
+function esRenderGrids(){
+  const EM = window.CygenixEffortModel;
+  const doc = esDoc();
+
+  // Use-case grid: fixed rows, module checkboxes, TC input, FP column.
+  let h = '<thead><tr><th class="es-name">Use Case Name</th>'
+    + doc.modules.map(m => '<th class="es-mod">' + esc(m) + '</th>').join('')
+    + '<th class="es-mod">Technical Complexity (TC)</th>'
+    + '<th style="min-width:64px">FP</th></tr></thead><tbody>';
+  for (const uc of EM.EM_USE_CASES){
+    h += '<tr><td class="es-name">' + esc(uc.name) + '</td>'
+      + doc.modules.map(m => '<td class="es-cell"><input type="checkbox"'
+        + (doc.ticks[uc.id + '|' + m] ? ' checked' : '')
+        + ' onchange="esTick(\'' + uc.id + '\',\'' + esc(m) + '\', this.checked)"'
+        + ' aria-label="' + esc(uc.name) + ' — ' + esc(m) + '"></td>').join('')
+      + '<td class="es-tc"><input type="number" step="0.1" min="0.1" max="99" value="' + (doc.tc[uc.id] || 1)
+      + '" onchange="esTc(\'' + uc.id + '\', this.value)" aria-label="Technical complexity"></td>'
+      + '<td class="es-fp" id="es-fp-' + uc.id + '"></td></tr>';
+  }
+  h += '<tr class="es-total"><td class="es-name">Total Use Case Function Points (TUCFP)</td>'
+    + doc.modules.map(m => '<td id="es-cn-' + esc(m).replace(/[^A-Za-z0-9]/g, '_') + '"></td>').join('')
+    + '<td></td><td class="es-fp" id="es-tucfp"></td></tr></tbody>';
+  $('es-uc').innerHTML = h;
+
+  // Data-model grid: counts per module.
+  let d = '<thead><tr><th class="es-name">Data model</th>'
+    + doc.modules.map(m => '<th class="es-mod">' + esc(m) + '</th>').join('')
+    + '<th style="min-width:64px">FP</th></tr></thead><tbody>';
+  for (const meas of EM.EM_DATA_MEASURES){
+    d += '<tr><td class="es-name">' + esc(meas.name) + '</td>'
+      + doc.modules.map(m => '<td class="es-num"><input type="number" min="0" value="'
+        + (doc.data[meas.id + '|' + m] || '') + '" placeholder="0"'
+        + ' onchange="esData(\'' + meas.id + '\',\'' + esc(m) + '\', this.value)"'
+        + ' aria-label="' + esc(meas.name) + ' — ' + esc(m) + '"></td>').join('')
+      + '<td></td></tr>';
+  }
+  d += '<tr class="es-total"><td class="es-name">Total Data Function Points (TDP)</td>'
+    + doc.modules.map(() => '<td></td>').join('')
+    + '<td class="es-fp" id="es-tdp"></td></tr></tbody>';
+  $('es-dm').innerHTML = d;
+
+  esRenderUcFps();
+}
+
+function esRenderUcFps(){
+  const EM = window.CygenixEffortModel;
+  const r = EM.emCompute(esDoc());
+  for (const u of r.perUseCase){
+    const el = $('es-fp-' + u.id);
+    if (el) el.textContent = u.fp.toFixed(1);
+  }
+  const doc = esDoc();
+  for (const m of doc.modules){
+    const el = $('es-cn-' + m.replace(/[^A-Za-z0-9]/g, '_'));
+    if (el) el.textContent = EM.EM_USE_CASES.filter(uc => doc.ticks[uc.id + '|' + m]).length || '';
+  }
+  const tu = $('es-tucfp'); if (tu) tu.textContent = r.tucfp.toFixed(1);
+  const td = $('es-tdp'); if (td) td.textContent = r.tdp.toFixed(1);
+}
+
+function esRenderVars(){
+  const doc = esDoc();
+  $('es-vars').innerHTML = doc.variables.map(v =>
+    '<div class="es-var">'
+    + '<input class="form-input" style="flex:1;min-width:120px" value="' + esc(v.name) + '"'
+    + ' onchange="esVarField(\'' + esc(v.id) + '\',\'name\', this.value)" aria-label="Variable name">'
+    + (v.kind === 'flag'
+        ? '<label style="font-size:11px;display:flex;align-items:center;gap:4px">on '
+          + '<input type="checkbox"' + (v.value ? ' checked' : '')
+          + ' onchange="esVarField(\'' + esc(v.id) + '\',\'flagOn\', this.checked)"></label>'
+        : '<input class="form-input" type="number" min="' + v.min + '" max="' + v.max + '" value="' + v.value + '"'
+          + ' onchange="esVarField(\'' + esc(v.id) + '\',\'value\', this.value)" aria-label="Value">')
+    + '<label style="font-size:10px;color:var(--text3)">weight '
+    + '<input class="form-input" type="number" step="0.05" min="0" max="2" value="' + v.weight + '"'
+    + ' onchange="esVarField(\'' + esc(v.id) + '\',\'weight\', this.value)" aria-label="Weight"></label>'
+    + '<button class="btn btn-sm" onclick="esRemoveVariable(\'' + esc(v.id) + '\')" aria-label="Remove variable">✕</button>'
+    + '</div>').join('')
+    || '<div style="font-size:11px;color:var(--text3)">No variables — the multiplier is 1.</div>';
+}
+
+function esRenderMods(){
+  const doc = esDoc();
+  $('es-mods').innerHTML = doc.modules.map(m =>
+    '<span class="es-chip">' + esc(m)
+    + '<button onclick="esRemoveModule(\'' + esc(m) + '\')" aria-label="Remove ' + esc(m) + '">✕</button></span>').join('');
+}
+
+function esRenderRates(){
+  const doc = esDoc();
+  $('es-rates').innerHTML =
+    '<div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">'
+    + '<div><span class="form-label">Holiday days</span><input class="form-input" type="number" min="0" style="width:80px" value="' + doc.holidayDays + '" onchange="esNum(\'holidayDays\', this.value, 0, 365)"></div>'
+    + '<div><span class="form-label">Accrued days</span><input class="form-input" type="number" min="0" style="width:80px" value="' + doc.accruedDays + '" onchange="esNum(\'accruedDays\', this.value, 0, 9999)"></div>'
+    + '<label style="font-size:11.5px;display:flex;align-items:center;gap:5px;padding-bottom:6px">'
+    + '<input type="checkbox"' + (doc.useAccrued ? ' checked' : '') + ' onchange="esFlag(\'useAccrued\', this.checked)"> Use accrued?</label>'
+    + '<div><span class="form-label">Resources in parallel</span><input class="form-input" type="number" min="1" max="50" style="width:80px" value="' + doc.resources + '" onchange="esNum(\'resources\', this.value, 1, 50)"></div>'
+    + '<div><span class="form-label">Days per FP</span><input class="form-input" type="number" step="0.01" min="0.01" style="width:88px" value="' + doc.rates.daysPerFP + '" onchange="esRate(\'daysPerFP\', this.value, 0.01)"></div>'
+    + '<div><span class="form-label">Working days / month</span><input class="form-input" type="number" step="0.5" min="1" style="width:88px" value="' + doc.rates.workingDaysPerMonth + '" onchange="esRate(\'workingDaysPerMonth\', this.value, 1)"></div>'
+    + '<div><span class="form-label">Hours / day</span><input class="form-input" type="number" min="1" max="24" style="width:70px" value="' + doc.rates.hoursPerDay + '" onchange="esRate(\'hoursPerDay\', this.value, 1)"></div>'
+    + '</div>';
+}
+
+function esRenderResults(){
+  const EM = window.CygenixEffortModel;
+  const doc = esDoc();
+  const r = EM.emCompute(doc);
+  const kpi = (lbl, val, sub) =>
+    '<div class="es-kpi"><div class="k-lbl">' + lbl + '</div><div class="k-val">' + val + '</div>'
+    + (sub ? '<div class="k-sub">' + sub + '</div>' : '') + '</div>';
+  $('es-kpis').innerHTML =
+      kpi('Total FP', r.tfp.toFixed(1), r.tucfp.toFixed(1) + ' use case + ' + r.tdp.toFixed(1) + ' data · variables ×' + r.variableFactor)
+    + kpi('Working days', r.wd, r.hours.toLocaleString('en-GB') + ' hours' + (doc.useAccrued ? ' · accrued applied' : ''))
+    + kpi('Calendar months', r.cm.toFixed(2), doc.rates.workingDaysPerMonth + ' working days/month')
+    + kpi('Delivery date', r.delivery || 'set a start date', doc.holidayDays ? '+' + doc.holidayDays + ' holiday days' : '')
+    + kpi('Working days available', r.available == null ? 'n/a' : r.available,
+        r.available != null && r.available < 0 ? 'due date is before the start' : 'start → due, minus holidays')
+    + (doc.resources > 1 ? kpi('Shared (' + doc.resources + ' resources)', r.wdShared + ' wd', r.deliveryShared || '') : '');
+  const v = $('es-verdict');
+  if (r.fits == null){
+    v.className = 'es-verdict na';
+    v.textContent = 'Set the start date and due date to see whether the estimate fits the timeline.';
+  } else if (r.fits){
+    v.className = 'es-verdict ok';
+    v.textContent = '✓ Fits: ' + r.wd + ' working days needed, ' + r.available
+      + ' available before the due date' + (r.delivery ? ' — projected delivery ' + r.delivery : '') + '.';
+  } else {
+    v.className = 'es-verdict bad';
+    v.textContent = '✗ Does not fit: ' + r.wd + ' working days needed against ' + r.available
+      + ' available — over by ' + (r.wd - r.available) + ' working days'
+      + (r.delivery ? '. Projected delivery ' + r.delivery : '')
+      + (r.fitsShared ? '. It WOULD fit with ' + doc.resources + ' resources in parallel.' : '.');
+  }
+  const vf = $('es-vf'); if (vf) vf.textContent = '×' + r.variableFactor;
+}
+
+function esRenderAll(){
+  const sel = $('es-est-sel');
+  sel.innerHTML = Object.keys(ES.store.estimates).map(n =>
+    '<option value="' + esc(n) + '"' + (n === ES.store.active ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
+  esRenderMeta(); esRenderGrids(); esRenderVars(); esRenderMods(); esRenderRates(); esRenderResults();
+}
+
+function esExportCsv(){
+  const EM = window.CygenixEffortModel;
+  const blob = new Blob([EM.emCsv(esDoc())], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'cygenix-effort-estimate.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 2000);
+}
+
+function esBoot(){
+  if (!window.CygenixEffortModel){ setTimeout(esBoot, 40); return; }
+  esLoad(); esRenderAll();
+}
+document.addEventListener('DOMContentLoaded', esBoot);
+</script>
+</body>
+</html>

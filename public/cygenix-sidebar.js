@@ -118,6 +118,7 @@
         // RETIRED Planner & Schedules page and its removal is pinned by
         // tests. This is the new task-planning grid under Reports.
         { key:'project-plan-grid',        label:'Project Plan',      href:'/project_plan.html',       color:'var(--green)',  icon: iconPlanGrid() },
+        { key:'effort-estimator',         label:'Effort Estimator',  href:'/effort_estimator.html',   color:'var(--teal)',   icon: iconEstimator() },
         // 'Project Summary' was removed on request (17-Aug-2026). The view
         // itself still loads on dashboard.html and answers to
         // #goto=project-summary-document for old bookmarks.
@@ -187,6 +188,8 @@
   function iconAlert(){        return svg('<path d="M8 2l6 11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3M8 11v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   // Gantt bars in a frame — the Project Plan task-planning grid.
   function iconPlanGrid(){     return svg('<rect x="2" y="2" width="12" height="12" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M2 5.5h12" stroke="currentColor" stroke-width="1"/><rect x="4" y="7" width="5" height="1.6" fill="currentColor"/><rect x="6.5" y="10" width="5.5" height="1.6" fill="currentColor"/>'); }
+  // Sigma over a baseline — the Effort Estimator's function-point roll-up.
+  function iconEstimator(){    return svg('<path d="M4 3h8M4 3l4 5-4 5M4 13h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconCookie(){       return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/>'); }
   function iconSearch(){       return svg('<circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   // Two figures — Users & Roles, the access-control directory.
