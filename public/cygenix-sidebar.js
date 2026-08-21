@@ -63,6 +63,13 @@
   const NAV = [
     { section: null, items: [
       { key:'dashboard', label:'Home',   view:'dashboard', icon: iconDashboard() },
+      // Project sits directly below Home (moved out of Reports on request,
+      // 21-Aug-2026): the estimate is where an engagement starts, and the
+      // plan follows straight from it. Estimator first, then the Planner.
+      { key:'project-group', label:'Project', icon: iconEstimator(), children: [
+        { key:'effort-estimator',  label:'Effort Estimator', href:'/effort_estimator.html', color:'var(--teal)',  icon: iconEstimator() },
+        { key:'project-plan-grid', label:'Project Plan',     href:'/project_plan.html',     color:'var(--green)', icon: iconPlanGrid() },
+      ]},
       { key:'search',    label:'Search', view:'search',    icon: iconSearch() },
     ]},
     { section: 'Connect', group:'connect', items: [
@@ -114,11 +121,10 @@
       { key:'reports-group', label:'Reports', icon: iconReport(), children: [
         { key:'report-builder',           label:'Report Builder',    href:'/reports.html',            color:'var(--amber)',  icon: iconReportBuilder() },
         { key:'reports',                  label:'Conversion Report', view:'reports',                  color:'var(--purple)', icon: iconReport() },
-        // 'project-plan-grid', not 'project-plan': that key belongs to the
-        // RETIRED Planner & Schedules page and its removal is pinned by
-        // tests. This is the new task-planning grid under Reports.
-        { key:'project-plan-grid',        label:'Project Plan',      href:'/project_plan.html',       color:'var(--green)',  icon: iconPlanGrid() },
-        { key:'effort-estimator',         label:'Effort Estimator',  href:'/effort_estimator.html',   color:'var(--teal)',   icon: iconEstimator() },
+        // The Effort Estimator and Project Plan moved to the top-level
+        // Project group below Home (21-Aug-2026). Their keys are unchanged
+        // ('project-plan-grid' — NOT 'project-plan', which belongs to the
+        // retired Planner & Schedules page and whose removal is pinned).
         // 'Project Summary' was removed on request (17-Aug-2026). The view
         // itself still loads on dashboard.html and answers to
         // #goto=project-summary-document for old bookmarks.

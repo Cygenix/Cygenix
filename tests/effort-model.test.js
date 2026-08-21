@@ -220,8 +220,9 @@ check('a new estimate starts with NOTHING ticked',
     /Hourly rate/.test(html) && /Estimated cost/.test(html) && /hourlyRate/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
-  check('Effort Estimator lives under Reports in the rail',
-    /key:'effort-estimator',\s*label:'Effort Estimator',\s*href:'\/effort_estimator\.html'/.test(sidebar));
+  check('Effort Estimator leads the Project group below Home',
+    /key:'project-group',\s*label:'Project'/.test(sidebar)
+    && /key:'effort-estimator',\s*label:'Effort Estimator',\s*href:'\/effort_estimator\.html'/.test(sidebar));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
