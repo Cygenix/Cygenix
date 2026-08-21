@@ -61,12 +61,28 @@
     { id: 'history',  name: 'No of Years Historical data',   kind: 'scale', weight: 0.05, value: 1, min: 1, max: 30 },
   ];
 
-  // ── Rates: how FP becomes time ───────────────────────────────────────────
+  // ── Rates: how FP becomes time (and money) ───────────────────────────────
   const EM_DEFAULT_RATES = {
     daysPerFP: 1.37,            // 49 FP → 67 working days, per the sheet
     workingDaysPerMonth: 19.5,  // 67 WD → 3.44 calendar months, per the sheet
     hoursPerDay: 8,
+    hourlyRate: 0,              // 0 = no cost shown until the user sets one
   };
+
+  // ── Baseline: the quoted time for a TYPICAL project ──────────────────────
+  // "Our baseline is normally 3 months" — most quotes go out on that basis.
+  // The unit is the user's choice; working days is the common currency
+  // (weeks are 5 working days, months use workingDaysPerMonth).
+  const EM_DEFAULT_BASELINE = { value: 3, unit: 'months' };
+  const EM_BASELINE_UNITS = ['days', 'weeks', 'months'];
+
+  function emBaselineDays(baseline, rates) {
+    const b = baseline || EM_DEFAULT_BASELINE;
+    const n = Math.max(0, Number(b.value) || 0);
+    if (b.unit === 'days') return n;
+    if (b.unit === 'weeks') return n * 5;
+    return n * ((rates && rates.workingDaysPerMonth) || EM_DEFAULT_RATES.workingDaysPerMonth);
+  }
 
   // Data-model measures: counts per module, weighted into FP.
   const EM_DATA_MEASURES = [
@@ -134,6 +150,7 @@
       holidayDays: 0,
       accruedDays: 0, useAccrued: false,
       resources: 1,
+      baseline: Object.assign({}, EM_DEFAULT_BASELINE),
     };
   }
 
@@ -162,6 +179,12 @@
       daysPerFP: rate(d.rates && d.rates.daysPerFP, EM_DEFAULT_RATES.daysPerFP),
       workingDaysPerMonth: rate(d.rates && d.rates.workingDaysPerMonth, EM_DEFAULT_RATES.workingDaysPerMonth),
       hoursPerDay: rate(d.rates && d.rates.hoursPerDay, EM_DEFAULT_RATES.hoursPerDay),
+      // Zero is a real choice here: no rate set, no cost shown.
+      hourlyRate: Math.max(0, Math.min(100000, Number(d.rates && d.rates.hourlyRate) || 0)),
+    };
+    out.baseline = {
+      value: Math.max(0, Math.min(9999, Number(d.baseline && d.baseline.value) || EM_DEFAULT_BASELINE.value)),
+      unit: EM_BASELINE_UNITS.includes(d.baseline && d.baseline.unit) ? d.baseline.unit : EM_DEFAULT_BASELINE.unit,
     };
     const modSet = new Set(out.modules);
     const ucSet = new Set(EM_USE_CASES.map(u => u.id));
@@ -226,9 +249,42 @@
     const fits = (available != null) ? wd <= available : null;
     const fitsShared = (available != null && doc.resources > 1) ? wdShared <= available : null;
 
+    // Baseline: the standard quote. Compared against the estimate whether or
+    // not dates are set — a quote goes out before a start date exists.
+    const baselineDays = Math.round(emBaselineDays(doc.baseline, doc.rates) * 10) / 10;
+    const fitsBaseline = baselineDays > 0 ? wd <= baselineDays : null;
+    const baselineDelta = baselineDays > 0 ? Math.round((baselineDays - wd) * 10) / 10 : null;
+
+    // Money: total hours × hourly rate. No rate, no number — a cost of £0
+    // on a quote is worse than no cost at all.
+    const cost = doc.rates.hourlyRate > 0 ? Math.round(hours * doc.rates.hourlyRate) : null;
+
     return { perUseCase, tucfp, tdp, tfp, wd, wdShared, cm, hours,
       variableFactor: Math.round(vf * 1000) / 1000,
-      delivery, deliveryShared, available, fits, fitsShared };
+      delivery, deliveryShared, available, fits, fitsShared,
+      baselineDays, fitsBaseline, baselineDelta, cost };
+  }
+
+  // ── Baseline calibration ─────────────────────────────────────────────────
+  // "If every module is ticked, it should fit the quoted time for a typical
+  // project." Full scope = every use case × every module, with the current
+  // variables and TC. The returned days-per-FP makes exactly that estimate
+  // land on the baseline, so every partial scope prices proportionally
+  // inside the standard quote.
+  function emFullScopeFp(doc) {
+    const full = emNormalize(JSON.parse(JSON.stringify(doc)));
+    full.ticks = {};
+    for (const uc of EM_USE_CASES)
+      for (const mod of full.modules) full.ticks[uc.id + '|' + mod] = 1;
+    return emCompute(full).tfp;
+  }
+  function emCalibrateToBaseline(doc) {
+    const target = emBaselineDays(doc.baseline, doc.rates);
+    const fullFp = emFullScopeFp(doc);
+    if (!(target > 0) || !(fullFp > 0)) return null;
+    // FLOOR to 3dp, never round: rounding up can overshoot the baseline by
+    // a fraction of a day, and "fits the quote" must mean fits.
+    return Math.max(0.001, Math.floor((target / fullFp) * 1000) / 1000);
   }
 
   // ── CSV export ───────────────────────────────────────────────────────────
@@ -252,14 +308,21 @@
     lines.push(['Calculated delivery date', '', '', r.delivery || 'n/a'].map(emCsvCell).join(','));
     lines.push(['Working days available', '', '', r.available == null ? 'n/a' : r.available].map(emCsvCell).join(','));
     lines.push(['Fits the timeline', '', '', r.fits == null ? 'n/a' : (r.fits ? 'YES' : 'NO')].map(emCsvCell).join(','));
+    lines.push(['Baseline (' + doc.baseline.value + ' ' + doc.baseline.unit + ')', '', '',
+      r.baselineDays + ' working days'].map(emCsvCell).join(','));
+    lines.push(['Fits the baseline', '', '',
+      r.fitsBaseline == null ? 'n/a' : (r.fitsBaseline ? 'YES' : 'NO')].map(emCsvCell).join(','));
+    lines.push(['Hourly rate', '', '', doc.rates.hourlyRate || 'not set'].map(emCsvCell).join(','));
+    lines.push(['Estimated cost', '', '', r.cost == null ? 'n/a' : r.cost].map(emCsvCell).join(','));
     return lines.join('\n') + '\n';
   }
 
   const api = {
     EM_VERSION, EM_USE_CASES, EM_DEFAULT_MODULES, EM_DEFAULT_VARIABLES,
-    EM_DEFAULT_RATES, EM_DATA_MEASURES,
+    EM_DEFAULT_RATES, EM_DATA_MEASURES, EM_DEFAULT_BASELINE, EM_BASELINE_UNITS,
     emId, emNewDoc, emNormalize, emVariableFactor, emCompute, emCsv,
     emAddWorkingDays, emWorkingDaysBetween,
+    emBaselineDays, emFullScopeFp, emCalibrateToBaseline,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.CygenixEffortModel = api;

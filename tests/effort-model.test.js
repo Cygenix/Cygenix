@@ -124,14 +124,70 @@ check('a new estimate starts with NOTHING ticked',
   check('normalizing nothing yields a working default', EM.emNormalize(null).modules.length > 0);
 }
 
+// ── Baseline: the standard quote ────────────────────────────────────────────
+{
+  const d = EM.emNewDoc();
+  check('the default baseline is the firm\'s typical 3 months',
+    d.baseline.value === 3 && d.baseline.unit === 'months'
+    && EM.emBaselineDays(d.baseline, d.rates) === 58.5);
+  check('the unit is the user\'s choice — days, weeks or months',
+    EM.emBaselineDays({ value: 10, unit: 'days' }, d.rates) === 10
+    && EM.emBaselineDays({ value: 4, unit: 'weeks' }, d.rates) === 20
+    && EM.EM_BASELINE_UNITS.join(',') === 'days,weeks,months');
+
+  d.ticks['scripts|AP'] = 1;                            // 26.5 FP → 36 wd
+  const r = EM.emCompute(d);
+  check('the baseline verdict works before any dates exist — a quote goes out first',
+    r.fitsBaseline === true && r.baselineDays === 58.5 && r.baselineDelta === 22.5);
+  for (const uc of EM.EM_USE_CASES) for (const m of d.modules) d.ticks[uc.id + '|' + m] = 1;
+  check('full scope at the sheet rate blows a 3-month baseline — that is the point of calibrating',
+    EM.emCompute(d).fitsBaseline === false);
+
+  // Calibration: full scope — every module on every use case — must land
+  // exactly inside the baseline, so partial scopes price proportionally.
+  const rate = EM.emCalibrateToBaseline(d);
+  d.rates.daysPerFP = rate;
+  const full = EM.emCompute(d);
+  check('calibrating the rate makes a fully ticked estimate fit the baseline',
+    rate > 0 && rate < EM.EM_DEFAULT_RATES.daysPerFP
+    && full.fitsBaseline === true && full.wd <= full.baselineDays);
+  check('and a half scope then sits comfortably inside the standard quote',
+    (() => { const h = EM.emNormalize(d); h.ticks = { 'scripts|AP': 1 }; h.rates.daysPerFP = rate;
+      return EM.emCompute(h).wd < full.wd / 4; })());
+  check('a zero baseline reads as no verdict, never a divide-by-zero',
+    (() => { const z = EM.emNewDoc(); z.baseline.value = 0;
+      return EM.emCompute(z).fitsBaseline === null && EM.emCalibrateToBaseline(z) === null; })());
+  check('normalization clamps the baseline and rejects unknown units',
+    EM.emNormalize({ baseline: { value: -3, unit: 'fortnights' } }).baseline.unit === 'months');
+}
+
+// ── Cost: hours × hourly rate ───────────────────────────────────────────────
+{
+  const d = EM.emNewDoc();
+  d.ticks['scripts|AP'] = 1;                            // 36 wd × 8h = 288h
+  check('no rate set means no cost shown — a £0 quote is worse than none',
+    EM.emCompute(d).cost === null);
+  d.rates.hourlyRate = 120;
+  const r = EM.emCompute(d);
+  check('the estimated cost is total hours × the hourly rate',
+    r.cost === r.hours * 120 && r.hours === r.wd * 8);
+  check('the rate survives normalization and clamps to sanity',
+    EM.emNormalize(d).rates.hourlyRate === 120
+    && EM.emNormalize({ rates: { hourlyRate: -5 } }).rates.hourlyRate === 0);
+}
+
 // ── CSV ─────────────────────────────────────────────────────────────────────
 {
   const d = EM.emNewDoc();
   d.ticks['analysis|AP'] = 1;
+  d.rates.hourlyRate = 100;
   const csv = EM.emCsv(d);
   check('the CSV walks use cases to totals to the verdict',
     /Initial analysis/.test(csv) && /TOTAL COST IN FUNCTION POINTS/.test(csv)
     && /Working days/.test(csv) && /Fits the timeline/.test(csv));
+  check('the CSV carries the baseline verdict and the estimated cost',
+    /Baseline \(3 months\)/.test(csv) && /Fits the baseline,,,YES/.test(csv)
+    && /Estimated cost,,,\d+/.test(csv));
 }
 
 // ── Page pins ───────────────────────────────────────────────────────────────
@@ -156,6 +212,12 @@ check('a new estimate starts with NOTHING ticked',
   check('every weight is visible and editable — the method panel says so',
     /an estimate nobody can inspect is an estimate nobody trusts/i.test(html));
   check('print hides the chrome', /@media print/.test(html));
+  check('the baseline is on the page: value, unit and the calibrate action',
+    /id="es-baseline-value"/.test(html) && /id="es-baseline-unit"/.test(html)
+    && /Calibrate rate to baseline/.test(html) && /esCalibrate/.test(html)
+    && /id="es-baseline-note"/.test(html));
+  check('the hourly rate feeds an estimated cost tile',
+    /Hourly rate/.test(html) && /Estimated cost/.test(html) && /hourlyRate/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
   check('Effort Estimator lives under Reports in the rail',
