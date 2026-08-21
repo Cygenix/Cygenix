@@ -65,6 +65,7 @@
     return {
       v: PP_VERSION,
       name: name || 'Migration plan',
+      client: '',                 // carried from the Effort Estimator on import
       timeline: { start: '2026-01', months: 8 },
       phases: [phase],
       tasks: [{ id: ppId(), phaseId: phase.id,
@@ -80,6 +81,7 @@
     const d = (doc && typeof doc === 'object') ? doc : {};
     const out = ppNewDoc(d.name);
     out.name = String(d.name || out.name).slice(0, 80);
+    out.client = String(d.client || '').slice(0, 120);
     const t = d.timeline || {};
     out.timeline = {
       start: /^\d{4}-\d{2}$/.test(String(t.start)) ? t.start : '2026-01',
@@ -213,6 +215,10 @@
     const doc = {
       v: PP_VERSION,
       name: (o.name || ('Plan — ' + (est.name || 'estimate'))).slice(0, 80),
+      // The client, exactly as the estimate has it — one source of truth.
+      client: [est.meta && est.meta.clientName,
+        est.meta && est.meta.clientCode ? '(' + est.meta.clientCode + ')' : '']
+        .filter(Boolean).join(' ').slice(0, 120),
       timeline: { start, months: 1 },
       phases: [], tasks: [], cells: {},
     };
@@ -274,10 +280,67 @@
   // requires the effort model: the computed result already carries them.
   function EstUC(id, name) { return String(name || id); }
 
+  // ── Excel export ─────────────────────────────────────────────────────────
+  // An Excel-compatible HTML workbook (.xls): Excel opens it with the grid
+  // intact — phase tints, rotated phase labels (mso-rotate), work bars in
+  // the phase colour and green milestone markers. HTML because a real .xlsx
+  // is a zip archive, which a dependency-free static page cannot author;
+  // this format round-trips into Excel and prints identically.
+  const xEsc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function ppExcelHtml(doc) {
+    const months = ppMonths(doc.timeline.start, doc.timeline.months);
+    const rows = ppRows(doc);
+    const th = 'background:#ECEEF0;border:0.5pt solid #999;font-weight:bold;text-align:center';
+    const td = 'border:0.5pt solid #BBB';
+    let h = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8">'
+      + '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>'
+      + '<x:Name>Project Plan</x:Name><x:WorksheetOptions><x:Print><x:ValidPrinterInfo/></x:Print>'
+      + '</x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->'
+      + '</head><body><table style="border-collapse:collapse;font-family:Arial;font-size:9pt">';
+    h += '<tr><td colspan="4" style="font-size:12pt;font-weight:bold">' + xEsc(doc.name) + '</td></tr>';
+    if (doc.client)
+      h += '<tr><td style="font-weight:bold">Client</td><td colspan="3">' + xEsc(doc.client) + '</td></tr>';
+    h += '<tr><td colspan="4"></td></tr>';
+    h += '<tr><td style="' + th + '"></td><td style="' + th + ';text-align:left">Task</td>'
+      + '<td style="' + th + '">Resource</td><td style="' + th + '">Comment</td>'
+      + months.map(m => '<td colspan="' + PP_WEEKS + '" style="' + th + '">' + xEsc(m.label) + '</td>').join('')
+      + '</tr>';
+    h += '<tr><td style="' + th + '"></td><td style="' + th + '"></td><td style="' + th + '"></td><td style="' + th + '"></td>'
+      + months.map(() => Array.from({ length: PP_WEEKS }, (_, i) =>
+          '<td style="' + th + ';font-weight:normal">' + (i + 1) + '</td>').join('')).join('')
+      + '</tr>';
+    for (const r of rows) {
+      const pal = PP_PALETTE[r.phase.color] || PP_PALETTE[0];
+      h += '<tr>';
+      if (r.first)
+        h += '<td rowspan="' + r.span + '" style="' + td + ';background:' + pal.bg + ';color:' + pal.fg
+          + ';mso-rotate:90;font-weight:bold;text-align:center;vertical-align:middle;width:24px">'
+          + xEsc(r.phase.name) + '</td>';
+      h += '<td style="' + td + ';vertical-align:top;white-space:normal;width:280px">'
+        + xEsc(r.task.title).replace(/\n/g, '<br>') + '</td>'
+        + '<td style="' + td + ';vertical-align:top">' + xEsc(r.task.resource) + '</td>'
+        + '<td style="' + td + ';vertical-align:top">' + xEsc(r.task.comment) + '</td>';
+      for (const m of months) for (let w = 1; w <= PP_WEEKS; w++) {
+        const c = doc.cells[ppCellKey(r.task.id, m.ym, w)];
+        if (c && c.t === 'mile')
+          h += '<td style="' + td + ';background:' + PP_MILESTONE.bg + ';color:' + PP_MILESTONE.fg
+            + ';mso-rotate:90;font-size:7pt;text-align:center">' + xEsc(c.label) + '</td>';
+        else if (c && c.t === 'work')
+          h += '<td style="' + td + ';background:' + pal.bg + '"></td>';
+        else h += '<td style="' + td + '"></td>';
+      }
+      h += '</tr>';
+    }
+    h += '</table></body></html>';
+    return h;
+  }
+
   const api = {
     PP_VERSION, PP_WEEKS, PP_MAX_MONTHS, PP_PALETTE, PP_MILESTONE, PP_MONTH_NAMES,
     ppId, ppMonths, ppCellKey, ppNewDoc, ppNormalize, ppPaint, ppStats, ppRows, ppCsv,
-    ppSlotForDate, ppFromEstimate,
+    ppSlotForDate, ppFromEstimate, ppExcelHtml,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.CygenixProjectPlan = api;

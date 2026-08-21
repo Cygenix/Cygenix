@@ -173,6 +173,30 @@ const check = (name, ok, detail) => {
     && plan.cells[Object.keys(plan.cells).find(k => /2027-06/.test(k))].label === 'Due date');
   check('the import is a valid plan document — it survives its own normalization',
     JSON.stringify(PP.ppNormalize(plan)) === JSON.stringify(plan));
+  check('the client rides in from the estimate, name and code together',
+    (() => { const e2 = EM.emNewDoc('X'); e2.ticks['uat|AP'] = 1;
+      e2.meta.clientName = 'Corus'; e2.meta.clientCode = 'MDG';
+      return PP.ppFromEstimate(e2, EM.emCompute(e2)).client === 'Corus (MDG)'; })());
+  check('the client survives normalization and defaults empty',
+    PP.ppNormalize({ client: 'Corus' }).client === 'Corus' && PP.ppNewDoc().client === '');
+
+  // The Excel workbook: grid, colours and rotated labels intact.
+  {
+    const xls = PP.ppExcelHtml(Object.assign(plan, { client: 'Corus (MDG)' }));
+    check('the Excel export is a workbook with the plan and the client on top',
+      /urn:schemas-microsoft-com:office:excel/.test(xls)
+      && /<x:Name>Project Plan<\/x:Name>/.test(xls)
+      && /Client<\/td><td colspan="3">Corus \(MDG\)/.test(xls));
+    check('phases keep their tint and stand rotated; milestones stay green with their names',
+      /mso-rotate:90/.test(xls) && xls.includes(PP.PP_PALETTE[0].bg)
+      && xls.includes(PP.PP_MILESTONE.bg) && /Est\. delivery/.test(xls) && /Due date/.test(xls));
+    check('work bars land as filled cells and multiline tasks keep their lines',
+      (xls.match(new RegExp('background:' + PP.PP_PALETTE[2].bg, 'g')) || []).length >= 8
+      && /: AP<br>/.test(xls));
+    check('user text is escaped in the workbook',
+      PP.ppExcelHtml(Object.assign(PP.ppNewDoc(), { client: '<img src=x>' }))
+        .includes('&lt;img src=x&gt;'));
+  }
   check('an estimate with nothing ticked imports as null, never an empty husk',
     PP.ppFromEstimate(EM.emNewDoc('empty'), EM.emCompute(EM.emNewDoc('empty'))) === null);
   check('date → slot math: whole months plus the day mapped onto the week slots',
@@ -206,10 +230,27 @@ const check = (name, ok, detail) => {
     /⇪ From estimator/.test(html) && /ppImportEstimate/.test(html)
     && /cygenix-effort-model\.js/.test(html) && /ONE-WAY copy/.test(html)
     && /cygenix_effort_estimates_v1/.test(html));
+  check('the client from the estimate shows in the header area, click-to-edit',
+    /id="pp-client"/.test(html) && /ppEditClient/.test(html)
+    && /'Client: ' \+ ppDoc\(\)\.client/.test(html));
+  check('the grid exports to Excel as well as CSV',
+    /⤓ Excel/.test(html) && /ppExportExcel/.test(html)
+    && /application\/vnd\.ms-excel/.test(html) && /cygenix-project-plan\.xls/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
-  check('Project Plan lives under Reports in the rail, on its own key',
-    /key:'project-plan-grid',\s*label:'Project Plan',\s*href:'\/project_plan\.html'/.test(sidebar));
+  check('the Project group sits below Home: Estimator first, then the Planner',
+    (() => {
+      const grp = /key:'project-group',\s*label:'Project'[\s\S]*?\]\}/.exec(sidebar);
+      if (!grp) return false;
+      const est = grp[0].indexOf("key:'effort-estimator'");
+      const pln = grp[0].indexOf("key:'project-plan-grid'");
+      return est > -1 && pln > -1 && est < pln
+        && sidebar.indexOf("key:'dashboard'") < sidebar.indexOf("key:'project-group'")
+        && sidebar.indexOf("key:'project-group'") < sidebar.indexOf("section: 'Connect'");
+    })());
+  check('and neither module is listed under Reports any more',
+    !/reports-group[\s\S]{0,900}key:'project-plan-grid'/.test(sidebar)
+    && !/reports-group[\s\S]{0,900}key:'effort-estimator'/.test(sidebar));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
