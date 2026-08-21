@@ -161,6 +161,37 @@ check('a new estimate starts with NOTHING ticked',
     EM.emNormalize({ baseline: { value: -3, unit: 'fortnights' } }).baseline.unit === 'months');
 }
 
+// ── Module complexity weights ───────────────────────────────────────────────
+// Proforma is inherently simpler than Trust, and the estimate should say so:
+// a ticked module contributes perModule × its weight, default ×1.
+{
+  const d = EM.emNewDoc();
+  d.ticks['analysis|AP'] = 1; d.ticks['analysis|Trust'] = 1;
+  check('all-default weights are exactly the calibrated standard',
+    EM.emCompute(d).tucfp === 5.5 && EM.emModuleWeight(d, 'AP') === 1);
+  d.moduleWeights = { Trust: 1.5, Proforma: 0.5 };
+  check('a hard module contributes more — Trust ×1.5 lifts the use case',
+    EM.emCompute(d).tucfp === 6.5);
+  d.moduleWeights.AP = 0.5;
+  check('a light module contributes less, and the weights combine',
+    EM.emCompute(d).tucfp === 5.5);
+  check('a lone light module still OPENS the use case — the gate is the tick, not the weight',
+    (() => { const e = EM.emNewDoc(); e.ticks['uat|Proforma'] = 1;
+      e.moduleWeights = { Proforma: 0.1 };
+      const fp = EM.emCompute(e).perUseCase.find(u => u.id === 'uat').fp;
+      return fp === 8.2; })());              // (8 + 2×0.1) — base still applies
+  check('weights ride through baseline calibration — a heavier estate needs a slower rate',
+    EM.emCalibrateToBaseline(d) !== EM.emCalibrateToBaseline(EM.emNewDoc()));
+
+  const norm = EM.emNormalize({ modules: ['AP', 'AR'],
+    moduleWeights: { AP: 0.5, AR: 1, Matters: 3, ghost: 2, junk: -1 } });
+  check('normalization keeps only live modules, clamps, and never stores the default',
+    JSON.stringify(norm.moduleWeights) === '{"AP":0.5}'
+    && EM.emNormalize({ modules: ['AP'], moduleWeights: { AP: 999 } }).moduleWeights.AP === 10);
+  check('the CSV names every non-default weight',
+    /Module weights,,,"?Trust ×1\.5; Proforma ×0\.5; AP ×0\.5/.test(EM.emCsv(EM.emNormalize(d))));
+}
+
 // ── Cost: hours × hourly rate ───────────────────────────────────────────────
 {
   const d = EM.emNewDoc();
@@ -212,6 +243,9 @@ check('a new estimate starts with NOTHING ticked',
   check('every weight is visible and editable — the method panel says so',
     /an estimate nobody can inspect is an estimate nobody trusts/i.test(html));
   check('print hides the chrome', /@media print/.test(html));
+  check('module weights are editable on the chips and badge the grid headers',
+    /esModuleWeight/.test(html) && /Complexity weight — 1 is standard/.test(html)
+    && /emModuleWeight\(doc, m\)/.test(html) && /×' \+ w \+ '<\/span>'/.test(html));
   check('the baseline is on the page: value, unit and the calibrate action',
     /id="es-baseline-value"/.test(html) && /id="es-baseline-unit"/.test(html)
     && /Calibrate rate to baseline/.test(html) && /esCalibrate/.test(html)

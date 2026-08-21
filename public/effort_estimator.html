@@ -133,7 +133,7 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
 
 <div id="cyg-sidebar-mount" data-active="effort-estimator"></div>
 <script src="/cygenix-sidebar.js?v=ca28db8c99" defer></script>
-<script src="/cygenix-effort-model.js?v=15105cb680" defer></script>
+<script src="/cygenix-effort-model.js?v=83fd6285f9" defer></script>
 
 <div class="page">
 
@@ -210,8 +210,10 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
     <div class="panel es-config">
       <div class="panel-head">
         <div><div class="panel-title">Modules</div>
-        <div class="panel-sub">The product areas in this migration. Removing a module clears its
-          ticks and counts.</div></div>
+        <div class="panel-sub">The product areas in this migration, each with a complexity weight —
+          ×1 is standard, Proforma might be ×0.5 and Trust ×1.5. A ticked module contributes its
+          weight to every use case it appears on. Removing a module clears its
+          ticks, counts and weight.</div></div>
         <button class="btn btn-sm" style="margin-left:auto" onclick="esResetModules()">Reset to defaults</button>
       </div>
       <div class="panel-body">
@@ -234,8 +236,9 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
   <div class="panel pp-noprint">
     <div class="panel-head"><div class="panel-title">How it estimates</div></div>
     <div class="panel-body" style="font-size:11.5px;color:var(--text2);line-height:1.7">
-      Use-case FP = (base + per-module × ticked modules) × variables × TC, and zero with nothing
-      ticked. Data FP adds source systems ×3, attributes ×0.05, 1:1 relationships ×0.5 and
+      Use-case FP = (base + per-module × the ticked modules' weights) × variables × TC, and zero
+      with nothing ticked — each module's complexity weight (×1 standard) scales what it adds, so
+      a simple module opens a use case without costing like a hard one. Data FP adds source systems ×3, attributes ×0.05, 1:1 relationships ×0.5 and
       1:N ×1 per module. Total FP × days-per-FP (default 1.37) gives working days; divided by
       19.5 gives calendar months; the delivery date walks forward from the start date over
       working days plus holidays, skipping weekends. The verdict compares working days needed
@@ -409,8 +412,12 @@ function esRenderGrids(){
   const doc = esDoc();
 
   // Use-case grid: fixed rows, module checkboxes, TC input, FP column.
+  const EMW = (m) => {
+    const w = EM.emModuleWeight(doc, m);
+    return w !== 1 ? ' <span style="color:var(--accent);font-weight:400">×' + w + '</span>' : '';
+  };
   let h = '<thead><tr><th class="es-name">Use Case Name</th>'
-    + doc.modules.map(m => '<th class="es-mod">' + esc(m) + '</th>').join('')
+    + doc.modules.map(m => '<th class="es-mod">' + esc(m) + EMW(m) + '</th>').join('')
     + '<th class="es-mod">Technical Complexity (TC)</th>'
     + '<th style="min-width:64px">FP</th></tr></thead><tbody>';
   for (const uc of EM.EM_USE_CASES){
@@ -484,11 +491,27 @@ function esRenderVars(){
     || '<div style="font-size:11px;color:var(--text3)">No variables — the multiplier is 1.</div>';
 }
 
-function esRenderMods(){
+// Each module carries a complexity weight (default ×1): Proforma is
+// inherently simpler than Trust, and the estimate should account for it.
+function esModuleWeight(name, v){
   const doc = esDoc();
-  $('es-mods').innerHTML = doc.modules.map(m =>
-    '<span class="es-chip">' + esc(m)
-    + '<button onclick="esRemoveModule(\'' + esc(m) + '\')" aria-label="Remove ' + esc(m) + '">✕</button></span>').join('');
+  const n = Math.max(0.1, Math.min(10, Number(v) || 1));
+  if (n === 1) delete doc.moduleWeights[name]; else doc.moduleWeights[name] = Math.round(n * 100) / 100;
+  esSave(); esRenderGrids(); esRenderResults(); esRenderMods();
+}
+function esRenderMods(){
+  const EM = window.CygenixEffortModel;
+  const doc = esDoc();
+  $('es-mods').innerHTML = doc.modules.map(m => {
+    const w = EM.emModuleWeight(doc, m);
+    return '<span class="es-chip' + (w !== 1 ? '" style="border-color:var(--accent)' : '') + '">' + esc(m)
+      + '<input type="number" step="0.1" min="0.1" max="10" value="' + w + '"'
+      + ' style="width:44px;border:none;background:transparent;font-family:var(--mono);font-size:10px;outline:none;color:'
+      + (w !== 1 ? 'var(--accent)' : 'var(--text3)') + '"'
+      + ' title="Complexity weight — 1 is standard, below 1 simpler, above 1 harder"'
+      + ' aria-label="Weight for ' + esc(m) + '" onchange="esModuleWeight(\'' + esc(m) + '\', this.value)">'
+      + '<button onclick="esRemoveModule(\'' + esc(m) + '\')" aria-label="Remove ' + esc(m) + '">✕</button></span>';
+  }).join('');
 }
 
 function esRenderRates(){
