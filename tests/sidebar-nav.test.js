@@ -227,5 +227,23 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
     && /collapsed \.cyg-fav-star/.test(src));
 }
 
+// ── The active-project switcher lives under the Project group ───────────────
+{
+  const src = require('fs').readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
+  check('the switcher renders inside the Project group, not pinned above the nav',
+    /item\.key === 'project-group' \? buildProjectSwitcher\(\) : ''/.test(src)
+    && !/head \+ buildProjectSwitcher\(\)/.test(src));
+  check('the Project group starts open so the project is never hidden',
+    /DEFAULT_OPEN_GROUPS = \['project-group'\]/.test(src)
+    && /function isGroupOpen/.test(src) && /cygenix_sidebar_closed_groups/.test(src));
+  check('an explicit collapse of that group is still remembered',
+    /shut\.add\(key\)/.test(src) && /getClosedGroups\(\)\.includes\(key\)/.test(src));
+  check('the collapsed rail keeps the project chip and hides only its sibling rows',
+    /collapsed \.cyg-nav-children\[data-children="project-group"\]\{ display:block/.test(src)
+    && /collapsed \.cyg-nav-children\[data-children="project-group"\] \.cyg-nav-item\{ display:none/.test(src));
+  check('refresh() re-wires the switcher — its dropdown used to go dead',
+    /wireProjectSwitcher\(replacement\)/.test(src));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
