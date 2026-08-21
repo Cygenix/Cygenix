@@ -245,5 +245,31 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
     /wireProjectSwitcher\(replacement\)/.test(src));
 }
 
+// ── Every page that loads the rail must have somewhere to mount it ──────────
+// projects.html shipped without a mount element and silently lost its whole
+// navigation; nothing caught it, so this does.
+{
+  const fs2 = require('fs'), path2 = require('path');
+  const dir = path2.join(__dirname, '..', 'public');
+  const pages = fs2.readdirSync(dir).filter(f => f.endsWith('.html'));
+  const missing = pages.filter(f => {
+    const html = fs2.readFileSync(path2.join(dir, f), 'utf8');
+    return /cygenix-sidebar\.js/.test(html) && !/id="cyg-sidebar-mount"/.test(html);
+  });
+  check('every page loading cygenix-sidebar.js declares a mount point',
+    missing.length === 0, missing.join(', '));
+
+  const projects = fs2.readFileSync(path2.join(dir, 'projects.html'), 'utf8');
+  check('the Projects page mounts the rail and leaves room for it',
+    /id="cyg-sidebar-mount"/.test(projects) && /padding-left:230px/.test(projects)
+    && /body\.cyg-collapsed\{padding-left:54px\}/.test(projects)
+    && !/<div class="sidebar" id="sidebar">/.test(projects));
+
+  const src2 = fs2.readFileSync(path2.join(dir, 'cygenix-sidebar.js'), 'utf8');
+  check('a missing mount self-heals instead of dropping the navigation',
+    /mounting at the top of <body>/.test(src2)
+    && /cyg-sidebar-autopad/.test(src2));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

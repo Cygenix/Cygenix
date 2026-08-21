@@ -392,6 +392,9 @@
 
       body.cyg-collapsed{ --cyg-sidebar-w:${WIDTH_CLOSED}px; }
       body:not(.cyg-collapsed){ --cyg-sidebar-w:${WIDTH_OPEN}px; }
+      /* Applied only when mount() had to create its own mount point: the page
+         has no padding rule of its own, so keep its content clear of the rail. */
+      body.cyg-sidebar-autopad{ padding-left:var(--cyg-sidebar-w);transition:padding-left 0.2s ease; }
 
       /* Pinned footer — user chip + accessibility control (always visible). */
       .cyg-sidebar-foot{
@@ -1152,10 +1155,17 @@
 
   function mount(){
     injectStyles();
-    const host = document.getElementById(MOUNT_ID);
+    let host = document.getElementById(MOUNT_ID);
+    // Self-heal: a page that loads this script WANTS the rail, so a missing
+    // mount point must not cost it the whole navigation (projects.html shipped
+    // that way and simply lost its menu). Create one, and pad the body from
+    // here since such a page has no padding rule of its own.
     if (!host){
-      console.warn('[cygenix-sidebar] No mount point found (expected #'+MOUNT_ID+')');
-      return;
+      console.warn('[cygenix-sidebar] No #' + MOUNT_ID + ' found — mounting at the top of <body>.');
+      host = document.createElement('div');
+      host.id = MOUNT_ID;
+      document.body.insertBefore(host, document.body.firstChild);
+      document.body.classList.add('cyg-sidebar-autopad');
     }
     const activeKey = host.dataset.active || '';
     const aside = document.createElement('aside');
