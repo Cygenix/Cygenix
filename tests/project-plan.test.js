@@ -134,6 +134,12 @@ const check = (name, ok, detail) => {
     plan.tasks.length === 3
     && plan.tasks.map(t => t.title.split('\n')[0]).join(';')
       === 'Initial analysis, business review, documentation;Design and documentation;Script development');
+  check('each use case is a PHASE of its own, named after it, in its own tint',
+    plan.phases.length === 3
+    && plan.phases.map(p => p.name).join(';')
+      === 'Initial analysis, business review, documentation;Design and documentation;Script development'
+    && plan.phases.map(p => p.color).join(',') === '0,1,2'
+    && plan.phases.every((p, i) => plan.tasks[i].phaseId === p.id));
   check('the employee becomes every task\'s resource and the FP rides in the comment',
     plan.tasks.every(t => t.resource === 'Curtis')
     && plan.tasks[0].comment === '13.5 FP' && plan.tasks[2].comment === '26.5 FP');
