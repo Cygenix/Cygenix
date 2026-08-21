@@ -231,8 +231,11 @@ const check = (name, ok, detail) => {
     && /cygenix-effort-model\.js/.test(html) && /ONE-WAY copy/.test(html)
     && /cygenix_effort_estimates_v1/.test(html));
   check('the client from the estimate shows in the header area, click-to-edit',
-    /id="pp-client"/.test(html) && /ppEditClient/.test(html)
-    && /'Client: ' \+ ppDoc\(\)\.client/.test(html));
+    /id="pp-client"/.test(html) && /ppEditClient/.test(html));
+  check('a plan without its own client falls back LIVE to the estimator\'s',
+    /function ppEstimatorClient/.test(html)
+    && /own \|\| ppEstimatorClient\(\)/.test(html)
+    && /Carried from the Effort Estimator/.test(html));
   check('the grid exports to Excel as well as CSV',
     /⤓ Excel/.test(html) && /ppExportExcel/.test(html)
     && /application\/vnd\.ms-excel/.test(html) && /cygenix-project-plan\.xls/.test(html));
