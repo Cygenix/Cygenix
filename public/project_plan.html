@@ -247,9 +247,28 @@ function ppFillPlanSelect(){
     '<option value="' + esc(n) + '"' + (n === PPState.store.active ? ' selected' : '') + '>'
     + esc(n) + '</option>').join('');
   $('pp-plan-name').textContent = PPState.store.active;
-  // The client rides in from the Effort Estimator on import; editable here.
+  // The client rides in from the Effort Estimator on import; a plan without
+  // one of its own falls back LIVE to the active estimate's client, so the
+  // name always carries forward. Click still edits the plan's own value.
   const c = $('pp-client');
-  if (c) c.textContent = ppDoc().client ? 'Client: ' + ppDoc().client : '+ client';
+  if (c){
+    const own = ppDoc().client;
+    const carried = own || ppEstimatorClient();
+    c.textContent = carried ? 'Client: ' + carried : '+ client';
+    c.style.fontStyle = (!own && carried) ? 'italic' : '';
+    c.title = (!own && carried)
+      ? 'Carried from the Effort Estimator — click to set this plan\'s own client'
+      : 'The client, as set on the Effort Estimator — click to edit';
+  }
+}
+function ppEstimatorClient(){
+  try {
+    const s = JSON.parse(localStorage.getItem('cygenix_effort_estimates_v1') || 'null');
+    const est = s && s.estimates && s.estimates[s.active];
+    if (!est || !est.meta) return '';
+    return [est.meta.clientName, est.meta.clientCode ? '(' + est.meta.clientCode + ')' : '']
+      .filter(Boolean).join(' ');
+  } catch (e) { return ''; }
 }
 function ppEditClient(){
   const doc = ppDoc();

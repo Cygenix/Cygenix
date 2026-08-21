@@ -149,6 +149,10 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
       <select id="es-est-sel" class="form-input" onchange="esSwitch(this.value)" aria-label="Choose an estimate"></select>
       <button class="btn btn-sm" onclick="esNewEstimate()">+ New estimate</button>
       <button class="btn btn-sm" onclick="esDeleteEstimate()">Delete</button>
+      <button class="btn btn-sm" onclick="esSaveEstimate()" title="Download this estimate as a JSON file — an archive you can reload or share">⤓ Save</button>
+      <button class="btn btn-sm" onclick="esLoadEstimate()" title="Load a previously saved estimate file">⤒ Load</button>
+      <input type="file" id="es-load-file" accept=".json,application/json" style="display:none"
+             onchange="esLoadEstimateFile(this.files[0]); this.value='';">
       <button class="btn btn-sm" onclick="esExportCsv()">⤓ CSV</button>
       <button class="btn btn-sm" onclick="window.print()">⎙ Print</button>
     </div>
@@ -214,7 +218,11 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
           ×1 is standard, Proforma might be ×0.5 and Trust ×1.5. A ticked module contributes its
           weight to every use case it appears on. Removing a module clears its
           ticks, counts and weight.</div></div>
-        <button class="btn btn-sm" style="margin-left:auto" onclick="esResetModules()">Reset to defaults</button>
+        <span style="margin-left:auto;display:flex;gap:0.4rem">
+          <button class="btn btn-sm" onclick="esSaveHouseWeights()" title="Store the current module weights as the firm's house defaults — every NEW estimate starts with them">★ Save as house defaults</button>
+          <button class="btn btn-sm" onclick="esApplyHouseWeights()" title="Apply the saved house weights to THIS estimate">Apply house defaults</button>
+          <button class="btn btn-sm" onclick="esResetModules()">Reset to defaults</button>
+        </span>
       </div>
       <div class="panel-body">
         <div id="es-mods"></div>
@@ -268,7 +276,7 @@ function esLoad(){
   let s = null;
   try { s = JSON.parse(localStorage.getItem(ES_STORE) || 'null'); } catch (e) {}
   if (!s || !s.estimates || !Object.keys(s.estimates).length){
-    const doc = EM.emNewDoc('New estimate');
+    const doc = esApplyHouseTo(EM.emNewDoc('New estimate'));
     s = { active: doc.name, estimates: {} };
     s.estimates[doc.name] = doc;
   }
@@ -279,22 +287,94 @@ function esLoad(){
 function esSave(){ try { localStorage.setItem(ES_STORE, JSON.stringify(ES.store)); } catch (e) {} }
 function esDoc(){ return ES.store.estimates[ES.store.active]; }
 
+// ── House weight defaults ─────────────────────────────────────────────────
+// The firm's standing view of module complexity (Proforma ×0.5, Trust ×1.5)
+// saved once and applied to every NEW estimate, so the fifth quote starts
+// where the fourth left off.
+const ES_HOUSE = 'cygenix_house_weights_v1';
+function esHouseWeights(){
+  try { return JSON.parse(localStorage.getItem(ES_HOUSE) || 'null'); } catch (e) { return null; }
+}
+function esSaveHouseWeights(){
+  const doc = esDoc();
+  localStorage.setItem(ES_HOUSE, JSON.stringify({
+    weights: doc.moduleWeights, savedAt: Date.now(), by: '' }));
+  window.alert('Saved as house defaults: '
+    + (Object.keys(doc.moduleWeights).length
+        ? Object.entries(doc.moduleWeights).map(([m, w]) => m + ' ×' + w).join(', ')
+        : 'everything at the ×1 standard')
+    + '. Every new estimate starts with these.');
+}
+// Merge house weights onto a document — only for modules it actually has.
+function esApplyHouseTo(doc){
+  const h = esHouseWeights();
+  if (!h || !h.weights) return doc;
+  const live = new Set(doc.modules);
+  for (const [m, w] of Object.entries(h.weights)) if (live.has(m)) doc.moduleWeights[m] = w;
+  return doc;
+}
+function esApplyHouseWeights(){
+  const h = esHouseWeights();
+  if (!h){ window.alert('No house defaults saved yet — set your weights, then “Save as house defaults”.'); return; }
+  esApplyHouseTo(esDoc());
+  esSave(); esRenderGrids(); esRenderMods(); esRenderResults();
+}
+
 // ── Estimates ─────────────────────────────────────────────────────────────
 function esSwitch(name){ if (ES.store.estimates[name]){ ES.store.active = name; esSave(); esRenderAll(); } }
 function esNewEstimate(){
   const EM = window.CygenixEffortModel;
   const name = window.prompt('Name the new estimate:', 'Estimate ' + (Object.keys(ES.store.estimates).length + 1));
   if (!name || ES.store.estimates[name]) return;
-  ES.store.estimates[name] = EM.emNormalize(EM.emNewDoc(name));
+  ES.store.estimates[name] = esApplyHouseTo(EM.emNormalize(EM.emNewDoc(name)));
   ES.store.active = name;
   esSave(); esRenderAll();
+}
+
+// ── Save / Load: estimates as files ───────────────────────────────────────
+// The store already persists in this browser; Save/Load is the archive —
+// a JSON file per estimate that reloads here or on a colleague's machine.
+function esSaveEstimate(){
+  const doc = esDoc();
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cygenix-estimate-' + String(doc.name).replace(/[^\w-]+/g, '_').slice(0, 60) + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 2000);
+}
+function esLoadEstimate(){ $('es-load-file').click(); }
+// Separated from the file input so the parse-and-adopt path is testable.
+function esImportEstimateText(text){
+  const EM = window.CygenixEffortModel;
+  let raw = null;
+  try { raw = JSON.parse(text); } catch (e) {}
+  if (!raw || typeof raw !== 'object' || !raw.v){
+    window.alert('That file is not a saved Cygenix estimate.');
+    return null;
+  }
+  const doc = EM.emNormalize(raw);
+  let name = doc.name || 'Loaded estimate';
+  for (let i = 2; ES.store.estimates[name]; i++) name = (doc.name || 'Loaded estimate') + ' (' + i + ')';
+  doc.name = name;
+  ES.store.estimates[name] = doc;
+  ES.store.active = name;
+  esSave(); esRenderAll();
+  return name;
+}
+function esLoadEstimateFile(file){
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => esImportEstimateText(String(r.result || ''));
+  r.readAsText(file);
 }
 function esDeleteEstimate(){
   if (!window.confirm('Delete the estimate "' + ES.store.active + '"?')) return;
   delete ES.store.estimates[ES.store.active];
   if (!Object.keys(ES.store.estimates).length){
     const EM = window.CygenixEffortModel;
-    const doc = EM.emNewDoc('New estimate');
+    const doc = esApplyHouseTo(EM.emNewDoc('New estimate'));
     ES.store.estimates[doc.name] = doc;
   }
   ES.store.active = Object.keys(ES.store.estimates)[0];

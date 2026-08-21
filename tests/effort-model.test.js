@@ -243,6 +243,16 @@ check('a new estimate starts with NOTHING ticked',
   check('every weight is visible and editable — the method panel says so',
     /an estimate nobody can inspect is an estimate nobody trusts/i.test(html));
   check('print hides the chrome', /@media print/.test(html));
+  check('house weight defaults: saved once, applied to every new estimate',
+    /cygenix_house_weights_v1/.test(html) && /esSaveHouseWeights/.test(html)
+    && /esApplyHouseWeights/.test(html)
+    && /esApplyHouseTo\(EM\.emNormalize\(EM\.emNewDoc\(name\)\)\)/.test(html)
+    && (html.match(/esApplyHouseTo\(EM\.emNewDoc\('New estimate'\)\)/g) || []).length === 2);
+  check('estimates save to a JSON file and load back, name-collision safe',
+    /esSaveEstimate/.test(html) && /esLoadEstimate/.test(html)
+    && /esImportEstimateText/.test(html) && /cygenix-estimate-/.test(html)
+    && /accept="\.json,application\/json"/.test(html)
+    && /not a saved Cygenix estimate/.test(html));
   check('module weights are editable on the chips and badge the grid headers',
     /esModuleWeight/.test(html) && /Complexity weight — 1 is standard/.test(html)
     && /emModuleWeight\(doc, m\)/.test(html) && /×' \+ w \+ '<\/span>'/.test(html));
