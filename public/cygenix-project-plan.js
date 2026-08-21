@@ -280,6 +280,92 @@
   // requires the effort model: the computed result already carries them.
   function EstUC(id, name) { return String(name || id); }
 
+  // ── Portfolio: every plan on one shared timeline ─────────────────────────
+  // The multi-project view's model. Each plan becomes one project lane on a
+  // GLOBAL week axis (the union of every plan's timeline): per-week phase
+  // hits for the striped lane, milestones re-based to global weeks, phase
+  // summaries for the expanded rows, and per-resource loads so the page can
+  // hatch any week a person is booked on two projects at once. Pure — the
+  // page only draws it.
+  const ppMonthDiff = (aYm, bYm) => {
+    const a = /^(\d{4})-(\d{2})$/.exec(String(aYm)), b = /^(\d{4})-(\d{2})$/.exec(String(bYm));
+    if (!a || !b) return null;
+    return (Number(b[1]) - Number(a[1])) * 12 + (Number(b[2]) - Number(a[2]));
+  };
+  const PP_PORTFOLIO_MAX_MONTHS = 36;
+  const ppFpOf = (comment) => {
+    const m = /(\d+(?:\.\d+)?) FP/.exec(String(comment || ''));
+    return m ? Number(m[1]) : 0;
+  };
+
+  function ppPortfolio(plansByName) {
+    const list = Object.values(plansByName || {}).map(ppNormalize)
+      .filter(p => p.tasks.length);
+    if (!list.length) return null;
+
+    const startYm = list.map(p => p.timeline.start).sort()[0];
+    let months = 1;
+    for (const p of list)
+      months = Math.max(months, (ppMonthDiff(startYm, p.timeline.start) || 0) + p.timeline.months);
+    months = Math.min(PP_PORTFOLIO_MAX_MONTHS, months);
+    const weeks = months * PP_WEEKS;
+
+    const projects = list.map((p, idx) => {
+      const phaseIdx = new Map(p.phases.map((ph, i) => [ph.id, i]));
+      const taskById = new Map(p.tasks.map(t => [t.id, t]));
+      const byWeek = Array.from({ length: weeks }, () => []);
+      const milestones = [];
+      const phaseAgg = p.phases.map(ph => ({
+        name: ph.name, color: ph.color, weeks: new Set(), resources: new Set(), fp: 0 }));
+      for (const [k, v] of Object.entries(p.cells)) {
+        const [taskId, ym, w] = k.split('|');
+        const task = taskById.get(taskId);
+        if (!task) continue;
+        const md = ppMonthDiff(startYm, ym);
+        if (md == null || md < 0) continue;
+        const gw = md * PP_WEEKS + (Number(w) - 1);
+        if (gw < 0 || gw >= weeks) continue;
+        if (v.t === 'mile') { milestones.push({ w: gw, label: v.label }); continue; }
+        const pi = phaseIdx.get(task.phaseId);
+        if (pi == null) continue;
+        byWeek[gw].push({ phase: pi, resource: task.resource || '', task: task.title.split('\n')[0] });
+        phaseAgg[pi].weeks.add(gw);
+        if (task.resource) phaseAgg[pi].resources.add(task.resource);
+      }
+      for (const t of p.tasks) {
+        const pi = phaseIdx.get(t.phaseId);
+        if (pi != null) phaseAgg[pi].fp += ppFpOf(t.comment);
+      }
+      const worked = byWeek.map((a, w) => a.length ? w : -1).filter(w => w >= 0);
+      return {
+        id: idx, name: p.name, client: p.client,
+        byWeek, milestones: milestones.sort((a, b) => a.w - b.w),
+        phases: phaseAgg.map(a => ({ name: a.name, color: a.color,
+          weeks: [...a.weeks].sort((x, y) => x - y), resources: [...a.resources],
+          fp: Math.round(a.fp * 10) / 10 })),
+        weeks: worked.length,
+        start: worked.length ? worked[0] : null,
+        fp: Math.round(phaseAgg.reduce((s, a) => s + a.fp, 0) * 10) / 10,
+      };
+    });
+
+    // Resources: who is where, week by week, across every project in view.
+    const byName = new Map();
+    projects.forEach(pr => pr.byWeek.forEach((hits, w) => {
+      for (const h of hits) {
+        if (!h.resource) continue;
+        let r = byName.get(h.resource);
+        if (!r) byName.set(h.resource, r = Array.from({ length: weeks }, () => []));
+        if (!r[w].some(x => x.project === pr.id)) r[w].push({ project: pr.id, phase: h.phase });
+      }
+    }));
+    const resources = [...byName.entries()].map(([name, load]) => ({
+      name, load, peak: Math.max(0, ...load.map(a => a.length)),
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
+    return { start: startYm, months, weeks, projects, resources };
+  }
+
   // ── Excel export ─────────────────────────────────────────────────────────
   // An Excel-compatible HTML workbook (.xls): Excel opens it with the grid
   // intact — phase tints, rotated phase labels (mso-rotate), work bars in
@@ -341,6 +427,7 @@
     PP_VERSION, PP_WEEKS, PP_MAX_MONTHS, PP_PALETTE, PP_MILESTONE, PP_MONTH_NAMES,
     ppId, ppMonths, ppCellKey, ppNewDoc, ppNormalize, ppPaint, ppStats, ppRows, ppCsv,
     ppSlotForDate, ppFromEstimate, ppExcelHtml,
+    ppMonthDiff, ppFpOf, ppPortfolio,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.CygenixProjectPlan = api;

@@ -205,6 +205,54 @@ const check = (name, ok, detail) => {
     && PP.ppSlotForDate('2026-08', 'garbage') === null);
 }
 
+// ── Portfolio: every plan on one shared timeline ────────────────────────────
+{
+  const EM = require('../public/cygenix-effort-model.js');
+  const e1 = EM.emNewDoc('Corus 3E');
+  Object.assign(e1.meta, { clientName: 'Corus', clientCode: 'MDG',
+    employee: 'Curtis', startDate: '2026-08-21', dueDate: '2027-06-03' });
+  e1.ticks['analysis|AP'] = 1; e1.ticks['analysis|AR'] = 1; e1.ticks['scripts|AP'] = 1;
+  const p1 = PP.ppFromEstimate(e1, EM.emCompute(e1));
+
+  const p2 = PP.ppNewDoc('Hand plan');
+  p2.client = 'Kestrel';
+  p2.timeline = { start: '2026-06', months: 6 };
+  p2.tasks[0].resource = 'Curtis';
+  p2.cells[PP.ppCellKey(p2.tasks[0].id, '2026-08', 1)] = { t: 'work' };
+  p2.cells[PP.ppCellKey(p2.tasks[0].id, '2026-09', 2)] = { t: 'mile', label: 'Go live' };
+
+  const m = PP.ppPortfolio({ a: p1, b: p2 });
+  check('the global axis is the union of every plan\'s timeline',
+    m.start === '2026-06' && m.months === 13 && m.weeks === 52 && m.projects.length === 2);
+  check('each plan re-bases onto global weeks — August W1 lands at week 8 from a June start',
+    m.projects[1].byWeek[8].length === 1
+    && m.projects[0].byWeek.findIndex(a => a.length) === 8);
+  check('milestones re-base too, labels intact',
+    m.projects[1].milestones[0].w === 13 && m.projects[1].milestones[0].label === 'Go live'
+    && m.projects[0].milestones.map(x => x.label).join(',') === 'Est. delivery,Due date');
+  check('per-project rollups: client, worked weeks, FP parsed from the comments',
+    m.projects[0].client === 'Corus (MDG)' && m.projects[0].fp === 32
+    && m.projects[0].weeks > 0 && m.projects[1].fp === 0);
+  check('phase summaries carry tint, resources and their global weeks',
+    (() => { const ph = m.projects[0].phases.find(x => x.weeks.length && /Script/.test(x.name));
+      return ph && ph.resources.join(',') === 'Curtis' && ph.weeks[0] >= 8; })());
+  check('the resource ledger finds the SAME person on two projects in the same week',
+    (() => { const c = m.resources.find(r => r.name === 'Curtis');
+      return c && c.peak === 2 && c.load[8].length === 2; })());
+  check('a plan with no month overlap never clashes',
+    (() => { const q = PP.ppNormalize(JSON.parse(JSON.stringify(p2)));
+      q.name = 'Late plan'; q.timeline.start = '2027-01'; q.cells = {};
+      q.cells[PP.ppCellKey(q.tasks[0].id, '2027-01', 1)] = { t: 'work' };
+      const mm = PP.ppPortfolio({ a: p1, b: q });
+      const c = mm.resources.find(r => r.name === 'Curtis');
+      return c.peak === 1; })());
+  check('an empty store or plans without tasks yield null, never a husk',
+    PP.ppPortfolio({}) === null && PP.ppPortfolio(null) === null);
+  check('month arithmetic and FP parsing are plain and safe',
+    PP.ppMonthDiff('2026-06', '2027-01') === 7 && PP.ppMonthDiff('x', 'y') === null
+    && PP.ppFpOf('13.5 FP · TC 2') === 13.5 && PP.ppFpOf('no figure') === 0);
+}
+
 // ── Page pins ───────────────────────────────────────────────────────────────
 {
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'project_plan.html'), 'utf8');
@@ -239,6 +287,18 @@ const check = (name, ok, detail) => {
   check('the grid exports to Excel as well as CSV',
     /⤓ Excel/.test(html) && /ppExportExcel/.test(html)
     && /application\/vnd\.ms-excel/.test(html) && /cygenix-project-plan\.xls/.test(html));
+  check('the Portfolio button opens the multi-project view in place',
+    /id="pf-open-btn"/.test(html) && /▤ Portfolio/.test(html)
+    && /id="pf-view"/.test(html) && /Back to plan/.test(html)
+    && /ppPortfolio\(PPState\.store\.plans\)/.test(html));
+  check('portfolio modes, zoom, client filter and expand/collapse are wired',
+    /pfSetMode\('resource'\)/.test(html) && /pfSetZoom\('wk'\)/.test(html)
+    && /id="pf-client"/.test(html) && /pfExpandAll/.test(html));
+  check('overlapping phases split the tint and double-bookings hatch red',
+    /phases overlap/.test(html) && /pf-c\.clash/.test(html)
+    && /booked on ' \+ a\.length \+ ' projects this week/.test(html));
+  check('the today line and milestone flags ride on every track',
+    /pf-today/.test(html) && /pf-flag/.test(html) && /pfTodayWeek/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
   check('the Project group sits below Home: Estimator first, then the Planner',
