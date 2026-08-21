@@ -29,7 +29,15 @@
     { name: 'lilac',  bg: '#E4DCEF', fg: '#4B3869' },
     { name: 'sand',   bg: '#EFE7CE', fg: '#6A5A1E' },
     { name: 'rose',   bg: '#F3DBDB', fg: '#7A2E2E' },
+    // Red is the emphasis tint — key deliverables, Go Lives, cutover
+    // weekends. Deliberately stronger than the pastel 'rose' beside it so it
+    // reads as a signal, not another phase colour.
+    { name: 'red',    bg: '#F0A9A2', fg: '#7A1710' },
   ];
+  // Auto-assignment (imports, "+ Phase") rotates through the tints BEFORE
+  // red: an emphasis colour nobody chose is an emphasis colour nobody
+  // believes. Red is only ever picked by hand.
+  const PP_AUTO_TINTS = PP_PALETTE.length - 1;
   // Milestones are always the green of the source spreadsheet — they must
   // read as one family across every phase.
   const PP_MILESTONE = { bg: '#C6D9A8', fg: '#3B4A22' };
@@ -232,7 +240,7 @@
     for (let i = 0; i < costed.length; i++) {
       const u = costed[i];
       const phase = { id: ppId(), name: EstUC(u.id, u.name).slice(0, 60),
-        color: i % PP_PALETTE.length };
+        color: i % PP_AUTO_TINTS };
       doc.phases.push(phase);
       const mods = Object.keys(est.ticks || {})
         .filter(k => k.startsWith(u.id + '|')).map(k => k.split('|')[1]);
@@ -424,7 +432,7 @@
   }
 
   const api = {
-    PP_VERSION, PP_WEEKS, PP_MAX_MONTHS, PP_PALETTE, PP_MILESTONE, PP_MONTH_NAMES,
+    PP_VERSION, PP_WEEKS, PP_MAX_MONTHS, PP_PALETTE, PP_AUTO_TINTS, PP_MILESTONE, PP_MONTH_NAMES,
     ppId, ppMonths, ppCellKey, ppNewDoc, ppNormalize, ppPaint, ppStats, ppRows, ppCsv,
     ppSlotForDate, ppFromEstimate, ppExcelHtml,
     ppMonthDiff, ppFpOf, ppPortfolio,
