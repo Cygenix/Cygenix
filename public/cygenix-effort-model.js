@@ -139,6 +139,8 @@
       meta: { date: '', clientCode: '', clientName: '', reference: '',
         employee: '', startDate: '', dueDate: '' },
       modules: EM_DEFAULT_MODULES.slice(),
+      // moduleWeights: { '<module>': factor } — sparse, only non-1 entries.
+      moduleWeights: {},
       variables: EM_DEFAULT_VARIABLES.map(v => Object.assign({}, v)),
       rates: Object.assign({}, EM_DEFAULT_RATES),
       // ticks: { '<useCaseId>|<module>': 1 } — default NONE ticked.
@@ -163,6 +165,16 @@
     out.modules = (Array.isArray(d.modules) ? d.modules : EM_DEFAULT_MODULES)
       .map(x => String(x).slice(0, 40)).filter(Boolean).slice(0, 64);
     if (!out.modules.length) out.modules = EM_DEFAULT_MODULES.slice();
+    // Weights: clamp into 0.1–10, keep only live modules, and never store
+    // the default — a sparse map keeps "standard" visibly standard.
+    out.moduleWeights = {};
+    const liveModules = new Set(out.modules);
+    for (const [mod, w] of Object.entries(d.moduleWeights || {})) {
+      const n = Number(w);
+      if (!liveModules.has(mod) || !(n > 0)) continue;
+      const c = Math.max(0.1, Math.min(10, Math.round(n * 100) / 100));
+      if (c !== 1) out.moduleWeights[mod] = c;
+    }
     out.variables = (Array.isArray(d.variables) && d.variables.length
       ? d.variables : EM_DEFAULT_VARIABLES).map(v => ({
         id: String(v && v.id || emId()),
@@ -218,13 +230,25 @@
     return f;
   }
 
+  // A module's complexity weight: Proforma is inherently simpler than Trust,
+  // and the estimate should say so. Default 1.0 = the calibrated standard;
+  // a ticked module contributes perModule × its weight to the use case.
+  const emModuleWeight = (doc, mod) => {
+    const w = doc.moduleWeights && Number(doc.moduleWeights[mod]);
+    return w > 0 ? w : 1;
+  };
+
   function emCompute(doc) {
     const vf = emVariableFactor(doc.variables);
     const perUseCase = EM_USE_CASES.map(uc => {
-      const n = doc.modules.filter(mod => doc.ticks[uc.id + '|' + mod]).length;
+      const ticked = doc.modules.filter(mod => doc.ticks[uc.id + '|' + mod]);
+      // The gate stays on the COUNT — an untouched use case costs nothing —
+      // while the FP uses the weighted sum, so a light module still opens
+      // the use case but contributes less.
+      const wsum = ticked.reduce((s, mod) => s + emModuleWeight(doc, mod), 0);
       const tc = doc.tc[uc.id] || 1;
-      const fp = n > 0 ? round1((uc.base + uc.perModule * n) * vf * tc) : 0;
-      return { id: uc.id, name: uc.name, modules: n, tc, fp };
+      const fp = ticked.length > 0 ? round1((uc.base + uc.perModule * wsum) * vf * tc) : 0;
+      return { id: uc.id, name: uc.name, modules: ticked.length, tc, fp };
     });
     const tucfp = round1(perUseCase.reduce((s, u) => s + u.fp, 0));
 
@@ -314,13 +338,17 @@
       r.fitsBaseline == null ? 'n/a' : (r.fitsBaseline ? 'YES' : 'NO')].map(emCsvCell).join(','));
     lines.push(['Hourly rate', '', '', doc.rates.hourlyRate || 'not set'].map(emCsvCell).join(','));
     lines.push(['Estimated cost', '', '', r.cost == null ? 'n/a' : r.cost].map(emCsvCell).join(','));
+    const mw = Object.entries(doc.moduleWeights || {});
+    if (mw.length)
+      lines.push(['Module weights', '', '',
+        mw.map(([m, w]) => m + ' ×' + w).join('; ')].map(emCsvCell).join(','));
     return lines.join('\n') + '\n';
   }
 
   const api = {
     EM_VERSION, EM_USE_CASES, EM_DEFAULT_MODULES, EM_DEFAULT_VARIABLES,
     EM_DEFAULT_RATES, EM_DATA_MEASURES, EM_DEFAULT_BASELINE, EM_BASELINE_UNITS,
-    emId, emNewDoc, emNormalize, emVariableFactor, emCompute, emCsv,
+    emId, emNewDoc, emNormalize, emVariableFactor, emModuleWeight, emCompute, emCsv,
     emAddWorkingDays, emWorkingDaysBetween,
     emBaselineDays, emFullScopeFp, emCalibrateToBaseline,
   };
