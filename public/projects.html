@@ -54,15 +54,15 @@
   --r:10px;--r-lg:14px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
 
 /* ── Layout ── */
-.app{display:grid;grid-template-rows:52px 1fr;grid-template-columns:230px 1fr;height:100vh;overflow:hidden}
+.app{display:grid;grid-template-rows:52px 1fr;grid-template-columns:1fr;height:100vh;overflow:hidden}
 .topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
 .logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
 .logo span{color:var(--accent)}
 .logo-console{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;font-family:var(--mono)}
-.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto}
 .main{padding:1.75rem;overflow-y:auto;background:var(--bg)}
 .avatar{width:30px;height:30px;border-radius:50%;background:var(--bg4);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--text2)}
 
@@ -159,7 +159,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div>
   </div>
 
-  <div class="sidebar" id="sidebar"></div>
+  <!-- The shared console rail mounts here. Without this element
+       cygenix-sidebar.js has nowhere to render and the page loses its
+       navigation entirely. -->
+  <div id="cyg-sidebar-mount" data-active=""></div>
 
   <div class="main">
     <div class="page-header">
@@ -326,7 +329,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
 <div class="toast" id="toast"></div>
 
-<script src="/cygenix-sidebar.js?v=9e8f81546a" defer></script>
+<script src="/cygenix-sidebar.js?v=bb6b26f4db" defer></script>
 <script>
 // ── Config & state ────────────────────────────────────────────────────────────
 const PROJECTS_KEY    = 'cygenix_projects';
