@@ -192,7 +192,7 @@
         id: String(v && v.id || emId()),
         name: String(v && v.name || 'Variable').slice(0, 60),
         kind: v && v.kind === 'flag' ? 'flag' : 'scale',
-        weight: Math.max(0, Math.min(2, Number(v && v.weight) || 0)),
+        weight: Math.max(EM_WEIGHT_MIN, Math.min(EM_WEIGHT_MAX, Number(v && v.weight) || 0)),
         value: Math.max(0, Math.min(99, Number(v && v.value) || 0)),
         min: Number(v && v.min) || 0, max: Number(v && v.max) || 99,
       })).slice(0, 16);
@@ -233,12 +233,22 @@
   }
 
   // ── The model ────────────────────────────────────────────────────────────
+  // Weights may be NEGATIVE: a staging-only migration is less work than
+  // source → staging → prod, and the model should be able to say so. What a
+  // variable may not do is drive the estimate to nothing — each one's
+  // contribution is floored, so effort can be reduced, never erased or
+  // inverted.
+  const EM_WEIGHT_MIN = -0.95, EM_WEIGHT_MAX = 2;
+  const EM_FACTOR_FLOOR = 0.05;
+  function emVariableContribution(v) {
+    const c = v.kind === 'flag'
+      ? (v.value ? 1 + v.weight : 1)
+      : 1 + v.weight * (Math.max(0, v.value) - 1);
+    return Math.max(EM_FACTOR_FLOOR, c);
+  }
   function emVariableFactor(variables) {
     let f = 1;
-    for (const v of variables || []) {
-      if (v.kind === 'flag') f *= v.value ? 1 + v.weight : 1;
-      else f *= 1 + v.weight * (Math.max(0, v.value) - 1);
-    }
+    for (const v of variables || []) f *= emVariableContribution(v);
     return f;
   }
 
@@ -360,6 +370,7 @@
   const api = {
     EM_VERSION, EM_USE_CASES, EM_DEFAULT_MODULES, EM_DEFAULT_VARIABLES,
     EM_DEFAULT_RATES, EM_DATA_MEASURES, EM_DEFAULT_BASELINE, EM_BASELINE_UNITS,
+    EM_WEIGHT_MIN, EM_WEIGHT_MAX, EM_FACTOR_FLOOR, emVariableContribution,
     emId, emNewDoc, emTickAll, emNormalize, emVariableFactor, emModuleWeight, emCompute, emCsv,
     emAddWorkingDays, emWorkingDaysBetween,
     emBaselineDays, emFullScopeFp, emCalibrateToBaseline,
