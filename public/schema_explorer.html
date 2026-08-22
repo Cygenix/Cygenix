@@ -90,9 +90,12 @@ body.cyg-collapsed{padding-left:54px}
 .se-head-actions{margin-left:auto;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
 
 /* ── Tab bar — same control as Object Mapping's mode switch ── */
-/* Four buttons now — at 520px the labels wrapped. */
-.mode-bar{display:flex;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;max-width:680px;flex:none}
-.mode-btn{flex:1;text-align:center;white-space:nowrap;padding:0.4rem 1rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
+/* Eight buttons now: the four native maps plus the four data maps. They no
+   longer fit on one line at any sensible width, so the bar wraps and the
+   buttons size to their own labels instead of splitting the width evenly —
+   flex:1 across eight would squeeze "⇄ Relationship map" into an ellipsis. */
+.mode-bar{display:flex;flex-wrap:wrap;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;max-width:1000px;flex:0 1 auto}
+.mode-btn{flex:0 1 auto;text-align:center;white-space:nowrap;padding:0.4rem 0.85rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
 .mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
 
 .btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
@@ -569,6 +572,9 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-subject-triage.js?v=259690e173" defer></script>
 <script src="/cygenix-exclusion-rules.js?v=8e49dbbb79" defer></script>
 <script src="/cygenix-infer-schema.js?v=c197ec85e0" defer></script>
+<!-- Adds its own four map tabs to the tab bar the moment it loads. Deferred, so
+     seSwitchTab and smTables are already defined when it wraps them. -->
+<script src="/cygenix-data-maps.js?v=6c9f136048" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
 <script src="/cygenix-sidebar.js?v=bb6b26f4db" defer></script>
@@ -1326,6 +1332,17 @@ function smVisibleKeys(){
   smTables();
   return _filterCache ? _filterCache.keys : new Set();
 }
+// The declared foreign keys between the tables smTables() is showing. The Data
+// Maps read this to draw real table→table traffic; without it all they have is
+// each table's fkColumns, which name the columns in a key and not the tables
+// they point at. Inferred edges are deliberately left out — a hypothesis is
+// not a foreign key, and these maps are a picture of what the estate declares.
+function smEdges(){
+  const g = SM.graph;
+  if (!g || !g.ok) return [];
+  const keys = smVisibleKeys();
+  return g.edges.filter(e => !e.self && keys.has(e.from) && keys.has(e.to));
+}
 function smHiddenCount(){
   const g = SM.graph;
   if (!g || !g.ok) return 0;
@@ -1405,7 +1422,12 @@ function smUpdateSideButtons(){
 }
 
 function seReloadSchema(){
-  if (seTab === 'schema') smEnsureLoaded(true);
+  // seTab only ever names a native view, so the Data Maps have to be asked
+  // whether one of theirs is the panel actually on screen.
+  if (window.CygenixDataMaps && CygenixDataMaps.isActive()){
+    smEnsureLoaded(true).then(() => CygenixDataMaps.refresh());
+  }
+  else if (seTab === 'schema') smEnsureLoaded(true);
   else if (seTab === 'atlas'){ CygenixSchemaGraph.reload(DA.side).then(() => { DA.loaded = null; daEnsure(); }); }
   else if (seTab === 'areas'){ AM.ready = false; amEnsure(true); }
   else { CygenixSchemaGraph.reload(SM.side).then(() => cvRender()); }
