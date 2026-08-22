@@ -133,7 +133,7 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
 
 <div id="cyg-sidebar-mount" data-active="effort-estimator"></div>
 <script src="/cygenix-sidebar.js?v=bb6b26f4db" defer></script>
-<script src="/cygenix-effort-model.js?v=83fd6285f9" defer></script>
+<script src="/cygenix-effort-model.js?v=db4957f157" defer></script>
 
 <div class="page">
 
@@ -178,10 +178,14 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
   <div class="panel">
     <div class="panel-head">
       <div><div class="panel-title">Use case estimates</div>
-      <div class="panel-sub">The seven standard use cases. Tick the modules each one covers —
-        an untouched use case costs nothing. TC is the technical complexity factor: 1 is standard,
-        up to 99 for fully custom.</div></div>
-      <button class="btn btn-sm" style="margin-left:auto" onclick="esResetTicks()">Reset ticks</button>
+      <div class="panel-sub">The seven standard use cases. A new estimate starts at FULL SCOPE —
+        every module ticked — so you untick what the client is not buying; an untouched use case
+        costs nothing. TC is the technical complexity factor: 1 is standard, up to 99 for fully
+        custom.</div></div>
+      <span style="margin-left:auto;display:flex;gap:0.4rem">
+        <button class="btn btn-sm" onclick="esTickAll()" title="Tick every module on every use case — full scope, the starting point for a quote">Tick all</button>
+        <button class="btn btn-sm" onclick="esResetTicks()">Clear all</button>
+      </span>
     </div>
     <div class="es-wrap"><table class="es" id="es-uc"></table></div>
   </div>
@@ -276,7 +280,7 @@ function esLoad(){
   let s = null;
   try { s = JSON.parse(localStorage.getItem(ES_STORE) || 'null'); } catch (e) {}
   if (!s || !s.estimates || !Object.keys(s.estimates).length){
-    const doc = esApplyHouseTo(EM.emNewDoc('New estimate'));
+    const doc = esNewSeeded(EM, 'New estimate');
     s = { active: doc.name, estimates: {} };
     s.estimates[doc.name] = doc;
   }
@@ -320,13 +324,24 @@ function esApplyHouseWeights(){
   esSave(); esRenderGrids(); esRenderMods(); esRenderResults();
 }
 
+// A new estimate starts at FULL SCOPE — every use case against every module
+// — because a quote begins with "everything is in" and the analyst removes
+// what the client is not buying. House weights apply on top.
+function esNewSeeded(EM, name){
+  return esApplyHouseTo(EM.emNormalize(EM.emTickAll(EM.emNewDoc(name))));
+}
+function esTickAll(){
+  window.CygenixEffortModel.emTickAll(esDoc());
+  esSave(); esRenderGrids(); esRenderResults();
+}
+
 // ── Estimates ─────────────────────────────────────────────────────────────
 function esSwitch(name){ if (ES.store.estimates[name]){ ES.store.active = name; esSave(); esRenderAll(); } }
 function esNewEstimate(){
   const EM = window.CygenixEffortModel;
   const name = window.prompt('Name the new estimate:', 'Estimate ' + (Object.keys(ES.store.estimates).length + 1));
   if (!name || ES.store.estimates[name]) return;
-  ES.store.estimates[name] = esApplyHouseTo(EM.emNormalize(EM.emNewDoc(name)));
+  ES.store.estimates[name] = esNewSeeded(EM, name);
   ES.store.active = name;
   esSave(); esRenderAll();
 }
@@ -374,7 +389,7 @@ function esDeleteEstimate(){
   delete ES.store.estimates[ES.store.active];
   if (!Object.keys(ES.store.estimates).length){
     const EM = window.CygenixEffortModel;
-    const doc = esApplyHouseTo(EM.emNewDoc('New estimate'));
+    const doc = esNewSeeded(EM, 'New estimate');
     ES.store.estimates[doc.name] = doc;
   }
   ES.store.active = Object.keys(ES.store.estimates)[0];
@@ -432,6 +447,8 @@ function esAddModule(){
   const name = $('es-mod-new').value.trim().slice(0, 40);
   if (!name || doc.modules.includes(name)) return;
   doc.modules.push(name);
+  // Added scope is IN by default, matching how a new estimate starts.
+  for (const uc of window.CygenixEffortModel.EM_USE_CASES) doc.ticks[uc.id + '|' + name] = 1;
   $('es-mod-new').value = '';
   esSave(); esRenderAll();
 }

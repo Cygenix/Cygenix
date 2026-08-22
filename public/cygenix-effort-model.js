@@ -156,6 +156,18 @@
     };
   }
 
+  // Full scope: every use case against every module. emNewDoc stays blank —
+  // a document with no ticks is the honest empty model, and the calibration
+  // and import paths rely on it — while the CONSOLE seeds a new estimate
+  // with this, because a quote starts from "everything is in" and the
+  // analyst removes what the client is not buying.
+  function emTickAll(doc) {
+    doc.ticks = {};
+    for (const uc of EM_USE_CASES)
+      for (const mod of doc.modules) doc.ticks[uc.id + '|' + mod] = 1;
+    return doc;
+  }
+
   function emNormalize(doc) {
     const d = (doc && typeof doc === 'object') ? doc : {};
     const out = emNewDoc(d.name);
@@ -348,7 +360,7 @@
   const api = {
     EM_VERSION, EM_USE_CASES, EM_DEFAULT_MODULES, EM_DEFAULT_VARIABLES,
     EM_DEFAULT_RATES, EM_DATA_MEASURES, EM_DEFAULT_BASELINE, EM_BASELINE_UNITS,
-    emId, emNewDoc, emNormalize, emVariableFactor, emModuleWeight, emCompute, emCsv,
+    emId, emNewDoc, emTickAll, emNormalize, emVariableFactor, emModuleWeight, emCompute, emCsv,
     emAddWorkingDays, emWorkingDaysBetween,
     emBaselineDays, emFullScopeFp, emCalibrateToBaseline,
   };
