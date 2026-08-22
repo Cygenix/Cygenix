@@ -241,6 +241,9 @@ function geoPlan(index, opts){
   var plan = [];
   (index || []).forEach(function (e) {
     if (e.enabled === false) return;
+    /* A GROUP BY over an empty table cannot contribute a record, and on a
+       large estate there are enough of them to be worth not asking. */
+    if (e.rows === 0) return;
     var sql = geoSql(e, opts);
     if (sql) plan.push({ entry: e, table: e.table, key: e.key, sql: sql });
   });

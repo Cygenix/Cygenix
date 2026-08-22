@@ -142,6 +142,10 @@ check('identifiers are quoted, and a bracket inside one is doubled',
   /\[Odd\]\]Name\]/.test(G.geoSql({ table: 'X', key: 'dbo.X', columns: { country: 'Odd]Name' } })));
 check('a table with nothing groupable produces no query',
   G.geoSql({ table: 'X', key: 'dbo.X', columns: { lat: 'Lat', lng: 'Lng' } }) === null);
+check('an empty table costs no query — it cannot contribute a record',
+  G.geoPlan([{ table: 'E', key: 'dbo.E', rows: 0, columns: { country: 'C' } },
+             { table: 'F', key: 'dbo.F', rows: 1, columns: { country: 'C' } }])
+    .map(j => j.table).join(',') === 'F');
 check('the plan skips entries the user switched off',
   G.geoPlan(idx.map(e => Object.assign({}, e, { enabled: e.table !== 'Client' }))).length === idx.length - 1);
 

@@ -65,6 +65,14 @@ var G = {
 };
 
 function GI(){ return window.CygenixGeoIndex; }
+
+/* db-connect answers an execute with { success, rowsAffected, recordset } —
+   the driver's own shape. Reading only .rows returns nothing from every query
+   while every query reports success, which is the most confusing failure this
+   view can have: a full set of answers and an empty map. */
+function resultRows(res){
+  return (res && (res.recordset || res.rows)) || [];
+}
 function fmt(n){
   if (n >= 1e9) return (n/1e9).toFixed(n>=1e10?0:1).replace(/\.0$/,'') + 'bn';
   if (n >= 1e6) return (n/1e6).toFixed(n>=1e7?0:1).replace(/\.0$/,'') + 'm';
@@ -161,7 +169,7 @@ function seedFromEstate(){
   var parts = String(ref.key || ref.name).split('.');
   var sql = 'SELECT TOP 400 * FROM [' + (parts[0] || 'dbo') + '].[' + (parts[1] || ref.name) + ']';
   return SG.execute(G.side, sql)
-    .then(function (res) { return GI().geoSeedFromCountryTable((res && res.rows) || []); })
+    .then(function (res) { return GI().geoSeedFromCountryTable(resultRows(res)); })
     .catch(function () { return null; });
 }
 
@@ -187,7 +195,7 @@ function run(force){
       render();
       return GI().geoRun(G.index, {
         exec: function (sql) {
-          return SG.execute(G.side, sql).then(function (res) { return (res && res.rows) || []; });
+          return SG.execute(G.side, sql).then(resultRows);
         },
         metric: st.metric === 'distinct' ? 'distinct' : 'rows',
         seed: seed,
@@ -907,9 +915,15 @@ function renderTiles(){
   add('Countries', String(list.length),
       list.length ? list[0].name + ' leads with ' + pct(list[0].v, total) : 'nothing resolved');
   add('Unresolved', fmt(L.unresolved.n),
-      L.total ? pct(L.unresolved.n, L.total) + ' of what was counted' : '—');
-  add('Tables aggregated', String(L.queried) + ' / ' + String(L.planned),
-      (L.failures && L.failures.length) ? L.failures.length + ' failed — see Sources' : 'all answered');
+      L.total ? pct(L.unresolved.n, L.total) + ' of what was counted'
+              : 'nothing came back to resolve');
+  /* Two different numbers used to share this tile. It counts the geo-bearing
+     tables the scan queried — say so, rather than showing "121 / 121" and
+     leaving the reader to guess what 121 is. */
+  var failed = (L.failures && L.failures.length) || 0;
+  add('Geo-bearing tables', String(L.planned),
+      failed ? (L.queried + ' answered, ' + failed + ' failed — see Sources')
+             : ('all ' + L.queried + ' answered'));
 }
 
 function renderLegend(){
@@ -1218,9 +1232,19 @@ function renderNote(){
     return;
   }
   var parts = [];
-  parts.push('Aggregated from ' + G.ledger.queried + ' table' + (G.ledger.queried === 1 ? '' : 's')
-    + ' with one GROUP BY each. ' + comma(G.ledger.resolved) + ' of ' + comma(G.ledger.total)
-    + ' ' + unitLabel() + ' resolved to a country.');
+  /* Every table answering and nothing landing is the one outcome that looks
+     like success and is not: say it plainly instead of drawing a bare globe
+     beside a row of zeros. */
+  if (G.ledger.queried > 0 && G.ledger.total === 0) {
+    parts.push(G.ledger.queried + ' table' + (G.ledger.queried === 1 ? '' : 's')
+      + ' answered but returned no rows at all. Either the geography columns are empty in this '
+      + 'database, or the tables the scan picked are the wrong ones — the Sources view lists what '
+      + 'it chose and why, and each one can be switched off.');
+  } else {
+    parts.push('Aggregated from ' + G.ledger.queried + ' table' + (G.ledger.queried === 1 ? '' : 's')
+      + ' with one GROUP BY each. ' + comma(G.ledger.resolved) + ' of ' + comma(G.ledger.total)
+      + ' ' + unitLabel() + ' resolved to a country.');
+  }
   if (st.drill && G.admin1[st.drill] && G.admin1[st.drill].missing) {
     parts.push('No boundary file is bundled for ' + GI().geoCountryName(st.drill)
       + ', so its regions are listed rather than drawn.');
