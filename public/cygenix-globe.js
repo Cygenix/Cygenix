@@ -28,8 +28,7 @@ window.CygenixGlobe = (function () {
 
 var GEO_PATH = '/geo/';
 var PANEL_ID = 'se-view-globe';
-var MODE_BAR = '.mode-bar';
-var TAB_ID   = 'se-tab-globe';
+var PANEL_HOST = 'se-view-schema';   /* our panel goes beside the native ones */
 
 var DOMAINS = ['Finance & AR','Time & billing','Matters & clients','Documents & content',
                'People & HR','Reference & lookup','System & audit','Other'];
@@ -1364,65 +1363,28 @@ function showPanel(){
 }
 
 function install(){
-  var bar = document.querySelector(MODE_BAR);
-  if (!bar || document.getElementById(TAB_ID)) return false;
-  var native = [].slice.call(bar.querySelectorAll('button'));
-  if (!native.length) return false;
-  var firstPanel = document.getElementById(native[0].getAttribute('aria-controls'));
-  if (!firstPanel) return false;
+  if (typeof window.seRegisterMap !== 'function') return false;
+  if (document.getElementById(PANEL_ID)) return false;
+  var host = document.getElementById(PANEL_HOST);
+  if (!host || !host.parentElement) return false;
 
   var panel = document.createElement('div');
   panel.id = PANEL_ID;
   panel.style.display = 'none';
   panel.style.padding = '4px 0 24px';
-  firstPanel.parentElement.appendChild(panel);
+  host.parentElement.appendChild(panel);
   panelEl = panel;
 
-  function setOn(b, on){
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-selected', String(on));
-  }
-  function standDownOthers(){
-    [].slice.call(bar.querySelectorAll('button')).forEach(function (b) {
-      if (b.id === TAB_ID) return;
-      setOn(b, false);
-      var p = document.getElementById(b.getAttribute('aria-controls'));
-      if (p && p !== panel) p.style.display = 'none';
-    });
-  }
-
-  var btn = document.createElement('button');
-  btn.className = (native[0].className || 'mode-btn').replace(/\bactive\b/g, '').trim();
-  btn.id = TAB_ID;
-  btn.type = 'button';
-  btn.setAttribute('role', 'tab');
-  btn.setAttribute('aria-selected', 'false');
-  btn.setAttribute('aria-controls', PANEL_ID);
-  btn.textContent = '🌐 Globe';
-  btn.addEventListener('click', function () {
-    standDownOthers();
-    setOn(btn, true);
-    panel.style.display = 'block';
-    showPanel();
+  /* One entry in the console's map picker. The page decides which panel is
+     showing — it hides every other map before opening this one — so there is
+     no tab state of our own to keep in step. */
+  return window.seRegisterMap({
+    id: 'globe',
+    label: '🌐 Globe',
+    group: 'Estate maps',
+    show: function () { panel.style.display = 'block'; showPanel(); },
+    hide: function () { panel.style.display = 'none'; hideTip(); },
   });
-  bar.appendChild(btn);
-
-  /* Both the console's own tab switch and the data maps' wrap have to stand
-     this panel down; wrapping whatever is there now chains onto theirs. */
-  var original = window.seSwitchTab;
-  if (typeof original === 'function') {
-    window.seSwitchTab = function () {
-      panel.style.display = 'none';
-      setOn(btn, false);
-      return original.apply(this, arguments);
-    };
-  }
-  var others = [].slice.call(bar.querySelectorAll('button'));
-  others.forEach(function (b) {
-    if (b.id === TAB_ID) return;
-    b.addEventListener('click', function () { panel.style.display = 'none'; setOn(btn, false); });
-  });
-  return true;
 }
 
 return {
@@ -1442,8 +1404,8 @@ return {
 };
 })();
 
-/* Auto-register once the console's tab bar exists, after the data maps so the
-   Globe sits at the end of the row. */
+/* Auto-register once the console's map picker exists, after the data maps so
+   the Globe is the last entry in the list. */
 (function () {
   function go(){ return window.CygenixGlobe.install(); }
   if (!go()) {

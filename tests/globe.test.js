@@ -164,13 +164,17 @@ check('and after the full-screen helper it attaches to',
   PAGE.indexOf('cygenix-globe.js') > PAGE.indexOf('cygenix-fullscreen.js'));
 check('the engine loads before the view that calls it',
   PAGE.indexOf('cygenix-geo-index.js') < PAGE.indexOf('cygenix-globe.js'));
-check('the tab bar comment counts nine', /Nine buttons now/.test(PAGE));
+check('the Globe is an entry in the picker, not a tenth button',
+  /id: 'globe'/.test(SRC) && /window\.seRegisterMap\(\{/.test(SRC) && !/mode-btn/.test(SRC));
+check('and the page offers every map from one select',
+  /<select id="se-map"/.test(PAGE) && /onchange="seSelectMap\(this\.value\)"/.test(PAGE)
+  && !/class="mode-bar"/.test(PAGE));
 
 // The globe borrows the data maps' chrome, so that stylesheet has to be there
 // whichever tab the user opens first.
 const DM = fs.readFileSync(__dirname + '/../public/cygenix-data-maps.js', 'utf8');
 check('the shared chrome stylesheet is injected on install, not on first mount',
-  /if \(!bar \|\| document\.getElementById\('se-tab-dm-estate'\)\) return false;\s*\n\s*\/\*[\s\S]{0,200}\*\/\s*\n\s*injectCSS\(\);/.test(DM));
+  /injectCSS\(\);\s*\n\s*\n\s*var panel = document\.createElement/.test(DM));
 check('and the globe asks for it too, so tab order cannot matter',
   /CygenixDataMaps\.injectStyles/.test(SRC) && /injectStyles: injectCSS/.test(DM));
 

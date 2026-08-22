@@ -6,10 +6,10 @@
 
      <script src="cygenix-data-maps.js?v=1"></script>
 
-   It registers four tabs on the existing .mode-bar (Estate map, Relationship
-   map, Radial burst, Constellation) and renders them from the live schema
-   returned by smTables(). If smTables() is unavailable it falls back to
-   window.CYGENIX_SNAPSHOT when one has been loaded.
+   It registers four maps with the Schema Explorer's picker (Estate map,
+   Relationship map, Radial burst, Constellation) and renders them from the
+   live schema returned by smTables(). If smTables() is unavailable it falls
+   back to window.CYGENIX_SNAPSHOT when one has been loaded.
 
    Public API
      CygenixDataMaps.install()                  register the tabs (call on load)
@@ -1265,14 +1265,13 @@ function mount(host, data, opts){
   render();
   return { render:render, state:st };
 }
-/* --- registration on the Schema Explorer's own .mode-bar ------------------
-   The console's tabs are <button id="se-tab-KEY" aria-controls="se-view-KEY">
-   inside .mode-bar, and seSwitchTab(KEY) shows the matching panel. We add four
-   buttons of the same shape sharing one panel, and wrap seSwitchTab so that
-   selecting a native tab stands our panel down. Adjust MODE_BAR / PANEL_HOST
-   here if those hooks ever move — nothing else in the file depends on them. */
-var MODE_BAR = '.mode-bar';
+/* --- registration with the Schema Explorer's map picker -------------------
+   The console offers every map from one select, built from a registry. We add
+   four entries to it, all sharing one panel, and the page handles which panel
+   is showing: it calls hide() on the map being left and show() on the one
+   being opened. That hook — seRegisterMap — is the whole integration. */
 var PANEL_ID = 'se-view-datamaps';
+var PANEL_HOST = 'se-view-schema';   /* our panel goes beside the native ones */
 
 var panelEl = null, mounted = false, loading = false, wanted = null;
 
@@ -1312,76 +1311,37 @@ function refresh(){
 }
 
 function install(){
-  var bar = document.querySelector(MODE_BAR);
-  if (!bar || document.getElementById('se-tab-dm-estate')) return false;
+  if (typeof window.seRegisterMap !== 'function') return false;
+  if (document.getElementById(PANEL_ID)) return false;
+  var host = document.getElementById(PANEL_HOST);
+  if (!host || !host.parentElement) return false;
   /* Inject now, not on first mount: the Globe view is styled with these same
-     tokens and classes, and it can be the first tab a user opens. */
+     tokens and classes, and it can be the first map a user opens. */
   injectCSS();
-  var native = [].slice.call(bar.querySelectorAll('button'));
-  var firstPanel = document.getElementById(native[0] && native[0].getAttribute('aria-controls'));
-  if (!firstPanel) return false;
 
   var panel = document.createElement('div');
   panel.id = PANEL_ID;
   panel.style.display = 'none';
   panel.style.padding = '4px 0 24px';
-  firstPanel.parentElement.appendChild(panel);
+  host.parentElement.appendChild(panel);
   panelEl = panel;
 
-  /* The console paints the selected tab with an .active class, not with
-     aria-selected, so the two have to move together in both directions —
-     otherwise the tab you left stays lit while one of ours is showing. */
-  function setOn(b, on){
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-selected', String(on));
-  }
-  function standDownNative(){
-    native.forEach(function (b) {
-      setOn(b, false);
-      var p = document.getElementById(b.getAttribute('aria-controls'));
-      if (p) p.style.display = 'none';
-    });
-  }
-  function standDownOurs(){
-    panel.style.display = 'none';
-    TABS.forEach(function (t) {
-      var b = document.getElementById('se-tab-dm-' + t.id);
-      if (b) setOn(b, false);
-    });
-  }
-
+  /* Four entries, one panel. Which of the four is showing is our own state,
+     so opening one from the picker is the same as switching between them
+     once we are already on screen. */
   TABS.forEach(function (t) {
-    var b = document.createElement('button');
-    /* Shaped like the native buttons, minus their selected state: native[0]
-       is the tab that happens to be open, and cloning its class wholesale
-       would light all four of ours up before they had ever been clicked. */
-    b.className = (native[0] ? native[0].className : 'mode-btn').replace(/\bactive\b/g, '').trim();
-    b.id = 'se-tab-dm-' + t.id;
-    b.type = 'button';
-    b.setAttribute('role', 'tab');
-    b.setAttribute('aria-selected', 'false');
-    b.setAttribute('aria-controls', PANEL_ID);
-    b.textContent = t.label;
-    b.addEventListener('click', function () {
-      standDownNative(); standDownOurs();
-      setOn(b, true);
-      panel.style.display = 'block';
-      showPanel(t.id);
+    window.seRegisterMap({
+      id: 'dm-' + t.id,
+      label: t.label,
+      group: 'Estate maps',
+      show: function () { panel.style.display = 'block'; showPanel(t.id); },
+      hide: function () { panel.style.display = 'none'; },
     });
-    bar.appendChild(b);
   });
-
-  var original = window.seSwitchTab;
-  if (typeof original === 'function') {
-    window.seSwitchTab = function () {
-      standDownOurs();
-      return original.apply(this, arguments);
-    };
-  }
   return true;
 }
 
-/* Is one of our tabs the one on screen? The console's own seReloadSchema()
+/* Is one of our maps the one on screen? The console's own seReloadSchema()
    asks, so that ↻ Reload schema reloads what the user is actually looking at. */
 function isActive(){ return !!(panelEl && panelEl.style.display !== 'none'); }
 
@@ -1402,8 +1362,8 @@ return {
 };
 })();
 
-/* Auto-register once the console's tab bar exists. Remove this block if you
-   would rather call CygenixDataMaps.install() from your own bootstrap. */
+/* Auto-register once the console's map picker exists. Remove this block if
+   you would rather call CygenixDataMaps.install() from your own bootstrap. */
 (function () {
   function go(){ if (window.CygenixDataMaps.install()) return true; return false; }
   if (!go()) {
