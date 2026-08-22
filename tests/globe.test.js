@@ -124,6 +124,21 @@ check('the globe reads the ledger and never issues a query of its own',
 check('the only statement it composes is the reference-table read',
   (SRC.match(/SELECT /gi) || []).length === 1);
 check('it stores nothing', !/localStorage|sessionStorage/.test(SRC));
+
+// db-connect answers an execute with { success, rowsAffected, recordset }.
+// Reading only .rows returns nothing from every query while every query
+// reports success — a full set of answers and an empty map. Every other
+// module in the console reads recordset; this one must too.
+check('query results are read from the envelope db-connect actually sends',
+  /res\.recordset \|\| res\.rows/.test(SRC), 'globe reads .rows only');
+const readsRaw = (SRC.match(/res\.rows/g) || []).length;
+check('and nowhere reaches past the one normaliser to do it by hand',
+  readsRaw === 1 && (SRC.match(/resultRows/g) || []).length >= 3,
+  readsRaw + ' raw .rows reads');
+const OTHERS = ['cygenix-evidence-map.js', 'cygenix-nl-recon.js', 'cygenix-preflight.js',
+                'cygenix-subject-harvest.js', 'cygenix-infer-schema.js'];
+check('which is what the rest of the console does (' + OTHERS.length + ' modules)',
+  OTHERS.every(f => /recordset/.test(fs.readFileSync(__dirname + '/../public/' + f, 'utf8'))));
 check('and fetches nothing but its own boundary files',
   (SRC.match(/fetch\(/g) || []).length === 2 && /GEO_PATH \+ 'countries-110m\.json'/.test(SRC)
   && /GEO_PATH \+ 'admin1\/'/.test(SRC));
