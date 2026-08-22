@@ -90,10 +90,10 @@ body.cyg-collapsed{padding-left:54px}
 .se-head-actions{margin-left:auto;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
 
 /* ── Tab bar — same control as Object Mapping's mode switch ── */
-/* Eight buttons now: the four native maps plus the four data maps. They no
-   longer fit on one line at any sensible width, so the bar wraps and the
-   buttons size to their own labels instead of splitting the width evenly —
-   flex:1 across eight would squeeze "⇄ Relationship map" into an ellipsis. */
+/* Nine buttons now: the four native maps, the four data maps and the Globe.
+   They no longer fit on one line at any sensible width, so the bar wraps and
+   the buttons size to their own labels instead of splitting the width evenly —
+   flex:1 across nine would squeeze "⇄ Relationship map" into an ellipsis. */
 .mode-bar{display:flex;flex-wrap:wrap;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;max-width:1000px;flex:0 1 auto}
 .mode-btn{flex:0 1 auto;text-align:center;white-space:nowrap;padding:0.4rem 0.85rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
 .mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
@@ -590,7 +590,10 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-fullscreen.js?v=9934aab360" defer></script>
 <!-- Adds its own four map tabs to the tab bar the moment it loads. Deferred, so
      seSwitchTab and smTables are already defined when it wraps them. -->
-<script src="/cygenix-data-maps.js?v=d612e96b40" defer></script>
+<script src="/cygenix-data-maps.js?v=99ce91a613" defer></script>
+<!-- The Globe registers last, so its tab sits at the end of the row. -->
+<script src="/cygenix-geo-index.js?v=ad241c7f9c" defer></script>
+<script src="/cygenix-globe.js?v=c486e520f9" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
 <script src="/cygenix-sidebar.js?v=bb6b26f4db" defer></script>
