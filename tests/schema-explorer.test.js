@@ -466,19 +466,23 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('there is a visible reload for the cached schema', /Reload schema/.test(html));
 
   // Screen space.
-  check('the diagram can go full screen', /id="sm-fs-btn"/.test(html) && /requestFullscreen/.test(html));
+  // Full screen moved to the shared helper — cygenix-fullscreen.js and
+  // tests/fullscreen.test.js own the mechanism. What this file still pins is
+  // that the two original controls survived the move with their behaviour.
+  check('the diagram can go full screen',
+    /id="sm-fs-btn"/.test(html) && /<script src="\/cygenix-fullscreen\.js/.test(html));
   check('and the canvas keeps its own background there, since the browser paints black behind it',
     /:fullscreen\{[^}]*background:var\(--bg\)/.test(html));
   check('leaving full screen re-measures rather than keeping the old zoom',
-    /function smOnFullscreenChange\(\)[\s\S]{0,900}smFit\(\)/.test(html)
-    && /addEventListener\('fullscreenchange', seOnFullscreenChange\)/.test(html));
-  // The router keeps the two canvases apart: refitting the schema canvas
-  // while the atlas panel owns the screen would measure a hidden 0×0 box.
-  check('fullscreen changes route to whichever view owns the element',
-    /contains\('da-panel'\)\) daOnFullscreenChange\(\);/.test(html)
-    && /else smOnFullscreenChange\(\);/.test(html));
+    /onChange: \(\) => \{ smRenderCanvas\(\); smFit\(\); \}/.test(html));
+  // Each view supplies its own target and redraw, so a transition can never
+  // refit the schema canvas while the atlas panel owns the screen — which
+  // would measure a hidden 0×0 box.
+  check('every view brings its own target and redraw to the shared helper',
+    /target: \(\) => \$\('sm-canvas-wrap'\)/.test(html)
+    && /target: \(\) => document\.querySelector\('\.da-panel'\)/.test(html));
   check('the atlas has its own full screen control',
-    /id="da-fs-btn"/.test(html) && /function daFullscreen\(\)/.test(html));
+    /id="da-fs-btn"/.test(html) && /if \(DA\.view === 'map'\) daResize\(\)/.test(html));
   check('and the atlas view flexes to the viewport instead of a fixed offset',
     /\.da-view\{display:flex;flex-direction:column;height:calc\(100vh/.test(html)
     && /\.da-body\{[^}]*flex:1;min-height:0\}/.test(html));

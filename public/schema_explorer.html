@@ -297,6 +297,21 @@ body.cyg-collapsed{padding-left:54px}
    black behind a fullscreen element and the page's is not inherited. */
 .da-panel:fullscreen{background:var(--bg2);border-radius:0;height:100vh;width:100vw}
 .da-panel:-webkit-full-screen{background:var(--bg2);border-radius:0;height:100vh;width:100vw}
+
+/* The six views wired up later take the shared helper's .cyg-fs-target rules;
+   these add what each one needs beyond a full-bleed box. A panel of rows has
+   to scroll rather than clip — .panel is overflow:hidden by design, which
+   full screen turns from a rounded corner into a lost half of the table. */
+.panel.cyg-fs-target:fullscreen,.panel.cyg-fs-target:-webkit-full-screen{
+  background:var(--bg2);overflow:auto}
+/* A Migration map sub-view is a bare div holding its panel, so it supplies
+   the page margin the fullscreen box does not inherit. */
+#se-view-areas > div.cyg-fs-target:fullscreen,#se-view-areas > div.cyg-fs-target:-webkit-full-screen{
+  background:var(--bg);padding:1rem 1.25rem;overflow:auto}
+.cdm-card.cyg-fs-target:fullscreen,.cdm-card.cyg-fs-target:-webkit-full-screen{
+  background:var(--bg2);padding:0 6px 10px;display:flex;flex-direction:column}
+.cdm-card.cyg-fs-target:fullscreen > .cdm-plot,.cdm-card.cyg-fs-target:-webkit-full-screen > .cdm-plot{
+  flex:1;display:flex;align-items:center;justify-content:center}
 @media(max-width:1100px){.da-body{grid-template-columns:minmax(0,1fr)}.da-rail-panel{display:none}}
 .da-panel{display:flex;flex-direction:column;min-height:0;min-width:0}
 .da-crumb{display:flex;align-items:center;gap:5px;font-size:12px;min-width:0}
@@ -572,9 +587,10 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-subject-triage.js?v=259690e173" defer></script>
 <script src="/cygenix-exclusion-rules.js?v=8e49dbbb79" defer></script>
 <script src="/cygenix-infer-schema.js?v=c197ec85e0" defer></script>
+<script src="/cygenix-fullscreen.js?v=9934aab360" defer></script>
 <!-- Adds its own four map tabs to the tab bar the moment it loads. Deferred, so
      seSwitchTab and smTables are already defined when it wraps them. -->
-<script src="/cygenix-data-maps.js?v=6c9f136048" defer></script>
+<script src="/cygenix-data-maps.js?v=d612e96b40" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
 <script src="/cygenix-sidebar.js?v=bb6b26f4db" defer></script>
@@ -646,7 +662,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
                     title="Bring the table list back" style="display:none">Show list</button>
             <button class="btn" id="sm-insp-btn" onclick="smTogglePanel('insp')"
                     title="Bring the inspector back" style="display:none">Show inspector</button>
-            <button class="btn" id="sm-fs-btn" onclick="smFullscreen()"
+            <button class="btn" id="sm-fs-btn"
                     title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
             <span id="sm-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
           </div>
@@ -761,7 +777,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
             <button data-da-lens="sensitivity" aria-pressed="false">Sensitivity</button>
             <button data-da-lens="status" aria-pressed="false">Migration</button>
           </div>
-          <button class="btn" id="da-fs-btn" onclick="daFullscreen()" title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
+          <button class="btn" id="da-fs-btn" title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
         </div>
         <div class="da-mapwrap" id="da-mapwrap">
           <canvas id="da-map" role="img"
@@ -824,6 +840,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
         <button id="am-sub-queue" onclick="amSetSub('queue')">Mapping queue</button>
         <button id="am-sub-method" onclick="amSetSub('method')">How it decides</button>
       </div>
+      <button class="btn" id="am-fs-btn" title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
       <button class="btn" id="am-scope-btn" onclick="xpOpen()" title="Scope the estate before the run — exclude backups, test tables and unlicensed modules by rule, with a preview before anything commits">⊘ Scope</button>
       <button class="btn" onclick="amRebuildAll()" title="Re-harvest both schemas' columns and keys and rebuild the model">↻ Rebuild</button>
       <button class="btn" onclick="amExport()" title="Download the full fit report as CSV — every source table, its area, tier, top candidate and decision">⤓ Export</button>
@@ -975,7 +992,10 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
       <div class="panel-header">
         <div><div class="panel-title">Source → target coverage</div>
         <div class="panel-sub">One ribbon per saved map. Thickness is the number of mapped columns; colour is the worst match confidence in that map.</div></div>
-        <button class="btn" style="margin-left:auto" onclick="cvRender()">↻ Refresh</button>
+        <div style="margin-left:auto;display:flex;gap:0.4rem">
+          <button class="btn" onclick="cvRender()">↻ Refresh</button>
+          <button class="btn" id="cv-fs-ribbons" title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
+        </div>
       </div>
       <div id="cv-ribbons" class="cv-ribbons"></div>
     </div>
@@ -987,6 +1007,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
         <div style="margin-left:auto;display:flex;gap:0.4rem">
           <button class="btn" onclick="cvExportComposite()">⬇ Composite job</button>
           <button class="btn btn-primary" onclick="cvSaveComposite()">💾 Save as job</button>
+          <button class="btn" id="cv-fs-waves" title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
         </div>
       </div>
       <div id="cv-waves"></div>
@@ -994,7 +1015,8 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 
     <div class="panel">
       <div class="panel-header"><div><div class="panel-title">Pre-flight checks</div>
-      <div class="panel-sub">Run these before a migration, not after it.</div></div></div>
+      <div class="panel-sub">Run these before a migration, not after it.</div></div>
+      <button class="btn" id="cv-fs-checks" style="margin-left:auto" title="Full screen (F, or Esc to leave)">⤢ Full screen</button></div>
       <div id="cv-checks"></div>
     </div>
   </div>
@@ -1871,45 +1893,59 @@ function smApplyPanels(){
   if (ib) ib.style.display = SM.panels.insp ? 'none' : '';
 }
 
-function smFullscreen(){
-  const el = $('sm-canvas-wrap');
-  if (!el) return;
-  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-  if (fsEl){
-    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-    return;
-  }
-  const req = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (!req){ smStatus('This browser will not go full screen'); return; }
-  // Safari's returns undefined rather than a promise, so guard the catch.
-  const r = req.call(el);
-  if (r && r.catch) r.catch(e => smStatus('Full screen refused: ' + (e && e.message || '')));
-}
+// ── Full screen ───────────────────────────────────────────────────────────
+// Every view attaches to the one implementation in cygenix-fullscreen.js.
+// It owns the API dance, the Esc path, the iOS fallback and the re-parenting
+// of body-level overlays; each view supplies only its target and how to
+// re-draw at the new size.
+//
+// The Schema map's inspector and table list stay OUTSIDE the target on
+// purpose: full screen here means the diagram, and that is the behaviour
+// this button has always had. What must come along are the overlays that
+// live at body level, or that would be clipped away — nothing else.
+const SE_FS = {};
+function seAttachFullscreen(){
+  if (!window.CygenixFullscreen) return;
+  const F = window.CygenixFullscreen;
 
-function smOnFullscreenChange(){
-  const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
-  const btn = $('sm-fs-btn');
-  if (btn){
-    btn.textContent = on ? '⤢ Exit full screen' : '⤢ Full screen';
-    btn.classList.toggle('on', on);
-  }
-  // The viewport is a different size now; re-measure, then refit so the whole
-  // diagram uses the space rather than staying at the old zoom in a corner.
-  requestAnimationFrame(() => { smRenderCanvas(); smFit(); });
+  SE_FS.schema = F.attach({
+    button: $('sm-fs-btn'),
+    target: () => $('sm-canvas-wrap'),
+    visible: () => seTab === 'schema',
+    // Re-measure, then refit, so the whole diagram uses the space rather
+    // than staying at the old zoom in a corner.
+    onChange: () => { smRenderCanvas(); smFit(); },
+  });
+
+  SE_FS.atlas = F.attach({
+    button: $('da-fs-btn'),
+    target: () => document.querySelector('.da-panel'),
+    visible: () => seTab === 'atlas',
+    adopt: ['#da-tip'],
+    onChange: () => { if (DA.view === 'map') daResize(); },
+  });
+
+  // Coverage: one button per panel, each taking its own panel full screen.
+  [['ribbons', 'cv-fs-ribbons'], ['waves', 'cv-fs-waves'], ['checks', 'cv-fs-checks']].forEach(([key, id]) => {
+    const btn = $(id);
+    if (!btn) return;
+    SE_FS['cv-' + key] = F.attach({
+      button: btn,
+      target: () => btn.closest('.panel'),
+      // Three panels share the tab, so F alone cannot pick between them —
+      // it acts only on the one already full screen.
+      onChange: () => cvRender(),
+    });
+  });
+
+  // Migration map: whichever sub-view is showing.
+  SE_FS.areas = F.attach({
+    button: $('am-fs-btn'),
+    target: () => $('am-v-' + (AM.sub || 'areas')),
+    visible: () => seTab === 'areas',
+    onChange: () => amRender(),
+  });
 }
-// One listener routes by which element actually went (or left) full screen —
-// re-fitting the schema canvas while it is hidden behind another tab would
-// measure a 0×0 box and wreck its zoom state.
-let _lastFsEl = null;
-function seOnFullscreenChange(){
-  const now = document.fullscreenElement || document.webkitFullscreenElement;
-  const subject = now || _lastFsEl;
-  _lastFsEl = now;
-  if (subject && subject.classList && subject.classList.contains('da-panel')) daOnFullscreenChange();
-  else smOnFullscreenChange();
-}
-document.addEventListener('fullscreenchange', seOnFullscreenChange);
-document.addEventListener('webkitfullscreenchange', seOnFullscreenChange);
 
 // ── Exclusion rules ───────────────────────────────────────────────────────
 function smFiltersToggle(){
@@ -2325,12 +2361,9 @@ document.addEventListener('keydown', (ev) => {
     const f = $('sm-filters');
     if (f && f.classList.contains('show')) smFiltersToggle();
   }
-  // F for full screen, but not while typing into a filter or rule box.
-  const typing = ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
-  if (!typing && !ev.metaKey && !ev.ctrlKey && !ev.altKey && ev.key.toLowerCase() === 'f'){
-    if (seTab === 'schema'){ ev.preventDefault(); smFullscreen(); }
-    else if (seTab === 'atlas'){ ev.preventDefault(); daFullscreen(); }
-  }
+  // F for full screen is the shared helper's — it knows which view is on
+  // screen from the `visible` test each one attached with, and it skips the
+  // key while a filter or rule box has focus.
 });
 
 // A click anywhere else closes the rules panel, the way a popover should.
@@ -2907,30 +2940,8 @@ function daUpdateFilterButton(){
         : 'Hide the same tables the Schema map\'s Filters panel hides');
 }
 
-// ── Full screen, same pattern as the Schema map's canvas. ──
-function daFullscreen(){
-  const el = document.querySelector('.da-panel');
-  if (!el) return;
-  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-  if (fsEl){
-    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-    return;
-  }
-  const req = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (!req) return;
-  const r = req.call(el);
-  if (r && r.catch) r.catch(() => {});
-}
-function daOnFullscreenChange(){
-  const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
-  const btn = $('da-fs-btn');
-  if (btn){
-    btn.textContent = on ? '⤢ Exit full screen' : '⤢ Full screen';
-    btn.classList.toggle('on', on);
-  }
-  // The canvas is a different size now — re-measure and redraw.
-  requestAnimationFrame(() => { if (DA.view === 'map') daResize(); });
-}
+// Full screen for this view is attached in seAttachFullscreen(), with the
+// other seven, onto the shared helper.
 
 // ── Squarified treemap ────────────────────────────────────────────────────
 function daSquarify(items, rect){
@@ -5453,6 +5464,7 @@ document.addEventListener('DOMContentLoaded', () => {
   smLoadPrefs();
   smApplyPanels();
   smFiltersWrite();
+  seAttachFullscreen();
   // Then switch, so the right view is visible before it loads into it.
   seSwitchTab(saved);
   smUpdateSideButtons();

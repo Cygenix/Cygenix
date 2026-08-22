@@ -346,9 +346,15 @@ function halo(attrs){
 }
 function textW(str, size){ return str.length * size * 0.56; }
 
+/* Each map is laid out in its own fixed coordinate space and capped at that
+   height, so a wide window does not stretch a 900×640 drawing into a band.
+   Full screen is the one case where the cap has to lift: the art is vector,
+   so the whole map — labels included — scales up losslessly to fill the
+   screen instead of sitting 640px tall in the middle of it. */
+var fsHeight = 0;
 function svg(w, h, label){
   return el('svg', { viewBox:'0 0 ' + w + ' ' + h, role:'img', 'aria-label':label,
-                     style:'max-height:' + h + 'px' });
+                     style:'max-height:' + (fsHeight ? Math.max(h, fsHeight) : h) + 'px' });
 }
 
 /* =======================================================================
@@ -937,6 +943,31 @@ function elh(tag, cls, txt){
   if (txt !== undefined) n.textContent = txt;
   return n;
 }
+/* All four maps share this card, so this is one full-screen button, not four:
+   it follows whichever tab is active, and the card's own header already names
+   it. The tab strip and the filter row stay outside — the same choice the
+   Data map's panel makes, which keeps its header and nothing above it — and
+   the legend rail is carried in, because a map you cannot read the colours of
+   is not much use blown up to a wall. */
+function wireFullscreen(card, hd, seg){
+  if (!window.CygenixFullscreen) return;
+  var btn = elh('button', 'btn cdm-fsbtn', '⤢ Full screen');
+  btn.type = 'button';
+  btn.title = 'Full screen (F, or Esc to leave)';
+  hd.insertBefore(btn, seg.nextSibling);
+  window.CygenixFullscreen.attach({
+    button: btn,
+    target: card,
+    adopt: ['.cdm-tip', '.cdm-rail'],
+    visible: function () { return isActive(); },
+    onChange: function (on) {
+      /* Lift the height cap to what the card can actually give the plot. */
+      fsHeight = on ? Math.max(0, card.clientHeight - hd.offsetHeight - 34) : 0;
+      render();
+    },
+  });
+}
+
 function buildChrome(host, opts){
   host.innerHTML = '';
   host.classList.add('cdm-root');
@@ -963,6 +994,7 @@ function buildChrome(host, opts){
   hdText.appendChild(h2); hdText.appendChild(sub);
   hd.appendChild(hdText); hd.appendChild(seg);
   card.appendChild(hd); card.appendChild(plot);
+  wireFullscreen(card, hd, seg);
   main.appendChild(card); main.appendChild(note);
   lgCard.appendChild(elh('h3', null, 'Domains')); lgCard.appendChild(legend);
   dtCard.appendChild(elh('h3', null, 'Selection')); dtCard.appendChild(detail);
@@ -1159,6 +1191,10 @@ var CSS = [
 '.cdm-hd{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:13px 16px 0}',
 '.cdm-hd h2{font-size:14.5px;font-weight:600;margin:0}',
 '.cdm-hd p{font-size:12.5px;color:var(--cdm-text-3);margin:2px 0 0}',
+/* Styled only for the standalone prototype; inside the console the .btn class
+   it also carries is the one that wins. */
+'.cdm-fsbtn{appearance:none;border:1px solid var(--cdm-border-2);background:var(--cdm-surface);',
+'  border-radius:7px;padding:5px 11px;font:inherit;font-size:12px;color:var(--cdm-text-2);cursor:pointer;white-space:nowrap}',
 '.cdm-plot{padding:6px 10px 14px}',
 '.cdm-rail{display:flex;flex-direction:column;gap:12px}',
 '.cdm-rail h3{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--cdm-text-3);font-weight:500;margin:0 0 9px}',
