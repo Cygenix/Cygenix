@@ -26,8 +26,15 @@ check('the default module set is the sheet\'s, AP through Custom',
 check('the default variables are the sheet\'s five, every one neutral at its default',
   EM.EM_DEFAULT_VARIABLES.length === 5
   && Math.abs(EM.emVariableFactor(EM.EM_DEFAULT_VARIABLES) - 1) < 1e-9);
-check('a new estimate starts with NOTHING ticked',
+check('the ENGINE\'s blank document has no ticks — calibration and imports rely on it',
   Object.keys(EM.emNewDoc().ticks).length === 0);
+check('emTickAll fills every use case against every module — full scope',
+  (() => { const d = EM.emTickAll(EM.emNewDoc());
+    return Object.keys(d.ticks).length === EM.EM_USE_CASES.length * d.modules.length
+      && EM.emCompute(d).perUseCase.every(u => u.fp > 0); })());
+check('it follows the estimate\'s own module list, not the defaults',
+  (() => { const d = EM.emNewDoc(); d.modules = ['AP', 'AR'];
+    return Object.keys(EM.emTickAll(d).ticks).length === EM.EM_USE_CASES.length * 2; })());
 
 // ── Calibration against the reference sheet ─────────────────────────────────
 {
@@ -246,13 +253,23 @@ check('a new estimate starts with NOTHING ticked',
   check('house weight defaults: saved once, applied to every new estimate',
     /cygenix_house_weights_v1/.test(html) && /esSaveHouseWeights/.test(html)
     && /esApplyHouseWeights/.test(html)
-    && /esApplyHouseTo\(EM\.emNormalize\(EM\.emNewDoc\(name\)\)\)/.test(html)
-    && (html.match(/esApplyHouseTo\(EM\.emNewDoc\('New estimate'\)\)/g) || []).length === 2);
+    && /function esNewSeeded/.test(html)
+    && /return esApplyHouseTo\(EM\.emNormalize\(EM\.emTickAll/.test(html));
   check('estimates save to a JSON file and load back, name-collision safe',
     /esSaveEstimate/.test(html) && /esLoadEstimate/.test(html)
     && /esImportEstimateText/.test(html) && /cygenix-estimate-/.test(html)
     && /accept="\.json,application\/json"/.test(html)
     && /not a saved Cygenix estimate/.test(html));
+  check('the CONSOLE seeds a new estimate at full scope, on every creation path',
+    /function esNewSeeded/.test(html) && /emTickAll\(EM\.emNewDoc\(name\)\)/.test(html)
+    && (html.match(/= esNewSeeded\(EM, /g) || []).length === 3
+    && /starts at FULL SCOPE/.test(html));
+  check('Tick all and Clear all replace the one ambiguous Reset',
+    /onclick="esTickAll\(\)"/.test(html) && />Tick all</.test(html)
+    && />Clear all</.test(html) && !/>Reset ticks</.test(html));
+  check('a module added later joins the scope by default',
+    /Added scope is IN by default/.test(html)
+    && /doc\.ticks\[uc\.id \+ '\|' \+ name\] = 1/.test(html));
   check('module weights are editable on the chips and badge the grid headers',
     /esModuleWeight/.test(html) && /Complexity weight — 1 is standard/.test(html)
     && /emModuleWeight\(doc, m\)/.test(html) && /×' \+ w \+ '<\/span>'/.test(html));
