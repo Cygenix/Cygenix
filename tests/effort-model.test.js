@@ -168,6 +168,42 @@ check('it follows the estimate\'s own module list, not the defaults',
     EM.emNormalize({ baseline: { value: -3, unit: 'fortnights' } }).baseline.unit === 'months');
 }
 
+// ── Negative variable weights: a variable may CUT effort ────────────────────
+{
+  const d = EM.emTickAll(EM.emNewDoc());
+  const full = EM.emCompute(d).tucfp;
+  const st = d.variables.find(v => v.id === 'staging');
+  st.weight = -0.15; st.value = 1;                 // staging-only: less work
+  const cut = EM.emCompute(d);
+  check('a negative flag weight reduces the estimate — staging-only is less work',
+    cut.variableFactor === 0.85 && cut.tucfp < full
+    // per-use-case rounding means the total is within a tenth of full × 0.85
+    && Math.abs(cut.tucfp - full * 0.85) < 0.5);
+  st.value = 0;
+  check('and an off flag is still neutral, negative weight or not',
+    EM.emCompute(d).variableFactor === 1);
+
+  const sc = EM.emNewDoc();
+  sc.ticks['uat|AP'] = 1;
+  const mt = sc.variables.find(v => v.id === 'migtype');
+  mt.weight = -0.1; mt.value = 3;                  // 1 + (-0.1 × 2) = 0.8
+  check('a negative scale weight reduces as its value climbs',
+    EM.emVariableContribution(mt) === 0.8 && EM.emCompute(sc).tucfp < 10);
+
+  check('no variable can erase or invert the estimate — the contribution floors',
+    (() => { const runaway = { kind: 'scale', weight: -0.9, value: 10 };
+      const flagged = { kind: 'flag', weight: -0.95, value: 1 };
+      const near = (a, b) => Math.abs(a - b) < 1e-9;
+      return near(EM.emVariableContribution(runaway), EM.EM_FACTOR_FLOOR)
+        && near(EM.emVariableContribution(flagged), EM.EM_FACTOR_FLOOR)
+        && EM.emVariableFactor([runaway, flagged]) > 0; })());
+  check('weights clamp into the signed range, and the defaults stay neutral',
+    EM.EM_WEIGHT_MIN < 0 && EM.EM_WEIGHT_MAX === 2
+    && EM.emNormalize({ variables: [{ id: 'x', kind: 'flag', weight: -5, value: 1 }] })
+        .variables[0].weight === EM.EM_WEIGHT_MIN
+    && Math.abs(EM.emVariableFactor(EM.EM_DEFAULT_VARIABLES) - 1) < 1e-9);
+}
+
 // ── Module complexity weights ───────────────────────────────────────────────
 // Proforma is inherently simpler than Trust, and the estimate should say so:
 // a ticked module contributes perModule × its weight, default ×1.
@@ -273,6 +309,10 @@ check('it follows the estimate\'s own module list, not the defaults',
   check('module weights are editable on the chips and badge the grid headers',
     /esModuleWeight/.test(html) && /Complexity weight — 1 is standard/.test(html)
     && /emModuleWeight\(doc, m\)/.test(html) && /×' \+ w \+ '<\/span>'/.test(html));
+  check('the variables panel accepts negative weights and shows each row\'s factor',
+    /Negative weights REDUCE effort/.test(html) && /esVarFactor/.test(html)
+    && /min="' \+ EM_MIN_W\(\)/.test(html)
+    && /may be\n *<b>negative<\/b> to CUT effort/.test(html));
   check('the baseline is on the page: value, unit and the calibrate action',
     /id="es-baseline-value"/.test(html) && /id="es-baseline-unit"/.test(html)
     && /Calibrate rate to baseline/.test(html) && /esCalibrate/.test(html)

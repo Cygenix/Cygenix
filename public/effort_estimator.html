@@ -133,7 +133,7 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
 
 <div id="cyg-sidebar-mount" data-active="effort-estimator"></div>
 <script src="/cygenix-sidebar.js?v=bb6b26f4db" defer></script>
-<script src="/cygenix-effort-model.js?v=db4957f157" defer></script>
+<script src="/cygenix-effort-model.js?v=6b544c7a30" defer></script>
 
 <div class="page">
 
@@ -207,7 +207,9 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
       <div class="panel-head">
         <div><div class="panel-title">Variables</div>
         <div class="panel-sub">Project-level multipliers applied to every use case. A scale variable
-          at its minimum is neutral; a flag adds its weight when on. Combined factor:
+          at its minimum is neutral; a flag applies its weight when on. A weight may be
+          <b>negative</b> to CUT effort — a staging-only migration is less work than
+          source → staging → prod. Combined factor:
           <b id="es-vf" style="font-family:var(--mono)">×1.0</b></div></div>
         <button class="btn btn-sm" style="margin-left:auto" onclick="esAddVariable()">+ Variable</button>
       </div>
@@ -250,7 +252,10 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
     <div class="panel-body" style="font-size:11.5px;color:var(--text2);line-height:1.7">
       Use-case FP = (base + per-module × the ticked modules' weights) × variables × TC, and zero
       with nothing ticked — each module's complexity weight (×1 standard) scales what it adds, so
-      a simple module opens a use case without costing like a hard one. Data FP adds source systems ×3, attributes ×0.05, 1:1 relationships ×0.5 and
+      a simple module opens a use case without costing like a hard one. Variable weights may
+      be negative, so a variable can cut effort as well as add it; no single variable can take
+      the estimate below a twentieth of its unweighted value — effort can be reduced, never
+      erased. Data FP adds source systems ×3, attributes ×0.05, 1:1 relationships ×0.5 and
       1:N ×1 per module. Total FP × days-per-FP (default 1.37) gives working days; divided by
       19.5 gives calendar months; the delivery date walks forward from the start date over
       working days plus holidays, skipping weekends. The verdict compares working days needed
@@ -468,15 +473,24 @@ function esResetModules(){
 }
 
 // ── Variables (configurable) ──────────────────────────────────────────────
+const EM_MIN_W = () => window.CygenixEffortModel.EM_WEIGHT_MIN;
+const EM_MAX_W = () => window.CygenixEffortModel.EM_WEIGHT_MAX;
+// What one variable is doing to the estimate right now — shown per row so a
+// negative weight reads as "×0.85", not as a number the analyst must model.
+const esVarFactor = (v) => window.CygenixEffortModel.emVariableContribution(v);
+
 function esVarField(id, field, v){
   const doc = esDoc();
   const va = doc.variables.find(x => x.id === id);
   if (!va) return;
   if (field === 'name') va.name = String(v).slice(0, 60);
   else if (field === 'value') va.value = Math.max(0, Math.min(99, Number(v) || 0));
-  else if (field === 'weight') va.weight = Math.max(0, Math.min(2, Number(v) || 0));
+  else if (field === 'weight') va.weight = Math.max(EM_MIN_W(), Math.min(EM_MAX_W(), Number(v) || 0));
   else if (field === 'flagOn') va.value = v ? 1 : 0;
-  esSave(); esRenderResults();
+  // A variable multiplies EVERY use case, so the FP column and the grid
+  // footer move with it — and the row's own ×factor has to follow. Fired on
+  // change (commit), not input, so re-rendering the panel costs no focus.
+  esSave(); esRenderResults(); esRenderUcFps(); esRenderVars();
 }
 function esAddVariable(){
   const EM = window.CygenixEffortModel;
@@ -581,8 +595,13 @@ function esRenderVars(){
         : '<input class="form-input" type="number" min="' + v.min + '" max="' + v.max + '" value="' + v.value + '"'
           + ' onchange="esVarField(\'' + esc(v.id) + '\',\'value\', this.value)" aria-label="Value">')
     + '<label style="font-size:10px;color:var(--text3)">weight '
-    + '<input class="form-input" type="number" step="0.05" min="0" max="2" value="' + v.weight + '"'
+    + '<input class="form-input" type="number" step="0.05" min="' + EM_MIN_W() + '" max="' + EM_MAX_W() + '" value="' + v.weight + '"'
+    + ' title="Negative weights REDUCE effort — a staging-only migration is less work than source → staging → prod"'
     + ' onchange="esVarField(\'' + esc(v.id) + '\',\'weight\', this.value)" aria-label="Weight"></label>'
+    + '<span style="font-family:var(--mono);font-size:10px;min-width:44px;text-align:right;color:'
+    + (esVarFactor(v) < 1 ? 'var(--green)' : (esVarFactor(v) > 1 ? 'var(--amber)' : 'var(--text3)'))
+    + '" title="What this variable does to the estimate right now">×'
+    + (Math.round(esVarFactor(v) * 100) / 100) + '</span>'
     + '<button class="btn btn-sm" onclick="esRemoveVariable(\'' + esc(v.id) + '\')" aria-label="Remove variable">✕</button>'
     + '</div>').join('')
     || '<div style="font-size:11px;color:var(--text3)">No variables — the multiplier is 1.</div>';
