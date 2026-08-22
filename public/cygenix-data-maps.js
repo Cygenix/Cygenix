@@ -1314,6 +1314,9 @@ function refresh(){
 function install(){
   var bar = document.querySelector(MODE_BAR);
   if (!bar || document.getElementById('se-tab-dm-estate')) return false;
+  /* Inject now, not on first mount: the Globe view is styled with these same
+     tokens and classes, and it can be the first tab a user opens. */
+  injectCSS();
   var native = [].slice.call(bar.querySelectorAll('button'));
   var firstPanel = document.getElementById(native[0] && native[0].getAttribute('aria-controls'));
   if (!firstPanel) return false;
@@ -1384,6 +1387,7 @@ function isActive(){ return !!(panelEl && panelEl.style.display !== 'none'); }
 
 return {
   install: install,
+  injectStyles: injectCSS,
   mount: mount,
   refresh: refresh,
   isActive: isActive,
