@@ -15,7 +15,7 @@ const noopEl = () => ({ classList:{add(){},remove(){},toggle(){},contains:()=>fa
 const sandbox = {
   window: { addEventListener(){}, innerWidth: 1440, innerHeight: 900 },
   document: {
-    // No .mode-bar in this DOM: install() must decline rather than throw.
+    // No map picker in this DOM: install() must decline rather than throw.
     querySelector: () => null, getElementById: () => null, querySelectorAll: () => [],
     createElement: noopEl, head: noopEl(), body: noopEl(),
   },
@@ -39,7 +39,7 @@ console.log('Data Maps — estate adapter and registration\n');
 
 check('module loads under a DOM with no tab bar and exports its API',
   !!(DM && DM.fromSchema && DM.classify && DM.familyKey && DM.install && DM.refresh));
-check('install() declines when there is no .mode-bar to register on', DM.install() === false);
+check('install() declines when there is no map picker to register with', DM.install() === false);
 check('four tabs, one per map model', DM.TABS.length === 4 &&
   DM.TABS.map(t => t.id).join(',') === 'estate,flow,burst,constellation');
 check('eight domains, eight palette slots',
@@ -182,10 +182,9 @@ check('no baked-in table count survives from the prototype', !/12,245/.test(SRC)
 check('the page loads the module', /<script src="\/cygenix-data-maps\.js[^"]*" defer><\/script>/.test(PAGE));
 check('the module loads after the schema graph it reads through',
   PAGE.indexOf('cygenix-data-maps.js') > PAGE.indexOf('cygenix-schema-graph.js'));
-check('the tab bar wraps — eight tabs no longer fit on one line',
-  /\.mode-bar\{[^}]*flex-wrap:wrap/.test(PAGE));
-check('the tab buttons size to their labels instead of splitting the width',
-  /\.mode-btn\{flex:0 1 auto/.test(PAGE));
+check('the four maps are offered from the picker, not from four buttons',
+  /window\.seRegisterMap\(\{/.test(SRC) && /group: 'Estate maps'/.test(SRC)
+  && !/mode-btn/.test(SRC));
 check('the page exposes the declared edges the maps draw from',
   /function smEdges\(\)/.test(PAGE));
 check('smEdges reports only edges between visible tables',
@@ -195,15 +194,16 @@ check('inferred edges stay out of the maps — a hypothesis is not a foreign key
 check('↻ Reload schema reloads the data maps when one of them is showing',
   /CygenixDataMaps\.isActive\(\)/.test(PAGE) &&
   /smEnsureLoaded\(true\)\.then\(\(\) => CygenixDataMaps\.refresh\(\)\)/.test(PAGE));
-check('the four native tabs are untouched',
-  ['se-tab-schema','se-tab-atlas','se-tab-coverage','se-tab-areas'].every(k => PAGE.includes(k)));
+check('the four native maps are untouched',
+  ['se-view-schema','se-view-atlas','se-view-coverage','se-view-areas'].every(k => PAGE.includes(k)));
 
-// The console paints selection with .active; aria-selected alone leaves the
-// tab you left looking lit. Both have to move, in both directions.
-check('registration moves .active with aria-selected',
-  /classList\.toggle\('active', on\)/.test(SRC) && /setAttribute\('aria-selected', String\(on\)\)/.test(SRC));
-check('our tabs do not inherit the native active state they were cloned from',
-  /replace\(\/\\bactive\\b\/g, ''\)/.test(SRC));
+// The page owns which panel is showing, so the module keeps no selection
+// state of its own — it is told to show and told to hide.
+check('the module carries no tab state, only show and hide',
+  /show: function \(\) \{ panel\.style\.display = 'block'; showPanel\(t\.id\); \}/.test(SRC)
+  && /hide: function \(\) \{ panel\.style\.display = 'none'; \}/.test(SRC));
+check('and no longer wraps the page\'s own switch',
+  !/seSwitchTab/.test(SRC));
 check('surfaces follow the console theme rather than a baked white',
   /--cdm-surface:var\(--bg2/.test(SRC) && /getPropertyValue\('--cdm-surface'\)/.test(SRC));
 // A domain with no keys has a zero-width arc; labelling it stacked every

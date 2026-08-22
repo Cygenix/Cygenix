@@ -89,14 +89,24 @@ body.cyg-collapsed{padding-left:54px}
 @media(max-width:1400px){.se-sub{display:none}}
 .se-head-actions{margin-left:auto;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
 
-/* ── Tab bar — same control as Object Mapping's mode switch ── */
-/* Nine buttons now: the four native maps, the four data maps and the Globe.
-   They no longer fit on one line at any sensible width, so the bar wraps and
-   the buttons size to their own labels instead of splitting the width evenly —
-   flex:1 across nine would squeeze "⇄ Relationship map" into an ellipsis. */
-.mode-bar{display:flex;flex-wrap:wrap;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;max-width:1000px;flex:0 1 auto}
-.mode-btn{flex:0 1 auto;text-align:center;white-space:nowrap;padding:0.4rem 0.85rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
-.mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
+/* ── Map picker ──
+   This was a row of buttons, which worked at four and did not at nine: it
+   wrapped onto two lines and took the width the header needed. One select
+   holds every map, grouped, and leaves the row to the actions. */
+.se-mapsel{display:flex;align-items:center;gap:0.5rem;flex:0 1 auto}
+.se-mapsel-lbl{font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-weight:500}
+.se-select{font-family:var(--serif);font-size:12.5px;font-weight:500;padding:0.42rem 2rem 0.42rem 0.7rem;
+  border-radius:8px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;
+  min-width:230px;appearance:none;
+  /* The arrow is drawn rather than left to the platform, so the control reads
+     the same in both themes. currentColor keeps it on the text. */
+  background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);
+  background-position:calc(100% - 15px) calc(50% + 1px),calc(100% - 10px) calc(50% + 1px);
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.se-select:hover{border-color:rgba(74,91,214,0.45)}
+.se-select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.se-select optgroup{font-style:normal;font-weight:600;color:var(--text3);background:var(--bg2)}
+.se-select option{font-weight:400;color:var(--text);background:var(--bg2)}
 
 .btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
 .btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
@@ -590,10 +600,10 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-fullscreen.js?v=9934aab360" defer></script>
 <!-- Adds its own four map tabs to the tab bar the moment it loads. Deferred, so
      seSwitchTab and smTables are already defined when it wraps them. -->
-<script src="/cygenix-data-maps.js?v=99ce91a613" defer></script>
+<script src="/cygenix-data-maps.js?v=1d72dbabd1" defer></script>
 <!-- The Globe registers last, so its tab sits at the end of the row. -->
 <script src="/cygenix-geo-index.js?v=7fe109193e" defer></script>
-<script src="/cygenix-globe.js?v=5d3fdd617f" defer></script>
+<script src="/cygenix-globe.js?v=df36f477fa" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
 <script src="/cygenix-sidebar.js?v=bb6b26f4db" defer></script>
@@ -605,15 +615,13 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
       <div class="se-sub">Explore the target schema and see what your saved maps actually cover.</div>
     </div>
 
-    <div class="mode-bar" role="tablist" aria-label="Schema Explorer views">
-      <button class="mode-btn active" id="se-tab-schema" role="tab" aria-selected="true"
-              aria-controls="se-view-schema" onclick="seSwitchTab('schema')">◈ Schema map</button>
-      <button class="mode-btn" id="se-tab-atlas" role="tab" aria-selected="false"
-              aria-controls="se-view-atlas" onclick="seSwitchTab('atlas')">▣ Data map</button>
-      <button class="mode-btn" id="se-tab-coverage" role="tab" aria-selected="false"
-              aria-controls="se-view-coverage" onclick="seSwitchTab('coverage')">⊞ Coverage map</button>
-      <button class="mode-btn" id="se-tab-areas" role="tab" aria-selected="false"
-              aria-controls="se-view-areas" onclick="seSwitchTab('areas')">⇄ Migration map</button>
+    <!-- Nine maps is too many for a row of buttons, so they live in one
+         picker. The options are built from the registry below: the four here
+         are registered by the page, and the data maps and the Globe register
+         their own on load. -->
+    <div class="se-mapsel">
+      <label class="se-mapsel-lbl" for="se-map">Map</label>
+      <select id="se-map" class="se-select" onchange="seSelectMap(this.value)"></select>
     </div>
 
     <div class="se-head-actions">
@@ -623,7 +631,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
   </div>
 
   <!-- ══ VIEW 1 — SCHEMA MAP ══════════════════════════════════════════ -->
-  <div id="se-view-schema" role="tabpanel" aria-labelledby="se-tab-schema">
+  <div id="se-view-schema" role="region" aria-label="Schema map">
     <div class="sm-grid" id="sm-grid">
       <div class="panel sm-tree">
         <div class="panel-header" style="gap:0.4rem">
@@ -745,7 +753,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
   </div>
 
   <!-- ══ VIEW 1.5 — DATA MAP (Data Atlas) ═════════════════════════════ -->
-  <div id="se-view-atlas" class="da-view" role="tabpanel" aria-labelledby="se-tab-atlas" style="display:none">
+  <div id="se-view-atlas" class="da-view" role="region" aria-label="Data map" style="display:none">
     <div class="da-hd">
       <span class="da-sub" id="da-src-label"></span>
       <span style="flex:1"></span>
@@ -822,7 +830,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
        triage". Four sub-views, in the order the work happens: subject
        areas, the concept spine (the mapping contract), the mapping queue
        (decisions by rows at stake), and the method. -->
-  <div id="se-view-areas" role="tabpanel" aria-labelledby="se-tab-areas" style="display:none">
+  <div id="se-view-areas" role="region" aria-label="Migration map" style="display:none">
 
     <div class="am-bar">
       <div class="am-estate">
@@ -988,7 +996,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
   </div>
 
   <!-- ══ VIEW 2 — COVERAGE MAP ════════════════════════════════════════ -->
-  <div id="se-view-coverage" role="tabpanel" aria-labelledby="se-tab-coverage" style="display:none">
+  <div id="se-view-coverage" role="region" aria-label="Coverage map" style="display:none">
     <div id="cv-kpis" class="cv-kpis"></div>
 
     <div class="panel" style="margin-bottom:1rem">
@@ -1097,21 +1105,76 @@ const TAB_KEY = 'cygenix_schemaexp_tab';
 let seTab = 'schema';
 
 const SE_TABS = ['schema', 'atlas', 'coverage', 'areas'];
-function seSwitchTab(tab){
-  seTab = SE_TABS.includes(tab) ? tab : 'schema';
-  try { localStorage.setItem(TAB_KEY, seTab); } catch {}
-  for (const k of SE_TABS){
-    const on = seTab === k;
-    $('se-view-' + k).style.display = on ? '' : 'none';
-    const btn = $('se-tab-' + k);
-    btn.classList.toggle('active', on);
-    btn.setAttribute('aria-selected', String(on));
+
+// Every map the picker offers, in the order it lists them. The four below are
+// this page's own; cygenix-data-maps.js and cygenix-globe.js add theirs on
+// load through seRegisterMap, which is the whole of their integration — they
+// no longer reach into the header to append a control of their own.
+//
+//   { id, label, group, show(), hide() }
+//
+// show() is called on the map being opened, hide() on every other. Only one
+// map is ever visible, and seTab names it.
+const SE_MAPS = [];
+function seRegisterMap(def){
+  if (!def || !def.id || SE_MAPS.some(m => m.id === def.id)) return false;
+  SE_MAPS.push(def);
+  seRenderMapPicker();
+  return true;
+}
+function seRenderMapPicker(){
+  const sel = $('se-map');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const groups = new Map();
+  for (const m of SE_MAPS){
+    const name = m.group || 'Maps';
+    let g = groups.get(name);
+    if (!g){
+      g = document.createElement('optgroup');
+      g.label = name;
+      groups.set(name, g);
+      sel.appendChild(g);
+    }
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.label;
+    g.appendChild(o);
   }
-  if (seTab === 'schema'){ smEnsureLoaded(); smFitIfUnplaced(); }
-  else if (seTab === 'atlas') daEnsure();
-  else if (seTab === 'areas') amEnsure();
+  sel.value = seTab;
+}
+
+function seSelectMap(id){
+  const map = SE_MAPS.find(m => m.id === id) || SE_MAPS[0];
+  if (!map) return;
+  seTab = map.id;
+  try { localStorage.setItem(TAB_KEY, seTab); } catch {}
+  // Stand everything else down first: a map that measures its canvas on the
+  // way in must not do it while the one it replaced is still taking the room.
+  for (const other of SE_MAPS) if (other !== map && other.hide) other.hide();
+  const sel = $('se-map');
+  if (sel && sel.value !== seTab) sel.value = seTab;
+  map.show();
+}
+
+// The four native views. Kept as one function because which of them is
+// showing decides what has to load, and that has always lived here.
+function seShowNative(tab){
+  for (const k of SE_TABS) $('se-view-' + k).style.display = k === tab ? '' : 'none';
+  if (tab === 'schema'){ smEnsureLoaded(); smFitIfUnplaced(); }
+  else if (tab === 'atlas') daEnsure();
+  else if (tab === 'areas') amEnsure();
   else cvRender();
 }
+[['schema', '◈ Schema map'], ['atlas', '▣ Data map'],
+ ['coverage', '⊞ Coverage map'], ['areas', '⇄ Migration map']].forEach(([id, label]) => {
+  seRegisterMap({ id, label, group: 'Schema & coverage',
+    show: () => seShowNative(id),
+    hide: () => { const el = $('se-view-' + id); if (el) el.style.display = 'none'; } });
+});
+
+// The name the rest of the page has always called this by.
+function seSwitchTab(tab){ seSelectMap(SE_TABS.includes(tab) ? tab : 'schema'); }
 
 // ═══ VIEW 1 — SCHEMA MAP ═════════════════════════════════════════════════
 const SM = {
@@ -1447,10 +1510,13 @@ function smUpdateSideButtons(){
 }
 
 function seReloadSchema(){
-  // seTab only ever names a native view, so the Data Maps have to be asked
-  // whether one of theirs is the panel actually on screen.
+  // Reload what is actually on screen. seTab names the chosen map, and the
+  // two module-registered ones own their own panels, so they are asked.
   if (window.CygenixDataMaps && CygenixDataMaps.isActive()){
     smEnsureLoaded(true).then(() => CygenixDataMaps.refresh());
+  }
+  else if (window.CygenixGlobe && CygenixGlobe.isActive()){
+    smEnsureLoaded(true).then(() => CygenixGlobe.refresh());
   }
   else if (seTab === 'schema') smEnsureLoaded(true);
   else if (seTab === 'atlas'){ CygenixSchemaGraph.reload(DA.side).then(() => { DA.loaded = null; daEnsure(); }); }
@@ -5461,17 +5527,19 @@ function cvCompositeWhyNot(){
 document.addEventListener('DOMContentLoaded', () => {
   let saved = 'schema';
   try { saved = localStorage.getItem(TAB_KEY) || 'schema'; } catch {}
-  // Preferences first: seSwitchTab starts the schema load, and a load that
+  // Preferences first: opening the Schema map starts its load, and a load that
   // begins before the saved filters are in hand lays out every table and then
   // has nothing to tell it to lay them out again.
   smLoadPrefs();
   smApplyPanels();
   smFiltersWrite();
   seAttachFullscreen();
-  // Then switch, so the right view is visible before it loads into it.
-  seSwitchTab(saved);
+  // Then open, so the right view is visible before it loads into it. Every map
+  // has registered by now — the modules are deferred scripts, which run before
+  // this event — so a remembered data map or Globe comes back too, and an id
+  // that no longer exists falls back to the first in the picker.
+  seSelectMap(saved);
   smUpdateSideButtons();
-  if (saved === 'schema') smEnsureLoaded();
 });
 </script>
 <script src="/cookie-consent.js?v=8bc63de620" defer></script>

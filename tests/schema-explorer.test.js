@@ -441,8 +441,8 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('and the project context', /src="\/cygenix-cosmos-sync\.js(\?v=[a-f0-9]+)?"/.test(html));
   check('and cookie consent', /src="\/cookie-consent\.js(\?v=[a-f0-9]+)?"/.test(html));
 
-  check('all three tabs are present',
-    /se-tab-schema/.test(html) && /se-tab-atlas/.test(html) && /se-tab-coverage/.test(html));
+  check('all three native views are present',
+    /se-view-schema/.test(html) && /se-view-atlas/.test(html) && /se-view-coverage/.test(html));
   // The atlas module must sit OUTSIDE the coverage slice this file extracts,
   // or the vm run above would have pulled canvas code into the sandbox.
   check('the atlas module precedes the coverage module',
@@ -527,9 +527,9 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   // Compared inside the markup — the same class names appear earlier in the
   // stylesheet, where the order means nothing.
   const body = html.slice(html.indexOf('<body>'));
-  check('the tab bar shares the header row rather than taking a line of its own',
-    body.indexOf('mode-bar') > body.indexOf('se-title')
-    && body.indexOf('mode-bar') < body.indexOf('se-head-actions'));
+  check('the map picker shares the header row rather than taking a line of its own',
+    body.indexOf('se-mapsel') > body.indexOf('se-title')
+    && body.indexOf('se-mapsel') < body.indexOf('se-head-actions'));
 
   // Exclusion rules.
   check('there is a filter control with the rule modes the brief asked for',
@@ -671,9 +671,9 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   // Wiring pins.
   check('the engine and the harvest module are loaded',
     /cygenix-subject-map\.js/.test(html) && /cygenix-subject-harvest\.js/.test(html));
-  check('the Migration map is still the registered fourth tab',
+  check('the Migration map is still the fourth entry in the picker',
     /'schema', 'atlas', 'coverage', 'areas'/.test(html)
-    && /id="se-tab-areas"/.test(html) && /⇄ Migration map/.test(html));
+    && /\['areas', '⇄ Migration map'\]/.test(html) && /id="se-view-areas"/.test(html));
   check('four sub-views in the order the work happens',
     /id="am-sub-areas"/.test(html) && /id="am-sub-spine"/.test(html)
     && /id="am-sub-queue"/.test(html) && /id="am-sub-method"/.test(html));
