@@ -598,7 +598,59 @@ check('a store already at v2 passes through untouched',
   (() => { const s = A.asNewStore(now); const before = JSON.stringify(s);
     return A.asMigrateStore(s, now) === s && JSON.stringify(s) === before; })());
 
-// ── 20. Wiring ──────────────────────────────────────────────────────────────
+// ── 20. Deriving from the map — the predicate lifter and rule states ────────
+check('the lifter pulls a top-level WHERE out of an INSERT…SELECT verbatim',
+  (() => { const r = A.asLiftPredicate(
+    "INSERT INTO [tgt].[dbo].[T1] (a,b) SELECT a,b FROM [src].[dbo].[T1] WHERE is_active = 1 AND region = 'HK'");
+    return r.confident && r.predicate === "is_active = 1 AND region = 'HK'"; })());
+check('a job with no filter is confidently unfiltered — the unfiltered count is right',
+  (() => { const r = A.asLiftPredicate('SELECT * FROM src.dbo.T1');
+    return r.confident === true && r.predicate === null && /no filter/.test(r.reason); })());
+check('a WHERE inside a subquery does not confuse the top-level scan',
+  A.asLiftPredicate('SELECT a FROM x WHERE k IN (SELECT k FROM y WHERE z=1) ORDER BY a')
+    .predicate === 'k IN (SELECT k FROM y WHERE z=1)');
+check('the predicate stops at a top-level GROUP BY',
+  A.asLiftPredicate('SELECT a FROM x WHERE a=1 GROUP BY a').predicate === 'a=1');
+check('a top-level JOIN demotes confidence — its aliases may not resolve on a bare count',
+  (() => { const r = A.asLiftPredicate('SELECT a FROM x JOIN y ON x.id=y.id WHERE y.flag = 1');
+    return r.confident === false && /predicate not derived/.test(r.reason); })());
+check('a UNION is refused rather than guessed',
+  (() => { const r = A.asLiftPredicate('SELECT a FROM x WHERE a=1 UNION SELECT a FROM z WHERE a=2');
+    return r.confident === false && r.predicate === null && /UNION/.test(r.reason); })());
+check('keywords hiding inside string literals are ignored',
+  A.asLiftPredicate("SELECT a FROM x WHERE note = 'where the union goes; ok' AND a > 0;")
+    .predicate === "note = 'where the union goes; ok' AND a > 0");
+
+const stateStore = A.asNewStore(now);
+const stRule = A.asSaveRule(stateStore, { name: 's', category: 'reconciliation', check: 'recon.rowcount',
+  binding: { mode: 'explicit', targets: [
+    { db: 'src', schema: 'dbo', table: 't', column: null },
+    { db: 'tgt', schema: 'dbo', table: 't', column: null }], databases: [] } }, 'u', now);
+check('an accepted rule with no run yet is armed',
+  A.asRuleState(stateStore, stRule, { phase: 'planning' }) === 'armed');
+check('a generated-not-reviewed rule is derived — visible, never fires',
+  A.asRuleState(stateStore, Object.assign({}, stRule, { lifecycle: 'derived' }), {}) === 'derived');
+check('a drift rule before cutover is dormant, and wakes at cutover',
+  A.asRuleState(stateStore, Object.assign({}, stRule, { dormantUntilCutover: true }), { phase: 'planning' }) === 'dormant'
+  && A.asRuleState(stateStore, Object.assign({}, stRule, { dormantUntilCutover: true }), { phase: 'cutover' }) === 'armed');
+A.asRecordRun(stateStore, { id: 'st1', ruleId: stRule.id, startedAt: now + 10, status: 'pass',
+  rowsFailed: 0, rowsScanned: 100, targetsMatched: 2, severity: 'warning', category: 'reconciliation' }, now + 10);
+check('a passing run makes it proven', A.asRuleState(stateStore, stRule, {}) === 'proven');
+A.asRecordRun(stateStore, { id: 'st2', ruleId: stRule.id, startedAt: now + 20, status: 'fail',
+  rowsFailed: 4, rowsScanned: 100, targetsMatched: 2, severity: 'warning', category: 'reconciliation' }, now + 20);
+check('a failing run makes it breaching', A.asRuleState(stateStore, stRule, {}) === 'breaching');
+
+const jobRule = Object.assign({}, stRule, { id: 'MAP-1/JOB-1/S1',
+  schedule: { onJobCompletion: 'JOB-1', groupId: null, cron: null } });
+check('a job-bound rule is due only when the job finished after its last run',
+  A.asJobRuleDue(A.asNewStore(now), jobRule, now + 100) === true      /* never ran, job done */
+  && A.asJobRuleDue(A.asNewStore(now), jobRule, null) === false       /* job never ran */
+  && (() => { const s = A.asNewStore(now);
+    s.runs.push({ id: 'jr1', ruleId: 'MAP-1/JOB-1/S1', startedAt: now + 200, status: 'pass' });
+    return A.asJobRuleDue(s, jobRule, now + 100) === false            /* already ran after the job */
+      && A.asJobRuleDue(s, jobRule, now + 300) === true; })());       /* job ran again since */
+
+// ── 21. Wiring ──────────────────────────────────────────────────────────────
 const PAGE = fs.existsSync(__dirname + '/../public/assurance.html')
   ? fs.readFileSync(__dirname + '/../public/assurance.html', 'utf8') : '';
 const NAV = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');

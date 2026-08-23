@@ -1197,6 +1197,131 @@ function asCronDue(expr, lastRunMs, nowMs) {
 }
 
 /* =======================================================================
+   Deriving checks from the map — the predicate lifter
+   ----------------------------------------------------------------------
+   A reconciliation check must count the source the same way the job did,
+   or a deliberately filtered migration reports as data loss. The lifter
+   pulls the top-level WHERE out of the job's own statement so it can be
+   reused verbatim on the source side.
+
+   It is honest about its limits: a statement it cannot read confidently
+   (several top-level WHEREs, a top-level JOIN whose aliases would not
+   resolve on a bare source count, a UNION) comes back with
+   confident:false and a reason — the caller falls back to an unfiltered
+   count and shows "predicate not derived" rather than counting wrong.
+   ======================================================================= */
+function asLiftPredicate(sql) {
+  var s = String(sql || '');
+  /* walk once, tracking nesting and quoting, collecting top-level tokens */
+  var depth = 0, i = 0, n = s.length;
+  var tokens = [];                       /* { word, at } at depth 0 */
+  while (i < n) {
+    var c = s[i];
+    if (c === "'") {                     /* 'literal' with '' escape */
+      i++;
+      while (i < n) { if (s[i] === "'") { if (s[i + 1] === "'") i += 2; else { i++; break; } } else i++; }
+      continue;
+    }
+    if (c === '"') { i++; while (i < n && s[i] !== '"') i++; i++; continue; }
+    if (c === '[') { i++; while (i < n && s[i] !== ']') i++; i++; continue; }
+    if (c === '-' && s[i + 1] === '-') { while (i < n && s[i] !== '\n') i++; continue; }
+    if (c === '/' && s[i + 1] === '*') { i += 2; while (i < n && !(s[i] === '*' && s[i + 1] === '/')) i++; i += 2; continue; }
+    if (c === '(') { depth++; i++; continue; }
+    if (c === ')') { depth--; i++; continue; }
+    if (depth === 0 && /[A-Za-z_]/.test(c)) {
+      var j = i;
+      while (j < n && /[A-Za-z_]/.test(s[j])) j++;
+      tokens.push({ word: s.slice(i, j).toUpperCase(), at: i, end: j });
+      i = j;
+      continue;
+    }
+    i++;
+  }
+
+  var wheres = tokens.filter(function (t) { return t.word === 'WHERE'; });
+  var hasUnion = tokens.some(function (t) { return t.word === 'UNION'; });
+  var hasJoin = tokens.some(function (t) { return t.word === 'JOIN'; });
+
+  if (!wheres.length) {
+    /* an unfiltered job — the unfiltered count is the RIGHT count */
+    return { predicate: null, confident: true, reason: 'the job has no filter' };
+  }
+  if (wheres.length > 1 || hasUnion) {
+    return { predicate: null, confident: false,
+      reason: 'predicate not derived — the statement has ' + (hasUnion ? 'a UNION' : 'several WHERE clauses') };
+  }
+
+  var w = wheres[0];
+  /* the predicate runs to the next top-level terminator */
+  var TERMINATORS = { GROUP: 1, ORDER: 1, HAVING: 1, OPTION: 1, UNION: 1 };
+  var endAt = n;
+  for (var k = 0; k < tokens.length; k++) {
+    if (tokens[k].at > w.at && TERMINATORS[tokens[k].word]) { endAt = tokens[k].at; break; }
+  }
+  var semi = -1;
+  for (var d2 = 0, p = 0; p < n; p++) {
+    var ch = s[p];
+    if (ch === "'") { p++; while (p < n) { if (s[p] === "'") { if (s[p + 1] === "'") p += 2; else break; } else p++; } continue; }
+    if (ch === '(') d2++;
+    else if (ch === ')') d2--;
+    else if (ch === ';' && d2 === 0 && p > w.end) { semi = p; break; }
+  }
+  if (semi >= 0 && semi < endAt) endAt = semi;
+
+  var predicate = s.slice(w.end, endAt).trim();
+  if (!predicate) return { predicate: null, confident: false, reason: 'predicate not derived — empty WHERE' };
+  if (hasJoin) {
+    /* the filter may reference joined aliases that will not resolve on a
+       bare source count — surface it rather than count wrong */
+    return { predicate: predicate, confident: false,
+      reason: 'predicate not derived — the job joins other tables, so its filter may reference their aliases' };
+  }
+  return { predicate: predicate, confident: true, reason: null };
+}
+
+/* =======================================================================
+   Rule states — five, replacing the pass/open binary
+   ----------------------------------------------------------------------
+   derived   generated from the map, not yet reviewed. Visible, never
+             fires, never counted in coverage.
+   armed     accepted and waiting on its job. Counts in the denominator,
+             shows no result yet.
+   proven    ran after its job completed and passed — what the evidence
+             pack counts.
+   breaching ran and failed. A real incident.
+   dormant   correct but premature (a continuous drift rule before
+             cutover). Activates when the phase reaches cutover.
+   ======================================================================= */
+function asRuleState(store, rule, opts) {
+  var phase = (opts && opts.phase) || null;
+  if (rule.lifecycle === 'derived') return 'derived';
+  if (rule.dormantUntilCutover && phase !== 'cutover') return 'dormant';
+  if (!rule.enabled) return 'dormant';
+  var breaching = store.breaches.some(function (b) {
+    return b.ruleId === rule.id && (b.state === 'open' || b.state === 'acknowledged');
+  });
+  if (breaching) return 'breaching';
+  var last = null;
+  for (var i = store.runs.length - 1; i >= 0; i--) {
+    if (store.runs[i].ruleId === rule.id && store.runs[i].status !== 'skipped') { last = store.runs[i]; break; }
+  }
+  if (!last) return 'armed';
+  return last.status === 'pass' ? 'proven' : 'breaching';
+}
+
+/* A rule that should fire only when its job has completed is due when the
+   job finished after the rule last ran. No wall clock involved. */
+function asJobRuleDue(store, rule, jobFinishedAt) {
+  if (!rule.schedule || !rule.schedule.onJobCompletion) return false;
+  if (jobFinishedAt == null) return false;                /* job never ran */
+  var lastRun = null;
+  for (var i = store.runs.length - 1; i >= 0; i--) {
+    if (store.runs[i].ruleId === rule.id) { lastRun = store.runs[i]; break; }
+  }
+  return !lastRun || lastRun.startedAt < jobFinishedAt;
+}
+
+/* =======================================================================
    sha256 — dependency-free, so run hashes are identical in the browser
    and under node. The reference implementation of the algorithm, kept
    compact; verified against the FIPS 180-4 test vector in the tests.
@@ -1770,6 +1895,10 @@ return {
 
   asCronNext: asCronNext,
   asCronDue: asCronDue,
+
+  asLiftPredicate: asLiftPredicate,
+  asRuleState: asRuleState,
+  asJobRuleDue: asJobRuleDue,
 
   MATERIAL_ROWS_DEFAULT: MATERIAL_ROWS_DEFAULT,
   NOT_COVERED: NOT_COVERED,
