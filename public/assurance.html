@@ -51,17 +51,34 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 body.cyg-collapsed{padding-left:54px}
 .page{padding:1rem 1.25rem;max-width:1500px}
 
-.as-head{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:0.8rem}
+.as-head{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:0.4rem}
 .as-title{font-size:18px;font-weight:600}
-.as-sub{font-size:12px;color:var(--text2);line-height:1.5;max-width:640px}
-.as-actions{margin-left:auto;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
+.as-sub{font-size:12px;color:var(--text2);line-height:1.5;max-width:520px}
+.as-status{margin-left:auto;display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.as-status .txt{text-align:right;max-width:460px}
+.as-status .line{font-size:14px;font-weight:600}
+.as-status .line.bad{color:var(--red)}
+.as-status .line.good{color:var(--green)}
+.as-status .subnote{font-size:11.5px;color:var(--text2);line-height:1.45}
 
 .btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
 .btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
 .btn:disabled{opacity:0.45;cursor:default}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn-primary:hover{color:#fff;opacity:0.9}
+.btn-ghost{background:transparent;border-style:dashed}
 .btn-danger{color:var(--red)}
+
+.ribbon{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0.6rem 0 0.9rem}
+.rstep{border:0.5px solid var(--border);border-radius:8px;padding:0.5rem 0.7rem;background:var(--bg2)}
+.rstep .num{font-family:var(--mono);font-size:10px;color:var(--text2)}
+.rstep .t{font-size:12px;font-weight:600}
+.rstep .n{font-size:10.5px;color:var(--text2);font-family:var(--mono);margin-top:1px}
+.rstep.done{border-color:rgba(34,201,122,0.35)}
+.rstep.done .t{color:var(--green)}
+.rstep.now{border-color:var(--accent);background:var(--accent-glow)}
+.rstep.now .t{color:var(--accent)}
+@media(max-width:800px){.ribbon{grid-template-columns:repeat(2,1fr)}}
 
 .as-seg{display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;gap:2px;flex-wrap:wrap}
 .as-seg button{border:none;background:transparent;color:var(--text3);font-family:var(--serif);font-size:12px;font-weight:500;padding:0.4rem 0.85rem;border-radius:6px;cursor:pointer;white-space:nowrap}
@@ -75,13 +92,6 @@ body.cyg-collapsed{padding-left:54px}
 .panel-body{padding:0.8rem 0.9rem}
 .p-right{margin-left:auto;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap}
 .note{padding:0.55rem 0.9rem;font-size:11.5px;color:var(--text2);border-top:0.5px solid var(--border)}
-
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.6rem;margin-bottom:0.9rem}
-.tile{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.85rem}
-.tile .k{font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text2);font-weight:500}
-.tile .v{font-size:22px;font-weight:600;font-family:var(--mono);margin-top:2px}
-.tile .n{font-size:11px;color:var(--text2)}
-.tile .v.crit{color:var(--red)}
 
 table{border-collapse:collapse;width:100%;font-size:12px}
 th{font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);font-weight:500;text-align:left;padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
@@ -105,13 +115,27 @@ tr:last-child td{border-bottom:none}
 .rowlink{cursor:pointer}
 .rowlink:hover td{background:var(--bg3)}
 
-.bars .brow{display:grid;grid-template-columns:150px 1fr 46px;align-items:center;gap:8px;margin-bottom:6px;font-size:11.5px}
-.bars .track{height:7px;border-radius:4px;background:var(--bg4);overflow:hidden}
-.bars .track i{display:block;height:100%;border-radius:4px}
-.bars .pc{font-family:var(--mono);font-size:11px;text-align:right;color:var(--text2)}
+.covbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--bg4);margin:0.35rem 0 0.55rem}
+.covbar i{display:block;height:100%}
+.covleg{display:flex;gap:16px;font-size:11px;color:var(--text2);flex-wrap:wrap;margin-bottom:0.55rem}
+.covleg .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:baseline}
+.covgaps{font-size:12px;line-height:1.65}
 
-.fchip{border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;border-radius:12px;padding:3px 10px;cursor:pointer;font-family:var(--serif)}
+.bundle{display:flex;gap:12px;align-items:flex-start;padding:0.75rem 0.9rem;border-top:0.5px solid var(--border)}
+.bundle .body{flex:1;min-width:0}
+.bundle b{font-size:12.5px}
+.bundle p{font-size:11.5px;color:var(--text2);margin-top:2px}
+.bundle .meta{font-family:var(--mono);font-size:10.5px;color:var(--text2);margin-top:4px}
+.bundle .acts{display:flex;gap:6px;flex:none;align-items:flex-start}
+.bexp{border-top:0.5px dotted var(--border);background:var(--bg3);padding:0.4rem 0.9rem 0.6rem}
+.bexp .bitem{display:flex;gap:10px;align-items:center;padding:0.35rem 0;border-bottom:0.5px dotted var(--border);font-size:11.5px}
+.bexp .bitem:last-child{border-bottom:none}
+.bexp .bitem .nm{flex:1;min-width:0}
+.bexp .bitem .pv{color:var(--text2)}
+
+.fchip{border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;border-radius:12px;padding:3px 10px;cursor:pointer;font-family:var(--serif);white-space:nowrap}
 .fchip.on{color:var(--accent);border-color:rgba(74,91,214,0.45);background:var(--accent-glow)}
+.fchip .ct{font-family:var(--mono);font-size:10px;opacity:0.8;margin-left:3px}
 .as-search{font-family:var(--serif);font-size:12px;padding:5px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);min-width:210px}
 .inp{font-family:var(--serif);font-size:12px;padding:5px 8px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%}
 textarea.inp{font-family:var(--mono);font-size:11px;min-height:70px;resize:vertical}
@@ -174,11 +198,6 @@ select.inp{cursor:pointer}
 .retain b{font-size:12.5px}
 .retain p{font-size:11.5px;color:var(--text2)}
 
-.asset{display:flex;gap:12px;align-items:center;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.9rem;margin-bottom:0.9rem}
-.asset .ic{width:30px;height:30px;border-radius:8px;background:var(--accent-glow);color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none}
-.asset b{font-size:12.5px}
-.asset p{font-size:11.5px;color:var(--text2)}
-
 .rep-head{padding:1.1rem 1rem;border-bottom:0.5px solid var(--border)}
 .rep-head .k{font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
 .rep-head h2{font-size:19px;margin:2px 0}
@@ -187,16 +206,33 @@ select.inp{cursor:pointer}
 .rep-stat:last-child{border-right:none}
 .rep-stat .v{font-size:21px;font-weight:600;font-family:var(--mono)}
 .rep-stat .k{font-size:10.5px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em}
+@media(max-width:800px){.rep-stats{grid-template-columns:1fr 1fr}}
 
-.cats{display:flex;flex-direction:column;gap:3px}
-.cat{text-align:left;border:none;background:transparent;color:var(--text2);font-size:12px;padding:0.4rem 0.6rem;border-radius:6px;cursor:pointer;font-family:var(--serif);display:flex;justify-content:space-between;gap:8px}
-.cat.on{background:var(--accent-glow);color:var(--accent);font-weight:500}
-.cat .ct{font-family:var(--mono);font-size:10.5px;color:var(--text2)}
+.ev-statement{font-size:15px;line-height:1.8;max-width:840px}
+.sigstrip{font-family:var(--mono);font-size:10.5px;color:var(--text2);border-top:0.5px solid var(--border);margin-top:0.9rem;padding-top:0.6rem;word-break:break-all;line-height:1.7}
+.openitem{display:flex;gap:12px;align-items:flex-start;padding:0.7rem 0.9rem;border-top:0.5px solid var(--border)}
+.openitem .body{flex:1;min-width:0}
+.openitem b{font-size:12.5px}
+.openitem p{font-size:11.5px;color:var(--text2);margin-top:2px;line-height:1.55}
+.claim{border-top:0.5px solid var(--border)}
+.claim summary{cursor:pointer;padding:0.6rem 0.9rem;font-size:12.5px;display:flex;gap:10px;align-items:center;list-style:none}
+.claim summary::-webkit-details-marker{display:none}
+.claim summary .arrow{color:var(--text2);font-size:10px}
+.claim[open] summary .arrow{transform:rotate(90deg)}
+.claim .steps{padding:0 0.9rem 0.8rem}
+.claim .step{display:flex;gap:12px;padding:0.4rem 0;border-top:0.5px dotted var(--border);font-size:12px}
+.claim .step .k{min-width:70px;color:var(--text2);text-transform:uppercase;font-size:10px;letter-spacing:0.06em;padding-top:2px;font-weight:500}
+.claim .step pre{font-family:var(--mono);font-size:10.5px;white-space:pre-wrap;word-break:break-all;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.6rem;flex:1;min-width:0}
+.notcov{margin:0;padding-left:20px;font-size:12.5px;line-height:1.9;color:var(--text2)}
+.pack{display:flex;gap:12px;align-items:center;padding:0.6rem 0.9rem;border-top:0.5px solid var(--border);font-size:12px}
+.pack .body{flex:1}
+.pack .body p{font-size:11px;color:var(--text2)}
 
 .empty{padding:1.6rem;text-align:center;color:var(--text2);font-size:12.5px;line-height:1.7}
+.empty a{color:var(--accent)}
 @media print{
   body{padding-left:0;background:#fff;color:#000}
-  #cyg-sidebar-mount,.as-head,.as-seg,.no-print{display:none !important}
+  #cyg-sidebar-mount,.as-head,.as-seg,.ribbon,.no-print{display:none !important}
   .panel{border-color:#ccc}
 }
 </style>
@@ -211,123 +247,90 @@ select.inp{cursor:pointer}
       <div class="as-sub">Every validation rule written to prove the migration was correct, running on a schedule
         against live data — for as long as the data matters.</div>
     </div>
-    <div class="as-actions">
-      <span class="mono muted" id="as-sweepnote"></span>
-      <button class="btn" id="as-sweep" onclick="asSweepDue()" title="Run every group whose cron has come due since its last sweep">▶ Run due groups</button>
-      <button class="btn btn-primary" onclick="asDrawerOpen()">+ New rule</button>
+    <!-- §2: the one status line + §3: the one primary action, visible on every tab -->
+    <div class="as-status">
+      <div class="txt">
+        <div class="line" id="as-status-line">—</div>
+        <div class="subnote" id="as-status-sub"></div>
+      </div>
+      <button class="btn btn-primary" id="as-cta" onclick="asCtaClick()">…</button>
     </div>
   </div>
 
+  <!-- §4: four-step progress ribbon, derived from the same status object -->
+  <div class="ribbon" id="as-ribbon"></div>
+
+  <!-- §9: split by audience -->
   <div class="as-seg" role="group" aria-label="Assurance views" style="margin-bottom:0.9rem">
-    <button id="as-tab-health"   class="active" onclick="asView('health')">Health</button>
-    <button id="as-tab-rules"    onclick="asView('rules')">Rule Library</button>
-    <button id="as-tab-tags"     onclick="asView('tags')">Tags</button>
-    <button id="as-tab-breaches" onclick="asView('breaches')">Breaches<span class="as-count" id="as-breach-n" style="display:none"></span></button>
-    <button id="as-tab-sched"    onclick="asView('sched')">Schedules &amp; Routing</button>
-    <button id="as-tab-report"   onclick="asView('report')">Monthly Report</button>
+    <button id="as-tab-eng" class="active" onclick="asView('eng')">Engineer</button>
+    <button id="as-tab-ev" onclick="asView('ev')">Evidence</button>
   </div>
 
-  <!-- ══ HEALTH ══ -->
-  <div id="as-v-health">
-    <div class="asset" id="as-asset"></div>
-    <div class="tiles" id="as-tiles"></div>
-    <div class="grid2">
-      <div class="panel">
-        <div class="panel-header"><div class="panel-title">Data health</div>
-          <span class="panel-sub">rolling 30 days · both connections</span></div>
-        <div class="panel-body">
-          <div style="display:flex;align-items:baseline;gap:12px">
-            <div id="as-score" style="font-size:38px;font-weight:600;font-family:var(--mono)">—</div>
-            <div class="muted" id="as-streak" style="font-size:12px"></div>
-          </div>
-          <svg id="as-spark" viewBox="0 0 660 110" width="100%" height="110" aria-label="Data health, last 30 days"></svg>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-header"><div class="panel-title">Health by category</div></div>
-        <div class="panel-body bars" id="as-catbars"></div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-header"><div class="panel-title">Open breaches</div><span class="panel-sub">newest first</span>
-        <div class="p-right"><button class="btn" onclick="asView('breaches')">Open queue →</button></div></div>
-      <div class="tw"><table id="as-open-breaches"><thead>
-        <tr><th style="width:1px"></th><th>Rule</th><th>Category</th><th>Scope</th><th class="num">Rows</th><th>First seen</th><th>State</th></tr>
-      </thead><tbody></tbody></table></div>
-    </div>
-  </div>
+  <!-- ══ ENGINEER VIEW ══ -->
+  <div id="as-v-eng">
 
-  <!-- ══ RULE LIBRARY ══ -->
-  <div id="as-v-rules" style="display:none">
-    <div class="split">
-      <div class="panel"><div class="panel-body cats" id="as-cats"></div></div>
-      <div style="min-width:0">
-        <div class="panel">
-          <div class="panel-header">
-            <input class="as-search" id="as-rule-q" placeholder="Search rules, tables, tags…" oninput="asRenderRules()">
-            <button class="fchip" id="as-f-continuous" onclick="asToggleFilter('continuous')">Continuous</button>
-            <button class="fchip" id="as-f-migration" onclick="asToggleFilter('migration')">Migration-only</button>
-            <button class="fchip" id="as-f-disabled" onclick="asToggleFilter('disabled')">Disabled</button>
-            <button class="fchip" id="as-f-breaching" onclick="asToggleFilter('breaching')">Breaching</button>
-            <div class="p-right">
-              <button class="btn" onclick="asImportValidation()" title="Read the Validation module's script sources and promote each script to a continuous custom.sql rule — the Validation page itself is untouched">⇪ Promote from Validation</button>
-              <button class="btn btn-primary" onclick="asDrawerOpen()">+ New rule</button>
-            </div>
-          </div>
-          <div class="tw"><table id="as-rules"><thead>
-            <tr><th>Rule</th><th>Category</th><th>Check</th><th>Binds to</th><th>Severity</th><th>Schedule</th><th class="num">Last run</th><th>On</th><th></th></tr>
-          </thead><tbody></tbody></table></div>
-          <div class="note" id="as-rules-note"></div>
-        </div>
-        <div class="panel">
-          <div class="panel-header"><div class="panel-title">Suggested rules</div>
-            <span class="panel-sub" id="as-sug-sub">from the profile sweep</span>
-            <div class="p-right"><button class="btn" onclick="asProfileNow()">↻ Profile now</button></div></div>
-          <div id="as-sugs"></div>
-        </div>
-      </div>
+    <!-- §5: coverage instead of a column of zeros -->
+    <div class="panel" id="as-coverage-panel">
+      <div class="panel-header"><div class="panel-title">Coverage of the migration</div>
+        <span class="panel-sub" id="as-cov-hint">measuring…</span></div>
+      <div class="panel-body" id="as-coverage"><div class="muted" style="font-size:12px">Reading the target schema…</div></div>
     </div>
-  </div>
 
-  <!-- ══ TAGS ══ -->
-  <div id="as-v-tags" style="display:none">
-    <div class="asset" id="as-tag-asset"></div>
-    <div class="panel">
-      <div class="panel-header"><div class="panel-title">Proposed tags</div>
-        <span class="panel-sub">heuristic proposals from the schema — nothing applies until you accept it</span>
+    <!-- §6: suggestions bundled by rule template -->
+    <div class="panel" id="as-bundles-panel">
+      <div class="panel-header"><div class="panel-title">Suggested checks</div>
+        <span class="panel-sub" id="as-bundle-sub">from the profiler</span>
+        <div class="p-right"><button class="btn" onclick="asProfileNow()">↻ Re-profile</button></div></div>
+      <div id="as-bundles"><div class="empty">Profiling the schema…</div></div>
+      <div id="as-sugs"></div>
+    </div>
+
+    <!-- §7: your checks, led by what each one proves -->
+    <div class="panel" id="as-checks-panel">
+      <div class="panel-header">
+        <div class="panel-title">Your checks</div>
         <div class="p-right">
-          <button class="btn" onclick="asProposeTagsNow()">↻ Propose from schema</button>
-          <button class="btn" onclick="asAcceptTags(0.9)">Accept above 0.90</button>
-        </div></div>
-      <div class="tw"><table id="as-tag-props"><thead>
-        <tr><th>Column</th><th>Proposed tag</th><th>Confidence</th><th>Why</th><th></th></tr>
+          <button class="btn btn-ghost" onclick="asImportValidation()" title="Read the Validation module's script sources and import each script as a continuous custom.sql rule — the Validation page itself is untouched">⇪ Import from Validation</button>
+          <button class="btn" onclick="asDrawerOpen()">+ New rule</button>
+        </div>
+      </div>
+      <div class="panel-header" style="border-top:none">
+        <input class="as-search" id="as-rule-q" placeholder="Search rules, tables, tags…" oninput="asRenderRules()">
+        <span id="as-catchips" style="display:flex;gap:5px;flex-wrap:wrap"></span>
+        <div class="p-right">
+          <button class="fchip" id="as-f-continuous" onclick="asToggleFilter('continuous')">Continuous</button>
+          <button class="fchip" id="as-f-migration" onclick="asToggleFilter('migration')">Migration-only</button>
+          <button class="fchip" id="as-f-disabled" onclick="asToggleFilter('disabled')">Disabled</button>
+          <button class="fchip" id="as-f-breaching" onclick="asToggleFilter('breaching')">Breaching</button>
+        </div>
+      </div>
+      <div class="tw"><table id="as-rules"><thead>
+        <tr><th>What it proves</th><th>Scope</th><th>Runs</th><th>Last result</th><th>SQL</th><th>On</th><th></th></tr>
       </thead><tbody></tbody></table></div>
-      <div class="note">A tag changes which rules bind to a column, so every acceptance is written to the audit trail.</div>
+      <div class="note" id="as-rules-note" style="display:none"></div>
     </div>
-    <div class="panel">
-      <div class="panel-header"><div class="panel-title">Tag catalogue</div><span class="panel-sub" id="as-tag-count"></span></div>
-      <div class="tw"><table id="as-tag-cat"><thead>
-        <tr><th>Tag</th><th class="num">Columns</th><th>Bound rules</th><th></th></tr>
-      </thead><tbody></tbody></table></div>
-    </div>
-  </div>
 
-  <!-- ══ BREACHES ══ -->
-  <div id="as-v-breaches" style="display:none">
-    <div class="split">
-      <div class="bq" id="as-bq"></div>
-      <div style="min-width:0" id="as-breach-detail"><div class="panel"><div class="empty">No breach selected.</div></div></div>
+    <!-- Breaches: queue + detail (the Review breaches CTA lands here) -->
+    <div class="panel" id="as-breaches-panel">
+      <div class="panel-header"><div class="panel-title">Breaches</div>
+        <span class="panel-sub" id="as-breach-sub"></span></div>
+      <div class="panel-body">
+        <div class="split">
+          <div class="bq" id="as-bq"></div>
+          <div style="min-width:0" id="as-breach-detail"><div class="panel" style="margin:0"><div class="empty">No breach selected.</div></div></div>
+        </div>
+      </div>
     </div>
-  </div>
 
-  <!-- ══ SCHEDULES & ROUTING ══ -->
-  <div id="as-v-sched" style="display:none">
+    <!-- Schedules & routing -->
     <div class="grid2">
       <div class="panel">
-        <div class="panel-header"><div class="panel-title">Rule groups</div>
-          <span class="panel-sub">the group owns the cron; a rule may override it</span></div>
+        <div class="panel-header"><div class="panel-title">Schedules</div>
+          <span class="panel-sub">the group owns the cron; a rule may override it</span>
+          <div class="p-right"><span class="mono muted" id="as-sweepnote"></span>
+            <button class="btn" id="as-sweep" onclick="asSweepDue()" title="Run every group whose schedule has come due since its last sweep">▶ Run due groups</button></div></div>
         <div class="tw"><table id="as-groups"><thead>
-          <tr><th>Group</th><th class="num">Rules</th><th>Cron</th><th>Next run</th><th>Est. cost</th><th></th></tr>
+          <tr><th>Group</th><th class="num">Rules</th><th>Runs</th><th>Next run</th><th>Est. cost</th><th></th></tr>
         </thead><tbody></tbody></table></div>
         <div class="note">Sweeps run from this console against the project connections, with counts first and samples
           only on a hit. Every generated statement is a read-only SELECT and is logged on the run.</div>
@@ -347,25 +350,60 @@ select.inp{cursor:pointer}
         </div>
       </div>
     </div>
+
+    <!-- Tags: the binding vocabulary, absorbed into the engineer view -->
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Tags</div>
+        <span class="panel-sub" id="as-tag-count"></span>
+        <div class="p-right">
+          <button class="btn" onclick="asProposeTagsNow()">↻ Propose from schema</button>
+          <button class="btn" onclick="asAcceptTags(0.9)">Accept above 0.90</button>
+        </div></div>
+      <div class="tw"><table id="as-tag-props"><thead>
+        <tr><th>Column</th><th>Proposed tag</th><th>Confidence</th><th>Why</th><th></th></tr>
+      </thead><tbody></tbody></table></div>
+      <div class="tw" style="border-top:0.5px solid var(--border)"><table id="as-tag-cat"><thead>
+        <tr><th>Tag</th><th class="num">Columns</th><th>Bound rules</th><th></th></tr>
+      </thead><tbody></tbody></table></div>
+      <div class="note">A tag changes which rules bind to a column, so every acceptance is written to the audit trail.</div>
+    </div>
   </div>
 
-  <!-- ══ MONTHLY REPORT ══ -->
-  <div id="as-v-report" style="display:none">
+  <!-- ══ EVIDENCE VIEW ══ -->
+  <div id="as-v-ev" style="display:none">
     <div class="panel">
       <div class="rep-head">
-        <div class="k">Cygenix Assurance</div>
-        <h2>Monthly data assurance report</h2>
-        <p class="muted" id="as-rep-sub" style="font-size:12px"></p>
+        <div class="k">Cygenix Assurance · Evidence</div>
+        <h2>Statement of checks</h2>
       </div>
-      <div class="rep-stats" id="as-rep-stats"></div>
       <div class="panel-body">
-        <h4 style="font-size:13px;margin-bottom:8px">What we caught before it reached a report</h4>
-        <ul id="as-rep-narrative" style="margin:0 0 16px;padding-left:18px;font-size:12.5px;color:var(--text2);line-height:1.8"></ul>
-        <h4 style="font-size:13px;margin-bottom:8px">Library growth</h4>
-        <p class="muted" style="font-size:12.5px" id="as-rep-growth"></p>
+        <p class="ev-statement" id="as-ev-statement">—</p>
+        <div class="sigstrip" id="as-ev-sig"></div>
       </div>
-      <div class="note no-print">Print this page to produce the PDF.
-        <button class="btn" style="margin-left:8px" onclick="window.print()">⎙ Print / save as PDF</button></div>
+      <div class="rep-stats" id="as-ev-tiles"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Open items</div>
+        <span class="panel-sub">each one named — never a bare count</span></div>
+      <div id="as-ev-open"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">How to check us</div>
+        <span class="panel-sub">every claim expands to the query, the result and the record</span></div>
+      <div id="as-ev-claims"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">What this does not cover</div></div>
+      <div class="panel-body"><ul class="notcov" id="as-ev-notcov"></ul></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Evidence pack</div>
+        <span class="panel-sub">real exports — each file stands on its own</span></div>
+      <div id="as-ev-pack"></div>
     </div>
   </div>
 </div>
@@ -386,6 +424,10 @@ select.inp{cursor:pointer}
     </div>
     <fieldset class="fs"><legend>Identity</legend>
       <div class="fld"><label>Rule name</label><input class="inp" id="as-dw-name" placeholder="Cost centre in reference set"></div>
+      <div class="fld"><label>What it proves — one plain-English sentence, present tense</label>
+        <input class="inp" id="as-dw-proves" placeholder="Every posting still carries a cost centre the reference set knows.">
+        <div class="muted" style="font-size:10.5px;margin-top:3px">Required. Suggested checks arrive with this
+          pre-filled; a template fills it for standard checks if you leave it blank.</div></div>
       <div class="row3">
         <div class="fld"><label>Category</label><select class="inp" id="as-dw-category"></select></div>
         <div class="fld"><label>Severity</label><select class="inp" id="as-dw-severity">
@@ -425,6 +467,11 @@ select.inp{cursor:pointer}
         Also warn when the measure moves more than <input class="inp mono" id="as-dw-band" value="10" style="width:52px;display:inline-block"> % against its 7-day baseline
       </div>
     </fieldset>
+    <fieldset class="fs"><legend>Schedule</legend>
+      <div class="muted" style="font-size:11px;margin-bottom:4px" id="as-dw-cronhuman"></div>
+      <div class="fld"><label>Cron override (optional — the group's cron applies when blank)</label>
+        <input class="inp mono" id="as-dw-cron" placeholder="0 4 * * *" oninput="asDwCronChanged()"></div>
+    </fieldset>
     <fieldset class="fs"><legend>On breach</legend>
       <select class="inp" id="as-dw-onbreach">
         <option value="notify">Notify</option>
@@ -447,7 +494,7 @@ select.inp{cursor:pointer}
 <script src="/cygenix-schema-graph.js?v=7342c9d73d" defer></script>
 <script src="/cygenix-subject-harvest.js?v=b15d4ee907" defer></script>
 <script src="/cygenix-integrations.js?v=460ebe6c49" defer></script>
-<script src="/cygenix-assurance.js?v=956fac1aaf" defer></script>
+<script src="/cygenix-assurance.js?v=a51db57f83" defer></script>
 <script src="/cygenix-sidebar.js?v=6f72ef587c" defer></script>
 
 <script>
@@ -457,6 +504,16 @@ select.inp{cursor:pointer}
    this file owns the chrome, the connections and the store round-trip.
    Nothing here writes to a customer database: every statement the sweeps
    run is a compiled, logged, read-only SELECT.
+
+   Layout contract (the redesign brief):
+   - one status object (A.asStatus) → one status line + ONE primary CTA
+   - a four-step ribbon derived from that same object, no new state
+   - Engineer view: coverage, suggestion bundles, your checks, breaches,
+     schedules & routing, tags
+   - Evidence view: statement, tiles, open items, how-to-check-us,
+     what-this-does-not-cover, and real exports
+   - runs are append-only records with a sha256 each and a manifest hash
+     per sweep; nothing on this page edits or deletes a recorded run
    ═════════════════════════════════════════════════════════════════════════ */
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -465,12 +522,15 @@ const AS_KEY = 'cygenix_assurance_v1';
 let A = null;                 // engine, once loaded
 let store = null;
 let catalog = null;           // { tables, tags } — built from the schema graph
-let view = 'health';
-let ruleCat = null;           // rule-library category filter
+let catalogMeta = { srcDb: null, tgtDb: null };
+let view = 'eng';
+let ruleCat = null;           // §1: always opens on All rules, never persisted
 let ruleFilters = {};         // continuous / migration / disabled / breaching
 let selBreach = null;
 let dryOk = null;             // last successful dry-run payload (gates the save)
 let editingRuleId = null;
+let expandedBundle = null;    // which bundle's Review drill-down is open
+let expandedSqlRule = null;   // which rule row shows its SQL
 
 function userName(){
   try { return (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || 'user'; }
@@ -482,7 +542,12 @@ function nowMs(){ return Date.now(); }
 function loadStore(){
   try {
     const raw = localStorage.getItem(AS_KEY);
-    if (raw) { store = JSON.parse(raw); return; }
+    if (raw) {
+      store = JSON.parse(raw);
+      /* v1 → v2: proves filled from templates, runs gain their hashes */
+      if (store.v < A.STORE_VERSION) { A.asMigrateStore(store, nowMs()); saveStore(); }
+      return;
+    }
   } catch {}
   store = A.asNewStore(nowMs());
   saveStore();
@@ -499,6 +564,10 @@ function connOf(side){
   } catch { return ''; }
 }
 function dialectOf(side){ return A.asDialectOf(connOf(side)); }
+function connectionCount(){
+  return ['src', 'tgt'].filter(s => window.CygenixSchemaGraph
+    && CygenixSchemaGraph.hasConnection && CygenixSchemaGraph.hasConnection(s)).length;
+}
 
 async function buildCatalog(){
   if (catalog) return catalog;
@@ -508,6 +577,7 @@ async function buildCatalog(){
     let g;
     try { g = await CygenixSchemaGraph.load(side); } catch { continue; }
     if (!g || !g.ok) continue;
+    if (side === 'src') catalogMeta.srcDb = g.database; else catalogMeta.tgtDb = g.database;
     let harvest = null;
     try {
       harvest = await CygenixSubjectHarvest.shEnsure({
@@ -515,6 +585,17 @@ async function buildCatalog(){
         database: g.database, cacheKey: side + '|' + (g.database || 'unknown'),
       });
     } catch {}
+    /* FK edges → per-table fks and referenced-by counts, for coverage
+       materiality and the References-resolve bundle */
+    const fksByKey = {}, refBy = {};
+    (g.edges || []).forEach(e => {
+      if (e.self) return;
+      const toParts = String(e.to).split('.');
+      (fksByKey[e.from] = fksByKey[e.from] || []).push({
+        column: e.fromColumn, refSchema: toParts[0],
+        refTable: toParts.slice(1).join('.'), refColumn: e.toColumn });
+      refBy[e.to] = (refBy[e.to] || 0) + 1;
+    });
     g.tables.forEach(t => {
       let cols = (t.columns || []).map(c => typeof c === 'string' ? c : c.name);
       let pks = (t.primaryKeys || []).slice();
@@ -526,6 +607,7 @@ async function buildCatalog(){
       if (!cols.length && t.colsig) cols = String(t.colsig).split(',').map(c => c.split(':')[0]);
       tables.push({ db: side, schema: t.schema || 'dbo', table: t.name, rowCount: t.rowCount || 0,
         columns: cols, primaryKeys: pks,
+        fks: fksByKey[t.key] || [], referencedBy: refBy[t.key] || 0,
         types: h && h.c ? String(h.c).split(',').map(c => c.split(':')[1] || '') : [] });
     });
   }
@@ -612,7 +694,8 @@ async function asRunRule(rule, opts){
 
   const run = {
     id: 'run_' + startedAt.toString(36) + '_' + Math.floor(Math.random() * 1e4),
-    ruleId: rule.id, category: rule.category, severity: rule.severity,
+    ruleId: rule.id, ruleVersion: rule.version || 1,
+    category: rule.category, severity: rule.severity,
     startedAt, durationMs: nowMs() - startedAt,
     targetsMatched: targets.length, rowsScanned, rowsFailed,
     measure: measure == null || measure === -Infinity ? null : measure,
@@ -620,6 +703,8 @@ async function asRunRule(rule, opts){
     context: buildSignals(rule, perTarget),
   };
   rule.estimatedCostMs = Math.round(((rule.estimatedCostMs || run.durationMs) * 3 + run.durationMs) / 4);
+  /* asRecordRun finalizes the record: ISO timestamps, counts, the verbatim
+     query text and the sha256 run hash — append-only from here on */
   const breach = A.asRecordRun(store, run, startedAt);
   if (breach && (status === 'fail' || status === 'warn') && breach.lastRunId === run.id && breach.runCount === 1){
     notifyBreach(rule, breach, run);
@@ -630,7 +715,18 @@ async function asRunRule(rule, opts){
 }
 function tName(t){ return t.db + '.' + t.schema + '.' + t.table + (t.column ? '.' + t.column : ''); }
 
-/* §7 signals, gathered deterministically from what the run already holds —
+/* §8: one manifest hash per sweep — the sha256 of the sorted run hashes */
+function recordSweep(runs){
+  const done = (runs || []).filter(Boolean);
+  if (!done.length) return;
+  const m = A.asManifest(done);
+  store.sweeps.push({ at: nowMs(), runIds: done.map(r => r.id), manifestHash: m.hash });
+  if (store.sweeps.length > 200) store.sweeps.splice(0, store.sweeps.length - 200);
+  A.asEvent(store, { type: 'sweep.recorded', runs: done.length, manifestHash: m.hash }, nowMs());
+  saveStore();
+}
+
+/* signals gathered deterministically from what the run already holds —
    sampled rows, the previous run, sibling breaches. No extra queries. */
 function buildSignals(rule, perTarget){
   const prev = store.runs.filter(r => r.ruleId === rule.id && r.status === 'pass').slice(-1)[0];
@@ -708,11 +804,22 @@ async function asRunGroup(groupId){
   const g = store.groups.find(x => x.id === groupId);
   if (!g) return;
   const list = rulesInGroup(g);
-  for (const r of list) await asRunRule(r, { silent: true });
+  const runs = [];
+  for (const r of list) runs.push(await asRunRule(r, { silent: true }));
   g.lastRunAt = nowMs();
   A.asEvent(store, { type: 'group.swept', groupId: g.id, rules: list.length }, g.lastRunAt);
+  recordSweep(runs);
   saveStore();
   renderAll();
+}
+async function asRunAll(){
+  const btn = $('as-cta'); btn.disabled = true;
+  try {
+    const list = store.rules.filter(r => r.enabled);
+    const runs = [];
+    for (const r of list) runs.push(await asRunRule(r, { silent: true }));
+    recordSweep(runs);
+  } finally { btn.disabled = false; saveStore(); renderAll(); }
 }
 async function asSweepDue(){
   const btn = $('as-sweep'); btn.disabled = true;
@@ -775,7 +882,7 @@ async function asProfileNow(silent){
   return fresh;
 }
 
-/* ---------- promotion from the Validation module (read-only import) ------ */
+/* ---------- import from the Validation module (read-only) --------------- */
 async function asDbCall(conn, body){
   const isFn = /^https?:\/\//.test(conn);
   const url = isFn ? conn : '/.netlify/functions/db-connect';
@@ -789,7 +896,7 @@ async function asDbCall(conn, body){
 async function asImportValidation(){
   let sources = [];
   try { sources = JSON.parse(localStorage.getItem('cygenix_validation_sources') || '[]'); } catch {}
-  if (!sources.length){ alert('The Validation module has no script sources to promote.'); return; }
+  if (!sources.length){ alert('The Validation module has no script sources to import.'); return; }
   let made = 0;
   for (const src of sources){
     if (!src.conn || !src.tableName) continue;
@@ -808,18 +915,20 @@ async function asImportValidation(){
         A.asSaveRule(store, {
           name: nm || 'Validation script', category: 'custom', check: 'custom.sql',
           params: { sql: { any: sql.replace(/;+\s*$/, '') } },
+          proves: nm ? 'The migration validation "' + nm + '" still holds against live data.'
+                     : 'A migration validation script still holds against live data.',
           binding: { mode: 'explicit', targets: [{ db: 'tgt', schema: schema, table: name, column: null }], databases: ['tgt'] },
           severity: 'warning', continuous: true,
           provenance: { source: 'migration', projectId: src.label || null, createdAt: nowMs() },
         }, userName(), nowMs());
         made++;
       });
-    } catch (e) { console.warn('promote', e); }
+    } catch (e) { console.warn('import', e); }
   }
   saveStore(); renderAll();
   alert(made
-    ? made + ' validation script' + (made === 1 ? '' : 's') + ' promoted to continuous rules. The Validation page is untouched.'
-    : 'No SELECT scripts found to promote.');
+    ? made + ' validation script' + (made === 1 ? '' : 's') + ' imported as continuous rules. The Validation page is untouched.'
+    : 'No SELECT scripts found to import.');
 }
 
 /* ---------- breach actions ---------- */
@@ -867,16 +976,19 @@ function asExportRows(breachId){
     const v = String(r[c] == null ? '' : r[c]);
     return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
   }).join(','))).join('\r\n');
+  downloadBlob(new Blob(['﻿' + csv], { type: 'text/csv' }), b.ruleId + '-failing-rows.csv');
+}
+function downloadBlob(blob, name){
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
-  a.download = (b.ruleId + '-failing-rows.csv');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
 }
 
-/* ═══════════════ rendering ═══════════════ */
+/* ═══════════════ shared render helpers ═══════════════ */
 function asView(v){
   view = v;
-  ['health', 'rules', 'tags', 'breaches', 'sched', 'report'].forEach(k => {
+  ['eng', 'ev'].forEach(k => {
     $('as-v-' + k).style.display = k === v ? '' : 'none';
     $('as-tab-' + k).classList.toggle('active', k === v);
   });
@@ -904,126 +1016,160 @@ function openBreaches(){
 }
 function ruleOf(id){ return store.rules.find(r => r.id === id) || { id, name: id, category: 'custom' }; }
 function lastRunOf(ruleId){ return store.runs.filter(r => r.ruleId === ruleId).slice(-1)[0] || null; }
-
-function renderHealth(){
-  const h = A.asHealth(store, 30 * 86400000, nowMs());
-  const dbNames = ['src', 'tgt'].filter(s => CygenixSchemaGraph && CygenixSchemaGraph.hasConnection && CygenixSchemaGraph.hasConnection(s));
-  $('as-asset').innerHTML = '<div class="ic">◆</div><div><b>' + h.activeRules + ' rules · '
-    + store.runs.length + ' runs retained · ' + (dbNames.length || 'no') + ' connection' + (dbNames.length === 1 ? '' : 's') + '</b>'
-    + '<p>Your rule library encodes business logic that exists nowhere else in the estate. It is versioned, '
-    + 'never hard-deleted, and every change is on the audit trail.</p></div>'
-    + '<button class="btn" onclick="asView(\'rules\')">View library</button>';
-
-  $('as-score').textContent = h.score == null ? '—' : h.score + '%';
-  $('as-streak').textContent = h.runs
-    ? h.runs + ' graded checks in the window' + (h.streakDays != null ? ' · ' + h.streakDays + ' days since the last fail' : '')
-    : 'No runs yet — run a group from Schedules, or seed rules from Suggested.';
-
-  const tiles = [
-    ['Active rules', h.activeRules, store.rules.length - h.activeRules + ' disabled'],
-    ['Checks (30d)', h.runs, h.fail + ' failed · ' + h.warn + ' warned'],
-    ['Open breaches', h.openBreaches, h.criticalOpen + ' critical', h.criticalOpen ? 'crit' : ''],
-    ['Mean time to fix', h.meanTimeToFixMs == null ? '—' : A.fmtDuration(h.meanTimeToFixMs), '30-day average'],
-    ['Tags', store.tags.length, (store.tagProposals || []).filter(p => p.state === 'proposed').length + ' proposed'],
-    ['Suggestions', store.suggestions.filter(s => s.state === 'proposed').length, 'waiting for review'],
-  ];
-  $('as-tiles').innerHTML = tiles.map(t =>
-    '<div class="tile"><div class="k">' + t[0] + '</div><div class="v ' + (t[3] || '') + '">' + t[1]
-    + '</div><div class="n">' + t[2] + '</div></div>').join('');
-
-  const series = A.asHealthSeries(store, 30, nowMs());
-  const svg = $('as-spark');
-  const pts = series.map((v, i) => v == null ? null : [(i / 29) * 640 + 10, 100 - (Math.max(80, v) - 80) / 20 * 90]).filter(Boolean);
-  svg.innerHTML = pts.length > 1
-    ? '<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="' + pts.map(p => p.join(',')).join(' ') + '"/>'
-    : '<text x="10" y="60" fill="var(--text2)" font-size="12">Health per day appears here after the first sweeps.</text>';
-
-  $('as-catbars').innerHTML = A.CATEGORIES.map(c => {
-    const v = h.perCategory[c.key];
-    if (v == null) return '';
-    const colr = v >= 99 ? 'var(--green)' : v >= 95 ? 'var(--amber)' : 'var(--red)';
-    return '<div class="brow"><span>' + esc(c.label) + '</span><span class="track"><i style="width:' + v + '%;background:' + colr + '"></i></span><span class="pc">' + v + '%</span></div>';
-  }).join('') || '<div class="muted" style="font-size:12px">No graded runs yet.</div>';
-
-  const tb = $('as-open-breaches').querySelector('tbody');
-  const open = openBreaches();
-  tb.innerHTML = open.length ? open.map(b => {
-    const r = ruleOf(b.ruleId);
-    const run = lastRunOf(b.ruleId);
-    return '<tr class="rowlink" onclick="selBreach=\'' + b.id + '\';asView(\'breaches\')">'
-      + '<td><span class="sev ' + (b.severity === 'critical' ? 'c' : b.severity === 'warning' ? 'w' : 'i') + '"></span></td>'
-      + '<td><span class="rulename">' + esc(r.name) + '</span><span class="rid">' + esc(b.ruleId) + '</span></td>'
-      + '<td><span class="chip">' + esc(catLabel(r.category)) + '</span></td>'
-      + '<td class="scope">' + (run && run.perTarget[0] ? esc(run.perTarget[0].target) : '—') + '</td>'
-      + '<td class="mono num">' + (b.currentRowsFailed || '—') + '</td>'
-      + '<td class="mono">' + fmtWhen(b.openedAt) + '</td>'
-      + '<td><span class="chip ' + (b.state === 'suppressed' ? '' : 'crit') + '">' + esc(b.state) + '</span></td></tr>';
-  }).join('') : '<tr><td colspan="7" class="empty">Nothing is breaching. That is the product working.</td></tr>';
+function ruleCron(r){
+  const g = store.groups.find(x => x.id === (r.schedule && r.schedule.groupId));
+  return (r.schedule && r.schedule.cron) || (g && g.cron) || null;
+}
+function estSweepMs(rules){
+  return rules.reduce((a, r) => a + (r.estimatedCostMs || 400), 0);
 }
 
-function asToggleFilter(k){
-  ruleFilters[k] = !ruleFilters[k];
-  $('as-f-' + k).classList.toggle('on', !!ruleFilters[k]);
-  asRenderRules();
+/* ═══════════════ §2 + §3 + §4: status line, primary CTA, ribbon ═════════ */
+let ctaAction = null;
+function renderStatus(){
+  const st = A.asStatus(store, { connections: connectionCount() });
+  const line = $('as-status-line'), sub = $('as-status-sub'), cta = $('as-cta');
+  line.className = 'line';
+  if (st.state === 'no-checks'){
+    line.textContent = 'No checks written yet';
+    sub.textContent = 'Accept a suggested bundle below, import your migration validations, or write a rule.';
+    cta.textContent = 'Add suggested checks';
+    ctaAction = () => { asView('eng'); $('as-bundles-panel').scrollIntoView({ behavior: 'smooth' }); };
+  } else if (st.state === 'never-run'){
+    line.textContent = 'Nothing has been proven yet';
+    sub.textContent = st.checksWritten + ' check' + (st.checksWritten === 1 ? ' is' : 's are')
+      + ' written. None of them have ever run, so there is no evidence to show anyone.';
+    const est = estSweepMs(store.rules.filter(r => r.enabled));
+    cta.textContent = 'Run all ' + st.checksWritten + ' checks · ~' + A.fmtDuration(est);
+    ctaAction = asRunAll;
+  } else if (st.state === 'breaches'){
+    line.textContent = st.openBreaches + ' open breach' + (st.openBreaches === 1 ? '' : 'es');
+    line.className = 'line bad';
+    sub.textContent = st.checksRun + ' of ' + st.checksWritten + ' checks have run · last run ' + fmtWhen(st.lastRunAt) + '.';
+    cta.textContent = 'Review breaches';
+    ctaAction = () => { asView('eng'); $('as-breaches-panel').scrollIntoView({ behavior: 'smooth' }); };
+  } else {
+    line.textContent = 'All ' + st.checksWritten + ' checks passing · last run ' + fmtWhen(st.lastRunAt);
+    line.className = 'line good';
+    sub.textContent = 'The evidence pack is ready to share.';
+    cta.textContent = 'Publish evidence pack';
+    ctaAction = () => asView('ev');
+  }
+
+  /* §4: the ribbon derives from the SAME status object — no new state */
+  $('as-ribbon').innerHTML = A.asRibbon(st).map((s, i) =>
+    '<div class="rstep ' + s.state + '"><div class="num">' + (i + 1) + '</div>'
+    + '<div class="t">' + esc(s.label) + '</div><div class="n">' + esc(s.note || '') + '</div></div>').join('');
+  return st;
 }
-function asRenderRules(){
-  const cats = [['', 'All rules']].concat(A.CATEGORIES.map(c => [c.key, c.label]));
-  $('as-cats').innerHTML = cats.map(([k, label]) => {
-    const n = k ? store.rules.filter(r => r.category === k).length : store.rules.length;
-    return '<button class="cat ' + ((ruleCat || '') === k ? 'on' : '') + '" onclick="ruleCat=' + (k ? '\'' + k + '\'' : 'null') + ';asRenderRules()">'
-      + esc(label) + ' <span class="ct">' + n + '</span></button>';
-  }).join('');
+function asCtaClick(){ if (ctaAction) ctaAction(); }
 
-  const q = ($('as-rule-q').value || '').toLowerCase();
-  const breachingIds = new Set(openBreaches().map(b => b.ruleId));
-  let list = store.rules.slice();
-  if (ruleCat) list = list.filter(r => r.category === ruleCat);
-  if (ruleFilters.continuous) list = list.filter(r => r.continuous);
-  if (ruleFilters.migration) list = list.filter(r => r.provenance && r.provenance.source === 'migration');
-  if (ruleFilters.disabled) list = list.filter(r => !r.enabled);
-  if (ruleFilters.breaching) list = list.filter(r => breachingIds.has(r.id));
-  if (q) list = list.filter(r => (r.name + ' ' + r.id + ' ' + r.check + ' ' + JSON.stringify(r.binding)).toLowerCase().includes(q));
-
-  const tb = $('as-rules').querySelector('tbody');
-  tb.innerHTML = list.length ? list.map(r => {
-    const g = store.groups.find(x => x.id === (r.schedule && r.schedule.groupId));
-    const lr = lastRunOf(r.id);
-    const prov = r.provenance && r.provenance.source === 'migration'
-      ? ' · from ' + esc(r.provenance.projectId || 'migration') : '';
-    return '<tr>'
-      + '<td><span class="rulename">' + esc(r.name) + '</span><span class="rid">' + esc(r.id) + prov + '</span></td>'
-      + '<td><span class="chip">' + esc(catLabel(r.category)) + '</span></td>'
-      + '<td class="mono">' + esc(r.check) + '</td>'
-      + '<td class="scope">' + bindLabel(r) + '</td>'
-      + '<td>' + sevChip(r.severity) + '</td>'
-      + '<td class="mono">' + esc((r.schedule && r.schedule.cron) || (g && g.cron) || '—') + '</td>'
-      + '<td class="mono num">' + (lr ? '<span class="chip ' + (lr.status === 'pass' ? 'ok' : lr.status === 'warn' ? 'warn' : lr.status === 'fail' ? 'crit' : '') + '">' + lr.status + '</span>' : '—') + '</td>'
-      + '<td><button class="tog" aria-pressed="' + String(!!r.enabled) + '" aria-label="Enabled" onclick="asToggleRule(\'' + r.id + '\')"></button></td>'
-      + '<td style="white-space:nowrap"><button class="btn" onclick="asRunNow(\'' + r.id + '\')" title="Run this rule now">▶</button> '
-      + '<button class="btn" onclick="asDrawerOpen(\'' + r.id + '\')">Edit</button></td></tr>';
-  }).join('') : '<tr><td colspan="9" class="empty">No rules yet. Promote your migration validations, accept a suggestion below, or write one with + New rule.</td></tr>';
-  $('as-rules-note').textContent = 'Showing ' + list.length + ' of ' + store.rules.length
-    + '. Rules are versioned and never hard-deleted; disabling keeps the history.';
-
-  const sugs = store.suggestions.filter(s => s.state === 'proposed');
-  $('as-sug-sub').textContent = sugs.length ? sugs.length + ' waiting' : 'nothing waiting — run Profile now';
-  $('as-sugs').innerHTML = sugs.length ? sugs.map(s =>
-    '<div class="sug"><span class="chip">' + esc(catLabel(s.category)) + '</span>'
-    + '<div class="body"><b>' + esc(s.title) + '</b><p>' + esc(s.detail) + '</p></div>'
-    + '<div class="acts"><button class="btn" onclick="asDismissSug(\'' + s.id + '\')">Dismiss</button>'
-    + '<button class="btn btn-primary" onclick="asAcceptSug(\'' + s.id + '\')">Review &amp; add</button></div></div>'
-  ).join('') : '<div class="empty">The profiler proposes rules from audit-date columns, declared keys and untended lookup tags. Dismissals are remembered per column.</div>';
+/* ═══════════════ §5: coverage of the migration ═══════════════ */
+function renderCoverage(){
+  const host = $('as-coverage'), hint = $('as-cov-hint');
+  if (!catalog || !catalog.tables.length){
+    hint.textContent = 'not yet measurable';
+    host.innerHTML = '<div class="muted" style="font-size:12px">— No target schema loaded, so coverage cannot be'
+      + ' computed. Connect the project databases and this card fills itself in.</div>';
+    return;
+  }
+  const cov = A.asCoverage(store, catalog, { db: 'tgt', labelFn: t => t.schema });
+  hint.textContent = cov.inScope + ' tables in scope · '
+    + (catalogMeta.srcDb || 'source') + ' → ' + (catalogMeta.tgtDb || 'target');
+  const pc = (n) => cov.inScope ? Math.round(100 * n / cov.inScope) : 0;
+  const c = cov.checked.length, m = cov.materialUnchecked.length, l = cov.lowRisk.length;
+  const gaps = cov.gaps.length
+    ? 'Biggest gaps: ' + cov.gaps.map(g => g.label + ' — 0 checks across ' + g.tables + ' table'
+        + (g.tables === 1 ? '' : 's') + (g.examples.length ? ' including ' + g.examples.join(', ') : '')).join('. ') + '.'
+    : (m === 0 ? 'Every material table has at least one check on it.' : '');
+  host.innerHTML =
+    '<div class="covbar">'
+    + (c ? '<i style="width:' + pc(c) + '%;background:var(--green)" title="checked"></i>' : '')
+    + (m ? '<i style="width:' + pc(m) + '%;background:var(--amber)" title="material but unchecked"></i>' : '')
+    + (l ? '<i style="width:' + Math.max(0, 100 - pc(c) - pc(m)) + '%;background:var(--bg4)" title="low-risk reference"></i>' : '')
+    + '</div>'
+    + '<div class="covleg">'
+    + '<span><span class="sw" style="background:var(--green)"></span>' + c + ' checked</span>'
+    + '<span><span class="sw" style="background:var(--amber)"></span>' + m + ' material but unchecked</span>'
+    + '<span><span class="sw" style="background:var(--bg4)"></span>' + l + ' low-risk reference</span>'
+    + '</div>'
+    + (gaps ? '<div class="covgaps">' + esc(gaps) + '</div>' : '')
+    + '<div class="muted" style="font-size:10.5px;margin-top:6px">Material = carries a money column, is referenced by'
+    + ' a foreign key, or holds more than ' + (store.settings.materialRowThreshold || 10000).toLocaleString('en-GB')
+    + ' rows (configurable).</div>';
 }
-function asToggleRule(id){
-  const r = store.rules.find(x => x.id === id);
-  if (!r) return;
-  if (r.enabled) A.asDisableRule(store, id, userName(), nowMs());
-  else { r.enabled = true; r.version++; A.asEvent(store, { type: 'rule.enabled', ruleId: id, by: userName() }, nowMs()); }
+
+/* ═══════════════ §6: suggestion bundles ═══════════════ */
+const BUNDLE_CHECKS = ['uniqueness.composite', 'recon.rowcount', 'referential.orphan', 'recon.column_aggregate'];
+function renderBundles(){
+  const host = $('as-bundles'), sub = $('as-bundle-sub');
+  if (!catalog){
+    sub.textContent = 'from the profiler';
+    host.innerHTML = '<div class="empty">Profiling the schema…</div>';
+    renderOtherSugs();
+    return;
+  }
+  const res = A.asSuggestBundles(store, catalog);
+  sub.textContent = res.total
+    ? res.total.toLocaleString('en-GB') + ' found by the profiler · grouped into ' + res.bundles.length
+      + ' decision' + (res.bundles.length === 1 ? '' : 's')
+    : 'nothing waiting';
+  host.innerHTML = res.bundles.length ? res.bundles.map(b => {
+    const open = expandedBundle === b.key;
+    return '<div class="bundle"><div class="body">'
+      + '<b>' + esc(b.title) + '</b><p>' + esc(b.plain) + '</p>'
+      + '<div class="meta">' + b.count + ' table' + (b.count === 1 ? '' : 's') + ' · ~'
+      + A.fmtDuration(b.estMsPerSweep) + ' per sweep · no writes</div></div>'
+      + '<div class="acts">'
+      + '<button class="btn" onclick="asBundleReview(\'' + b.key + '\')">' + (open ? 'Close' : 'Review') + '</button>'
+      + '<button class="btn btn-primary" onclick="asBundleAddAll(\'' + b.key + '\')">Add all ' + b.count + '</button>'
+      + '</div></div>'
+      + (open ? '<div class="bexp">' + b.items.map((d, i) =>
+          '<div class="bitem"><span class="nm"><b>' + esc(d.name) + '</b><br><span class="pv">' + esc(d.proves || '') + '</span></span>'
+          + '<button class="btn" onclick="asBundleDismiss(\'' + b.key + '\',\'' + esc(b.tables[i]) + '\')">Dismiss</button>'
+          + '<button class="btn" onclick="asBundleAddOne(\'' + b.key + '\',' + i + ')">Add</button></div>').join('')
+        + '</div>' : '');
+  }).join('') : '<div class="empty">The profiler has nothing new to suggest — every table it can cover already has'
+    + ' a check, was dismissed, or is out of scope.</div>';
+  renderOtherSugs();
+}
+function renderOtherSugs(){
+  /* checks the four bundles don't carry (freshness, lookups, …) keep the
+     per-item cards, below the bundles */
+  const sugs = store.suggestions.filter(s => s.state === 'proposed' && BUNDLE_CHECKS.indexOf(s.check) < 0);
+  $('as-sugs').innerHTML = sugs.length
+    ? '<div class="note" style="border-top:0.5px solid var(--border)">Other suggestions — one decision each</div>'
+      + sugs.map(s =>
+        '<div class="sug"><span class="chip">' + esc(catLabel(s.category)) + '</span>'
+        + '<div class="body"><b>' + esc(s.title) + '</b><p>' + esc(s.detail) + '</p></div>'
+        + '<div class="acts"><button class="btn" onclick="asDismissSug(\'' + s.id + '\')">Dismiss</button>'
+        + '<button class="btn" onclick="asAcceptSug(\'' + s.id + '\')">Review &amp; add</button></div></div>').join('')
+    : '';
+}
+function bundleByKey(key){
+  return A.asSuggestBundles(store, catalog).bundles.find(b => b.key === key) || null;
+}
+function asBundleReview(key){
+  expandedBundle = expandedBundle === key ? null : key;
+  renderBundles();
+}
+function asBundleAddAll(key){
+  const b = bundleByKey(key);
+  if (!b) return;
+  A.asAcceptBundle(store, b, userName(), nowMs());
+  expandedBundle = null;
   saveStore(); renderAll();
 }
-async function asRunNow(id){
-  const r = store.rules.find(x => x.id === id);
-  if (r) await asRunRule(r);
+function asBundleAddOne(key, i){
+  const b = bundleByKey(key);
+  if (!b || !b.items[i]) return;
+  A.asSaveRule(store, b.items[i], userName(), nowMs());
+  saveStore(); renderAll();
+}
+function asBundleDismiss(key, tableKey){
+  store.dismissals['bundle|' + key + '|' + tableKey] = { at: nowMs(), by: userName() };
+  A.asEvent(store, { type: 'bundle.item_dismissed', key, tableKey, by: userName() }, nowMs());
+  saveStore(); renderBundles();
 }
 function asAcceptSug(id){
   const s = store.suggestions.find(x => x.id === id);
@@ -1034,13 +1180,124 @@ function asAcceptSug(id){
 }
 function asDismissSug(id){ A.asDismissSuggestion(store, id, userName(), nowMs()); saveStore(); renderAll(); }
 
-function renderTags(){
-  const totalCols = catalog ? catalog.tables.reduce((a, t) => a + (t.columns || []).length, 0) : 0;
-  const taggedCols = new Set(store.tags.map(t => [t.db, t.schema, t.table, t.column].join('|'))).size;
-  $('as-tag-asset').innerHTML = '<div class="ic">◇</div><div><b>' + taggedCols + ' of ' + (totalCols || '—')
-    + ' columns tagged</b><p>Tags are what make a rule portable. Tag a column once and every rule bound to that '
-    + 'tag applies — on this schema, on the next database, on the next migration.</p></div>';
+/* ═══════════════ §1 + §7: your checks ═══════════════ */
+function asToggleFilter(k){
+  ruleFilters[k] = !ruleFilters[k];
+  $('as-f-' + k).classList.toggle('on', !!ruleFilters[k]);
+  asRenderRules();
+}
+function asClearRuleFilters(){
+  ruleCat = null;
+  ruleFilters = {};
+  $('as-rule-q').value = '';
+  ['continuous', 'migration', 'disabled', 'breaching'].forEach(k => $('as-f-' + k).classList.remove('on'));
+  asRenderRules();
+}
+function lastResultChip(r){
+  const lr = lastRunOf(r.id);
+  const open = openBreaches().some(b => b.ruleId === r.id);
+  if (open) return '<span class="chip crit">Open</span>';
+  if (!lr) return '<span class="chip">Never run</span>';
+  if (lr.status === 'pass') return '<span class="chip ok">Pass</span>';
+  if (lr.status === 'error') return '<span class="chip warn">Error</span>';
+  if (lr.status === 'skipped') return '<span class="chip">Skipped</span>';
+  return '<span class="chip crit">Open</span>';
+}
+function scopeCell(r){
+  const t = (r.binding && r.binding.targets || [])[0];
+  let name = null, rows = null;
+  if (r.binding && r.binding.mode === 'tag') name = 'tag: ' + r.binding.tag;
+  else if (r.binding && r.binding.mode === 'pattern') name = r.binding.pattern;
+  else if (t) name = t.table + ((r.binding.targets.length > 1) ? ' +' + (r.binding.targets.length - 1) : '');
+  if (t && catalog){
+    const ct = catalog.tables.find(x => x.db === t.db && x.schema === t.schema && x.table === t.table);
+    if (ct) rows = ct.rowCount;
+  }
+  return '<span class="mono">' + esc(name || '—') + '</span>'
+    + (rows != null ? '<span class="rid">' + rows.toLocaleString('en-GB') + ' rows</span>' : '');
+}
+function asRenderRules(){
+  /* §5: categories survive as filter chips on the search row, not a report */
+  const chips = [['', 'All rules', store.rules.length]]
+    .concat(A.CATEGORIES.map(c => [c.key, c.label, store.rules.filter(r => r.category === c.key).length])
+      .filter(x => x[2] > 0));
+  $('as-catchips').innerHTML = chips.map(([k, label, n]) =>
+    '<button class="fchip ' + ((ruleCat || '') === k ? 'on' : '') + '" onclick="ruleCat='
+    + (k ? '\'' + k + '\'' : 'null') + ';asRenderRules()">' + esc(label) + '<span class="ct">' + n + '</span></button>').join('');
 
+  const q = ($('as-rule-q').value || '').toLowerCase();
+  const breachingIds = new Set(openBreaches().map(b => b.ruleId));
+  let list = store.rules.slice();
+  if (ruleCat) list = list.filter(r => r.category === ruleCat);
+  if (ruleFilters.continuous) list = list.filter(r => r.continuous);
+  if (ruleFilters.migration) list = list.filter(r => r.provenance && r.provenance.source === 'migration');
+  if (ruleFilters.disabled) list = list.filter(r => !r.enabled);
+  if (ruleFilters.breaching) list = list.filter(r => breachingIds.has(r.id));
+  if (q) list = list.filter(r => (r.name + ' ' + r.id + ' ' + r.check + ' ' + (r.proves || '') + ' ' + JSON.stringify(r.binding)).toLowerCase().includes(q));
+
+  const tb = $('as-rules').querySelector('tbody');
+  const note = $('as-rules-note');
+  if (!store.rules.length){
+    /* the library is truly empty */
+    tb.innerHTML = '<tr><td colspan="7" class="empty">No rules yet. Import your migration validations, accept a'
+      + ' suggested bundle above, or write one with + New rule.</td></tr>';
+    note.style.display = 'none';
+    return;
+  }
+  if (!list.length){
+    /* §1: a filter that matches nothing is NOT an empty library */
+    const whatFor = ruleCat ? 'in ' + catLabel(ruleCat) : 'matching these filters';
+    tb.innerHTML = '<tr><td colspan="7" class="empty">No rules ' + esc(whatFor) + '.<br>'
+      + '<a href="#" onclick="asClearRuleFilters();return false">Show all ' + store.rules.length + '</a></td></tr>';
+    note.style.display = 'none';
+    return;
+  }
+  tb.innerHTML = list.map(r => {
+    const prov = r.provenance && r.provenance.source === 'migration'
+      ? ' · from ' + esc(r.provenance.projectId || 'migration') : '';
+    const cron = ruleCron(r);
+    const sqlOpen = expandedSqlRule === r.id;
+    const lr = lastRunOf(r.id);
+    return '<tr>'
+      /* §7: the plain-English sentence leads; the internals are the sub-line */
+      + '<td><span class="rulename">' + esc(r.proves || r.name) + '</span>'
+      + '<span class="rid">' + esc(r.id) + ' · ' + esc(r.name) + ' · ' + esc(r.check) + prov + '</span></td>'
+      + '<td>' + scopeCell(r) + '</td>'
+      + '<td>' + esc(cron ? A.asCronHuman(cron) : '—') + '</td>'
+      + '<td>' + lastResultChip(r) + '</td>'
+      + '<td><button class="btn" onclick="asToggleSql(\'' + r.id + '\')" title="The SQL this check runs — recorded verbatim on every run">' + (sqlOpen ? '▴' : 'SQL') + '</button></td>'
+      + '<td><button class="tog" aria-pressed="' + String(!!r.enabled) + '" aria-label="Enabled" onclick="asToggleRule(\'' + r.id + '\')"></button></td>'
+      + '<td style="white-space:nowrap"><button class="btn" onclick="asRunNow(\'' + r.id + '\')" title="Run this rule now">▶</button> '
+      + '<button class="btn" onclick="asDrawerOpen(\'' + r.id + '\')">Edit</button></td></tr>'
+      + (sqlOpen ? '<tr><td colspan="7" style="background:var(--bg3)"><div class="dry" style="margin:0">'
+          + esc(lr && lr.queryText ? lr.queryText : 'Not run yet — the SQL is recorded verbatim with the first run.'
+            + ' Dry-run it in the editor to preview.') + '</div></td></tr>' : '');
+  }).join('');
+  note.style.display = '';
+  note.textContent = 'Showing ' + list.length + ' of ' + store.rules.length
+    + '. Rules are versioned and never hard-deleted; disabling keeps the history.';
+}
+function asToggleSql(id){
+  expandedSqlRule = expandedSqlRule === id ? null : id;
+  asRenderRules();
+}
+function asToggleRule(id){
+  const r = store.rules.find(x => x.id === id);
+  if (!r) return;
+  if (r.enabled) A.asDisableRule(store, id, userName(), nowMs());
+  else { r.enabled = true; r.version++; A.asEvent(store, { type: 'rule.enabled', ruleId: id, by: userName() }, nowMs()); }
+  saveStore(); renderAll();
+}
+async function asRunNow(id){
+  const r = store.rules.find(x => x.id === id);
+  if (!r) return;
+  const run = await asRunRule(r, { silent: true });
+  recordSweep([run]);
+  renderAll();
+}
+
+/* ═══════════════ tags ═══════════════ */
+function renderTags(){
   const props = (store.tagProposals || []).map((p, i) => ({ p, i })).filter(x => x.p.state === 'proposed');
   const tb = $('as-tag-props').querySelector('tbody');
   tb.innerHTML = props.length ? props.map(({ p, i }) =>
@@ -1049,7 +1306,7 @@ function renderTags(){
     + '<td><span class="conf"><span class="track"><i style="width:' + Math.round(p.confidence * 100) + '%"></i></span>'
     + p.confidence.toFixed(2) + '</span></td>'
     + '<td class="muted" style="font-size:11.5px">' + esc(p.rationale) + '</td>'
-    + '<td style="white-space:nowrap"><button class="btn btn-primary" onclick="asAcceptTag(' + i + ')">Accept</button> '
+    + '<td style="white-space:nowrap"><button class="btn" onclick="asAcceptTag(' + i + ')">Accept</button> '
     + '<button class="btn" onclick="asDismissTag(' + i + ')">Dismiss</button></td></tr>'
   ).join('') : '<tr><td colspan="5" class="empty">No proposals waiting. ↻ Propose from schema reads column names, types and keys — metadata only, no values.</td></tr>';
 
@@ -1066,7 +1323,12 @@ function renderTags(){
   }).join('') || '<tr><td colspan="4" class="empty">No tags yet — accept proposals above.</td></tr>';
 }
 
+/* ═══════════════ breaches ═══════════════ */
 function renderBreaches(){
+  const open = openBreaches().length;
+  $('as-breach-sub').textContent = open
+    ? open + ' open — one breach is one incident across runs'
+    : 'nothing is breaching — that is the product working';
   const list = store.breaches.slice().sort((a, b) => b.openedAt - a.openedAt);
   if (!selBreach && list.length) selBreach = (openBreaches()[0] || list[0]).id;
   $('as-bq').innerHTML = list.length ? list.map(b => {
@@ -1079,7 +1341,7 @@ function renderBreaches(){
 
   const b = store.breaches.find(x => x.id === selBreach);
   const host = $('as-breach-detail');
-  if (!b){ host.innerHTML = '<div class="panel"><div class="empty">No breach selected.</div></div>'; return; }
+  if (!b){ host.innerHTML = '<div class="panel" style="margin:0"><div class="empty">No breach selected.</div></div>'; return; }
   const r = ruleOf(b.ruleId);
   const run = store.runs.filter(x => x.ruleId === b.ruleId).slice(-1)[0];
   const signals = (run && run.context) || {};
@@ -1098,7 +1360,7 @@ function renderBreaches(){
     + (b.state === 'open' ? '<button class="btn" onclick="asAck(\'' + b.id + '\')">Acknowledge</button>' : '')
     + (b.state !== 'resolved' ? '<button class="btn" onclick="asResolveBreach(\'' + b.id + '\')">Resolve</button>'
       + '<button class="btn" onclick="asSuppressBreach(\'' + b.ruleId + '\')">Suppress…</button>'
-      + '<button class="btn btn-primary" onclick="asCleanse(\'' + b.id + '\')">Cleanse rows</button>' : '')
+      + '<button class="btn" onclick="asCleanse(\'' + b.id + '\')">Cleanse rows</button>' : '')
     + '</div></div><div class="panel-body">'
     + '<table style="font-size:12px"><tbody>'
     + '<tr><td class="muted" style="width:110px">Rule</td><td><span class="mono">' + esc(b.ruleId) + '</span> · ' + esc(r.check)
@@ -1120,7 +1382,7 @@ function renderBreaches(){
     + (sample.length
       ? '<div class="tw" style="margin-top:0.8rem"><table><thead><tr>' + cols.map(c => '<th>' + esc(c) + '</th>').join('')
         + '</tr></thead><tbody>' + sample.map(row => '<tr>' + cols.map(c => '<td class="mono">' + esc(String(row[c] == null ? '' : row[c]).slice(0, 60)) + '</td>').join('') + '</tr>').join('')
-        + '</tbody></tbody></table></div>'
+        + '</tbody></table></div>'
         + '<div class="muted" style="font-size:11px;margin-top:4px">Showing ' + sample.length + ' retained sample rows of '
         + (b.currentRowsFailed || b.peakRowsFailed) + ' failing. <a href="#" onclick="asExportRows(\'' + b.id + '\');return false" style="color:var(--accent)">Export sampled rows to CSV</a></div>'
       : '')
@@ -1129,7 +1391,7 @@ function renderBreaches(){
         + '<div class="dry">' + esc(run.perTarget.map(t => t.generatedSql).join('\n\n')) + '</div></details>'
       : '')
     + '</div></div>'
-    + '<div class="panel"><div class="panel-header"><div class="panel-title">Audit trail</div>'
+    + '<div class="panel" style="margin:0.9rem 0 0"><div class="panel-header"><div class="panel-title">Audit trail</div>'
     + '<span class="panel-sub">every state change, kept with the rule history</span></div>'
     + '<div class="panel-body"><ul class="trail">'
     + (trail.length ? trail.map(e => '<li><span class="ts">' + new Date(e.at).toLocaleString() + '</span><span><b>'
@@ -1139,17 +1401,16 @@ function renderBreaches(){
     + '</ul></div></div>';
 }
 
+/* ═══════════════ schedules & routing ═══════════════ */
 function renderSched(){
   const tb = $('as-groups').querySelector('tbody');
   tb.innerHTML = store.groups.map(g => {
     const rules = g.id === 'grp_profile' ? null : rulesInGroup(g);
-    const est = rules && rules.length
-      ? Math.round(rules.reduce((a, r) => a + (r.estimatedCostMs || 400), 0) / 1000) + 's'
-      : '—';
+    const est = rules && rules.length ? Math.round(estSweepMs(rules) / 1000) + 's' : '—';
     const next = A.asCronNext(g.cron, nowMs());
     return '<tr><td><b>' + esc(g.name) + '</b><span class="rid">' + esc((g.match || []).map(catLabel).join(' + ') || 'auto-discovery sweep') + '</span></td>'
       + '<td class="mono num">' + (rules ? rules.length : '—') + '</td>'
-      + '<td class="mono">' + esc(g.cron) + '</td>'
+      + '<td>' + esc(A.asCronHuman(g.cron)) + '<span class="rid">' + esc(g.cron) + '</span></td>'
       + '<td class="mono">' + (next ? new Date(next).toLocaleString() : '—')
       + (g.lastRunAt ? '<span class="rid">last ' + fmtWhen(g.lastRunAt) + '</span>' : '<span class="rid">never swept</span>') + '</td>'
       + '<td class="mono">' + est + '</td>'
@@ -1180,39 +1441,224 @@ function renderSched(){
     + '<span class="muted">Every suppression requires a reason and an expiry. There is no silent permanent mute.</span>';
 }
 
-function renderReport(){
-  const d = new Date();
-  const from = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
-  const to = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
-  const rep = A.asMonthlyReport(store, from, to);
-  $('as-rep-sub').textContent = d.toLocaleString('en-GB', { month: 'long', year: 'numeric' })
-    + ' · ' + rep.rulesTotal + ' active rules';
-  $('as-rep-stats').innerHTML = [
-    ['Mean health', rep.meanHealth == null ? '—' : rep.meanHealth + '%'],
-    ['Breaches caught', rep.breachesCaught],
-    ['Resolved', rep.breachesResolved],
-    ['Mean time to fix', rep.meanTimeToFixMs == null ? '—' : A.fmtDuration(rep.meanTimeToFixMs)],
-  ].map(([k, v]) => '<div class="rep-stat"><div class="v">' + v + '</div><div class="k">' + k + '</div></div>').join('');
-  $('as-rep-narrative').innerHTML = rep.narrative.length
-    ? rep.narrative.map(n => '<li>' + esc(n) + '</li>').join('')
-    : '<li>No breaches this month — every scheduled check passed.</li>';
-  $('as-rep-growth').textContent = rep.rulesAdded + ' rule' + (rep.rulesAdded === 1 ? '' : 's')
-    + ' added this month. The library now holds ' + rep.rulesTotal + ' active rules and '
-    + store.runs.length + ' retained run summaries — the asset this module accumulates.';
+/* ═══════════════ §9: the Evidence view ═══════════════ */
+function renderEvidence(){
+  const ev = A.asEvidence(store, nowMs());
+  const openN = ev.open.length;
+
+  /* the statement — every number computed, none invented */
+  const asAt = new Date(ev.asAt);
+  const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
+  let statement;
+  if (!ev.checksRun){
+    statement = 'As at ' + asAt.toLocaleString('en-GB') + ' (' + tz + '), no checks have run against the live'
+      + ' target database yet, so there is no evidence to state. Run the checks from the Engineer view first.';
+  } else {
+    statement = 'As at ' + asAt.toLocaleString('en-GB') + ' (' + tz + '), ' + ev.checksRun + ' check'
+      + (ev.checksRun === 1 ? '' : 's') + ' ran against the live target database. ' + ev.passed + ' passed. '
+      + (openN ? openN + (openN === 1 ? ' is' : ' are') + ' open and named below. ' : 'None are open. ')
+      + (ev.integrity.firstRunAt
+        ? (ev.integrity.editsSince === 0
+            ? 'No check has been edited or removed since the first recorded run on '
+              + new Date(ev.integrity.firstRunAt).toLocaleDateString('en-GB') + '.'
+            : ev.integrity.editsSince + ' check edit' + (ev.integrity.editsSince === 1 ? '' : 's')
+              + ' since the first recorded run are on the audit trail; each kept the prior version.')
+        : '');
+  }
+  $('as-ev-statement').textContent = statement;
+
+  /* signature strip */
+  const latest = {};
+  store.runs.forEach(r => { if (r.status !== 'skipped') latest[r.ruleId] = r; });
+  const rowsVerified = Object.values(latest).reduce((a, r) => a + ((r.counts && r.counts.compared) || 0), 0);
+  $('as-ev-sig').innerHTML = ev.manifest
+    ? 'sweep of ' + ev.manifest.count + ' runs · ' + new Date(ev.manifest.at).toISOString()
+      + ' · ' + rowsVerified.toLocaleString('en-GB') + ' rows verified<br>manifest sha256 ' + esc(ev.manifest.hash)
+      + '<br>Prepared by Cygenix Migration Console (automated)'
+    : '— no sweep recorded yet, so there is no manifest hash to sign with';
+
+  /* four tiles — null renders as a dash with the reason, never a made-up figure */
+  const cov = catalog ? A.asCoverage(store, catalog, { db: 'tgt', labelFn: t => t.schema }) : null;
+  const tiles = [
+    ['Checks passing', ev.tiles.passingPct == null ? '—' : ev.tiles.passingPct + '%',
+      ev.tiles.passingPct == null ? 'nothing has run' : ev.passed + ' of ' + ev.checksRun],
+    ['Tables covered', cov ? cov.checked.length + ' / ' + cov.inScope : '—',
+      cov ? 'of the target scope' : 'no schema loaded'],
+    ['Days unbroken', ev.tiles.unbrokenDays == null ? '—' : ev.tiles.unbrokenDays,
+      ev.tiles.unbrokenDays == null ? 'nothing has run' : 'consecutive days with runs'],
+    ['Mean time to fix', ev.tiles.meanTimeToFixMs == null ? '—' : A.fmtDuration(ev.tiles.meanTimeToFixMs),
+      ev.tiles.meanTimeToFixMs == null ? 'no breach fixed yet' : 'across resolved breaches'],
+  ];
+  $('as-ev-tiles').innerHTML = tiles.map(([k, v, n]) =>
+    '<div class="rep-stat"><div class="v">' + v + '</div><div class="k">' + esc(k) + '</div>'
+    + '<div class="muted" style="font-size:10.5px">' + esc(n) + '</div></div>').join('');
+
+  /* open items — named, never a bare count */
+  $('as-ev-open').innerHTML = openN ? ev.open.map(o => {
+    const r = store.rules.find(x => x.id === o.ruleId);
+    const cadence = r ? ruleCron(r) : null;
+    return '<div class="openitem"><span class="chip ' + (/high/.test(o.severity) ? 'crit' : /accepted/.test(o.severity) ? '' : 'warn')
+      + '">' + esc(o.severity) + '</span>'
+      + '<div class="body"><b>' + esc(o.name) + '</b>'
+      + '<p>' + esc(o.impact) + ' Owner: ' + esc(o.owner) + ' · open ' + esc(A.fmtDuration(o.ageMs))
+      + ' · first seen in run ' + esc(o.firstRunId || '—')
+      + ' · re-checked ' + esc(cadence ? A.asCronHuman(cadence) : '—') + '.</p></div></div>';
+  }).join('') : '<div class="empty">Nothing is open. Every named check currently passes.</div>';
+
+  /* how to check us — claim → query → result → record */
+  const catKeys = Object.keys(ev.claims);
+  $('as-ev-claims').innerHTML = catKeys.length ? catKeys.map(cat =>
+    '<details class="claim"><summary><span class="arrow">▶</span><b>' + esc(cat) + '</b>'
+    + '<span class="muted" style="font-size:11px">' + ev.claims[cat].length + ' claim' + (ev.claims[cat].length === 1 ? '' : 's') + '</span></summary>'
+    + '<div class="steps">' + ev.claims[cat].map(c =>
+      '<div class="step"><span class="k">Claim</span><span>' + esc(c.claim) + '</span></div>'
+      + '<div class="step"><span class="k">Query</span>' + (c.query
+        ? '<pre>' + esc(c.query) + '</pre>' : '<span class="muted">not run yet — the query is recorded verbatim on the first run</span>') + '</div>'
+      + '<div class="step"><span class="k">Result</span><span>' + (c.counts
+        ? c.result + ' · ' + c.counts.compared.toLocaleString('en-GB') + ' compared, '
+          + c.counts.failed.toLocaleString('en-GB') + ' failed'
+        : 'never run') + '</span></div>'
+      + '<div class="step"><span class="k">Record</span><span class="mono">' + (c.runId
+        ? esc(c.runId) + ' · ' + esc(c.at || '') + '<br>sha256 ' + esc(c.hash || '—')
+        : '—') + '</span></div>').join('')
+    + '</div></details>').join('')
+    : '<div class="empty">No enabled checks yet — there is nothing to claim.</div>';
+
+  /* what this does not cover — verbatim, and load-bearing for credibility */
+  $('as-ev-notcov').innerHTML = ev.notCovered.map(x => '<li>' + esc(x) + '</li>').join('');
+
+  /* the pack — real exports */
+  $('as-ev-pack').innerHTML = [
+    ['Statement (PDF)', 'the dated statement, tiles and open items as a standalone document', 'asExportStatementPdf()'],
+    ['All results (CSV)', 'one row per recorded run: ids, timestamps, result, counts, sha256', 'asExportResultsCsv()'],
+    ['SQL manifest (TXT)', 'every check\'s recorded SELECT, verbatim, with the manifest hash', 'asExportSqlManifest()'],
+    ['Run log (JSON)', 'the complete append-only run records, exactly as stored', 'asExportRunLog()'],
+  ].map(([t, p, fn]) =>
+    '<div class="pack"><div class="body"><b>' + t + '</b><p>' + p + '</p></div>'
+    + '<button class="btn" onclick="' + fn + '">Download</button></div>').join('')
+    + '<div class="pack"><div class="body"><b>Verify this pack</b>'
+    + '<p>manifest sha256 ' + esc(ev.manifest ? ev.manifest.hash : '— (no sweep recorded yet)') + '<br>'
+    + 'Recompute it: sha256 each run record (the JSON fields id, ruleId, ruleVersion, startedAt, finishedAt, result,'
+    + ' counts, queryText, connectionIds), sort the hashes, join with newlines, sha256 the result.</p></div></div>';
 }
 
+/* ---------- evidence exports ---------- */
+function asExportResultsCsv(){
+  const head = 'run_id,rule_id,rule_version,started_at,finished_at,result,compared,matched,failed,sha256';
+  const rows = store.runs.map(r => [
+    r.id, r.ruleId, r.ruleVersion || '', r.startedAtIso || '', r.finishedAtIso || '', r.result || r.status,
+    r.counts ? r.counts.compared : '', r.counts ? r.counts.matched : '', r.counts ? r.counts.failed : '',
+    r.runHash || ''].join(','));
+  downloadBlob(new Blob(['﻿' + [head].concat(rows).join('\r\n')], { type: 'text/csv' }),
+    'assurance-results.csv');
+}
+function asExportSqlManifest(){
+  const ev = A.asEvidence(store, nowMs());
+  const latest = {};
+  store.runs.forEach(r => { if (r.status !== 'skipped') latest[r.ruleId] = r; });
+  const lines = ['-- Cygenix Assurance — SQL manifest',
+    '-- generated ' + new Date().toISOString(),
+    '-- manifest sha256 ' + (ev.manifest ? ev.manifest.hash : 'n/a — no sweep recorded'),
+    '-- every statement below is a read-only SELECT, recorded verbatim at run time', ''];
+  store.rules.filter(r => r.enabled).forEach(r => {
+    const run = latest[r.id];
+    lines.push('-- ' + r.id + ' · ' + r.name + (r.proves ? '\n-- proves: ' + r.proves : ''));
+    const cron = ruleCron(r);
+    if (cron) lines.push('-- schedule: ' + A.asCronHuman(cron) + ' (' + cron + ')');
+    lines.push(run && run.queryText ? run.queryText : '-- not run yet; SQL is recorded on the first run');
+    lines.push('');
+  });
+  downloadBlob(new Blob([lines.join('\n')], { type: 'text/plain' }), 'assurance-sql-manifest.txt');
+}
+function asExportRunLog(){
+  const ev = A.asEvidence(store, nowMs());
+  downloadBlob(new Blob([JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    manifest: ev.manifest,
+    note: 'Append-only run records. Each runHash is the sha256 of the record’s id, ruleId, ruleVersion, '
+      + 'ISO timestamps, result, counts, queryText and connectionIds — sample rows are excluded so retention '
+      + 'ageing cannot invalidate a record.',
+    runs: store.runs,
+  }, null, 2)], { type: 'application/json' }), 'assurance-run-log.json');
+}
+/* A minimal but genuine PDF writer — Helvetica text, A4, multi-page.
+   No print dialog: the pack has to stand on its own. */
+function asMiniPdf(lines){
+  const escPdf = (s) => String(s).replace(/[^\x20-\x7e]/g, '?').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const perPage = 52;
+  const pages = [];
+  for (let i = 0; i < lines.length; i += perPage) pages.push(lines.slice(i, i + perPage));
+  if (!pages.length) pages.push(['']);
+  const objs = [];                                     // 1-indexed object bodies
+  const pageIds = pages.map((_, i) => 4 + i * 2);
+  objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objs[2] = '<< /Type /Pages /Kids [' + pageIds.map(id => id + ' 0 R').join(' ') + '] /Count ' + pages.length + ' >>';
+  objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+  pages.forEach((pl, i) => {
+    const content = 'BT /F1 10 Tf 13 TL 40 800 Td '
+      + pl.map((l, j) => (j ? 'T* ' : '') + '(' + escPdf(l) + ') Tj ').join('') + 'ET';
+    objs[4 + i * 2] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] '
+      + '/Resources << /Font << /F1 3 0 R >> >> /Contents ' + (5 + i * 2) + ' 0 R >>';
+    objs[5 + i * 2] = '<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream';
+  });
+  let out = '%PDF-1.4\n';
+  const offsets = [0];
+  for (let i = 1; i < objs.length; i++){
+    offsets[i] = out.length;
+    out += i + ' 0 obj\n' + objs[i] + '\nendobj\n';
+  }
+  const xref = out.length;
+  out += 'xref\n0 ' + objs.length + '\n0000000000 65535 f \n';
+  for (let i = 1; i < objs.length; i++) out += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+  out += 'trailer\n<< /Size ' + objs.length + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF';
+  return new Blob([out], { type: 'application/pdf' });
+}
+function wrapText(s, width){
+  const words = String(s).split(/\s+/); const out = []; let line = '';
+  words.forEach(w => {
+    if ((line + ' ' + w).trim().length > width){ if (line) out.push(line); line = w; }
+    else line = (line ? line + ' ' : '') + w;
+  });
+  if (line) out.push(line);
+  return out.length ? out : [''];
+}
+function asExportStatementPdf(){
+  const ev = A.asEvidence(store, nowMs());
+  const lines = [];
+  const push = (s) => wrapText(s, 100).forEach(l => lines.push(l));
+  lines.push('CYGENIX ASSURANCE - STATEMENT OF CHECKS'); lines.push('');
+  push($('as-ev-statement').textContent); lines.push('');
+  if (ev.manifest){
+    push('Sweep of ' + ev.manifest.count + ' runs at ' + new Date(ev.manifest.at).toISOString());
+    push('Manifest sha256: ' + ev.manifest.hash);
+  } else push('No sweep recorded yet - no manifest hash.');
+  push('Prepared by Cygenix Migration Console (automated)'); lines.push('');
+  lines.push('OPEN ITEMS'); lines.push('');
+  if (ev.open.length) ev.open.forEach(o => {
+    push('- [' + o.severity + '] ' + o.name);
+    push('  ' + o.impact + ' Owner: ' + o.owner + '. First seen in run ' + (o.firstRunId || '-') + '.');
+  });
+  else push('Nothing is open. Every named check currently passes.');
+  lines.push(''); lines.push('WHAT THIS DOES NOT COVER'); lines.push('');
+  ev.notCovered.forEach(x => push('- ' + x));
+  downloadBlob(asMiniPdf(lines), 'assurance-statement.pdf');
+}
+
+/* ═══════════════ render orchestration ═══════════════ */
 function renderAll(){
-  const open = openBreaches().length;
-  $('as-breach-n').style.display = open ? '' : 'none';
-  $('as-breach-n').textContent = open;
+  renderStatus();
   const due = store.groups.filter(g => A.asCronDue(g.cron, g.lastRunAt, nowMs())).length;
   $('as-sweepnote').textContent = due ? due + ' group' + (due === 1 ? '' : 's') + ' due' : '';
-  if (view === 'health') renderHealth();
-  else if (view === 'rules') asRenderRules();
-  else if (view === 'tags') renderTags();
-  else if (view === 'breaches') renderBreaches();
-  else if (view === 'sched') renderSched();
-  else renderReport();
+  if (view === 'eng'){
+    renderCoverage();
+    renderBundles();
+    asRenderRules();
+    renderBreaches();
+    renderSched();
+    renderTags();
+  } else {
+    renderEvidence();
+  }
 }
 
 /* ═══════════════ the rule builder drawer ═══════════════ */
@@ -1266,6 +1712,7 @@ function asDrawerOpen(ruleId, draft){
   $('as-dw-title').textContent = r ? 'Edit ' + r.id : 'New rule';
   $('as-dw-badge').textContent = draft ? 'Draft from suggestion' : (r ? 'v' + r.version : 'Draft');
   $('as-dw-name').value = src.name || '';
+  $('as-dw-proves').value = src.proves || '';
   $('as-dw-category').value = src.category || 'quality';
   $('as-dw-severity').value = src.severity || 'warning';
   if (src.schedule && src.schedule.groupId) $('as-dw-group').value = src.schedule.groupId;
@@ -1285,6 +1732,8 @@ function asDrawerOpen(ruleId, draft){
   $('as-dw-band').value = (src.thresholds.baseline && src.thresholds.baseline.worseByPercent) || 10;
   $('as-dw-continuous').setAttribute('aria-pressed', String(src.continuous !== false));
   $('as-dw-onbreach').value = src.onBreach || 'notify';
+  $('as-dw-cron').value = (src.schedule && src.schedule.cron) || '';
+  asDwCronChanged();
   asDwBindChanged();
   asDwResolvePreview();
   $('as-scrim').classList.add('show');
@@ -1293,6 +1742,12 @@ function asDrawerOpen(ruleId, draft){
 function asDrawerClose(){
   $('as-scrim').classList.remove('show');
   $('as-drawer').classList.remove('show');
+}
+function asDwCronChanged(){
+  const v = $('as-dw-cron').value.trim();
+  $('as-dw-cronhuman').textContent = v
+    ? 'Reads as: ' + A.asCronHuman(v)
+    : 'Blank — the rule runs on its group’s schedule.';
 }
 function asDwCheckChanged(){
   $('as-dw-params').value = JSON.stringify(PARAM_TEMPLATES[$('as-dw-check').value] || {}, null, 2);
@@ -1314,6 +1769,7 @@ function drawerRule(){
   const mode = $('as-dw-bmode').value;
   const out = {
     name: $('as-dw-name').value.trim() || 'Untitled rule',
+    proves: $('as-dw-proves').value.trim() || null,
     category: $('as-dw-category').value,
     severity: $('as-dw-severity').value,
     check: $('as-dw-check').value,
@@ -1335,7 +1791,7 @@ function drawerRule(){
     },
     continuous: $('as-dw-continuous').getAttribute('aria-pressed') === 'true',
     onBreach: $('as-dw-onbreach').value,
-    schedule: { groupId: $('as-dw-group').value, cron: null },
+    schedule: { groupId: $('as-dw-group').value, cron: $('as-dw-cron').value.trim() || null },
   };
   if (editingRuleId) out.id = editingRuleId;
   return out;
@@ -1384,11 +1840,19 @@ async function asDryRun(){
 function asSaveFromDrawer(){
   if (!dryOk) return;
   try {
-    const rule = A.asSaveRule(store, drawerRule(), userName(), nowMs());
+    const draft = drawerRule();
+    /* §7: proves is required — a template fills it for standard checks, but
+       a rule no template fits needs its author's own sentence */
+    if (!draft.proves && !A.asProvesFor(draft)){
+      alert('Write one sentence in "What it proves" — for this check there is no template to fill it from.');
+      $('as-dw-proves').focus();
+      return;
+    }
+    const rule = A.asSaveRule(store, draft, userName(), nowMs());
     saveStore();
     asDrawerClose();
     ruleCat = null;
-    asView('rules');
+    asView('eng');
     void rule;
   } catch (e) { alert(String(e.message || e)); }
 }
@@ -1400,8 +1864,8 @@ document.addEventListener('DOMContentLoaded', () => {
   /* keep the default groups current without clobbering user edits */
   if (!store.groups || !store.groups.length) store.groups = A.asDefaultGroups();
   renderAll();
-  /* build the catalogue in the background so the drawer and tag proposals
-     open warm; nothing waits on it */
+  /* build the catalogue in the background so coverage, bundles and the
+     drawer open warm; nothing waits on it */
   buildCatalog().then(() => renderAll()).catch(() => {});
 });
 </script>

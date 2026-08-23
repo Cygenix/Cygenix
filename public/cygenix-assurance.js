@@ -37,8 +37,9 @@
 })(this, function () {
 'use strict';
 
-var STORE_VERSION = 1;
+var STORE_VERSION = 2;
 var SAMPLE_CAP_DEFAULT = 1000;
+var MATERIAL_ROWS_DEFAULT = 10000;   /* a table this big is material by size alone */
 var RUN_HISTORY_CAP = 6000;      /* summaries kept; oldest dropped past this */
 var FLAP_MINUTES_DEFAULT = 30;
 
@@ -700,12 +701,14 @@ function asNewStore(now) {
     rules: [], ruleVersions: [], tags: [], tagProposals: [],
     groups: asDefaultGroups(), runs: [], breaches: [], events: [],
     baselines: {}, suggestions: [], dismissals: {}, suppressions: [], reports: [],
+    sweeps: [],
     settings: {
       quietHours: { from: '22:00', to: '06:00', criticalStillPages: true },
       flapMinutes: FLAP_MINUTES_DEFAULT,
       freezeWindows: [],
       sampleCap: SAMPLE_CAP_DEFAULT,
       sampleRetentionDays: 90,
+      materialRowThreshold: MATERIAL_ROWS_DEFAULT,
       routing: {
         critical: { channels: ['webhook', 'email'], escalateMinutes: 15 },
         warning:  { channels: ['webhook'], escalateMinutes: null },
@@ -770,6 +773,7 @@ function asSaveRule(store, draft, user, now) {
     provenance: { source: 'authored', projectId: null, createdAt: now || 0 },
     enabled: true, version: 1,
   }, draft);
+  if (!rule.proves) rule.proves = asProvesFor(rule);
   if (!rule.schedule.groupId) rule.schedule.groupId = defaultGroupFor(store, rule.category);
   store.rules.push(rule);
   asEvent(store, { type: 'rule.created', ruleId: rule.id, by: user, name: rule.name }, now);
@@ -794,6 +798,7 @@ function asDisableRule(store, ruleId, user, now) {
    passes — unless it resolved so recently that reopening would be flap.
    ======================================================================= */
 function asRecordRun(store, run, now) {
+  asFinalizeRun(run);
   store.runs.push(run);
   if (store.runs.length > RUN_HISTORY_CAP) store.runs.splice(0, store.runs.length - RUN_HISTORY_CAP);
 
@@ -1192,6 +1197,535 @@ function asCronDue(expr, lastRunMs, nowMs) {
 }
 
 /* =======================================================================
+   sha256 — dependency-free, so run hashes are identical in the browser
+   and under node. The reference implementation of the algorithm, kept
+   compact; verified against the FIPS 180-4 test vector in the tests.
+   ======================================================================= */
+function sha256(msg) {
+  function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
+  var K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+  var H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+
+  /* UTF-8 encode */
+  var bytes = [];
+  var s = String(msg == null ? '' : msg);
+  for (var ci = 0; ci < s.length; ci++) {
+    var code = s.codePointAt(ci);
+    if (code > 0xffff) ci++;
+    if (code < 0x80) bytes.push(code);
+    else if (code < 0x800) bytes.push(0xc0 | (code >> 6), 0x80 | (code & 63));
+    else if (code < 0x10000) bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 63), 0x80 | (code & 63));
+    else bytes.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 63), 0x80 | ((code >> 6) & 63), 0x80 | (code & 63));
+  }
+  var bitLen = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  for (var sh = 56; sh >= 32; sh -= 8) bytes.push(0);           /* length high 32 (fits) */
+  bytes.push((bitLen >>> 24) & 255, (bitLen >>> 16) & 255, (bitLen >>> 8) & 255, bitLen & 255);
+
+  var w = new Array(64);
+  for (var off = 0; off < bytes.length; off += 64) {
+    for (var i2 = 0; i2 < 16; i2++) {
+      w[i2] = (bytes[off + i2 * 4] << 24) | (bytes[off + i2 * 4 + 1] << 16)
+            | (bytes[off + i2 * 4 + 2] << 8) | bytes[off + i2 * 4 + 3];
+    }
+    for (var t2 = 16; t2 < 64; t2++) {
+      var s0 = rotr(w[t2 - 15], 7) ^ rotr(w[t2 - 15], 18) ^ (w[t2 - 15] >>> 3);
+      var s1 = rotr(w[t2 - 2], 17) ^ rotr(w[t2 - 2], 19) ^ (w[t2 - 2] >>> 10);
+      w[t2] = (w[t2 - 16] + s0 + w[t2 - 7] + s1) | 0;
+    }
+    var a = H[0], b = H[1], c = H[2], dd = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (var t3 = 0; t3 < 64; t3++) {
+      var S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      var ch = (e & f) ^ (~e & g);
+      var temp1 = (h + S1 + ch + K[t3] + w[t3]) | 0;
+      var S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      var maj = (a & b) ^ (a & c) ^ (b & c);
+      var temp2 = (S0 + maj) | 0;
+      h = g; g = f; f = e; e = (dd + temp1) | 0;
+      dd = c; c = b; b = a; a = (temp1 + temp2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + dd) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  return H.map(function (x) { return ('00000000' + (x >>> 0).toString(16)).slice(-8); }).join('');
+}
+
+/* =======================================================================
+   §2 — one status object, derived once, rendered everywhere
+   ======================================================================= */
+function asStatus(store, opts) {
+  var enabled = store.rules.filter(function (r) { return r.enabled; });
+  var ranIds = {};
+  store.runs.forEach(function (r) { if (r.status !== 'skipped') ranIds[r.ruleId] = 1; });
+  var lastRunAt = store.runs.length ? store.runs[store.runs.length - 1].startedAt : null;
+  var openBreaches = store.breaches.filter(function (b) {
+    return b.state === 'open' || b.state === 'acknowledged';
+  }).length;
+  var st = {
+    checksWritten: enabled.length,
+    checksRun: Object.keys(ranIds).length,
+    lastRunAt: lastRunAt,
+    openBreaches: openBreaches,
+    connections: (opts && opts.connections) || 0,
+  };
+  if (st.checksWritten === 0) st.state = 'no-checks';
+  else if (st.checksRun === 0) st.state = 'never-run';
+  else if (st.openBreaches > 0) st.state = 'breaches';
+  else st.state = 'passing';
+  return st;
+}
+
+/* §4 — the four-step ribbon, derived from the same object. */
+function asRibbon(status) {
+  var steps = [
+    { key: 'connect', label: 'Connect' },
+    { key: 'write',   label: 'Write checks' },
+    { key: 'run',     label: 'Run them' },
+    { key: 'publish', label: 'Publish evidence' },
+  ];
+  var stage = status.connections === 0 ? 0
+            : status.checksWritten === 0 ? 1
+            : status.checksRun === 0 ? 2 : 3;
+  steps.forEach(function (s, i) {
+    s.state = i < stage ? 'done' : i === stage ? 'now' : 'todo';
+  });
+  steps[0].note = status.connections ? '✓ ' + status.connections + ' connection'
+    + (status.connections === 1 ? '' : 's') + ' live' : 'No connection yet';
+  steps[1].note = status.checksWritten ? '✓ ' + status.checksWritten + ' written' : 'Nothing written';
+  steps[2].note = stage === 2 ? 'You are here'
+    : stage > 2 ? '✓ ' + status.checksRun + ' have run' : '—';
+  steps[3].note = status.state === 'passing' ? 'Ready' : 'Needs one clean run';
+  return steps;
+}
+
+/* =======================================================================
+   §7 — the `proves` field: one plain-English present-tense sentence per
+   rule, written from the reader's side. Templates cover every check the
+   profiler proposes; a rule no template fits is flagged for its author
+   rather than shown with a blank.
+   ======================================================================= */
+function asProvesFor(rule) {
+  var p = rule.params || {};
+  var b = rule.binding || {};
+  var t = (b.targets || [])[0] || {};
+  var tbl = t.table || (b.tag ? 'every table tagged ' + b.tag : 'the bound tables');
+  var col = t.column || p.column || 'the checked column';
+  switch (rule.check) {
+    case 'uniqueness.composite':
+    case 'uniqueness.key':
+      return tbl + ' keeps exactly one row per ' + ((p.columns || [col]).join(', '))
+        + ' — no duplicated loads or re-runs.';
+    case 'recon.rowcount':
+      return 'The same number of rows landed in the target as left the source for ' + tbl + '.';
+    case 'recon.column_aggregate':
+      return 'The ' + (p.fn || 'sum') + ' of ' + col + ' agrees between source and target for ' + tbl + '.';
+    case 'referential.orphan':
+      return 'Every ' + col + ' in ' + tbl + ' still points at a '
+        + ((p.parent && p.parent.table) || 'parent') + ' row that exists.';
+    case 'referential.childless_parent':
+      return 'No ' + tbl + ' row is left without its '
+        + ((p.child && p.child.table) || 'child') + ' rows.';
+    case 'completeness.not_null':
+      return col + ' is never empty in ' + tbl + '.';
+    case 'completeness.blank_string':
+      return col + ' never holds a blank string in ' + tbl + '.';
+    case 'domain.lookup':
+      return (t.column || p.column
+        ? 'Every ' + (t.column || p.column) + ' in ' + tbl
+        : 'Every value it checks in ' + tbl) + ' exists in the reference set.';
+    case 'domain.enum':
+      return col + ' in ' + tbl + ' only ever holds an allowed value.';
+    case 'drift.freshness':
+      return tbl + ' stays fresh — new data arrives within ' + num(p.maxAgeHours, 26) + ' hours.';
+    case 'drift.rowcount':
+      return 'Row volume in ' + tbl + ' stays inside its normal band.';
+    case 'drift.null_rate':
+      return 'The share of empty ' + col + ' values in ' + tbl + ' does not creep up.';
+    case 'aggregate.balance':
+      return tbl + ' balances to zero'
+        + (p.groupBy && p.groupBy.length ? ' per ' + p.groupBy.join(', ') : '') + '.';
+    case 'aggregate.parent_child':
+      return 'Every ' + tbl + ' header total equals the sum of its lines.';
+    case 'aggregate.tolerance':
+      return 'Stored ' + col + ' values in ' + tbl + ' match their recomputation to within '
+        + num(p.epsilon, 0.01) + '.';
+    default:
+      return null;                       /* needs its author's own sentence */
+  }
+}
+
+/* §7 — human schedule, never a raw cron in a primary cell. */
+function asCronHuman(expr) {
+  var f = String(expr || '').trim().split(/\s+/);
+  if (f.length !== 5) return expr || '—';
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  var at = /^\d+$/.test(f[1]) && /^\d+$/.test(f[0])
+    ? pad(Number(f[1])) + ':' + pad(Number(f[0])) : null;
+  if (f[0] === '0' && f[1] === '*' && f[2] === '*' && f[3] === '*' && f[4] === '*') return 'Hourly';
+  var step = f[1].match(/^\*\/(\d+)$/);
+  if (step && f[2] === '*' && f[4] === '*') return 'Every ' + step[1] + ' hours';
+  var dows = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  if (/^\d$/.test(f[4]) && at) return 'Weekly, ' + dows[Number(f[4])] + ' ' + at;
+  if (f[2] === '*' && f[3] === '*' && f[4] === '*' && at) return 'Daily ' + at;
+  return expr;
+}
+
+/* =======================================================================
+   §8 — the run is the record
+   ----------------------------------------------------------------------
+   Runs are append-only: the engine exposes no API that edits one, and the
+   hash makes silent edits detectable. The hash covers what was asserted,
+   by what SQL, against what, when, and what came back — and deliberately
+   EXCLUDES sample rows, so ageing samples out on the retention policy
+   (recorded when it happens) does not invalidate the record.
+   ======================================================================= */
+function asFinalizeRun(run) {
+  run.startedAtIso = new Date(run.startedAt).toISOString();
+  run.finishedAtIso = new Date(run.startedAt + (run.durationMs || 0)).toISOString();
+  run.result = run.status === 'pass' ? 'pass'
+             : run.status === 'error' ? 'error'
+             : run.status === 'skipped' ? 'skipped' : 'breach';
+  run.counts = {
+    compared: run.rowsScanned || 0,
+    matched: Math.max(0, (run.rowsScanned || 0) - (run.rowsFailed || 0)),
+    failed: run.rowsFailed || 0,
+  };
+  run.queryText = (run.perTarget || []).map(function (t) { return t.generatedSql; })
+    .filter(Boolean).join('\n\n');
+  run.connectionIds = [];
+  (run.perTarget || []).forEach(function (t) {
+    var db = String(t.target || '').split('.')[0];
+    if (db && run.connectionIds.indexOf(db) < 0) run.connectionIds.push(db);
+  });
+  run.runHash = sha256(JSON.stringify({
+    id: run.id, ruleId: run.ruleId, ruleVersion: run.ruleVersion || null,
+    startedAt: run.startedAtIso, finishedAt: run.finishedAtIso,
+    result: run.result, counts: run.counts, queryText: run.queryText,
+    connectionIds: run.connectionIds,
+  }));
+  return run;
+}
+
+/* One manifest hash per sweep: the sha256 of the sorted run hashes. */
+function asManifest(runs) {
+  var hashes = (runs || []).map(function (r) { return r.runHash; }).filter(Boolean).sort();
+  return { count: hashes.length, hash: sha256(hashes.join('\n')) };
+}
+
+/* Sample rows may age out on policy; the record that they did stays. */
+function asAgeSamples(store, retentionDays, now) {
+  var cutoff = (now || 0) - retentionDays * 86400000;
+  var aged = 0;
+  store.runs.forEach(function (r) {
+    if (r.startedAt >= cutoff) return;
+    (r.perTarget || []).forEach(function (t) {
+      if (t.sampleRows && t.sampleRows.length) {
+        delete t.sampleRows;
+        t.samplesAgedAt = now || 0;
+        aged++;
+      }
+    });
+  });
+  if (aged) asEvent(store, { type: 'runs.samples_aged', targets: aged, retentionDays: retentionDays }, now);
+  return aged;
+}
+
+/* =======================================================================
+   §5 — coverage of the migration, instead of a column of zeros
+   ----------------------------------------------------------------------
+   Material = carries money, or its declared key is referenced by at least
+   one foreign key, or it is big (threshold configurable). labelFn groups
+   the gaps for the prose line — the page passes the Schema Explorer's own
+   business-area classifier so the words match the rest of the console.
+   ======================================================================= */
+var MONEY_COL = /(^|_)(amount|amt|total|price|cost|value|balance|net|gross)($|_)|_base$|_txn$/i;
+function asCoverage(store, catalog, opts) {
+  opts = opts || {};
+  var threshold = num(opts.materialRows,
+    (store.settings && store.settings.materialRowThreshold) || MATERIAL_ROWS_DEFAULT);
+  var labelFn = opts.labelFn || function (t) { return t.schema; };
+  var scope = (catalog.tables || []).filter(function (t) {
+    return !opts.db || t.db === opts.db;
+  });
+
+  var checked = {};
+  store.rules.filter(function (r) { return r.enabled; }).forEach(function (r) {
+    asResolveBinding(r, catalog).forEach(function (t) {
+      checked[t.db + '.' + t.schema + '.' + t.table] = 1;
+    });
+  });
+
+  var out = { inScope: scope.length, checked: [], materialUnchecked: [], lowRisk: [] };
+  scope.forEach(function (t) {
+    var key = t.db + '.' + t.schema + '.' + t.table;
+    var material = (t.columns || []).some(function (c) { return MONEY_COL.test(c); })
+      || (t.referencedBy || 0) > 0
+      || (t.rowCount || 0) > threshold;
+    if (checked[key]) out.checked.push(t);
+    else if (material) out.materialUnchecked.push(t);
+    else out.lowRisk.push(t);
+  });
+
+  /* the biggest gaps, in prose */
+  var groups = {};
+  out.materialUnchecked.forEach(function (t) {
+    var label = labelFn(t) || 'Other';
+    (groups[label] = groups[label] || []).push(t);
+  });
+  out.gaps = Object.keys(groups).map(function (k) {
+    var list = groups[k].sort(function (a, b) { return (b.rowCount || 0) - (a.rowCount || 0); });
+    return { label: k, tables: list.length,
+             examples: list.slice(0, 2).map(function (t) { return t.table; }) };
+  }).sort(function (a, b) { return b.tables - a.tables; }).slice(0, 3);
+  return out;
+}
+
+/* =======================================================================
+   §6 — bundle the profiler's output by rule TEMPLATE, not by table.
+   One decision per bundle instead of one per table; the per-table list
+   stays reachable as the Review drill-down.
+   ======================================================================= */
+function bundleDraft(check, category, params, targets, proves) {
+  var draft = { category: category, check: check, params: params,
+    binding: { mode: 'explicit', targets: targets, databases: [] },
+    severity: check.indexOf('recon.') === 0 || check.indexOf('uniqueness.') === 0 ? 'critical' : 'warning' };
+  draft.proves = proves;
+  return draft;
+}
+
+function asSuggestBundles(store, catalog) {
+  var covered = {};
+  store.rules.filter(function (r) { return r.enabled; }).forEach(function (r) {
+    var prefix = r.check.split('.')[0];
+    asResolveBinding(r, catalog).forEach(function (t) {
+      covered[prefix + '|' + t.db + '.' + t.schema + '.' + t.table] = 1;
+      if (t.column) covered[prefix + '|' + t.db + '.' + t.schema + '.' + t.table + '.' + t.column] = 1;
+    });
+  });
+  var dismissed = store.dismissals || {};
+  var tgt = (catalog.tables || []).filter(function (t) { return t.db === 'tgt'; });
+  var srcByName = {};
+  (catalog.tables || []).forEach(function (t) { if (t.db === 'src') srcByName[t.schema + '.' + t.table] = t; });
+  var haveSrc = Object.keys(srcByName).length > 0;
+
+  var bundles = [];
+  function bundle(key, title, plain, items) {
+    items = items.filter(function (it) { return !dismissed['bundle|' + key + '|' + it.tableKey]; });
+    if (!items.length) return;
+    bundles.push({ key: key, title: title, plain: plain, count: items.length,
+      estMsPerSweep: items.length * 400,
+      items: items.map(function (it) { return it.draft; }),
+      tables: items.map(function (it) { return it.tableKey; }) });
+  }
+
+  /* Keys stay unique */
+  bundle('keys-unique', 'Keys stay unique',
+    'Every table that declares a key still has exactly one row per key after the move. '
+    + 'Catches duplicated loads and re-runs.',
+    tgt.filter(function (t) { return (t.primaryKeys || []).length; })
+      .filter(function (t) { return !covered['uniqueness|tgt.' + t.schema + '.' + t.table]; })
+      .map(function (t) {
+        var d = bundleDraft('uniqueness.composite', 'duplicates', { columns: t.primaryKeys },
+          [{ db: 'tgt', schema: t.schema, table: t.table, column: null }],
+          t.table + ' keeps exactly one row per ' + t.primaryKeys.join(', ')
+          + ' — no duplicated loads or re-runs.');
+        d.name = 'Unique key — ' + t.table;
+        return { tableKey: 'tgt.' + t.schema + '.' + t.table, draft: d };
+      }));
+
+  /* Row counts match source */
+  if (haveSrc) {
+    bundle('rowcounts-match', 'Row counts match source',
+      'The same number of rows landed in the target as left the source, per table.',
+      tgt.filter(function (t) { return srcByName[t.schema + '.' + t.table]; })
+        .filter(function (t) { return !covered['recon|tgt.' + t.schema + '.' + t.table]; })
+        .map(function (t) {
+          var d = bundleDraft('recon.rowcount', 'reconciliation', { tolerance: 0 },
+            [{ db: 'src', schema: t.schema, table: t.table, column: null },
+             { db: 'tgt', schema: t.schema, table: t.table, column: null }],
+            'The same number of rows landed in the target as left the source for ' + t.table + '.');
+          d.name = 'Row count — ' + t.table;
+          return { tableKey: 'tgt.' + t.schema + '.' + t.table, draft: d };
+        }));
+  }
+
+  /* References resolve */
+  bundle('references-resolve', 'References resolve',
+    'No orphaned foreign keys — every child row still points at a parent that exists.',
+    tgt.filter(function (t) { return (t.fks || []).length; })
+      .filter(function (t) { return !covered['referential|tgt.' + t.schema + '.' + t.table]; })
+      .map(function (t) {
+        var fk = t.fks[0];
+        var d = bundleDraft('referential.orphan', 'referential',
+          { parent: { schema: fk.refSchema, table: fk.refTable, column: fk.refColumn } },
+          [{ db: 'tgt', schema: t.schema, table: t.table, column: fk.column }],
+          'Every ' + fk.column + ' in ' + t.table + ' still points at a ' + fk.refTable + ' row that exists.');
+        d.name = 'Orphans — ' + t.table + '.' + fk.column;
+        return { tableKey: 'tgt.' + t.schema + '.' + t.table, draft: d };
+      }));
+
+  /* Money agrees to the penny */
+  if (haveSrc) {
+    bundle('money-agrees', 'Money agrees to the penny',
+      'Control totals reconcile between source and target. The checks a finance sponsor '
+      + 'will ask about first.',
+      tgt.filter(function (t) { return srcByName[t.schema + '.' + t.table]; })
+        .map(function (t) {
+          var money = (t.columns || []).filter(function (c) { return MONEY_COL.test(c); })[0];
+          return money ? { t: t, money: money } : null;
+        })
+        .filter(Boolean)
+        .filter(function (x) { return !covered['recon|tgt.' + x.t.schema + '.' + x.t.table + '.' + x.money]; })
+        .map(function (x) {
+          var d = bundleDraft('recon.column_aggregate', 'finance', { fn: 'sum', tolerance: 0.01 },
+            [{ db: 'src', schema: x.t.schema, table: x.t.table, column: x.money },
+             { db: 'tgt', schema: x.t.schema, table: x.t.table, column: x.money }],
+            'The sum of ' + x.money + ' agrees between source and target for ' + x.t.table + '.');
+          d.name = 'Σ ' + x.money + ' — ' + x.t.table;
+          return { tableKey: 'tgt.' + x.t.schema + '.' + x.t.table, draft: d };
+        }));
+  }
+
+  return { total: bundles.reduce(function (a, b) { return a + b.count; }, 0), bundles: bundles };
+}
+
+function asAcceptBundle(store, bundle, user, now) {
+  var made = [];
+  bundle.items.forEach(function (draft) {
+    made.push(asSaveRule(store, draft, user, now));
+  });
+  asEvent(store, { type: 'bundle.accepted', key: bundle.key, rules: made.length, by: user }, now);
+  return made;
+}
+
+/* =======================================================================
+   §9 — the Evidence view's data. Everything here is computed, nothing
+   invented: a value that cannot be computed comes back null and the page
+   renders — with the reason.
+   ======================================================================= */
+var NOT_COVERED = [
+  'Correctness of the source data itself — these checks prove the move, not the business.',
+  'Documents and files held outside the database.',
+  'Permissions, logins and user mappings on the new system.',
+  'Free-text content beyond counts, formats and nullability.',
+  'Rows created after cutover by the new system\'s own processes.',
+  'Third-party reports built on top of the target.',
+];
+
+function latestRunPerRule(store) {
+  var latest = {};
+  store.runs.forEach(function (r) { if (r.status !== 'skipped') latest[r.ruleId] = r; });
+  return latest;
+}
+
+function asEvidence(store, now) {
+  var latest = latestRunPerRule(store);
+  var ids = Object.keys(latest);
+  var passed = ids.filter(function (id) { return latest[id].result === 'pass'; }).length;
+  var openList = store.breaches.filter(function (b) {
+    return b.state === 'open' || b.state === 'acknowledged' || b.state === 'suppressed';
+  });
+
+  /* integrity: is "no check has been edited since cutover" actually true? */
+  var firstRunAt = store.runs.length ? store.runs[0].startedAt : null;
+  var editsSince = store.events.filter(function (e) {
+    return (e.type === 'rule.updated' || e.type === 'rule.disabled')
+      && firstRunAt != null && e.at > firstRunAt;
+  }).length;
+
+  /* unbroken days: consecutive calendar days ending today with >= 1 run */
+  var days = null;
+  if (store.runs.length) {
+    var have = {};
+    store.runs.forEach(function (r) { have[Math.floor(r.startedAt / 86400000)] = 1; });
+    days = 0;
+    for (var d = Math.floor(now / 86400000); have[d]; d--) days++;
+  }
+
+  var fixed = store.breaches.filter(function (b) { return b.state === 'resolved' && b.resolvedAt; });
+  var mttf = fixed.length
+    ? fixed.reduce(function (a, b) { return a + (b.resolvedAt - b.openedAt); }, 0) / fixed.length
+    : null;
+
+  var sweep = (store.sweeps || [])[Math.max(0, (store.sweeps || []).length - 1)] || null;
+
+  var claims = {};
+  store.rules.filter(function (r) { return r.enabled; }).forEach(function (r) {
+    var run = latest[r.id] || null;
+    var cat = categoryOf(r.category).label;
+    (claims[cat] = claims[cat] || []).push({
+      ruleId: r.id,
+      claim: r.proves || r.name,
+      query: run ? run.queryText : null,
+      counts: run ? run.counts : null,
+      result: run ? run.result : 'never-run',
+      runId: run ? run.id : null,
+      at: run ? run.startedAtIso : null,
+      hash: run ? run.runHash : null,
+    });
+  });
+
+  return {
+    asAt: now,
+    checksRun: ids.length,
+    passed: passed,
+    open: openList.map(function (b) {
+      var r = store.rules.filter(function (x) { return x.id === b.ruleId; })[0] || { name: b.ruleId };
+      var run = latest[b.ruleId];
+      return {
+        ruleId: b.ruleId,
+        name: r.proves || r.name,
+        impact: (b.currentRowsFailed || b.peakRowsFailed || 0).toLocaleString('en-GB')
+          + ' rows do not currently satisfy this check.',
+        owner: b.assignee || 'Unassigned',
+        ageMs: now - b.openedAt,
+        firstRunId: b.firstRunId,
+        cadence: null,
+        severity: b.state === 'suppressed' ? 'Open · accepted'
+          : (b.severity === 'critical' ? 'Open · high' : 'Open · low'),
+      };
+    }),
+    integrity: { firstRunAt: firstRunAt, editsSince: editsSince },
+    tiles: {
+      passingPct: ids.length ? Math.round(1000 * passed / ids.length) / 10 : null,
+      tablesCovered: null,                     /* the page supplies coverage */
+      unbrokenDays: days,
+      meanTimeToFixMs: mttf,
+    },
+    manifest: sweep ? { hash: sweep.manifestHash, count: sweep.runIds.length, at: sweep.at } : null,
+    claims: claims,
+    notCovered: NOT_COVERED.slice(),
+  };
+}
+
+/* v1 stores gain the v2 fields; nothing is lost, everything is recorded. */
+function asMigrateStore(store, now) {
+  if (!store || store.v >= STORE_VERSION) return store;
+  store.rules.forEach(function (r) {
+    if (!r.proves) {
+      var p = asProvesFor(r);
+      if (p) r.proves = p;
+      else r.provesNeedsAuthor = true;
+    }
+  });
+  store.runs.forEach(function (r) { if (!r.runHash) asFinalizeRun(r); });
+  store.sweeps = store.sweeps || [];
+  store.settings.materialRowThreshold = store.settings.materialRowThreshold || MATERIAL_ROWS_DEFAULT;
+  store.v = STORE_VERSION;
+  asEvent(store, { type: 'store.migrated', to: STORE_VERSION }, now);
+  return store;
+}
+
+/* =======================================================================
    Public
    ======================================================================= */
 return {
@@ -1236,5 +1770,21 @@ return {
 
   asCronNext: asCronNext,
   asCronDue: asCronDue,
+
+  MATERIAL_ROWS_DEFAULT: MATERIAL_ROWS_DEFAULT,
+  NOT_COVERED: NOT_COVERED,
+  sha256: sha256,
+  asStatus: asStatus,
+  asRibbon: asRibbon,
+  asProvesFor: asProvesFor,
+  asCronHuman: asCronHuman,
+  asFinalizeRun: asFinalizeRun,
+  asManifest: asManifest,
+  asAgeSamples: asAgeSamples,
+  asCoverage: asCoverage,
+  asSuggestBundles: asSuggestBundles,
+  asAcceptBundle: asAcceptBundle,
+  asEvidence: asEvidence,
+  asMigrateStore: asMigrateStore,
 };
 });

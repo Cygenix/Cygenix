@@ -350,7 +350,255 @@ check('a group is due when its next fire time has passed',
   A.asCronDue('0 4 * * *', Date.UTC(2026, 7, 23, 4, 0), Date.UTC(2026, 7, 24, 4, 1)) === true
   && A.asCronDue('0 4 * * *', Date.UTC(2026, 7, 24, 4, 0), Date.UTC(2026, 7, 24, 5, 0)) === false);
 
-// ── 12. Wiring ──────────────────────────────────────────────────────────────
+// ── 12. sha256 and the run record (redesign §8) ────────────────────────────
+check('sha256 matches the FIPS vector for "abc"',
+  A.sha256('abc') === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+check('and for the empty string',
+  A.sha256('') === 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+
+const mkRun = (id, status, at) => ({ id, ruleId: 'SET-001', ruleVersion: 3, startedAt: at,
+  durationMs: 1500, status, rowsFailed: status === 'fail' ? 7 : 0, rowsScanned: 500,
+  targetsMatched: 1, severity: 'warning', category: 'setups',
+  perTarget: [{ target: 'tgt.dbo.gl_posting', generatedSql: 'SELECT COUNT(*) AS n FROM x',
+    sampleRows: [{ id: 1 }], rowsFailed: status === 'fail' ? 7 : 0 }] });
+const recStore = A.asNewStore(now);
+A.asSaveRule(recStore, { name: 'rec', category: 'setups', check: 'completeness.not_null' }, 'u', now);
+recStore.rules[0].id = 'SET-001';
+const rec1 = A.asRecordRun(store0 = recStore, mkRun('run_a1', 'fail', now), now) && recStore.runs[0];
+check('recording a run finalizes it: ISO timestamps, result, counts, query text, connections',
+  rec1.startedAtIso === new Date(now).toISOString()
+  && rec1.finishedAtIso === new Date(now + 1500).toISOString()
+  && rec1.result === 'breach'
+  && rec1.counts.compared === 500 && rec1.counts.matched === 493 && rec1.counts.failed === 7
+  && rec1.queryText === 'SELECT COUNT(*) AS n FROM x'
+  && rec1.connectionIds.length === 1 && rec1.connectionIds[0] === 'tgt',
+  JSON.stringify(rec1.counts));
+check('pass maps to pass and error to error — the record vocabulary is fixed',
+  A.asFinalizeRun(mkRun('x1', 'pass', now)).result === 'pass'
+  && A.asFinalizeRun(mkRun('x2', 'error', now)).result === 'error');
+check('the run hash is deterministic',
+  A.asFinalizeRun(mkRun('run_a1', 'fail', now)).runHash === rec1.runHash);
+check('and covers the substance — a different query is a different hash',
+  (() => { const r = mkRun('run_a1', 'fail', now);
+    r.perTarget[0].generatedSql = 'SELECT COUNT(*) AS n FROM y';
+    return A.asFinalizeRun(r).runHash !== rec1.runHash; })());
+check('but deliberately EXCLUDES sample rows, so ageing them keeps the record valid',
+  (() => { const r = mkRun('run_a1', 'fail', now); delete r.perTarget[0].sampleRows;
+    return A.asFinalizeRun(r).runHash === rec1.runHash; })());
+A.asRecordRun(recStore, mkRun('run_a2', 'pass', now + 60000), now + 60000);
+const man = A.asManifest(recStore.runs);
+check('a sweep manifest hashes the sorted run hashes',
+  man.count === 2 && man.hash === A.sha256([recStore.runs[0].runHash, recStore.runs[1].runHash]
+    .sort().join('\n')));
+const agedN = A.asAgeSamples(recStore, 30, now + 40 * 86400000);
+check('sample ageing strips old samples, stamps when, and writes an audit event',
+  agedN === 2 && !recStore.runs[0].perTarget[0].sampleRows
+  && recStore.runs[0].perTarget[0].samplesAgedAt === now + 40 * 86400000
+  && recStore.events.some(e => e.type === 'runs.samples_aged'));
+check('and the aged run still verifies against its original hash',
+  recStore.runs[0].runHash === rec1.runHash);
+
+// ── 13. The status object and its state machine (redesign §2) ──────────────
+const stEmpty = A.asNewStore(now);
+check('no rules → no-checks', A.asStatus(stEmpty, { connections: 2 }).state === 'no-checks');
+A.asSaveRule(stEmpty, { name: 'n', category: 'finance', check: 'completeness.not_null' }, 'u', now);
+const stNever = A.asStatus(stEmpty, { connections: 2 });
+check('rules but no runs → never-run, and the counts are there',
+  stNever.state === 'never-run' && stNever.checksWritten === 1 && stNever.checksRun === 0
+  && stNever.lastRunAt === null && stNever.connections === 2);
+A.asRecordRun(stEmpty, { id: 'sr1', ruleId: stEmpty.rules[0].id, startedAt: now + 1, status: 'fail',
+  rowsFailed: 3, rowsScanned: 10, targetsMatched: 1, severity: 'warning', category: 'finance' }, now + 1);
+check('an open breach → breaches', A.asStatus(stEmpty, {}).state === 'breaches'
+  && A.asStatus(stEmpty, {}).openBreaches === 1);
+A.asRecordRun(stEmpty, { id: 'sr2', ruleId: stEmpty.rules[0].id, startedAt: now + 2, status: 'pass',
+  rowsFailed: 0, rowsScanned: 10, targetsMatched: 1, severity: 'warning', category: 'finance' }, now + 2);
+const stPass = A.asStatus(stEmpty, { connections: 2 });
+check('all clear → passing, with the last run time',
+  stPass.state === 'passing' && stPass.lastRunAt === now + 2 && stPass.checksRun === 1);
+check('a skipped run does not count as having run',
+  (() => { const s = A.asNewStore(now);
+    A.asSaveRule(s, { name: 'n', category: 'finance', check: 'completeness.not_null' }, 'u', now);
+    s.runs.push({ id: 'k', ruleId: s.rules[0].id, startedAt: now, status: 'skipped' });
+    return A.asStatus(s, {}).checksRun === 0 && A.asStatus(s, {}).state === 'never-run'; })());
+
+// ── 14. The ribbon derives from the status object, no new state (§4) ────────
+const rb = A.asRibbon(A.asStatus(stEmpty, { connections: 2 }));
+check('four steps, keyed and labelled', rb.length === 4
+  && rb.map(s => s.key).join(',') === 'connect,write,run,publish');
+check('a passing estate stands at Publish',
+  rb[0].state === 'done' && rb[1].state === 'done' && rb[2].state === 'done'
+  && rb[3].state === 'now' && rb[3].note === 'Ready');
+check('no connections puts you at step one',
+  A.asRibbon(A.asStatus(A.asNewStore(now), { connections: 0 }))[0].state === 'now');
+const rbNever = A.asRibbon(stNever);
+check('written-but-never-run stands at Run them, marked "You are here"',
+  rbNever[2].state === 'now' && rbNever[2].note === 'You are here'
+  && rbNever[3].note === 'Needs one clean run');
+
+// ── 15. proves templates and human schedules (§7) ───────────────────────────
+const provesOf = (check_, params, targets) => A.asProvesFor({ check: check_, params: params || {},
+  binding: { mode: 'explicit', targets: targets || [{ db: 'tgt', schema: 'dbo', table: 'client', column: 'customer_num' }] } });
+check('uniqueness proves one row per key',
+  /client keeps exactly one row per customer_num/.test(provesOf('uniqueness.composite', { columns: ['customer_num'] })));
+check('recon.rowcount proves the landed count',
+  /The same number of rows landed in the target as left the source for client\./
+    .test(provesOf('recon.rowcount')));
+check('referential.orphan names the parent',
+  /still points at a cost_centre row that exists/.test(
+    provesOf('referential.orphan', { parent: { table: 'cost_centre' } })));
+check('freshness proves arrival within the window',
+  /within 60 hours/.test(provesOf('drift.freshness', { maxAgeHours: 60 })));
+check('custom.sql has no template — the author must write the sentence',
+  provesOf('custom.sql', { sql: { any: 'SELECT 1' } }) === null);
+check('a saved rule with a template gets proves filled in automatically',
+  (() => { const s = A.asNewStore(now);
+    const r = A.asSaveRule(s, { name: 'u', category: 'duplicates', check: 'uniqueness.composite',
+      params: { columns: ['id'] }, binding: { mode: 'explicit',
+        targets: [{ db: 'tgt', schema: 'dbo', table: 'client', column: null }], databases: [] } }, 'u', now);
+    return /client keeps exactly one row per id/.test(r.proves); })());
+check('cron renders as a human schedule, never shown raw in the table',
+  A.asCronHuman('0 * * * *') === 'Hourly' && A.asCronHuman('0 */6 * * *') === 'Every 6 hours'
+  && A.asCronHuman('0 4 * * *') === 'Daily 04:00' && A.asCronHuman('0 5 * * 0') === 'Weekly, Sunday 05:00');
+
+// ── 16. Coverage of the migration (§5) ──────────────────────────────────────
+const covCatalog = { tables: [
+  { db: 'tgt', schema: 'fin', table: 'frx_period_bal', rowCount: 500, columns: ['id', 'amount'] },
+  { db: 'tgt', schema: 'fin', table: 'frx_tran_detail', rowCount: 20000, columns: ['id', 'note'] },
+  { db: 'tgt', schema: 'ref', table: 'country', rowCount: 200, columns: ['code'], referencedBy: 3 },
+  { db: 'tgt', schema: 'ref', table: 'colour', rowCount: 12, columns: ['code'] },
+  { db: 'src', schema: 'fin', table: 'frx_period_bal', rowCount: 500, columns: ['id', 'amount'] },
+], tags: [] };
+const covStore = A.asNewStore(now);
+A.asSaveRule(covStore, { name: 'c', category: 'finance', check: 'aggregate.balance',
+  params: { amount: 'amount' }, binding: { mode: 'explicit',
+    targets: [{ db: 'tgt', schema: 'fin', table: 'frx_period_bal', column: null }], databases: [] } }, 'u', now);
+const cov = A.asCoverage(covStore, covCatalog, { db: 'tgt', labelFn: t => t.schema === 'fin' ? 'Finance' : 'Reference' });
+check('coverage sorts scope into checked / material-unchecked / low-risk',
+  cov.inScope === 4 && cov.checked.length === 1
+  && cov.materialUnchecked.length === 2 && cov.lowRisk.length === 1,
+  JSON.stringify([cov.inScope, cov.checked.length, cov.materialUnchecked.length, cov.lowRisk.length]));
+check('material means money, referenced, or big',
+  cov.materialUnchecked.some(t => t.table === 'frx_tran_detail')      /* big */
+  && cov.materialUnchecked.some(t => t.table === 'country')           /* referenced */
+  && cov.lowRisk.some(t => t.table === 'colour'));
+check('the gaps come back grouped and exampled for the prose line',
+  cov.gaps.length === 2 && cov.gaps.every(g => g.label && g.tables > 0 && g.examples.length > 0));
+check('the size threshold is configurable',
+  A.asCoverage(covStore, covCatalog, { db: 'tgt', materialRows: 50000 })
+    .materialUnchecked.every(t => t.table !== 'frx_tran_detail'));
+
+// ── 17. Suggestion bundles (§6) ─────────────────────────────────────────────
+const bunCatalog = { tables: [
+  { db: 'tgt', schema: 'dbo', table: 'client', rowCount: 900, columns: ['customer_num', 'name'],
+    primaryKeys: ['customer_num'] },
+  { db: 'tgt', schema: 'dbo', table: 'invoice', rowCount: 5000,
+    columns: ['id', 'customer_num', 'total_amount'], primaryKeys: ['id'],
+    fks: [{ column: 'customer_num', refSchema: 'dbo', refTable: 'client', refColumn: 'customer_num' }] },
+  { db: 'src', schema: 'dbo', table: 'client', rowCount: 900, columns: ['customer_num', 'name'] },
+  { db: 'src', schema: 'dbo', table: 'invoice', rowCount: 5000, columns: ['id', 'customer_num', 'total_amount'] },
+], tags: [] };
+const bunStore = A.asNewStore(now);
+const bun = A.asSuggestBundles(bunStore, bunCatalog);
+const bunKeys = bun.bundles.map(b => b.key);
+check('the profiler output groups into the four template bundles',
+  bunKeys.includes('keys-unique') && bunKeys.includes('rowcounts-match')
+  && bunKeys.includes('references-resolve') && bunKeys.includes('money-agrees'),
+  bunKeys.join(','));
+check('the total is the sum of the bundle counts',
+  bun.total === bun.bundles.reduce((a, b) => a + b.count, 0));
+check('every bundle carries plain English, an estimate, and ready drafts with proves pre-filled',
+  bun.bundles.every(b => b.plain && b.estMsPerSweep > 0
+    && b.items.length === b.count && b.items.every(d => d.proves && d.check && d.binding)));
+check('recon drafts bind BOTH sides explicitly',
+  bun.bundles.find(b => b.key === 'rowcounts-match').items
+    .every(d => d.binding.targets.length === 2
+      && d.binding.targets[0].db === 'src' && d.binding.targets[1].db === 'tgt'));
+check('the money bundle found the money column',
+  bun.bundles.find(b => b.key === 'money-agrees').items
+    .some(d => d.binding.targets[0].column === 'total_amount'));
+const addedRules = A.asAcceptBundle(bunStore, bun.bundles.find(b => b.key === 'keys-unique'), 'user1', now);
+check('accepting a bundle saves every draft and logs one event',
+  addedRules.length === 2 && bunStore.rules.length === 2
+  && bunStore.events.some(e => e.type === 'bundle.accepted' && e.rules === 2));
+const bunAfter = A.asSuggestBundles(bunStore, bunCatalog);
+check('covered tables drop out of the bundle on the next pass',
+  !bunAfter.bundles.some(b => b.key === 'keys-unique'));
+bunStore.dismissals['bundle|references-resolve|tgt.dbo.invoice'] = { at: now };
+check('a dismissed bundle item stays dismissed',
+  !A.asSuggestBundles(bunStore, bunCatalog).bundles.some(b => b.key === 'references-resolve'));
+
+// ── 18. The Evidence view data (§9) ─────────────────────────────────────────
+const evStore = A.asNewStore(now);
+const evR1 = A.asSaveRule(evStore, { name: 'GL balances', category: 'finance', check: 'aggregate.balance',
+  params: { amount: 'amount' }, severity: 'critical', binding: { mode: 'explicit',
+    targets: [{ db: 'tgt', schema: 'fin', table: 'gl', column: null }], databases: [] } }, 'u', now);
+const evR2 = A.asSaveRule(evStore, { name: 'Client dupes', category: 'duplicates', check: 'uniqueness.composite',
+  params: { columns: ['customer_num'] }, binding: { mode: 'explicit',
+    targets: [{ db: 'tgt', schema: 'dbo', table: 'client', column: null }], databases: [] } }, 'u', now);
+A.asRecordRun(evStore, { id: 'ev1', ruleId: evR1.id, startedAt: now, durationMs: 100, status: 'pass',
+  rowsFailed: 0, rowsScanned: 100, targetsMatched: 1, severity: 'critical', category: 'finance',
+  perTarget: [{ target: 'tgt.fin.gl', generatedSql: 'SELECT 1' }] }, now);
+A.asRecordRun(evStore, { id: 'ev2', ruleId: evR2.id, startedAt: now + 1000, durationMs: 100, status: 'fail',
+  rowsFailed: 12, rowsScanned: 900, targetsMatched: 1, severity: 'warning', category: 'duplicates',
+  perTarget: [{ target: 'tgt.dbo.client', generatedSql: 'SELECT 2' }] }, now + 1000);
+evStore.sweeps.push({ at: now + 1000, runIds: ['ev1', 'ev2'],
+  manifestHash: A.asManifest(evStore.runs).hash });
+const ev = A.asEvidence(evStore, now + 3600000);
+check('the statement numbers come from the latest run per rule',
+  ev.checksRun === 2 && ev.passed === 1);
+check('open items are named with impact prose, owner, age and severity chip — never a bare count',
+  ev.open.length === 1 && /12 rows do not currently satisfy/.test(ev.open[0].impact)
+  && ev.open[0].owner === 'Unassigned' && ev.open[0].ageMs > 0
+  && /^Open · /.test(ev.open[0].severity), JSON.stringify(ev.open[0]));
+check('integrity reports edits since the first run — the "no check has been edited" claim is checked',
+  ev.integrity.editsSince === 0
+  && (A.asSaveRule(evStore, { id: evR1.id, severity: 'warning' }, 'u', now + 2000),
+      A.asEvidence(evStore, now + 86400000).integrity.editsSince === 1));
+check('tiles compute what they can and leave null what they cannot',
+  ev.tiles.passingPct === 50 && ev.tiles.unbrokenDays === 1
+  && ev.tiles.meanTimeToFixMs === null && ev.tiles.tablesCovered === null);
+check('the manifest of the last sweep rides along', ev.manifest
+  && ev.manifest.count === 2 && ev.manifest.hash === A.asManifest(evStore.runs).hash);
+check('claims group by category and carry query, counts, run id and hash',
+  Object.keys(ev.claims).length === 2
+  && ev.claims['Finance'][0].query === 'SELECT 1'
+  && ev.claims['Finance'][0].runId === 'ev1'
+  && ev.claims['Finance'][0].hash === evStore.runs[0].runHash);
+check('what this does not cover ships verbatim, all six items',
+  ev.notCovered.length === 6 && ev.notCovered.some(x => /Correctness of the source data/.test(x))
+  && ev.notCovered.some(x => /Third-party reports/.test(x)));
+
+// ── 19. Store migration v1 → v2 ─────────────────────────────────────────────
+const oldStore = A.asNewStore(now);
+A.asSaveRule(oldStore, { name: 'templated', category: 'duplicates', check: 'uniqueness.composite',
+  params: { columns: ['id'] }, binding: { mode: 'explicit',
+    targets: [{ db: 'tgt', schema: 'dbo', table: 'client', column: null }], databases: [] } }, 'u', now);
+A.asSaveRule(oldStore, { name: 'bespoke', category: 'custom', check: 'custom.sql',
+  params: { sql: { any: 'SELECT 1' } } }, 'u', now);
+A.asRecordRun(oldStore, { id: 'old1', ruleId: oldStore.rules[0].id, startedAt: now, status: 'pass',
+  rowsFailed: 0, rowsScanned: 5, targetsMatched: 1, severity: 'warning', category: 'duplicates' }, now);
+// strip it back to v1 shape
+oldStore.v = 1;
+delete oldStore.sweeps;
+delete oldStore.settings.materialRowThreshold;
+oldStore.rules.forEach(r => { delete r.proves; });
+oldStore.runs.forEach(r => { delete r.runHash; delete r.result; delete r.counts; });
+A.asMigrateStore(oldStore, now + 5000);
+check('migration fills proves from the template where one applies',
+  /client keeps exactly one row per id/.test(oldStore.rules[0].proves));
+check('and flags the rest for manual authoring rather than leaving a blank',
+  !oldStore.rules[1].proves && oldStore.rules[1].provesNeedsAuthor === true);
+check('old runs gain their hash and record fields',
+  oldStore.runs[0].runHash && oldStore.runs[0].result === 'pass' && oldStore.runs[0].counts.compared === 5);
+check('the store gains sweeps, the threshold, the version bump and an audit event',
+  Array.isArray(oldStore.sweeps) && oldStore.settings.materialRowThreshold === A.MATERIAL_ROWS_DEFAULT
+  && oldStore.v === A.STORE_VERSION
+  && oldStore.events.some(e => e.type === 'store.migrated'));
+check('a store already at v2 passes through untouched',
+  (() => { const s = A.asNewStore(now); const before = JSON.stringify(s);
+    return A.asMigrateStore(s, now) === s && JSON.stringify(s) === before; })());
+
+// ── 20. Wiring ──────────────────────────────────────────────────────────────
 const PAGE = fs.existsSync(__dirname + '/../public/assurance.html')
   ? fs.readFileSync(__dirname + '/../public/assurance.html', 'utf8') : '';
 const NAV = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
@@ -361,18 +609,78 @@ check('it mounts the sidebar under the assurance key',
 check('the sidebar offers Assurance first in the Data Quality group',
   /key:'assurance'/.test(NAV)
   && NAV.indexOf("key:'assurance'") < NAV.indexOf("key:'data-quality'"));
-check('the six views are all present',
-  ['as-v-health', 'as-v-rules', 'as-v-tags', 'as-v-breaches', 'as-v-sched', 'as-v-report']
-    .every(id => PAGE.includes(id)),
-  ['as-v-health', 'as-v-rules', 'as-v-tags', 'as-v-breaches', 'as-v-sched', 'as-v-report']
-    .filter(id => !PAGE.includes(id)).join(','));
+
+// §9: the audience split replaces the six equal-weight tabs.
+check('the page splits into Engineer and Evidence views — the old six tabs are gone',
+  PAGE.includes('as-v-eng') && PAGE.includes('as-v-ev')
+  && !PAGE.includes('as-v-health') && !PAGE.includes('as-v-report'));
+// §2 + §3: one status line, one primary CTA in the header.
+check('one status line and one primary CTA live in the page header',
+  PAGE.includes('as-status-line') && PAGE.includes('id="as-cta"')
+  /* filled buttons: header CTA, bundle Add-all (§6 spec), drawer save */
+  && (PAGE.match(/class="btn btn-primary"/g) || []).length === 3
+  && !/as-head[\s\S]{0,400}\+ New rule/.test(PAGE));
+check('the state machine covers all four states with the brief\'s copy',
+  PAGE.includes('No checks written yet') && PAGE.includes('Nothing has been proven yet')
+  && PAGE.includes('Review breaches') && PAGE.includes('Publish evidence pack')
+  && PAGE.includes('so there is no evidence to show anyone'));
+// §4: the ribbon derives from the same status object.
+check('the four-step ribbon renders from asRibbon, not its own state',
+  PAGE.includes('as-ribbon') && /asRibbon\(st\)/.test(PAGE));
+// §3: renamed, demoted buttons.
+check('Import from Validation is a ghost button; Re-profile and + New rule are secondary',
+  /btn-ghost[^>]*onclick="asImportValidation/.test(PAGE)
+  && PAGE.includes('↻ Re-profile') && !PAGE.includes('Promote from Validation')
+  /* one + New rule BUTTON, in the Your-checks card header (prose mentions aside) */
+  && (PAGE.match(/onclick="asDrawerOpen\(\)">\+ New rule/g) || []).length === 1);
+// §5: coverage instead of a column of zeros.
+check('the coverage card replaces the category report',
+  PAGE.includes('Coverage of the migration') && /asCoverage\(/.test(PAGE)
+  && PAGE.includes('Biggest gaps:') && PAGE.includes('material but unchecked'));
+check('categories survive as filter chips on the search row',
+  PAGE.includes('as-catchips') && !PAGE.includes('as-cats'));
+// §6: bundles are the default unit of work.
+check('suggestions render as template bundles with Add all and Review',
+  /asSuggestBundles\(/.test(PAGE) && PAGE.includes('asBundleAddAll')
+  && PAGE.includes('asBundleReview') && PAGE.includes('grouped into'));
+// §1: the two empty states can no longer contradict the counts.
+check('a filtered-empty library says so and offers Show all — never "No rules yet"',
+  PAGE.includes('No rules ') && PAGE.includes('Show all ')
+  && /if \(!store\.rules\.length\)/.test(PAGE));
+check('the truly-empty state hides the Showing-N note',
+  /note\.style\.display = 'none'/.test(PAGE));
+// §7: the table leads with what each rule proves, on a human schedule.
+check('the rule table leads with What it proves and a human schedule',
+  PAGE.includes('<th>What it proves</th>') && PAGE.includes('<th>Scope</th>')
+  && PAGE.includes('<th>Runs</th>') && PAGE.includes('<th>Last result</th>')
+  && /asCronHuman\(cron\)/.test(PAGE));
+check('the drawer requires a proves sentence when no template fits',
+  PAGE.includes('as-dw-proves') && /asProvesFor\(draft\)/.test(PAGE));
+// §8: sweeps carry a manifest hash; the store migrates v1 → v2 on load.
+check('every sweep records a manifest hash over the run hashes',
+  /recordSweep/.test(PAGE) && /asManifest\(/.test(PAGE) && /manifestHash/.test(PAGE));
+check('a v1 store is migrated on load',
+  /asMigrateStore\(store/.test(PAGE));
+// §9: the Evidence view is real — statement, tiles, open items, exports.
+check('the Evidence view carries the statement, signature strip and four tiles',
+  PAGE.includes('Statement of checks') && PAGE.includes('as-ev-sig')
+  && PAGE.includes('Prepared by Cygenix Migration Console (automated)')
+  && PAGE.includes('as-ev-tiles'));
+check('what-this-does-not-cover ships and open items are named',
+  PAGE.includes('What this does not cover') && PAGE.includes('never a bare count'));
+check('the evidence pack is real exports, not print-this-page',
+  PAGE.includes('asExportStatementPdf') && PAGE.includes('asExportResultsCsv')
+  && PAGE.includes('asExportSqlManifest') && PAGE.includes('asExportRunLog')
+  && !PAGE.includes('window.print()'));
+
+// Behaviours that must survive the redesign.
 check('the rule builder is a drawer with a dry-run gate before save',
   /as-drawer/.test(PAGE) && /asDryRun/.test(PAGE));
 check('the generated SQL is logged with the run so a DBA can reproduce it',
   /countSql/.test(PAGE) && /generatedSql/.test(PAGE));
 check('breach hand-off goes to the existing Cleansing module',
   /data-cleansing\.html/.test(PAGE));
-check('promotion imports from the existing Validation module, read-only',
+check('the import still reads the Validation module read-only',
   /cygenix_validation_sources/.test(PAGE));
 check('suppression in the page asks for reason and expiry',
   /asSuppress/.test(PAGE) && /reason/i.test(PAGE));
