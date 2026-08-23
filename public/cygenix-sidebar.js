@@ -120,6 +120,11 @@
         { key:'assurance',      label:'Assurance',      href:'/assurance.html',      color:'var(--accent)', icon: iconCheck() },
         { key:'data-quality',   label:'Quality Review', href:'/data-quality.html',   color:'var(--green)', icon: iconQuality() },
         { key:'data-cleansing', label:'Cleansing',      href:'/data-cleansing.html', color:'var(--teal)',  icon: iconClean() },
+        // After Cleansing, before Validation — the operator sequence is
+        // de-duplicate → enrich → validate: don't enrich three copies of the
+        // same person, and have the enriched values in place before the
+        // validation report is generated.
+        { key:'data-enrichment', label:'Data Enrichment', href:'/data-enrichment.html', color:'var(--purple, #a888d0)', icon: iconEnrich() },
         { key:'validation',     label:'Validation',     href:'/validation.html',     color:'var(--amber)', icon: iconCheck() },
       ]},
       // 'Data Insights' was removed on request (16-Aug-2026): the Schema
@@ -191,6 +196,8 @@
   // iconReport (single-page document, used for Conversion Report).
   function iconQuality(){      return svg('<rect x="3" y="3" width="10" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="6" y="1.5" width="4" height="2.5" rx="0.4" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M5.5 8.5l1.6 1.6 3.4-3.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconCheck(){        return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8l2 2 3-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
+  /* a record card with a small "+" sparkle — per the enrichment spec */
+  function iconEnrich(){       return svg('<rect x="2" y="3.5" width="9" height="9" rx="1.2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6.5h5M4 9h3.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M12.5 2v4M10.5 4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconPlay(){         return svg('<rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M7 6l3 2-3 2z" fill="currentColor"/>'); }
   function iconList(){         return svg('<path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconGrid(){         return svg('<rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/>'); }
