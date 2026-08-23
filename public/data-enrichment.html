@@ -82,6 +82,9 @@ tr:last-child td{border-bottom:none}
 .b-none{background:var(--red-bg);color:var(--red)}
 .b-internal{background:var(--teal-bg);color:var(--teal)}
 .b-review{background:var(--amber-bg);color:var(--amber)}
+.b-applied{background:var(--green-bg);color:var(--green);font-family:var(--mono)}
+tr.applied td{opacity:1}
+tr.applied td:first-child{box-shadow:inset 2px 0 0 var(--green)}
 .conf{display:inline-flex;align-items:center;gap:6px;min-width:70px}
 .conf .track{width:44px;height:4px;border-radius:2px;background:var(--bg4);overflow:hidden;display:inline-block}
 .conf .track i{display:block;height:100%}
@@ -322,7 +325,7 @@ tr.decided td{opacity:0.55}
             <div style="display:flex;align-items:center;gap:10px;padding:0.6rem 0.9rem;border-top:0.5px solid var(--border)">
               <span class="mono muted" id="en-sum" style="font-size:11px"></span>
               <span style="flex:1"></span>
-              <button class="btn btn-primary" id="en-apply" onclick="enOpenApply()" disabled>Generate apply SQL →</button>
+              <button class="btn btn-primary" id="en-apply" onclick="enOpenApply()" disabled>Review &amp; apply →</button>
             </div>
           </div>
           <div data-panel="conflicts" style="display:none"><div class="tw"><table><thead>
@@ -384,15 +387,18 @@ tr.decided td{opacity:0.55}
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
-<script src="/cygenix-enrichment.js?v=f282fc8a29" defer></script>
+<script src="/cygenix-enrichment.js?v=aca502593a" defer></script>
 <script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
 
 <script>
 'use strict';
 /* Data Enrichment page. The engine (cygenix-enrichment.js) owns every
-   decision; this file owns the chrome, the read-only SQL round-trips, and
-   the staged-artifact handoff to the Jobs module. This page NEVER executes
-   a write: Apply registers UPDATE + rollback scripts as jobs. */
+   decision; this file owns the chrome, the SQL round-trips, and the
+   staged-artifact handoff to the Jobs module.
+   Discovery, profiling and the run itself are read-only SELECTs — the only
+   write this page can make is Apply, and only from the Apply dialog after
+   an explicit Execute: it passes the connection-profile write guard and
+   registers the rollback as a job BEFORE the first UPDATE is sent. */
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const E_BATCH = 200, E_ROW_CAP = 1000;   /* v1: cap a run at 1,000 rows */
@@ -915,7 +921,7 @@ function renderProposals(){
   const floor = +$('en-floor').value;
   $('en-c-prop').textContent = list.length;
   $('en-props').innerHTML = list.length ? list.map(p =>
-    '<tr class="' + (p.verdict !== 'pending' ? 'decided' : '') + '">'
+    '<tr class="' + (p.appliedAt ? 'applied' : p.verdict !== 'pending' ? 'decided' : '') + '">'
     + '<td class="mono muted">' + esc(p.rowKey) + '</td>'
     + '<td class="mono">' + esc(p.targetColumn) + '</td>'
     + '<td>' + (p.current != null && String(p.current).trim() !== '' ? '<span class="mono muted">' + esc(String(p.current).slice(0, 30)) + '</span>' : '<span class="nullv">null</span>') + '</td>'
@@ -926,14 +932,18 @@ function renderProposals(){
     + confColor(p.confidence) + '"></i></span><b class="mono" style="color:' + confColor(p.confidence) + '">'
     + p.confidence.toFixed(2) + '</b></span></td>'
     + '<td style="text-align:right;white-space:nowrap">'
-    + '<button class="iconbtn acc ' + (p.verdict === 'accepted' ? 'on' : '') + '" onclick="enSetVerdict(\'' + p.proposalId + '\',\'accepted\')" ' + (p.proposed == null ? 'disabled' : '') + '>✓</button> '
-    + '<button class="iconbtn rej ' + (p.verdict === 'rejected' ? 'on' : '') + '" onclick="enSetVerdict(\'' + p.proposalId + '\',\'rejected\')">✕</button> '
+    + (p.appliedAt ? '<span class="badge b-applied">written</span> '
+      : '<button class="iconbtn acc ' + (p.verdict === 'accepted' ? 'on' : '') + '" onclick="enSetVerdict(\'' + p.proposalId + '\',\'accepted\')" ' + (p.proposed == null ? 'disabled' : '') + '>✓</button> '
+        + '<button class="iconbtn rej ' + (p.verdict === 'rejected' ? 'on' : '') + '" onclick="enSetVerdict(\'' + p.proposalId + '\',\'rejected\')">✕</button> ')
     + '<button class="iconbtn" onclick="enWhy(\'' + p.proposalId + '\')">?</button></td></tr>'
   ).join('') : '<tr><td colspan="7" class="empty">No proposals in this run.</td></tr>';
   const a = list.filter(p => p.verdict === 'accepted').length;
   const r = list.filter(p => p.verdict === 'rejected').length;
-  $('en-sum').textContent = a + ' accepted · ' + r + ' rejected · ' + (list.length - a - r) + ' pending';
-  $('en-apply').disabled = a === 0;
+  const w = list.filter(p => p.appliedAt).length;
+  $('en-sum').textContent = a + ' accepted · ' + r + ' rejected · ' + (list.length - a - r) + ' pending'
+    + (w ? ' · ' + w + ' written' : '');
+  /* an applied proposal is spent: Apply only ever offers what is still unwritten */
+  $('en-apply').disabled = acceptedOfRun().length === 0;
 }
 function renderResults(){
   renderProposals();
@@ -967,12 +977,14 @@ function renderResults(){
 }
 function enSetVerdict(id, v){
   const p = store.proposals.find(x => x.proposalId === id);
+  /* a written value is history — un-accepting it here would not un-write it */
+  if (p && p.appliedAt) return;
   const next = p && p.verdict === v ? 'pending' : v;
   E.enVerdict(store, id, next, null, userName(), Date.now());
   saveStore(); renderProposals();
 }
 function enBulk(mode){
-  proposalsOfRun().forEach(p => {
+  proposalsOfRun().filter(p => !p.appliedAt).forEach(p => {
     if (mode === '0.9' && p.confidence >= 0.9 && p.proposed != null) E.enVerdict(store, p.proposalId, 'accepted', null, userName(), Date.now());
     /* "verified" means provider-attested or internal — inferred can NEVER qualify */
     if (mode === 'verified' && (p.origin === 'provider' || p.origin === 'internal') && p.proposed != null)
@@ -993,6 +1005,9 @@ function enWhy(id){
     + '<dt>Confidence</dt><dd class="mono">' + p.confidence.toFixed(2) + '</dd>'
     + '<dt>Verdict trail</dt><dd class="mono" style="font-size:10.5px">' + (p.verdictTrail.length
       ? esc(p.verdictTrail.map(t => t.verdict + ' · ' + new Date(t.at).toLocaleTimeString()).join(' → ')) : '—') + '</dd>'
+    + (p.appliedAt ? '<dt>Written</dt><dd class="mono" style="font-size:10.5px">'
+      + esc(new Date(p.appliedAt).toLocaleString() + ' by ' + (p.appliedBy || '—'))
+      + '<br>reverse with ' + esc(p.rollbackJob || 'the paired rollback job') + '</dd>' : '')
     + '</dl><div style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin:10px 0 4px">Reasoning</div>'
     + '<p style="font-size:12.5px;line-height:1.6">' + esc(p.reason) + '</p>';
   $('en-scrim').classList.add('show');
@@ -1028,38 +1043,96 @@ function enEraseRow(){
   alert(n + ' proposal(s) purged. The tombstone records who and when.');
 }
 
-/* ── apply: staged SQL, registered as jobs — never executed here ── */
-function enOpenApply(){
-  const accepted = proposalsOfRun().filter(p => p.verdict === 'accepted' && p.proposed != null);
-  if (!accepted.length) return;
+/* ── apply ───────────────────────────────────────────────────────────────
+   Two routes, both explicit. Register stages the pair as jobs for the Jobs
+   module to run; Execute writes from here. Neither can happen by accident:
+   nothing before this point touches the database with anything but a SELECT,
+   and execution additionally goes through the connection-profile write guard
+   and saves the rollback BEFORE the first UPDATE leaves the browser. */
+const E_APPLY_BATCH = 50;    /* statements per round trip */
+
+function applyOpts(){
   const { schema, table } = tableRef();
-  const opts = { schema, table, keyColumn: $('en-key').value, dialect: dialectOf(),
+  return { schema, table, keyColumn: $('en-key').value, dialect: dialectOf(),
     runId: currentRun.runId, date: new Date().toISOString().slice(0, 10) };
+}
+function acceptedOfRun(){
+  return proposalsOfRun().filter(p => p.verdict === 'accepted' && p.proposed != null && !p.appliedAt);
+}
+
+/* the same write guard the other executing pages use: an UNKNOWN
+   environment blocks, a PRD profile demands its id typed out */
+function cpPageGuardWrite(toolLabel){
+  try {
+    const CP = window.CygenixProfiles;
+    if (!CP) return true;
+    const cps = CP.cpLoad();
+    const g = CP.cpGuardWrite(cps, {});
+    if (!g.checked) return true;
+    const record = (profileId, outcome) => {
+      CP.cpRecordRun(cps, { artifactType: 'enrichment-apply', artifactId: toolLabel, profileId,
+        assertionResult: 'not-checked', outcome, runBy: userName() }, Date.now());
+      CP.cpSave(cps);
+    };
+    if (!g.ok){
+      alert(toolLabel + ' is blocked: ' + g.why);
+      record((cps.settings && cps.settings.activeProfileId) || null, 'refused — ' + g.why);
+      return false;
+    }
+    if (g.requiresTypedConfirm){
+      const typed = prompt('This is a ' + g.envClass + ' profile (' + g.profile.id + ').\n'
+        + toolLabel + ' will WRITE to this environment.\n\nType the profile id to continue:');
+      if (typed !== g.profile.id){
+        record(g.profile.id, 'refused — typed confirmation did not match');
+        alert('Confirmation did not match ' + g.profile.id + ' — nothing was written.');
+        return false;
+      }
+    }
+    record(g.profile.id, 'apply started (' + g.envClass + ')');
+    return true;
+  } catch (e){ console.warn('[profiles] guard', e); return true; }
+}
+
+function enOpenApply(){
+  const accepted = acceptedOfRun();
+  if (!accepted.length) return;
+  const opts = applyOpts();
   const apply = E.enApplySql(accepted, opts);
   const rollback = E.enRollbackSql(accepted, opts);
-  $('en-mo-title').textContent = 'Apply SQL · staged artifact';
+  const side = $('en-side').value === 'tgt' ? 'TARGET' : 'SOURCE';
+  $('en-mo-title').textContent = 'Apply · ' + accepted.length + ' proposal(s)';
   $('en-mo-body').innerHTML =
     '<div class="infobox" style="margin-bottom:10px"><span>ⓘ</span><div><b>' + accepted.length
-    + ' accepted proposal(s)</b> across ' + new Set(accepted.map(p => p.rowKey)).size + ' rows. Registering '
-    + 'creates two jobs in the Jobs module — apply and rollback — so execution inherits its logging, '
-    + 'scheduling and audit trail. <b>This page never executes a write.</b></div></div>'
+    + ' accepted proposal(s)</b> across ' + new Set(accepted.map(p => p.rowKey)).size + ' rows of '
+    + esc(opts.schema + '.' + opts.table) + ' on the <b>' + side + '</b> connection. '
+    + '<b>Register</b> stages both scripts as jobs, so execution inherits the Jobs module\'s logging, '
+    + 'scheduling and audit trail — the safer route, and the one to use for production. '
+    + '<b>Execute now</b> runs the apply from this page in batches of ' + E_APPLY_BATCH
+    + '; the rollback is registered as a job first, so the undo exists before the first write.</div></div>'
+    + '<div id="en-apply-log" class="warnbox" style="display:none;margin-bottom:10px"><span>▶</span><div></div></div>'
     + '<div style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin-bottom:4px">enrichment_apply_' + esc(currentRun.runId) + '.sql</div>'
     + '<div class="sql">' + esc(apply) + '</div>'
     + '<div style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin:12px 0 4px">enrichment_rollback_' + esc(currentRun.runId) + '.sql</div>'
     + '<div class="sql">' + esc(rollback) + '</div>'
-    + '<div style="margin-top:12px"><button class="btn btn-primary" onclick="enRegisterJobs()">Register both as jobs →</button></div>';
+    + '<div style="margin-top:12px;display:flex;gap:6px;align-items:center">'
+    + '<button class="btn btn-primary" id="en-btn-register" onclick="enRegisterJobs()">Register both as jobs →</button>'
+    + '<button class="btn btn-danger" id="en-btn-exec" onclick="enExecuteApply()">⚡ Execute apply now</button>'
+    + '<span class="muted" style="font-size:10.5px">Execute writes to ' + side.toLowerCase() + ' immediately.</span>'
+    + '</div>';
   $('en-scrim').classList.add('show');
   $('en-modal').classList.add('show');
 }
-function enRegisterJobs(){
-  const accepted = proposalsOfRun().filter(p => p.verdict === 'accepted' && p.proposed != null);
-  const { schema, table } = tableRef();
-  const opts = { schema, table, keyColumn: $('en-key').value, dialect: dialectOf(),
-    runId: currentRun.runId, date: new Date().toISOString().slice(0, 10) };
+
+/* Registering is also the first half of executing: the rollback must exist
+   as a saved artifact before anything is written. */
+function enRegisterJobs(quiet){
+  const accepted = acceptedOfRun();
+  const opts = applyOpts();
   let jobs = [];
   try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
+  const stamp = Date.now();
   const mk = (suffix, sql) => ({
-    id: 'job_' + Date.now() + '_' + suffix,
+    id: 'job_' + stamp + '_' + suffix,
     name: 'enrichment_' + suffix + '_' + currentRun.runId,
     jobType: 'sql', type: 'sql',
     projectId: projectId(), connOn: $('en-side').value === 'tgt' ? 'target' : 'source',
@@ -1070,15 +1143,95 @@ function enRegisterJobs(){
       + ' — review before executing; the paired ' + (suffix === 'apply' ? 'rollback' : 'apply')
       + ' job reverses it.'],
   });
-  jobs.push(mk('apply', E.enApplySql(accepted, opts)));
-  jobs.push(mk('rollback', E.enRollbackSql(accepted, opts)));
+  const applyJob = mk('apply', E.enApplySql(accepted, opts));
+  const rollbackJob = mk('rollback', E.enRollbackSql(accepted, opts));
+  jobs.push(applyJob, rollbackJob);
   localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
   E.enEvent(store, { type: 'apply.registered', runId: currentRun.runId,
-    proposals: accepted.length, by: userName() }, Date.now());
+    proposals: accepted.length, by: userName() }, stamp);
   saveStore();
-  enCloseModals();
-  alert('Registered enrichment_apply and enrichment_rollback as jobs. Execute them from the Jobs module — '
-    + 'they inherit its logging and audit trail.');
+  if (!quiet){
+    enCloseModals();
+    alert('Registered enrichment_apply and enrichment_rollback as jobs. Execute them from the Jobs module — '
+      + 'they inherit its logging and audit trail.');
+  }
+  return { applyJob, rollbackJob };
+}
+
+async function enExecuteApply(){
+  const accepted = acceptedOfRun();
+  if (!accepted.length) return;
+  const opts = applyOpts();
+  const side = $('en-side').value === 'tgt' ? 'target' : 'source';
+  const rows = new Set(accepted.map(p => p.rowKey)).size;
+  if (!confirm('Write ' + accepted.length + ' value(s) across ' + rows + ' row(s) to '
+    + opts.schema + '.' + opts.table + ' on the ' + side.toUpperCase() + ' connection?\n\n'
+    + 'The rollback script is registered as a job first, so this can be reversed.')) return;
+  if (!cpPageGuardWrite('Data Enrichment apply')) return;
+
+  /* undo before write, always */
+  const { rollbackJob } = enRegisterJobs(true);
+
+  const log = $('en-apply-log');
+  const say = (html, kind) => {
+    log.style.display = '';
+    log.querySelector('span').textContent = kind === 'err' ? '✗' : kind === 'ok' ? '✓' : '▶';
+    log.querySelector('div').innerHTML = html;
+  };
+  $('en-btn-exec').disabled = true; $('en-btn-register').disabled = true;
+  say('Rollback registered as <span class="mono">' + esc(rollbackJob.name) + '</span>. Writing…');
+
+  const stmts = E.enApplyStatements(accepted, opts);
+  const startedAt = Date.now();
+  let doneStmts = 0, failure = null;
+  for (let i = 0; i < stmts.length; i += E_APPLY_BATCH){
+    const batch = stmts.slice(i, i + E_APPLY_BATCH);
+    try {
+      await dbExec(batch.join('\n'));
+      doneStmts += batch.length;
+      say('Writing… <span class="mono">' + doneStmts + ' / ' + stmts.length + '</span> statements applied.');
+    } catch (e){
+      failure = e.message || String(e);
+      break;
+    }
+  }
+
+  /* only the statements that actually went through are stamped applied */
+  const appliedIds = accepted.slice(0, doneStmts).map(p => p.proposalId);
+  E.enMarkApplied(store, appliedIds, { via: 'page-execute', rollbackJob: rollbackJob.name },
+    userName(), Date.now());
+  E.enEvent(store, { type: failure ? 'apply.executed.partial' : 'apply.executed',
+    runId: currentRun.runId, applied: doneStmts, of: stmts.length, table: opts.schema + '.' + opts.table,
+    side: side, rollbackJob: rollbackJob.name, error: failure || null, by: userName() }, Date.now());
+  saveStore();
+
+  try {
+    const CP = window.CygenixProfiles;
+    if (CP){
+      const cps = CP.cpLoad();
+      if (CP.cpAdopted(cps)){
+        CP.cpRecordRun(cps, { artifactType: 'enrichment-apply', artifactId: currentRun.runId,
+          profileId: (cps.settings && cps.settings.activeProfileId) || null,
+          actualDatabase: opts.schema + '.' + opts.table, assertionResult: 'not-checked',
+          outcome: (failure ? 'partial — ' : 'applied — ') + doneStmts + ' of ' + stmts.length
+            + ' statements written; rollback job ' + rollbackJob.name,
+          runBy: userName(), startedAt: startedAt, endedAt: Date.now() }, Date.now());
+        CP.cpSave(cps);
+      }
+    }
+  } catch (e){ /* best-effort */ }
+
+  if (failure){
+    say('Stopped after <b>' + doneStmts + ' of ' + stmts.length + '</b> statements: ' + esc(failure)
+      + '<br>The ' + doneStmts + ' written value(s) are marked applied. Run <span class="mono">'
+      + esc(rollbackJob.name) + '</span> from the Jobs module to reverse them.', 'err');
+  } else {
+    say('<b>' + doneStmts + ' statement(s) applied</b> to <span class="mono">'
+      + esc(opts.schema + '.' + opts.table) + '</span>. To reverse, run <span class="mono">'
+      + esc(rollbackJob.name) + '</span> from the Jobs module.', 'ok');
+  }
+  $('en-btn-register').disabled = false;
+  renderProposals();
 }
 
 /* ── tabs + boot ── */

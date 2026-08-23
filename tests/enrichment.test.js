@@ -178,6 +178,16 @@ const rb = E.enRollbackSql(accepted, { schema: 'dbo', table: 'crm_contacts', key
 check('the rollback restores every pre-enrichment value — NULL stays NULL',
   /SET \[job_title\] = NULL WHERE \[row_key\] = '1042'/.test(rb)
   && /SET \[company_legal\] = 'obrien co' WHERE \[row_key\] = '1210'/.test(rb));
+const applyStmts = E.enApplyStatements(accepted, { schema: 'dbo', table: 'crm_contacts',
+  keyColumn: 'row_key', dialect: 'sqlserver', runId: 'enr_1', date: '2026-08-23' });
+check('the statement list is one statement per proposal, and the script is that list with a header',
+  applyStmts.length === accepted.length
+  && applyStmts.every(s => /^UPDATE \[dbo\]\.\[crm_contacts\] SET /.test(s) && /;$/.test(s))
+  && applyStmts.every(s => apply.includes(s)),
+  JSON.stringify(applyStmts));
+check('the rollback list matches its script too — batched execution cannot drift from the artifact',
+  E.enRollbackStatements(accepted, { schema: 'dbo', table: 'crm_contacts', keyColumn: 'row_key',
+    dialect: 'sqlserver', runId: 'enr_1' }).every(s => rb.includes(s)));
 check('both scripts open with the run id so a script on disk names its run',
   /run enr_x/.test(apply) && /run enr_x/.test(rb));
 
@@ -202,6 +212,26 @@ check('right-to-erasure purges the row\'s proposals and leaves a tombstone event
 const rs1 = E.enSaveRuleset(store, 'uk-only', 'Only UK', comp.ruleJson, 'op@x', now);
 const rs2 = E.enSaveRuleset(store, 'uk-only', 'Only UK v2', comp.ruleJson, 'op@x', now + 5);
 check('rulesets version rather than overwrite', rs1.version === 1 && rs2.version === 2);
+
+// executing an apply stamps what was written — the accept AND the write survive
+const store2 = E.enNewStore(now);
+const run2 = E.enRecordRun(store2, { projectId: 'p1', sourceTable: 'dbo.crm_contacts', seed: 41889 }, now);
+E.enStageProposals(store2, run2.runId, rec.proposals, now);
+const ids2 = store2.proposals.slice(0, 2).map(p => p.proposalId);
+E.enVerdict(store2, ids2[0], 'accepted', null, 'op@x', now + 1);
+const marked = E.enMarkApplied(store2, ids2, { via: 'page-execute', rollbackJob: 'enrichment_rollback_r1' },
+  'op@x', now + 2);
+check('applied proposals are stamped with who, when and the rollback that reverses them',
+  marked === 2 && store2.proposals[0].appliedAt === now + 2
+  && store2.proposals[0].appliedBy === 'op@x'
+  && store2.proposals[0].rollbackJob === 'enrichment_rollback_r1'
+  && store2.proposals[0].verdictTrail.map(t => t.verdict).join(',') === 'accepted,applied',
+  JSON.stringify(store2.proposals[0].verdictTrail));
+check('a second apply cannot double-stamp what is already written',
+  E.enMarkApplied(store2, ids2, {}, 'op@x', now + 9) === 0
+  && store2.proposals[0].appliedAt === now + 2);
+check('only the ids handed in are stamped — a partial write marks only what went through',
+  store2.proposals.slice(2).every(p => !p.appliedAt));
 
 // ── 9. Table picker ─────────────────────────────────────────────────────────
 // The source table is searched, not remembered. Ranking, inline completion
@@ -264,9 +294,29 @@ check('the pre-run disclosure names what is transmitted and requires acknowledge
 check('verify-only fields are called out on the page, and bulk actions include reject-AI-inferred',
   /provider-attested or nothing/i.test(PAGE) && /Reject.*AI-inferred/i.test(PAGE)
   && /Accept.*verified/i.test(PAGE));
-check('apply registers staged SQL as jobs — the page itself never executes a write',
+check('apply offers both routes: stage the pair as jobs, or execute from the page',
   /cygenix_jobs/.test(PAGE) && /enRollbackSql/.test(PAGE) && /enApplySql/.test(PAGE)
-  && !/action:\s*'execute'[^}]*enApplySql/.test(PAGE));
+  && /onclick="enRegisterJobs\(\)"/.test(PAGE) && /onclick="enExecuteApply\(\)"/.test(PAGE));
+// Everything before the Apply dialog is read-only. Executing is the one write,
+// and it is gated: profile guard, explicit confirm, rollback saved first.
+const EXEC = (PAGE.match(/async function enExecuteApply\(\)\{[\s\S]*?\n\}/) || [''])[0];
+check('executing asks for confirmation and passes the connection-profile write guard',
+  /confirm\(/.test(EXEC) && /cpPageGuardWrite\('Data Enrichment apply'\)/.test(EXEC)
+  && /cpGuardWrite/.test(PAGE) && /requiresTypedConfirm/.test(PAGE));
+check('the rollback job is registered BEFORE the first UPDATE is sent',
+  EXEC.indexOf('enRegisterJobs(true)') > -1
+  && EXEC.indexOf('enRegisterJobs(true)') < EXEC.indexOf('dbExec(batch'),
+  String(EXEC.indexOf('enRegisterJobs(true)')) + ' vs ' + String(EXEC.indexOf('dbExec(batch')));
+check('the write goes out in batches and only what actually landed is marked applied',
+  /E_APPLY_BATCH/.test(EXEC) && /enApplyStatements/.test(EXEC)
+  && /accepted\.slice\(0, doneStmts\)/.test(EXEC) && /enMarkApplied/.test(EXEC));
+check('an executed apply is recorded as an event and a profile run record, error included',
+  /apply\.executed/.test(EXEC) && /cpRecordRun/.test(EXEC) && /rollbackJob: rollbackJob\.name/.test(EXEC));
+check('a written proposal is spent: no re-verdict, no re-apply, and it says so in the row',
+  /if \(p && p\.appliedAt\) return;/.test(PAGE)
+  && /filter\(p => !p\.appliedAt\)/.test(PAGE)
+  && /b-applied">written/.test(PAGE)
+  && /p\.proposed != null && !p\.appliedAt/.test(PAGE));
 check('runs write a profile run record when profiles are in force',
   /cpRecordRun/.test(PAGE));
 check('external providers are honest about being unconfigured, not silently skipped',
