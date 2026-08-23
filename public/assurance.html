@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Every validation rule from the migration, running on a schedule against live data.">
+<title>Cygenix – Assurance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#17827C;--purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1rem 1.25rem;max-width:1500px}
+
+.as-head{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:0.8rem}
+.as-title{font-size:18px;font-weight:600}
+.as-sub{font-size:12px;color:var(--text2);line-height:1.5;max-width:640px}
+.as-actions{margin-left:auto;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
+
+.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
+.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn:disabled{opacity:0.45;cursor:default}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{color:#fff;opacity:0.9}
+.btn-danger{color:var(--red)}
+
+.as-seg{display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;gap:2px;flex-wrap:wrap}
+.as-seg button{border:none;background:transparent;color:var(--text3);font-family:var(--serif);font-size:12px;font-weight:500;padding:0.4rem 0.85rem;border-radius:6px;cursor:pointer;white-space:nowrap}
+.as-seg button.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
+.as-count{display:inline-block;min-width:16px;padding:0 5px;border-radius:8px;background:var(--red-bg);color:var(--red);font-size:10.5px;font-family:var(--mono);margin-left:4px}
+
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:0.9rem}
+.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.panel-title{font-size:13px;font-weight:600}
+.panel-sub{font-size:11.5px;color:var(--text2)}
+.panel-body{padding:0.8rem 0.9rem}
+.p-right{margin-left:auto;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap}
+.note{padding:0.55rem 0.9rem;font-size:11.5px;color:var(--text2);border-top:0.5px solid var(--border)}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.6rem;margin-bottom:0.9rem}
+.tile{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.85rem}
+.tile .k{font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text2);font-weight:500}
+.tile .v{font-size:22px;font-weight:600;font-family:var(--mono);margin-top:2px}
+.tile .n{font-size:11px;color:var(--text2)}
+.tile .v.crit{color:var(--red)}
+
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);font-weight:500;text-align:left;padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
+td{padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.tw{overflow-x:auto}
+.mono{font-family:var(--mono);font-size:11px}
+.muted{color:var(--text2)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+
+.chip{display:inline-block;padding:1px 8px;border-radius:9px;font-size:10.5px;font-weight:500;background:var(--bg4);color:var(--text2);white-space:nowrap}
+.chip.crit{background:var(--red-bg);color:var(--red)}
+.chip.warn{background:var(--amber-bg);color:var(--amber)}
+.chip.ok{background:var(--green-bg);color:var(--green)}
+.chip.info{background:var(--accent-glow);color:var(--accent)}
+.sev{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle}
+.sev.c{background:var(--red)}.sev.w{background:var(--amber)}.sev.i{background:var(--text2)}
+.rulename{display:block;font-weight:500}
+.rid{display:block;font-family:var(--mono);font-size:10.5px;color:var(--text2)}
+.scope{font-family:var(--mono);font-size:11px;color:var(--text2)}
+.rowlink{cursor:pointer}
+.rowlink:hover td{background:var(--bg3)}
+
+.bars .brow{display:grid;grid-template-columns:150px 1fr 46px;align-items:center;gap:8px;margin-bottom:6px;font-size:11.5px}
+.bars .track{height:7px;border-radius:4px;background:var(--bg4);overflow:hidden}
+.bars .track i{display:block;height:100%;border-radius:4px}
+.bars .pc{font-family:var(--mono);font-size:11px;text-align:right;color:var(--text2)}
+
+.fchip{border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;border-radius:12px;padding:3px 10px;cursor:pointer;font-family:var(--serif)}
+.fchip.on{color:var(--accent);border-color:rgba(74,91,214,0.45);background:var(--accent-glow)}
+.as-search{font-family:var(--serif);font-size:12px;padding:5px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);min-width:210px}
+.inp{font-family:var(--serif);font-size:12px;padding:5px 8px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%}
+textarea.inp{font-family:var(--mono);font-size:11px;min-height:70px;resize:vertical}
+select.inp{cursor:pointer}
+.fld{margin-bottom:0.6rem}
+.fld label{display:block;font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin-bottom:3px;font-weight:500}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:0.6rem}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.6rem}
+
+.grid2{display:grid;grid-template-columns:1fr 380px;gap:0.9rem;align-items:start}
+@media(max-width:1100px){.grid2{grid-template-columns:1fr}}
+.split{display:grid;grid-template-columns:290px minmax(0,1fr);gap:0.9rem;align-items:start}
+@media(max-width:1100px){.split{grid-template-columns:1fr}}
+
+.bq{display:flex;flex-direction:column;gap:4px}
+.bq-item{text-align:left;border:0.5px solid var(--border);background:var(--bg2);border-radius:8px;padding:0.55rem 0.7rem;cursor:pointer;color:var(--text);font-family:var(--serif)}
+.bq-item.on{border-color:rgba(74,91,214,0.5);background:var(--accent-glow)}
+.bq-item .t{font-size:12px;font-weight:500}
+.bq-item .m{font-size:10.5px;color:var(--text2);font-family:var(--mono)}
+
+.diag{border:0.5px solid rgba(107,78,142,0.4);border-radius:var(--r);overflow:hidden;margin-top:0.8rem}
+.diag-h{background:var(--purple-bg);padding:0.5rem 0.8rem;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center}
+.diag-b{padding:0.7rem 0.8rem;font-size:12.5px;line-height:1.65}
+.ev{list-style:none;margin-top:0.6rem}
+.ev li{display:flex;gap:10px;font-size:11.5px;padding:3px 0;border-top:0.5px dotted var(--border)}
+.ev .k{min-width:120px;color:var(--text2);text-transform:uppercase;font-size:10px;letter-spacing:0.05em;padding-top:1px}
+.diag-foot{font-size:10.5px;color:var(--text2);border-top:0.5px solid var(--border);padding:0.45rem 0.8rem}
+
+.trail{list-style:none}
+.trail li{display:flex;gap:12px;font-size:12px;padding:4px 0}
+.trail .ts{font-family:var(--mono);font-size:10.5px;color:var(--text2);min-width:130px}
+
+.sug{display:flex;gap:12px;align-items:flex-start;padding:0.7rem 0.9rem;border-top:0.5px solid var(--border)}
+.sug .body{flex:1;min-width:0}
+.sug b{font-size:12.5px}
+.sug p{font-size:11.5px;color:var(--text2);margin-top:2px}
+.sug .acts{display:flex;gap:6px}
+
+.tog{width:34px;height:18px;border-radius:10px;border:0.5px solid var(--border2);background:var(--bg4);cursor:pointer;position:relative;flex:none}
+.tog::after{content:'';position:absolute;top:1.5px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--text2);transition:all 0.15s}
+.tog[aria-pressed="true"]{background:var(--accent)}
+.tog[aria-pressed="true"]::after{left:17px;background:#fff}
+
+.conf{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px}
+.conf .track{width:52px;height:5px;border-radius:3px;background:var(--bg4);overflow:hidden;display:inline-block}
+.conf .track i{display:block;height:100%;background:var(--accent)}
+
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:60;display:none}
+.scrim.show{display:block}
+.as-drawer{position:fixed;top:0;right:-560px;width:540px;max-width:96vw;height:100vh;background:var(--bg2);border-left:0.5px solid var(--border2);z-index:61;transition:right 0.2s ease;display:flex;flex-direction:column}
+.as-drawer.show{right:0}
+.dw-h{display:flex;align-items:center;gap:0.6rem;padding:0.8rem 1rem;border-bottom:0.5px solid var(--border)}
+.dw-b{flex:1;overflow-y:auto;padding:0.9rem 1rem}
+.fs{border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.8rem;margin-bottom:0.8rem}
+.fs legend{font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text2);padding:0 6px;font-weight:500}
+.dw-f{padding:0.7rem 1rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;align-items:center}
+.dry{font-family:var(--mono);font-size:11px;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;margin-top:0.5rem;white-space:pre-wrap;max-height:220px;overflow:auto}
+
+.retain{display:flex;gap:12px;align-items:flex-start;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.35);border-radius:var(--r);padding:0.7rem 0.8rem;margin-bottom:0.8rem}
+.retain b{font-size:12.5px}
+.retain p{font-size:11.5px;color:var(--text2)}
+
+.asset{display:flex;gap:12px;align-items:center;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.9rem;margin-bottom:0.9rem}
+.asset .ic{width:30px;height:30px;border-radius:8px;background:var(--accent-glow);color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none}
+.asset b{font-size:12.5px}
+.asset p{font-size:11.5px;color:var(--text2)}
+
+.rep-head{padding:1.1rem 1rem;border-bottom:0.5px solid var(--border)}
+.rep-head .k{font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+.rep-head h2{font-size:19px;margin:2px 0}
+.rep-stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:0.5px solid var(--border)}
+.rep-stat{padding:0.8rem;border-right:0.5px solid var(--border);text-align:center}
+.rep-stat:last-child{border-right:none}
+.rep-stat .v{font-size:21px;font-weight:600;font-family:var(--mono)}
+.rep-stat .k{font-size:10.5px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em}
+
+.cats{display:flex;flex-direction:column;gap:3px}
+.cat{text-align:left;border:none;background:transparent;color:var(--text2);font-size:12px;padding:0.4rem 0.6rem;border-radius:6px;cursor:pointer;font-family:var(--serif);display:flex;justify-content:space-between;gap:8px}
+.cat.on{background:var(--accent-glow);color:var(--accent);font-weight:500}
+.cat .ct{font-family:var(--mono);font-size:10.5px;color:var(--text2)}
+
+.empty{padding:1.6rem;text-align:center;color:var(--text2);font-size:12.5px;line-height:1.7}
+@media print{
+  body{padding-left:0;background:#fff;color:#000}
+  #cyg-sidebar-mount,.as-head,.as-seg,.no-print{display:none !important}
+  .panel{border-color:#ccc}
+}
+</style>
+</head>
+<body>
+<div id="cyg-sidebar-mount" data-active="assurance"></div>
+
+<div class="page">
+  <div class="as-head">
+    <div>
+      <div class="as-title">✓ Assurance</div>
+      <div class="as-sub">Every validation rule written to prove the migration was correct, running on a schedule
+        against live data — for as long as the data matters.</div>
+    </div>
+    <div class="as-actions">
+      <span class="mono muted" id="as-sweepnote"></span>
+      <button class="btn" id="as-sweep" onclick="asSweepDue()" title="Run every group whose cron has come due since its last sweep">▶ Run due groups</button>
+      <button class="btn btn-primary" onclick="asDrawerOpen()">+ New rule</button>
+    </div>
+  </div>
+
+  <div class="as-seg" role="group" aria-label="Assurance views" style="margin-bottom:0.9rem">
+    <button id="as-tab-health"   class="active" onclick="asView('health')">Health</button>
+    <button id="as-tab-rules"    onclick="asView('rules')">Rule Library</button>
+    <button id="as-tab-tags"     onclick="asView('tags')">Tags</button>
+    <button id="as-tab-breaches" onclick="asView('breaches')">Breaches<span class="as-count" id="as-breach-n" style="display:none"></span></button>
+    <button id="as-tab-sched"    onclick="asView('sched')">Schedules &amp; Routing</button>
+    <button id="as-tab-report"   onclick="asView('report')">Monthly Report</button>
+  </div>
+
+  <!-- ══ HEALTH ══ -->
+  <div id="as-v-health">
+    <div class="asset" id="as-asset"></div>
+    <div class="tiles" id="as-tiles"></div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">Data health</div>
+          <span class="panel-sub">rolling 30 days · both connections</span></div>
+        <div class="panel-body">
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <div id="as-score" style="font-size:38px;font-weight:600;font-family:var(--mono)">—</div>
+            <div class="muted" id="as-streak" style="font-size:12px"></div>
+          </div>
+          <svg id="as-spark" viewBox="0 0 660 110" width="100%" height="110" aria-label="Data health, last 30 days"></svg>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">Health by category</div></div>
+        <div class="panel-body bars" id="as-catbars"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Open breaches</div><span class="panel-sub">newest first</span>
+        <div class="p-right"><button class="btn" onclick="asView('breaches')">Open queue →</button></div></div>
+      <div class="tw"><table id="as-open-breaches"><thead>
+        <tr><th style="width:1px"></th><th>Rule</th><th>Category</th><th>Scope</th><th class="num">Rows</th><th>First seen</th><th>State</th></tr>
+      </thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- ══ RULE LIBRARY ══ -->
+  <div id="as-v-rules" style="display:none">
+    <div class="split">
+      <div class="panel"><div class="panel-body cats" id="as-cats"></div></div>
+      <div style="min-width:0">
+        <div class="panel">
+          <div class="panel-header">
+            <input class="as-search" id="as-rule-q" placeholder="Search rules, tables, tags…" oninput="asRenderRules()">
+            <button class="fchip" id="as-f-continuous" onclick="asToggleFilter('continuous')">Continuous</button>
+            <button class="fchip" id="as-f-migration" onclick="asToggleFilter('migration')">Migration-only</button>
+            <button class="fchip" id="as-f-disabled" onclick="asToggleFilter('disabled')">Disabled</button>
+            <button class="fchip" id="as-f-breaching" onclick="asToggleFilter('breaching')">Breaching</button>
+            <div class="p-right">
+              <button class="btn" onclick="asImportValidation()" title="Read the Validation module's script sources and promote each script to a continuous custom.sql rule — the Validation page itself is untouched">⇪ Promote from Validation</button>
+              <button class="btn btn-primary" onclick="asDrawerOpen()">+ New rule</button>
+            </div>
+          </div>
+          <div class="tw"><table id="as-rules"><thead>
+            <tr><th>Rule</th><th>Category</th><th>Check</th><th>Binds to</th><th>Severity</th><th>Schedule</th><th class="num">Last run</th><th>On</th><th></th></tr>
+          </thead><tbody></tbody></table></div>
+          <div class="note" id="as-rules-note"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title">Suggested rules</div>
+            <span class="panel-sub" id="as-sug-sub">from the profile sweep</span>
+            <div class="p-right"><button class="btn" onclick="asProfileNow()">↻ Profile now</button></div></div>
+          <div id="as-sugs"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAGS ══ -->
+  <div id="as-v-tags" style="display:none">
+    <div class="asset" id="as-tag-asset"></div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Proposed tags</div>
+        <span class="panel-sub">heuristic proposals from the schema — nothing applies until you accept it</span>
+        <div class="p-right">
+          <button class="btn" onclick="asProposeTagsNow()">↻ Propose from schema</button>
+          <button class="btn" onclick="asAcceptTags(0.9)">Accept above 0.90</button>
+        </div></div>
+      <div class="tw"><table id="as-tag-props"><thead>
+        <tr><th>Column</th><th>Proposed tag</th><th>Confidence</th><th>Why</th><th></th></tr>
+      </thead><tbody></tbody></table></div>
+      <div class="note">A tag changes which rules bind to a column, so every acceptance is written to the audit trail.</div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Tag catalogue</div><span class="panel-sub" id="as-tag-count"></span></div>
+      <div class="tw"><table id="as-tag-cat"><thead>
+        <tr><th>Tag</th><th class="num">Columns</th><th>Bound rules</th><th></th></tr>
+      </thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- ══ BREACHES ══ -->
+  <div id="as-v-breaches" style="display:none">
+    <div class="split">
+      <div class="bq" id="as-bq"></div>
+      <div style="min-width:0" id="as-breach-detail"><div class="panel"><div class="empty">No breach selected.</div></div></div>
+    </div>
+  </div>
+
+  <!-- ══ SCHEDULES & ROUTING ══ -->
+  <div id="as-v-sched" style="display:none">
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">Rule groups</div>
+          <span class="panel-sub">the group owns the cron; a rule may override it</span></div>
+        <div class="tw"><table id="as-groups"><thead>
+          <tr><th>Group</th><th class="num">Rules</th><th>Cron</th><th>Next run</th><th>Est. cost</th><th></th></tr>
+        </thead><tbody></tbody></table></div>
+        <div class="note">Sweeps run from this console against the project connections, with counts first and samples
+          only on a hit. Every generated statement is a read-only SELECT and is logged on the run.</div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title">Routing</div></div>
+          <div class="tw"><table id="as-routing"><thead>
+            <tr><th>Severity</th><th>Channels</th><th>Delivery</th></tr>
+          </thead><tbody></tbody></table></div>
+          <div class="note">Delivery uses the console's Integrations connectors (webhook, email). Enable and configure
+            them under Connect → Integrations; breaches then notify automatically.</div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title">Quiet hours &amp; suppression</div></div>
+          <div class="panel-body" style="font-size:12px;line-height:1.9" id="as-quiet"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MONTHLY REPORT ══ -->
+  <div id="as-v-report" style="display:none">
+    <div class="panel">
+      <div class="rep-head">
+        <div class="k">Cygenix Assurance</div>
+        <h2>Monthly data assurance report</h2>
+        <p class="muted" id="as-rep-sub" style="font-size:12px"></p>
+      </div>
+      <div class="rep-stats" id="as-rep-stats"></div>
+      <div class="panel-body">
+        <h4 style="font-size:13px;margin-bottom:8px">What we caught before it reached a report</h4>
+        <ul id="as-rep-narrative" style="margin:0 0 16px;padding-left:18px;font-size:12.5px;color:var(--text2);line-height:1.8"></ul>
+        <h4 style="font-size:13px;margin-bottom:8px">Library growth</h4>
+        <p class="muted" style="font-size:12.5px" id="as-rep-growth"></p>
+      </div>
+      <div class="note no-print">Print this page to produce the PDF.
+        <button class="btn" style="margin-left:8px" onclick="window.print()">⎙ Print / save as PDF</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RULE BUILDER DRAWER ══ -->
+<div class="scrim" id="as-scrim" onclick="asDrawerClose()"></div>
+<aside class="as-drawer" id="as-drawer" aria-label="Rule builder">
+  <div class="dw-h">
+    <div class="panel-title" id="as-dw-title">New rule</div>
+    <span class="chip info" id="as-dw-badge">Draft</span>
+    <div class="p-right"><button class="btn" onclick="asDrawerClose()">Close</button></div>
+  </div>
+  <div class="dw-b">
+    <div class="retain">
+      <button class="tog" id="as-dw-continuous" aria-pressed="true" onclick="asTog(this)" aria-label="Run continuously"></button>
+      <div><b>Keep running after the migration ends</b>
+        <p>On by default. The rule joins the continuous schedule at cutover instead of stopping with the project.</p></div>
+    </div>
+    <fieldset class="fs"><legend>Identity</legend>
+      <div class="fld"><label>Rule name</label><input class="inp" id="as-dw-name" placeholder="Cost centre in reference set"></div>
+      <div class="row3">
+        <div class="fld"><label>Category</label><select class="inp" id="as-dw-category"></select></div>
+        <div class="fld"><label>Severity</label><select class="inp" id="as-dw-severity">
+          <option value="info">Info</option><option value="warning" selected>Warning</option>
+          <option value="critical">Critical</option></select></div>
+        <div class="fld"><label>Group</label><select class="inp" id="as-dw-group"></select></div>
+      </div>
+    </fieldset>
+    <fieldset class="fs"><legend>Check</legend>
+      <div class="fld"><label>Check type</label><select class="inp" id="as-dw-check" onchange="asDwCheckChanged()"></select></div>
+      <div class="fld"><label>Parameters (JSON)</label><textarea class="inp" id="as-dw-params" rows="5"></textarea>
+        <div class="muted" style="font-size:10.5px;margin-top:3px" id="as-dw-paramhint"></div></div>
+    </fieldset>
+    <fieldset class="fs"><legend>Binding — tag first</legend>
+      <div class="row3">
+        <div class="fld"><label>Mode</label><select class="inp" id="as-dw-bmode" onchange="asDwBindChanged()">
+          <option value="tag">Tag</option><option value="pattern">Pattern</option><option value="explicit">Explicit</option></select></div>
+        <div class="fld" id="as-dw-btag-w"><label>Tag</label><select class="inp" id="as-dw-btag"></select></div>
+        <div class="fld"><label>Databases</label><select class="inp" id="as-dw-bdb">
+          <option value="">Both</option><option value="src">Source only</option><option value="tgt">Target only</option></select></div>
+      </div>
+      <div class="fld" id="as-dw-bpattern-w" style="display:none"><label>Pattern — db.schema.table.column, * wildcards</label>
+        <input class="inp mono" id="as-dw-bpattern" placeholder="tgt.dbo.*.currency_code"></div>
+      <div class="fld" id="as-dw-btargets-w" style="display:none"><label>Targets — one db.schema.table.column per line (column optional)</label>
+        <textarea class="inp" id="as-dw-btargets" rows="3" placeholder="tgt.dbo.gl_posting.cost_centre"></textarea></div>
+      <div class="muted" style="font-size:11px" id="as-dw-resolves"></div>
+    </fieldset>
+    <fieldset class="fs"><legend>Thresholds</legend>
+      <div class="row3">
+        <div class="fld"><label>Warn above</label><input class="inp mono" id="as-dw-warn" value="0"></div>
+        <div class="fld"><label>Fail above</label><input class="inp mono" id="as-dw-fail" value="0"></div>
+        <div class="fld"><label>Unit</label><select class="inp" id="as-dw-unit">
+          <option value="rows">rows</option><option value="percent">percent</option></select></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+        <button class="tog" id="as-dw-baseline" aria-pressed="false" onclick="asTog(this)" aria-label="Baseline"></button>
+        Also warn when the measure moves more than <input class="inp mono" id="as-dw-band" value="10" style="width:52px;display:inline-block"> % against its 7-day baseline
+      </div>
+    </fieldset>
+    <fieldset class="fs"><legend>On breach</legend>
+      <select class="inp" id="as-dw-onbreach">
+        <option value="notify">Notify</option>
+        <option value="notify_quarantine">Notify + mark rows for quarantine</option>
+        <option value="notify_cleanse">Notify + open in Cleansing</option>
+      </select>
+    </fieldset>
+    <div id="as-dw-dry" class="dry" style="display:none"></div>
+  </div>
+  <div class="dw-f">
+    <button class="btn" onclick="asDryRun()">▷ Dry run</button>
+    <span class="muted" style="font-size:11px" id="as-dw-drynote">Dry-run the preview before saving — the save is gated on it.</span>
+    <div class="p-right"><button class="btn btn-primary" id="as-dw-save" onclick="asSaveFromDrawer()" disabled>Save rule</button></div>
+  </div>
+</aside>
+
+<script src="/connections.js?v=d199ff3358" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
+<script src="/cygenix-api.js?v=923ff2d8c9" defer></script>
+<script src="/cygenix-schema-graph.js?v=7342c9d73d" defer></script>
+<script src="/cygenix-subject-harvest.js?v=b15d4ee907" defer></script>
+<script src="/cygenix-integrations.js?v=460ebe6c49" defer></script>
+<script src="/cygenix-assurance.js?v=956fac1aaf" defer></script>
+<script src="/cygenix-sidebar.js?v=6f72ef587c" defer></script>
+
+<script>
+'use strict';
+/* ═════════════════════════════════════════════════════════════════════════
+   Assurance page. The engine (cygenix-assurance.js) owns every decision;
+   this file owns the chrome, the connections and the store round-trip.
+   Nothing here writes to a customer database: every statement the sweeps
+   run is a compiled, logged, read-only SELECT.
+   ═════════════════════════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const AS_KEY = 'cygenix_assurance_v1';
+
+let A = null;                 // engine, once loaded
+let store = null;
+let catalog = null;           // { tables, tags } — built from the schema graph
+let view = 'health';
+let ruleCat = null;           // rule-library category filter
+let ruleFilters = {};         // continuous / migration / disabled / breaching
+let selBreach = null;
+let dryOk = null;             // last successful dry-run payload (gates the save)
+let editingRuleId = null;
+
+function userName(){
+  try { return (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || 'user'; }
+  catch { return 'user'; }
+}
+function nowMs(){ return Date.now(); }
+
+/* ---------- store ---------- */
+function loadStore(){
+  try {
+    const raw = localStorage.getItem(AS_KEY);
+    if (raw) { store = JSON.parse(raw); return; }
+  } catch {}
+  store = A.asNewStore(nowMs());
+  saveStore();
+}
+function saveStore(){
+  try { localStorage.setItem(AS_KEY, JSON.stringify(store)); } catch (e) { console.warn('assurance store', e); }
+}
+
+/* ---------- connections, dialects, catalogue ---------- */
+function connOf(side){
+  try {
+    const c = window.CygenixConnections ? CygenixConnections.get() || {} : {};
+    return side === 'src' ? (c.srcConnString || '') : (c.tgtConnString || '');
+  } catch { return ''; }
+}
+function dialectOf(side){ return A.asDialectOf(connOf(side)); }
+
+async function buildCatalog(){
+  if (catalog) return catalog;
+  const tables = [];
+  for (const side of ['src', 'tgt']){
+    if (!CygenixSchemaGraph.hasConnection(side)) continue;
+    let g;
+    try { g = await CygenixSchemaGraph.load(side); } catch { continue; }
+    if (!g || !g.ok) continue;
+    let harvest = null;
+    try {
+      harvest = await CygenixSubjectHarvest.shEnsure({
+        execute: (sql) => CygenixSchemaGraph.execute(side, sql),
+        database: g.database, cacheKey: side + '|' + (g.database || 'unknown'),
+      });
+    } catch {}
+    g.tables.forEach(t => {
+      let cols = (t.columns || []).map(c => typeof c === 'string' ? c : c.name);
+      let pks = (t.primaryKeys || []).slice();
+      const h = harvest && (harvest.tables[t.key] || harvest.tables[(t.schema || 'dbo') + '.' + t.name]);
+      if (h){
+        if (!cols.length && h.c) cols = String(h.c).split(',').map(c => c.split(':')[0]);
+        if (!pks.length && h.pk) pks = h.pk.slice();
+      }
+      if (!cols.length && t.colsig) cols = String(t.colsig).split(',').map(c => c.split(':')[0]);
+      tables.push({ db: side, schema: t.schema || 'dbo', table: t.name, rowCount: t.rowCount || 0,
+        columns: cols, primaryKeys: pks,
+        types: h && h.c ? String(h.c).split(',').map(c => c.split(':')[1] || '') : [] });
+    });
+  }
+  catalog = { tables, tags: store.tags };
+  return catalog;
+}
+
+/* ---------- the executor: counts first, samples on a hit, everything logged */
+async function execSide(side, sql){
+  const res = await CygenixSchemaGraph.execute(side, sql);
+  return (res && (res.recordset || res.rows)) || [];
+}
+
+async function asRunRule(rule, opts){
+  const startedAt = nowMs();
+  await buildCatalog();
+  const targets = A.asResolveBinding(rule, catalog);
+  const cap = store.settings.sampleCap || 1000;
+  const perTarget = [];
+  let rowsScanned = 0, rowsFailed = 0, measure = null, status = 'pass', why = null, error = null;
+
+  const kindOf = () => { try { return A.asCompile(rule, targets[0] || { db:'tgt', schema:'dbo', table:'x', column:'x' }, 'sqlserver', 1).kind; } catch { return 'count'; } };
+
+  try {
+    if (!targets.length){
+      status = 'skipped';
+    } else if (rule.check.indexOf('recon.') === 0){
+      /* pair: first source-side target vs first target-side target */
+      const a = targets.find(t => t.db === 'src'), b = targets.find(t => t.db === 'tgt');
+      if (!a || !b) throw new Error('recon rules need one source and one target binding');
+      const qa = A.asCompile(rule, a, dialectOf('src'), cap);
+      const qb = A.asCompile(rule, b, dialectOf('tgt'), cap);
+      const ra = await execSide('src', qa.countSql), rb = await execSide('tgt', qb.countSql);
+      const va = Number(ra[0] && (ra[0].n ?? ra[0].N) || 0), vb = Number(rb[0] && (rb[0].n ?? rb[0].N) || 0);
+      const v = A.asEvaluatePair(rule, va, vb);
+      status = v.status; why = v.why; measure = Math.abs(va - vb);
+      perTarget.push({ target: tName(a), value: va, generatedSql: qa.countSql });
+      perTarget.push({ target: tName(b), value: vb, generatedSql: qb.countSql });
+    } else {
+      for (const t of targets){
+        const d = dialectOf(t.db);
+        const q = A.asCompile(rule, t, d, cap);
+        const rows = await execSide(t.db, q.countSql);
+        const first = rows[0] || {};
+        const n = Number(first.n ?? first.N ?? 0) || 0;
+        if (q.kind === 'measure'){
+          measure = Math.max(measure == null ? -Infinity : measure, n);
+          if (first.total != null) { rowsScanned += Number(first.total) || 0; rowsFailed += n; }
+          perTarget.push({ target: tName(t), value: n, generatedSql: q.countSql });
+        } else {
+          rowsFailed += n;
+          let sample = [], sampleKeys = [], distinctBad = [];
+          if (n > 0 && q.sampleSql){
+            try {
+              sample = await execSide(t.db, q.sampleSql);
+              const keep = sample.slice(0, 20);
+              const firstCol = keep.length ? Object.keys(keep[0])[0] : null;
+              sampleKeys = firstCol ? keep.slice(0, 5).map(r => String(r[firstCol])) : [];
+              if (t.column) distinctBad = [...new Set(sample.map(r => String(r[t.column])).filter(v => v !== 'undefined'))].slice(0, 12);
+              perTarget.push({ target: tName(t), rowsFailed: n, sampleKeys, distinctBadValues: distinctBad,
+                sampleRows: keep, generatedSql: q.countSql, sampleSql: q.sampleSql });
+            } catch (e) {
+              perTarget.push({ target: tName(t), rowsFailed: n, generatedSql: q.countSql, sampleError: String(e.message || e) });
+            }
+          } else {
+            perTarget.push({ target: tName(t), rowsFailed: n, generatedSql: q.countSql });
+          }
+        }
+      }
+      /* rowsScanned for percent thresholds: total rows across bound tables */
+      if (!rowsScanned) rowsScanned = targets.reduce((a, t) => {
+        const ct = catalog.tables.find(x => x.db === t.db && x.table === t.table && x.schema === t.schema);
+        return a + (ct ? ct.rowCount : 0);
+      }, 0);
+      const baseline = (store.baselines[rule.id] || []).slice(0, -0).map(b => b.value);
+      const v = kindOf() === 'measure'
+        ? A.asEvaluateMeasure(rule, measure == null ? 0 : measure, baseline)
+        : A.asEvaluate(rule, { rowsFailed, rowsScanned, measure }, baseline);
+      status = v.status; why = v.why;
+    }
+  } catch (e) {
+    status = 'error'; error = String(e && e.message || e);
+  }
+
+  const run = {
+    id: 'run_' + startedAt.toString(36) + '_' + Math.floor(Math.random() * 1e4),
+    ruleId: rule.id, category: rule.category, severity: rule.severity,
+    startedAt, durationMs: nowMs() - startedAt,
+    targetsMatched: targets.length, rowsScanned, rowsFailed,
+    measure: measure == null || measure === -Infinity ? null : measure,
+    status, why, error, perTarget,
+    context: buildSignals(rule, perTarget),
+  };
+  rule.estimatedCostMs = Math.round(((rule.estimatedCostMs || run.durationMs) * 3 + run.durationMs) / 4);
+  const breach = A.asRecordRun(store, run, startedAt);
+  if (breach && (status === 'fail' || status === 'warn') && breach.lastRunId === run.id && breach.runCount === 1){
+    notifyBreach(rule, breach, run);
+  }
+  saveStore();
+  if (!opts || !opts.silent) renderAll();
+  return run;
+}
+function tName(t){ return t.db + '.' + t.schema + '.' + t.table + (t.column ? '.' + t.column : ''); }
+
+/* §7 signals, gathered deterministically from what the run already holds —
+   sampled rows, the previous run, sibling breaches. No extra queries. */
+function buildSignals(rule, perTarget){
+  const prev = store.runs.filter(r => r.ruleId === rule.id && r.status === 'pass').slice(-1)[0];
+  const prevBad = new Set();
+  store.runs.filter(r => r.ruleId === rule.id).slice(-3).forEach(r =>
+    (r.perTarget || []).forEach(t => (t.distinctBadValues || []).forEach(v => prevBad.add(v))));
+  const nowBad = [];
+  perTarget.forEach(t => (t.distinctBadValues || []).forEach(v => { if (!prevBad.has(v)) nowBad.push(v); }));
+
+  let insertWindow = null, writtenBy = null;
+  perTarget.forEach(t => (t.sampleRows || []).forEach(row => {
+    Object.keys(row).forEach(k => {
+      const v = row[k];
+      if (/(_at|_ts|date)$/i.test(k) && v){
+        const s = String(v);
+        if (!insertWindow) insertWindow = { from: s, to: s };
+        else { if (s < insertWindow.from) insertWindow.from = s; if (s > insertWindow.to) insertWindow.to = s; }
+      }
+      if (/^(created_by|source_system|written_by|login|modified_by)$/i.test(k) && v && !writtenBy) writtenBy = String(v);
+    });
+  }));
+
+  const tablesOfRule = new Set((perTarget || []).map(t => String(t.target).split('.').slice(0, 3).join('.')));
+  const correlated = store.breaches
+    .filter(b => b.state !== 'resolved' && b.ruleId !== rule.id)
+    .filter(b => {
+      const r = store.runs.filter(x => x.id === b.firstRunId)[0];
+      return r && (r.perTarget || []).some(t => tablesOfRule.has(String(t.target).split('.').slice(0, 3).join('.')));
+    }).map(b => b.ruleId);
+
+  return {
+    newValues: [...new Set(nowBad)].slice(0, 8),
+    insertWindow, writtenBy,
+    schemaChanges: [],
+    referenceAgeDays: null,
+    correlatedBreaches: correlated,
+    previousPassingRuns: prev ? store.runs.filter(r => r.ruleId === rule.id && r.status === 'pass').length : 0,
+  };
+}
+
+/* Routing: through the console's existing Integrations connectors. Quiet
+   hours hold non-critical notifications; critical still pages. */
+function inQuietHours(now){
+  const q = store.settings.quietHours || {};
+  if (!q.from || !q.to) return false;
+  const hm = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + (m || 0); };
+  const d = new Date(now); const cur = d.getHours() * 60 + d.getMinutes();
+  const from = hm(q.from), to = hm(q.to);
+  return from > to ? (cur >= from || cur < to) : (cur >= from && cur < to);
+}
+function notifyBreach(rule, breach, run){
+  const route = (store.settings.routing || {})[rule.severity] || { channels: [] };
+  if (!route.channels.length) return;
+  if (inQuietHours(run.startedAt) && rule.severity !== 'critical'
+      && store.settings.quietHours.criticalStillPages) {
+    A.asEvent(store, { type: 'breach.notify_held', breachId: breach.id, note: 'quiet hours' }, run.startedAt);
+    return;
+  }
+  try {
+    if (window.CygenixIntegrations) {
+      CygenixIntegrations.emit('cygenix.assurance.breach', {
+        breachId: breach.id, ruleId: rule.id, rule: rule.name, severity: rule.severity,
+        rowsFailed: run.rowsFailed, why: run.why || null,
+      });
+    }
+    A.asEvent(store, { type: 'breach.notified', breachId: breach.id, channels: route.channels }, run.startedAt);
+  } catch (e) { /* delivery is best-effort; the breach itself is the record */ }
+}
+
+/* ---------- sweeps ---------- */
+function rulesInGroup(g){
+  return store.rules.filter(r => r.enabled && (r.schedule && r.schedule.groupId) === g.id);
+}
+async function asRunGroup(groupId){
+  const g = store.groups.find(x => x.id === groupId);
+  if (!g) return;
+  const list = rulesInGroup(g);
+  for (const r of list) await asRunRule(r, { silent: true });
+  g.lastRunAt = nowMs();
+  A.asEvent(store, { type: 'group.swept', groupId: g.id, rules: list.length }, g.lastRunAt);
+  saveStore();
+  renderAll();
+}
+async function asSweepDue(){
+  const btn = $('as-sweep'); btn.disabled = true;
+  try {
+    for (const g of store.groups){
+      if (g.id === 'grp_profile'){ if (A.asCronDue(g.cron, g.lastRunAt, nowMs())) { await asProfileNow(true); g.lastRunAt = nowMs(); } continue; }
+      if (A.asCronDue(g.cron, g.lastRunAt, nowMs())) await asRunGroup(g.id);
+    }
+  } finally { btn.disabled = false; saveStore(); renderAll(); }
+}
+
+/* ---------- profiling: tags + suggestions (the deterministic sweep) ------- */
+async function asProposeTagsNow(){
+  await buildCatalog();
+  const cols = [];
+  catalog.tables.forEach(t => (t.columns || []).forEach((c, i) => cols.push({
+    db: t.db, schema: t.schema, table: t.table, column: c,
+    dataType: (t.types && t.types[i]) || '', isPk: (t.primaryKeys || []).includes(c),
+    rowCount: t.rowCount, siblings: t.columns.filter(x => x !== c),
+  })));
+  const refTables = catalog.tables.filter(t => t.rowCount > 0 && t.rowCount < 2000
+    && /list|code|type|ref|centre|center|lookup|country|currency/i.test(t.table)).map(t => t.table);
+  const props = A.asProposeTags(cols, refTables);
+  const have = new Set(store.tags.map(A.tagKey));
+  const dismissed = new Set((store.tagProposals || []).filter(p => p.state === 'dismissed').map(A.tagKey));
+  store.tagProposals = (store.tagProposals || []).filter(p => p.state === 'dismissed');
+  props.forEach(p => {
+    if (!have.has(A.tagKey(p)) && !dismissed.has(A.tagKey(p))) store.tagProposals.push(Object.assign({ state: 'proposed' }, p));
+  });
+  saveStore(); renderAll();
+}
+function asAcceptTag(i){
+  const p = store.tagProposals[i];
+  if (!p) return;
+  p.state = 'accepted';
+  store.tags.push({ db: p.db, schema: p.schema, table: p.table, column: p.column,
+    tag: p.tag, source: 'auto', confidence: p.confidence });
+  A.asEvent(store, { type: 'tag.accepted', tag: p.tag, column: p.table + '.' + p.column, by: userName() }, nowMs());
+  if (catalog) catalog.tags = store.tags;
+  saveStore(); renderAll();
+}
+function asDismissTag(i){
+  const p = store.tagProposals[i];
+  if (!p) return;
+  p.state = 'dismissed';
+  A.asEvent(store, { type: 'tag.dismissed', tag: p.tag, column: p.table + '.' + p.column, by: userName() }, nowMs());
+  saveStore(); renderAll();
+}
+function asAcceptTags(minConf){
+  (store.tagProposals || []).forEach((p, i) => {
+    if (p.state === 'proposed' && p.confidence >= minConf) asAcceptTag(i);
+  });
+}
+async function asProfileNow(silent){
+  await buildCatalog();
+  const fresh = A.asSuggest(store, catalog, nowMs());
+  A.asEvent(store, { type: 'profile.swept', proposed: fresh.length }, nowMs());
+  saveStore();
+  if (!silent) renderAll();
+  return fresh;
+}
+
+/* ---------- promotion from the Validation module (read-only import) ------ */
+async function asDbCall(conn, body){
+  const isFn = /^https?:\/\//.test(conn);
+  const url = isFn ? conn : '/.netlify/functions/db-connect';
+  const payload = isFn ? body : Object.assign({}, body, { connectionString: conn });
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload) });
+  const data = await res.json().catch(() => ({ error: 'Non-JSON (' + res.status + ')' }));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+async function asImportValidation(){
+  let sources = [];
+  try { sources = JSON.parse(localStorage.getItem('cygenix_validation_sources') || '[]'); } catch {}
+  if (!sources.length){ alert('The Validation module has no script sources to promote.'); return; }
+  let made = 0;
+  for (const src of sources){
+    if (!src.conn || !src.tableName) continue;
+    try {
+      const [schema, name] = String(src.tableName).split('.');
+      const d = A.asDialectOf(src.conn);
+      const q = d === 'postgres'
+        ? 'SELECT * FROM "' + schema + '"."' + name + '" LIMIT 500'
+        : 'SELECT TOP 500 * FROM [' + schema + '].[' + name + ']';
+      const res = await asDbCall(src.conn, { action: 'execute', sql: q });
+      const rows = (res && (res.recordset || res.rows)) || [];
+      rows.forEach(r => {
+        const sql = String(r[src.sqlCol] || '').trim();
+        if (!/^select[\s(]/i.test(sql)) return;
+        const nm = src.nameCol ? String(r[src.nameCol] || '') : '';
+        A.asSaveRule(store, {
+          name: nm || 'Validation script', category: 'custom', check: 'custom.sql',
+          params: { sql: { any: sql.replace(/;+\s*$/, '') } },
+          binding: { mode: 'explicit', targets: [{ db: 'tgt', schema: schema, table: name, column: null }], databases: ['tgt'] },
+          severity: 'warning', continuous: true,
+          provenance: { source: 'migration', projectId: src.label || null, createdAt: nowMs() },
+        }, userName(), nowMs());
+        made++;
+      });
+    } catch (e) { console.warn('promote', e); }
+  }
+  saveStore(); renderAll();
+  alert(made
+    ? made + ' validation script' + (made === 1 ? '' : 's') + ' promoted to continuous rules. The Validation page is untouched.'
+    : 'No SELECT scripts found to promote.');
+}
+
+/* ---------- breach actions ---------- */
+function asAck(id){ A.asAcknowledge(store, id, userName(), nowMs()); saveStore(); renderAll(); }
+function asResolveBreach(id){
+  const why = prompt('Resolution note (what fixed it)?', 'reference data corrected');
+  if (why == null) return;
+  A.asResolve(store, id, userName(), why, nowMs());
+  saveStore(); renderAll();
+}
+function asSuppressBreach(ruleId){
+  const reason = prompt('Suppression reason (required — it goes to the audit trail):');
+  if (reason == null) return;
+  const days = prompt('Expiry in days (required):', '7');
+  if (days == null) return;
+  try {
+    A.asSuppress(store, ruleId, { reason, expiresAt: nowMs() + Number(days) * 86400000 }, userName(), nowMs());
+    saveStore(); renderAll();
+  } catch (e) { alert(String(e.message || e)); }
+}
+function asCleanse(breachId){
+  const b = store.breaches.find(x => x.id === breachId);
+  const rule = b && store.rules.find(r => r.id === b.ruleId);
+  const run = b && store.runs.filter(r => r.ruleId === b.ruleId).slice(-1)[0];
+  try {
+    localStorage.setItem('cygenix_cleansing_handoff', JSON.stringify({
+      from: 'assurance', breachId, ruleId: b.ruleId, rule: rule && rule.name,
+      targets: run ? run.perTarget.map(t => t.target) : [],
+      distinctBadValues: run ? run.perTarget.flatMap(t => t.distinctBadValues || []) : [],
+      at: nowMs(),
+    }));
+  } catch {}
+  A.asEvent(store, { type: 'breach.cleanse_handoff', breachId, by: userName() }, nowMs());
+  saveStore();
+  window.location.href = '/data-cleansing.html';
+}
+function asExportRows(breachId){
+  const b = store.breaches.find(x => x.id === breachId);
+  const run = b && store.runs.filter(r => r.ruleId === b.ruleId && (r.perTarget || []).some(t => t.sampleRows)).slice(-1)[0];
+  if (!run){ alert('No sampled rows are retained for this breach.'); return; }
+  const rows = run.perTarget.flatMap(t => t.sampleRows || []);
+  if (!rows.length){ alert('No sampled rows are retained for this breach.'); return; }
+  const cols = Object.keys(rows[0]);
+  const csv = [cols.join(',')].concat(rows.map(r => cols.map(c => {
+    const v = String(r[c] == null ? '' : r[c]);
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }).join(','))).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
+  a.download = (b.ruleId + '-failing-rows.csv');
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ═══════════════ rendering ═══════════════ */
+function asView(v){
+  view = v;
+  ['health', 'rules', 'tags', 'breaches', 'sched', 'report'].forEach(k => {
+    $('as-v-' + k).style.display = k === v ? '' : 'none';
+    $('as-tab-' + k).classList.toggle('active', k === v);
+  });
+  renderAll();
+}
+function catLabel(k){ const c = A.CATEGORIES.find(x => x.key === k); return c ? c.label : k; }
+function sevChip(s){ return '<span class="chip ' + (s === 'critical' ? 'crit' : s === 'warning' ? 'warn' : '') + '">' + esc(s) + '</span>'; }
+function bindLabel(r){
+  const b = r.binding || {};
+  if (b.mode === 'tag') return 'tag:<b>' + esc(b.tag) + '</b>';
+  if (b.mode === 'pattern') return esc(b.pattern);
+  const t = (b.targets || [])[0];
+  return t ? esc(tName(t)) + ((b.targets.length > 1) ? ' +' + (b.targets.length - 1) : '') : '—';
+}
+function fmtWhen(ms){
+  if (!ms) return '—';
+  const d = nowMs() - ms;
+  if (d < 3600000) return Math.max(1, Math.round(d / 60000)) + 'm ago';
+  if (d < 86400000) return Math.round(d / 3600000) + 'h ago';
+  return Math.round(d / 86400000) + 'd ago';
+}
+function openBreaches(){
+  return store.breaches.filter(b => b.state !== 'resolved')
+    .sort((a, b) => b.openedAt - a.openedAt);
+}
+function ruleOf(id){ return store.rules.find(r => r.id === id) || { id, name: id, category: 'custom' }; }
+function lastRunOf(ruleId){ return store.runs.filter(r => r.ruleId === ruleId).slice(-1)[0] || null; }
+
+function renderHealth(){
+  const h = A.asHealth(store, 30 * 86400000, nowMs());
+  const dbNames = ['src', 'tgt'].filter(s => CygenixSchemaGraph && CygenixSchemaGraph.hasConnection && CygenixSchemaGraph.hasConnection(s));
+  $('as-asset').innerHTML = '<div class="ic">◆</div><div><b>' + h.activeRules + ' rules · '
+    + store.runs.length + ' runs retained · ' + (dbNames.length || 'no') + ' connection' + (dbNames.length === 1 ? '' : 's') + '</b>'
+    + '<p>Your rule library encodes business logic that exists nowhere else in the estate. It is versioned, '
+    + 'never hard-deleted, and every change is on the audit trail.</p></div>'
+    + '<button class="btn" onclick="asView(\'rules\')">View library</button>';
+
+  $('as-score').textContent = h.score == null ? '—' : h.score + '%';
+  $('as-streak').textContent = h.runs
+    ? h.runs + ' graded checks in the window' + (h.streakDays != null ? ' · ' + h.streakDays + ' days since the last fail' : '')
+    : 'No runs yet — run a group from Schedules, or seed rules from Suggested.';
+
+  const tiles = [
+    ['Active rules', h.activeRules, store.rules.length - h.activeRules + ' disabled'],
+    ['Checks (30d)', h.runs, h.fail + ' failed · ' + h.warn + ' warned'],
+    ['Open breaches', h.openBreaches, h.criticalOpen + ' critical', h.criticalOpen ? 'crit' : ''],
+    ['Mean time to fix', h.meanTimeToFixMs == null ? '—' : A.fmtDuration(h.meanTimeToFixMs), '30-day average'],
+    ['Tags', store.tags.length, (store.tagProposals || []).filter(p => p.state === 'proposed').length + ' proposed'],
+    ['Suggestions', store.suggestions.filter(s => s.state === 'proposed').length, 'waiting for review'],
+  ];
+  $('as-tiles').innerHTML = tiles.map(t =>
+    '<div class="tile"><div class="k">' + t[0] + '</div><div class="v ' + (t[3] || '') + '">' + t[1]
+    + '</div><div class="n">' + t[2] + '</div></div>').join('');
+
+  const series = A.asHealthSeries(store, 30, nowMs());
+  const svg = $('as-spark');
+  const pts = series.map((v, i) => v == null ? null : [(i / 29) * 640 + 10, 100 - (Math.max(80, v) - 80) / 20 * 90]).filter(Boolean);
+  svg.innerHTML = pts.length > 1
+    ? '<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="' + pts.map(p => p.join(',')).join(' ') + '"/>'
+    : '<text x="10" y="60" fill="var(--text2)" font-size="12">Health per day appears here after the first sweeps.</text>';
+
+  $('as-catbars').innerHTML = A.CATEGORIES.map(c => {
+    const v = h.perCategory[c.key];
+    if (v == null) return '';
+    const colr = v >= 99 ? 'var(--green)' : v >= 95 ? 'var(--amber)' : 'var(--red)';
+    return '<div class="brow"><span>' + esc(c.label) + '</span><span class="track"><i style="width:' + v + '%;background:' + colr + '"></i></span><span class="pc">' + v + '%</span></div>';
+  }).join('') || '<div class="muted" style="font-size:12px">No graded runs yet.</div>';
+
+  const tb = $('as-open-breaches').querySelector('tbody');
+  const open = openBreaches();
+  tb.innerHTML = open.length ? open.map(b => {
+    const r = ruleOf(b.ruleId);
+    const run = lastRunOf(b.ruleId);
+    return '<tr class="rowlink" onclick="selBreach=\'' + b.id + '\';asView(\'breaches\')">'
+      + '<td><span class="sev ' + (b.severity === 'critical' ? 'c' : b.severity === 'warning' ? 'w' : 'i') + '"></span></td>'
+      + '<td><span class="rulename">' + esc(r.name) + '</span><span class="rid">' + esc(b.ruleId) + '</span></td>'
+      + '<td><span class="chip">' + esc(catLabel(r.category)) + '</span></td>'
+      + '<td class="scope">' + (run && run.perTarget[0] ? esc(run.perTarget[0].target) : '—') + '</td>'
+      + '<td class="mono num">' + (b.currentRowsFailed || '—') + '</td>'
+      + '<td class="mono">' + fmtWhen(b.openedAt) + '</td>'
+      + '<td><span class="chip ' + (b.state === 'suppressed' ? '' : 'crit') + '">' + esc(b.state) + '</span></td></tr>';
+  }).join('') : '<tr><td colspan="7" class="empty">Nothing is breaching. That is the product working.</td></tr>';
+}
+
+function asToggleFilter(k){
+  ruleFilters[k] = !ruleFilters[k];
+  $('as-f-' + k).classList.toggle('on', !!ruleFilters[k]);
+  asRenderRules();
+}
+function asRenderRules(){
+  const cats = [['', 'All rules']].concat(A.CATEGORIES.map(c => [c.key, c.label]));
+  $('as-cats').innerHTML = cats.map(([k, label]) => {
+    const n = k ? store.rules.filter(r => r.category === k).length : store.rules.length;
+    return '<button class="cat ' + ((ruleCat || '') === k ? 'on' : '') + '" onclick="ruleCat=' + (k ? '\'' + k + '\'' : 'null') + ';asRenderRules()">'
+      + esc(label) + ' <span class="ct">' + n + '</span></button>';
+  }).join('');
+
+  const q = ($('as-rule-q').value || '').toLowerCase();
+  const breachingIds = new Set(openBreaches().map(b => b.ruleId));
+  let list = store.rules.slice();
+  if (ruleCat) list = list.filter(r => r.category === ruleCat);
+  if (ruleFilters.continuous) list = list.filter(r => r.continuous);
+  if (ruleFilters.migration) list = list.filter(r => r.provenance && r.provenance.source === 'migration');
+  if (ruleFilters.disabled) list = list.filter(r => !r.enabled);
+  if (ruleFilters.breaching) list = list.filter(r => breachingIds.has(r.id));
+  if (q) list = list.filter(r => (r.name + ' ' + r.id + ' ' + r.check + ' ' + JSON.stringify(r.binding)).toLowerCase().includes(q));
+
+  const tb = $('as-rules').querySelector('tbody');
+  tb.innerHTML = list.length ? list.map(r => {
+    const g = store.groups.find(x => x.id === (r.schedule && r.schedule.groupId));
+    const lr = lastRunOf(r.id);
+    const prov = r.provenance && r.provenance.source === 'migration'
+      ? ' · from ' + esc(r.provenance.projectId || 'migration') : '';
+    return '<tr>'
+      + '<td><span class="rulename">' + esc(r.name) + '</span><span class="rid">' + esc(r.id) + prov + '</span></td>'
+      + '<td><span class="chip">' + esc(catLabel(r.category)) + '</span></td>'
+      + '<td class="mono">' + esc(r.check) + '</td>'
+      + '<td class="scope">' + bindLabel(r) + '</td>'
+      + '<td>' + sevChip(r.severity) + '</td>'
+      + '<td class="mono">' + esc((r.schedule && r.schedule.cron) || (g && g.cron) || '—') + '</td>'
+      + '<td class="mono num">' + (lr ? '<span class="chip ' + (lr.status === 'pass' ? 'ok' : lr.status === 'warn' ? 'warn' : lr.status === 'fail' ? 'crit' : '') + '">' + lr.status + '</span>' : '—') + '</td>'
+      + '<td><button class="tog" aria-pressed="' + String(!!r.enabled) + '" aria-label="Enabled" onclick="asToggleRule(\'' + r.id + '\')"></button></td>'
+      + '<td style="white-space:nowrap"><button class="btn" onclick="asRunNow(\'' + r.id + '\')" title="Run this rule now">▶</button> '
+      + '<button class="btn" onclick="asDrawerOpen(\'' + r.id + '\')">Edit</button></td></tr>';
+  }).join('') : '<tr><td colspan="9" class="empty">No rules yet. Promote your migration validations, accept a suggestion below, or write one with + New rule.</td></tr>';
+  $('as-rules-note').textContent = 'Showing ' + list.length + ' of ' + store.rules.length
+    + '. Rules are versioned and never hard-deleted; disabling keeps the history.';
+
+  const sugs = store.suggestions.filter(s => s.state === 'proposed');
+  $('as-sug-sub').textContent = sugs.length ? sugs.length + ' waiting' : 'nothing waiting — run Profile now';
+  $('as-sugs').innerHTML = sugs.length ? sugs.map(s =>
+    '<div class="sug"><span class="chip">' + esc(catLabel(s.category)) + '</span>'
+    + '<div class="body"><b>' + esc(s.title) + '</b><p>' + esc(s.detail) + '</p></div>'
+    + '<div class="acts"><button class="btn" onclick="asDismissSug(\'' + s.id + '\')">Dismiss</button>'
+    + '<button class="btn btn-primary" onclick="asAcceptSug(\'' + s.id + '\')">Review &amp; add</button></div></div>'
+  ).join('') : '<div class="empty">The profiler proposes rules from audit-date columns, declared keys and untended lookup tags. Dismissals are remembered per column.</div>';
+}
+function asToggleRule(id){
+  const r = store.rules.find(x => x.id === id);
+  if (!r) return;
+  if (r.enabled) A.asDisableRule(store, id, userName(), nowMs());
+  else { r.enabled = true; r.version++; A.asEvent(store, { type: 'rule.enabled', ruleId: id, by: userName() }, nowMs()); }
+  saveStore(); renderAll();
+}
+async function asRunNow(id){
+  const r = store.rules.find(x => x.id === id);
+  if (r) await asRunRule(r);
+}
+function asAcceptSug(id){
+  const s = store.suggestions.find(x => x.id === id);
+  if (!s) return;
+  s.state = 'accepted';
+  asDrawerOpen(null, s.draft);
+  saveStore();
+}
+function asDismissSug(id){ A.asDismissSuggestion(store, id, userName(), nowMs()); saveStore(); renderAll(); }
+
+function renderTags(){
+  const totalCols = catalog ? catalog.tables.reduce((a, t) => a + (t.columns || []).length, 0) : 0;
+  const taggedCols = new Set(store.tags.map(t => [t.db, t.schema, t.table, t.column].join('|'))).size;
+  $('as-tag-asset').innerHTML = '<div class="ic">◇</div><div><b>' + taggedCols + ' of ' + (totalCols || '—')
+    + ' columns tagged</b><p>Tags are what make a rule portable. Tag a column once and every rule bound to that '
+    + 'tag applies — on this schema, on the next database, on the next migration.</p></div>';
+
+  const props = (store.tagProposals || []).map((p, i) => ({ p, i })).filter(x => x.p.state === 'proposed');
+  const tb = $('as-tag-props').querySelector('tbody');
+  tb.innerHTML = props.length ? props.map(({ p, i }) =>
+    '<tr><td class="scope">' + esc(p.db + '.' + p.schema + '.') + '<b>' + esc(p.table) + '</b>.' + esc(p.column) + '</td>'
+    + '<td><span class="chip info">' + esc(p.tag) + '</span></td>'
+    + '<td><span class="conf"><span class="track"><i style="width:' + Math.round(p.confidence * 100) + '%"></i></span>'
+    + p.confidence.toFixed(2) + '</span></td>'
+    + '<td class="muted" style="font-size:11.5px">' + esc(p.rationale) + '</td>'
+    + '<td style="white-space:nowrap"><button class="btn btn-primary" onclick="asAcceptTag(' + i + ')">Accept</button> '
+    + '<button class="btn" onclick="asDismissTag(' + i + ')">Dismiss</button></td></tr>'
+  ).join('') : '<tr><td colspan="5" class="empty">No proposals waiting. ↻ Propose from schema reads column names, types and keys — metadata only, no values.</td></tr>';
+
+  const byTag = {};
+  store.tags.forEach(t => { (byTag[t.tag] = byTag[t.tag] || []).push(t); });
+  $('as-tag-count').textContent = Object.keys(byTag).length + ' tags · ' + store.tags.length + ' assignments';
+  const tc = $('as-tag-cat').querySelector('tbody');
+  tc.innerHTML = Object.keys(byTag).sort().map(tag => {
+    const bound = store.rules.filter(r => r.binding && r.binding.mode === 'tag' && r.binding.tag === tag);
+    return '<tr><td><span class="chip info">' + esc(tag) + '</span></td>'
+      + '<td class="mono num">' + byTag[tag].length + '</td>'
+      + '<td class="muted">' + (bound.length ? bound.map(b => esc(b.id)).join(', ') : '<span class="chip warn">no rule bound</span>') + '</td>'
+      + '<td><button class="btn" onclick="asDrawerOpen(null,{binding:{mode:\'tag\',tag:\'' + esc(tag) + '\'}})">+ Rule on this tag</button></td></tr>';
+  }).join('') || '<tr><td colspan="4" class="empty">No tags yet — accept proposals above.</td></tr>';
+}
+
+function renderBreaches(){
+  const list = store.breaches.slice().sort((a, b) => b.openedAt - a.openedAt);
+  if (!selBreach && list.length) selBreach = (openBreaches()[0] || list[0]).id;
+  $('as-bq').innerHTML = list.length ? list.map(b => {
+    const r = ruleOf(b.ruleId);
+    return '<button class="bq-item ' + (b.id === selBreach ? 'on' : '') + '" onclick="selBreach=\'' + b.id + '\';renderAll()">'
+      + '<div class="t">' + (b.state !== 'resolved' ? '● ' : '') + esc(r.name) + '</div>'
+      + '<div class="m">' + esc(b.ruleId) + ' · ' + (b.currentRowsFailed || b.peakRowsFailed || 0) + ' rows · '
+      + fmtWhen(b.openedAt) + ' · ' + esc(b.state) + '</div></button>';
+  }).join('') : '<div class="empty">No breaches recorded.</div>';
+
+  const b = store.breaches.find(x => x.id === selBreach);
+  const host = $('as-breach-detail');
+  if (!b){ host.innerHTML = '<div class="panel"><div class="empty">No breach selected.</div></div>'; return; }
+  const r = ruleOf(b.ruleId);
+  const run = store.runs.filter(x => x.ruleId === b.ruleId).slice(-1)[0];
+  const signals = (run && run.context) || {};
+  const prose = A.asDiagnoseProse(signals);
+  const sample = run ? run.perTarget.flatMap(t => t.sampleRows || []).slice(0, 8) : [];
+  const cols = sample.length ? Object.keys(sample[0]).slice(0, 6) : [];
+  const trail = store.events.filter(e => e.breachId === b.id || (e.ruleId === b.ruleId && /^breach\./.test(e.type)));
+
+  host.innerHTML =
+    '<div class="panel"><div class="panel-header">'
+    + '<span class="sev ' + (b.severity === 'critical' ? 'c' : 'w') + '"></span>'
+    + '<div class="panel-title">' + esc(r.name) + '</div>'
+    + '<span class="chip">' + esc(catLabel(r.category)) + '</span>'
+    + '<span class="chip ' + (b.state === 'resolved' ? 'ok' : b.state === 'suppressed' ? '' : 'crit') + '">' + esc(b.state) + '</span>'
+    + '<div class="p-right">'
+    + (b.state === 'open' ? '<button class="btn" onclick="asAck(\'' + b.id + '\')">Acknowledge</button>' : '')
+    + (b.state !== 'resolved' ? '<button class="btn" onclick="asResolveBreach(\'' + b.id + '\')">Resolve</button>'
+      + '<button class="btn" onclick="asSuppressBreach(\'' + b.ruleId + '\')">Suppress…</button>'
+      + '<button class="btn btn-primary" onclick="asCleanse(\'' + b.id + '\')">Cleanse rows</button>' : '')
+    + '</div></div><div class="panel-body">'
+    + '<table style="font-size:12px"><tbody>'
+    + '<tr><td class="muted" style="width:110px">Rule</td><td><span class="mono">' + esc(b.ruleId) + '</span> · ' + esc(r.check)
+    + (r.provenance && r.provenance.source === 'migration' ? ' · created during migration, promoted to continuous' : '') + '</td></tr>'
+    + '<tr><td class="muted">Scope</td><td class="mono">' + (run && run.perTarget[0] ? esc(run.perTarget.map(t => t.target).join(', ')) : '—') + '</td></tr>'
+    + '<tr><td class="muted">Rows</td><td>current <b>' + (b.currentRowsFailed || 0) + '</b> · peak ' + (b.peakRowsFailed || 0)
+    + ' · across ' + (b.runCount || 1) + ' run' + ((b.runCount || 1) === 1 ? '' : 's') + '</td></tr>'
+    + '<tr><td class="muted">Opened</td><td>' + new Date(b.openedAt).toLocaleString() + (b.resolvedAt ? ' · resolved ' + new Date(b.resolvedAt).toLocaleString() + ' (' + esc(b.resolution || '') + ')' : '') + '</td></tr>'
+    + '</tbody></table>'
+    + '<div class="diag"><div class="diag-h">Diagnosis <span class="chip info">written from the engine\'s own signals</span></div>'
+    + '<div class="diag-b">' + esc(prose)
+    + '<ul class="ev">'
+    + '<li><span class="k">New values</span><span>' + (signals.newValues && signals.newValues.length ? esc(signals.newValues.join(', ')) : 'none the previous runs had not seen') + '</span></li>'
+    + '<li><span class="k">Insert window</span><span>' + (signals.insertWindow ? esc(signals.insertWindow.from + ' – ' + signals.insertWindow.to) + ' (from the sampled rows)' : 'no audit-date column in the sample') + '</span></li>'
+    + '<li><span class="k">Written by</span><span>' + (signals.writtenBy ? esc(signals.writtenBy) : 'no writer column in the sample') + '</span></li>'
+    + '<li><span class="k">Correlated</span><span>' + (signals.correlatedBreaches && signals.correlatedBreaches.length ? esc(signals.correlatedBreaches.join(', ')) : 'no other rule on these tables is breaching') + '</span></li>'
+    + '</ul></div>'
+    + '<div class="diag-foot">Pass, fail and thresholds are computed by the rule engine in SQL. The diagnosis only arranges evidence the engine already collected — it cannot open, close or change a breach.</div></div>'
+    + (sample.length
+      ? '<div class="tw" style="margin-top:0.8rem"><table><thead><tr>' + cols.map(c => '<th>' + esc(c) + '</th>').join('')
+        + '</tr></thead><tbody>' + sample.map(row => '<tr>' + cols.map(c => '<td class="mono">' + esc(String(row[c] == null ? '' : row[c]).slice(0, 60)) + '</td>').join('') + '</tr>').join('')
+        + '</tbody></tbody></table></div>'
+        + '<div class="muted" style="font-size:11px;margin-top:4px">Showing ' + sample.length + ' retained sample rows of '
+        + (b.currentRowsFailed || b.peakRowsFailed) + ' failing. <a href="#" onclick="asExportRows(\'' + b.id + '\');return false" style="color:var(--accent)">Export sampled rows to CSV</a></div>'
+      : '')
+    + (run && run.perTarget[0] && run.perTarget[0].generatedSql
+      ? '<details style="margin-top:0.8rem"><summary class="muted" style="cursor:pointer;font-size:11.5px">Generated SQL — reproduce this by hand</summary>'
+        + '<div class="dry">' + esc(run.perTarget.map(t => t.generatedSql).join('\n\n')) + '</div></details>'
+      : '')
+    + '</div></div>'
+    + '<div class="panel"><div class="panel-header"><div class="panel-title">Audit trail</div>'
+    + '<span class="panel-sub">every state change, kept with the rule history</span></div>'
+    + '<div class="panel-body"><ul class="trail">'
+    + (trail.length ? trail.map(e => '<li><span class="ts">' + new Date(e.at).toLocaleString() + '</span><span><b>'
+        + esc(e.type.replace('breach.', '')) + '</b>' + (e.by ? ' — ' + esc(e.by) : '') + (e.reason ? ' — ' + esc(e.reason) : '')
+        + (e.resolution ? ' — ' + esc(e.resolution) : '') + '</span></li>').join('')
+      : '<li class="muted">No events yet.</li>')
+    + '</ul></div></div>';
+}
+
+function renderSched(){
+  const tb = $('as-groups').querySelector('tbody');
+  tb.innerHTML = store.groups.map(g => {
+    const rules = g.id === 'grp_profile' ? null : rulesInGroup(g);
+    const est = rules && rules.length
+      ? Math.round(rules.reduce((a, r) => a + (r.estimatedCostMs || 400), 0) / 1000) + 's'
+      : '—';
+    const next = A.asCronNext(g.cron, nowMs());
+    return '<tr><td><b>' + esc(g.name) + '</b><span class="rid">' + esc((g.match || []).map(catLabel).join(' + ') || 'auto-discovery sweep') + '</span></td>'
+      + '<td class="mono num">' + (rules ? rules.length : '—') + '</td>'
+      + '<td class="mono">' + esc(g.cron) + '</td>'
+      + '<td class="mono">' + (next ? new Date(next).toLocaleString() : '—')
+      + (g.lastRunAt ? '<span class="rid">last ' + fmtWhen(g.lastRunAt) + '</span>' : '<span class="rid">never swept</span>') + '</td>'
+      + '<td class="mono">' + est + '</td>'
+      + '<td><button class="btn" onclick="' + (g.id === 'grp_profile' ? 'asProfileNow()' : 'asRunGroup(\'' + g.id + '\')') + '">▶ Run now</button></td></tr>';
+  }).join('');
+
+  const rt = $('as-routing').querySelector('tbody');
+  const enabled = (id) => { try { return window.CygenixIntegrations && CygenixIntegrations.isEnabled(id); } catch { return false; } };
+  rt.innerHTML = ['critical', 'warning', 'info'].map(sev => {
+    const route = store.settings.routing[sev] || { channels: [] };
+    const live = route.channels.filter(c => enabled(c === 'email' ? 'smtp' : c));
+    return '<tr><td>' + sevChip(sev) + '</td>'
+      + '<td>' + (route.channels.length ? route.channels.map(esc).join(' + ') : 'none') + '</td>'
+      + '<td class="muted">' + (route.channels.length
+        ? (live.length ? 'delivers via ' + live.join(', ') : 'configured, but no matching connector is enabled yet')
+        : 'digest only') + '</td></tr>';
+  }).join('');
+
+  const sups = (store.suppressions || []).filter(s => !s.expiresAt || s.expiresAt > nowMs());
+  $('as-quiet').innerHTML =
+    '<b>Quiet hours</b> ' + esc(store.settings.quietHours.from + ' – ' + store.settings.quietHours.to)
+    + ' (critical still pages)<br>'
+    + '<b>Flap guard</b> a breach that resolved within ' + store.settings.flapMinutes
+    + ' minutes reopens instead of duplicating<br>'
+    + '<b>Suppressions</b> ' + (sups.length
+      ? sups.map(s => esc(s.ruleId) + ' — “' + esc(s.reason) + '” until ' + new Date(s.expiresAt).toLocaleDateString()).join('; ')
+      : 'none active') + '<br>'
+    + '<span class="muted">Every suppression requires a reason and an expiry. There is no silent permanent mute.</span>';
+}
+
+function renderReport(){
+  const d = new Date();
+  const from = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  const to = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+  const rep = A.asMonthlyReport(store, from, to);
+  $('as-rep-sub').textContent = d.toLocaleString('en-GB', { month: 'long', year: 'numeric' })
+    + ' · ' + rep.rulesTotal + ' active rules';
+  $('as-rep-stats').innerHTML = [
+    ['Mean health', rep.meanHealth == null ? '—' : rep.meanHealth + '%'],
+    ['Breaches caught', rep.breachesCaught],
+    ['Resolved', rep.breachesResolved],
+    ['Mean time to fix', rep.meanTimeToFixMs == null ? '—' : A.fmtDuration(rep.meanTimeToFixMs)],
+  ].map(([k, v]) => '<div class="rep-stat"><div class="v">' + v + '</div><div class="k">' + k + '</div></div>').join('');
+  $('as-rep-narrative').innerHTML = rep.narrative.length
+    ? rep.narrative.map(n => '<li>' + esc(n) + '</li>').join('')
+    : '<li>No breaches this month — every scheduled check passed.</li>';
+  $('as-rep-growth').textContent = rep.rulesAdded + ' rule' + (rep.rulesAdded === 1 ? '' : 's')
+    + ' added this month. The library now holds ' + rep.rulesTotal + ' active rules and '
+    + store.runs.length + ' retained run summaries — the asset this module accumulates.';
+}
+
+function renderAll(){
+  const open = openBreaches().length;
+  $('as-breach-n').style.display = open ? '' : 'none';
+  $('as-breach-n').textContent = open;
+  const due = store.groups.filter(g => A.asCronDue(g.cron, g.lastRunAt, nowMs())).length;
+  $('as-sweepnote').textContent = due ? due + ' group' + (due === 1 ? '' : 's') + ' due' : '';
+  if (view === 'health') renderHealth();
+  else if (view === 'rules') asRenderRules();
+  else if (view === 'tags') renderTags();
+  else if (view === 'breaches') renderBreaches();
+  else if (view === 'sched') renderSched();
+  else renderReport();
+}
+
+/* ═══════════════ the rule builder drawer ═══════════════ */
+const PARAM_TEMPLATES = {
+  'domain.lookup': { reference: { kind: 'table', ref: 'ref.cost_centre.code' }, normalise: 'trim_upper', nulls: 'ignore' },
+  'domain.enum': { values: ['GBP', 'USD', 'EUR'], normalise: 'trim_upper' },
+  'domain.range': { min: 0, max: null },
+  'domain.length': { min: null, max: 35 },
+  'domain.date_sanity': { after: '1900-01-01', futureToleranceDays: 1 },
+  'domain.regex': { pattern: '^[A-Z]{2}[0-9]+$' },
+  'format.pattern': { like: '[A-Z][A-Z]%' },
+  'format.max_length': { declaredMax: 50 },
+  'completeness.required_if': { predicate: "status = 'POSTED'" },
+  'uniqueness.composite': { columns: ['col_a', 'col_b'] },
+  'uniqueness.fuzzy': { algorithm: 'soundex', column: 'name', blockingKey: 'postcode' },
+  'referential.orphan': { parent: { schema: 'dbo', table: 'parent_table', column: 'id' } },
+  'referential.childless_parent': { child: { schema: 'dbo', table: 'child_table', column: 'parent_id' } },
+  'aggregate.balance': { amount: 'amount', groupBy: ['journal_id'], tolerance: 0 },
+  'aggregate.parent_child': { key: 'id', headerTotal: 'total', tolerance: 0.01, child: { schema: 'dbo', table: 'line', key: 'header_id', amount: 'amount' } },
+  'aggregate.tolerance': { expression: 'qty * unit_price', epsilon: 0.01 },
+  'drift.freshness': { maxAgeHours: 26 },
+  'drift.rowcount': {}, 'drift.null_rate': {},
+  'recon.rowcount': { tolerance: 0 }, 'recon.column_aggregate': { fn: 'sum', tolerance: 0.01 },
+  'custom.sql': { sql: { any: 'SELECT * FROM dbo.some_table WHERE broken = 1' } },
+};
+function asTog(el){ el.setAttribute('aria-pressed', String(el.getAttribute('aria-pressed') !== 'true')); }
+
+function asDrawerOpen(ruleId, draft){
+  editingRuleId = ruleId || null;
+  dryOk = null;
+  $('as-dw-save').disabled = true;
+  $('as-dw-dry').style.display = 'none';
+  $('as-dw-category').innerHTML = A.CATEGORIES.map(c => '<option value="' + c.key + '">' + esc(c.label) + '</option>').join('');
+  $('as-dw-group').innerHTML = store.groups.filter(g => g.id !== 'grp_profile')
+    .map(g => '<option value="' + g.id + '">' + esc(g.name) + '</option>').join('');
+  $('as-dw-check').innerHTML = A.asChecks().map(c => '<option>' + c + '</option>').join('');
+  const tags = [...new Set(store.tags.map(t => t.tag))].sort();
+  $('as-dw-btag').innerHTML = tags.length
+    ? tags.map(t => '<option>' + esc(t) + '</option>').join('')
+    : '<option value="">(no tags yet)</option>';
+
+  const r = ruleId ? store.rules.find(x => x.id === ruleId) : null;
+  const src = r || Object.assign({
+    name: '', category: 'quality', severity: 'warning', check: 'completeness.not_null',
+    params: {}, binding: { mode: 'tag', tag: tags[0] || '', pattern: '', targets: [], databases: [] },
+    thresholds: { warnAbove: { unit: 'rows', value: 0 }, failAbove: { unit: 'rows', value: 0 },
+      baseline: { enabled: false, worseByPercent: 10 } },
+    continuous: true, onBreach: 'notify', schedule: {},
+  }, draft || {});
+
+  $('as-dw-title').textContent = r ? 'Edit ' + r.id : 'New rule';
+  $('as-dw-badge').textContent = draft ? 'Draft from suggestion' : (r ? 'v' + r.version : 'Draft');
+  $('as-dw-name').value = src.name || '';
+  $('as-dw-category').value = src.category || 'quality';
+  $('as-dw-severity').value = src.severity || 'warning';
+  if (src.schedule && src.schedule.groupId) $('as-dw-group').value = src.schedule.groupId;
+  $('as-dw-check').value = src.check;
+  $('as-dw-params').value = JSON.stringify(src.params && Object.keys(src.params).length ? src.params
+    : (PARAM_TEMPLATES[src.check] || {}), null, 2);
+  $('as-dw-bmode').value = (src.binding && src.binding.mode) || 'tag';
+  $('as-dw-btag').value = (src.binding && src.binding.tag) || tags[0] || '';
+  $('as-dw-bpattern').value = (src.binding && src.binding.pattern) || '';
+  $('as-dw-btargets').value = ((src.binding && src.binding.targets) || []).map(t =>
+    [t.db, t.schema, t.table, t.column].filter(Boolean).join('.')).join('\n');
+  $('as-dw-bdb').value = ((src.binding && src.binding.databases) || [])[0] || '';
+  $('as-dw-warn').value = src.thresholds.warnAbove.value;
+  $('as-dw-fail').value = src.thresholds.failAbove.value;
+  $('as-dw-unit').value = src.thresholds.warnAbove.unit || 'rows';
+  $('as-dw-baseline').setAttribute('aria-pressed', String(!!(src.thresholds.baseline && src.thresholds.baseline.enabled)));
+  $('as-dw-band').value = (src.thresholds.baseline && src.thresholds.baseline.worseByPercent) || 10;
+  $('as-dw-continuous').setAttribute('aria-pressed', String(src.continuous !== false));
+  $('as-dw-onbreach').value = src.onBreach || 'notify';
+  asDwBindChanged();
+  asDwResolvePreview();
+  $('as-scrim').classList.add('show');
+  $('as-drawer').classList.add('show');
+}
+function asDrawerClose(){
+  $('as-scrim').classList.remove('show');
+  $('as-drawer').classList.remove('show');
+}
+function asDwCheckChanged(){
+  $('as-dw-params').value = JSON.stringify(PARAM_TEMPLATES[$('as-dw-check').value] || {}, null, 2);
+  $('as-dw-paramhint').textContent = 'The template shows this check\'s parameters — edit in place.';
+  dryOk = null; $('as-dw-save').disabled = true;
+}
+function asDwBindChanged(){
+  const m = $('as-dw-bmode').value;
+  $('as-dw-btag-w').style.display = m === 'tag' ? '' : 'none';
+  $('as-dw-bpattern-w').style.display = m === 'pattern' ? '' : 'none';
+  $('as-dw-btargets-w').style.display = m === 'explicit' ? '' : 'none';
+  asDwResolvePreview();
+}
+function drawerRule(){
+  let params;
+  try { params = JSON.parse($('as-dw-params').value || '{}'); }
+  catch (e) { throw new Error('Parameters are not valid JSON: ' + e.message); }
+  const dbs = $('as-dw-bdb').value ? [$('as-dw-bdb').value] : [];
+  const mode = $('as-dw-bmode').value;
+  const out = {
+    name: $('as-dw-name').value.trim() || 'Untitled rule',
+    category: $('as-dw-category').value,
+    severity: $('as-dw-severity').value,
+    check: $('as-dw-check').value,
+    params,
+    binding: {
+      mode,
+      tag: mode === 'tag' ? $('as-dw-btag').value : null,
+      pattern: mode === 'pattern' ? $('as-dw-bpattern').value.trim() : null,
+      targets: mode === 'explicit' ? $('as-dw-btargets').value.split('\n').map(l => l.trim()).filter(Boolean)
+        .map(l => { const p = l.split('.'); return { db: p[0], schema: p[1] || 'dbo', table: p[2], column: p[3] || null }; })
+        : [],
+      databases: dbs,
+    },
+    thresholds: {
+      warnAbove: { unit: $('as-dw-unit').value, value: Number($('as-dw-warn').value) || 0 },
+      failAbove: { unit: $('as-dw-unit').value, value: Number($('as-dw-fail').value) || 0 },
+      baseline: { enabled: $('as-dw-baseline').getAttribute('aria-pressed') === 'true',
+        window: '7d', worseByPercent: Number($('as-dw-band').value) || 10 },
+    },
+    continuous: $('as-dw-continuous').getAttribute('aria-pressed') === 'true',
+    onBreach: $('as-dw-onbreach').value,
+    schedule: { groupId: $('as-dw-group').value, cron: null },
+  };
+  if (editingRuleId) out.id = editingRuleId;
+  return out;
+}
+async function asDwResolvePreview(){
+  try {
+    await buildCatalog();
+    const t = A.asResolveBinding(drawerRule(), catalog);
+    $('as-dw-resolves').textContent = 'Resolves to ' + t.length + ' target' + (t.length === 1 ? '' : 's')
+      + (t.length ? ': ' + t.slice(0, 3).map(tName).join(', ') + (t.length > 3 ? '…' : '') : ' — a rule that binds to nothing is flagged on every run');
+  } catch (e) { $('as-dw-resolves').textContent = String(e.message || e); }
+}
+async function asDryRun(){
+  const out = $('as-dw-dry');
+  out.style.display = '';
+  out.textContent = 'Resolving binding…';
+  try {
+    const rule = drawerRule();
+    await buildCatalog();
+    const targets = A.asResolveBinding(rule, catalog);
+    if (!targets.length) throw new Error('The binding resolves to no targets.');
+    const lines = [];
+    let total = 0;
+    for (const t of targets.slice(0, 3)){
+      const d = dialectOf(t.db);
+      const q = A.asCompile(rule, t, d, 10);
+      out.textContent = 'Running against ' + tName(t) + '…';
+      const rows = await execSide(t.db, q.countSql);
+      const n = Number(rows[0] && (rows[0].n ?? rows[0].N) || 0) || 0;
+      total += n;
+      lines.push(tName(t) + '  →  ' + n + (q.kind === 'measure' ? ' (measure)' : ' failing rows')
+        + '\n  ' + q.countSql);
+    }
+    if (targets.length > 3) lines.push('… and ' + (targets.length - 3) + ' more targets at run time');
+    out.textContent = 'DRY RUN — counts only, nothing recorded\n\n' + lines.join('\n\n');
+    dryOk = { at: nowMs(), targets: targets.length, total };
+    $('as-dw-save').disabled = false;
+    $('as-dw-drynote').textContent = 'Dry run passed against ' + targets.length + ' target'
+      + (targets.length === 1 ? '' : 's') + ' — save when ready.';
+  } catch (e) {
+    out.textContent = 'Dry run failed: ' + String(e.message || e);
+    dryOk = null;
+    $('as-dw-save').disabled = true;
+  }
+}
+function asSaveFromDrawer(){
+  if (!dryOk) return;
+  try {
+    const rule = A.asSaveRule(store, drawerRule(), userName(), nowMs());
+    saveStore();
+    asDrawerClose();
+    ruleCat = null;
+    asView('rules');
+    void rule;
+  } catch (e) { alert(String(e.message || e)); }
+}
+
+/* ═══════════════ boot ═══════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  A = window.CygenixAssurance;
+  loadStore();
+  /* keep the default groups current without clobbering user edits */
+  if (!store.groups || !store.groups.length) store.groups = A.asDefaultGroups();
+  renderAll();
+  /* build the catalogue in the background so the drawer and tag proposals
+     open warm; nothing waits on it */
+  buildCatalog().then(() => renderAll()).catch(() => {});
+});
+</script>
+<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
+</body>
+</html>
