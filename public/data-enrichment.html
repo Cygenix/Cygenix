@@ -130,6 +130,21 @@ tr.decided td{opacity:0.55}
 .kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:12px}
 .kv dt{font-family:var(--mono);font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text2);padding-top:2px}
 .kv dd{margin:0}
+/* table combobox. The menu is position:fixed and lives at body level: .panel
+   sets overflow:hidden for its rounded corners, so an in-flow dropdown would
+   be clipped to whatever room is left below the input. */
+.cb-menu{position:fixed;z-index:62;display:none;background:var(--bg2);border:0.5px solid var(--border2);
+  border-radius:8px;box-shadow:0 14px 36px rgba(0,0,0,0.5);max-height:min(320px,50vh);overflow-y:auto;padding:3px}
+.cb-menu.show{display:block}
+.cb-opt{display:flex;align-items:baseline;gap:2px;padding:5px 8px;border-radius:5px;cursor:pointer;
+  font-family:var(--mono);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb-opt:hover{background:var(--bg4)}
+.cb-opt.on{background:var(--accent-glow);color:var(--text)}
+.cb-opt .sch{color:var(--text2)}
+.cb-opt em{font-style:normal;color:var(--accent);font-weight:600}
+.cb-note{padding:7px 9px;font-size:11.5px;color:var(--text2)}
+.cb-note b{color:var(--text);font-weight:500}
+.cb-hint{font-size:10.5px;color:var(--text2);margin-top:3px}
 </style>
 </head>
 <body>
@@ -154,11 +169,15 @@ tr.decided td{opacity:0.55}
         <div class="panel-header"><span class="step-n">1</span><div class="panel-title">Source</div></div>
         <div class="panel-body">
           <div class="fld"><label>Connection</label>
-            <select class="inp" id="en-side">
+            <select class="inp" id="en-side" onchange="enSideChanged()">
               <option value="src">Source DB</option><option value="tgt">Target DB</option>
             </select></div>
-          <div class="fld"><label>Table (schema.table)</label>
-            <input class="inp mono" id="en-table" placeholder="dbo.crm_contacts"></div>
+          <div class="fld"><label>Table</label>
+            <input class="inp mono" id="en-table" placeholder="type to search tables…"
+              autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
+              aria-autocomplete="list" aria-controls="en-table-menu">
+            <div class="cb-hint">Type any part of a name to search the connected database. A bare
+              name takes the default schema (<span class="mono" id="en-dflt-schema">dbo</span>).</div></div>
           <button class="btn" id="en-load" onclick="enLoadColumns()">↓ Load columns</button>
           <span class="muted mono" id="en-load-note" style="font-size:10.5px;margin-left:6px"></span>
           <div class="stats" id="en-stats" style="display:none"></div>
@@ -215,7 +234,9 @@ tr.decided td{opacity:0.55}
           <div id="en-provs"></div>
           <div class="fld" style="margin-top:8px"><label>Internal reference table (provider zero — your own clean data)</label>
             <div style="display:flex;gap:6px">
-              <input class="inp mono" id="en-ref-table" placeholder="dbo.ref_accounts_clean" style="flex:2">
+              <input class="inp mono" id="en-ref-table" placeholder="type to search tables…" style="flex:2"
+                autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
+                aria-autocomplete="list" aria-controls="en-ref-menu">
               <select class="inp mono" id="en-ref-anchor" style="flex:1">
                 <option value="email">match on email</option><option value="company">match on company</option>
               </select>
@@ -329,6 +350,9 @@ tr.decided td{opacity:0.55}
 </div>
 
 <!-- pre-run disclosure -->
+<div class="cb-menu" id="en-table-menu" role="listbox" aria-label="Tables"></div>
+<div class="cb-menu" id="en-ref-menu" role="listbox" aria-label="Reference tables"></div>
+
 <div class="scrim" id="en-scrim" onclick="enCloseModals()"></div>
 <div class="modal" id="en-disclose">
   <div class="mo-h"><div class="panel-title">Before this run — what will be transmitted</div></div>
@@ -360,7 +384,7 @@ tr.decided td{opacity:0.55}
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
-<script src="/cygenix-enrichment.js?v=75c099f54f" defer></script>
+<script src="/cygenix-enrichment.js?v=f282fc8a29" defer></script>
 <script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
 
 <script>
@@ -397,11 +421,13 @@ function connOf(){
 }
 function dialectOf(){ return /postgres/i.test(connOf() || '') ? 'postgres' : 'sqlserver'; }
 function qi(name){ return dialectOf() === 'postgres' ? '"' + name.replace(/"/g, '""') + '"' : '[' + name.replace(/\]/g, ']]') + ']'; }
-function tableRef(){
-  const t = $('en-table').value.trim();
+function defaultSchema(){ return dialectOf() === 'postgres' ? 'public' : 'dbo'; }
+function splitTable(raw){
+  const t = String(raw || '').trim().replace(/[[\]"`]/g, '');
   const parts = t.split('.');
-  return { schema: parts.length > 1 ? parts[0] : 'dbo', table: parts[parts.length - 1] };
+  return { schema: parts.length > 1 ? parts[0] : defaultSchema(), table: parts[parts.length - 1] };
 }
+function tableRef(){ return splitTable($('en-table').value); }
 async function dbExec(sql){
   const conn = connOf();
   if (!conn) throw new Error('No ' + ($('en-side').value === 'tgt' ? 'target' : 'source') + ' connection configured — set one under Connections.');
@@ -415,17 +441,153 @@ async function dbExec(sql){
   return data.recordset || data.rows || [];
 }
 
+/* ── table combobox ──────────────────────────────────────────────────────
+   Type-to-search over the connected database's own catalogue, so a table is
+   picked rather than remembered. The list is read once per side and cached;
+   ranking, inline completion and default-schema resolution are the engine's
+   (enRankTables / enInlineCompletion / enResolveTable). */
+const tableLists = { src: null, tgt: null };
+let openCombo = null;
+
+async function loadTableList(side){
+  if (tableLists[side]) return tableLists[side];
+  const rows = await dbExec(
+    'SELECT TABLE_SCHEMA AS s, TABLE_NAME AS t FROM INFORMATION_SCHEMA.TABLES'
+    + " WHERE TABLE_TYPE = 'BASE TABLE'"
+    + " AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA', 'pg_catalog', 'information_schema')"
+    + ' ORDER BY TABLE_SCHEMA, TABLE_NAME');
+  tableLists[side] = rows.map(r => ({ schema: r.s, table: r.t, full: r.s + '.' + r.t }))
+    .filter(t => t.schema && t.table);
+  return tableLists[side];
+}
+
+function makeCombo(inputId, menuId, onPick){
+  const inp = $(inputId), menu = $(menuId);
+  const st = { items: [], idx: -1, loading: false, error: null, open: false };
+
+  const listNow = () => tableLists[$('en-side').value] || [];
+  const mark = (name, q) => {
+    const bare = q.indexOf('.') > -1 ? q.slice(q.lastIndexOf('.') + 1) : q;
+    const i = bare ? name.toLowerCase().indexOf(bare) : -1;
+    return i < 0 ? esc(name)
+      : esc(name.slice(0, i)) + '<em>' + esc(name.slice(i, i + bare.length)) + '</em>'
+        + esc(name.slice(i + bare.length));
+  };
+  function place(){
+    const r = inp.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - 10;
+    menu.style.left = r.left + 'px';
+    menu.style.width = r.width + 'px';
+    menu.style.maxHeight = Math.max(120, Math.min(320, below)) + 'px';
+    menu.style.top = (r.bottom + 4) + 'px';
+  }
+  function draw(){
+    const q = inp.value.trim().toLowerCase();
+    if (st.loading) menu.innerHTML = '<div class="cb-note">reading the table list…</div>';
+    else if (st.error) menu.innerHTML = '<div class="cb-note">✗ ' + esc(st.error) + '</div>';
+    else if (!st.items.length) menu.innerHTML = '<div class="cb-note">No table matches <b>'
+      + esc(inp.value.trim()) + '</b> on this connection.</div>';
+    else menu.innerHTML = st.items.map((t, i) =>
+      '<div class="cb-opt' + (i === st.idx ? ' on' : '') + '" role="option" data-i="' + i + '"'
+      + ' aria-selected="' + (i === st.idx) + '"><span class="sch">' + esc(t.schema)
+      + '.</span><span>' + mark(t.table, q) + '</span></div>').join('');
+    place();
+    menu.classList.add('show');
+    inp.setAttribute('aria-expanded', 'true');
+    st.open = true; openCombo = st;
+  }
+  function close(){
+    menu.classList.remove('show');
+    inp.setAttribute('aria-expanded', 'false');
+    st.open = false; st.idx = -1;
+    if (openCombo === st) openCombo = null;
+  }
+  function filter(){ st.items = E.enRankTables(listNow(), inp.value); st.idx = st.items.length ? 0 : -1; }
+  async function ensureList(){
+    if (tableLists[$('en-side').value] || st.loading) return;
+    st.loading = true; st.error = null; draw();
+    try { await loadTableList($('en-side').value); st.error = null; }
+    catch (e) { st.error = (e.message || String(e)); }
+    st.loading = false;
+    filter(); draw();
+  }
+  function pick(i){
+    const t = st.items[i];
+    if (!t) return;
+    inp.value = t.full;
+    close();
+    if (onPick) onPick(t);
+  }
+  function settle(){
+    const v = E.enResolveTable(inp.value, listNow(), defaultSchema());
+    if (v !== inp.value) inp.value = v;
+  }
+
+  inp.addEventListener('focus', () => { filter(); draw(); ensureList(); });
+  inp.addEventListener('input', (e) => {
+    filter();
+    /* inline autofill — only ever extends what was typed, and only while
+       adding characters at the end, so backspacing can never re-complete */
+    const insert = !e.inputType || e.inputType.indexOf('insert') === 0;
+    if (insert && inp.selectionStart === inp.value.length){
+      const done = E.enInlineCompletion(inp.value, listNow());
+      if (done){
+        const typed = inp.value.length;
+        inp.value = done;
+        inp.setSelectionRange(typed, done.length);
+      }
+    }
+    draw();
+  });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      e.preventDefault();
+      if (!st.open){ filter(); draw(); return; }
+      if (!st.items.length) return;
+      st.idx = (st.idx + (e.key === 'ArrowDown' ? 1 : -1) + st.items.length) % st.items.length;
+      draw();
+      const on = menu.querySelector('.cb-opt.on');
+      if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter'){
+      e.preventDefault();
+      if (st.open && st.idx > -1) pick(st.idx);
+      else { settle(); close(); if (onPick) onPick(null); }
+    } else if (e.key === 'Tab'){
+      if (st.open && st.idx > -1){ inp.value = st.items[st.idx].full; }
+      close();
+    } else if (e.key === 'Escape'){
+      if (st.open){ e.stopPropagation(); close(); }
+    }
+  });
+  inp.addEventListener('blur', () => { settle(); setTimeout(close, 120); });
+  menu.addEventListener('mousedown', (e) => e.preventDefault());   /* keep focus */
+  menu.addEventListener('click', (e) => {
+    const opt = e.target.closest('.cb-opt');
+    if (opt) pick(+opt.dataset.i);
+  });
+  return { close, reposition: () => { if (st.open) place(); } };
+}
+
+let comboTable = null, comboRef = null;
+function enSideChanged(){
+  if (comboTable) comboTable.close();
+  if (comboRef) comboRef.close();
+  $('en-dflt-schema').textContent = defaultSchema();
+  $('en-load-note').textContent = '';
+}
+
 /* ── Step 1: load columns + null rates (read-only) ── */
 async function enLoadColumns(){
   const btn = $('en-load'), note = $('en-load-note');
   const { schema, table } = tableRef();
-  if (!table){ note.textContent = 'enter schema.table first'; return; }
+  if (!table){ note.textContent = 'pick a table first'; $('en-table').focus(); return; }
   btn.disabled = true; note.textContent = 'reading…';
   try {
     const cols = await dbExec(
       "SELECT COLUMN_NAME AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '" + schema.replace(/'/g, "''")
       + "' AND TABLE_NAME = '" + table.replace(/'/g, "''") + "' ORDER BY ORDINAL_POSITION");
-    if (!cols.length) throw new Error('table not found or no columns visible');
+    if (!cols.length) throw new Error(schema + '.' + table + ' not found on this connection'
+      + (tableLists[$('en-side').value] ? ' — pick one from the list' : ''));
     const names = cols.map(r => r.c).slice(0, 40);
     const nullSql = 'SELECT COUNT(*) AS total, '
       + names.map((c, i) => 'SUM(CASE WHEN ' + qi(c) + ' IS NULL THEN 1 ELSE 0 END) AS n' + i).join(', ')
@@ -627,9 +789,9 @@ async function enRun(){
   if (refTable){
     try {
       $('en-run-status').textContent = 'Reading internal reference table…';
-      const rp = refTable.split('.');
-      const rs = rp.length > 1 ? rp[0] : 'dbo', rt = rp[rp.length - 1];
-      const refRows = await dbExec('SELECT ' + top + '* FROM ' + qi(rs) + '.' + qi(rt) + limit);
+      const rref = splitTable(refTable);
+      const refRows = await dbExec('SELECT ' + top + '* FROM '
+        + qi(rref.schema) + '.' + qi(rref.table) + limit);
       if (refRows.length){
         refCols = Object.keys(refRows[0]);
         const matchOn = $('en-ref-anchor').value;
@@ -925,6 +1087,14 @@ document.addEventListener('DOMContentLoaded', () => {
   store = E.enLoad();
   $('en-floor').value = store.settings.floor;
   $('en-floor-v').textContent = (+store.settings.floor).toFixed(2);
+  comboTable = makeCombo('en-table', 'en-table-menu', () => enLoadColumns());
+  comboRef = makeCombo('en-ref-table', 'en-ref-menu', null);
+  $('en-dflt-schema').textContent = defaultSchema();
+  /* the menu is viewport-positioned, so it has to follow its input */
+  window.addEventListener('scroll', () => {
+    comboTable.reposition(); comboRef.reposition();
+  }, true);
+  window.addEventListener('resize', () => { comboTable.reposition(); comboRef.reposition(); });
   $('en-tabs').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     document.querySelectorAll('#en-tabs button').forEach(x => x.classList.toggle('active', x === b));

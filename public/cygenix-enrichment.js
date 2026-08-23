@@ -84,6 +84,73 @@ var PROVIDERS = [
     desc: 'catch-all / invalid detection', costPerLookup: 0.002 },
 ];
 
+/* ── table picker (spec §4 step 1) ───────────────────────────────────────
+   The source table is chosen from the live catalogue, not typed from
+   memory. Which table a fragment means is a decision, so the ranking and
+   the default-schema resolution live here and are tested; the page only
+   draws the menu.
+   Tables are {schema, table, full}. ─────────────────────────────────────── */
+function enRankTables(tables, query, limit) {
+  var list = tables || [], cap = limit || 250;
+  var q = String(query == null ? '' : query).trim().toLowerCase();
+  if (!q) return list.slice(0, cap);
+  var dot = q.indexOf('.');
+  var qSchema = dot > -1 ? q.slice(0, dot) : null;
+  var bare = dot > -1 ? q.slice(dot + 1) : q;
+  var hits = [];
+  list.forEach(function (t, i) {
+    var full = String(t.full || (t.schema + '.' + t.table)).toLowerCase();
+    var name = String(t.table || '').toLowerCase();
+    var schema = String(t.schema || '').toLowerCase();
+    var schemaOk = !qSchema || schema.indexOf(qSchema) === 0;
+    var score = -1;
+    if (full.indexOf(q) === 0) score = 0;                    /* dbo.crm → dbo.crm_contacts */
+    else if (schemaOk && bare && name.indexOf(bare) === 0) score = 1;   /* crm → dbo.crm_contacts */
+    else if (schemaOk && bare && name.indexOf(bare) > 0) score = 2;     /* contacts → dbo.crm_contacts */
+    else if (!qSchema && full.indexOf(q) > 0) score = 3;
+    if (score >= 0) hits.push({ t: t, score: score, i: i });
+  });
+  /* stable within a score band: the caller's order is already schema, name */
+  hits.sort(function (a, b) { return a.score - b.score || a.i - b.i; });
+  return hits.slice(0, cap).map(function (h) { return h.t; });
+}
+
+/* What a typed fragment resolves to once the operator stops typing. A bare
+   name takes the default schema — unless the catalogue says it lives in
+   exactly one other schema, in which case guessing "dbo" would be wrong. */
+function enResolveTable(raw, tables, defaultSchema) {
+  var dflt = defaultSchema || 'dbo';
+  var v = String(raw == null ? '' : raw).trim().replace(/[[\]"`]/g, '');
+  if (!v) return '';
+  var list = tables || [];
+  var lower = v.toLowerCase();
+  if (v.indexOf('.') > -1) {
+    /* echo the catalogue's own casing when it knows the table */
+    var exact = list.filter(function (t) {
+      return String(t.full || (t.schema + '.' + t.table)).toLowerCase() === lower; })[0];
+    return exact ? (exact.full || (exact.schema + '.' + exact.table)) : v;
+  }
+  var byName = list.filter(function (t) { return String(t.table).toLowerCase() === lower; });
+  if (byName.length === 1) return byName[0].full || (byName[0].schema + '.' + byName[0].table);
+  var inDefault = byName.filter(function (t) {
+    return String(t.schema).toLowerCase() === dflt.toLowerCase(); })[0];
+  if (inDefault) return inDefault.full || (inDefault.schema + '.' + inDefault.table);
+  return dflt + '.' + v;
+}
+
+/* Inline autofill: only ever EXTENDS what was typed. Completing "crm" to
+   "dbo.crm_contacts" would rewrite text the operator did not type, so a
+   fragment that is not a true prefix gets a highlighted menu row instead. */
+function enInlineCompletion(typed, tables) {
+  var v = String(typed == null ? '' : typed);
+  if (!v.trim()) return null;
+  var best = enRankTables(tables, v, 1)[0];
+  if (!best) return null;
+  var full = best.full || (best.schema + '.' + best.table);
+  if (full.length <= v.length) return null;
+  return full.toLowerCase().indexOf(v.toLowerCase()) === 0 ? full : null;
+}
+
 /* ── anchors (spec §3): the identifiers that find a record in the outside
    world. Detected from column names + null rates; operator-confirmable. ── */
 function enDetectAnchors(columns) {
@@ -498,6 +565,10 @@ return {
   PROVIDERS: PROVIDERS,
   INFERENCE_CAP: INFERENCE_CAP,
   attrOf: attrOf,
+
+  enRankTables: enRankTables,
+  enResolveTable: enResolveTable,
+  enInlineCompletion: enInlineCompletion,
 
   enDetectAnchors: enDetectAnchors,
   enNormCompany: enNormCompany,

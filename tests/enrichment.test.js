@@ -203,7 +203,50 @@ const rs1 = E.enSaveRuleset(store, 'uk-only', 'Only UK', comp.ruleJson, 'op@x', 
 const rs2 = E.enSaveRuleset(store, 'uk-only', 'Only UK v2', comp.ruleJson, 'op@x', now + 5);
 check('rulesets version rather than overwrite', rs1.version === 1 && rs2.version === 2);
 
-// ── 9. Wiring ───────────────────────────────────────────────────────────────
+// ── 9. Table picker ─────────────────────────────────────────────────────────
+// The source table is searched, not remembered. Ranking, inline completion
+// and default-schema resolution are decisions, so they live in the engine.
+const CATALOG = [
+  { schema: 'dbo', table: 'accounts', full: 'dbo.accounts' },
+  { schema: 'dbo', table: 'crm_contacts', full: 'dbo.crm_contacts' },
+  { schema: 'dbo', table: 'ref_accounts_clean', full: 'dbo.ref_accounts_clean' },
+  { schema: 'sales', table: 'crm_leads', full: 'sales.crm_leads' },
+  { schema: 'stg', table: 'accounts', full: 'stg.accounts' },
+];
+const names = (q) => E.enRankTables(CATALOG, q).map(t => t.full);
+check('an empty query lists the whole catalogue', E.enRankTables(CATALOG, '').length === 5);
+check('typing a schema narrows to that schema',
+  JSON.stringify(names('dbo')) === JSON.stringify(['dbo.accounts', 'dbo.crm_contacts', 'dbo.ref_accounts_clean']),
+  JSON.stringify(names('dbo')));
+check('a bare fragment searches table names across every schema, prefix matches first',
+  JSON.stringify(names('crm')) === JSON.stringify(['dbo.crm_contacts', 'sales.crm_leads']),
+  JSON.stringify(names('crm')));
+check('a mid-word fragment still finds the table — searching beats remembering',
+  JSON.stringify(names('contacts')) === JSON.stringify(['dbo.crm_contacts']), JSON.stringify(names('contacts')));
+check('a qualified fragment respects the schema the operator typed',
+  JSON.stringify(names('sales.crm')) === JSON.stringify(['sales.crm_leads'])
+  && names('sales.acc').length === 0, JSON.stringify(names('sales.crm')));
+check('a fragment matching nothing ranks nothing — no consolation guesses',
+  E.enRankTables(CATALOG, 'invoices').length === 0);
+check('inline autofill only ever extends what was typed',
+  E.enInlineCompletion('dbo.crm', CATALOG) === 'dbo.crm_contacts'
+  && E.enInlineCompletion('crm', CATALOG) === null
+  && E.enInlineCompletion('dbo.accounts', CATALOG) === null,
+  String(E.enInlineCompletion('crm', CATALOG)));
+check('a bare name takes the default schema',
+  E.enResolveTable('crm_contacts', CATALOG, 'dbo') === 'dbo.crm_contacts'
+  && E.enResolveTable('not_a_table', CATALOG, 'dbo') === 'dbo.not_a_table');
+check('a bare name that exists in exactly one other schema resolves there, not to dbo',
+  E.enResolveTable('crm_leads', CATALOG, 'dbo') === 'sales.crm_leads');
+check('a bare name in several schemas takes the default rather than picking a favourite',
+  E.enResolveTable('accounts', CATALOG, 'dbo') === 'dbo.accounts');
+check('postgres gets its own default schema',
+  E.enResolveTable('crm_contacts', [], 'public') === 'public.crm_contacts');
+check('bracket-quoted input is accepted and echoed in the catalogue\'s casing',
+  E.enResolveTable('[dbo].[CRM_Contacts]', CATALOG, 'dbo') === 'dbo.crm_contacts'
+  && E.enResolveTable('', CATALOG, 'dbo') === '');
+
+// ── 10. Wiring ──────────────────────────────────────────────────────────────
 const PAGE = fs.existsSync(__dirname + '/../public/data-enrichment.html')
   ? fs.readFileSync(__dirname + '/../public/data-enrichment.html', 'utf8') : '';
 const SIDE = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
@@ -228,6 +271,16 @@ check('runs write a profile run record when profiles are in force',
   /cpRecordRun/.test(PAGE));
 check('external providers are honest about being unconfigured, not silently skipped',
   /Configure in Integrations|not configured/i.test(PAGE));
+check('both table fields are comboboxes over the live catalogue, not free text',
+  /id="en-table"[^>]*role="combobox"/.test(PAGE) && /id="en-ref-table"[^>]*role="combobox"/.test(PAGE)
+  && /INFORMATION_SCHEMA\.TABLES/.test(PAGE) && /enRankTables/.test(PAGE)
+  && /enInlineCompletion/.test(PAGE) && /enResolveTable/.test(PAGE));
+check('the picker menu escapes the panel\'s overflow:hidden instead of being clipped by it',
+  /\.cb-menu\{position:fixed/.test(PAGE)
+  && PAGE.indexOf('<div class="cb-menu" id="en-table-menu"') > PAGE.indexOf('</div>\n\n<div class="scrim"') - 400);
+check('the default schema is dialect-aware, so postgres is not told its tables live in dbo',
+  /function defaultSchema\(\)\{ return dialectOf\(\) === 'postgres' \? 'public' : 'dbo'; \}/.test(PAGE)
+  && !/parts\.length > 1 \? parts\[0\] : 'dbo'/.test(PAGE));
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
