@@ -1820,11 +1820,15 @@
     // Build a name-keyed map so we can match DMV results back to schema entries.
     // sys.dm_db_partition_stats joins on object_id; we use OBJECT_SCHEMA_NAME
     // and OBJECT_NAME to project a friendly key, then group by it.
+    // sys.dm_db_partition_stats calls its count column row_count; it is
+    // sys.partitions that calls it plain `rows`. Summing the wrong one here
+    // fails with "Invalid column name" on every SQL Server, which is why
+    // this check used to error on any source.
     const sql =
       "SELECT " +
         "OBJECT_SCHEMA_NAME(p.object_id) AS [schema], " +
         "OBJECT_NAME(p.object_id)        AS [name], " +
-        "SUM(p.rows)                     AS [c] " +
+        "SUM(p.row_count)                AS [c] " +
       "FROM sys.dm_db_partition_stats p " +
       "INNER JOIN sys.tables t ON t.object_id = p.object_id " +
       "WHERE p.index_id IN (0,1) " +    // 0 = heap, 1 = clustered (each row counted once)
