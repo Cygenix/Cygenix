@@ -37,7 +37,7 @@
 })(this, function () {
 'use strict';
 
-var STORE_VERSION = 2;
+var STORE_VERSION = 3;
 var SAMPLE_CAP_DEFAULT = 1000;
 var MATERIAL_ROWS_DEFAULT = 10000;   /* a table this big is material by size alone */
 var RUN_HISTORY_CAP = 6000;      /* summaries kept; oldest dropped past this */
@@ -457,11 +457,36 @@ var REGISTRY = {
     },
   },
 
-  /* ---- reconciliation (two queries; the engine compares) ---- */
+  /* ---- structure ---- */
+  'schema.table': {
+    category: 'quality',
+    compile: function (t, p, d) {
+      /* the mapped table exists in the target with the columns the map
+         writes — n = how many of them are missing. INFORMATION_SCHEMA is
+         common to both dialects, and this stays a read-only SELECT. */
+      var cols = p.columns || [];
+      if (!cols.length) throw new Error('schema.table needs params.columns — the columns the map writes');
+      var list = cols.map(function (c) { return lit(String(c).toLowerCase()); }).join(', ');
+      return {
+        countSql: 'SELECT ' + cols.length + ' - COUNT(*) AS n FROM INFORMATION_SCHEMA.COLUMNS'
+          + ' WHERE LOWER(TABLE_SCHEMA) = ' + lit(String(t.schema || 'dbo').toLowerCase())
+          + ' AND LOWER(TABLE_NAME) = ' + lit(String(t.table).toLowerCase())
+          + ' AND LOWER(COLUMN_NAME) IN (' + list + ')',
+        sampleSql: null,
+      };
+    },
+  },
+
+  /* ---- reconciliation (two queries; the engine compares) ----
+     p.srcPredicate is the job's own filter — the structured srcWhere field
+     on the mapping, never parsed out of generated SQL. It applies to the
+     SOURCE side only, so a deliberately filtered migration is counted the
+     way the job counted it instead of reported as data loss. */
   'recon.rowcount': {
     category: 'reconciliation', kind: 'pair',
     compile: function (t, p, d) {
-      return { countSql: 'SELECT COUNT(*) AS n FROM ' + qTable(d, t), sampleSql: null };
+      var where = p.srcPredicate && t.db === 'src' ? ' WHERE (' + p.srcPredicate + ')' : '';
+      return { countSql: 'SELECT COUNT(*) AS n FROM ' + qTable(d, t) + where, sampleSql: null };
     },
   },
   'recon.column_aggregate': {
@@ -469,7 +494,8 @@ var REGISTRY = {
     compile: function (t, p, d) {
       var fn = { sum: 'SUM', min: 'MIN', max: 'MAX', count: 'COUNT' }[p.fn || 'sum'];
       if (!fn) throw new Error('recon.column_aggregate: fn must be sum|min|max|count');
-      return { countSql: 'SELECT ' + fn + '(' + qCol(d, t.column) + ') AS n FROM ' + qTable(d, t), sampleSql: null };
+      var where = p.srcPredicate && t.db === 'src' ? ' WHERE (' + p.srcPredicate + ')' : '';
+      return { countSql: 'SELECT ' + fn + '(' + qCol(d, t.column) + ') AS n FROM ' + qTable(d, t) + where, sampleSql: null };
     },
   },
 
@@ -774,6 +800,11 @@ function asSaveRule(store, draft, user, now) {
     enabled: true, version: 1,
   }, draft);
   if (!rule.proves) rule.proves = asProvesFor(rule);
+  /* a freshness clock before cutover is not an incident: drift rules are
+     born dormant and wake when the project phase reaches cutover */
+  if (rule.check.indexOf('drift.') === 0 && rule.dormantUntilCutover === undefined) {
+    rule.dormantUntilCutover = true;
+  }
   if (!rule.schedule.groupId) rule.schedule.groupId = defaultGroupFor(store, rule.category);
   store.rules.push(rule);
   asEvent(store, { type: 'rule.created', ruleId: rule.id, by: user, name: rule.name }, now);
@@ -1197,6 +1228,292 @@ function asCronDue(expr, lastRunMs, nowMs) {
 }
 
 /* =======================================================================
+   Rule states — five, replacing the pass/open binary
+   ----------------------------------------------------------------------
+   derived   generated, not yet reviewed. Visible, never fires, never
+             counted. (Reserved: map-derived rules currently arrive live.)
+   armed     waiting on its job, or re-armed because the map changed after
+             the last run — a run only proves the definition it ran against.
+   proven    ran after its job completed and passed. What the evidence
+             pack counts.
+   breaching ran and failed. A real incident, so it pages.
+   dormant   correct but premature: a continuous drift rule before cutover.
+             It does not fire and does not open a breach.
+   ======================================================================= */
+function asRuleState(store, rule, opts) {
+  var phase = (opts && opts.phase) || null;
+  if (rule.lifecycle === 'derived') return 'derived';
+  if (rule.dormantUntilCutover && phase !== 'cutover') return 'dormant';
+  if (!rule.enabled) return 'dormant';
+  var breaching = store.breaches.some(function (b) {
+    return b.ruleId === rule.id && (b.state === 'open' || b.state === 'acknowledged');
+  });
+  if (breaching) return 'breaching';
+  var last = null;
+  for (var i = store.runs.length - 1; i >= 0; i--) {
+    if (store.runs[i].ruleId === rule.id && store.runs[i].status !== 'skipped') { last = store.runs[i]; break; }
+  }
+  if (!last) return 'armed';
+  if (rule.rearmedAt && last.startedAt < rule.rearmedAt) return 'armed';
+  return last.status === 'pass' ? 'proven' : 'breaching';
+}
+
+/* A rule bound to a job fires on job completion, not on a wall clock: due
+   when the job finished after the rule last ran — or when the rule was
+   re-armed by a map change since its last run. */
+function asJobRuleDue(store, rule, jobFinishedAt) {
+  if (!rule.schedule || !rule.schedule.onJobCompletion) return false;
+  if (jobFinishedAt == null) return false;              /* the job never ran */
+  var lastRun = null;
+  for (var i = store.runs.length - 1; i >= 0; i--) {
+    if (store.runs[i].ruleId === rule.id) { lastRun = store.runs[i]; break; }
+  }
+  return !lastRun || lastRun.startedAt < jobFinishedAt
+    || lastRun.startedAt < (rule.rearmedAt || 0);
+}
+
+/* The rules that count: enabled, reviewed, and awake. A dormant rule
+   waits for cutover and is invisible to every denominator until then. */
+function countableRules(store, phase) {
+  return store.rules.filter(function (r) {
+    if (!r.enabled) return false;
+    if (r.lifecycle === 'derived') return false;
+    if (r.dormantUntilCutover && phase !== 'cutover') return false;
+    return true;
+  });
+}
+
+/* =======================================================================
+   From the map's derived-check specs to executable rules
+   ----------------------------------------------------------------------
+   CygenixMapContext.deriveChecks(scope) describes the fixed set a mapped
+   table implies — id, check type, proves, provenance. This converter
+   turns each spec into a rule the engine can compile and run, taking the
+   binding and parameters from the same scope record the spec came from.
+   The brief's correctness rules are enforced here:
+     - recon.rowcount / recon.column_aggregate carry the job's srcWhere as
+       srcPredicate — the structured field, never parsed from SQL
+     - rowsExcluded is an accounted-for figure, not a rule: it comes back
+       under `informational`, for the page to render as prose
+     - a column written from a static literal gets a domain.enum constant
+       check; a dynamic literal (@@date and friends) cannot be resolved at
+       derive time, so it gets completeness.not_null instead — and either
+       way the column is out of source-vs-target comparison
+     - unfilled target columns get drift.null_rate with the baseline band
+       on, so anything starting to write to them shows up as drift
+     - fan-out targets get a custom.sql agreement check, per dialect
+     - verify SQL that is the same row-count comparison the derivation
+       produces collapses into the recon pair (provenance says so); a
+       genuine failing-rows SELECT supersedes the generated row count
+     - freshness is created dormant and needs a date-bearing column;
+       without one it is skipped, because nothing can be derived
+   ======================================================================= */
+var VERIFY_UNION_RE = /AS \[?Table\]?[\s\S]*UNION ALL/i;
+var AUDIT_COL_RE = /(^|_)(created|modified|updated|loaded)|_at$|_ts$|date/i;
+var DYNAMIC_LITERAL_RE = /@|^\?|\$\(/;
+
+function splitFullName(full) {
+  var parts = String(full || '').split('.');
+  return { schema: parts.length > 1 ? parts[0] : 'dbo', table: parts[parts.length - 1] };
+}
+
+function fanoutAgreeSql(schema, table, cols) {
+  var first = cols[0], rest = cols.slice(1);
+  var ms = rest.map(function (c) {
+    return '([' + first + '] <> [' + c + '] OR (CASE WHEN [' + first + '] IS NULL THEN 1 ELSE 0 END)'
+      + ' <> (CASE WHEN [' + c + '] IS NULL THEN 1 ELSE 0 END))';
+  }).join(' OR ');
+  var pg = rest.map(function (c) { return '"' + first + '" IS DISTINCT FROM "' + c + '"'; }).join(' OR ');
+  return {
+    sqlserver: 'SELECT * FROM [' + schema + '].[' + table + '] WHERE ' + ms,
+    postgres: 'SELECT * FROM "' + schema + '"."' + table + '" WHERE ' + pg,
+  };
+}
+
+function asDraftsFromScope(scope, specs, opts) {
+  var now = (opts && opts.now) || 0;
+  var out = { drafts: [], informational: [], skipped: [] };
+  var byJob = {};
+  (scope.tables || []).forEach(function (t, i) { byJob[t.jobId || 'JOB-' + (i + 1)] = t; });
+
+  /* how each job's verify SQL is treated */
+  var verifyMode = {};
+  (specs || []).forEach(function (s) {
+    if (s.check !== 'custom.sql' || !/verifySQL/.test(s.derivedFrom || '')) return;
+    var jobId = String(s.id).split('/')[0];
+    verifyMode[jobId] = VERIFY_UNION_RE.test(s.sql || '') ? 'collapse' : 'supersede';
+  });
+
+  var counters = {};
+  var nth = function (jobId, kind) {
+    var k = jobId + '|' + kind;
+    counters[k] = (counters[k] || 0) + 1;
+    return counters[k] - 1;
+  };
+
+  (specs || []).forEach(function (spec) {
+    var jobId = String(spec.id).split('/')[0];
+    var t = byJob[jobId];
+    if (!t) { out.skipped.push({ id: spec.id, why: 'no scope table for ' + jobId }); return; }
+    var src = splitFullName(t.srcTable), tgt = splitFullName(t.tgtTable);
+    var from = spec.derivedFrom || '';
+
+    var draft = {
+      id: spec.id, proves: spec.proves, check: spec.check,
+      category: 'reconciliation', severity: 'critical', continuous: true,
+      params: {}, binding: { mode: 'explicit', targets: [], databases: [] },
+      schedule: { onJobCompletion: t.jobId || null, groupId: null, cron: null },
+      provenance: { source: 'derived', jobId: t.jobId || null, jobName: t.name || '',
+        origin: from, createdAt: now },
+    };
+    var tgtTarget = function (column) {
+      return { db: 'tgt', schema: tgt.schema, table: tgt.table, column: column || null };
+    };
+
+    if (spec.check === 'schema.table') {
+      draft.category = 'quality'; draft.severity = 'warning';
+      draft.params = { columns: (t.columns || []).map(function (c) { return c.tgt; }).filter(Boolean) };
+      draft.binding.targets = [tgtTarget()];
+      draft.name = 'Structure — ' + tgt.table;
+
+    } else if (spec.check === 'recon.rowcount' && /rowsExcluded/.test(from)) {
+      /* accounted for, not lost — and not a live rule */
+      out.informational.push({ id: spec.id, jobId: t.jobId, proves: spec.proves,
+        excluded: (t.run && t.run.excluded) || null });
+      return;
+
+    } else if (spec.check === 'recon.rowcount') {
+      if (verifyMode[jobId] === 'supersede') {
+        out.skipped.push({ id: spec.id, why: 'superseded by the job\'s hand-written verify SQL' });
+        return;
+      }
+      draft.params = { tolerance: 0, srcPredicate: t.predicate || null };
+      draft.binding.targets = [
+        { db: 'src', schema: src.schema, table: src.table, column: null }, tgtTarget()];
+      draft.name = 'Row count — ' + tgt.table;
+      if (verifyMode[jobId] === 'collapse') {
+        draft.provenance.origin += '; the job\'s hand-written verify SQL is this same comparison,'
+          + ' executed as the reconciliation pair';
+      }
+
+    } else if (spec.check === 'uniqueness.key') {
+      draft.category = 'duplicates';
+      draft.binding.targets = [tgtTarget(t.key)];
+      draft.name = 'Unique key — ' + tgt.table + '.' + t.key;
+
+    } else if (spec.check === 'custom.sql' && /source column mapped to/.test(from)) {
+      var f = (t.fanOut || [])[nth(jobId, 'fanout')];
+      if (!f) { out.skipped.push({ id: spec.id, why: 'fan-out entry not found on the scope table' }); return; }
+      draft.category = 'quality'; draft.severity = 'warning';
+      draft.params = { sql: fanoutAgreeSql(tgt.schema, tgt.table, f.targets) };
+      draft.binding.targets = [tgtTarget()];
+      draft.binding.databases = ['tgt'];
+      draft.name = 'Fan-out agrees — ' + f.targets.join(' = ');
+
+    } else if (spec.check === 'custom.sql' && /verifySQL/.test(from)) {
+      if (verifyMode[jobId] === 'collapse') return;      /* folded into the recon pair */
+      draft.category = 'custom';
+      draft.params = { sql: { any: t.verifySQL } };
+      draft.binding.targets = [tgtTarget()];
+      draft.binding.databases = ['tgt'];
+      draft.name = 'Verify SQL — ' + (t.name || tgt.table);
+
+    } else if (spec.check === 'domain.enum') {
+      var l = (t.literals || [])[nth(jobId, 'literal')];
+      if (!l) { out.skipped.push({ id: spec.id, why: 'literal entry not found on the scope table' }); return; }
+      draft.severity = 'warning';
+      if (DYNAMIC_LITERAL_RE.test(String(l.value))) {
+        /* the resolved value is unknowable at derive time — prove the
+           column is filled, and keep it out of source-vs-target compares */
+        draft.check = 'completeness.not_null';
+        draft.category = 'completeness';
+        draft.proves = l.column + ' is filled on every migrated row (written from ' + l.value
+          + ', so it is excluded from source-vs-target comparison).';
+      } else {
+        draft.category = 'setups';
+        draft.params = { values: [l.value] };
+      }
+      draft.binding.targets = [tgtTarget(l.column)];
+      draft.name = 'Literal — ' + tgt.table + '.' + l.column;
+
+    } else if (spec.check === 'drift.null_rate') {
+      draft.category = 'drift'; draft.severity = 'warning';
+      draft.binding.targets = (t.unsourced || []).map(function (c) { return tgtTarget(c); });
+      if (!draft.binding.targets.length) { out.skipped.push({ id: spec.id, why: 'no unsourced columns' }); return; }
+      draft.thresholds = { warnAbove: { unit: 'rows', value: 0 }, failAbove: { unit: 'rows', value: 0 },
+        baseline: { enabled: true, window: '7d', worseByPercent: 10 } };
+      draft.name = 'Unfilled stay empty — ' + tgt.table;
+
+    } else if (spec.check === 'recon.column_aggregate') {
+      var col = String(spec.scope || '').split('.').pop();
+      var pair = (t.columns || []).filter(function (c) { return c.tgt === col && c.src && !c.literal; })[0];
+      if (!pair) { out.skipped.push({ id: spec.id, why: 'no source column behind ' + col }); return; }
+      draft.category = 'finance';
+      draft.params = { fn: 'sum', tolerance: 0.01, srcPredicate: t.predicate || null };
+      draft.binding.targets = [
+        { db: 'src', schema: src.schema, table: src.table, column: pair.src }, tgtTarget(col)];
+      draft.name = 'Σ ' + col + ' — ' + tgt.table;
+
+    } else if (spec.check === 'drift.freshness') {
+      var dateCol = (t.columns || []).map(function (c) { return c.tgt; })
+        .filter(function (c) { return c && AUDIT_COL_RE.test(c); })[0];
+      if (!dateCol) { out.skipped.push({ id: spec.id, why: 'no date-bearing column to measure freshness on' }); return; }
+      draft.category = 'drift'; draft.severity = 'warning';
+      draft.params = { maxAgeHours: 26 };
+      draft.schedule = { groupId: 'grp_hourly_fresh', cron: null, onJobCompletion: null };
+      draft.binding.targets = [tgtTarget(dateCol)];
+      draft.name = 'Freshness — ' + tgt.table;
+
+    } else {
+      out.skipped.push({ id: spec.id, why: 'no conversion for check type ' + spec.check });
+      return;
+    }
+
+    /* the resolver decides what is premature — its per-spec state overrides
+       the blanket drift.* default (null_rate is deliberately armed: watching
+       that unfilled columns stay empty is meaningful before cutover) */
+    draft.dormantUntilCutover = spec.state === 'dormant'
+      || (spec.check === 'drift.freshness');
+    out.drafts.push(draft);
+  });
+  return out;
+}
+
+/* Idempotent sync: same map, same drafts, no churn. A changed step
+   re-derives (versioned, re-armed — a run only proves the definition it
+   ran against); a step whose table left the map retires with a versioned
+   disable, never a delete. */
+function ruleMaterial(r) {
+  return JSON.stringify({ check: r.check, params: r.params, binding: r.binding,
+    proves: r.proves, name: r.name, severity: r.severity, schedule: r.schedule });
+}
+function asSyncMapRules(store, drafts, user, now) {
+  var out = { created: 0, updated: 0, unchanged: 0, retired: 0 };
+  var ids = {};
+  drafts.forEach(function (d) {
+    ids[d.id] = 1;
+    var existing = store.rules.filter(function (r) { return r.id === d.id; })[0];
+    if (!existing) { asSaveRule(store, d, user || 'map-sync', now); out.created++; return; }
+    if (ruleMaterial(existing) === ruleMaterial(Object.assign({}, existing, d))) { out.unchanged++; return; }
+    var next = asSaveRule(store, Object.assign({}, d, { enabled: existing.enabled }), user || 'map-sync', now);
+    next.rearmedAt = now || 0;
+    out.updated++;
+  });
+  store.rules.forEach(function (r) {
+    if (r.provenance && r.provenance.source === 'derived' && r.enabled && !ids[r.id]) {
+      asDisableRule(store, r.id, user || 'map-sync', now);
+      asEvent(store, { type: 'rule.retired_from_map', ruleId: r.id }, now);
+      out.retired++;
+    }
+  });
+  if (out.created || out.updated || out.retired) {
+    asEvent(store, { type: 'map.synced', created: out.created, updated: out.updated,
+      retired: out.retired, unchanged: out.unchanged }, now);
+  }
+  return out;
+}
+
+/* =======================================================================
    sha256 — dependency-free, so run hashes are identical in the browser
    and under node. The reference implementation of the algorithm, kept
    compact; verified against the FIPS 180-4 test vector in the tests.
@@ -1263,7 +1580,7 @@ function sha256(msg) {
    §2 — one status object, derived once, rendered everywhere
    ======================================================================= */
 function asStatus(store, opts) {
-  var enabled = store.rules.filter(function (r) { return r.enabled; });
+  var enabled = countableRules(store, (opts && opts.phase) || null);
   var ranIds = {};
   store.runs.forEach(function (r) { if (r.status !== 'skipped') ranIds[r.ruleId] = 1; });
   var lastRunAt = store.runs.length ? store.runs[store.runs.length - 1].startedAt : null;
@@ -1272,7 +1589,7 @@ function asStatus(store, opts) {
   }).length;
   var st = {
     checksWritten: enabled.length,
-    checksRun: Object.keys(ranIds).length,
+    checksRun: enabled.filter(function (r) { return ranIds[r.id]; }).length,
     lastRunAt: lastRunAt,
     openBreaches: openBreaches,
     connections: (opts && opts.connections) || 0,
@@ -1458,7 +1775,7 @@ function asCoverage(store, catalog, opts) {
   });
 
   var checked = {};
-  store.rules.filter(function (r) { return r.enabled; }).forEach(function (r) {
+  countableRules(store, opts.phase || null).forEach(function (r) {
     asResolveBinding(r, catalog).forEach(function (t) {
       checked[t.db + '.' + t.schema + '.' + t.table] = 1;
     });
@@ -1627,7 +1944,7 @@ function latestRunPerRule(store) {
   return latest;
 }
 
-function asEvidence(store, now) {
+function asEvidence(store, now, opts) {
   var latest = latestRunPerRule(store);
   var ids = Object.keys(latest);
   var passed = ids.filter(function (id) { return latest[id].result === 'pass'; }).length;
@@ -1659,7 +1976,7 @@ function asEvidence(store, now) {
   var sweep = (store.sweeps || [])[Math.max(0, (store.sweeps || []).length - 1)] || null;
 
   var claims = {};
-  store.rules.filter(function (r) { return r.enabled; }).forEach(function (r) {
+  countableRules(store, (opts && opts.phase) || null).forEach(function (r) {
     var run = latest[r.id] || null;
     var cat = categoryOf(r.category).label;
     (claims[cat] = claims[cat] || []).push({
@@ -1707,19 +2024,53 @@ function asEvidence(store, now) {
   };
 }
 
-/* v1 stores gain the v2 fields; nothing is lost, everything is recorded. */
-function asMigrateStore(store, now) {
+/* Old stores gain the new fields; nothing is lost, everything is recorded. */
+function asMigrateStore(store, now, opts) {
   if (!store || store.v >= STORE_VERSION) return store;
-  store.rules.forEach(function (r) {
-    if (!r.proves) {
-      var p = asProvesFor(r);
-      if (p) r.proves = p;
-      else r.provesNeedsAuthor = true;
+  var phase = (opts && opts.phase) || null;
+
+  if (store.v < 2) {
+    store.rules.forEach(function (r) {
+      if (!r.proves) {
+        var p = asProvesFor(r);
+        if (p) r.proves = p;
+        else r.provesNeedsAuthor = true;
+      }
+    });
+    store.runs.forEach(function (r) { if (!r.runHash) asFinalizeRun(r); });
+    store.sweeps = store.sweeps || [];
+    store.settings.materialRowThreshold = store.settings.materialRowThreshold || MATERIAL_ROWS_DEFAULT;
+  }
+
+  if (store.v < 3) {
+    /* pre-derivation drift rules go dormant until cutover — a freshness
+       clock before anything writes to the target is not an incident */
+    store.rules.forEach(function (r) {
+      if (r.check && r.check.indexOf('drift.') === 0 && r.dormantUntilCutover === undefined) {
+        r.dormantUntilCutover = true;
+        r.preDerivation = true;
+        asEvent(store, { type: 'rule.dormant_until_cutover', ruleId: r.id,
+          note: 'pre-derivation drift rule' }, now);
+      }
+    });
+    /* their phantom breaches resolve — no suppression entries, so the
+       suppression log stays clean (every entry there needs a reason and
+       an expiry, and these deserve neither) */
+    if (phase !== 'cutover') {
+      store.breaches.forEach(function (b) {
+        if (b.state === 'resolved') return;
+        var r = store.rules.filter(function (x) { return x.id === b.ruleId; })[0];
+        if (!r || !r.dormantUntilCutover) return;
+        b.state = 'resolved';
+        b.resolvedAt = now || 0;
+        b.resolvedBy = 'map-migration';
+        b.resolution = 'rule made dormant until cutover — a freshness clock before cutover is not an incident';
+        asEvent(store, { type: 'breach.resolved', breachId: b.id, by: 'map-migration',
+          resolution: b.resolution }, now);
+      });
     }
-  });
-  store.runs.forEach(function (r) { if (!r.runHash) asFinalizeRun(r); });
-  store.sweeps = store.sweeps || [];
-  store.settings.materialRowThreshold = store.settings.materialRowThreshold || MATERIAL_ROWS_DEFAULT;
+  }
+
   store.v = STORE_VERSION;
   asEvent(store, { type: 'store.migrated', to: STORE_VERSION }, now);
   return store;
@@ -1770,6 +2121,13 @@ return {
 
   asCronNext: asCronNext,
   asCronDue: asCronDue,
+
+  asRuleState: asRuleState,
+  asJobRuleDue: asJobRuleDue,
+  countableRules: countableRules,
+  asDraftsFromScope: asDraftsFromScope,
+  asSyncMapRules: asSyncMapRules,
+
 
   MATERIAL_ROWS_DEFAULT: MATERIAL_ROWS_DEFAULT,
   NOT_COVERED: NOT_COVERED,

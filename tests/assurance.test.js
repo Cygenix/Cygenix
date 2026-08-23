@@ -72,6 +72,7 @@ const BOTH = {
   'aggregate.tolerance': { expression: 'qty * unit_price', epsilon: 0.01 },
   'drift.rowcount': {}, 'drift.freshness': {}, 'drift.null_rate': {},
   'recon.rowcount': {}, 'recon.column_aggregate': { fn: 'sum' },
+  'schema.table': { columns: ['a', 'b'] },
   'custom.sql': { sql: { any: 'SELECT * FROM x WHERE broken = 1' } },
 };
 let compiled = 0, failedCompiles = [];
@@ -598,7 +599,108 @@ check('a store already at v2 passes through untouched',
   (() => { const s = A.asNewStore(now); const before = JSON.stringify(s);
     return A.asMigrateStore(s, now) === s && JSON.stringify(s) === before; })());
 
-// ── 20. Wiring ──────────────────────────────────────────────────────────────
+// ── 20. Deriving from the map — predicate as data, rule states, dormancy ────
+// The job's filter is the structured srcWhere field on the mapping — never
+// parsed out of generated SQL — and it lands on the SOURCE side only.
+const rcDerived = { check: 'recon.rowcount', params: { tolerance: 0, srcPredicate: "caseno like '%z%'" } };
+check('recon.rowcount applies the job\'s own filter to the source count only',
+  /WHERE \(caseno like '%z%'\)/.test(A.asCompile(rcDerived,
+    { db: 'src', schema: 'dbo', table: 'Cases', column: null }, 'sqlserver').countSql)
+  && !/WHERE/.test(A.asCompile(rcDerived,
+    { db: 'tgt', schema: 'dbo', table: 'cases', column: null }, 'sqlserver').countSql));
+check('recon.column_aggregate carries the same source-side predicate',
+  /SUM\(\[fee\]\) AS n FROM \[dbo\]\.\[Cases\] WHERE \(caseno/.test(
+    A.asCompile({ check: 'recon.column_aggregate', params: { fn: 'sum', srcPredicate: "caseno like '%z%'" } },
+      { db: 'src', schema: 'dbo', table: 'Cases', column: 'fee' }, 'sqlserver').countSql));
+check('schema.table proves the mapped columns exist, read-only, on both dialects',
+  ['sqlserver', 'postgres'].every(dl => {
+    const q = A.asCompile({ check: 'schema.table', params: { columns: ['id', 'caseno'] } },
+      { db: 'tgt', schema: 'dbo', table: 'cases', column: null }, dl).countSql;
+    return /INFORMATION_SCHEMA\.COLUMNS/.test(q) && /^SELECT 2 - COUNT\(\*\) AS n/.test(q);
+  }));
+check('a drift rule is born dormant — a freshness clock before cutover is not an incident',
+  (() => { const s = A.asNewStore(now);
+    const r = A.asSaveRule(s, { name: 'f', category: 'drift', check: 'drift.freshness',
+      params: { maxAgeHours: 26 }, binding: { mode: 'explicit',
+        targets: [{ db: 'tgt', schema: 'dbo', table: 't', column: 'created_at' }], databases: [] } }, 'u', now);
+    return r.dormantUntilCutover === true
+      && A.asStatus(s, { connections: 1, phase: 'planning' }).checksWritten === 0
+      && A.asStatus(s, { connections: 1, phase: 'cutover' }).checksWritten === 1; })());
+check('v2 → v3 migration makes pre-derivation drift rules dormant and clears their phantom breaches — zero suppressions',
+  (() => { const s = A.asNewStore(now);
+    A.asSaveRule(s, { name: 'fresh', category: 'drift', check: 'drift.freshness',
+      params: { maxAgeHours: 26 }, binding: { mode: 'explicit',
+        targets: [{ db: 'tgt', schema: 'dbo', table: 'ref1', column: 'created_at' }], databases: [] } }, 'u', now);
+    delete s.rules[0].dormantUntilCutover;                     /* pre-v3 rules had no flag */
+    A.asRecordRun(s, { id: 'ph1', ruleId: s.rules[0].id, startedAt: now + 1, status: 'fail',
+      rowsFailed: 0, rowsScanned: 0, measure: 400, targetsMatched: 1, severity: 'warning', category: 'drift' }, now + 1);
+    s.v = 2;
+    A.asMigrateStore(s, now + 2, { phase: 'planning' });
+    return s.rules[0].dormantUntilCutover === true && s.rules[0].preDerivation === true
+      && s.breaches[0].state === 'resolved' && s.suppressions.length === 0
+      && s.events.some(e => e.type === 'rule.dormant_until_cutover'); })());
+check('a map change re-arms a rule — a run only proves the definition it ran against',
+  (() => { const s = A.asNewStore(now);
+    const d = { id: 'job_1/S2', name: 'rc', proves: 'p', category: 'reconciliation',
+      check: 'recon.rowcount', severity: 'critical', continuous: true,
+      params: { tolerance: 0, srcPredicate: 'a=1' },
+      binding: { mode: 'explicit', targets: [
+        { db: 'src', schema: 'dbo', table: 't', column: null },
+        { db: 'tgt', schema: 'dbo', table: 't', column: null }], databases: [] },
+      schedule: { onJobCompletion: 'job_1', groupId: null, cron: null },
+      provenance: { source: 'derived', jobId: 'job_1', jobName: 'j', origin: 'srcWhere', createdAt: now } };
+    A.asSyncMapRules(s, [d], 'sync', now);
+    A.asRecordRun(s, { id: 'r1', ruleId: 'job_1/S2', startedAt: now + 10, status: 'pass',
+      rowsFailed: 0, rowsScanned: 24, targetsMatched: 2, severity: 'critical', category: 'reconciliation' }, now + 10);
+    const proven = A.asRuleState(s, s.rules[0], {}) === 'proven';
+    const s2 = A.asSyncMapRules(s, [Object.assign({}, d, { params: { tolerance: 0, srcPredicate: 'a=2' } })], 'sync', now + 20);
+    const r = s.rules[0];
+    return proven && s2.updated === 1 && r.version === 2 && r.rearmedAt === now + 20
+      && A.asRuleState(s, r, {}) === 'armed'
+      && A.asJobRuleDue(s, r, now + 5) === true                /* due again on the already-completed job */
+      && s.ruleVersions.length === 1; })());
+check('a table absent from the map retires its rules — versioned disable, never a delete',
+  (() => { const s = A.asNewStore(now);
+    const d = { id: 'job_9/UQ', name: 'u', proves: 'p', category: 'duplicates',
+      check: 'uniqueness.composite', params: { columns: ['id'] },
+      binding: { mode: 'explicit', targets: [{ db: 'tgt', schema: 'dbo', table: 'gone', column: null }], databases: [] },
+      schedule: { onJobCompletion: 'job_9', groupId: null, cron: null },
+      provenance: { source: 'derived', jobId: 'job_9', jobName: 'j', origin: 'map', createdAt: now } };
+    A.asSyncMapRules(s, [d], 'sync', now);
+    const r2 = A.asSyncMapRules(s, [], 'sync', now + 1);
+    return r2.retired === 1 && s.rules.length === 1 && s.rules[0].enabled === false
+      && s.events.some(e => e.type === 'rule.retired_from_map'); })());
+
+const stateStore = A.asNewStore(now);
+const stRule = A.asSaveRule(stateStore, { name: 's', category: 'reconciliation', check: 'recon.rowcount',
+  binding: { mode: 'explicit', targets: [
+    { db: 'src', schema: 'dbo', table: 't', column: null },
+    { db: 'tgt', schema: 'dbo', table: 't', column: null }], databases: [] } }, 'u', now);
+check('an accepted rule with no run yet is armed',
+  A.asRuleState(stateStore, stRule, { phase: 'planning' }) === 'armed');
+check('a generated-not-reviewed rule is derived — visible, never fires',
+  A.asRuleState(stateStore, Object.assign({}, stRule, { lifecycle: 'derived' }), {}) === 'derived');
+check('a drift rule before cutover is dormant, and wakes at cutover',
+  A.asRuleState(stateStore, Object.assign({}, stRule, { dormantUntilCutover: true }), { phase: 'planning' }) === 'dormant'
+  && A.asRuleState(stateStore, Object.assign({}, stRule, { dormantUntilCutover: true }), { phase: 'cutover' }) === 'armed');
+A.asRecordRun(stateStore, { id: 'st1', ruleId: stRule.id, startedAt: now + 10, status: 'pass',
+  rowsFailed: 0, rowsScanned: 100, targetsMatched: 2, severity: 'warning', category: 'reconciliation' }, now + 10);
+check('a passing run makes it proven', A.asRuleState(stateStore, stRule, {}) === 'proven');
+A.asRecordRun(stateStore, { id: 'st2', ruleId: stRule.id, startedAt: now + 20, status: 'fail',
+  rowsFailed: 4, rowsScanned: 100, targetsMatched: 2, severity: 'warning', category: 'reconciliation' }, now + 20);
+check('a failing run makes it breaching', A.asRuleState(stateStore, stRule, {}) === 'breaching');
+
+const jobRule = Object.assign({}, stRule, { id: 'MAP-1/JOB-1/S1',
+  schedule: { onJobCompletion: 'JOB-1', groupId: null, cron: null } });
+check('a job-bound rule is due only when the job finished after its last run',
+  A.asJobRuleDue(A.asNewStore(now), jobRule, now + 100) === true      /* never ran, job done */
+  && A.asJobRuleDue(A.asNewStore(now), jobRule, null) === false       /* job never ran */
+  && (() => { const s = A.asNewStore(now);
+    s.runs.push({ id: 'jr1', ruleId: 'MAP-1/JOB-1/S1', startedAt: now + 200, status: 'pass' });
+    return A.asJobRuleDue(s, jobRule, now + 100) === false            /* already ran after the job */
+      && A.asJobRuleDue(s, jobRule, now + 300) === true; })());       /* job ran again since */
+
+// ── 21. Wiring ──────────────────────────────────────────────────────────────
 const PAGE = fs.existsSync(__dirname + '/../public/assurance.html')
   ? fs.readFileSync(__dirname + '/../public/assurance.html', 'utf8') : '';
 const NAV = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
@@ -652,7 +754,7 @@ check('the truly-empty state hides the Showing-N note',
 // §7: the table leads with what each rule proves, on a human schedule.
 check('the rule table leads with What it proves and a human schedule',
   PAGE.includes('<th>What it proves</th>') && PAGE.includes('<th>Scope</th>')
-  && PAGE.includes('<th>Runs</th>') && PAGE.includes('<th>Last result</th>')
+  && PAGE.includes('<th>Runs</th>') && PAGE.includes('<th>State</th>')
   && /asCronHuman\(cron\)/.test(PAGE));
 check('the drawer requires a proves sentence when no template fits',
   PAGE.includes('as-dw-proves') && /asProvesFor\(draft\)/.test(PAGE));
@@ -686,6 +788,37 @@ check('suppression in the page asks for reason and expiry',
   /asSuppress/.test(PAGE) && /reason/i.test(PAGE));
 check('notification routing goes through the existing integrations emit',
   /CygenixIntegrations/.test(PAGE) && /emit\(/.test(PAGE));
+
+// ── 22. The map is the scope — page wiring ─────────────────────────────────
+const MAPJS = fs.readFileSync(__dirname + '/../public/cygenix-map-context.js', 'utf8');
+check('the resolver ships, and is loaded before the engine',
+  PAGE.indexOf('cygenix-map-context.js') > 0
+  && PAGE.indexOf('cygenix-map-context.js') < PAGE.indexOf('cygenix-assurance.js?'));
+check('the resolver never writes on the read path',
+  !/localStorage\.setItem/.test(MAPJS) && !/fetch\(/.test(MAPJS));
+check('the resolver refuses the WIP scratch buffer and the stale project id',
+  /NOT a source: cygenix_objmap_wip/.test(MAPJS) && /activeProjectId/.test(MAPJS));
+check('the page resolves scope from the map and syncs derived rules from it',
+  /resolveMigrationScope\(\)/.test(PAGE) && /deriveChecks\(mapScope\)/.test(PAGE)
+  && /asDraftsFromScope/.test(PAGE) && /asSyncMapRules/.test(PAGE));
+check('the header states what is being proven, from project data',
+  /Proving the /.test(PAGE) && /landed correctly/.test(PAGE));
+check('coverage re-bases on mapped tables, catalogue demoted to the outside line',
+  /mapped table/.test(PAGE) && /outside this migration/.test(PAGE)
+  && /review scope/.test(PAGE));
+check('rowsExcluded renders as an accounted-for figure, never a breach',
+  /mapInfo\.map/.test(PAGE));
+check('derived rules run on job completion, not on a wall clock',
+  /asRunDueJobRules/.test(PAGE) && /On job completion/.test(PAGE)
+  && /asJobRuleDue/.test(PAGE));
+check('the five states render as pills and derived rules name their map',
+  /Derived<\/span>/.test(PAGE) && /Armed<\/span>/.test(PAGE) && /Proven<\/span>/.test(PAGE)
+  && /Dormant<\/span>/.test(PAGE) && /object_mapping\.html\?edit=/.test(PAGE));
+check('a connection mismatch refuses derived checks and says why (§5, decided)',
+  /as-mismatch/.test(PAGE) && /refuse to run/.test(PAGE)
+  && /never touched/.test(PAGE) && /runnable\(/.test(PAGE));
+check('a job run or map edit in another tab re-scopes the page',
+  /addEventListener\('storage'/.test(PAGE) && /cygenix_jobs/.test(PAGE));
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
