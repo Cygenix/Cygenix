@@ -78,6 +78,7 @@
     ]},
     { section: 'Connect', group:'connect', items: [
       { key:'connections',  label:'Connections',  view:'connections',  color:'var(--green)', icon: iconPlug() },
+      { key:'profiles',     label:'Profiles',     href:'/profiles.html', color:'var(--amber, #f59e0b)', icon: iconShield() },
       { key:'integrations', label:'Integrations', view:'integrations', color:'var(--teal)',  icon: iconIntegrations() },
       { key:'settings-group', label:'Settings', icon: iconSettings(), children: [
         { key:'project-settings',  label:'General',           view:'project-settings',  color:'var(--amber)',  icon: iconSettings() },
@@ -1157,6 +1158,57 @@
     else if (mq.addListener) mq.addListener(sync);
   }
 
+  // ── Environment banner ────────────────────────────────────────────────
+  // A persistent strip on every page naming the active connection profile
+  // and its environment class, colour-coded by blast radius. Today the only
+  // clue to which database a page is on is a string like hgji9oppmecudpiwmhqjuq;
+  // this is the cheapest fix for that. Renders only once profiles are in
+  // force (any profile defined in cygenix_profiles_v1) — before adoption the
+  // product behaves exactly as it always has.
+  function renderEnvBanner(){
+    try {
+      var raw = localStorage.getItem('cygenix_profiles_v1');
+      var st = raw ? JSON.parse(raw) : null;
+      var adopted = !!(st && st.profiles && st.profiles.length);
+      var bar = document.getElementById('cyg-envbar');
+      if (!adopted){
+        if (bar){ bar.remove(); document.body.classList.remove('cyg-envbar-pad'); }
+        return;
+      }
+      var id = st.settings && st.settings.activeProfileId;
+      var p = null;
+      for (var i = 0; i < st.profiles.length; i++){
+        if (st.profiles[i].id === id) p = st.profiles[i];
+      }
+      var env = p ? String(p.envClass || 'UNKNOWN').toUpperCase() : null;
+      var color = p ? ({ PRD: '#c23636', UAT: '#b97a0b', UNKNOWN: '#4a515c' }[env] || '#1f7a4d') : '#b97a0b';
+      var text = p
+        ? p.id + ' · ' + env + (p.name && p.name !== p.id ? ' · ' + p.name : '')
+        : 'No connection profile selected — writes are blocked. Choose one on the Profiles page.';
+      if (!bar){
+        bar = document.createElement('a');
+        bar.id = 'cyg-envbar';
+        bar.href = '/profiles.html';
+        bar.title = 'The connection profile governing this session. Click to manage profiles.';
+        document.body.appendChild(bar);
+        var css = document.createElement('style');
+        css.id = 'cyg-envbar-css';
+        css.textContent =
+          '#cyg-envbar{position:fixed;top:0;left:0;right:0;height:22px;z-index:2000;' +
+          'display:flex;align-items:center;justify-content:center;gap:6px;' +
+          'font:600 10.5px/1 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:0.06em;' +
+          'text-decoration:none;color:#fff}' +
+          '#cyg-envbar:hover{filter:brightness(1.12)}' +
+          'body.cyg-envbar-pad{padding-top:22px}' +
+          'body.cyg-envbar-pad .cyg-sidebar{top:22px;height:calc(100vh - 22px)}';
+        document.head.appendChild(css);
+        document.body.classList.add('cyg-envbar-pad');
+      }
+      bar.style.background = color;
+      bar.textContent = '● ' + text;
+    } catch (e) { /* the banner must never break navigation */ }
+  }
+
   function mount(){
     injectStyles();
     let host = document.getElementById(MOUNT_ID);
@@ -1191,6 +1243,12 @@
     hideTopbarUserPill();
     ensureA11y();
     wireMobileDrawer(aside);
+    renderEnvBanner();
+    window.addEventListener('storage', function (e) {
+      if (e.key === 'cygenix_profiles_v1') renderEnvBanner();
+    });
+    // same-tab updates: the Profiles page announces its own writes
+    window.addEventListener('cygenix:profiles-changed', renderEnvBanner);
     // Preload the Drive overlay so the first click is instant (skip the
     // co-worker page, which ships its own native Drive). Idle-scheduled the
     // same way loadDriveSyncWhenIdle already is: injecting 53KB of modal at

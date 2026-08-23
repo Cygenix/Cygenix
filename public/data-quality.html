@@ -75,6 +75,7 @@
 
   <!-- Shared connections helper (gives us CygenixConnections.srcConn / tgtConn) -->
   <script src="/connections.js?v=d199ff3358" defer></script>
+  <script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
 
   <!-- SheetJS for client-side Excel export. Same CDN pattern other pages use. -->
   <script>
@@ -1295,7 +1296,7 @@
   </main>
 
   <!-- Sidebar (auto-mounts on DOMContentLoaded) -->
-  <script src="/cygenix-sidebar.js?v=6f72ef587c" defer></script>
+  <script src="/cygenix-sidebar.js?v=2ac6f7a944" defer></script>
 
   <!-- Toast -->
   <div id="toast"></div>
@@ -1471,6 +1472,49 @@
       return;
     }
 
+    // ── Identity before work (connection profiles) ──────────────────────
+    // Once profiles are in force, the run asserts WHERE it is before it
+    // examines anything: read the environment sentinel from this connection
+    // and abort on mismatch; where no sentinel is installed, fall back to
+    // the endpoint fingerprint. Either way the run record carries expected
+    // AND actual identity.
+    let _cpProfile = null, _cpAssertion = 'not-checked', _cpActual = {}, _cpOutcome = 'unknown';
+    if (window.CygenixProfiles) {
+      try {
+        const CP = CygenixProfiles;
+        const cpStore = CP.cpLoad();
+        if (CP.cpAdopted(cpStore)) {
+          _cpProfile = cpStore.profiles.find(p =>
+            p.id === cpStore.settings.activeProfileId && p.status === 'active') || null;
+          const dialect = /postgres/i.test(conn) ? 'postgres' : 'sqlserver';
+          try {
+            const fp = (await dbExecute(CP.cpFingerprintSql(dialect)))[0] || {};
+            _cpActual = { server: fp.server_name || fp.server_endpoint || null,
+                          database: fp.database_name || null, login: fp.login_name || null };
+          } catch (e) { /* fingerprint is best-effort */ }
+          if (_cpProfile) {
+            const side = document.getElementById('conn-select').value === 'target' ? 'TGT' : 'SRC';
+            const expected = { profileId: _cpProfile.id, envClass: _cpProfile.envClass, role: side };
+            let outcome;
+            try { outcome = { rows: await dbExecute(CP.cpSentinelReadSql(dialect)) }; }
+            catch (e) { outcome = { error: String(e.message || e) }; }
+            const verdict = CP.cpClassifySentinel(expected, outcome);
+            _cpAssertion = verdict.result;
+            if (verdict.result === 'mismatch') {
+              CP.cpRecordRun(cpStore, { artifactType: 'quality-review', artifactId: 'pending',
+                profileId: _cpProfile.id, actualServer: _cpActual.server,
+                actualDatabase: _cpActual.database, actualLogin: _cpActual.login,
+                assertionResult: 'mismatch', outcome: 'aborted before any work — ' + verdict.detail,
+                runBy: getUserId() }, Date.now());
+              CP.cpSave(cpStore);
+              showToast('ENV MISMATCH — run aborted. ' + verdict.detail, 'error');
+              return;
+            }
+          }
+        }
+      } catch (e) { console.warn('[profiles] identity check', e); }
+    }
+
     _cancelRequested = false;
     _runInProgress   = true;
     setRunUI(true);
@@ -1496,6 +1540,10 @@
       projectId:   projectId,
       userId:      getUserId(),
       sourceName:  getConnLabel(),
+      profileId:   _cpProfile ? _cpProfile.id : null,
+      envClass:    _cpProfile ? _cpProfile.envClass : null,
+      assertionResult: _cpAssertion,
+      actualIdentity:  _cpActual,
       connSide:    document.getElementById('conn-select').value,
       reportName:  defaultReportName(),
       runAt:       new Date().toISOString(),
@@ -1572,6 +1620,7 @@
       }
 
       // 3. Build final report record
+      _cpOutcome = _cancelRequested ? 'cancelled' : 'complete';
       currentReport = buildReportSnapshot(_cancelRequested ? 'cancelled' : 'complete');
 
       renderResults(currentReport);
@@ -1601,10 +1650,27 @@
       console.error('runReview error:', e);
       hideProgressPanel();
       showToast('Run failed: ' + e.message, 'error');
+      _cpOutcome = 'failed — ' + e.message;
     } finally {
       _runInProgress   = false;
       _cancelRequested = false;
       setRunUI(false);
+      // every run writes a record — success or failure, expected vs actual
+      if (window.CygenixProfiles) {
+        try {
+          const CP = CygenixProfiles;
+          const cpStore = CP.cpLoad();
+          if (CP.cpAdopted(cpStore)) {
+            CP.cpRecordRun(cpStore, { artifactType: 'quality-review', artifactId: reportId,
+              profileId: _cpProfile ? _cpProfile.id : null,
+              actualServer: _cpActual.server || null, actualDatabase: _cpActual.database || null,
+              actualLogin: _cpActual.login || null,
+              assertionResult: _cpAssertion,
+              outcome: _cpOutcome, endedAt: Date.now(), runBy: getUserId() }, Date.now());
+            CP.cpSave(cpStore);
+          }
+        } catch (e2) { /* the record must never mask the run's own error */ }
+      }
     }
   }
 
@@ -2239,6 +2305,14 @@
   }
 
   function defaultReportName() {
+    // A governance record that cannot name its own database is not one:
+    // once a connection profile is selected, reports lead with its id
+    // (FIN-PRD-01_2026-08-23_0958), and 'Source DB' survives only as the
+    // fallback of the ambient era.
+    if (window.CygenixProfiles) {
+      try { return CygenixProfiles.cpReportName(CygenixProfiles.cpLoad(), getConnLabel(), new Date()); }
+      catch (e) { /* fall through */ }
+    }
     const which = getConnLabel();
     const d = new Date();
     const pad = n => String(n).padStart(2, '0');

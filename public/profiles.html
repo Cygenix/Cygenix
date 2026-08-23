@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Connection profiles: governed source/target pairings every artifact binds to.">
+<title>Cygenix – Connection Profiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1rem 1.25rem;max-width:1500px}
+.cp-head{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:0.9rem}
+.cp-title{font-size:18px;font-weight:600}
+.cp-sub{font-size:12px;color:var(--text2);line-height:1.5;max-width:640px}
+.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
+.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn:disabled{opacity:0.45;cursor:default}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-danger{color:var(--red)}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:0.9rem}
+.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.panel-title{font-size:13px;font-weight:600}
+.panel-sub{font-size:11.5px;color:var(--text2)}
+.panel-body{padding:0.8rem 0.9rem}
+.p-right{margin-left:auto;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap}
+.note{padding:0.55rem 0.9rem;font-size:11.5px;color:var(--text2);border-top:0.5px solid var(--border);line-height:1.55}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);font-weight:500;text-align:left;padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
+td{padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.tw{overflow-x:auto}
+.mono{font-family:var(--mono);font-size:11px}
+.muted{color:var(--text2)}
+.chip{display:inline-block;padding:1px 8px;border-radius:9px;font-size:10.5px;font-weight:500;background:var(--bg4);color:var(--text2);white-space:nowrap}
+.chip.ok{background:var(--green-bg);color:var(--green)}
+.chip.warn{background:var(--amber-bg);color:var(--amber)}
+.chip.crit{background:var(--red-bg);color:var(--red)}
+.chip.info{background:var(--accent-glow);color:var(--accent)}
+.inp{font-family:var(--serif);font-size:12px;padding:5px 8px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%}
+select.inp{cursor:pointer}
+.inp.mini{width:110px;display:inline-block}
+.fld{margin-bottom:0.6rem}
+.fld label{display:block;font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin-bottom:3px;font-weight:500}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0.6rem}
+@media(max-width:900px){.grid3,.grid2{grid-template-columns:1fr}}
+.sql{font-family:var(--mono);font-size:10.5px;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.6rem 0.7rem;white-space:pre;overflow:auto;max-height:260px}
+.errbox{background:var(--red-bg);border:0.5px solid rgba(240,70,70,0.4);border-radius:6px;padding:0.5rem 0.7rem;font-size:11.5px;color:var(--red);margin-bottom:0.6rem;line-height:1.6}
+.callout{display:flex;gap:12px;align-items:flex-start;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.35);border-radius:var(--r);padding:0.7rem 0.8rem;margin-bottom:0.9rem;font-size:12px;line-height:1.6}
+.callout b{font-size:12.5px}
+.callout p{font-size:11.5px;color:var(--text2)}
+.empty{padding:1.4rem;text-align:center;color:var(--text2);font-size:12.5px;line-height:1.7}
+</style>
+</head>
+<body>
+<div id="cyg-sidebar-mount" data-active="profiles"></div>
+
+<div class="page">
+  <div class="cp-head">
+    <div>
+      <div class="cp-title">🔒 Connection Profiles</div>
+      <div class="cp-sub">A profile is a governed pairing of one source and one target. Artifacts bind to a
+        profile — never to whatever connection happens to be loaded — so every run can prove which databases
+        it touched. Once the first profile exists, writes require an active profile, an UNKNOWN environment
+        blocks writes, and PRD writes need a typed confirmation.</div>
+    </div>
+  </div>
+
+  <div class="callout" id="cp-adoption"></div>
+
+  <!-- 1. Connection register -->
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Connection register</div>
+      <span class="panel-sub">every saved connection, classified. The standard name is
+        ENV_ROLE_SYSTEM_DATABASE — environment first, so the list sorts by blast radius.</span></div>
+    <div class="tw"><table id="cp-conns"><thead>
+      <tr><th>Saved connection</th><th>Role</th><th>Type</th><th>Env class</th><th>System / domain</th>
+        <th>Standard name</th><th>Owner</th><th></th></tr>
+    </thead><tbody></tbody></table></div>
+    <div class="note">Connections referenced by a non-retired profile are <b>locked</b> — rename and delete are
+      refused on the Connections page, because editing in place would rewrite the meaning of every artifact
+      that ever ran under them. A changed endpoint is a new saved connection and a new profile.</div>
+  </div>
+
+  <!-- 2. Profiles -->
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Profiles</div>
+      <span class="panel-sub" id="cp-prof-sub"></span></div>
+    <div class="tw"><table id="cp-profiles"><thead>
+      <tr><th>Selected</th><th>Profile</th><th>Env</th><th>Source</th><th>Target</th><th>Project</th>
+        <th>Service account</th><th>Status</th><th></th></tr>
+    </thead><tbody></tbody></table></div>
+    <div class="panel-body" style="border-top:0.5px solid var(--border)">
+      <div id="cp-prof-errors"></div>
+      <div class="grid3">
+        <div class="fld"><label>Profile ID</label><input class="inp mono" id="cp-f-id" placeholder="FIN-PRD-01"></div>
+        <div class="fld"><label>Name</label><input class="inp" id="cp-f-name" placeholder="Finance production"></div>
+        <div class="fld"><label>Environment class</label><select class="inp" id="cp-f-env"></select></div>
+      </div>
+      <div class="grid2">
+        <div class="fld"><label>Source connection</label><select class="inp" id="cp-f-src"></select></div>
+        <div class="fld"><label>Target connection</label><select class="inp" id="cp-f-tgt"></select></div>
+      </div>
+      <div class="grid3">
+        <div class="fld"><label>Cygenix project</label><select class="inp" id="cp-f-project"></select></div>
+        <div class="fld"><label>Service account (credential ref)</label><input class="inp mono" id="cp-f-cred" placeholder="svc_cyg_fin_prd"></div>
+        <div class="fld"><label>Owner / approver</label>
+          <div style="display:flex;gap:6px"><input class="inp" id="cp-f-owner" placeholder="Owner">
+          <input class="inp" id="cp-f-approver" placeholder="Approver"></div></div>
+      </div>
+      <button class="btn btn-primary" onclick="cpCreateProfile()">Create profile (draft)</button>
+      <span class="muted" style="font-size:11px;margin-left:8px">A draft runs nothing. Activate it once both
+        connections are classified into the same environment. One service account per profile, with rights only
+        in its own environment, is the guardrail that survives application bugs.</span>
+    </div>
+  </div>
+
+  <!-- 3. Bindings -->
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Artifact bindings</div>
+      <span class="panel-sub">exactly one profile per runnable artifact — an unbound artifact cannot run</span></div>
+    <div class="tw"><table id="cp-bindings"><thead>
+      <tr><th>Artifact</th><th>Type</th><th>Profile</th><th>Bound</th><th>Last verified</th><th></th></tr>
+    </thead><tbody></tbody></table></div>
+    <div class="panel-body" style="border-top:0.5px solid var(--border)">
+      <div class="grid3">
+        <div class="fld"><label>Artifact type</label><select class="inp" id="cp-b-type">
+          <option value="job">Job / Map</option><option value="quality-review">Quality review</option>
+          <option value="validation">Validation</option><option value="cleansing">Cleansing</option>
+          <option value="report">Report</option><option value="sql-script">SQL script</option>
+          <option value="server-migration">Server migration</option></select></div>
+        <div class="fld"><label>Artifact</label><select class="inp" id="cp-b-artifact"></select></div>
+        <div class="fld"><label>Profile</label><select class="inp" id="cp-b-profile"></select></div>
+      </div>
+      <button class="btn" onclick="cpDoBind()">Bind artifact</button>
+    </div>
+  </div>
+
+  <!-- 4. Sentinel -->
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Environment sentinel</div>
+      <span class="panel-sub">a marker row inside each database that names its profile, environment and role —
+        the strong identity check. Install needs CREATE TABLE once per database (an operator action);
+        the assertion needs SELECT only.</span>
+      <div class="p-right">
+        <select class="inp mini" id="cp-s-profile" onchange="cpRenderSentinel()"></select>
+        <select class="inp mini" id="cp-s-role" onchange="cpRenderSentinel()">
+          <option value="SRC">Source</option><option value="TGT" selected>Target</option></select>
+        <select class="inp mini" id="cp-s-dialect" onchange="cpRenderSentinel()">
+          <option value="sqlserver">SQL Server</option><option value="postgres">PostgreSQL</option></select>
+      </div></div>
+    <div class="panel-body">
+      <div class="fld"><label>Install + seed (operator, once per database — and again after ANY restore)</label>
+        <div class="sql" id="cp-s-install"></div>
+        <button class="btn" style="margin-top:4px" onclick="cpCopy('cp-s-install')">Copy install SQL</button></div>
+      <div class="fld"><label>Pre-run assertion (SELECT-only; contains no GO on purpose)</label>
+        <div class="sql" id="cp-s-assert"></div>
+        <button class="btn" style="margin-top:4px" onclick="cpCopy('cp-s-assert')">Copy assertion SQL</button></div>
+      <div class="fld"><label>Fingerprint fallback (no DDL — detects a changed endpoint, not a changed meaning)</label>
+        <div class="sql" id="cp-s-fp"></div>
+        <button class="btn" style="margin-top:4px" onclick="cpCopy('cp-s-fp')">Copy fingerprint SQL</button></div>
+    </div>
+    <div class="note"><b>The one real hole:</b> restoring a production backup over a lower environment copies the
+      production sentinel with it, and the sentinel then vouches for the wrong environment. Re-seed immediately
+      after ANY restore — including Cygenix's own Restore database and Data import functions.</div>
+  </div>
+
+  <!-- 5. Run records -->
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Run records</div>
+      <span class="panel-sub">every run, success or failure: what was supposed to happen vs what the
+        connection actually reached</span></div>
+    <div class="tw"><table id="cp-runs"><thead>
+      <tr><th>Run</th><th>Artifact</th><th>Profile</th><th>Actual server / database</th>
+        <th>Assertion</th><th>Outcome</th><th>When</th></tr>
+    </thead><tbody></tbody></table></div>
+  </div>
+</div>
+
+<script src="/connections.js?v=d199ff3358" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
+<script src="/cygenix-saved-conn-secrets.js?v=7e0395ba10" defer></script>
+<script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
+<script src="/cygenix-sidebar.js?v=2ac6f7a944" defer></script>
+
+<script>
+'use strict';
+/* The Profiles page owns the governance objects; the engine
+   (cygenix-profiles.js) owns every decision. Nothing on this page writes to
+   the connections stores — meta lives beside them, in the profile store. */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let P = null, store = null;
+
+function userName(){
+  try { return (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || 'user'; }
+  catch { return 'user'; }
+}
+function savedConns(){
+  /* the synced saved list is sanitised (no passwords, no fn keys); rehydrate
+     from the local secrets store so the standard name can see the database */
+  try {
+    let list = (window.CygenixConnections && CygenixConnections.savedGetAll)
+      ? CygenixConnections.savedGetAll() : [];
+    if (window.CygenixSavedConnSecrets && CygenixSavedConnSecrets.rehydrate) {
+      list = CygenixSavedConnSecrets.rehydrate(list);
+    }
+    return list;
+  } catch { return []; }
+}
+function projects(){
+  try { return JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch { return []; }
+}
+function jobs(){
+  try { return JSON.parse(localStorage.getItem('cygenix_jobs') || '[]').filter(j => j && !j._deleted); }
+  catch { return []; }
+}
+function saveStore(){
+  P.cpSave(store);
+  /* storage events are cross-tab only — tell this tab's banner too */
+  try { window.dispatchEvent(new CustomEvent('cygenix:profiles-changed')); } catch (e) {}
+}
+function fmtWhen(ms){ return ms ? new Date(ms).toLocaleString() : '—'; }
+function envChip(env){
+  const tier = P.cpEnvTier(env);
+  const cls = tier === 'danger' ? 'crit' : tier === 'warn' ? 'warn' : tier === 'ok' ? 'ok' : '';
+  return '<span class="chip ' + cls + '">' + esc(env || 'UNKNOWN') + '</span>';
+}
+
+/* ── render ── */
+function renderAdoption(){
+  const el = $('cp-adoption');
+  if (!P.cpAdopted(store)){
+    el.innerHTML = '<div><b>Profiles are not in force yet.</b>'
+      + '<p>Connections are still ambient — every page inherits whatever is loaded on the Connections page. '
+      + 'Classify the register below and create the first profile; from that moment writes require an active '
+      + 'profile, and the environment banner shows on every page.</p></div>';
+  } else {
+    const b = P.cpBannerInfo(store);
+    el.innerHTML = '<div><b>Profiles are in force.</b>'
+      + '<p>Selected profile: ' + (b.profileId ? esc(b.text) : '<span style="color:var(--amber)">none — writes are blocked until one is selected below</span>')
+      + '. The selected profile is the default for newly created artifacts and the identity every tool write runs under.</p></div>';
+  }
+}
+
+function renderConns(){
+  const tb = $('cp-conns').querySelector('tbody');
+  const list = savedConns();
+  tb.innerHTML = list.length ? list.map(c => {
+    const meta = P.cpConnMeta(store, c.id);
+    const locked = P.cpIsConnLocked(store, c.id);
+    return '<tr>'
+      + '<td><b>' + esc(c.name) + '</b></td>'
+      + '<td class="mono">' + esc((c.side || '').toUpperCase()) + '</td>'
+      + '<td class="mono">' + esc(c.mode === 'azure' ? 'AZUREFUNC' : 'DIRECT') + '</td>'
+      + '<td><select class="inp mini" onchange="cpMetaEdit(\'' + c.id + '\',\'envClass\',this.value)">'
+      + ['UNKNOWN'].concat(store.settings.envClasses).map(e =>
+          '<option' + (meta.envClass === e ? ' selected' : '') + '>' + e + '</option>').join('') + '</select></td>'
+      + '<td><input class="inp mini" value="' + esc(meta.systemDomain) + '" placeholder="FINANCE" '
+      + 'onchange="cpMetaEdit(\'' + c.id + '\',\'systemDomain\',this.value)"></td>'
+      + '<td class="mono">' + esc(P.cpStandardName(store, c)) + '</td>'
+      + '<td><input class="inp mini" value="' + esc(meta.owner) + '" '
+      + 'onchange="cpMetaEdit(\'' + c.id + '\',\'owner\',this.value)"></td>'
+      + '<td>' + (locked ? '<span class="chip info" title="Referenced by a non-retired profile">🔒 locked</span>' : '') + '</td>'
+      + '</tr>';
+  }).join('') : '<tr><td colspan="8" class="empty">No saved connections yet. Save the live source and target '
+    + 'under names on the Connections page first — profiles pair SAVED connections, never the live boxes.</td></tr>';
+}
+
+function cpMetaEdit(connId, field, value){
+  const meta = {}; meta[field] = field === 'envClass' ? value.toUpperCase() : value;
+  P.cpSetConnMeta(store, connId, meta, userName(), Date.now());
+  saveStore(); renderAll();
+}
+
+function connLabel(id){
+  const c = savedConns().find(x => x.id === id);
+  return c ? P.cpStandardName(store, c) : (id || '—');
+}
+function projectName(id){
+  const p = projects().find(x => x.id === id);
+  return p ? p.name : (id || '—');
+}
+
+function renderProfiles(){
+  $('cp-prof-sub').textContent = store.profiles.length
+    ? store.profiles.filter(p => p.status === 'active').length + ' active · '
+      + store.profiles.filter(p => p.status === 'draft').length + ' draft · '
+      + store.profiles.filter(p => p.status === 'retired').length + ' retired'
+    : 'none yet';
+  const tb = $('cp-profiles').querySelector('tbody');
+  tb.innerHTML = store.profiles.length ? store.profiles.map(p =>
+    '<tr>'
+    + '<td><input type="radio" name="cp-active" ' + (store.settings.activeProfileId === p.id ? 'checked' : '')
+    + (p.status === 'active' ? '' : ' disabled title="Only an active profile can be selected"')
+    + ' onchange="cpSelectActive(\'' + esc(p.id) + '\')"></td>'
+    + '<td><b class="mono">' + esc(p.id) + '</b><div class="muted" style="font-size:10.5px">' + esc(p.name || '') + '</div></td>'
+    + '<td>' + envChip(p.envClass) + '</td>'
+    + '<td class="mono">' + esc(connLabel(p.srcConnId)) + '</td>'
+    + '<td class="mono">' + esc(connLabel(p.tgtConnId)) + '</td>'
+    + '<td>' + esc(projectName(p.projectId)) + '</td>'
+    + '<td class="mono">' + esc(p.credentialRef || '—') + '</td>'
+    + '<td><span class="chip ' + (p.status === 'active' ? 'ok' : p.status === 'retired' ? '' : 'warn') + '">'
+    + esc(p.status) + '</span>'
+    + (p.supersedesProfileId ? '<div class="muted" style="font-size:10px">supersedes ' + esc(p.supersedesProfileId) + '</div>' : '') + '</td>'
+    + '<td style="white-space:nowrap">'
+    + (p.status === 'draft' ? '<button class="btn" onclick="cpActivate(\'' + esc(p.id) + '\')">Activate</button> ' : '')
+    + (p.status !== 'retired' ? '<button class="btn btn-danger" onclick="cpRetire(\'' + esc(p.id) + '\')">Retire</button>' : '')
+    + '</td></tr>'
+  ).join('') : '<tr><td colspan="9" class="empty">No profiles yet — create the first one below and the '
+    + 'ambient-connection era ends.</td></tr>';
+
+  $('cp-f-env').innerHTML = store.settings.envClasses.map(e => '<option>' + e + '</option>').join('');
+  const conns = savedConns();
+  const opts = (side) => conns.filter(c => c.side === side)
+    .map(c => '<option value="' + esc(c.id) + '">' + esc(P.cpStandardName(store, c)) + ' (' + esc(c.name) + ')</option>').join('');
+  $('cp-f-src').innerHTML = opts('src') || '<option value="">(no saved source connections)</option>';
+  $('cp-f-tgt').innerHTML = opts('tgt') || '<option value="">(no saved target connections)</option>';
+  $('cp-f-project').innerHTML = '<option value="">(none)</option>'
+    + projects().map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('');
+}
+
+function cpCreateProfile(){
+  const draft = {
+    id: $('cp-f-id').value.trim(), name: $('cp-f-name').value.trim(),
+    envClass: $('cp-f-env').value, srcConnId: $('cp-f-src').value, tgtConnId: $('cp-f-tgt').value,
+    projectId: $('cp-f-project').value || null,
+    credentialRef: $('cp-f-cred').value.trim(),
+    owner: $('cp-f-owner').value.trim() || userName(), approver: $('cp-f-approver').value.trim(),
+  };
+  const errors = P.cpValidateProfile(store, draft, savedConns());
+  const box = $('cp-prof-errors');
+  if (errors.length){
+    box.innerHTML = '<div class="errbox">' + errors.map(esc).join('<br>') + '</div>';
+    return;
+  }
+  box.innerHTML = '';
+  try {
+    P.cpSaveProfile(store, draft, savedConns(), userName(), Date.now());
+    saveStore(); renderAll();
+    $('cp-f-id').value = ''; $('cp-f-name').value = '';
+  } catch (e) { box.innerHTML = '<div class="errbox">' + esc(e.message) + '</div>'; }
+}
+function cpActivate(id){
+  try { P.cpActivateProfile(store, id, savedConns(), userName(), Date.now()); saveStore(); renderAll(); }
+  catch (e) { alert(String(e.message || e)); }
+}
+function cpRetire(id){
+  if (!confirm('Retire ' + id + '? Artifacts bound to it will refuse to run until re-bound to its successor.')) return;
+  P.cpRetireProfile(store, id, userName(), Date.now());
+  saveStore(); renderAll();
+}
+function cpSelectActive(id){
+  store.settings.activeProfileId = id;
+  P.cpEvent(store, { type: 'profile.selected', profileId: id, by: userName() }, Date.now());
+  saveStore(); renderAll();
+}
+
+function artifactName(type, id){
+  if (type === 'job'){
+    const j = jobs().find(x => x.id === id);
+    if (j) return j.name || id;
+  }
+  return id;
+}
+function renderBindings(){
+  const tb = $('cp-bindings').querySelector('tbody');
+  tb.innerHTML = store.bindings.length ? store.bindings.map(b =>
+    '<tr><td><b>' + esc(artifactName(b.artifactType, b.artifactId)) + '</b>'
+    + '<div class="muted mono" style="font-size:10px">' + esc(b.artifactId) + '</div></td>'
+    + '<td class="mono">' + esc(b.artifactType) + '</td>'
+    + '<td class="mono">' + esc(b.profileId) + '</td>'
+    + '<td class="mono">' + esc(fmtWhen(b.boundAt)) + '</td>'
+    + '<td class="mono">' + esc(fmtWhen(b.lastVerifiedAt)) + '</td>'
+    + '<td><button class="btn btn-danger" onclick="cpUnbind(\'' + esc(b.artifactType) + '\',\'' + esc(b.artifactId) + '\')">Unbind</button></td></tr>'
+  ).join('') : '<tr><td colspan="6" class="empty">No bindings yet. Once profiles are in force, an unbound '
+    + 'artifact is a blocking state — bind everything that runs.</td></tr>';
+
+  const type = $('cp-b-type').value;
+  const art = $('cp-b-artifact');
+  if (type === 'job'){
+    art.innerHTML = jobs().map(j => '<option value="' + esc(j.id) + '">' + esc(j.name || j.id) + '</option>').join('')
+      || '<option value="">(no jobs saved)</option>';
+  } else {
+    art.innerHTML = '<option value="' + esc(type) + '">' + esc(type) + ' (page-level)</option>';
+  }
+  $('cp-b-profile').innerHTML = store.profiles.filter(p => p.status === 'active')
+    .map(p => '<option value="' + esc(p.id) + '">' + esc(p.id) + '</option>').join('')
+    || '<option value="">(no active profiles)</option>';
+}
+function cpDoBind(){
+  const type = $('cp-b-type').value, id = $('cp-b-artifact').value, prof = $('cp-b-profile').value;
+  if (!id || !prof){ alert('Pick an artifact and an active profile.'); return; }
+  P.cpBind(store, type, id, prof, userName(), Date.now());
+  saveStore(); renderAll();
+}
+function cpUnbind(type, id){
+  if (!confirm('Unbind ' + id + '? An unbound artifact cannot run while profiles are in force.')) return;
+  store.bindings = store.bindings.filter(b => !(b.artifactType === type && b.artifactId === id));
+  P.cpEvent(store, { type: 'binding.removed', artifactType: type, artifactId: id, by: userName() }, Date.now());
+  saveStore(); renderAll();
+}
+
+function cpRenderSentinel(){
+  const sel = $('cp-s-profile');
+  if (!sel.options.length || sel.dataset.stale === '1'){
+    sel.innerHTML = store.profiles.map(p => '<option value="' + esc(p.id) + '">' + esc(p.id) + '</option>').join('')
+      || '<option value="">(no profiles)</option>';
+    sel.dataset.stale = '0';
+  }
+  const p = store.profiles.find(x => x.id === sel.value) || store.profiles[0];
+  const role = $('cp-s-role').value, dialect = $('cp-s-dialect').value;
+  if (!p){
+    $('cp-s-install').textContent = $('cp-s-assert').textContent = '-- create a profile first';
+    $('cp-s-fp').textContent = P.cpFingerprintSql(dialect);
+    return;
+  }
+  const connId = role === 'SRC' ? p.srcConnId : p.tgtConnId;
+  const entry = savedConns().find(c => c.id === connId);
+  const meta = P.cpConnMeta(store, connId);
+  $('cp-s-install').textContent = P.cpSentinelInstallSql(dialect, {
+    envClass: p.envClass, role: role, profileId: p.id,
+    systemDomain: meta.systemDomain || 'UNCLASSIFIED',
+    standardName: entry ? P.cpStandardName(store, entry) : p.envClass + '_' + role + '_?',
+    owner: meta.owner || p.owner || '',
+  });
+  $('cp-s-assert').textContent = P.cpAssertionSql(dialect, { profileId: p.id, envClass: p.envClass, role: role });
+  $('cp-s-fp').textContent = P.cpFingerprintSql(dialect);
+}
+function cpCopy(id){
+  navigator.clipboard && navigator.clipboard.writeText($(id).textContent).catch(() => {});
+}
+
+function renderRuns(){
+  const tb = $('cp-runs').querySelector('tbody');
+  const list = store.runRecords.slice().reverse().slice(0, 50);
+  tb.innerHTML = list.length ? list.map(r =>
+    '<tr><td class="mono">' + esc(r.runId) + '</td>'
+    + '<td>' + esc(artifactName(r.artifactType, r.artifactId)) + '<div class="muted" style="font-size:10px">' + esc(r.artifactType) + '</div></td>'
+    + '<td class="mono">' + esc(r.profileId || '(ambient)') + '</td>'
+    + '<td class="mono">' + esc([r.actualServer, r.actualDatabase].filter(Boolean).join(' / ') || '—') + '</td>'
+    + '<td><span class="chip ' + (r.assertionResult === 'pass' ? 'ok'
+        : r.assertionResult === 'mismatch' ? 'crit'
+        : r.assertionResult === 'not-checked' ? '' : 'warn') + '">' + esc(r.assertionResult) + '</span></td>'
+    + '<td>' + esc(r.outcome || '—') + '</td>'
+    + '<td class="mono">' + esc(fmtWhen(r.startedAt)) + '</td></tr>'
+  ).join('') : '<tr><td colspan="7" class="empty">No runs recorded yet. Quality Review and the write tools '
+    + 'write a record here on every run — expected identity, actual identity, and the assertion outcome.</td></tr>';
+}
+
+function renderAll(){
+  renderAdoption();
+  renderConns();
+  renderProfiles();
+  renderBindings();
+  $('cp-s-profile').dataset.stale = '1';
+  cpRenderSentinel();
+  renderRuns();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  P = window.CygenixProfiles;
+  store = P.cpLoad();
+  if (!store.v) store = P.cpNewStore(Date.now());
+  renderAll();
+  $('cp-b-type').addEventListener('change', renderBindings);
+  /* connections.js resolves the signed-in user a beat after DOMContentLoaded
+     on a cold load — re-render once so the register fills in */
+  setTimeout(renderAll, 600);
+});
+</script>
+<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
+</body>
+</html>
