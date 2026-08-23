@@ -445,39 +445,62 @@ function enEstimate(rowCount, providerIds, fieldCount) {
 }
 
 /* ── apply + rollback SQL ────────────────────────────────────────────────
-   Both scripts are STAGED artifacts: registered as jobs, never executed
-   here. Shadow columns carry provenance into the target when mapped. ───── */
-function enApplySql(proposals, opts) {
+   One statement per accepted proposal. The statement list is the source of
+   truth: the scripts are it with a header, and direct execution sends it in
+   batches so a partial failure has an exact boundary. Shadow columns carry
+   provenance into the target when mapped. ──────────────────────────────── */
+function enApplyStatements(proposals, opts) {
   var d = opts.dialect || 'sqlserver';
   var t = ident(d, opts.schema || 'dbo') + '.' + ident(d, opts.table);
   var key = ident(d, opts.keyColumn);
-  var lines = ['-- Cygenix Data Enrichment · apply script · run ' + opts.runId,
-    '-- ' + proposals.length + ' accepted proposal(s). Review before executing;',
-    '-- the paired rollback script restores every pre-enrichment value.', ''];
-  proposals.forEach(function (p) {
+  return (proposals || []).map(function (p) {
     var sets = [ident(d, p.targetColumn) + ' = ' + lit(p.proposed)];
     if (opts.shadow !== false) {
       sets.push(ident(d, p.targetColumn + '_source') + ' = ' + lit(p.source));
       sets.push(ident(d, p.targetColumn + '_confidence') + ' = ' + p.confidence);
       sets.push(ident(d, p.targetColumn + '_retrieved_at') + ' = ' + lit(opts.date || ''));
     }
-    lines.push('UPDATE ' + t + ' SET ' + sets.join(', ')
-      + ' WHERE ' + key + ' = ' + lit(p.rowKey) + ';');
+    return 'UPDATE ' + t + ' SET ' + sets.join(', ')
+      + ' WHERE ' + key + ' = ' + lit(p.rowKey) + ';';
   });
-  return lines.join('\n');
 }
-function enRollbackSql(proposals, opts) {
+function enRollbackStatements(proposals, opts) {
   var d = opts.dialect || 'sqlserver';
   var t = ident(d, opts.schema || 'dbo') + '.' + ident(d, opts.table);
   var key = ident(d, opts.keyColumn);
-  var lines = ['-- Cygenix Data Enrichment · rollback script · run ' + opts.runId,
-    '-- restores every pre-enrichment value captured on the proposal.', ''];
-  proposals.forEach(function (p) {
-    lines.push('UPDATE ' + t + ' SET ' + ident(d, p.targetColumn) + ' = '
+  return (proposals || []).map(function (p) {
+    return 'UPDATE ' + t + ' SET ' + ident(d, p.targetColumn) + ' = '
       + (p.current == null ? 'NULL' : lit(p.current))
-      + ' WHERE ' + key + ' = ' + lit(p.rowKey) + ';');
+      + ' WHERE ' + key + ' = ' + lit(p.rowKey) + ';';
   });
-  return lines.join('\n');
+}
+function enApplySql(proposals, opts) {
+  return ['-- Cygenix Data Enrichment · apply script · run ' + opts.runId,
+    '-- ' + (proposals || []).length + ' accepted proposal(s). Review before executing;',
+    '-- the paired rollback script restores every pre-enrichment value.', '']
+    .concat(enApplyStatements(proposals, opts)).join('\n');
+}
+function enRollbackSql(proposals, opts) {
+  return ['-- Cygenix Data Enrichment · rollback script · run ' + opts.runId,
+    '-- restores every pre-enrichment value captured on the proposal.', '']
+    .concat(enRollbackStatements(proposals, opts)).join('\n');
+}
+
+/* Executed proposals are stamped, never quietly mutated: the trail keeps the
+   accept AND the apply, so "who changed this column" survives the run. */
+function enMarkApplied(store, proposalIds, info, user, now) {
+  var ids = {}, n = 0;
+  (proposalIds || []).forEach(function (id) { ids[id] = true; });
+  store.proposals.forEach(function (p) {
+    if (!ids[p.proposalId] || p.appliedAt) return;
+    p.appliedAt = now || 0;
+    p.appliedBy = user || '';
+    p.appliedVia = (info && info.via) || 'executed';
+    p.rollbackJob = (info && info.rollbackJob) || null;
+    p.verdictTrail.push({ verdict: 'applied', by: user || '', at: now || 0 });
+    n++;
+  });
+  return n;
 }
 
 /* ── store (spec §8, browser-local) ─────────────────────────────────────── */
@@ -565,6 +588,10 @@ return {
   PROVIDERS: PROVIDERS,
   INFERENCE_CAP: INFERENCE_CAP,
   attrOf: attrOf,
+
+  enApplyStatements: enApplyStatements,
+  enRollbackStatements: enRollbackStatements,
+  enMarkApplied: enMarkApplied,
 
   enRankTables: enRankTables,
   enResolveTable: enResolveTable,
