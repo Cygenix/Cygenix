@@ -113,6 +113,10 @@
     ]},
     { section: 'Validate', group:'validate', items: [
       { key:'quality-group', label:'Data Quality', icon: iconQuality(), children: [
+        // Assurance leads: it is the continuous layer the three one-off
+        // pages feed — validation rules promote INTO it, breaches hand off
+        // to Cleansing, and Quality Review stays the pre-flight pass.
+        { key:'assurance',      label:'Assurance',      href:'/assurance.html',      color:'var(--accent)', icon: iconCheck() },
         { key:'data-quality',   label:'Quality Review', href:'/data-quality.html',   color:'var(--green)', icon: iconQuality() },
         { key:'data-cleansing', label:'Cleansing',      href:'/data-cleansing.html', color:'var(--teal)',  icon: iconClean() },
         { key:'validation',     label:'Validation',     href:'/validation.html',     color:'var(--amber)', icon: iconCheck() },
