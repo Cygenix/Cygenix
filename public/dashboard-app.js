@@ -9600,6 +9600,20 @@ function saveProjectConnections() {
 }
 
 function clearProjectConnections() {
+  // Barred entirely while an active profile references the saved set — a
+  // cleared register would orphan every governed binding at once.
+  try {
+    const CP = window.CygenixProfiles;
+    if (CP){
+      const st = CP.cpLoad();
+      const active = st.profiles.filter(p => p.status === 'active').length;
+      if (active){
+        alert('Clear all is barred: ' + active + ' active profile'
+          + (active === 1 ? '' : 's') + ' reference the saved connections. Retire the profiles first (Profiles page).');
+        return;
+      }
+    }
+  } catch (e) { /* fall through to the confirm */ }
   if (!confirm('Clear all saved connections?')) return;
   CygenixConnections.clear();
   ['proj-src-cs','proj-src-fn-url','proj-src-fn-key','proj-tgt-cs','proj-tgt-fn-url','proj-tgt-fn-key']
@@ -10175,6 +10189,51 @@ window.connioPickerToggleRow   = connioPickerToggleRow;
 window.connioPickerCancel      = connioPickerCancel;
 window.connioPickerConfirm     = connioPickerConfirm;
 
+// ── Connection-profile write guard ────────────────────────────────────────
+// Tools that write or destroy (Data import, Restore database, Linked
+// servers; the Data Generator page carries its own copy) run under the
+// SELECTED connection profile once profiles are in force. Before the first
+// profile exists this is a no-op — the ambient model behaves exactly as it
+// always has. An UNKNOWN environment blocks writes; a PRD profile demands
+// the profile id typed back. Every decision writes a run record.
+function cpPageGuardWrite(toolLabel){
+  try {
+    const CP = window.CygenixProfiles;
+    if (!CP) return true;
+    const store = CP.cpLoad();
+    const g = CP.cpGuardWrite(store, {});
+    const who = (typeof CygenixConnections !== 'undefined' && CygenixConnections.currentUserTag
+      && CygenixConnections.currentUserTag()) || '';
+    if (!g.checked) return true;                       // unadopted — ambient era
+    if (!g.ok){
+      alert(toolLabel + ' is blocked.\n\n' + g.why);
+      CP.cpRecordRun(store, { artifactType: 'tool', artifactId: toolLabel,
+        profileId: (store.settings && store.settings.activeProfileId) || null,
+        assertionResult: 'not-checked', outcome: 'refused — ' + g.why, runBy: who }, Date.now());
+      CP.cpSave(store);
+      return false;
+    }
+    if (g.requiresTypedConfirm){
+      const typed = prompt('This is a ' + g.envClass + ' profile (' + g.profile.id + ').\n'
+        + toolLabel + ' will WRITE to this environment.\n\nType the profile id to continue:');
+      if (typed !== g.profile.id){
+        if (typed != null) alert('Confirmation did not match ' + g.profile.id + ' — nothing was run.');
+        CP.cpRecordRun(store, { artifactType: 'tool', artifactId: toolLabel,
+          profileId: g.profile.id, assertionResult: 'not-checked',
+          outcome: 'refused — typed confirmation did not match', runBy: who }, Date.now());
+        CP.cpSave(store);
+        return false;
+      }
+    }
+    CP.cpRecordRun(store, { artifactType: 'tool', artifactId: toolLabel,
+      profileId: g.profile.id, assertionResult: 'not-checked',
+      outcome: 'started (' + g.envClass + ')', runBy: who }, Date.now());
+    CP.cpSave(store);
+    return true;
+  } catch (e) { console.warn('[profiles] write guard', e); return true; }
+}
+window.cpPageGuardWrite = cpPageGuardWrite;
+
 // Save current connection under a name. Reads the live fields.
 function sconnSaveAs(side){
   // Read the current mode + fields
@@ -10215,17 +10274,40 @@ function sconnSaveAs(side){
   entry.name = name.trim().slice(0, 60);
   entry.id = 'sconn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
+  // Environment class — required so profiles can govern this connection.
+  // Anything unrecognised records UNKNOWN, which is permissive for reads but
+  // blocks writes once profiles are in force (pressure to classify, without
+  // stopping the world).
+  const envClasses = ['DEV', 'TEST', 'UAT', 'PRD', 'SANDBOX'];
+  const envIn = prompt('Environment class for this connection:\n'
+    + envClasses.join(' / ') + '\n\n(Anything else records UNKNOWN — reads work, writes are blocked once profiles are in force.)',
+    'UNKNOWN');
+  const envClass = envClasses.indexOf(String(envIn || '').trim().toUpperCase()) >= 0
+    ? String(envIn).trim().toUpperCase() : 'UNKNOWN';
+
   const all = sconnGetAll();
   // Block exact-name duplicates for the same side — confirm overwrite
   const existing = all.find(s => s.side === side && s.name === entry.name);
+  let finalId = entry.id;
   if (existing){
     if (!confirm(`A ${side === 'src' ? 'source' : 'target'} connection named "${entry.name}" already exists. Overwrite?`)) return;
     const idx = all.indexOf(existing);
     all[idx] = { ...entry, id: existing.id };  // keep the old id for stability
+    finalId = existing.id;
   } else {
     all.push(entry);
   }
   sconnSetAll(all);
+  try {
+    const CP = window.CygenixProfiles;
+    if (CP){
+      const st = CP.cpLoad();
+      CP.cpSetConnMeta(st, finalId, { envClass },
+        (typeof CygenixConnections !== 'undefined' && CygenixConnections.currentUserTag
+          && CygenixConnections.currentUserTag()) || '', Date.now());
+      CP.cpSave(st);
+    }
+  } catch (e) { console.warn('[profiles] env class not recorded', e); }
   sconnRender(side);
 }
 
@@ -10295,11 +10377,30 @@ function sconnLoad(id){
   }
 }
 
+// Refuse edits to a connection a non-retired profile references: editing in
+// place silently rewrites the meaning of every artifact that ever ran under
+// that profile, including historic reports.
+function sconnLockedGuard(id, entry, verb){
+  try {
+    const CP = window.CygenixProfiles;
+    if (!CP) return false;
+    const st = CP.cpLoad();
+    if (CP.cpIsConnLocked(st, id)){
+      alert('“' + entry.name + '” is locked — a non-retired profile references it, so it cannot be '
+        + verb + '. A changed endpoint is a NEW saved connection and a new profile that supersedes '
+        + 'the old one (Profiles page).');
+      return true;
+    }
+  } catch (e) { /* guard must never block on its own error */ }
+  return false;
+}
+
 // Rename a saved connection.
 function sconnRename(id){
   const all = sconnGetAll();
   const entry = all.find(s => s.id === id);
   if (!entry) return;
+  if (sconnLockedGuard(id, entry, 'renamed')) return;
   const newName = prompt('Rename connection:', entry.name);
   if (!newName || !newName.trim()) return;
   entry.name = newName.trim().slice(0, 60);
@@ -10312,6 +10413,7 @@ function sconnDelete(id){
   const all = sconnGetAll();
   const entry = all.find(s => s.id === id);
   if (!entry) return;
+  if (sconnLockedGuard(id, entry, 'deleted')) return;
   if (!confirm('Delete “' + entry.name + '”?')) return;
   const next = all.filter(s => s.id !== id);
   sconnSetAll(next);
@@ -10645,6 +10747,7 @@ async function lsRunSetup(id){
     lsShowResult(id, '🔴 No target database connection configured. Set it up in the Database connections tab first.', 'err');
     return;
   }
+  if (!cpPageGuardWrite('Linked server setup')) return;
 
   const confirmMsg = `Create linked server "${d.name}"?\n\n` +
     `On target:  ${target.label}\n` +
@@ -10794,6 +10897,7 @@ async function lsDropServer(name){
     return;
   }
   if (!confirm(`Drop linked server "${name}"?\n\nThis runs sp_dropserver with droplogins. Any views, procedures, or jobs referencing this server will break.`)) return;
+  if (!cpPageGuardWrite('Drop linked server')) return;
 
   const tgtConn = impGetConn('tgt');
   if (!tgtConn){ alert('No target database connection configured.'); return; }
@@ -11127,6 +11231,7 @@ function rstValidate(){
 
 async function rstRun(){
   if (!rstState.validated){ if (!rstValidate()) return; }
+  if (!cpPageGuardWrite('Restore database')) return;
   const R = CygenixRestore;
   const plan = rstCollectPlan();
   const sql = R.rdBuildRestoreSql(plan);
@@ -13568,6 +13673,7 @@ function impProceed(mode){
 }
 
 async function impExecute(tableName, mode){
+  if (!cpPageGuardWrite('Data import')) return;
   if (impState.streaming){
     return impExecuteStreaming(tableName, mode);
   }

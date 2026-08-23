@@ -175,7 +175,7 @@ code,.mono{font-family:var(--mono)}
      means nothing in the sidebar highlights. Users navigate to this page
      via the "Data Generator" tab on Dashboard → Connections. -->
 <div id="cyg-sidebar-mount" data-active="connections"></div>
-<script src="/cygenix-sidebar.js?v=6f72ef587c" defer></script>
+<script src="/cygenix-sidebar.js?v=2ac6f7a944" defer></script>
 
 <div id="dg-main">
 
@@ -244,6 +244,7 @@ code,.mono{font-family:var(--mono)}
 </div>
 
 <script src="/connections.js?v=d199ff3358" defer></script>
+<script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -773,6 +774,40 @@ function readSourceLabel(){
   } catch (_){
     return '(unable to read connection)';
   }
+}
+
+// ── Connection-profile write guard (local copy — this page does not load
+// dashboard-app.js). No-op until the first profile exists; then writes need
+// an active, classified profile and PRD needs the id typed back. ─────────
+function cpPageGuardWrite(toolLabel){
+  try {
+    const CP = window.CygenixProfiles;
+    if (!CP) return true;
+    const store = CP.cpLoad();
+    const g = CP.cpGuardWrite(store, {});
+    if (!g.checked) return true;
+    const record = (profileId, outcome) => {
+      CP.cpRecordRun(store, { artifactType: 'tool', artifactId: toolLabel, profileId,
+        assertionResult: 'not-checked', outcome, runBy: '' }, Date.now());
+      CP.cpSave(store);
+    };
+    if (!g.ok){
+      logLine('✗ ' + toolLabel + ' is blocked: ' + g.why, 'err');
+      record((store.settings && store.settings.activeProfileId) || null, 'refused — ' + g.why);
+      return false;
+    }
+    if (g.requiresTypedConfirm){
+      const typed = prompt('This is a ' + g.envClass + ' profile (' + g.profile.id + ').\n'
+        + toolLabel + ' will WRITE to this environment.\n\nType the profile id to continue:');
+      if (typed !== g.profile.id){
+        if (typed != null) logLine('✗ Confirmation did not match ' + g.profile.id + ' — nothing was run.', 'err');
+        record(g.profile.id, 'refused — typed confirmation did not match');
+        return false;
+      }
+    }
+    record(g.profile.id, 'started (' + g.envClass + ')');
+    return true;
+  } catch (e){ console.warn('[profiles] guard', e); return true; }
 }
 
 // ── Logging ────────────────────────────────────────────────────────────────
@@ -1363,6 +1398,10 @@ async function dgGenerate(){
     logLine('Cannot generate: no source connection configured. Set one in Dashboard → Connections.', 'err');
     return;
   }
+  // Generation is CREATE/DROP/INSERT — a write tool. Once connection
+  // profiles are in force it runs under the selected profile: UNKNOWN
+  // environments are blocked, PRD demands the profile id typed back.
+  if (!cpPageGuardWrite('Data Generator')) return;
 
   // Validate FK integrity: children can't be generated if parents have 0 rows.
   // Works for any FK on any table — presets AND user-added.
