@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Data Enrichment: complete thin records from reference data — staged proposals, nothing written without review.">
+<title>Cygenix – Data Enrichment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --purple:#a888d0;--purple-bg:rgba(107,78,142,0.18);
+  --teal:#3fbdb7;--teal-bg:rgba(23,130,124,0.16);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1rem 1.25rem;max-width:1560px}
+.en-head{margin-bottom:0.9rem}
+.en-title{font-size:18px;font-weight:600}
+.en-sub{font-size:12px;color:var(--text2);line-height:1.55;max-width:760px;margin-top:2px}
+.en-sub b{color:var(--text)}
+.chipc{font-family:var(--mono);font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:4px;border:0.5px solid var(--border)}
+.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
+.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn:disabled{opacity:0.45;cursor:default}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-danger{color:var(--red)}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:0.9rem}
+.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.panel-title{font-size:13px;font-weight:600}
+.panel-sub{font-size:11.5px;color:var(--text2)}
+.panel-body{padding:0.8rem 0.9rem}
+.p-right{margin-left:auto;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap}
+.step-n{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);width:20px;height:20px;border-radius:6px;display:grid;place-items:center}
+.note{padding:0.55rem 0.9rem;font-size:11.5px;color:var(--text2);border-top:0.5px solid var(--border);line-height:1.55}
+.warnbox{display:flex;gap:9px;padding:0.6rem 0.7rem;border-radius:8px;background:var(--amber-bg);border:0.5px solid rgba(245,158,11,0.3);font-size:11.5px;line-height:1.5;color:var(--text2)}
+.warnbox b{color:var(--text)}
+.infobox{display:flex;gap:9px;padding:0.6rem 0.7rem;border-radius:8px;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);font-size:11.5px;line-height:1.5;color:var(--text2)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);font-weight:500;text-align:left;padding:0.45rem 0.6rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
+td{padding:0.45rem 0.6rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.tw{overflow-x:auto}
+.mono{font-family:var(--mono);font-size:11px}
+.muted{color:var(--text2)}
+.nullv{color:var(--text2);font-style:italic;font-family:var(--mono);font-size:11px}
+.badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:500;white-space:nowrap}
+.b-verified{background:var(--green-bg);color:var(--green)}
+.b-matched{background:var(--accent-glow);color:var(--accent)}
+.b-inferred{background:var(--amber-bg);color:var(--amber)}
+.b-none{background:var(--red-bg);color:var(--red)}
+.b-internal{background:var(--teal-bg);color:var(--teal)}
+.b-review{background:var(--amber-bg);color:var(--amber)}
+.conf{display:inline-flex;align-items:center;gap:6px;min-width:70px}
+.conf .track{width:44px;height:4px;border-radius:2px;background:var(--bg4);overflow:hidden;display:inline-block}
+.conf .track i{display:block;height:100%}
+.inp{font-family:var(--serif);font-size:12px;padding:5px 8px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%}
+.inp.mono{font-family:var(--mono)}
+select.inp{cursor:pointer}
+.inp.mini{width:auto;display:inline-block}
+textarea.inp{font-family:var(--serif);font-size:12px;min-height:76px;resize:vertical}
+.fld{margin-bottom:0.6rem}
+.fld label{display:block;font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin-bottom:3px;font-weight:500}
+.grid{display:grid;grid-template-columns:minmax(330px,420px) minmax(0,1fr);gap:0.9rem;align-items:start}
+@media(max-width:1150px){.grid{grid-template-columns:1fr}}
+.stats{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:0.5px dashed var(--border)}
+.stat b{display:block;font-family:var(--mono);font-size:14px}
+.stat span{font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text2);text-transform:uppercase}
+.tog{width:34px;height:18px;border-radius:10px;border:0.5px solid var(--border2);background:var(--bg4);cursor:pointer;position:relative;flex:none}
+.tog::after{content:'';position:absolute;top:1.5px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--text2);transition:all 0.15s}
+.tog[aria-pressed="true"]{background:var(--accent)}
+.tog[aria-pressed="true"]::after{left:17px;background:#fff}
+.prov{display:flex;gap:10px;align-items:center;border:0.5px solid var(--border);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:6px;background:var(--bg3)}
+.prov.off{opacity:0.5}
+.prov .nm{flex:1;min-width:0}
+.prov .nm b{display:block;font-size:12px;font-weight:500}
+.prov .nm span{font-family:var(--mono);font-size:10px;color:var(--text2)}
+.seg{display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;gap:2px}
+.seg button{border:none;background:transparent;color:var(--text2);font-family:var(--serif);font-size:11.5px;font-weight:500;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;white-space:nowrap}
+.seg button.active{background:var(--bg2);color:var(--accent)}
+.seg .cnt{font-family:var(--mono);font-size:10px;opacity:0.75;margin-left:3px}
+.sql{font-family:var(--mono);font-size:10.5px;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.6rem 0.7rem;white-space:pre-wrap;word-break:break-word;overflow:auto;max-height:240px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.progress{height:6px;border-radius:3px;background:var(--bg4);overflow:hidden;margin-top:10px}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width 0.2s}
+.runline{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--text2);margin-top:6px}
+.empty{padding:2rem 1rem;text-align:center;color:var(--text2);font-size:12.5px;line-height:1.7}
+.iconbtn{width:24px;height:24px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer;font-size:12px;line-height:1;padding:0}
+.iconbtn.acc.on{color:#fff;background:var(--green);border-color:var(--green)}
+.iconbtn.rej.on{color:#fff;background:var(--red);border-color:var(--red)}
+tr.decided td{opacity:0.55}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:60;display:none}
+.scrim.show{display:block}
+.modal{position:fixed;top:8vh;left:50%;transform:translateX(-50%);width:720px;max-width:94vw;max-height:80vh;background:var(--bg2);border:0.5px solid var(--border2);border-radius:12px;z-index:61;display:none;flex-direction:column}
+.modal.show{display:flex}
+.mo-h{display:flex;align-items:center;gap:0.6rem;padding:0.8rem 1rem;border-bottom:0.5px solid var(--border)}
+.mo-b{flex:1;overflow-y:auto;padding:0.9rem 1rem}
+.mo-f{padding:0.7rem 1rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;align-items:center}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:12px}
+.kv dt{font-family:var(--mono);font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text2);padding-top:2px}
+.kv dd{margin:0}
+</style>
+</head>
+<body>
+<div id="cyg-sidebar-mount" data-active="data-enrichment"></div>
+
+<div class="page">
+  <div class="en-head">
+    <div class="en-title">✨ Data Enrichment · Profile completion</div>
+    <div class="en-sub">Take thin records — an email address, a company name — and fill the gaps from reference
+      data. Pick a source table, map the fields you want completed, set a provider order, then run. The engine
+      normalises inputs, decides which reference record is <em>actually</em> a match, reconciles sources that
+      disagree, and scores its own confidence. Values are staged as proposals with a
+      <span class="chipc">source</span>, <span class="chipc">confidence</span> and a reason —
+      <b>nothing is written until you review and apply.</b></div>
+  </div>
+
+  <div class="grid">
+    <!-- ═══ LEFT: steps ═══ -->
+    <div>
+      <!-- Step 1 · Source -->
+      <div class="panel">
+        <div class="panel-header"><span class="step-n">1</span><div class="panel-title">Source</div></div>
+        <div class="panel-body">
+          <div class="fld"><label>Connection</label>
+            <select class="inp" id="en-side">
+              <option value="src">Source DB</option><option value="tgt">Target DB</option>
+            </select></div>
+          <div class="fld"><label>Table (schema.table)</label>
+            <input class="inp mono" id="en-table" placeholder="dbo.crm_contacts"></div>
+          <button class="btn" id="en-load" onclick="enLoadColumns()">↓ Load columns</button>
+          <span class="muted mono" id="en-load-note" style="font-size:10.5px;margin-left:6px"></span>
+          <div class="stats" id="en-stats" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- Step 2 · Anchors -->
+      <div class="panel" id="en-p2" style="display:none">
+        <div class="panel-header"><span class="step-n">2</span><div class="panel-title">Anchors</div>
+          <span class="badge b-matched">auto-detected</span></div>
+        <div class="panel-body">
+          <div class="muted" style="font-size:11px;margin-bottom:8px">The identifiers used to find each record
+            in the outside world. A row with no usable anchor is listed under <em>Unenrichable</em>, never
+            silently skipped.</div>
+          <div class="tw"><table><thead>
+            <tr><th>Anchor</th><th>Column</th><th>Coverage</th><th style="text-align:right">Use</th></tr>
+          </thead><tbody id="en-anchors"></tbody></table></div>
+          <div class="fld" style="margin-top:10px"><label>Row key column (identifies a row in apply SQL)</label>
+            <select class="inp mono" id="en-key"></select></div>
+        </div>
+      </div>
+
+      <!-- Step 3 · Fields to complete -->
+      <div class="panel" id="en-p3" style="display:none">
+        <div class="panel-header"><span class="step-n">3</span><div class="panel-title">Fields to complete</div>
+          <span class="badge b-internal" id="en-fieldcount">0 mapped</span></div>
+        <div class="panel-body">
+          <div class="tw"><table><thead>
+            <tr><th>Target column</th><th>Enrichment attribute</th><th>Fill policy</th><th></th></tr>
+          </thead><tbody id="en-map"></tbody></table></div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <select class="inp mini mono" id="en-add-col"></select>
+            <select class="inp mini mono" id="en-add-attr"></select>
+            <button class="btn" onclick="enAddMapping()">+ Map field</button>
+          </div>
+          <div class="warnbox" style="margin-top:10px">
+            <span>⚠</span><div><b>Verify-only fields.</b> Phone, email status, company number, SIC code and
+            revenue can never be filled by inference — <b>provider-attested or nothing</b>. The engine enforces
+            it; this note is just the warning.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:10px">
+            <button class="tog" id="en-infer" aria-pressed="true" onclick="enTog(this)"></button>
+            Allow engine inference (seniority, department, normalised titles, domains) — always badged
+            <span class="badge b-inferred">AI-inferred</span>, capped at 0.80
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4 · Providers & rules -->
+      <div class="panel" id="en-p4" style="display:none">
+        <div class="panel-header"><span class="step-n">4</span><div class="panel-title">Providers &amp; rules</div></div>
+        <div class="panel-body">
+          <label class="fld" style="margin-bottom:4px"><span style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);font-weight:500">Waterfall order</span></label>
+          <div id="en-provs"></div>
+          <div class="fld" style="margin-top:8px"><label>Internal reference table (provider zero — your own clean data)</label>
+            <div style="display:flex;gap:6px">
+              <input class="inp mono" id="en-ref-table" placeholder="dbo.ref_accounts_clean" style="flex:2">
+              <select class="inp mono" id="en-ref-anchor" style="flex:1">
+                <option value="email">match on email</option><option value="company">match on company</option>
+              </select>
+            </div>
+            <div class="muted" style="font-size:10.5px;margin-top:3px">Columns in the reference table whose
+              names match a mapped attribute (or target column) supply that value. Lookups are read-only
+              SELECTs against your own estate — nothing leaves it.</div></div>
+
+          <div class="fld" style="margin-top:12px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <label style="margin:0">Confidence floor</label>
+              <b class="mono" id="en-floor-v" style="color:var(--accent)">0.75</b></div>
+            <input type="range" id="en-floor" min="0.4" max="0.99" step="0.01" value="0.75"
+              oninput="enFloorChanged()">
+            <div class="muted" style="font-size:10.5px">Proposals below the floor are staged as
+              <em>Needs review</em> instead of <em>Ready to accept</em>.</div>
+          </div>
+
+          <div class="fld">
+            <label>Ask — rules in plain English</label>
+            <textarea class="inp" id="en-nl" placeholder="Only enrich UK accounts that are missing a phone number. Don't touch anything where the account is marked dissolved."></textarea>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn" onclick="enCompile()">⚙ Compile to rules</button>
+              <button class="btn" onclick="enClearRules()">Clear</button>
+              <span class="mono muted" id="en-scope-note" style="font-size:10.5px;align-self:center"></span>
+            </div>
+            <div id="en-questions"></div>
+            <div id="en-rules-out" style="display:none">
+              <div class="muted" style="font-size:10.5px;margin:8px 0 3px">Compiled rule set — this JSON is what
+                executes, not the English. Deterministic and versioned.</div>
+              <div class="sql" id="en-rules-json"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5 · Run -->
+      <div class="panel" id="en-p5" style="display:none">
+        <div class="panel-header"><span class="step-n">5</span><div class="panel-title">Run</div></div>
+        <div class="panel-body">
+          <div class="infobox" id="en-estimate" style="margin-bottom:10px"></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary" id="en-run" onclick="enPreRun()">▶ Run enrichment</button>
+            <button class="btn" id="en-cancel" onclick="enCancelRun()" style="display:none">■ Cancel (keeps partial results)</button>
+          </div>
+          <div class="progress" id="en-prog" style="display:none"><i></i></div>
+          <div class="runline" id="en-runline" style="display:none">
+            <span id="en-run-status">Queued…</span><span id="en-run-count"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ RIGHT: results ═══ -->
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Results</div>
+          <div class="p-right"><div class="seg" id="en-tabs">
+            <button class="active" data-tab="proposals">Proposals<span class="cnt" id="en-c-prop">0</span></button>
+            <button data-tab="conflicts">Conflicts<span class="cnt" id="en-c-conf">0</span></button>
+            <button data-tab="unenrichable">Unenrichable<span class="cnt" id="en-c-un">0</span></button>
+            <button data-tab="audit">Audit</button>
+          </div></div>
+        </div>
+
+        <div class="empty" id="en-empty">✨<br>Pick a source, map the fields you want completed, then run
+          enrichment to see proposed values here.</div>
+
+        <div id="en-results" style="display:none">
+          <div data-panel="proposals">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0.6rem 0.9rem;border-bottom:0.5px solid var(--border)">
+              <button class="btn" onclick="enBulk('0.9')">✓ Accept ≥ 0.90</button>
+              <button class="btn" onclick="enBulk('verified')">✓ Accept all verified</button>
+              <button class="btn" onclick="enBulk('reject-inferred')">✕ Reject all AI-inferred</button>
+              <span style="flex:1"></span>
+              <button class="btn" onclick="enExport('csv')">↓ Export CSV</button>
+              <button class="btn" onclick="enExport('json')">↓ Export JSON</button>
+            </div>
+            <div class="tw" style="max-height:520px;overflow-y:auto"><table><thead>
+              <tr><th>Row</th><th>Field</th><th>Current</th><th>Proposed</th><th>Source</th><th>Conf.</th>
+                <th style="text-align:right">Verdict</th></tr>
+            </thead><tbody id="en-props"></tbody></table></div>
+            <div style="display:flex;align-items:center;gap:10px;padding:0.6rem 0.9rem;border-top:0.5px solid var(--border)">
+              <span class="mono muted" id="en-sum" style="font-size:11px"></span>
+              <span style="flex:1"></span>
+              <button class="btn btn-primary" id="en-apply" onclick="enOpenApply()" disabled>Generate apply SQL →</button>
+            </div>
+          </div>
+          <div data-panel="conflicts" style="display:none"><div class="tw"><table><thead>
+            <tr><th>Row</th><th>Field</th><th>Chosen</th><th>Rejected</th><th>Why</th></tr>
+          </thead><tbody id="en-confs"></tbody></table></div></div>
+          <div data-panel="unenrichable" style="display:none"><div class="tw"><table><thead>
+            <tr><th>Row</th><th>Anchor value</th><th>Reason</th></tr>
+          </thead><tbody id="en-uns"></tbody></table></div></div>
+          <div data-panel="audit" style="display:none"><div class="panel-body">
+            <dl class="kv" id="en-audit"></dl>
+            <div class="fld" style="margin-top:12px"><label>Right to erasure — purge one row's proposals (tombstone kept)</label>
+              <div style="display:flex;gap:6px">
+                <input class="inp mono" id="en-erase-key" placeholder="row key">
+                <button class="btn btn-danger" onclick="enEraseRow()">Erase</button>
+              </div></div>
+          </div></div>
+        </div>
+        <div class="note">External providers (Companies House, contact and verification services) plug in as
+          connectors — <b>not configured</b> in this workspace yet, so they are shown greyed and skipped, never
+          silently pretended. Runs here use your internal reference table and the deterministic engine only;
+          spec §7.1's Claude adjudication tier drops in behind the same shapes when the API layer is enabled.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- pre-run disclosure -->
+<div class="scrim" id="en-scrim" onclick="enCloseModals()"></div>
+<div class="modal" id="en-disclose">
+  <div class="mo-h"><div class="panel-title">Before this run — what will be transmitted</div></div>
+  <div class="mo-b">
+    <div id="en-disclose-body" style="font-size:12.5px;line-height:1.7"></div>
+    <div class="fld" style="margin-top:12px"><label>Lawful basis for enrichment (recorded on the run report — Cygenix records it, it does not assess it)</label>
+      <input class="inp" id="en-lawful" placeholder="e.g. legitimate interests — migration data quality"></div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin-top:10px;cursor:pointer">
+      <input type="checkbox" id="en-ack" style="margin-top:2px">
+      <span>I acknowledge the providers and fields listed above for this project. Data submitted through the
+        Claude API is not used to train models; raw payloads purge on the retention schedule.</span></label>
+  </div>
+  <div class="mo-f">
+    <span class="muted" style="font-size:11px">Required once per project — it cannot be skipped on first use.</span>
+    <div class="p-right">
+      <button class="btn" onclick="enCloseModals()">Cancel</button>
+      <button class="btn btn-primary" id="en-disclose-go" onclick="enConfirmRun()">Run</button>
+    </div>
+  </div>
+</div>
+
+<!-- why? / apply modal -->
+<div class="modal" id="en-modal">
+  <div class="mo-h"><div class="panel-title" id="en-mo-title">Detail</div>
+    <div class="p-right"><button class="btn" onclick="enCloseModals()">✕ Close</button></div></div>
+  <div class="mo-b" id="en-mo-body"></div>
+</div>
+
+<script src="/connections.js?v=d199ff3358" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
+<script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
+<script src="/cygenix-enrichment.js?v=75c099f54f" defer></script>
+<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+
+<script>
+'use strict';
+/* Data Enrichment page. The engine (cygenix-enrichment.js) owns every
+   decision; this file owns the chrome, the read-only SQL round-trips, and
+   the staged-artifact handoff to the Jobs module. This page NEVER executes
+   a write: Apply registers UPDATE + rollback scripts as jobs. */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const E_BATCH = 200, E_ROW_CAP = 1000;   /* v1: cap a run at 1,000 rows */
+
+let E = null, store = null;
+let columns = [];            // [{name, nullPct}]
+let rowCount = 0;
+let anchors = [];
+let mappings = [];
+let ruleJson = null, nlText = '';
+let currentRun = null;       // {runId, conflicts, unenrichable, startedAt}
+let cancelRequested = false;
+
+function userName(){
+  try { return (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || 'user'; }
+  catch { return 'user'; }
+}
+function projectId(){ return localStorage.getItem('cygenix_active_project_id') || 'default'; }
+function saveStore(){ E.enSave(store); }
+function enTog(el){ el.setAttribute('aria-pressed', String(el.getAttribute('aria-pressed') !== 'true')); }
+function connOf(){
+  const c = (window.CygenixConnections && CygenixConnections.get()) || {};
+  return $('en-side').value === 'tgt'
+    ? (c.tgtFnUrl ? CygenixConnections.tgtConn : c.tgtConnString)
+    : (c.srcFnUrl ? CygenixConnections.srcConn : c.srcConnString);
+}
+function dialectOf(){ return /postgres/i.test(connOf() || '') ? 'postgres' : 'sqlserver'; }
+function qi(name){ return dialectOf() === 'postgres' ? '"' + name.replace(/"/g, '""') + '"' : '[' + name.replace(/\]/g, ']]') + ']'; }
+function tableRef(){
+  const t = $('en-table').value.trim();
+  const parts = t.split('.');
+  return { schema: parts.length > 1 ? parts[0] : 'dbo', table: parts[parts.length - 1] };
+}
+async function dbExec(sql){
+  const conn = connOf();
+  if (!conn) throw new Error('No ' + ($('en-side').value === 'tgt' ? 'target' : 'source') + ' connection configured — set one under Connections.');
+  const isFn = /^https?:\/\//.test(conn);
+  const url = isFn ? conn : '/.netlify/functions/db-connect';
+  const body = isFn ? { action: 'execute', sql } : { action: 'execute', sql, connectionString: conn };
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({ error: 'Non-JSON ' + res.status }));
+  if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+  return data.recordset || data.rows || [];
+}
+
+/* ── Step 1: load columns + null rates (read-only) ── */
+async function enLoadColumns(){
+  const btn = $('en-load'), note = $('en-load-note');
+  const { schema, table } = tableRef();
+  if (!table){ note.textContent = 'enter schema.table first'; return; }
+  btn.disabled = true; note.textContent = 'reading…';
+  try {
+    const cols = await dbExec(
+      "SELECT COLUMN_NAME AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '" + schema.replace(/'/g, "''")
+      + "' AND TABLE_NAME = '" + table.replace(/'/g, "''") + "' ORDER BY ORDINAL_POSITION");
+    if (!cols.length) throw new Error('table not found or no columns visible');
+    const names = cols.map(r => r.c).slice(0, 40);
+    const nullSql = 'SELECT COUNT(*) AS total, '
+      + names.map((c, i) => 'SUM(CASE WHEN ' + qi(c) + ' IS NULL THEN 1 ELSE 0 END) AS n' + i).join(', ')
+      + ' FROM ' + qi(schema) + '.' + qi(table);
+    const stats = (await dbExec(nullSql))[0] || {};
+    rowCount = Number(stats.total) || 0;
+    columns = names.map((c, i) => ({ name: c,
+      nullPct: rowCount ? Math.round(100 * (Number(stats['n' + i]) || 0) / rowCount) : 0 }));
+    note.textContent = '✓ ' + columns.length + ' columns';
+    renderStats(); renderAnchors(); seedMappings(); renderProviders(); renderEstimate();
+    ['en-p2', 'en-p3', 'en-p4', 'en-p5'].forEach(id => $(id).style.display = '');
+  } catch (e) {
+    note.textContent = '✗ ' + (e.message || e);
+  } finally { btn.disabled = false; }
+}
+function renderStats(){
+  const worst = columns.slice().sort((a, b) => b.nullPct - a.nullPct).slice(0, 3)
+    .filter(c => c.nullPct > 0);
+  $('en-stats').style.display = '';
+  $('en-stats').innerHTML = '<div class="stat"><b>' + rowCount.toLocaleString('en-GB') + '</b><span>rows</span></div>'
+    + worst.map(c => '<div class="stat"><b style="color:' + (c.nullPct > 70 ? 'var(--red)' : 'var(--amber)')
+      + '">' + c.nullPct + '%</b><span>' + esc(c.name) + ' null</span></div>').join('');
+}
+
+/* ── Step 2: anchors ── */
+function renderAnchors(){
+  anchors = E.enDetectAnchors(columns);
+  $('en-anchors').innerHTML = anchors.length ? anchors.map((a, i) =>
+    '<tr><td>' + esc(a.anchor) + '</td><td class="mono muted">' + esc(a.column) + '</td>'
+    + '<td><span class="conf"><span class="track"><i style="width:' + a.coverage + '%;background:'
+    + (a.coverage > 80 ? 'var(--green)' : 'var(--amber)') + '"></i></span><b class="mono">' + a.coverage + '%</b></span></td>'
+    + '<td style="text-align:right"><button class="tog" aria-pressed="' + a.enabled + '" onclick="enTog(this);anchors[' + i + '].enabled=!anchors[' + i + '].enabled"></button></td></tr>'
+  ).join('') : '<tr><td colspan="4" class="empty">No plausible anchor columns found — this table cannot be enriched.</td></tr>';
+  const keyGuess = columns.find(c => /^(row_key|id)$/i.test(c.name))
+    || columns.find(c => /_id$|_key$|^key$/i.test(c.name)) || columns[0];
+  $('en-key').innerHTML = columns.map(c =>
+    '<option' + (keyGuess && c.name === keyGuess.name ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('');
+}
+
+/* ── Step 3: field mapper ── */
+function seedMappings(){
+  mappings = [];
+  E.CATALOGUE.forEach(a => {
+    const col = columns.find(c => c.name.toLowerCase() === a.attr
+      || c.name.toLowerCase().replace(/^(contact_|company_)/, '') === a.attr.replace(/^(company_)/, ''));
+    if (col && mappings.length < 6) mappings.push({ targetColumn: col.name, attr: a.attr, policy: 'if-null' });
+  });
+  renderMappings();
+}
+function renderMappings(){
+  $('en-fieldcount').textContent = mappings.length + ' mapped';
+  $('en-map').innerHTML = mappings.map((m, i) => {
+    const meta = E.attrOf(m.attr) || {};
+    return '<tr><td class="mono">' + esc(m.targetColumn) + '</td>'
+      + '<td class="mono muted">' + esc(m.attr) + (meta.verifyOnly ? ' <span class="badge b-none">verify-only</span>' : '') + '</td>'
+      + '<td><select class="inp mini" onchange="mappings[' + i + '].policy=this.value">'
+      + [['if-null', 'If null'], ['null-lowconf', 'Null + low-conf'], ['overwrite', 'Overwrite']]
+        .map(([v, l]) => '<option value="' + v + '"' + (m.policy === v ? ' selected' : '') + '>' + l + '</option>').join('')
+      + '</select></td>'
+      + '<td><button class="iconbtn" onclick="mappings.splice(' + i + ',1);renderMappings();renderEstimate()">✕</button></td></tr>';
+  }).join('') || '<tr><td colspan="4" class="empty">Nothing mapped yet — add a field below.</td></tr>';
+  $('en-add-col').innerHTML = columns.map(c => '<option>' + esc(c.name) + '</option>').join('');
+  $('en-add-attr').innerHTML = E.CATALOGUE.map(a => '<option>' + esc(a.attr) + '</option>').join('');
+}
+function enAddMapping(){
+  mappings.push({ targetColumn: $('en-add-col').value, attr: $('en-add-attr').value, policy: 'if-null' });
+  renderMappings(); renderEstimate();
+}
+
+/* ── Step 4: providers + rules ── */
+function renderProviders(){
+  $('en-provs').innerHTML = E.PROVIDERS.map(p => {
+    const configured = p.kind === 'internal';
+    return '<div class="prov' + (configured ? '' : ' off') + '">'
+      + '<div class="nm"><b>' + esc(p.label) + '</b><span>' + esc(p.desc)
+      + (configured ? '' : ' · <b style="color:var(--amber)">not configured — Configure in Integrations</b>') + '</span></div>'
+      + (configured ? '<span class="badge b-internal">runs first</span>'
+        : '<span class="badge b-none">skipped</span>') + '</div>';
+  }).join('');
+}
+function enFloorChanged(){
+  $('en-floor-v').textContent = (+$('en-floor').value).toFixed(2);
+  store.settings.floor = +$('en-floor').value;
+  saveStore();
+  renderProposals();
+}
+function anchorCtx(){
+  const phone = anchors.find(a => a.anchor === 'Phone');
+  const country = columns.find(c => /country/i.test(c.name));
+  const status = columns.find(c => /status/i.test(c.name));
+  return { phoneColumn: phone ? phone.column : (columns.find(c => /^tel|phone/i.test(c.name)) || {}).name,
+    countryColumn: country && country.name, statusColumn: status && status.name };
+}
+async function enCompile(){
+  nlText = $('en-nl').value.trim();
+  const res = E.enCompileRules(nlText, anchorCtx());
+  ruleJson = res.ruleJson;
+  $('en-questions').innerHTML = res.questions.map(q =>
+    '<div class="warnbox" style="margin-top:6px"><span>?</span><div>' + esc(q) + '</div></div>').join('');
+  $('en-rules-out').style.display = '';
+  $('en-rules-json').textContent = JSON.stringify(ruleJson, null, 2);
+  if (nlText) E.enSaveRuleset(store, 'page-rules', nlText, ruleJson, userName(), Date.now());
+  saveStore();
+  /* rows in scope: a real read-only count with the compiled predicate —
+     only when every filter column actually exists on the table */
+  const missing = (ruleJson.filters || []).filter(f => !columns.some(c => c.name === f.column));
+  if (missing.length){
+    $('en-scope-note').textContent = 'scope not counted — column ' + missing[0].column + ' is not on this table';
+    return;
+  }
+  try {
+    const { schema, table } = tableRef();
+    const n = await dbExec('SELECT COUNT(*) AS n FROM ' + qi(schema) + '.' + qi(table)
+      + ' WHERE ' + E.enFiltersToSql(ruleJson, dialectOf()));
+    $('en-scope-note').textContent = '✓ ' + Number(n[0] && n[0].n || 0).toLocaleString('en-GB') + ' rows in scope';
+  } catch (e) { $('en-scope-note').textContent = 'scope count failed: ' + e.message; }
+}
+function enClearRules(){
+  $('en-nl').value = ''; ruleJson = null; nlText = '';
+  $('en-rules-out').style.display = 'none'; $('en-questions').innerHTML = '';
+  $('en-scope-note').textContent = '';
+}
+
+/* ── Step 5: estimate, disclosure, run ── */
+function activeProviderIds(){ return ['internal_ref']; }   /* v1: the only configured provider */
+function renderEstimate(){
+  const est = E.enEstimate(Math.min(rowCount, E_ROW_CAP), activeProviderIds(), mappings.length);
+  $('en-estimate').innerHTML = '<span>ⓘ</span><div><b>Before you run:</b> up to '
+    + Math.min(rowCount, E_ROW_CAP).toLocaleString('en-GB') + ' rows (v1 cap ' + E_ROW_CAP.toLocaleString('en-GB')
+    + ') · ' + est.lookups.toLocaleString('en-GB') + ' internal reference lookups · £'
+    + est.providerCost.toFixed(2) + ' provider spend · £' + est.llmCost.toFixed(2)
+    + ' model spend · cap £' + store.settings.spendCapGBP.toFixed(2)
+    + '. All lookups are read-only SELECTs.</div>';
+}
+function enPreRun(){
+  if (!mappings.length){ alert('Map at least one field first.'); return; }
+  if (!anchors.some(a => a.enabled)){ alert('Enable at least one anchor.'); return; }
+  const fields = [...new Set(anchors.filter(a => a.enabled && !a.derived).map(a => a.column))];
+  const external = false;   /* v1: internal only */
+  $('en-disclose-body').innerHTML =
+    '<p><b>Providers in this run:</b> Internal reference table only. External connectors are not configured, '
+    + 'so <b>no data will be transmitted outside your estate</b> in this run.</p>'
+    + '<p style="margin-top:8px"><b>Fields that will be sent</b> (to providers, when external connectors are '
+    + 'enabled): <span class="mono">' + esc(fields.join(', ')) + '</span> — anchors and matching columns only; '
+    + 'the full row is never transmitted.</p>'
+    + (external ? '' : '<p class="muted" style="margin-top:8px;font-size:11.5px">The acknowledgement below still '
+    + 'applies per project so the first external run cannot skip it.</p>');
+  const ack = store.settings.disclosureAck[projectId()];
+  $('en-ack').checked = !!ack;
+  if (ack && ack.lawfulBasis) $('en-lawful').value = ack.lawfulBasis;
+  $('en-scrim').classList.add('show');
+  $('en-disclose').classList.add('show');
+}
+function enCloseModals(){
+  $('en-scrim').classList.remove('show');
+  $('en-disclose').classList.remove('show');
+  $('en-modal').classList.remove('show');
+}
+function enConfirmRun(){
+  if (!$('en-ack').checked){ alert('The disclosure acknowledgement cannot be skipped on first use in a project.'); return; }
+  store.settings.disclosureAck[projectId()] = { at: Date.now(), by: userName(),
+    lawfulBasis: $('en-lawful').value.trim() };
+  saveStore();
+  enCloseModals();
+  enRun().catch(e => { $('en-run-status').textContent = '✗ ' + (e.message || e); $('en-run').disabled = false; });
+}
+
+async function enRun(){
+  const { schema, table } = tableRef();
+  const keyCol = $('en-key').value;
+  const floor = +$('en-floor').value;
+  const inference = $('en-infer').getAttribute('aria-pressed') === 'true';
+  const startedAt = Date.now();
+  cancelRequested = false;
+  $('en-run').disabled = true; $('en-cancel').style.display = '';
+  $('en-prog').style.display = ''; $('en-runline').style.display = '';
+  $('en-empty').style.display = 'none';
+
+  const emailA = anchors.find(a => a.anchor === 'Email' && a.enabled);
+  const companyA = anchors.find(a => a.anchor === 'Company name' && a.enabled);
+  const anchorCols = [emailA && emailA.column, companyA && companyA.column].filter(Boolean);
+  const selCols = [...new Set([keyCol].concat(anchorCols, mappings.map(m => m.targetColumn)))]
+    .filter(c => columns.some(x => x.name === c));
+  const where = ruleJson ? E.enFiltersToSql(ruleJson, dialectOf()) : '1=1';
+  const missing = ruleJson ? (ruleJson.filters || []).filter(f => !columns.some(c => c.name === f.column)) : [];
+  const pred = missing.length ? '1=1' : where;
+
+  /* the run's rows, capped, read-only */
+  const top = dialectOf() === 'postgres' ? '' : 'TOP (' + E_ROW_CAP + ') ';
+  const limit = dialectOf() === 'postgres' ? ' LIMIT ' + E_ROW_CAP : '';
+  $('en-run-status').textContent = 'Reading rows…';
+  const rows = await dbExec('SELECT ' + top + selCols.map(qi).join(', ')
+    + ' FROM ' + qi(schema) + '.' + qi(table) + ' WHERE ' + pred
+    + ' ORDER BY ' + qi(keyCol) + limit);
+
+  /* internal reference provider: read the ref table once, index by anchor */
+  let refIndex = null, refCols = [];
+  const refTable = $('en-ref-table').value.trim();
+  if (refTable){
+    try {
+      $('en-run-status').textContent = 'Reading internal reference table…';
+      const rp = refTable.split('.');
+      const rs = rp.length > 1 ? rp[0] : 'dbo', rt = rp[rp.length - 1];
+      const refRows = await dbExec('SELECT ' + top + '* FROM ' + qi(rs) + '.' + qi(rt) + limit);
+      if (refRows.length){
+        refCols = Object.keys(refRows[0]);
+        const matchOn = $('en-ref-anchor').value;
+        const keyOf = (r) => {
+          if (matchOn === 'email'){
+            const c = refCols.find(x => /mail/i.test(x));
+            return c && r[c] ? String(r[c]).trim().toLowerCase() : null;
+          }
+          const c = refCols.find(x => /(company|account|name)/i.test(x));
+          return c && r[c] ? E.enNormCompany(r[c]) : null;
+        };
+        refIndex = {};
+        refRows.forEach(r => { const k = keyOf(r); if (k && !refIndex[k]) refIndex[k] = r; });
+      }
+    } catch (e) { console.warn('[enrichment] reference table', e); }
+  }
+
+  const runId = 'enr_' + startedAt.toString(36);
+  const allProposals = [], allConflicts = [], unenrichable = [];
+  let done = 0;
+  for (let i = 0; i < rows.length; i += E_BATCH){
+    if (cancelRequested) break;
+    const batch = rows.slice(i, i + E_BATCH);
+    batch.forEach(r => {
+      const key = r[keyCol];
+      const email = emailA ? r[emailA.column] : null;
+      const company = companyA ? r[companyA.column] : null;
+      if (!email && !company){
+        unenrichable.push({ rowKey: key, anchorValue: '(null)',
+          reason: 'No enabled anchor holds a value — nothing to match on.' });
+        return;
+      }
+      /* candidates from the internal reference table */
+      const cands = [];
+      if (refIndex){
+        const matchOn = $('en-ref-anchor').value;
+        const lookup = matchOn === 'email'
+          ? (email ? String(email).trim().toLowerCase() : null)
+          : (company ? E.enNormCompany(company) : null);
+        const hit = lookup && refIndex[lookup];
+        if (hit){
+          const attrs = {};
+          mappings.forEach(m => {
+            const c = refCols.find(x => x.toLowerCase() === m.attr
+              || x.toLowerCase() === m.targetColumn.toLowerCase());
+            if (c && hit[c] != null && String(hit[c]).trim() !== '') attrs[m.attr] = hit[c];
+          });
+          if (Object.keys(attrs).length){
+            cands.push({ provider: 'internal_ref', providerOrder: 1, matchScore: 0.95, attrs: attrs,
+              detail: 'Exact anchor match in ' + refTable + ' — your own clean reference data, so it runs first and wins ties.' });
+          }
+        }
+      }
+      const values = {}; selCols.forEach(c => values[c] = r[c]);
+      const rec = E.enReconcile({ key: key, values: values, anchors: { email: email, company: company } },
+        mappings, cands, { floor: floor, ruleJson: ruleJson, inferenceEnabled: inference });
+      rec.proposals.forEach(p => allProposals.push(p));
+      rec.conflicts.forEach(c => allConflicts.push(c));
+    });
+    done = Math.min(rows.length, i + E_BATCH);
+    $('en-prog').querySelector('i').style.width = Math.round(100 * done / Math.max(1, rows.length)) + '%';
+    $('en-run-count').textContent = done.toLocaleString('en-GB') + ' / ' + rows.length.toLocaleString('en-GB');
+    $('en-run-status').textContent = 'Normalise · match · reconcile · score…';
+    await new Promise(res => setTimeout(res, 0));
+  }
+
+  const run = E.enRecordRun(store, {
+    projectId: projectId(), sourceTable: schema + '.' + table, side: $('en-side').value,
+    keyColumn: keyCol, dialect: dialectOf(),
+    status: cancelRequested ? 'cancelled' : 'complete',
+    rowCount: rows.length, rowsEnriched: new Set(allProposals.map(p => p.rowKey)).size,
+    rowsUnenrichable: unenrichable.length,
+    providers: activeProviderIds(), engine: 'deterministic v1 (Claude adjudication not configured)',
+    seed: 41889, floor: floor, ruleJson: ruleJson, nlText: nlText,
+    providerCost: 0, llmCost: 0,
+    lawfulBasis: (store.settings.disclosureAck[projectId()] || {}).lawfulBasis || '',
+    startedBy: userName(), startedAt: startedAt, finishedAt: Date.now(),
+  }, startedAt);
+  E.enStageProposals(store, run.runId, allProposals, startedAt);
+  saveStore();
+  currentRun = { runId: run.runId, conflicts: allConflicts, unenrichable: unenrichable, run: run };
+
+  /* every run writes a profile run record when profiles are in force */
+  try {
+    const CP = window.CygenixProfiles;
+    if (CP){
+      const cps = CP.cpLoad();
+      if (CP.cpAdopted(cps)){
+        CP.cpRecordRun(cps, { artifactType: 'enrichment', artifactId: run.runId,
+          profileId: (cps.settings && cps.settings.activeProfileId) || null,
+          actualDatabase: schema + '.' + table, assertionResult: 'not-checked',
+          outcome: run.status + ' — ' + allProposals.length + ' proposals staged, nothing written',
+          runBy: userName() }, Date.now());
+        CP.cpSave(cps);
+      }
+    }
+  } catch (e) { /* best-effort */ }
+
+  $('en-run-status').textContent = (cancelRequested ? '■ Cancelled (partial results kept)' : '✓ Complete')
+    + ' · ' + new Set(allProposals.map(p => p.rowKey)).size + ' enriched · ' + unenrichable.length + ' unenrichable';
+  $('en-run').disabled = false; $('en-run').textContent = '▶ Re-run enrichment';
+  $('en-cancel').style.display = 'none';
+  $('en-results').style.display = '';
+  renderResults();
+}
+function enCancelRun(){ cancelRequested = true; }
+
+/* ── results ── */
+function proposalsOfRun(){
+  return currentRun ? store.proposals.filter(p => p.runId === currentRun.runId) : [];
+}
+function badge(p){
+  if (p.nothingProposed) return '<span class="badge b-none">no proposal</span>';
+  if (p.origin === 'inferred') return '<span class="badge b-inferred">AI-inferred</span>';
+  if (p.origin === 'internal') return '<span class="badge b-internal">internal ref</span>';
+  return '<span class="badge b-verified">verified</span>';
+}
+function confColor(c){ return c >= 0.9 ? 'var(--green)' : c >= 0.75 ? 'var(--accent)' : c >= 0.5 ? 'var(--amber)' : 'var(--red)'; }
+function renderProposals(){
+  const list = proposalsOfRun();
+  const floor = +$('en-floor').value;
+  $('en-c-prop').textContent = list.length;
+  $('en-props').innerHTML = list.length ? list.map(p =>
+    '<tr class="' + (p.verdict !== 'pending' ? 'decided' : '') + '">'
+    + '<td class="mono muted">' + esc(p.rowKey) + '</td>'
+    + '<td class="mono">' + esc(p.targetColumn) + '</td>'
+    + '<td>' + (p.current != null && String(p.current).trim() !== '' ? '<span class="mono muted">' + esc(String(p.current).slice(0, 30)) + '</span>' : '<span class="nullv">null</span>') + '</td>'
+    + '<td><b style="font-weight:500">' + (p.proposed == null ? '—' : esc(String(p.proposed))) + '</b>'
+    + (p.proposed != null && p.confidence < floor ? ' <span class="badge b-review">needs review</span>' : '') + '</td>'
+    + '<td><span class="mono muted" style="font-size:10.5px">' + esc(p.source) + '</span><br>' + badge(p) + '</td>'
+    + '<td><span class="conf"><span class="track"><i style="width:' + Math.round(p.confidence * 100) + '%;background:'
+    + confColor(p.confidence) + '"></i></span><b class="mono" style="color:' + confColor(p.confidence) + '">'
+    + p.confidence.toFixed(2) + '</b></span></td>'
+    + '<td style="text-align:right;white-space:nowrap">'
+    + '<button class="iconbtn acc ' + (p.verdict === 'accepted' ? 'on' : '') + '" onclick="enSetVerdict(\'' + p.proposalId + '\',\'accepted\')" ' + (p.proposed == null ? 'disabled' : '') + '>✓</button> '
+    + '<button class="iconbtn rej ' + (p.verdict === 'rejected' ? 'on' : '') + '" onclick="enSetVerdict(\'' + p.proposalId + '\',\'rejected\')">✕</button> '
+    + '<button class="iconbtn" onclick="enWhy(\'' + p.proposalId + '\')">?</button></td></tr>'
+  ).join('') : '<tr><td colspan="7" class="empty">No proposals in this run.</td></tr>';
+  const a = list.filter(p => p.verdict === 'accepted').length;
+  const r = list.filter(p => p.verdict === 'rejected').length;
+  $('en-sum').textContent = a + ' accepted · ' + r + ' rejected · ' + (list.length - a - r) + ' pending';
+  $('en-apply').disabled = a === 0;
+}
+function renderResults(){
+  renderProposals();
+  const confs = currentRun ? currentRun.conflicts : [];
+  $('en-c-conf').textContent = confs.length;
+  $('en-confs').innerHTML = confs.length ? confs.map(c =>
+    '<tr><td class="mono muted">' + esc(c.rowKey) + '</td><td class="mono">' + esc(c.name) + '</td>'
+    + '<td><b style="font-weight:500">' + esc(String(c.chosen)) + '</b></td>'
+    + '<td class="mono muted" style="font-size:10.5px">' + esc(c.rejected.map(x => x.value + ' — ' + x.source).join('; ')) + '</td>'
+    + '<td class="muted" style="max-width:320px">' + esc(c.reason) + '</td></tr>').join('')
+    : '<tr><td colspan="5" class="empty">No conflicts — no two sources disagreed.</td></tr>';
+  const uns = currentRun ? currentRun.unenrichable : [];
+  $('en-c-un').textContent = uns.length;
+  $('en-uns').innerHTML = uns.length ? uns.map(u =>
+    '<tr><td class="mono muted">' + esc(u.rowKey) + '</td><td class="mono">' + esc(u.anchorValue) + '</td>'
+    + '<td>' + esc(u.reason) + '</td></tr>').join('')
+    : '<tr><td colspan="3" class="empty">Every row resolved at least one anchor.</td></tr>';
+  const run = currentRun && currentRun.run;
+  $('en-audit').innerHTML = run ? [
+    ['Run ID', run.runId], ['Project', run.projectId],
+    ['Source', run.sourceTable + ' (' + run.side + ')'],
+    ['Rows', run.rowCount + ' processed · ' + run.rowsEnriched + ' enriched · ' + run.rowsUnenrichable + ' unenrichable'],
+    ['Providers', run.providers.join(', ')],
+    ['Engine', run.engine],
+    ['Determinism', 'seed ' + run.seed + ' · floor ' + run.floor + ' — same input + ruleset + seed → same proposals'],
+    ['Spend', '£' + run.providerCost.toFixed(2) + ' providers · £' + run.llmCost.toFixed(2) + ' model · cap £' + store.settings.spendCapGBP.toFixed(2)],
+    ['Lawful basis', run.lawfulBasis || '— (record it in the pre-run disclosure)'],
+    ['Retention', 'raw payloads purge in ' + store.settings.retentionDays + ' days'],
+    ['Started by', run.startedBy + ' · ' + new Date(run.startedAt).toLocaleString()],
+  ].map(([k, v]) => '<dt>' + esc(k) + '</dt><dd class="mono">' + esc(v) + '</dd>').join('') : '';
+}
+function enSetVerdict(id, v){
+  const p = store.proposals.find(x => x.proposalId === id);
+  const next = p && p.verdict === v ? 'pending' : v;
+  E.enVerdict(store, id, next, null, userName(), Date.now());
+  saveStore(); renderProposals();
+}
+function enBulk(mode){
+  proposalsOfRun().forEach(p => {
+    if (mode === '0.9' && p.confidence >= 0.9 && p.proposed != null) E.enVerdict(store, p.proposalId, 'accepted', null, userName(), Date.now());
+    /* "verified" means provider-attested or internal — inferred can NEVER qualify */
+    if (mode === 'verified' && (p.origin === 'provider' || p.origin === 'internal') && p.proposed != null)
+      E.enVerdict(store, p.proposalId, 'accepted', null, userName(), Date.now());
+    if (mode === 'reject-inferred' && p.origin === 'inferred')
+      E.enVerdict(store, p.proposalId, 'rejected', null, userName(), Date.now());
+  });
+  saveStore(); renderProposals();
+}
+function enWhy(id){
+  const p = store.proposals.find(x => x.proposalId === id);
+  if (!p) return;
+  $('en-mo-title').textContent = 'Row ' + p.rowKey + ' · ' + p.targetColumn;
+  $('en-mo-body').innerHTML = '<dl class="kv">'
+    + '<dt>Current</dt><dd>' + (p.current != null ? '<span class="mono">' + esc(String(p.current)) + '</span>' : '<span class="nullv">null</span>') + '</dd>'
+    + '<dt>Proposed</dt><dd><b>' + (p.proposed == null ? '—' : esc(String(p.proposed))) + '</b></dd>'
+    + '<dt>Source</dt><dd class="mono">' + esc(p.source) + ' ' + badge(p) + '</dd>'
+    + '<dt>Confidence</dt><dd class="mono">' + p.confidence.toFixed(2) + '</dd>'
+    + '<dt>Verdict trail</dt><dd class="mono" style="font-size:10.5px">' + (p.verdictTrail.length
+      ? esc(p.verdictTrail.map(t => t.verdict + ' · ' + new Date(t.at).toLocaleTimeString()).join(' → ')) : '—') + '</dd>'
+    + '</dl><div style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin:10px 0 4px">Reasoning</div>'
+    + '<p style="font-size:12.5px;line-height:1.6">' + esc(p.reason) + '</p>';
+  $('en-scrim').classList.add('show');
+  $('en-modal').classList.add('show');
+}
+function enExport(kind){
+  const list = proposalsOfRun();
+  let blob, name;
+  if (kind === 'csv'){
+    const head = 'row_key,target_column,current,proposed,origin,source,confidence,verdict';
+    const rows = list.map(p => [p.rowKey, p.targetColumn, p.current, p.proposed, p.origin, p.source,
+      p.confidence, p.verdict].map(v => {
+        const s = String(v == null ? '' : v);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(','));
+    blob = new Blob(['﻿' + [head].concat(rows).join('\r\n')], { type: 'text/csv' });
+    name = (currentRun ? currentRun.runId : 'enrichment') + '-proposals.csv';
+  } else {
+    blob = new Blob([JSON.stringify({ run: currentRun && currentRun.run, proposals: list }, null, 2)],
+      { type: 'application/json' });
+    name = (currentRun ? currentRun.runId : 'enrichment') + '-proposals.json';
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function enEraseRow(){
+  const key = $('en-erase-key').value.trim();
+  if (!key || !currentRun) return;
+  if (!confirm('Purge every proposal for row ' + key + ' from this run? A tombstone stays in the audit trail.')) return;
+  const n = E.enErase(store, currentRun.runId, key, userName(), Date.now());
+  saveStore(); renderProposals();
+  alert(n + ' proposal(s) purged. The tombstone records who and when.');
+}
+
+/* ── apply: staged SQL, registered as jobs — never executed here ── */
+function enOpenApply(){
+  const accepted = proposalsOfRun().filter(p => p.verdict === 'accepted' && p.proposed != null);
+  if (!accepted.length) return;
+  const { schema, table } = tableRef();
+  const opts = { schema, table, keyColumn: $('en-key').value, dialect: dialectOf(),
+    runId: currentRun.runId, date: new Date().toISOString().slice(0, 10) };
+  const apply = E.enApplySql(accepted, opts);
+  const rollback = E.enRollbackSql(accepted, opts);
+  $('en-mo-title').textContent = 'Apply SQL · staged artifact';
+  $('en-mo-body').innerHTML =
+    '<div class="infobox" style="margin-bottom:10px"><span>ⓘ</span><div><b>' + accepted.length
+    + ' accepted proposal(s)</b> across ' + new Set(accepted.map(p => p.rowKey)).size + ' rows. Registering '
+    + 'creates two jobs in the Jobs module — apply and rollback — so execution inherits its logging, '
+    + 'scheduling and audit trail. <b>This page never executes a write.</b></div></div>'
+    + '<div style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin-bottom:4px">enrichment_apply_' + esc(currentRun.runId) + '.sql</div>'
+    + '<div class="sql">' + esc(apply) + '</div>'
+    + '<div style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin:12px 0 4px">enrichment_rollback_' + esc(currentRun.runId) + '.sql</div>'
+    + '<div class="sql">' + esc(rollback) + '</div>'
+    + '<div style="margin-top:12px"><button class="btn btn-primary" onclick="enRegisterJobs()">Register both as jobs →</button></div>';
+  $('en-scrim').classList.add('show');
+  $('en-modal').classList.add('show');
+}
+function enRegisterJobs(){
+  const accepted = proposalsOfRun().filter(p => p.verdict === 'accepted' && p.proposed != null);
+  const { schema, table } = tableRef();
+  const opts = { schema, table, keyColumn: $('en-key').value, dialect: dialectOf(),
+    runId: currentRun.runId, date: new Date().toISOString().slice(0, 10) };
+  let jobs = [];
+  try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
+  const mk = (suffix, sql) => ({
+    id: 'job_' + Date.now() + '_' + suffix,
+    name: 'enrichment_' + suffix + '_' + currentRun.runId,
+    jobType: 'sql', type: 'sql',
+    projectId: projectId(), connOn: $('en-side').value === 'tgt' ? 'target' : 'source',
+    sql: sql, insertSQL: sql, status: 'ready',
+    created: new Date().toISOString(), tables: [], files: [], totalRows: 0,
+    columnMapping: [], wasisRules: [],
+    warnings: ['Staged by Data Enrichment run ' + currentRun.runId
+      + ' — review before executing; the paired ' + (suffix === 'apply' ? 'rollback' : 'apply')
+      + ' job reverses it.'],
+  });
+  jobs.push(mk('apply', E.enApplySql(accepted, opts)));
+  jobs.push(mk('rollback', E.enRollbackSql(accepted, opts)));
+  localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+  E.enEvent(store, { type: 'apply.registered', runId: currentRun.runId,
+    proposals: accepted.length, by: userName() }, Date.now());
+  saveStore();
+  enCloseModals();
+  alert('Registered enrichment_apply and enrichment_rollback as jobs. Execute them from the Jobs module — '
+    + 'they inherit its logging and audit trail.');
+}
+
+/* ── tabs + boot ── */
+document.addEventListener('DOMContentLoaded', () => {
+  E = window.CygenixEnrichment;
+  store = E.enLoad();
+  $('en-floor').value = store.settings.floor;
+  $('en-floor-v').textContent = (+store.settings.floor).toFixed(2);
+  $('en-tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#en-tabs button').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('[data-panel]').forEach(p =>
+      p.style.display = p.dataset.panel === b.dataset.tab ? '' : 'none');
+  });
+});
+</script>
+<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
+</body>
+</html>
