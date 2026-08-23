@@ -269,6 +269,11 @@ select.inp{cursor:pointer}
   <!-- ══ ENGINEER VIEW ══ -->
   <div id="as-v-eng">
 
+    <!-- the connection-mismatch banner: refuse and say why -->
+    <div class="panel" id="as-mismatch" style="display:none;border-color:rgba(240,70,70,0.5)">
+      <div class="panel-body" id="as-mismatch-body" style="font-size:12.5px;line-height:1.7"></div>
+    </div>
+
     <!-- §5: coverage instead of a column of zeros -->
     <div class="panel" id="as-coverage-panel">
       <div class="panel-header"><div class="panel-title">Coverage of the migration</div>
@@ -305,7 +310,7 @@ select.inp{cursor:pointer}
         </div>
       </div>
       <div class="tw"><table id="as-rules"><thead>
-        <tr><th>What it proves</th><th>Scope</th><th>Runs</th><th>Last result</th><th>SQL</th><th>On</th><th></th></tr>
+        <tr><th>What it proves</th><th>Scope</th><th>Runs</th><th>State</th><th>SQL</th><th>On</th><th></th></tr>
       </thead><tbody></tbody></table></div>
       <div class="note" id="as-rules-note" style="display:none"></div>
     </div>
@@ -494,7 +499,8 @@ select.inp{cursor:pointer}
 <script src="/cygenix-schema-graph.js?v=7342c9d73d" defer></script>
 <script src="/cygenix-subject-harvest.js?v=b15d4ee907" defer></script>
 <script src="/cygenix-integrations.js?v=460ebe6c49" defer></script>
-<script src="/cygenix-assurance.js?v=a51db57f83" defer></script>
+<script src="/cygenix-map-context.js?v=f006e965b8" defer></script>
+<script src="/cygenix-assurance.js?v=d1a71328e3" defer></script>
 <script src="/cygenix-sidebar.js?v=6f72ef587c" defer></script>
 
 <script>
@@ -531,6 +537,10 @@ let dryOk = null;             // last successful dry-run payload (gates the save
 let editingRuleId = null;
 let expandedBundle = null;    // which bundle's Review drill-down is open
 let expandedSqlRule = null;   // which rule row shows its SQL
+let mapScope = null;          // CygenixMapContext.resolveMigrationScope() — the migration, not the catalogue
+let mapInfo = [];             // accounted-for figures (rowsExcluded), rendered as prose, never as breaches
+let mapSkipped = [];          // derivations honestly refused, with the reason
+let mismatch = null;          // selected connection pair ≠ the pair the map was built against
 
 function userName(){
   try { return (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || 'user'; }
@@ -544,8 +554,9 @@ function loadStore(){
     const raw = localStorage.getItem(AS_KEY);
     if (raw) {
       store = JSON.parse(raw);
-      /* v1 → v2: proves filled from templates, runs gain their hashes */
-      if (store.v < A.STORE_VERSION) { A.asMigrateStore(store, nowMs()); saveStore(); }
+      /* older stores gain proves, run hashes, and (v3) pre-derivation
+         drift rules go dormant — clearing their phantom breaches */
+      if (store.v < A.STORE_VERSION) { A.asMigrateStore(store, nowMs(), { phase: phaseOf() }); saveStore(); }
       return;
     }
   } catch {}
@@ -567,6 +578,89 @@ function dialectOf(side){ return A.asDialectOf(connOf(side)); }
 function connectionCount(){
   return ['src', 'tgt'].filter(s => window.CygenixSchemaGraph
     && CygenixSchemaGraph.hasConnection && CygenixSchemaGraph.hasConnection(s)).length;
+}
+
+/* ---------- the map is the scope ---------- */
+function phaseOf(){ return (mapScope && mapScope.project && mapScope.project.phase) || null; }
+
+function resolveScope(){
+  try {
+    mapScope = window.CygenixMapContext ? CygenixMapContext.resolveMigrationScope() : null;
+    if (mapScope && !mapScope.mappedTableCount) mapScope = null;   /* no map → catalogue world */
+  } catch (e) { console.warn('map scope', e); mapScope = null; }
+}
+
+/* Design decision (brief §5, answered): REFUSE AND SAY WHY. When the
+   selected connection pair is not the pair the map was built against,
+   derived checks do not run — the page names both pairs instead of
+   producing numbers that describe a database the migration never touched. */
+function checkMismatch(){
+  mismatch = null;
+  if (!mapScope || !catalog) return;
+  const missing = { src: [], tgt: [] };
+  mapScope.tables.forEach(t => {
+    [['src', t.srcTable], ['tgt', t.tgtTable]].forEach(([side, full]) => {
+      if (!full) return;
+      const parts = String(full).split('.');
+      const schema = (parts.length > 1 ? parts[0] : 'dbo').toLowerCase();
+      const table = parts[parts.length - 1].toLowerCase();
+      const connected = catalog.tables.some(x => x.db === side);
+      const have = catalog.tables.some(x => x.db === side
+        && x.schema.toLowerCase() === schema && x.table.toLowerCase() === table);
+      if (connected && !have && !missing[side].includes(full)) missing[side].push(full);
+    });
+  });
+  if (missing.src.length || missing.tgt.length){
+    const c = mapScope.connections || {};
+    mismatch = {
+      missing,
+      mappedPair: [(c.mappedSrc && c.mappedSrc.database) || '?',
+                   (c.mappedTgt && c.mappedTgt.database) || '?'],
+      selectedPair: [catalogMeta.srcDb || '—', catalogMeta.tgtDb || '—'],
+    };
+  }
+}
+
+function syncFromMap(){
+  if (!mapScope) return;
+  try {
+    const specs = CygenixMapContext.deriveChecks(mapScope);
+    const conv = A.asDraftsFromScope(mapScope, specs, { now: nowMs() });
+    mapInfo = conv.informational;
+    mapSkipped = conv.skipped;
+    const res = A.asSyncMapRules(store, conv.drafts, 'map-sync', nowMs());
+    if (res.created || res.updated || res.retired) saveStore();
+  } catch (e) { console.warn('map sync', e); }
+}
+
+function jobFinishedAtOf(jobId){
+  if (!mapScope) return null;
+  const t = mapScope.tables.find(x => x.jobId === jobId);
+  const iso = t && t.run && t.run.finishedAt;
+  return iso ? (Date.parse(iso) || null) : null;
+}
+
+function runnable(rule){
+  if (rule.dormantUntilCutover && phaseOf() !== 'cutover')
+    return { ok: false, why: 'dormant until cutover — the project phase is ' + (phaseOf() || 'not set') };
+  if (mismatch && rule.provenance && rule.provenance.source === 'derived')
+    return { ok: false, why: 'the selected connection is not the pair this map was built against — '
+      + 'derived checks refuse to run against a database the migration never touched' };
+  return { ok: true, why: null };
+}
+
+/* derived rules fire on job completion, not on a wall clock */
+async function asRunDueJobRules(){
+  if (!mapScope || mismatch) return;
+  const due = store.rules.filter(r => r.enabled
+    && r.schedule && r.schedule.onJobCompletion
+    && runnable(r).ok
+    && A.asJobRuleDue(store, r, jobFinishedAtOf(r.schedule.onJobCompletion)));
+  if (!due.length) return;
+  const runs = [];
+  for (const r of due) runs.push(await asRunRule(r, { silent: true }));
+  recordSweep(runs);
+  renderAll();
 }
 
 async function buildCatalog(){
@@ -798,7 +892,8 @@ function notifyBreach(rule, breach, run){
 
 /* ---------- sweeps ---------- */
 function rulesInGroup(g){
-  return store.rules.filter(r => r.enabled && (r.schedule && r.schedule.groupId) === g.id);
+  return store.rules.filter(r => r.enabled && (r.schedule && r.schedule.groupId) === g.id
+    && runnable(r).ok);
 }
 async function asRunGroup(groupId){
   const g = store.groups.find(x => x.id === groupId);
@@ -815,7 +910,7 @@ async function asRunGroup(groupId){
 async function asRunAll(){
   const btn = $('as-cta'); btn.disabled = true;
   try {
-    const list = store.rules.filter(r => r.enabled);
+    const list = store.rules.filter(r => r.enabled && runnable(r).ok);
     const runs = [];
     for (const r of list) runs.push(await asRunRule(r, { silent: true }));
     recordSweep(runs);
@@ -874,6 +969,18 @@ function asAcceptTags(minConf){
   });
 }
 async function asProfileNow(silent){
+  /* with a map, re-profiling means re-reading the map */
+  if (mapScope || window.CygenixMapContext){
+    resolveScope();
+    if (mapScope){
+      syncFromMap();
+      await buildCatalog();
+      checkMismatch();
+      await asRunDueJobRules();
+      if (!silent) renderAll();
+      return [];
+    }
+  }
   await buildCatalog();
   const fresh = A.asSuggest(store, catalog, nowMs());
   A.asEvent(store, { type: 'profile.swept', proposed: fresh.length }, nowMs());
@@ -1027,7 +1134,14 @@ function estSweepMs(rules){
 /* ═══════════════ §2 + §3 + §4: status line, primary CTA, ribbon ═════════ */
 let ctaAction = null;
 function renderStatus(){
-  const st = A.asStatus(store, { connections: connectionCount() });
+  /* the header states what is being proven, from project data */
+  const subEl = document.querySelector('.as-sub');
+  if (mapScope){
+    subEl.textContent = 'Proving the ' + (mapScope.project.name || 'active') + ' migration ('
+      + mapScope.mappedTableCount + ' table' + (mapScope.mappedTableCount === 1 ? '' : 's') + ', '
+      + mapScope.mappedRowsLanded.toLocaleString('en-GB') + ' rows) landed correctly.';
+  }
+  const st = A.asStatus(store, { connections: connectionCount(), phase: phaseOf() });
   const line = $('as-status-line'), sub = $('as-status-sub'), cta = $('as-cta');
   line.className = 'line';
   if (st.state === 'no-checks'){
@@ -1039,7 +1153,7 @@ function renderStatus(){
     line.textContent = 'Nothing has been proven yet';
     sub.textContent = st.checksWritten + ' check' + (st.checksWritten === 1 ? ' is' : 's are')
       + ' written. None of them have ever run, so there is no evidence to show anyone.';
-    const est = estSweepMs(store.rules.filter(r => r.enabled));
+    const est = estSweepMs(store.rules.filter(r => r.enabled && runnable(r).ok));
     cta.textContent = 'Run all ' + st.checksWritten + ' checks · ~' + A.fmtDuration(est);
     ctaAction = asRunAll;
   } else if (st.state === 'breaches'){
@@ -1065,8 +1179,85 @@ function renderStatus(){
 function asCtaClick(){ if (ctaAction) ctaAction(); }
 
 /* ═══════════════ §5: coverage of the migration ═══════════════ */
+function renderMismatch(){
+  const p = $('as-mismatch');
+  if (!mismatch){ p.style.display = 'none'; return; }
+  p.style.display = '';
+  const gone = mismatch.missing.tgt.concat(mismatch.missing.src);
+  $('as-mismatch-body').innerHTML =
+    '<b>The selected connection is not the pair this map was built against.</b> '
+    + 'The migration ran against <span class="mono">' + esc(mismatch.mappedPair.join(' → '))
+    + '</span>; the console is pointed at <span class="mono">' + esc(mismatch.selectedPair.join(' → ')) + '</span>'
+    + (gone.length ? ', which does not contain ' + esc(gone.slice(0, 3).join(', '))
+      + (gone.length > 3 ? '…' : '') : '') + '. '
+    + 'Derived checks refuse to run against a database the migration never touched — their results would '
+    + 'describe the wrong estate. Reselect the mapped connections, or '
+    + '<a href="/object_mapping.html" style="color:var(--accent)">review the scope</a> if the map is out of date.';
+}
+
+/* Coverage re-based on the map: the denominator is the number of mapped
+   tables — a number that can reach 100%. The catalogue count survives on
+   a secondary line, a prompt to widen scope rather than an accusation. */
+function renderCoverageMapped(host, hint){
+  const title = document.querySelector('#as-coverage-panel .panel-title');
+  title.textContent = 'Coverage of ' + (mapScope.project.name ? 'the ' + mapScope.project.name + ' migration' : 'the migration');
+  hint.textContent = mapScope.mappedTableCount + ' mapped table' + (mapScope.mappedTableCount === 1 ? '' : 's')
+    + ' · ' + mapScope.mappedRowsLanded.toLocaleString('en-GB') + ' rows landed'
+    + ' · phase ' + (phaseOf() || 'not set');
+  const phase = phaseOf();
+  const stateOf = (t) => {
+    const states = store.rules
+      .filter(r => r.enabled && r.provenance && r.provenance.source === 'derived'
+        && r.provenance.jobId === t.jobId)
+      .map(r => A.asRuleState(store, r, { phase }));
+    if (states.includes('breaching')) return 'breaching';
+    if (states.includes('proven')) return 'proven';
+    return 'armed';
+  };
+  const buckets = { proven: [], breaching: [], armed: [] };
+  mapScope.tables.forEach(t => buckets[stateOf(t)].push(t));
+  const n = mapScope.tables.length || 1;
+  const pc = (k) => Math.round(100 * buckets[k].length / n);
+
+  const notRun = mapScope.tables.filter(t => !t.run.hasRun);
+  const armedChecksFor = (jobId) => store.rules.filter(r => r.enabled
+    && r.schedule && r.schedule.onJobCompletion === jobId).length;
+  const tgtTotal = catalog ? catalog.tables.filter(x => x.db === 'tgt').length : null;
+  const outside = tgtTotal == null ? null : Math.max(0, tgtTotal - mapScope.mappedTableCount);
+
+  host.innerHTML =
+    '<div class="covbar">'
+    + (buckets.proven.length ? '<i style="width:' + pc('proven') + '%;background:var(--green)"></i>' : '')
+    + (buckets.breaching.length ? '<i style="width:' + pc('breaching') + '%;background:var(--red)"></i>' : '')
+    + (buckets.armed.length ? '<i style="width:' + Math.max(0, 100 - pc('proven') - pc('breaching')) + '%;background:var(--amber)"></i>' : '')
+    + '</div>'
+    + '<div class="covleg">'
+    + '<span><span class="sw" style="background:var(--green)"></span>' + buckets.proven.length + ' of '
+    + mapScope.tables.length + ' tables proven</span>'
+    + (buckets.breaching.length ? '<span><span class="sw" style="background:var(--red)"></span>'
+      + buckets.breaching.length + ' breaching</span>' : '')
+    + '<span><span class="sw" style="background:var(--amber)"></span>' + buckets.armed.length
+    + ' awaiting' + (notRun.length ? ' first job run' : ' a clean check') + '</span>'
+    + '</div>'
+    + notRun.map(t => '<div class="covgaps"><b>' + esc(t.name || t.tgtTable) + ' has not executed.</b> Its '
+      + armedChecksFor(t.jobId) + ' derived checks are armed and will run on completion.</div>').join('')
+    /* rowsExcluded: accounted for, not lost — never rendered as a breach */
+    + mapInfo.map(x => '<div class="covgaps">' + esc(x.proves) + '</div>').join('')
+    + (mapSkipped.length
+      ? '<div class="muted" style="font-size:10.5px;margin-top:6px">Not derived: '
+        + esc(mapSkipped.map(s => s.id.split('/').pop() + ' (' + s.why + ')').join('; ')) + '.</div>' : '')
+    + (outside != null
+      ? '<div class="muted" style="font-size:11px;margin-top:8px">' + outside.toLocaleString('en-GB')
+        + ' tables in ' + esc(catalogMeta.tgtDb || 'the target') + ' are outside this migration — '
+        + '<a href="/object_mapping.html" style="color:var(--accent)">review scope</a> if that looks wrong.</div>'
+      : '<div class="muted" style="font-size:11px;margin-top:8px">— The connection catalogue has not loaded, '
+        + 'so the outside-this-migration count cannot be shown yet.</div>');
+}
+
 function renderCoverage(){
   const host = $('as-coverage'), hint = $('as-cov-hint');
+  if (mapScope){ renderCoverageMapped(host, hint); return; }
+  document.querySelector('#as-coverage-panel .panel-title').textContent = 'Coverage of the migration';
   if (!catalog || !catalog.tables.length){
     hint.textContent = 'not yet measurable';
     host.innerHTML = '<div class="muted" style="font-size:12px">— No target schema loaded, so coverage cannot be'
@@ -1103,6 +1294,30 @@ function renderCoverage(){
 const BUNDLE_CHECKS = ['uniqueness.composite', 'recon.rowcount', 'referential.orphan', 'recon.column_aggregate'];
 function renderBundles(){
   const host = $('as-bundles'), sub = $('as-bundle-sub');
+  /* with a map, the profiler's reach IS the map: the derived checks stand
+     in for the catalogue-wide bundle sweep, one card per job */
+  if (mapScope){
+    document.querySelector('#as-bundles-panel .panel-title').textContent = 'Derived from the map';
+    const derived = store.rules.filter(r => r.provenance && r.provenance.source === 'derived' && r.enabled);
+    sub.textContent = derived.length
+      ? derived.length + ' checks derived from ' + mapScope.mappedTableCount + ' mapped table'
+        + (mapScope.mappedTableCount === 1 ? '' : 's') + ' · nothing to review by hand'
+      : 'the map has no derivable steps yet';
+    const byJob = {};
+    derived.forEach(r => { (byJob[r.provenance.jobId] = byJob[r.provenance.jobId] || []).push(r); });
+    host.innerHTML = Object.keys(byJob).map(jid => {
+      const rules = byJob[jid];
+      const t = mapScope.tables.find(x => x.jobId === jid) || {};
+      return '<div class="bundle"><div class="body"><b>' + esc(rules[0].provenance.jobName || jid) + '</b>'
+        + '<p>' + rules.length + ' check' + (rules.length === 1 ? '' : 's') + ' derived from this job\'s mapping'
+        + (t.predicate ? ' — the source is counted under its own filter (<span class="mono">'
+          + esc(t.predicate) + '</span>)' : '') + '.</p>'
+        + '<div class="meta">' + esc(jid) + ' · runs on job completion · no writes</div></div>'
+        + '<div class="acts"><a class="btn" href="/object_mapping.html?edit=' + esc(jid) + '">View map</a></div></div>';
+    }).join('') || '<div class="empty">No derived checks yet — add a table mapping and its checks appear here.</div>';
+    $('as-sugs').innerHTML = '';
+    return;
+  }
   if (!catalog){
     sub.textContent = 'from the profiler';
     host.innerHTML = '<div class="empty">Profiling the schema…</div>';
@@ -1193,15 +1408,23 @@ function asClearRuleFilters(){
   ['continuous', 'migration', 'disabled', 'breaching'].forEach(k => $('as-f-' + k).classList.remove('on'));
   asRenderRules();
 }
-function lastResultChip(r){
+/* the five states replacing the pass/open binary */
+function stateChip(r){
   const lr = lastRunOf(r.id);
-  const open = openBreaches().some(b => b.ruleId === r.id);
-  if (open) return '<span class="chip crit">Open</span>';
-  if (!lr) return '<span class="chip">Never run</span>';
-  if (lr.status === 'pass') return '<span class="chip ok">Pass</span>';
-  if (lr.status === 'error') return '<span class="chip warn">Error</span>';
-  if (lr.status === 'skipped') return '<span class="chip">Skipped</span>';
-  return '<span class="chip crit">Open</span>';
+  if (lr && lr.status === 'error') return '<span class="chip warn">Error</span>';
+  return {
+    derived:   '<span class="chip info">Derived</span>',
+    armed:     '<span class="chip">Armed</span>',
+    proven:    '<span class="chip ok">Proven</span>',
+    breaching: '<span class="chip crit">Open</span>',
+    dormant:   '<span class="chip warn">Dormant</span>',
+  }[A.asRuleState(store, r, { phase: phaseOf() })] || '<span class="chip">—</span>';
+}
+function runsCell(r){
+  if (r.schedule && r.schedule.onJobCompletion) return 'On job completion';
+  const cron = ruleCron(r);
+  const human = cron ? A.asCronHuman(cron) : '—';
+  return r.dormantUntilCutover && phaseOf() !== 'cutover' ? human + ' · from cutover' : human;
 }
 function scopeCell(r){
   const t = (r.binding && r.binding.targets || [])[0];
@@ -1253,9 +1476,13 @@ function asRenderRules(){
     return;
   }
   tb.innerHTML = list.map(r => {
-    const prov = r.provenance && r.provenance.source === 'migration'
-      ? ' · from ' + esc(r.provenance.projectId || 'migration') : '';
-    const cron = ruleCron(r);
+    /* the rule names its own origin: MAP-step id, job name, and a way back */
+    const prov = r.provenance && r.provenance.source === 'derived'
+      ? ' · <b>derived from ' + esc(r.provenance.jobName || r.provenance.jobId) + '</b>'
+        + (r.provenance.jobId ? ' · <a href="/object_mapping.html?edit=' + esc(r.provenance.jobId)
+          + '" style="color:var(--accent)">view map</a>' : '')
+      : (r.provenance && r.provenance.source === 'migration'
+        ? ' · from ' + esc(r.provenance.projectId || 'migration') : '');
     const sqlOpen = expandedSqlRule === r.id;
     const lr = lastRunOf(r.id);
     return '<tr>'
@@ -1263,8 +1490,8 @@ function asRenderRules(){
       + '<td><span class="rulename">' + esc(r.proves || r.name) + '</span>'
       + '<span class="rid">' + esc(r.id) + ' · ' + esc(r.name) + ' · ' + esc(r.check) + prov + '</span></td>'
       + '<td>' + scopeCell(r) + '</td>'
-      + '<td>' + esc(cron ? A.asCronHuman(cron) : '—') + '</td>'
-      + '<td>' + lastResultChip(r) + '</td>'
+      + '<td>' + esc(runsCell(r)) + '</td>'
+      + '<td>' + stateChip(r) + '</td>'
       + '<td><button class="btn" onclick="asToggleSql(\'' + r.id + '\')" title="The SQL this check runs — recorded verbatim on every run">' + (sqlOpen ? '▴' : 'SQL') + '</button></td>'
       + '<td><button class="tog" aria-pressed="' + String(!!r.enabled) + '" aria-label="Enabled" onclick="asToggleRule(\'' + r.id + '\')"></button></td>'
       + '<td style="white-space:nowrap"><button class="btn" onclick="asRunNow(\'' + r.id + '\')" title="Run this rule now">▶</button> '
@@ -1291,6 +1518,8 @@ function asToggleRule(id){
 async function asRunNow(id){
   const r = store.rules.find(x => x.id === id);
   if (!r) return;
+  const ok = runnable(r);
+  if (!ok.ok){ alert('This check will not run: ' + ok.why + '.'); return; }
   const run = await asRunRule(r, { silent: true });
   recordSweep([run]);
   renderAll();
@@ -1443,7 +1672,7 @@ function renderSched(){
 
 /* ═══════════════ §9: the Evidence view ═══════════════ */
 function renderEvidence(){
-  const ev = A.asEvidence(store, nowMs());
+  const ev = A.asEvidence(store, nowMs(), { phase: phaseOf() });
   const openN = ev.open.length;
 
   /* the statement — every number computed, none invented */
@@ -1496,13 +1725,12 @@ function renderEvidence(){
   /* open items — named, never a bare count */
   $('as-ev-open').innerHTML = openN ? ev.open.map(o => {
     const r = store.rules.find(x => x.id === o.ruleId);
-    const cadence = r ? ruleCron(r) : null;
     return '<div class="openitem"><span class="chip ' + (/high/.test(o.severity) ? 'crit' : /accepted/.test(o.severity) ? '' : 'warn')
       + '">' + esc(o.severity) + '</span>'
       + '<div class="body"><b>' + esc(o.name) + '</b>'
       + '<p>' + esc(o.impact) + ' Owner: ' + esc(o.owner) + ' · open ' + esc(A.fmtDuration(o.ageMs))
       + ' · first seen in run ' + esc(o.firstRunId || '—')
-      + ' · re-checked ' + esc(cadence ? A.asCronHuman(cadence) : '—') + '.</p></div></div>';
+      + ' · re-checked ' + esc(r ? runsCell(r).toLowerCase() : '—') + '.</p></div></div>';
   }).join('') : '<div class="empty">Nothing is open. Every named check currently passes.</div>';
 
   /* how to check us — claim → query → result → record */
@@ -1650,6 +1878,7 @@ function renderAll(){
   const due = store.groups.filter(g => A.asCronDue(g.cron, g.lastRunAt, nowMs())).length;
   $('as-sweepnote').textContent = due ? due + ' group' + (due === 1 ? '' : 's') + ' due' : '';
   if (view === 'eng'){
+    renderMismatch();
     renderCoverage();
     renderBundles();
     asRenderRules();
@@ -1860,13 +2089,26 @@ function asSaveFromDrawer(){
 /* ═══════════════ boot ═══════════════ */
 document.addEventListener('DOMContentLoaded', () => {
   A = window.CygenixAssurance;
+  resolveScope();                 /* the map first — everything reads from it */
   loadStore();
   /* keep the default groups current without clobbering user edits */
   if (!store.groups || !store.groups.length) store.groups = A.asDefaultGroups();
+  syncFromMap();                  /* derive rules from the map, idempotently */
   renderAll();
-  /* build the catalogue in the background so coverage, bundles and the
-     drawer open warm; nothing waits on it */
-  buildCatalog().then(() => renderAll()).catch(() => {});
+  /* the catalogue loads in the background: it feeds the outside-this-
+     migration line, the mismatch check, and the no-map fallback */
+  buildCatalog()
+    .then(() => { checkMismatch(); renderAll(); return asRunDueJobRules(); })
+    .catch(() => {});
+  /* cross-tab: a job run or a map edit elsewhere re-scopes this page */
+  window.addEventListener('storage', (e) => {
+    if (e.key !== 'cygenix_jobs' && e.key !== 'cygenix_projects') return;
+    resolveScope();
+    syncFromMap();
+    checkMismatch();
+    renderAll();
+    asRunDueJobRules().catch(() => {});
+  });
 });
 </script>
 <script src="/cookie-consent.js?v=8bc63de620" defer></script>
