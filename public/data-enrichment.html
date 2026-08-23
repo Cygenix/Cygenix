@@ -50,6 +50,14 @@ body.cyg-collapsed{padding-left:54px}
 .en-title{font-size:18px;font-weight:600}
 .en-sub{font-size:12px;color:var(--text2);line-height:1.55;max-width:760px;margin-top:2px}
 .en-sub b{color:var(--text)}
+.en-session{display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap}
+.en-session #en-sess-state{font-size:11px;color:var(--text2);margin-right:4px}
+.en-session #en-sess-state b{color:var(--text);font-weight:500}
+.sess-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;border:0.5px solid var(--border);margin-bottom:5px}
+.sess-row:hover{background:var(--bg4)}
+.sess-row .nm{flex:1;min-width:0}
+.sess-row .nm b{font-size:12.5px;font-weight:500;display:block}
+.sess-row .nm span{font-family:var(--mono);font-size:10.5px;color:var(--text2)}
 .chipc{font-family:var(--mono);font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:4px;border:0.5px solid var(--border)}
 .btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
 .btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
@@ -162,7 +170,15 @@ tr.decided td{opacity:0.55}
       disagree, and scores its own confidence. Values are staged as proposals with a
       <span class="chipc">source</span>, <span class="chipc">confidence</span> and a reason —
       <b>nothing is written until you review and apply.</b></div>
+    <div class="en-session">
+      <span class="mono" id="en-sess-state">New session</span>
+      <button class="btn" onclick="enSaveSessionAs()">💾 Save session</button>
+      <button class="btn" onclick="enOpenSessions()">📂 Open…</button>
+      <button class="btn" onclick="enNewSession()">✚ New</button>
+    </div>
   </div>
+
+  <div class="warnbox" id="en-resumed" style="display:none;margin-bottom:0.9rem"><span>↩</span><div></div></div>
 
   <div class="grid">
     <!-- ═══ LEFT: steps ═══ -->
@@ -222,7 +238,7 @@ tr.decided td{opacity:0.55}
             it; this note is just the warning.</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:10px">
-            <button class="tog" id="en-infer" aria-pressed="true" onclick="enTog(this)"></button>
+            <button class="tog" id="en-infer" aria-pressed="true" onclick="enTog(this);touchDraft()"></button>
             Allow engine inference (seniority, department, normalised titles, domains) — always badged
             <span class="badge b-inferred">AI-inferred</span>, capped at 0.80
           </div>
@@ -387,7 +403,7 @@ tr.decided td{opacity:0.55}
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
-<script src="/cygenix-enrichment.js?v=aca502593a" defer></script>
+<script src="/cygenix-enrichment.js?v=024cc71acc" defer></script>
 <script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
 
 <script>
@@ -411,6 +427,8 @@ let mappings = [];
 let ruleJson = null, nlText = '';
 let currentRun = null;       // {runId, conflicts, unenrichable, startedAt}
 let cancelRequested = false;
+let sessionName = null;      // the named session being worked in, if any
+let draftTimer = null;
 
 function userName(){
   try { return (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || 'user'; }
@@ -445,6 +463,193 @@ async function dbExec(sql){
   const data = await res.json().catch(() => ({ error: 'Non-JSON ' + res.status }));
   if (!res.ok || data.error) throw new Error(data.error || res.statusText);
   return data.recordset || data.rows || [];
+}
+
+/* ── sessions: leave the page, come back to the same screen ──────────────
+   Everything the page holds is capturable, columns included, so restoring
+   costs no database round trip. The draft is written continuously (one per
+   project); named sessions are deliberate and versioned. */
+function captureSetup(){
+  return {
+    side: $('en-side').value, table: $('en-table').value.trim(),
+    columns: columns, rowCount: rowCount,
+    anchors: anchors, keyColumn: $('en-key').value,
+    mappings: mappings, inference: $('en-infer').getAttribute('aria-pressed') === 'true',
+    refTable: $('en-ref-table').value.trim(), refAnchor: $('en-ref-anchor').value,
+    floor: +$('en-floor').value, nlText: $('en-nl').value,
+    ruleJson: ruleJson, runId: currentRun ? currentRun.runId : null,
+    projectId: projectId(),
+  };
+}
+
+/* debounced so typing a rule does not write the store on every keystroke */
+function touchDraft(){
+  if (!E || !store) return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(flushDraft, 400);
+}
+/* the debounce must never cost someone their last edit: closing the tab,
+   switching away, or navigating flushes whatever is still pending */
+function flushDraft(){
+  if (!E || !store) return;
+  clearTimeout(draftTimer);
+  draftTimer = null;
+  E.enSetDraft(store, projectId(), captureSetup(), Date.now());
+  saveStore();
+  renderSessionState();
+}
+
+function renderSessionState(when){
+  const d = E.enDraft(store, projectId());
+  const at = when || (d && d.savedAt);
+  $('en-sess-state').innerHTML = (sessionName ? '<b>' + esc(sessionName) + '</b>' : 'Unsaved session')
+    + (at ? ' · saved ' + new Date(at).toLocaleTimeString() : '');
+}
+
+/* Restoring never queries the database: the saved columns rebuild the
+   panels, and a saved run rebuilds its three result tabs from the store. */
+function restoreSetup(s, note){
+  if (!s) return;
+  $('en-side').value = s.side || 'src';
+  $('en-table').value = s.table || '';
+  columns = s.columns || [];
+  rowCount = s.rowCount || 0;
+  mappings = (s.mappings || []).slice();
+  ruleJson = s.ruleJson || null;
+  nlText = s.nlText || '';
+  $('en-nl').value = nlText;
+  $('en-ref-table').value = s.refTable || '';
+  $('en-ref-anchor').value = s.refAnchor || 'email';
+  $('en-floor').value = s.floor == null ? 0.75 : s.floor;
+  $('en-floor-v').textContent = (+$('en-floor').value).toFixed(2);
+  $('en-infer').setAttribute('aria-pressed', String(s.inference !== false));
+  $('en-dflt-schema').textContent = defaultSchema();
+
+  if (columns.length){
+    renderStats();
+    renderAnchors();
+    /* the saved anchor toggles win over a fresh detection */
+    if (s.anchors && s.anchors.length){
+      anchors = s.anchors.slice();
+      renderAnchors_fromState();
+    }
+    if (s.keyColumn) $('en-key').value = s.keyColumn;
+    renderMappings(); renderProviders(); renderEstimate();
+    ['en-p2', 'en-p3', 'en-p4', 'en-p5'].forEach(id => $(id).style.display = '');
+    $('en-load-note').textContent = '✓ ' + columns.length + ' columns (restored)';
+  }
+  if (ruleJson){
+    $('en-rules-out').style.display = '';
+    $('en-rules-json').textContent = JSON.stringify(ruleJson, null, 2);
+    $('en-scope-note').textContent = 'restored — compile again to re-count rows in scope';
+  }
+  if (s.runId) reopenRun(s.runId);
+
+  const banner = $('en-resumed');
+  if (note){
+    banner.style.display = '';
+    banner.querySelector('div').innerHTML = note;
+  } else banner.style.display = 'none';
+  renderSessionState(s.savedAt);
+}
+
+/* redraw the anchor rows from the restored state rather than re-detecting */
+function renderAnchors_fromState(){
+  $('en-anchors').innerHTML = anchors.map((a, i) =>
+    '<tr><td>' + esc(a.anchor) + '</td><td class="mono muted">' + esc(a.column) + '</td>'
+    + '<td><span class="conf"><span class="track"><i style="width:' + a.coverage + '%;background:'
+    + (a.coverage > 80 ? 'var(--green)' : 'var(--amber)') + '"></i></span><b class="mono">' + a.coverage + '%</b></span></td>'
+    + '<td style="text-align:right"><button class="tog" aria-pressed="' + a.enabled
+    + '" onclick="enTog(this);anchors[' + i + '].enabled=!anchors[' + i + '].enabled;touchDraft()"></button></td></tr>'
+  ).join('');
+}
+
+function reopenRun(runId){
+  const run = E.enRun(store, runId);
+  if (!run) return false;
+  currentRun = { runId: run.runId, run: run,
+    conflicts: run.conflicts || [], unenrichable: run.unenrichable || [] };
+  $('en-empty').style.display = 'none';
+  $('en-results').style.display = '';
+  renderResults();
+  return true;
+}
+
+function enSaveSessionAs(){
+  const name = prompt('Save this session as:', sessionName
+    || ($('en-table').value.trim() || 'enrichment') + ' · ' + new Date().toISOString().slice(0, 10));
+  if (!name) return;
+  const s = E.enSaveSession(store, name.trim(), captureSetup(), userName(), Date.now());
+  sessionName = s.name;
+  saveStore();
+  renderSessionState(s.savedAt);
+  $('en-resumed').style.display = '';
+  $('en-resumed').querySelector('div').innerHTML = 'Saved <b>' + esc(s.name) + '</b> (v' + s.version
+    + '). Reopen it from <b>Open…</b> on any machine signed in as you.';
+}
+
+function enOpenSessions(){
+  const sessions = E.enSessions(store, projectId());
+  const runs = E.enRuns(store, projectId(), 8);
+  $('en-mo-title').textContent = 'Open a session';
+  $('en-mo-body').innerHTML =
+    '<div style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin-bottom:5px">Saved sessions</div>'
+    + (sessions.length ? sessions.map(s =>
+      '<div class="sess-row"><div class="nm"><b>' + esc(s.name) + '</b><span>' + esc(s.table || 'no table')
+      + ' · ' + (s.mappings || []).length + ' fields · v' + s.version + ' · '
+      + new Date(s.savedAt).toLocaleString() + '</span></div>'
+      + '<button class="btn" onclick="enLoadSession(\'' + s.sessionId + '\')">Open</button>'
+      + '<button class="btn btn-danger" onclick="enDropSession(\'' + esc(s.name).replace(/'/g, "\\'") + '\')">Delete</button></div>').join('')
+      : '<div class="cb-note">No saved sessions yet — <b>Save session</b> keeps the table, mappings, rules and the run you are reviewing.</div>')
+    + '<div style="font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin:12px 0 5px">Recent runs</div>'
+    + (runs.length ? runs.map(r =>
+      '<div class="sess-row"><div class="nm"><b>' + esc(r.sourceTable || '—') + '</b><span>' + esc(r.runId)
+      + ' · ' + (r.rowsEnriched || 0) + ' enriched · ' + esc(r.status || '')
+      + ' · ' + new Date(r.startedAt).toLocaleString() + '</span></div>'
+      + '<button class="btn" onclick="enReopenRun(\'' + r.runId + '\')">Review</button></div>').join('')
+      : '<div class="cb-note">No runs recorded in this project yet.</div>');
+  $('en-scrim').classList.add('show');
+  $('en-modal').classList.add('show');
+}
+
+function enLoadSession(id){
+  const s = E.enSession(store, id);
+  if (!s) return;
+  sessionName = s.name;
+  enCloseModals();
+  restoreSetup(s, 'Opened <b>' + esc(s.name) + '</b> — saved '
+    + new Date(s.savedAt).toLocaleString() + '.'
+    + (s.columns && s.columns.length ? ' Columns came with the session, so nothing was re-read from the database.' : ''));
+  touchDraft();
+}
+function enDropSession(name){
+  if (!confirm('Delete every saved version of "' + name + '"? Runs and proposals are not affected.')) return;
+  const n = E.enDeleteSession(store, name, userName(), Date.now());
+  if (sessionName === name) sessionName = null;
+  saveStore();
+  enOpenSessions();
+  renderSessionState();
+  alert(n + ' saved version(s) deleted.');
+}
+function enReopenRun(runId){
+  enCloseModals();
+  if (!reopenRun(runId)){ alert('That run is no longer in the store.'); return; }
+  const run = currentRun.run;
+  $('en-resumed').style.display = '';
+  $('en-resumed').querySelector('div').innerHTML = 'Reviewing run <b>' + esc(run.runId) + '</b> ('
+    + esc(run.sourceTable || '') + ', ' + new Date(run.startedAt).toLocaleString() + '). '
+    + 'Verdicts you already recorded are as you left them.'
+    + (run.conflictsTruncated || run.unenrichableTruncated
+      ? ' <b>Note:</b> ' + (run.conflictsTruncated || 0) + ' conflict(s) and '
+        + (run.unenrichableTruncated || 0) + ' unenrichable row(s) beyond the first 500 were not kept.'
+      : '');
+  touchDraft();
+}
+function enNewSession(){
+  if (!confirm('Start a new session? The current one stays saved if you named it.')) return;
+  E.enClearDraft(store, projectId());
+  saveStore();
+  location.reload();
 }
 
 /* ── table combobox ──────────────────────────────────────────────────────
@@ -580,6 +785,7 @@ function enSideChanged(){
   if (comboRef) comboRef.close();
   $('en-dflt-schema').textContent = defaultSchema();
   $('en-load-note').textContent = '';
+  touchDraft();
 }
 
 /* ── Step 1: load columns + null rates (read-only) ── */
@@ -604,6 +810,7 @@ async function enLoadColumns(){
       nullPct: rowCount ? Math.round(100 * (Number(stats['n' + i]) || 0) / rowCount) : 0 }));
     note.textContent = '✓ ' + columns.length + ' columns';
     renderStats(); renderAnchors(); seedMappings(); renderProviders(); renderEstimate();
+    touchDraft();
     ['en-p2', 'en-p3', 'en-p4', 'en-p5'].forEach(id => $(id).style.display = '');
   } catch (e) {
     note.textContent = '✗ ' + (e.message || e);
@@ -625,7 +832,7 @@ function renderAnchors(){
     '<tr><td>' + esc(a.anchor) + '</td><td class="mono muted">' + esc(a.column) + '</td>'
     + '<td><span class="conf"><span class="track"><i style="width:' + a.coverage + '%;background:'
     + (a.coverage > 80 ? 'var(--green)' : 'var(--amber)') + '"></i></span><b class="mono">' + a.coverage + '%</b></span></td>'
-    + '<td style="text-align:right"><button class="tog" aria-pressed="' + a.enabled + '" onclick="enTog(this);anchors[' + i + '].enabled=!anchors[' + i + '].enabled"></button></td></tr>'
+    + '<td style="text-align:right"><button class="tog" aria-pressed="' + a.enabled + '" onclick="enTog(this);anchors[' + i + '].enabled=!anchors[' + i + '].enabled;touchDraft()"></button></td></tr>'
   ).join('') : '<tr><td colspan="4" class="empty">No plausible anchor columns found — this table cannot be enriched.</td></tr>';
   const keyGuess = columns.find(c => /^(row_key|id)$/i.test(c.name))
     || columns.find(c => /_id$|_key$|^key$/i.test(c.name)) || columns[0];
@@ -649,18 +856,18 @@ function renderMappings(){
     const meta = E.attrOf(m.attr) || {};
     return '<tr><td class="mono">' + esc(m.targetColumn) + '</td>'
       + '<td class="mono muted">' + esc(m.attr) + (meta.verifyOnly ? ' <span class="badge b-none">verify-only</span>' : '') + '</td>'
-      + '<td><select class="inp mini" onchange="mappings[' + i + '].policy=this.value">'
+      + '<td><select class="inp mini" onchange="mappings[' + i + '].policy=this.value;touchDraft()">'
       + [['if-null', 'If null'], ['null-lowconf', 'Null + low-conf'], ['overwrite', 'Overwrite']]
         .map(([v, l]) => '<option value="' + v + '"' + (m.policy === v ? ' selected' : '') + '>' + l + '</option>').join('')
       + '</select></td>'
-      + '<td><button class="iconbtn" onclick="mappings.splice(' + i + ',1);renderMappings();renderEstimate()">✕</button></td></tr>';
+      + '<td><button class="iconbtn" onclick="mappings.splice(' + i + ',1);renderMappings();renderEstimate();touchDraft()">✕</button></td></tr>';
   }).join('') || '<tr><td colspan="4" class="empty">Nothing mapped yet — add a field below.</td></tr>';
   $('en-add-col').innerHTML = columns.map(c => '<option>' + esc(c.name) + '</option>').join('');
   $('en-add-attr').innerHTML = E.CATALOGUE.map(a => '<option>' + esc(a.attr) + '</option>').join('');
 }
 function enAddMapping(){
   mappings.push({ targetColumn: $('en-add-col').value, attr: $('en-add-attr').value, policy: 'if-null' });
-  renderMappings(); renderEstimate();
+  renderMappings(); renderEstimate(); touchDraft();
 }
 
 /* ── Step 4: providers + rules ── */
@@ -679,6 +886,7 @@ function enFloorChanged(){
   store.settings.floor = +$('en-floor').value;
   saveStore();
   renderProposals();
+  touchDraft();
 }
 function anchorCtx(){
   const phone = anchors.find(a => a.anchor === 'Phone');
@@ -697,6 +905,7 @@ async function enCompile(){
   $('en-rules-json').textContent = JSON.stringify(ruleJson, null, 2);
   if (nlText) E.enSaveRuleset(store, 'page-rules', nlText, ruleJson, userName(), Date.now());
   saveStore();
+  touchDraft();
   /* rows in scope: a real read-only count with the compiled predicate —
      only when every filter column actually exists on the table */
   const missing = (ruleJson.filters || []).filter(f => !columns.some(c => c.name === f.column));
@@ -715,6 +924,7 @@ function enClearRules(){
   $('en-nl').value = ''; ruleJson = null; nlText = '';
   $('en-rules-out').style.display = 'none'; $('en-questions').innerHTML = '';
   $('en-scope-note').textContent = '';
+  touchDraft();
 }
 
 /* ── Step 5: estimate, disclosure, run ── */
@@ -870,6 +1080,8 @@ async function enRun(){
     status: cancelRequested ? 'cancelled' : 'complete',
     rowCount: rows.length, rowsEnriched: new Set(allProposals.map(p => p.rowKey)).size,
     rowsUnenrichable: unenrichable.length,
+    /* kept on the run so reopening it later rebuilds all three result tabs */
+    conflicts: allConflicts, unenrichable: unenrichable,
     providers: activeProviderIds(), engine: 'deterministic v1 (Claude adjudication not configured)',
     seed: 41889, floor: floor, ruleJson: ruleJson, nlText: nlText,
     providerCost: 0, llmCost: 0,
@@ -878,7 +1090,7 @@ async function enRun(){
   }, startedAt);
   E.enStageProposals(store, run.runId, allProposals, startedAt);
   saveStore();
-  currentRun = { runId: run.runId, conflicts: allConflicts, unenrichable: unenrichable, run: run };
+  currentRun = { runId: run.runId, conflicts: run.conflicts, unenrichable: run.unenrichable, run: run };
 
   /* every run writes a profile run record when profiles are in force */
   try {
@@ -902,6 +1114,7 @@ async function enRun(){
   $('en-cancel').style.display = 'none';
   $('en-results').style.display = '';
   renderResults();
+  touchDraft();          /* the draft now points at this run */
 }
 function enCancelRun(){ cancelRequested = true; }
 
@@ -1241,8 +1454,26 @@ document.addEventListener('DOMContentLoaded', () => {
   $('en-floor').value = store.settings.floor;
   $('en-floor-v').textContent = (+store.settings.floor).toFixed(2);
   comboTable = makeCombo('en-table', 'en-table-menu', () => enLoadColumns());
-  comboRef = makeCombo('en-ref-table', 'en-ref-menu', null);
+  comboRef = makeCombo('en-ref-table', 'en-ref-menu', () => touchDraft());
   $('en-dflt-schema').textContent = defaultSchema();
+  $('en-nl').addEventListener('input', touchDraft);
+  $('en-ref-table').addEventListener('change', touchDraft);
+  $('en-key').addEventListener('change', touchDraft);
+  window.addEventListener('pagehide', flushDraft);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushDraft();
+  });
+
+  /* resume: the draft is this project's last working state, restored with
+     no database round trip because the columns travelled with it */
+  const draft = E.enDraft(store, projectId());
+  if (draft && (draft.table || (draft.mappings || []).length)){
+    restoreSetup(draft, 'Resumed where you left off — <b>' + esc(draft.table || 'no table')
+      + '</b>, saved ' + new Date(draft.savedAt).toLocaleString()
+      + '. <b>Save session</b> to name it, or <b>New</b> to start clean.');
+  } else {
+    renderSessionState();
+  }
   /* the menu is viewport-positioned, so it has to follow its input */
   window.addEventListener('scroll', () => {
     comboTable.reposition(); comboRef.reposition();

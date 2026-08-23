@@ -233,7 +233,67 @@ check('a second apply cannot double-stamp what is already written',
 check('only the ids handed in are stamped — a partial write marks only what went through',
   store2.proposals.slice(2).every(p => !p.appliedAt));
 
-// ── 9. Table picker ─────────────────────────────────────────────────────────
+// ── 9. Sessions: leave and come back ────────────────────────────────────────
+const SETUP = { side: 'src', table: 'dbo.crm_contacts',
+  columns: [{ name: 'row_key', nullPct: 0 }, { name: 'job_title', nullPct: 60 }],
+  rowCount: 4812, anchors: [{ anchor: 'Email', column: 'contact_email', coverage: 92, enabled: true }],
+  keyColumn: 'row_key', mappings: MAPPINGS, inference: false, refTable: 'dbo.ref_accounts_clean',
+  refAnchor: 'company', floor: 0.82, nlText: 'Only UK accounts', ruleJson: comp.ruleJson,
+  runId: 'enr_x1', projectId: 'p1' };
+const s3 = E.enNewStore(now);
+const sesA = E.enSaveSession(s3, 'Finance backfill', SETUP, 'op@x', now);
+check('a saved session carries the whole screen, columns included, so resuming needs no database',
+  sesA.table === 'dbo.crm_contacts' && sesA.columns.length === 2 && sesA.rowCount === 4812
+  && sesA.mappings.length === MAPPINGS.length && sesA.floor === 0.82
+  && sesA.inference === false && sesA.ruleJson === comp.ruleJson && sesA.runId === 'enr_x1',
+  JSON.stringify(Object.keys(sesA)));
+const sesB = E.enSaveSession(s3, 'Finance backfill',
+  Object.assign({}, SETUP, { floor: 0.6 }), 'op@x', now + 10);
+check('saving over a name versions it rather than destroying the earlier copy',
+  sesB.version === 2 && s3.sessions.length === 2 && s3.sessions[0].floor === 0.82);
+check('the session list offers the newest version of each name, most recent first',
+  E.enSessions(s3, 'p1').length === 1 && E.enSessions(s3, 'p1')[0].version === 2);
+E.enSaveSession(s3, 'Other project', Object.assign({}, SETUP, { projectId: 'p2' }), 'op@x', now + 20);
+check('sessions are scoped to their project', E.enSessions(s3, 'p1').length === 1
+  && E.enSessions(s3, 'p2').length === 1 && E.enSessions(s3).length === 2);
+check('a saved session is an audit event, not a silent write',
+  s3.events.filter(e => e.type === 'session.saved').length === 3);
+check('deleting a name removes every version — the oldest copy does not resurface',
+  E.enDeleteSession(s3, 'Finance backfill', 'op@x', now + 30) === 2
+  && E.enSessions(s3, 'p1').length === 0
+  && s3.events.some(e => e.type === 'session.deleted' && e.versions === 2));
+
+const s4 = E.enNewStore(now);
+E.enSetDraft(s4, 'p1', SETUP, now);
+E.enSetDraft(s4, 'p2', Object.assign({}, SETUP, { table: 'dbo.leads' }), now + 1);
+check('the draft is per project, so two projects do not overwrite each other',
+  E.enDraft(s4, 'p1').table === 'dbo.crm_contacts' && E.enDraft(s4, 'p2').table === 'dbo.leads'
+  && E.enDraft(s4, 'p1').savedAt === now);
+E.enClearDraft(s4, 'p1');
+check('starting fresh clears only that project\'s draft',
+  E.enDraft(s4, 'p1') === null && E.enDraft(s4, 'p2') !== null);
+check('a store written before sessions existed still loads',
+  (() => { const old = { v: 1, runs: [], proposals: [], rulesets: [], events: [], settings: {} };
+    return E.enSessions(old).length === 0 && E.enDraft(old, 'p1') === null; })());
+
+// a reopened run must rebuild all three result tabs, so the run keeps them
+const s5 = E.enNewStore(now);
+const run5 = E.enRecordRun(s5, { projectId: 'p1', sourceTable: 'dbo.crm_contacts', rowCount: 3,
+  conflicts: [{ rowKey: 'R1', name: 'industry', chosen: 'Manufacturing', rejected: [], reason: 'waterfall' }],
+  unenrichable: [{ rowKey: 'R2', anchorValue: '(null)', reason: 'no anchor' }] }, now);
+check('a run keeps its conflicts and unenrichable rows — reopening shows the same three tabs',
+  E.enRun(s5, run5.runId).conflicts.length === 1
+  && E.enRun(s5, run5.runId).unenrichable.length === 1
+  && E.enRun(s5, run5.runId).conflictsTruncated === 0);
+const big = Array.from({ length: 640 }, (_, i) => ({ rowKey: 'R' + i, reason: 'x' }));
+const run6 = E.enRecordRun(s5, { projectId: 'p1', unenrichable: big }, now + 1);
+check('an enormous run is capped, and says how much it dropped rather than pretending',
+  run6.unenrichable.length === 500 && run6.unenrichableTruncated === 140);
+check('the resume list is newest first and scoped to the project',
+  E.enRuns(s5, 'p1')[0].runId === run6.runId && E.enRuns(s5, 'p9').length === 0
+  && E.enRun(s5, 'nope') === null);
+
+// ── 10. Table picker ────────────────────────────────────────────────────────
 // The source table is searched, not remembered. Ranking, inline completion
 // and default-schema resolution are decisions, so they live in the engine.
 const CATALOG = [
@@ -276,7 +336,7 @@ check('bracket-quoted input is accepted and echoed in the catalogue\'s casing',
   E.enResolveTable('[dbo].[CRM_Contacts]', CATALOG, 'dbo') === 'dbo.crm_contacts'
   && E.enResolveTable('', CATALOG, 'dbo') === '');
 
-// ── 10. Wiring ──────────────────────────────────────────────────────────────
+// ── 11. Wiring ──────────────────────────────────────────────────────────────
 const PAGE = fs.existsSync(__dirname + '/../public/data-enrichment.html')
   ? fs.readFileSync(__dirname + '/../public/data-enrichment.html', 'utf8') : '';
 const SIDE = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
@@ -328,6 +388,27 @@ check('both table fields are comboboxes over the live catalogue, not free text',
 check('the picker menu escapes the panel\'s overflow:hidden instead of being clipped by it',
   /\.cb-menu\{position:fixed/.test(PAGE)
   && PAGE.indexOf('<div class="cb-menu" id="en-table-menu"') > PAGE.indexOf('</div>\n\n<div class="scrim"') - 400);
+check('the page saves and restores sessions, and resumes the draft on boot',
+  /onclick="enSaveSessionAs\(\)"/.test(PAGE) && /onclick="enOpenSessions\(\)"/.test(PAGE)
+  && /onclick="enNewSession\(\)"/.test(PAGE)
+  && /E\.enDraft\(store, projectId\(\)\)/.test(PAGE) && /restoreSetup\(draft,/.test(PAGE)
+  && /Resumed where you left off/.test(PAGE));
+check('the draft is written on every state change, debounced, not on a Save button alone',
+  (PAGE.match(/touchDraft\(\)/g) || []).length >= 10
+  && /clearTimeout\(draftTimer\)/.test(PAGE));
+check('the debounce can never cost a last edit — hiding or leaving the page flushes it',
+  /function flushDraft/.test(PAGE) && /addEventListener\('pagehide', flushDraft\)/.test(PAGE)
+  && /visibilityState === 'hidden'/.test(PAGE)
+  && /draftTimer = setTimeout\(flushDraft, 400\)/.test(PAGE));
+check('restoring redraws from the saved columns instead of re-reading the database',
+  /function restoreSetup/.test(PAGE)
+  && !/restoreSetup[\s\S]{0,1200}?dbExec/.test(PAGE)
+  && /columns = s\.columns \|\| \[\]/.test(PAGE)
+  && /\(restored\)/.test(PAGE));
+check('a run can be reopened for review, with its conflicts and unenrichable rows',
+  /function reopenRun/.test(PAGE) && /E\.enRun\(store, runId\)/.test(PAGE)
+  && /run\.conflicts \|\| \[\]/.test(PAGE) && /conflicts: allConflicts, unenrichable: unenrichable/.test(PAGE)
+  && /conflictsTruncated/.test(PAGE));
 check('the default schema is dialect-aware, so postgres is not told its tables live in dbo',
   /function defaultSchema\(\)\{ return dialectOf\(\) === 'postgres' \? 'public' : 'dbo'; \}/.test(PAGE)
   && !/parts\.length > 1 \? parts\[0\] : 'dbo'/.test(PAGE));
