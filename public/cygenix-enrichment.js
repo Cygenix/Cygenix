@@ -508,14 +508,21 @@ function enNewStore(now) {
   return {
     v: 1, createdAt: now || 0,
     runs: [], proposals: [], rulesets: [], events: [],
+    sessions: [], drafts: {},
     settings: { floor: 0.75, inferenceEnabled: true, retentionDays: 30,
       spendCapGBP: 75, disclosureAck: {} },
   };
 }
+/* stores written before sessions existed load without them */
+function enMigrate(store) {
+  if (!store.sessions) store.sessions = [];
+  if (!store.drafts) store.drafts = {};
+  return store;
+}
 function enLoad() {
   try {
     var raw = (typeof localStorage !== 'undefined') && localStorage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return enMigrate(JSON.parse(raw));
   } catch (e) { /* fall through */ }
   return enNewStore(Date.now ? Date.now() : 0);
 }
@@ -536,12 +543,120 @@ function enSaveRuleset(store, name, nlText, ruleJson, user, now) {
   return rs;
 }
 
+/* ── sessions (save / resume) ────────────────────────────────────────────
+   A session is the whole working state of the page: which table, which
+   anchors and mappings, the ruleset, the provider settings, and the run
+   whose proposals are being reviewed. Columns travel with it, so resuming
+   restores the screen without going back to the database.
+
+   Two flavours. A DRAFT is written continuously, one per project, so
+   closing the tab loses nothing. A NAMED session is deliberate, versioned
+   like a ruleset — saving over a name keeps the older copy rather than
+   destroying work someone may still want. ─────────────────────────────── */
+var SESSION_CAP = 60;
+
+function enSessionShape(setup) {
+  var s = setup || {};
+  return {
+    side: s.side || 'src', table: s.table || '',
+    columns: s.columns || [], rowCount: s.rowCount || 0,
+    anchors: s.anchors || [], keyColumn: s.keyColumn || '',
+    mappings: s.mappings || [], inference: s.inference !== false,
+    refTable: s.refTable || '', refAnchor: s.refAnchor || 'email',
+    floor: s.floor == null ? 0.75 : s.floor,
+    nlText: s.nlText || '', ruleJson: s.ruleJson || null,
+    runId: s.runId || null, projectId: s.projectId || null,
+  };
+}
+
+function enSaveSession(store, name, setup, user, now) {
+  enMigrate(store);
+  var prior = store.sessions.filter(function (x) { return x.name === name; });
+  var s = Object.assign({
+    sessionId: 'ses_' + (now || 0).toString(36) + '_' + store.sessions.length,
+    name: name, version: prior.length + 1,
+    savedBy: user || '', savedAt: now || 0,
+  }, enSessionShape(setup));
+  store.sessions.push(s);
+  if (store.sessions.length > SESSION_CAP) {
+    store.sessions.splice(0, store.sessions.length - SESSION_CAP);
+  }
+  enEvent(store, { type: 'session.saved', sessionId: s.sessionId, name: name,
+    version: s.version, by: user || '' }, now);
+  return s;
+}
+
+/* newest version of each name, most recently saved first */
+function enSessions(store, projectId) {
+  enMigrate(store);
+  var latest = {};
+  store.sessions.forEach(function (s) {
+    if (projectId && s.projectId && s.projectId !== projectId) return;
+    if (!latest[s.name] || s.savedAt >= latest[s.name].savedAt) latest[s.name] = s;
+  });
+  return Object.keys(latest).map(function (k) { return latest[k]; })
+    .sort(function (a, b) { return b.savedAt - a.savedAt; });
+}
+
+function enSession(store, sessionId) {
+  enMigrate(store);
+  return store.sessions.filter(function (s) { return s.sessionId === sessionId; })[0] || null;
+}
+
+/* deleting a name removes every version of it — the operator asked for the
+   work to be gone, not for the oldest copy to resurface */
+function enDeleteSession(store, name, user, now) {
+  enMigrate(store);
+  var before = store.sessions.length;
+  store.sessions = store.sessions.filter(function (s) { return s.name !== name; });
+  var removed = before - store.sessions.length;
+  if (removed) enEvent(store, { type: 'session.deleted', name: name, versions: removed,
+    by: user || '' }, now);
+  return removed;
+}
+
+function enSetDraft(store, projectId, setup, now) {
+  enMigrate(store);
+  store.drafts[projectId || 'default'] = Object.assign(enSessionShape(setup), { savedAt: now || 0 });
+  return store.drafts[projectId || 'default'];
+}
+function enDraft(store, projectId) {
+  enMigrate(store);
+  return store.drafts[projectId || 'default'] || null;
+}
+function enClearDraft(store, projectId) {
+  enMigrate(store);
+  delete store.drafts[projectId || 'default'];
+}
+
+/* Conflicts and unenrichable rows are part of the run's evidence, not
+   scratch state — they are capped and kept so reopening a run shows the
+   same three tabs it showed when it finished. */
+var RUN_DETAIL_CAP = 500;
 function enRecordRun(store, run, now) {
   var r = Object.assign({ runId: 'enr_' + (now || 0).toString(36) + '_' + store.runs.length,
     status: 'complete', startedAt: now || 0 }, run);
+  var trim = function (list) {
+    var l = list || [];
+    return l.length > RUN_DETAIL_CAP
+      ? { kept: l.slice(0, RUN_DETAIL_CAP), truncated: l.length - RUN_DETAIL_CAP }
+      : { kept: l, truncated: 0 };
+  };
+  var c = trim(run.conflicts), u = trim(run.unenrichable);
+  r.conflicts = c.kept; r.conflictsTruncated = c.truncated;
+  r.unenrichable = u.kept; r.unenrichableTruncated = u.truncated;
   store.runs.push(r);
   enEvent(store, { type: 'run.recorded', runId: r.runId, rows: r.rowCount }, now);
   return r;
+}
+function enRun(store, runId) {
+  return store.runs.filter(function (r) { return r.runId === runId; })[0] || null;
+}
+/* most recent first, for the resume list */
+function enRuns(store, projectId, limit) {
+  return store.runs.filter(function (r) { return !projectId || r.projectId === projectId; })
+    .slice().sort(function (a, b) { return (b.startedAt || 0) - (a.startedAt || 0); })
+    .slice(0, limit || 20);
 }
 
 function enStageProposals(store, runId, proposals, now) {
@@ -588,6 +703,16 @@ return {
   PROVIDERS: PROVIDERS,
   INFERENCE_CAP: INFERENCE_CAP,
   attrOf: attrOf,
+
+  enSaveSession: enSaveSession,
+  enSessions: enSessions,
+  enSession: enSession,
+  enDeleteSession: enDeleteSession,
+  enSetDraft: enSetDraft,
+  enDraft: enDraft,
+  enClearDraft: enClearDraft,
+  enRun: enRun,
+  enRuns: enRuns,
 
   enApplyStatements: enApplyStatements,
   enRollbackStatements: enRollbackStatements,
