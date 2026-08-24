@@ -115,12 +115,29 @@
 
     // Chained jobs: another job reads THIS job's target table as its source,
     // and maps this very column onward.
+    //
+    // A job whose source is a VIEW counts too, when that view reads this
+    // table. Otherwise a view sitting between two jobs makes the dependency
+    // invisible: "what breaks if I change this column" would answer "nothing",
+    // while a downstream load through vw_x quietly stops working. The base
+    // objects are recorded on the job at save time (sourceBaseObjects); a job
+    // saved before that existed simply has none, and behaves as it always did.
+    const readsTable = (j, table) => {
+      if (sameTable(j.sourceTable, table)) return true;
+      return (j.sourceBaseObjects || []).some(o => {
+        const full = o && (o.schema ? o.schema + '.' + o.name : o.name);
+        return full && sameTable(full, table);
+      });
+    };
     for (const j of (ctx.jobs || [])) {
       if (j.id === job.id || j.jobType === 'composite') continue;
-      if (!sameTable(j.sourceTable, job.targetTable)) continue;
+      if (!readsTable(j, job.targetTable)) continue;
       const usesCol = (j.columnMapping || []).some(x => x && norm(x.srcCol) === norm(tgtCol));
+      const viaView = !sameTable(j.sourceTable, job.targetTable);
       if (usesCol) out.push({ type: 'job', name: j.name || j.id,
-        detail: 'reads ' + job.targetTable + '.' + tgtCol + ' as its source — changes here flow straight into it' });
+        detail: 'reads ' + job.targetTable + '.' + tgtCol + ' as its source'
+          + (viaView ? ' through the view ' + j.sourceTable : '')
+          + ' — changes here flow straight into it' });
     }
 
     // Validation sources registered on the target table.

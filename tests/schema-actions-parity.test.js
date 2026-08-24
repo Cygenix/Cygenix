@@ -66,10 +66,17 @@ const tablesAz = caseBody(azure, 'schema-tables');
 check('schema-tables returns the database name, the table list and the views',
   /success:\s*true/.test(tablesAz) && /database:/.test(tablesAz)
   && /tables:/.test(tablesAz) && /views:/.test(tablesAz));
-check('each table carries schema, name, kind and a numeric rowCount',
+// rowCount is null for a view and a number for a table. Two distinct facts —
+// "not counted" and "empty" — so the null must survive rather than collapsing
+// to 0; a BIGINT arriving as a string must still parse to a number.
+check('each table carries schema, name, kind and a rowCount that keeps null distinct from 0',
   /schema:\s*t\.TABLE_SCHEMA/.test(tablesAz) && /name:\s*t\.TABLE_NAME/.test(tablesAz)
-  && /kind:\s*t\.kind/.test(tablesAz) && /rowCount:\s*parseInt\(t\.row_count\) \|\| 0/.test(tablesAz),
-  'BIGINT can arrive as a string; the client silently zeroes anything non-numeric');
+  && /kind:\s*t\.kind/.test(tablesAz)
+  && /rowCount:\s*t\.row_count == null \? null : \(parseInt\(t\.row_count\)\s*\|\|\s*0\)/.test(tablesAz),
+  'BIGINT can arrive as a string; a view has no count at all');
+check('both backends report a view row count as NULL, never 0',
+  /THEN NULL ELSE COALESCE\(p\.rows,0\)/.test(tablesAz)
+  && /THEN NULL ELSE COALESCE\(p\.rows,0\)/.test(caseBody(netlify, 'schema-tables')));
 
 const fksAz = caseBody(azure, 'schema-fks');
 for (const field of ['fromSchema', 'fromTable', 'fromColumn', 'toSchema', 'toTable', 'toColumn', 'name']) {

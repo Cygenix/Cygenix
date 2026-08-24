@@ -347,7 +347,7 @@ async function handleMssql(action, connectionString, database, body) {
           pool.request().query(`
             SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
               CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind,
-              CASE WHEN t.TABLE_TYPE='VIEW' THEN 0 ELSE COALESCE(p.rows,0) END AS row_count
+              CASE WHEN t.TABLE_TYPE='VIEW' THEN NULL ELSE COALESCE(p.rows,0) END AS row_count
             FROM INFORMATION_SCHEMA.TABLES t
             LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
             LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
@@ -360,7 +360,7 @@ async function handleMssql(action, connectionString, database, body) {
           schema:   t.TABLE_SCHEMA,
           name:     t.TABLE_NAME,
           kind:     t.kind,
-          rowCount: parseInt(t.row_count) || 0,
+          rowCount: t.row_count == null ? null : (parseInt(t.row_count) || 0),
         }));
         result = {
           success:  true,
@@ -446,6 +446,39 @@ async function handleMssql(action, connectionString, database, body) {
       // Used by Data Profiling on insights.html: after schema-tables loads the
       // lightweight table list, schema-fks builds the relationship graph
       // without paying for per-table column data the user may never look at.
+      // The base objects a view reads from — its lineage. Impact analysis has to
+      // see through a view: "what breaks if I drop dbo.clients" must still find
+      // a mapping whose source is a view built on it. sys.dm_sql_referenced_entities
+      // resolves that in one call, and returns nothing (rather than throwing) for
+      // an object with no dependencies. A broken view — one whose base object has
+      // been dropped — makes the DMV raise; that is reported as an empty list with
+      // a reason rather than failing the whole schema load.
+      case 'schema-view-deps': {
+        const vSchema = body.schemaName;
+        const vName   = body.tableName;
+        if (!vSchema || !vName) return err('schemaName and tableName are required', null, 400);
+        try {
+          const depR = await pool.request()
+            .input('o', mssql.NVarChar, `[${String(vSchema).replace(/]/g, ']]')}].[${String(vName).replace(/]/g, ']]')}]`)
+            .query(`
+              SELECT DISTINCT referenced_schema_name AS ref_schema,
+                     referenced_entity_name          AS ref_name
+              FROM   sys.dm_sql_referenced_entities(@o, 'OBJECT')
+              WHERE  referenced_entity_name IS NOT NULL`);
+          result = {
+            success: true,
+            baseObjects: depR.recordset.map(r => ({
+              schema: r.ref_schema || vSchema,
+              name:   r.ref_name,
+            })),
+          };
+        } catch (e) {
+          // Typically "Invalid object name" on a view whose base table is gone.
+          result = { success: true, baseObjects: [], reason: e.message };
+        }
+        break;
+      }
+
       case 'schema-fks': {
         const fkR = await pool.request().query(`
           SELECT OBJECT_SCHEMA_NAME(fk.parent_object_id) AS fk_schema,
@@ -477,7 +510,7 @@ async function handleMssql(action, connectionString, database, body) {
           pool.request().query(`
             SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
               CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind,
-              CASE WHEN t.TABLE_TYPE='VIEW' THEN 0 ELSE COALESCE(p.rows,0) END AS row_count
+              CASE WHEN t.TABLE_TYPE='VIEW' THEN NULL ELSE COALESCE(p.rows,0) END AS row_count
             FROM INFORMATION_SCHEMA.TABLES t
             LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
             LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
@@ -523,7 +556,7 @@ async function handleMssql(action, connectionString, database, body) {
         const tables = {};
         for (const t of tablesR.recordset) {
           const key = `${t.TABLE_SCHEMA}.${t.TABLE_NAME}`;
-          tables[key] = { schema: t.TABLE_SCHEMA, name: t.TABLE_NAME, kind: t.kind || 'table', rowCount: parseInt(t.row_count)||0, columns: [], primaryKeys: [], foreignKeys: [] };
+          tables[key] = { schema: t.TABLE_SCHEMA, name: t.TABLE_NAME, kind: t.kind || 'table', rowCount: t.row_count == null ? null : (parseInt(t.row_count)||0), columns: [], primaryKeys: [], foreignKeys: [] };
         }
         for (const c of colsR.recordset) {
           const key = `${c.TABLE_SCHEMA}.${c.TABLE_NAME}`;
@@ -762,7 +795,7 @@ async function handlePostgres(action, connectionString, database, body) {
           schema:   t.table_schema,
           name:     t.table_name,
           kind:     t.kind,
-          rowCount: parseInt(t.row_count) || 0,
+          rowCount: t.row_count == null ? null : (parseInt(t.row_count) || 0),
         }));
         result = {
           success:  true,
@@ -891,7 +924,7 @@ async function handlePostgres(action, connectionString, database, body) {
             schema: t.table_schema,
             name: t.table_name,
             kind: t.kind || 'table',
-            rowCount: parseInt(t.row_count) || 0,
+            rowCount: t.row_count == null ? null : (parseInt(t.row_count) || 0),
             columns: [],
             primaryKeys: [],
             foreignKeys: []
