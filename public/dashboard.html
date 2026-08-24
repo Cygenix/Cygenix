@@ -1327,11 +1327,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        initial showView in startup code. Updated dynamically via
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
-  <script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+  <script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
-  <script src="/dashboard-app.js?v=0128555aa1" defer></script>
+  <script src="/dashboard-app.js?v=fa65cd43e3" defer></script>
 
 
   <!-- MAIN -->
@@ -4124,6 +4124,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
 <script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('dashboard');</script>
 </body>
 </html>
 

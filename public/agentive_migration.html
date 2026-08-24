@@ -51,7 +51,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/nav.js?v=cba1c59a84" defer></script>
+<script src="/nav.js?v=ba9168b06c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -386,7 +386,7 @@ body.cyg-collapsed .topbar{left:54px}
 <body>
 
 <div id="cyg-sidebar-mount" data-active="agentive-migration"></div>
-<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
 <script>
 // Sidebar width mirror — same pattern as sql-editor.html
 (function mirrorSidebarWidth(){
@@ -3025,5 +3025,10 @@ body.cyg-collapsed .topbar{left:54px}
 })();
 </script>
 
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('agentive-migration');</script>
 </body>
 </html>

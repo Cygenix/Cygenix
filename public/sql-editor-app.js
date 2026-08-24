@@ -4019,3 +4019,44 @@ window.__cygOpenWithSqlActive = false;
   window.cygenixClearSqlDraft = clearDraft;
 })();
 
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Assistant adapters — the SQL pair
+   ──────────────────────────────────────────────────────────────────────────
+   The docked assistant panel reads and writes THIS editor and runs through
+   THIS page's dbCall, so it uses the connection the user selected and the
+   same execution path as the Run button. Its sql.run action is approval-
+   gated by the panel's guardrail policy before it ever reaches here; rows
+   are capped so a big result set does not flood the conversation.
+   ═══════════════════════════════════════════════════════════════════════ */
+Object.assign(window.CygenixAssistantAdapters = window.CygenixAssistantAdapters || {}, {
+  getEditorSql: () => document.getElementById('sql-editor').value,
+  setEditorSql: (sql) => {
+    document.getElementById('sql-editor').value = sql;
+    updateStatus(); updateLineNumbers();
+  },
+  runSql: async ({ sql, maxRows }) => {
+    const res = await dbCall(sql);
+    const rows = res.recordset || [];
+    const cap = Math.max(1, Math.min(maxRows || 200, 500));
+    return {
+      rowCount: rows.length,
+      truncatedTo: rows.length > cap ? cap : undefined,
+      rowsAffected: res.rowsAffected || null,
+      rows: rows.slice(0, cap),
+    };
+  },
+});
+(function wireAssistant() {
+  if (!window.CygenixAssistant) { document.addEventListener('DOMContentLoaded', wireAssistant, { once: true }); return; }
+  CygenixAssistant.registerContext(() => {
+    const ed = document.getElementById('sql-editor');
+    const conn = document.getElementById('conn-select');
+    return {
+      editorLines: ed ? ed.value.split('\n').length : 0,
+      editorEmpty: !ed || !ed.value.trim(),
+      runConnection: conn ? conn.value : null,
+    };
+  });
+})();

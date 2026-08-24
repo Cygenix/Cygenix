@@ -18781,3 +18781,23 @@ async function cygmmTest() {
   }
   btn.disabled = false;
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Assistant adapters — what the docked panel can do on the dashboard shell
+   ──────────────────────────────────────────────────────────────────────────
+   The shell's screens are in-page views, so app.navigate switches them here
+   without a reload, and the context provider tells the assistant which view
+   is actually showing (the page key alone would just say "dashboard").
+   ═══════════════════════════════════════════════════════════════════════ */
+Object.assign(window.CygenixAssistantAdapters = window.CygenixAssistantAdapters || {}, {
+  navigateToView: (v) => showView(v),
+});
+// The assistant script loads after this file — register once it exists.
+(function wireAssistant() {
+  if (!window.CygenixAssistant) { document.addEventListener('DOMContentLoaded', wireAssistant, { once: true }); return; }
+  CygenixAssistant.registerContext(() => {
+    const active = document.querySelector('.view.active');
+    return { view: active ? active.id.replace(/^view-/, '') : 'dashboard' };
+  });
+})();

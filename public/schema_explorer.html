@@ -607,7 +607,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-globe.js?v=95b4f5af27" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
-<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
 
 <div class="page">
   <div class="se-head">
@@ -5545,5 +5545,41 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>
+CygenixAssistant.registerPage('schema-explorer');
+/* Assistant adapters — schema reads answered by the same graph engine the
+   maps draw from, so the assistant sees exactly what the Explorer sees. */
+Object.assign(window.CygenixAssistantAdapters = window.CygenixAssistantAdapters || {}, {
+  listTables: async ({ side }) => {
+    const s = side === 'tgt' ? 'tgt' : 'src';
+    if (!CygenixSchemaGraph.hasConnection(s)) {
+      throw new Error('No ' + (s === 'src' ? 'source' : 'target') + ' connection is configured.');
+    }
+    const g = await CygenixSchemaGraph.load(s);
+    if (!g.ok) throw new Error(g.reason || 'Could not read the schema.');
+    return g.tables.map(t => ({ schema: t.schema, name: t.name, rowCount: t.rowCount ?? null }));
+  },
+  describeTable: async ({ table, side }) => {
+    const s = side === 'tgt' ? 'tgt' : 'src';
+    const g = await CygenixSchemaGraph.load(s);
+    if (!g.ok) throw new Error(g.reason || 'Could not read the schema.');
+    const want = String(table || '').toLowerCase();
+    const hit = g.tables.find(t =>
+      (t.schema + '.' + t.name).toLowerCase() === want || t.name.toLowerCase() === want);
+    if (!hit) return { found: false, note: 'No table named "' + table + '" in the ' + s + ' schema.' };
+    const node = await CygenixSchemaGraph.columns(s, hit.schema, hit.name);
+    return {
+      found: true, schema: hit.schema, name: hit.name, rowCount: hit.rowCount ?? null,
+      primaryKeys: (node && node.primaryKeys) || [],
+      columns: ((node && node.columns) || []).map(c => ({
+        name: c.name, type: c.type || c.dataType || null, nullable: c.nullable ?? c.isNullable ?? null })),
+    };
+  },
+});
+</script>
 </body>
 </html>

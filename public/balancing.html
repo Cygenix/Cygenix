@@ -335,7 +335,7 @@ body.cyg-collapsed{padding-left:54px}
 <!-- Sidebar — `data-active="balancing"` matches the NAV key in
      /cygenix-sidebar.js so this item gets highlighted. -->
 <div id="cyg-sidebar-mount" data-active="balancing"></div>
-<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
 
 <div class="page">
 
@@ -3193,5 +3193,9 @@ function cbAiApplySql(idx, mid){
   };
 })();
 </script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('balancing');</script>
 </body>
 </html>

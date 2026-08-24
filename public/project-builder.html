@@ -269,7 +269,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <body>
 
 <div id="cyg-sidebar-mount" data-active="project-builder"></div>
-<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
 
 <div class="topbar">
   <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Execute Migration</span></a>
@@ -602,5 +602,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <script src="/cygenix-resume.js?v=f002a6878e" defer></script>
 <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
 <script src="/project-builder-app.js?v=172dba1133" defer></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('project-builder');</script>
 </body>
 </html>

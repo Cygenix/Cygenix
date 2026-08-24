@@ -96,7 +96,6 @@ const ICONS = {
   monitor:   `<rect x="2" y="3" width="12" height="8" rx="1" ${S}/><path d="M6 13.5h4M8 11v2.5" ${S}/>`,
   factory:   `<path d="M2.5 13.5V7l4 2.4V7l4 2.4V3.5h3v10z" ${S}/>`,
   menu:      `<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" ${S}/>`,
-  send:      `<path d="M14 2 7 9" ${S}/><path d="M14 2 9.6 14 7 9 2 6.4z" ${S}/>`,
   takeoff:   `<path d="M2 13.5h12" ${S}/><path d="M3.4 9.6l1.7.5 2.4-2.1-3.2-3.4 1.3-.4 4.2 2.7 2.3-2a1.2 1.2 0 0 1 1.7 1.7l-8.6 5.6-1.8-2.6z" ${S}/>`,
 
   // ── status ──

@@ -39,13 +39,14 @@ const NAV = SB.__nav, ACCT = SB.__accountNav;
 
 // 1. Every key that existed before the restructure must still resolve —
 //    pages mount with these in data-active, and dashboard code targets them.
-//    'supported', 'project-plan', 'insights' and 'project-summary-document'
-//    are deliberately absent: the Supported Formats menu option, the Project
-//    Planner, Data Insights (superseded by the Schema Explorer's Data map)
-//    and Project Summary were removed on request.
+//    'supported', 'project-plan', 'insights', 'project-summary-document' and
+//    'coworker' are deliberately absent: the Supported Formats menu option,
+//    the Project Planner, Data Insights (superseded by the Schema Explorer's
+//    Data map) and Project Summary were removed on request, and AI Workspace
+//    was replaced by the docked Assistant panel (coworker.html redirects).
 const LEGACY_KEYS = ['dashboard','search','project-settings','connections','performance',
   'system-parameters','privacy-security','integrations','object-mapping',
-  'sql-editor','agentive-migration','coworker','data-quality','data-cleansing',
+  'sql-editor','agentive-migration','data-quality','data-cleansing',
   'validation','jobs','project-builder','server-migration','inventory','task-agent',
   'report-builder','reports','audit','diagnostics',
   'help','accessibility'];
@@ -195,9 +196,10 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
 
   // The section around it must be untouched.
   const build = NAV.find(s => s.section === 'Map & Build');
-  check('Map & Build still holds the other three items in order',
+  // AI Workspace left this section when the docked Assistant replaced it.
+  check('Map & Build holds the other three items in order, without AI Workspace',
     JSON.stringify(build.items.map(i => i.key)) ===
-      JSON.stringify(['objmap-group', 'sql-editor', 'agentive-migration', 'coworker']),
+      JSON.stringify(['objmap-group', 'sql-editor', 'agentive-migration']),
     build.items.map(i => i.key).join(','));
 }
 
