@@ -386,8 +386,8 @@ body.fullscreen .script-panel { display:none }
 <body>
 
 <div id="cyg-sidebar-mount" data-active="sql-editor"></div>
-<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
-<script src="/sql-editor-app.js?v=91bfd50de9" defer></script>
+<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
+<script src="/sql-editor-app.js?v=5554b6a9b9" defer></script>
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
@@ -600,5 +600,9 @@ body.fullscreen .script-panel { display:none }
 
 <script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('sql-editor');</script>
 </body>
 </html>

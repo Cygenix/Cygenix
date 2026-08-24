@@ -98,7 +98,9 @@
       ]},
       { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor.html',         color:'var(--teal)',   icon: iconCode() },
       { key:'agentive-migration', label:'AI Assist',      href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
-      { key:'coworker',           label:'AI Workspace',   href:'/coworker.html',           color:'var(--accent)', icon: svg('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-3 2.5V10.5H2.5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.5 6.4h5M5.5 8.2h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>') },
+      // AI Workspace (coworker.html) was replaced by the docked Assistant
+      // panel, which is present on every app screen (Ctrl+/ or the launcher).
+      // /coworker.html redirects there and migrates its saved artifacts.
     ]},
     { section: 'Run', group:'run', items: [
       { key:'jobs-group', label:'Jobs', icon: iconPlay(), children: [
@@ -574,9 +576,8 @@
   }
 
   // Make sure the shared Drive overlay module is loaded, then run `cb`. This
-  // lets the Drive button open the Co-Worker Drive on top of ANY page instead
-  // of navigating away. coworker.html has its own richer Drive, so we never
-  // need the overlay there (see wireDriveButton).
+  // lets the Drive button open the Drive on top of ANY page instead of
+  // navigating away.
   function ensureDriveModal(cb){
     if (window.CygenixDriveModal){ if (cb) cb(); return; }
     let s = document.getElementById('cygenix-drive-modal-js');
@@ -608,7 +609,7 @@
   // and read as a branded term; this is literally where your files live.
   function buildDriveButton(){
     return `<div class="cyg-drive-area">
-      <a class="cyg-drive-btn" id="cyg-drive-btn" href="/coworker.html#drive" title="Your files — the shared Drive, available on every machine you sign in on">
+      <a class="cyg-drive-btn" id="cyg-drive-btn" href="/dashboard.html#drive" title="Your files — the shared Drive, available on every machine you sign in on">
         ${iconDrive()}<span class="cyg-nav-item-label">Files</span>
       </a>
     </div>`;
@@ -866,29 +867,29 @@
     });
   }
 
-  // Open the Co-Worker Drive as an OVERLAY on top of the current page, rather
-  // than navigating to coworker.html. On the co-worker page itself we use its
-  // own native Drive (richer — it wires into the workspace canvas); everywhere
-  // else we use the shared overlay module. The href stays as a no-JS fallback.
+  // Open the Drive as an OVERLAY on top of the current page. (The Co-Worker
+  // page's own native Drive went with that page; the overlay module is the
+  // one Drive everywhere now.) The href stays as a no-JS fallback.
   function wireDriveButton(root){
     const btn = root.querySelector('#cyg-drive-btn');
     if (!btn) return;
     btn.addEventListener('click', (e) => {
-      const onCoworker = /\/coworker\.html?$/.test(location.pathname);
-      if (onCoworker && typeof window.openDrive === 'function'){
-        e.preventDefault(); window.openDrive(); return;
-      }
       if (window.CygenixDriveModal){
         e.preventDefault(); window.CygenixDriveModal.open(); return;
       }
       // Module not loaded yet — load it, then open. Falls back to navigating
-      // to coworker.html#drive only if the module fails to load.
+      // to dashboard.html#drive only if the module fails to load.
       e.preventDefault();
       ensureDriveModal(() => {
         if (window.CygenixDriveModal) window.CygenixDriveModal.open();
-        else window.location.href = '/coworker.html#drive';
+        else window.location.href = '/dashboard.html#drive';
       });
     });
+    // #drive in the URL opens the overlay on arrival — this is where the old
+    // coworker.html#drive bookmarks (and the no-JS fallback above) land.
+    if (/#drive\b/.test(location.hash || '')) {
+      ensureDriveModal(() => { if (window.CygenixDriveModal) window.CygenixDriveModal.open(); });
+    }
   }
 
   function buildSection(sec, activeKey){
@@ -1256,13 +1257,12 @@
     });
     // same-tab updates: the Profiles page announces its own writes
     window.addEventListener('cygenix:profiles-changed', renderEnvBanner);
-    // Preload the Drive overlay so the first click is instant (skip the
-    // co-worker page, which ships its own native Drive). Idle-scheduled the
-    // same way loadDriveSyncWhenIdle already is: injecting 53KB of modal at
+    // Preload the Drive overlay so the first click is instant. Idle-scheduled
+    // the same way loadDriveSyncWhenIdle already is: injecting 53KB of modal at
     // DOMContentLoaded competed with every page's first paint, and a click
     // that beats the idle callback still works — the click path calls
     // ensureDriveModal(cb) itself and waits for the script's load event.
-    if (!/\/coworker\.html?$/.test(location.pathname)) {
+    {
       const warm = () => ensureDriveModal();
       if (window.requestIdleCallback) window.requestIdleCallback(warm, { timeout: 6000 });
       else setTimeout(warm, 2500);

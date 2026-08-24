@@ -1297,7 +1297,7 @@
   </main>
 
   <!-- Sidebar (auto-mounts on DOMContentLoaded) -->
-  <script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+  <script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
 
   <!-- Toast -->
   <div id="toast"></div>
@@ -4364,5 +4364,10 @@
   });
   </script>
 
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('data-quality');</script>
 </body>
 </html>

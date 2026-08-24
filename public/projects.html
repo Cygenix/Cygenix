@@ -330,7 +330,7 @@ body.cyg-collapsed{padding-left:54px}
 
 <div class="toast" id="toast"></div>
 
-<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
 <script>
 // ── Config & state ────────────────────────────────────────────────────────────
 const PROJECTS_KEY    = 'cygenix_projects';
@@ -881,5 +881,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeProjectModal();
 });
 </script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('projects');</script>
 </body>
 </html>

@@ -177,7 +177,7 @@ code,.mono{font-family:var(--mono)}
      means nothing in the sidebar highlights. Users navigate to this page
      via the "Data Generator" tab on Dashboard → Connections. -->
 <div id="cyg-sidebar-mount" data-active="connections"></div>
-<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
 
 <div id="dg-main">
 
@@ -1617,5 +1617,9 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('data-generator');</script>
 </body>
 </html>

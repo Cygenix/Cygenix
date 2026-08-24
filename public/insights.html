@@ -292,7 +292,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 <body>
 
 <div id="cyg-sidebar-mount" data-active="insights"></div>
-<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
+<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
@@ -3501,5 +3501,9 @@ function escapeHtmlAttr(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&'
 })();
 
 </script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-assistant.js?v=fa0fc4c81e"></script>
+<script src="/cygenix-assistant-actions.js?v=69b7e862d8"></script>
+<script>CygenixAssistant.registerPage('insights');</script>
 </body>
 </html>
