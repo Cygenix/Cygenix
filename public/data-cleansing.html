@@ -8,6 +8,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -39,7 +40,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
 <style>
@@ -144,7 +145,7 @@ body.cyg-collapsed .container{max-width:min(1600px,calc(100vw - 54px - 32px))}
 .merge-strategy-sel{background:var(--bg4);border:0.5px solid var(--border2);border-radius:4px;color:var(--text2);font-size:10px;font-family:var(--mono);padding:2px 6px;outline:none;cursor:pointer}
 .merge-strategy-sel:focus{border-color:var(--accent)}
 .cluster-row.is-master{background:rgba(34,201,122,0.05);border-left:2px solid var(--green)}
-.cluster-row.is-master .cluster-row-idx::before{content:"⭐ ";color:var(--green)}
+.cluster-row.is-master .cluster-row-idx::before{content:"★ ";color:var(--green)}
 .master-radio{width:14px;height:14px;accent-color:var(--green);cursor:pointer;flex:0 0 auto;margin:0}
 .master-radio-label{font-size:9.5px;color:var(--text3);font-family:var(--mono)}
 .merge-toolbar{display:flex;gap:0.75rem;align-items:center;padding:0.65rem 0.9rem;background:var(--bg3);border-bottom:0.5px solid var(--border);flex-wrap:wrap;font-size:11px;color:var(--text2)}
@@ -204,7 +205,7 @@ body.cyg-collapsed .container{max-width:min(1600px,calc(100vw - 54px - 32px))}
 <div class="container">
 
   <div class="page-head">
-    <div class="page-title">🧹 Data Cleansing · Dedup detection</div>
+    <div class="page-title"><i class="ic ic-broom"></i> Data Cleansing · Dedup detection</div>
     <div class="page-sub">
       Find near-duplicate rows in a source table before migrating. Pick the columns to match on and a strategy per column
       (<code>exact</code>, <code>fuzzy</code>, <code>phonetic</code>, or <code>numeric</code>), run detection on a sample,
@@ -230,7 +231,7 @@ body.cyg-collapsed .container{max-width:min(1600px,calc(100vw - 54px - 32px))}
           </div>
           <div class="form-row">
             <label class="form-label">Table</label>
-            <input id="inp-table" class="form-input" placeholder="🔍 schema.tablename" autocomplete="off" oninput="filterTables()" onfocus="openTableDrop()">
+            <input id="inp-table" class="form-input" placeholder="schema.tablename" autocomplete="off" oninput="filterTables()" onfocus="openTableDrop()">
             <div id="table-drop" style="display:none;max-height:220px;overflow-y:auto;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-top:0.35rem"></div>
             <div id="conn-status" class="status">Not connected</div>
           </div>
@@ -252,7 +253,7 @@ body.cyg-collapsed .container{max-width:min(1600px,calc(100vw - 54px - 32px))}
           <div style="display:flex;gap:0.4rem;margin-bottom:0.5rem;flex-wrap:wrap;align-items:center">
             <button class="btn btn-sm" onclick="selectAllCols(true)">✓ Select all</button>
             <button class="btn btn-sm" onclick="selectAllCols(false)">✕ Clear</button>
-            <input id="col-filter" class="form-input" style="flex:1;min-width:120px;padding:4px 8px;font-size:11px" placeholder="🔍 Filter columns…" oninput="filterCols()">
+            <input id="col-filter" class="form-input" style="flex:1;min-width:120px;padding:4px 8px;font-size:11px" placeholder="Filter columns…" oninput="filterCols()">
           </div>
           <div class="col-list" id="col-list"></div>
         </div>
@@ -293,8 +294,8 @@ body.cyg-collapsed .container{max-width:min(1600px,calc(100vw - 54px - 32px))}
         <div class="panel-head">
           <div class="panel-title">Clusters</div>
           <div style="display:flex;gap:0.5rem">
-            <button class="btn btn-sm" onclick="exportCSV()" id="btn-export-csv" disabled>⬇ Export CSV</button>
-            <button class="btn btn-sm" onclick="exportJSON()" id="btn-export-json" disabled>⬇ Export JSON</button>
+            <button class="btn btn-sm" onclick="exportCSV()" id="btn-export-csv" disabled><i class="ic ic-download"></i> Export CSV</button>
+            <button class="btn btn-sm" onclick="exportJSON()" id="btn-export-json" disabled><i class="ic ic-download"></i> Export JSON</button>
           </div>
         </div>
         <div class="cluster-stats" id="cluster-stats" style="display:none">
@@ -314,11 +315,11 @@ body.cyg-collapsed .container{max-width:min(1600px,calc(100vw - 54px - 32px))}
               <option value="audit">Move to audit table</option>
             </select>
           </label>
-          <button class="btn btn-sm btn-primary" onclick="generateMergeSQL()" id="btn-gen-sql" style="margin-left:auto">⚙ Generate Merge SQL</button>
+          <button class="btn btn-sm btn-primary" onclick="generateMergeSQL()" id="btn-gen-sql" style="margin-left:auto"><i class="ic ic-cog"></i> Generate Merge SQL</button>
         </div>
         <div id="results-body">
           <div class="empty">
-            <div class="emoji">🧹</div>
+            <div class="emoji"><i class="ic ic-broom"></i> </div>
             <div>Pick a source, load columns, and run detection to see candidate duplicate clusters.</div>
           </div>
         </div>
@@ -535,7 +536,7 @@ async function loadColumns(){
   const table = document.getElementById('inp-table').value.trim();
   if (!table || !currentConn) return;
   const btn = document.getElementById('btn-load-cols');
-  btn.disabled = true; btn.textContent = '⏳ Loading…';
+  btn.disabled = true; btn.textContent = 'Loading…';
   try {
     // Look up in schema cache (populated by onConnChange with table-list only)
     let tableKey = table;
@@ -714,7 +715,7 @@ async function runDetection(){
   const setProg = p => progFill.style.width = Math.round(p*100)+'%';
 
   document.getElementById('btn-run').disabled = true;
-  document.getElementById('btn-run').textContent = '⏳ Running…';
+  document.getElementById('btn-run').textContent = 'Running…';
 
   try {
     // 1 · count total rows
@@ -836,7 +837,7 @@ async function runDetection(){
               const verdict = await reviewWithClaude(toReview[i], selected, apiKey);
               toReview[i].aiVerdict = verdict.verdict;
               toReview[i].aiReason  = verdict.reason;
-              log('  cluster #'+(built.indexOf(toReview[i])+1)+': '+verdict.verdict+' — '+(verdict.reason||'').slice(0,80));
+              log(' cluster #'+(built.indexOf(toReview[i])+1)+': '+verdict.verdict+' — '+(verdict.reason||'').slice(0,80));
               // Audit log — record each call that actually went out
               P?.logAIAccess('dedup-ai-review', {
                 clusterRows: toReview[i].rows.length,
@@ -845,7 +846,7 @@ async function runDetection(){
                 verdict: verdict.verdict
               });
             } catch(e){
-              log('  AI review failed: '+e.message, 'err');
+              log(' AI review failed: '+e.message, 'err');
             }
           }
         }
@@ -908,7 +909,7 @@ function renderClusters(){
   const body = document.getElementById('results-body');
   const stats = document.getElementById('cluster-stats');
   if (!lastClusters.length){
-    body.innerHTML = '<div class="empty"><div class="emoji">✨</div><div>No duplicate clusters found with the current settings.</div><div style="font-size:11px;margin-top:0.4rem">Try lowering the cluster threshold, changing column strategies, or scanning a larger sample.</div></div>';
+    body.innerHTML = '<div class="empty"><div class="emoji"><i class="ic ic-sparkle"></i> </div><div>No duplicate clusters found with the current settings.</div><div style="font-size:11px;margin-top:0.4rem">Try lowering the cluster threshold, changing column strategies, or scanning a larger sample.</div></div>';
     stats.style.display = 'none';
     document.getElementById('merge-toolbar').style.display = 'none';
     document.getElementById('btn-export-csv').disabled = true;
@@ -951,7 +952,7 @@ function renderClusters(){
   // Debug banner — shows when something looks off so user can report it
   let debugBanner = '';
   if (firstRow && selCols.length && !matchedSel.length){
-    debugBanner = `<div style="padding:0.5rem 0.9rem;background:rgba(245,158,11,0.08);border-bottom:0.5px solid rgba(245,158,11,0.2);font-size:11px;color:var(--amber);font-family:var(--mono)">⚠ Column-name mismatch detected. Selected: [${selCols.join(', ')}]. Actual row keys: [${rowKeys.join(', ')}]. Showing all keys.</div>`;
+    debugBanner = `<div style="padding:0.5rem 0.9rem;background:rgba(245,158,11,0.08);border-bottom:0.5px solid rgba(245,158,11,0.2);font-size:11px;color:var(--amber);font-family:var(--mono)"><i class="ic ic-warning"></i> Column-name mismatch detected. Selected: [${selCols.join(', ')}]. Actual row keys: [${rowKeys.join(', ')}]. Showing all keys.</div>`;
   }
 
   body.innerHTML = explainHtml + debugBanner + '<div class="cluster-list">' + lastClusters.map((c, i) => {
@@ -959,10 +960,10 @@ function renderClusters(){
                   : c.aiVerdict === 'NOT_DUPLICATE' ? '<span class="cluster-badge ai-rejected">AI: false positive</span>'
                   : c.aiVerdict === 'UNCERTAIN' ? '<span class="cluster-badge" style="background:var(--bg4);color:var(--text3)">AI: uncertain</span>'
                   : '';
-    const reason = c.aiReason ? `<div class="cluster-reason">🤖 ${esc(c.aiReason)}</div>` : '';
+    const reason = c.aiReason ? `<div class="cluster-reason"><i class="ic ic-robot"></i> ${esc(c.aiReason)}</div>` : '';
     const tableFull = document.getElementById('inp-table').value.trim();
     const pks = (schemaCache[tableFull]?.primaryKeys)||[];
-    const pkLabel = pks.length ? `<span style="font-size:10px;color:var(--text3);font-family:var(--mono)">PK: ${pks.join(', ')}</span>` : `<span style="font-size:10px;color:var(--amber);font-family:var(--mono)" title="No primary key found — merge SQL may not work cleanly">⚠ no PK</span>`;
+    const pkLabel = pks.length ? `<span style="font-size:10px;color:var(--text3);font-family:var(--mono)">PK: ${pks.join(', ')}</span>` : `<span style="font-size:10px;color:var(--amber);font-family:var(--mono)" title="No primary key found — merge SQL may not work cleanly"><i class="ic ic-warning"></i> no PK</span>`;
     return `<div class="cluster-card" id="cluster-${c.id}">
       <div class="cluster-head">
         <span style="font-size:11px;font-weight:600">Cluster #${i+1}</span>
@@ -1089,7 +1090,7 @@ async function generateMergeSQL(){
   if (!accepted.length){ showToast('No clusters accepted (all dismissed)'); return; }
 
   const btn = document.getElementById('btn-gen-sql');
-  btn.disabled = true; btn.textContent = '⏳ Fetching FK references…';
+  btn.disabled = true; btn.textContent = 'Fetching FK references…';
 
   try {
     // Fetch incoming FKs once per run, cache it
@@ -1098,7 +1099,7 @@ async function generateMergeSQL(){
       fkCache = { forTable: table, fks };
     }
     const fks = fkCache.fks;
-    btn.textContent = '⏳ Building SQL…';
+    btn.textContent = 'Building SQL…';
 
     // All non-match columns (for coalesce/replace we need to read every column)
     const allCols = (schemaCache[table]?.columns || []).map(c => c.name);
@@ -1240,7 +1241,7 @@ async function generateMergeSQL(){
     showToast('✕ '+e.message);
   }
   btn.disabled = false;
-  btn.textContent = '⚙ Generate Merge SQL';
+  btn.textContent = 'Generate Merge SQL';
 }
 
 function showSqlPreview(sql, acceptedClusters){
@@ -1267,7 +1268,7 @@ function showSqlPreview(sql, acceptedClusters){
         <div class="sql-preview" id="sql-preview-text"></div>
       </div>
       <div class="modal-foot">
-        <button class="btn btn-sm" onclick="copyMergeSQL()">📋 Copy to clipboard</button>
+        <button class="btn btn-sm" onclick="copyMergeSQL()"><i class="ic ic-clipboard"></i> Copy to clipboard</button>
         <button class="btn btn-sm" onclick="openInSqlEditor()">↗ Open in SQL Editor</button>
         <div style="flex:1"></div>
         <label style="font-size:11px;color:var(--text3);display:flex;align-items:center">
@@ -1351,19 +1352,19 @@ async function runMergeSQL(){
   }
 
   const btn = document.getElementById('btn-run-now');
-  btn.disabled = true; btn.textContent = '⏳ Running…';
+  btn.disabled = true; btn.textContent = 'Running…';
 
   let totalRows = 0;
   try {
     // 1 · DDL batches — run standalone, no wrapping transaction. DDL is idempotent via IF NOT EXISTS.
     for (let i = 0; i < ddlBatches.length; i++){
-      btn.textContent = `⏳ DDL ${i+1}/${ddlBatches.length}…`;
+      btn.textContent = `DDL ${i+1}/${ddlBatches.length}…`;
       await dbCall(currentConn, { action:'execute', sql: ddlBatches[i] });
     }
 
     // 2 · Merge batches — wrap the lot in a single transaction sent as one batch through the driver.
     if (mergeBatches.length){
-      btn.textContent = '⏳ Running merge…';
+      btn.textContent = 'Running merge…';
       const mergeSQL = 'BEGIN TRANSACTION;\n\n' + mergeBatches.join('\n\n') + '\n\nCOMMIT TRANSACTION;';
       const res = await dbCall(currentConn, { action:'execute', sql: mergeSQL });
       totalRows = res.rowsAffected || 0;

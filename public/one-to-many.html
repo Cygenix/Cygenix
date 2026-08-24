@@ -7,6 +7,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -165,7 +166,7 @@ select.map-select:focus{border-color:var(--accent)}
   <div style="display:flex;align-items:center;gap:0.4rem">
     <span id="banner-src-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
     <span id="banner-src-label" style="font-family:var(--mono);color:var(--text3);font-size:11px">Source: not configured</span>
-    <button onclick="connectSrc()" id="src-connect-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">🔌 Connect</button>
+    <button onclick="connectSrc()" id="src-connect-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px"><i class="ic ic-plug"></i> Connect</button>
     <span id="src-conn-status" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
   </div>
 
@@ -175,11 +176,11 @@ select.map-select:focus{border-color:var(--accent)}
   <div style="display:flex;align-items:center;gap:0.4rem">
     <span id="banner-tgt-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
     <span id="banner-tgt-label" style="font-family:var(--mono);color:var(--text3);font-size:11px">Target: not configured</span>
-    <button onclick="connectTgt()" id="tgt-connect-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">🔌 Connect</button>
+    <button onclick="connectTgt()" id="tgt-connect-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px"><i class="ic ic-plug"></i> Connect</button>
     <span id="tgt-conn-status" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
   </div>
 
-  <a href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)">⚙ Edit →</a>
+  <a href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)"><i class="ic ic-cog"></i> Edit →</a>
 </div>
 <script>
 // DCL, not immediate: connections.js is deferred, so at parse time the
@@ -214,7 +215,7 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
       <div class="panel" id="src-panel">
         <div class="panel-head" onclick="toggleSrcPanel()" style="cursor:pointer;user-select:none" title="Click to expand/collapse">
           <div style="display:flex;align-items:center;gap:0.5rem">
-            <div class="panel-title">📋 Source table</div>
+            <div class="panel-title"><i class="ic ic-clipboard"></i> Source table</div>
             <span id="src-col-count" class="badge badge-teal" style="display:none"></span>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem">
@@ -223,7 +224,7 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
         </div>
         <div class="panel-body" id="src-panel-body">
           <div class="search-wrap">
-            <input id="src-table-input" class="form-input" placeholder="🔍 Type to search source tables…"
+            <input id="src-table-input" class="form-input" placeholder="Type to search source tables…"
               oninput="filterSrcTables()" onfocus="openSrcDrop()" autocomplete="off"
               onclick="event.stopPropagation()">
             <div class="search-drop" id="src-table-drop" style="display:none"></div>
@@ -239,7 +240,7 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
                 <button onclick="event.stopPropagation();setSrcPanelSize('lg')" id="src-size-lg" title="Large"
                   style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">L</button>
                 <button onclick="event.stopPropagation();setSrcPanelSize('xl')" id="src-size-xl" title="Full"
-                  style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">⛶</button>
+                  style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer"><i class="ic ic-fullscreen"></i> </button>
               </span>
             </div>
             <div class="src-col-list" id="src-col-list" style="max-height:220px;overflow-y:auto"></div>
@@ -253,7 +254,7 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
 
       <!-- Transaction mode -->
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">⚙️ Options</div></div>
+        <div class="panel-head"><div class="panel-title"><i class="ic ic-cog"></i> Options</div></div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:0.75rem">
           <div>
             <label class="form-label">Transaction mode</label>
@@ -267,7 +268,7 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
               Source row filter (WHERE clause, optional)
               <button onclick="buildWhereWithClaude('src-where', srcTable, srcTable&&srcTable.columns, 'otm-api-key')"
                 style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)"
-                title="Ask Claude AI to write the WHERE clause">🤖 AI help</button>
+                title="Ask Claude AI to write the WHERE clause"><i class="ic ic-robot"></i> AI help</button>
             </label>
             <input id="src-where" class="form-input" placeholder="e.g. active = 1 AND country = 'UK'">
           </div>
@@ -293,12 +294,12 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
       <!-- Add target table -->
       <div class="panel">
         <div class="panel-head">
-          <div class="panel-title">🎯 Target tables <span id="tgt-count" class="badge badge-purple" style="margin-left:4px;display:none">0</span></div>
+          <div class="panel-title"><i class="ic ic-target"></i> Target tables <span id="tgt-count" class="badge badge-purple" style="margin-left:4px;display:none">0</span></div>
           <button class="btn btn-primary btn-sm" onclick="addTargetTable()">+ Add target table</button>
         </div>
         <div class="panel-body" style="padding:0.75rem 1.25rem">
           <div class="search-wrap" style="max-width:400px">
-            <input id="tgt-table-input" class="form-input" placeholder="🔍 Search target tables to add…"
+            <input id="tgt-table-input" class="form-input" placeholder="Search target tables to add…"
               oninput="filterTgtTables()" onfocus="openTgtDrop()" autocomplete="off">
             <div class="search-drop" id="tgt-table-drop" style="display:none"></div>
           </div>
@@ -309,7 +310,7 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
       <div id="tgt-cards"></div>
 
       <div id="empty-tgt" style="text-align:center;padding:3rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);color:var(--text3)">
-        <div style="font-size:28px;opacity:0.3;margin-bottom:0.75rem">🎯</div>
+        <div style="font-size:28px;opacity:0.3;margin-bottom:0.75rem"><i class="ic ic-target"></i> </div>
         <div style="font-size:14px;color:var(--text2);margin-bottom:0.25rem">No target tables yet</div>
         <div style="font-size:12px">Connect to source and target databases, pick a source table, then add target tables above</div>
       </div>
@@ -318,15 +319,15 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
       <div id="sql-wrap" style="display:none">
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">⚡ Generated SQL</div>
+            <div class="panel-title"><i class="ic ic-bolt"></i> Generated SQL</div>
             <div style="display:flex;gap:0.5rem">
               <select id="sql-tab" class="form-input" style="width:160px;font-size:12px" onchange="showSQLTab()">
                 <option value="insert">INSERT script</option>
                 <option value="schema">Schema check</option>
                 <option value="verify">Verify queries</option>
               </select>
-              <button class="btn btn-ghost btn-sm" onclick="copySQL()">📋 Copy</button>
-              <button class="btn btn-ghost btn-sm" onclick="downloadSQL()">⬇ Download</button>
+              <button class="btn btn-ghost btn-sm" onclick="copySQL()"><i class="ic ic-clipboard"></i> Copy</button>
+              <button class="btn btn-ghost btn-sm" onclick="downloadSQL()"><i class="ic ic-download"></i> Download</button>
             </div>
           </div>
           <div class="panel-body" style="padding:0.75rem">
@@ -418,7 +419,7 @@ async function connectSrc(){
   const lbl=document.getElementById('banner-src-label');
   if (!conn){ alert('No source connection configured. Go to Dashboard → Configure → Connections.'); return; }
   if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
-  if(btn) { btn.disabled=true; btn.textContent='⏳'; }
+  if(btn) { btn.disabled=true; btn.textContent=''; }
   try{
     const { res, paginated } = await _fetchSchemaSmart(conn);
     // Parse database name from connection string since schema response doesn't include it
@@ -429,7 +430,7 @@ async function connectSrc(){
       columns: paginated ? null : (t.columns||[]),
       rowCount:t.rowCount||0,
     }));
-    if(st) { st.textContent='🟢 '+srcDbName+' · '+srcAllTables.length+' tables'; st.style.color='var(--green)'; }
+    if(st) { st.textContent= srcDbName+' · '+srcAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
     if(lbl) lbl.textContent='Source: '+srcDbName;
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
@@ -450,9 +451,9 @@ async function connectSrc(){
       }
     }
   }catch(e){
-    if(st) { st.textContent='🔴 '+e.message; st.style.color='var(--red)'; }
+    if(st) { st.textContent= e.message; st.style.color='var(--red)'; }
     if(dot) dot.style.background='var(--red)';
-    if(btn) { btn.disabled=false; btn.textContent='🔌 Retry'; }
+    if(btn) { btn.disabled=false; btn.textContent='Retry'; }
   }
 }
 
@@ -505,7 +506,7 @@ async function connectTgt(){
   const lbl=document.getElementById('banner-tgt-label');
   if (!conn){ alert('No target connection configured. Go to Dashboard → Configure → Connections.'); return; }
   if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
-  if(btn) { btn.disabled=true; btn.textContent='⏳'; }
+  if(btn) { btn.disabled=true; btn.textContent=''; }
   try{
     const { res, paginated } = await _fetchSchemaSmart(conn);
     // Parse database name from connection string since schema response doesn't include it
@@ -516,7 +517,7 @@ async function connectTgt(){
       columns: paginated ? null : (t.columns||[]),
       rowCount:t.rowCount||0,
     }));
-    if(st) { st.textContent='🟢 '+tgtDbName+' · '+tgtAllTables.length+' tables'; st.style.color='var(--green)'; }
+    if(st) { st.textContent= tgtDbName+' · '+tgtAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
     if(lbl) lbl.textContent='Target: '+tgtDbName;
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
@@ -544,9 +545,9 @@ async function connectTgt(){
       }
     }
   }catch(e){
-    if(st) { st.textContent='🔴 '+e.message; st.style.color='var(--red)'; }
+    if(st) { st.textContent= e.message; st.style.color='var(--red)'; }
     if(dot) dot.style.background='var(--red)';
-    if(btn) { btn.disabled=false; btn.textContent='🔌 Retry'; }
+    if(btn) { btn.disabled=false; btn.textContent='Retry'; }
   }
 }
 
@@ -726,7 +727,7 @@ function renderTargetCards(){
         <div class="map-row-label" style="color:var(--accent)">→</div>
         <select class="map-select" onchange="updateMapping(${ti},${mi},'tgtCol',this.value)">
           <option value="">— target col —</option>
-          ${tt.columns.map(c=>`<option ${m.tgtCol===c.name?'selected':''} value="${esc(c.name)}">${esc(c.name)}${c.isIdentity?' ✦ IDENTITY':c.type?' ('+esc(c.type)+(c.nullable===false?' NN':'')+')':''}</option>`).join('')}
+          ${tt.columns.map(c=>`<option ${m.tgtCol===c.name?'selected':''} value="${esc(c.name)}">${esc(c.name)}${c.isIdentity?' <i class="ic ic-sparkle"></i> IDENTITY':c.type?' ('+esc(c.type)+(c.nullable===false?' NN':'')+')':''}</option>`).join('')}
         </select>
         <select class="map-select" onchange="updateMapping(${ti},${mi},'transform',this.value)">
           ${['NONE','TRIM','CAST','UPPER','LOWER','CONVERT','GETDATE()','NEWID()'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
@@ -810,7 +811,7 @@ function renderTargetCards(){
         ${otherTables.length ? `
         <div style="margin-top:1rem">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
-            <div style="font-size:11px;font-weight:600;color:var(--amber);text-transform:uppercase;letter-spacing:0.07em">🔗 Foreign keys (link to parent tables)</div>
+            <div style="font-size:11px;font-weight:600;color:var(--amber);text-transform:uppercase;letter-spacing:0.07em"><i class="ic ic-link"></i> Foreign keys (link to parent tables)</div>
             <button class="btn btn-amber btn-sm" onclick="addFK(${ti})" style="font-size:11px;padding:2px 8px">+ Add FK</button>
           </div>
           ${fkRows || '<div style="font-size:12px;color:var(--text3)">No FK links yet — add to link this table to a parent</div>'}
@@ -1077,13 +1078,13 @@ function generateSQL(){
           }
         }
         switch(m.transform){
-          case 'TRIM':    return '  TRIM('+varName+')';
-          case 'UPPER':   return '  UPPER('+varName+')';
-          case 'LOWER':   return '  LOWER('+varName+')';
-          case 'CAST':    return '  CAST('+varName+' AS '+(tgtCol&&tgtCol.type||'NVARCHAR(MAX)')+')';
-          case 'CONVERT': return '  CONVERT('+(tgtCol&&tgtCol.type||'NVARCHAR(MAX)')+', '+varName+')';
-          case 'GETDATE()': return '  GETDATE()';
-          case 'NEWID()': return '  NEWID()';
+          case 'TRIM':    return ' TRIM('+varName+')';
+          case 'UPPER':   return ' UPPER('+varName+')';
+          case 'LOWER':   return ' LOWER('+varName+')';
+          case 'CAST':    return ' CAST('+varName+' AS '+(tgtCol&&tgtCol.type||'NVARCHAR(MAX)')+')';
+          case 'CONVERT': return ' CONVERT('+(tgtCol&&tgtCol.type||'NVARCHAR(MAX)')+', '+varName+')';
+          case 'GETDATE()': return ' GETDATE()';
+          case 'NEWID()': return ' NEWID()';
           default:
             if (truncLen) return '  -- truncated: '+(srcColDef&&srcColDef.type)+' -> '+(tgtCol&&tgtCol.type)+'\n  LEFT('+varName+', '+truncLen+')';
             return '  '+varName;
@@ -1163,7 +1164,7 @@ function generateSQL(){
   showSQLTab();
   document.getElementById('save-btn').disabled = false;
   window._lastTruncWarnings = truncationWarnings;
-  var tMsg = truncationWarnings.length ? ' -- ⚠ '+truncationWarnings.length+' truncation'+(truncationWarnings.length>1?'s':'')+' applied (LEFT)' : '';
+  var tMsg = truncationWarnings.length ? ' -- '+truncationWarnings.length+' truncation'+(truncationWarnings.length>1?'s':'')+' applied (LEFT)' : '';
   showStatus('SQL generated — '+targetTables.length+' target table'+(targetTables.length!==1?'s':'')+''+tMsg,'ok');
 }
 
@@ -1380,7 +1381,7 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
     // Show a banner indicating edit mode
     const banner = document.createElement('div');
     banner.style.cssText='margin-bottom:1rem;padding:0.6rem 1rem;background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:var(--r);font-size:12px;color:var(--purple);display:flex;align-items:center;justify-content:space-between';
-    banner.innerHTML='<span>✏ Editing job: <strong>'+job.name+'</strong> — connect to DBs then generate SQL to update</span><button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px">✕</button>';
+    banner.innerHTML='<span><i class="ic ic-edit"></i> Editing job: <strong>'+job.name+'</strong> — connect to DBs then generate SQL to update</span><button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px">✕</button>';
     const page = document.querySelector('.page');
     if (page) page.insertBefore(banner, page.firstChild);
   } catch(e) {
@@ -1439,7 +1440,7 @@ function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
     <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:100%;max-width:640px;display:flex;flex-direction:column;max-height:90vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
       <div style="padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
         <div>
-          <div style="font-size:13px;font-weight:600;color:var(--text)">🤖 AI WHERE clause builder</div>
+          <div style="font-size:13px;font-weight:600;color:var(--text)"><i class="ic ic-robot"></i> AI WHERE clause builder</div>
           <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">${tableName}</div>
         </div>
         <button onclick="document.getElementById('where-ai-modal').remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">✕</button>
@@ -1459,7 +1460,7 @@ function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
       <!-- Chat messages -->
       <div id="where-chat" style="flex:1;overflow-y:auto;padding:0.875rem 1.25rem;display:flex;flex-direction:column;gap:0.75rem;min-height:120px">
         <div style="padding:0.6rem 0.875rem;background:var(--bg3);border-radius:var(--r);font-size:12px;color:var(--text2);line-height:1.6">
-          👋 Describe the filter you need in plain English and I'll write the T-SQL WHERE clause.<br>
+          <i class="ic ic-user"></i> Describe the filter you need in plain English and I'll write the T-SQL WHERE clause.<br>
           <span style="color:var(--text3);font-size:11px">e.g. "Only active clients in the UK" · "Records created after 2020" · "Where status is not null"</span>
         </div>
         ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
@@ -1711,7 +1712,7 @@ function renderJoinBuilder(containerId, allTables, baseTable) {
             ${['INNER','LEFT','RIGHT','FULL OUTER'].map(t => `<option value="${t}" ${j.type===t?'selected':''}>${t}</option>`).join('')}
           </select>
           <div style="position:relative;flex:1">
-            <input id="join-tbl-inp-${i}" value="${(()=>{const t=(window._joinAllTables||[]).find(t=>t.value===j.table);return t?t.label:j.table||''})()}" placeholder="🔍 Type to search tables…"
+            <input id="join-tbl-inp-${i}" value="${(()=>{const t=(window._joinAllTables||[]).find(t=>t.value===j.table);return t?t.label:j.table||''})()}" placeholder="Type to search tables…"
               autocomplete="off" spellcheck="false"
               onfocus="openJoinTableDrop(${i})"
               oninput="filterJoinTableDrop(${i},this.value)"
@@ -1726,7 +1727,7 @@ function renderJoinBuilder(containerId, allTables, baseTable) {
           <input id="join-on-${i}" value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
             placeholder="e.g. [dbo].[client].[clnum] = [dbo].[contact].[clnum]"
             style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--teal);font-family:var(--mono);outline:none">
-          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI help for ON clause">🤖 AI</button>
+          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI help for ON clause"><i class="ic ic-robot"></i> AI</button>
         </div>
         ${j.table ? `<div style="font-size:10px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">${j.cols ? j.cols.length + ' columns available' : 'Loading columns…'}</div>` : ''}
       </div>

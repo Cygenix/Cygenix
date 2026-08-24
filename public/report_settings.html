@@ -7,6 +7,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -172,7 +173,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
     <span class="save-status" id="save-status"></span>
     <a href="/dashboard.html" class="btn btn-ghost">← Dashboard</a>
     <button class="btn btn-ghost" onclick="resetConfig()" id="reset-btn">↺ Reset</button>
-    <button class="btn btn-primary" onclick="saveAndPreview()" id="save-preview-btn">💾 Save &amp; preview</button>
+    <button class="btn btn-primary" onclick="saveAndPreview()" id="save-preview-btn"><i class="ic ic-save"></i> Save &amp; preview</button>
   </div>
 </div>
 
@@ -874,7 +875,7 @@ async function saveConfig(silent) {
 
 async function saveAndPreview() {
   const btn = document.getElementById('save-preview-btn');
-  btn.disabled = true; const prev = btn.textContent; btn.textContent = '⏳ Saving…';
+  btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Saving…';
   try {
     await saveConfig(true);
     setStatus('✓ Saved — opening preview', 'saved');

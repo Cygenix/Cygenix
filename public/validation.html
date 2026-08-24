@@ -10,6 +10,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -138,7 +139,7 @@ select.form-input option{background:var(--bg3)}
 <body>
 
 <div id="cyg-sidebar-mount" data-active="validation"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
@@ -183,8 +184,8 @@ select.form-input option{background:var(--bg3)}
   <div style="display:flex;align-items:center;gap:0.75rem">
     <button class="btn btn-ghost btn-sm" onclick="runSelected()" id="run-sel-btn" style="display:none">▶ Run selected</button>
     <button class="btn btn-amber btn-sm" onclick="runAll()" id="run-all-btn" disabled>▶ Run all</button>
-    <button class="btn btn-sm" id="stop-btn" onclick="stopRun()" style="display:none;background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)">⏹ Stop</button>
-    <button class="btn btn-ghost btn-sm" onclick="exportExcel()" id="export-btn" style="display:none">📊 Export</button>
+    <button class="btn btn-sm" id="stop-btn" onclick="stopRun()" style="display:none;background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)"><i class="ic ic-stop"></i> Stop</button>
+    <button class="btn btn-ghost btn-sm" onclick="exportExcel()" id="export-btn" style="display:none"><i class="ic ic-chart"></i> Export</button>
   </div>
 </div>
 
@@ -197,7 +198,7 @@ select.form-input option{background:var(--bg3)}
     </div>
     <div style="display:flex;gap:0.5rem;align-items:center">
       <span id="cloud-save-status" style="font-size:12px;color:var(--text3);min-height:1em" aria-live="polite"></span>
-      <button class="btn" onclick="cloudSaveNow()" title="Push validation tables to Cosmos now (otherwise auto-saves ~3s after each edit)">💾 Save to cloud</button>
+      <button class="btn" onclick="cloudSaveNow()" title="Push validation tables to Cosmos now (otherwise auto-saves ~3s after each edit)"><i class="ic ic-save"></i> Save to cloud</button>
       <button class="btn btn-primary" onclick="openAddSource()">+ Add validation table</button>
     </div>
   </div>
@@ -209,7 +210,7 @@ select.form-input option{background:var(--bg3)}
   <div class="panel" id="nl-recon-panel" style="margin-bottom:1.25rem">
     <div class="panel-head">
       <div>
-        <div class="panel-title">💬 Reconciliation tests — plain English</div>
+        <div class="panel-title"><i class="ic ic-chat"></i> Reconciliation tests — plain English</div>
         <div style="font-size:11.5px;color:var(--text2);margin-top:2px;max-width:82ch">
           Describe a check in words and it becomes a source/target query pair built from the migration job's own
           column mapping — with a pass/fail and a drillable list of exactly what differs. Try
@@ -233,7 +234,7 @@ select.form-input option{background:var(--bg3)}
   <!-- VALIDATION SOURCES LIST -->
   <div id="sources-wrap">
     <div id="sources-empty" style="text-align:center;padding:2.5rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);color:var(--text3)">
-      <div style="font-size:28px;opacity:0.3;margin-bottom:0.75rem">🔍</div>
+      <div style="font-size:28px;opacity:0.3;margin-bottom:0.75rem"><i class="ic ic-search"></i> </div>
       <div style="font-size:14px;color:var(--text2);margin-bottom:0.25rem">No validation tables added yet</div>
       <div style="font-size:12px">Click "+ Add validation table" to pick a table, choose which column runs as SQL and which columns appear in your report.</div>
     </div>
@@ -257,8 +258,8 @@ select.form-input option{background:var(--bg3)}
         </div>
         <div id="export-actions" style="display:none;gap:0.4rem">
           <span style="font-size:11px;color:var(--text3);align-self:center;margin-right:0.25rem">Export:</span>
-          <button class="btn btn-ghost btn-sm" onclick="exportCsv()" title="Download a CSV summary of every script's pass/fail status">📄 CSV</button>
-          <button class="btn btn-ghost btn-sm" onclick="exportExcel()" title="Download an Excel workbook with summary + one sheet per failed script">📊 Excel</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportCsv()" title="Download a CSV summary of every script's pass/fail status"><i class="ic ic-doc"></i> CSV</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportExcel()" title="Download an Excel workbook with summary + one sheet per failed script"><i class="ic ic-chart"></i> Excel</button>
         </div>
       </div>
     </div>
@@ -269,7 +270,7 @@ select.form-input option{background:var(--bg3)}
     <div class="panel-head">
       <div class="panel-title">Scripts</div>
       <div style="display:flex;gap:0.5rem;align-items:center">
-        <input id="gbl-filter" class="form-input" style="width:180px;font-size:11px;padding:3px 8px" placeholder="🔍 Filter…" oninput="applyGlobalFilter()">
+        <input id="gbl-filter" class="form-input" style="width:180px;font-size:11px;padding:3px 8px" placeholder="Filter…" oninput="applyGlobalFilter()">
         <select id="gbl-status" class="form-input" style="width:110px;font-size:11px;padding:3px 6px" onchange="applyGlobalFilter()">
           <option value="">All status</option>
           <option value="pending">Pending</option>
@@ -339,7 +340,7 @@ select.form-input option{background:var(--bg3)}
         <div id="modal-custom-conn" style="display:none;margin-bottom:0.5rem">
           <input id="modal-conn-str" class="form-input" placeholder="Server=...;Database=...;User=...;Password=... or https://fn.url?code=...">
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="modalConnect()" id="modal-conn-btn">🔌 Connect &amp; load tables</button>
+        <button class="btn btn-ghost btn-sm" onclick="modalConnect()" id="modal-conn-btn"><i class="ic ic-plug"></i> Connect &amp; load tables</button>
         <span id="modal-conn-status" style="font-size:11px;color:var(--text3);margin-left:0.75rem;font-family:var(--mono)"></span>
       </div>
 
@@ -347,7 +348,7 @@ select.form-input option{background:var(--bg3)}
       <div id="modal-step-table" style="display:none">
         <label class="form-label">Validation table</label>
         <div class="search-wrap">
-          <input id="modal-table-inp" class="form-input" placeholder="🔍 Search tables…" oninput="filterModalTables()" onfocus="openModalDrop()" autocomplete="off">
+          <input id="modal-table-inp" class="form-input" placeholder="Search tables…" oninput="filterModalTables()" onfocus="openModalDrop()" autocomplete="off">
           <div class="search-drop" id="modal-table-drop" style="display:none"></div>
         </div>
         <div id="modal-table-info" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:0.4rem"></div>
@@ -714,7 +715,7 @@ async function modalConnect(){
     $('modal-conn-status').textContent = '✕ '+e.message;
     $('modal-conn-status').style.color = 'var(--red)';
   }
-  $('modal-conn-btn').disabled=false; $('modal-conn-btn').textContent='🔌 Connect & load tables';
+  $('modal-conn-btn').disabled=false; $('modal-conn-btn').textContent='Connect & load tables';
 }
 
 function openModalDrop(){ renderModalDrop($('modal-table-inp').value); $('modal-table-drop').style.display='block'; }
@@ -906,7 +907,7 @@ function renderSources(){
         <div style="margin-left:auto;display:flex;gap:0.4rem">
           <button class="btn ${isActive?'btn-ghost':'btn-primary'} btn-sm" data-load-source="${esc(src.id)}" onclick="loadSourceScripts('${esc(src.id)}')">${loadLabel}</button>
           <button class="btn btn-amber btn-sm" onclick="runSourceScripts('${esc(src.id)}')" ${runDisabled?'disabled':''} ${runHint}>▶ Run</button>
-          <button class="btn btn-ghost btn-sm" onclick="openAddSource('${esc(src.id)}')">✏ Edit</button>
+          <button class="btn btn-ghost btn-sm" onclick="openAddSource('${esc(src.id)}')"><i class="ic ic-edit"></i> Edit</button>
           <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="removeSource('${esc(src.id)}')">✕</button>
         </div>
       </div>
@@ -958,16 +959,16 @@ function renderScriptsTable(){
     const src = validationSources.find(vs=>vs.id===s.srcId)||{label:'?',reportCols:[]};
     const statusHtml = {
       pending:'<span style="color:var(--text3);font-size:11px">— pending —</span>',
-      running:'<span style="color:var(--accent);font-size:11px">⏳ Running…</span>',
+      running:'<span style="color:var(--accent);font-size:11px"><i class="ic ic-hourglass"></i> Running…</span>',
       pass:   '<span class="badge badge-pass">✓ Pass</span>',
       fail:   '<span class="badge badge-fail">✕ Fail</span>',
-      error:  '<span class="badge badge-err">⚠ Error</span>'
+      error:  '<span class="badge badge-err"><i class="ic ic-warning"></i> Error</span>'
     }[s.status]||'';
     const resultHtml = s.status==='pending'||s.status==='running' ? '—'
       : s.status==='error' ? `<span style="font-family:var(--mono);font-size:10px;color:var(--amber)">${esc(s.error||'')}</span>`
       : s.status==='pass' ? '<span style="color:var(--green);font-size:11px">✓ No issues found</span>'
       : `<span style="color:var(--red);font-weight:600">${s.rowsFound.toLocaleString()} rows</span>`
-        + (s.result?.length ? `<button onclick="toggleResult('${s.id}')" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:10px">👁 View</button>
+        + (s.result?.length ? `<button onclick="toggleResult('${s.id}')" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:10px"><i class="ic ic-eye"></i> View</button>
           <div id="res-${s.id}" style="display:none;margin-top:6px;overflow-x:auto">
             <table class="val-table" style="font-size:10px;background:var(--bg3);border-radius:4px">
               <thead><tr>${src.reportCols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
@@ -1061,7 +1062,7 @@ async function execScripts(toRun){
   clearLog(); addLog('Running '+toRun.length+' script(s)…\n');
 
   for(let i=0;i<toRun.length;i++){
-    if(abortFlag){ addLog('\n⏹ Stopped.'); break; }
+    if(abortFlag){ addLog('\nStopped.'); break; }
     const s = toRun[i];
     const src = validationSources.find(v=>v.id===s.srcId)||{conn:'',runOn:'same',label:'?'};
     const conn = resolveConn(src);
@@ -1085,12 +1086,12 @@ async function execScripts(toRun){
       // Sync result back into source's scripts array
       const srcScript = src.scripts.find(x=>x.id===s.id);
       if(srcScript){ srcScript.status=s.status; srcScript.result=s.result; srcScript.rowsFound=s.rowsFound; }
-      addLog(rows.length>0 ? '  🔴 FAILED — '+rows.length+' rows' : '  🟢 PASSED');
+      addLog(rows.length>0 ? ' FAILED — '+rows.length+' rows' : ' PASSED');
     }catch(e){
       s.status='error'; s.error=e.message;
       const srcScript = src.scripts.find(x=>x.id===s.id);
       if(srcScript){ srcScript.status='error'; srcScript.error=e.message; }
-      addLog('  🟠 ERROR — '+e.message);
+      addLog(' ERROR — '+e.message);
     }
     renderScriptsTable(); updateStats(); renderSources();
   }
@@ -1100,13 +1101,13 @@ async function execScripts(toRun){
   addLog('\n─────────────────────────────────');
   addLog('✓ Pass: '+allScripts.filter(s=>s.status==='pass').length);
   addLog('✕ Fail: '+allScripts.filter(s=>s.status==='fail').length);
-  addLog('⚠ Error: '+allScripts.filter(s=>s.status==='error').length);
+  addLog('Error: '+allScripts.filter(s=>s.status==='error').length);
   running=false; abortFlag=false;
   $('run-all-btn').disabled=false;
   $('stop-btn').style.display='none';
 }
 
-function stopRun(){ abortFlag=true; $('stop-btn').disabled=true; $('stop-btn').textContent='⏹ Stopping…'; }
+function stopRun(){ abortFlag=true; $('stop-btn').disabled=true; $('stop-btn').textContent='Stopping…'; }
 function addLog(m){ const el=$('exec-log'); if(el){ el.textContent+=m+'\n'; el.scrollTop=el.scrollHeight; } }
 function clearLog(){ const el=$('exec-log'); if(el) el.textContent=''; }
 
@@ -1292,7 +1293,7 @@ async function nlRunOne(id){
   try {
     c.last = await CygenixNLRecon.nrRun(c.spec, { srcConn, tgtConn, dbCall });
   } catch (e) {
-    c.last = { pass: false, error: e.message, headline: '⚠ ' + e.message, deltas: [], ranAt: new Date().toISOString() };
+    c.last = { pass: false, error: e.message, headline: '' + e.message, deltas: [], ranAt: new Date().toISOString() };
   }
   nlSave(list);
   nlRenderChecks();

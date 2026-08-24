@@ -265,7 +265,7 @@
   function siModulesSql(caps) {
     const c = caps || CAPS;
     return 'SELECT TOP (' + (c.moduleCount | 0) + ') s.name AS schemaName, o.name AS moduleName,\n'
-      + '       LEFT(m.definition, ' + (c.moduleChars | 0) + ') AS definition\n'
+      + ' LEFT(m.definition, ' + (c.moduleChars | 0) + ') AS definition\n'
       + 'FROM sys.sql_modules m\n'
       + 'JOIN sys.objects o ON o.object_id = m.object_id\n'
       + 'JOIN sys.schemas s ON s.schema_id = o.schema_id\n'
@@ -284,11 +284,11 @@
   function siUniqueColsSql() {
     return 'SELECT s.name AS schemaName, t.name AS tableName, c.name AS columnName, why FROM (\n'
       + "  SELECT i.object_id, ic.column_id, 'unique_index' AS why\n"
-      + '  FROM sys.indexes i\n'
-      + '  JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0\n'
-      + '  WHERE i.is_unique = 1 AND 1 = (SELECT COUNT(*) FROM sys.index_columns k\n'
-      + '        WHERE k.object_id = i.object_id AND k.index_id = i.index_id AND k.is_included_column = 0)\n'
-      + '  UNION ALL\n'
+      + ' FROM sys.indexes i\n'
+      + ' JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0\n'
+      + ' WHERE i.is_unique = 1 AND 1 = (SELECT COUNT(*) FROM sys.index_columns k\n'
+      + ' WHERE k.object_id = i.object_id AND k.index_id = i.index_id AND k.is_included_column = 0)\n'
+      + ' UNION ALL\n'
       + "  SELECT c2.object_id, c2.column_id, 'identity' FROM sys.columns c2 WHERE c2.is_identity = 1\n"
       + ') u\n'
       + 'JOIN sys.columns c ON c.object_id = u.object_id AND c.column_id = u.column_id\n'
@@ -311,8 +311,8 @@
   // is TOP-capped — above the cap the verdict is about the sample and says so.
   function siKeyProbeSql(tableKey, col, top) {
     return 'SELECT COUNT_BIG(*) AS n_rows,\n'
-      + '       COUNT_BIG(DISTINCT ' + q(col) + ') AS n_distinct,\n'
-      + '       SUM(CASE WHEN ' + q(col) + ' IS NULL THEN 1 ELSE 0 END) AS n_null\n'
+      + ' COUNT_BIG(DISTINCT ' + q(col) + ') AS n_distinct,\n'
+      + ' SUM(CASE WHEN ' + q(col) + ' IS NULL THEN 1 ELSE 0 END) AS n_null\n'
       + 'FROM (SELECT TOP (' + (top | 0) + ') ' + q(col) + ' FROM ' + qk(tableKey) + ' WITH (NOLOCK)) x;';
   }
 
@@ -329,11 +329,11 @@
   // much as the edge: migration loads fail on the orphans.
   function siContainSql(childKey, childCol, parentKey, parentCol, childTop) {
     return 'SELECT COUNT_BIG(*) AS child_rows,\n'
-      + '       COUNT_BIG(DISTINCT c.' + q(childCol) + ') AS child_ndv,\n'
-      + '       COUNT_BIG(DISTINCT CASE WHEN p.' + q(parentCol) + ' IS NOT NULL THEN c.' + q(childCol) + ' END) AS matched_ndv,\n'
-      + '       SUM(CASE WHEN p.' + q(parentCol) + ' IS NULL THEN 1 ELSE 0 END) AS orphan_rows\n'
+      + ' COUNT_BIG(DISTINCT c.' + q(childCol) + ') AS child_ndv,\n'
+      + ' COUNT_BIG(DISTINCT CASE WHEN p.' + q(parentCol) + ' IS NOT NULL THEN c.' + q(childCol) + ' END) AS matched_ndv,\n'
+      + ' SUM(CASE WHEN p.' + q(parentCol) + ' IS NULL THEN 1 ELSE 0 END) AS orphan_rows\n'
       + 'FROM (SELECT TOP (' + (childTop | 0) + ') ' + q(childCol) + ' FROM ' + qk(childKey) + ' WITH (NOLOCK)\n'
-      + '      WHERE ' + q(childCol) + ' IS NOT NULL) c\n'
+      + ' WHERE ' + q(childCol) + ' IS NOT NULL) c\n'
       + 'LEFT JOIN ' + qk(parentKey) + ' p WITH (NOLOCK) ON p.' + q(parentCol) + ' = c.' + q(childCol) + ';';
   }
 

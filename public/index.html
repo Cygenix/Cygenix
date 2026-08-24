@@ -366,9 +366,10 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 .agent-step.active .agent-step-name{color:var(--accent)}
 .agent-step.done .agent-step-name{color:var(--text2)}
 .agent-prompt{background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.65rem;margin-bottom:0.5rem;font-family:var(--mono);font-size:10px;color:var(--text);line-height:1.5}
-.agent-prompt::before{content:'➤ Goal:';color:var(--accent);font-weight:600;margin-right:6px}
+.agent-prompt::before{content:'→ Goal:';color:var(--accent);font-weight:600;margin-right:6px}
 </style>
 <link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 </head>
 <body>
 <div class="grid-glow" aria-hidden="true"></div>
@@ -409,7 +410,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div style="display:grid;gap:0.75rem;margin-bottom:1.75rem">
       <a href="mailto:curtis.morris@cygenix.co.uk" style="display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.2s"
          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
-        <span style="font-size:18px">✉️</span>
+        <span style="font-size:18px"><i class="ic ic-mail"></i> </span>
         <div style="flex:1">
           <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Email</div>
           <div style="font-size:14px;font-weight:500;color:var(--text);font-family:var(--mono)">curtis.morris@cygenix.co.uk</div>
@@ -417,7 +418,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </a>
       <a href="tel:+447809873223" style="display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.2s"
          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
-        <span style="font-size:18px">📞</span>
+        <span style="font-size:18px"><i class="ic ic-chat"></i> </span>
         <div style="flex:1">
           <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Phone</div>
           <div style="font-size:14px;font-weight:500;color:var(--text);font-family:var(--mono)">+44 7809 873223</div>
@@ -425,7 +426,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </a>
       <a href="/register.html" style="display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.2s"
          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
-        <span style="font-size:18px">📋</span>
+        <span style="font-size:18px"><i class="ic ic-clipboard"></i> </span>
         <div style="flex:1">
           <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Waitlist</div>
           <div style="font-size:14px;font-weight:500;color:var(--text);font-family:var(--mono)">Get early access updates</div>
@@ -463,28 +464,28 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <!-- TICKER -->
 <div class="ticker-wrap">
   <div class="ticker">
-    <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
+    <div class="ticker-item"><i class="ic-dot" style="color:var(--green)"></i> <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
-    <div class="ticker-item">🤖 <span>Agentive mode</span> · Plan generated · 18 steps queued</div>
-    <div class="ticker-item">📊 <span>Reporting</span> · Exec summary regenerated · 1 page</div>
-    <div class="ticker-item">🔍 <span>Data insight</span> · "What does dbo.Transaction do?" answered</div>
-    <div class="ticker-item">⏰ <span>Task agent</span> · Nightly conversion scheduled · 22:00</div>
-    <div class="ticker-item">📦 <span>Execution plan</span> · 4 groups · 27 jobs</div>
-    <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
-    <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
-    <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
-    <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
-    <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
+    <div class="ticker-item"><i class="ic ic-robot"></i> <span>Agentive mode</span> · Plan generated · 18 steps queued</div>
+    <div class="ticker-item"><i class="ic ic-chart"></i> <span>Reporting</span> · Exec summary regenerated · 1 page</div>
+    <div class="ticker-item"><i class="ic ic-search"></i> <span>Data insight</span> · "What does dbo.Transaction do?" answered</div>
+    <div class="ticker-item"><i class="ic ic-clock"></i> <span>Task agent</span> · Nightly conversion scheduled · 22:00</div>
+    <div class="ticker-item"><i class="ic ic-package"></i> <span>Execution plan</span> · 4 groups · 27 jobs</div>
+    <div class="ticker-item"><i class="ic-dot" style="color:var(--green)"></i> <span>Migration complete</span> · 0 errors</div>
+    <div class="ticker-item"><i class="ic ic-sync"></i> <span>Was/Is rules applied</span> · 312 translations</div>
+    <div class="ticker-item"><i class="ic ic-calendar"></i> <span>Project Plan updated</span> · 7 days to completion</div>
+    <div class="ticker-item"><i class="ic ic-doc"></i> <span>Conversion report exported</span> · Excel ready</div>
+    <div class="ticker-item"><i class="ic-dot" style="color:var(--green)"></i> <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
-    <div class="ticker-item">🤖 <span>Agentive mode</span> · Plan generated · 18 steps queued</div>
-    <div class="ticker-item">📊 <span>Reporting</span> · Exec summary regenerated · 1 page</div>
-    <div class="ticker-item">🔍 <span>Data insight</span> · "What does dbo.Transaction do?" answered</div>
-    <div class="ticker-item">⏰ <span>Task agent</span> · Nightly conversion scheduled · 22:00</div>
-    <div class="ticker-item">📦 <span>Execution plan</span> · 4 groups · 27 jobs</div>
-    <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
-    <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
-    <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
-    <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
+    <div class="ticker-item"><i class="ic ic-robot"></i> <span>Agentive mode</span> · Plan generated · 18 steps queued</div>
+    <div class="ticker-item"><i class="ic ic-chart"></i> <span>Reporting</span> · Exec summary regenerated · 1 page</div>
+    <div class="ticker-item"><i class="ic ic-search"></i> <span>Data insight</span> · "What does dbo.Transaction do?" answered</div>
+    <div class="ticker-item"><i class="ic ic-clock"></i> <span>Task agent</span> · Nightly conversion scheduled · 22:00</div>
+    <div class="ticker-item"><i class="ic ic-package"></i> <span>Execution plan</span> · 4 groups · 27 jobs</div>
+    <div class="ticker-item"><i class="ic-dot" style="color:var(--green)"></i> <span>Migration complete</span> · 0 errors</div>
+    <div class="ticker-item"><i class="ic ic-sync"></i> <span>Was/Is rules applied</span> · 312 translations</div>
+    <div class="ticker-item"><i class="ic ic-calendar"></i> <span>Project Plan updated</span> · 7 days to completion</div>
+    <div class="ticker-item"><i class="ic ic-doc"></i> <span>Conversion report exported</span> · Excel ready</div>
   </div>
 </div>
 
@@ -496,21 +497,21 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       <div class="section-title">Everything you need to<br>migrate with confidence</div>
     </div>
     <div class="features-grid animate-on-scroll">
-      <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">Agentive Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Two ways to run a job. <strong style="color:var(--text2)">AI-Assisted</strong> — Cygenix recommends, you approve each step. <strong style="color:var(--text2)">Agentive</strong> — full autonomous execution end to end, with checkpoints and a human-in-the-loop kill switch.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Reporting</div><div class="feature-card-body">Interactive BI dashboards over your source or target database, drag-and-drop chart builder, and the home for auto-generated executive project summaries and conversion reports — ready to email to stakeholders. Upload context documents (emails, client briefs, sign-offs, Was/Is mappings, data dictionaries, schema docs) and Claude reads them when generating narratives, with inline citations back to the source (e.g. <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">[Email, 14 Apr]</code>).</div></div>
-      <div class="feature-card"><div class="feature-card-icon">🔍</div><div class="feature-card-title">Data Insights</div><div class="feature-card-body">Understand any database in plain English. Ask "what does this table do?", "where is config held?", "which tables hold financial data?" — Cygenix reads the schema, samples the data and answers you naturally. Onboard a legacy database in hours, not weeks.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">⏰</div><div class="feature-card-title">Task Agent</div><div class="feature-card-body">Job scheduler for everything Cygenix does. Run conversions, validations, reindexes and reports on a schedule — once, daily, weekly or cron. Job chains, retry policies, email alerts. Set it and walk away.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Connect to Anything</div><div class="feature-card-body">Live database connections to SQL Server (on-prem, Azure SQL, Azure Managed Instance, AWS RDS, Google Cloud SQL) and PostgreSQL (self-hosted, RDS, Aurora, Azure Database, Cloud SQL, Supabase, Neon). File sources for <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.csv</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.xlsx</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.tsv</code> and <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.txt</code> — multi-sheet workbooks handled. Cross-engine migration in any direction, with a built-in DDL generator that creates target tables from the source schema and flags lossy conversions (jsonb, arrays, hierarchyid). Azure Function with Managed Identity also supported.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">AI Column Mapping</div><div class="feature-card-body">Claude AI maps every source column to its target automatically, with a colour-coded confidence score per row. Switch between the table view (target-driven layout, source dropdown per column, fixed value override, truncation warnings) and the visual view (drag-and-drop pills with bezier connection lines, fullscreen for complex jobs). One-to-many mode maps a single source into multiple target tables in one operation.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">🔄</div><div class="feature-card-title">Was/Is Translation & System Parameters</div><div class="feature-card-body">Upload translation tables to convert values during migration — status codes, lookup IDs, department names, currency codes, and more. Define <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">@@Tokens</code> once and use them across SQL, Was/Is rules, WHERE clauses, literal mappings and custom jobs — values substitute at runtime. CSV / JSON import and export, filter and sort.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">✅</div><div class="feature-card-title">Flexible Validation</div><div class="feature-card-body">Add any table as a validation source. Pick which column holds the SQL, choose which columns appear in the report. Run any number of validation tables against any database.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">📦</div><div class="feature-card-title">Grouped Execution Plans</div><div class="feature-card-body">Organise jobs the way an enterprise migration actually runs — group by concern (Static Config, Masters, Transactions), drag jobs between groups, pick sequential or parallel per group. Tick-box selection runs only what you need.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">📅</div><div class="feature-card-title">Project Planner</div><div class="feature-card-body">Full calendar (year/month/week/day views), task tracking, blocker management, execution phase tracker, and activity log — driven by your project completion date.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">🔗</div><div class="feature-card-title">Integrations</div><div class="feature-card-body">Sync your migration plan with the tools your team already uses. Bidirectional, field-mapped sync with Atlassian Jira and Smartsheet for issue tracking — import existing issues, push new tasks, full sync history. Credentials stay in your browser.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">💻</div><div class="feature-card-title">SQL Editor</div><div class="feature-card-body">Full-featured SQL editor with script library, connection selector, find & replace, results grid, history, AI assistant, and one-to-many mapper for complex transformations.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">🧹</div><div class="feature-card-title">Data Cleansing</div><div class="feature-card-body">Find near-duplicate rows in a source table before migration. Pick the columns to match on and a strategy per column — <strong style="color:var(--text2)">exact</strong>, <strong style="color:var(--text2)">fuzzy</strong>, <strong style="color:var(--text2)">phonetic</strong> or <strong style="color:var(--text2)">numeric</strong>. Review candidate clusters, optionally have Claude review ambiguous ones for false positives, then export to CSV/JSON or generate merge SQL. Detection-only — your data stays untouched until you decide to act on it.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">🔐</div><div class="feature-card-title">Secure by Design</div><div class="feature-card-body">Authentication via Azure Entra External ID with SSO and Google sign-in. Azure Managed Identity supported, role-based access, full audit trail of every action. UK GDPR compliant. Database credentials live in your browser, not on our servers — sent only when running queries.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">🖧</div><div class="feature-card-title">Server Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Move the server-level objects most tools leave behind. Logins migrate with hashed passwords and SIDs preserved (database users stay mapped). SQL Agent jobs travel with their steps, schedules, categories and operators. SSIS projects deploy server-to-server via the catalog — environments, variables and references included. Linked servers reproduce the exact provider and options from source. Verify, discover, preview, execute, audit — one flow.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-robot"></i> </div><div class="feature-card-title">Agentive Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Two ways to run a job. <strong style="color:var(--text2)">AI-Assisted</strong> — Cygenix recommends, you approve each step. <strong style="color:var(--text2)">Agentive</strong> — full autonomous execution end to end, with checkpoints and a human-in-the-loop kill switch.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-chart"></i> </div><div class="feature-card-title">Reporting</div><div class="feature-card-body">Interactive BI dashboards over your source or target database, drag-and-drop chart builder, and the home for auto-generated executive project summaries and conversion reports — ready to email to stakeholders. Upload context documents (emails, client briefs, sign-offs, Was/Is mappings, data dictionaries, schema docs) and Claude reads them when generating narratives, with inline citations back to the source (e.g. <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">[Email, 14 Apr]</code>).</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-search"></i> </div><div class="feature-card-title">Data Insights</div><div class="feature-card-body">Understand any database in plain English. Ask "what does this table do?", "where is config held?", "which tables hold financial data?" — Cygenix reads the schema, samples the data and answers you naturally. Onboard a legacy database in hours, not weeks.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-clock"></i> </div><div class="feature-card-title">Task Agent</div><div class="feature-card-body">Job scheduler for everything Cygenix does. Run conversions, validations, reindexes and reports on a schedule — once, daily, weekly or cron. Job chains, retry policies, email alerts. Set it and walk away.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-plug"></i> </div><div class="feature-card-title">Connect to Anything</div><div class="feature-card-body">Live database connections to SQL Server (on-prem, Azure SQL, Azure Managed Instance, AWS RDS, Google Cloud SQL) and PostgreSQL (self-hosted, RDS, Aurora, Azure Database, Cloud SQL, Supabase, Neon). File sources for <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.csv</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.xlsx</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.tsv</code> and <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.txt</code> — multi-sheet workbooks handled. Cross-engine migration in any direction, with a built-in DDL generator that creates target tables from the source schema and flags lossy conversions (jsonb, arrays, hierarchyid). Azure Function with Managed Identity also supported.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-robot"></i> </div><div class="feature-card-title">AI Column Mapping</div><div class="feature-card-body">Claude AI maps every source column to its target automatically, with a colour-coded confidence score per row. Switch between the table view (target-driven layout, source dropdown per column, fixed value override, truncation warnings) and the visual view (drag-and-drop pills with bezier connection lines, fullscreen for complex jobs). One-to-many mode maps a single source into multiple target tables in one operation.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-sync"></i> </div><div class="feature-card-title">Was/Is Translation & System Parameters</div><div class="feature-card-body">Upload translation tables to convert values during migration — status codes, lookup IDs, department names, currency codes, and more. Define <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">@@Tokens</code> once and use them across SQL, Was/Is rules, WHERE clauses, literal mappings and custom jobs — values substitute at runtime. CSV / JSON import and export, filter and sort.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-check-circle"></i> </div><div class="feature-card-title">Flexible Validation</div><div class="feature-card-body">Add any table as a validation source. Pick which column holds the SQL, choose which columns appear in the report. Run any number of validation tables against any database.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-package"></i> </div><div class="feature-card-title">Grouped Execution Plans</div><div class="feature-card-body">Organise jobs the way an enterprise migration actually runs — group by concern (Static Config, Masters, Transactions), drag jobs between groups, pick sequential or parallel per group. Tick-box selection runs only what you need.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-calendar"></i> </div><div class="feature-card-title">Project Planner</div><div class="feature-card-body">Full calendar (year/month/week/day views), task tracking, blocker management, execution phase tracker, and activity log — driven by your project completion date.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-link"></i> </div><div class="feature-card-title">Integrations</div><div class="feature-card-body">Sync your migration plan with the tools your team already uses. Bidirectional, field-mapped sync with Atlassian Jira and Smartsheet for issue tracking — import existing issues, push new tasks, full sync history. Credentials stay in your browser.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-monitor"></i> </div><div class="feature-card-title">SQL Editor</div><div class="feature-card-body">Full-featured SQL editor with script library, connection selector, find & replace, results grid, history, AI assistant, and one-to-many mapper for complex transformations.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-broom"></i> </div><div class="feature-card-title">Data Cleansing</div><div class="feature-card-body">Find near-duplicate rows in a source table before migration. Pick the columns to match on and a strategy per column — <strong style="color:var(--text2)">exact</strong>, <strong style="color:var(--text2)">fuzzy</strong>, <strong style="color:var(--text2)">phonetic</strong> or <strong style="color:var(--text2)">numeric</strong>. Review candidate clusters, optionally have Claude review ambiguous ones for false positives, then export to CSV/JSON or generate merge SQL. Detection-only — your data stays untouched until you decide to act on it.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-lock"></i> </div><div class="feature-card-title">Secure by Design</div><div class="feature-card-body">Authentication via Azure Entra External ID with SSO and Google sign-in. Azure Managed Identity supported, role-based access, full audit trail of every action. UK GDPR compliant. Database credentials live in your browser, not on our servers — sent only when running queries.</div></div>
+      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-monitor"></i> </div><div class="feature-card-title">Server Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Move the server-level objects most tools leave behind. Logins migrate with hashed passwords and SIDs preserved (database users stay mapped). SQL Agent jobs travel with their steps, schedules, categories and operators. SSIS projects deploy server-to-server via the catalog — environments, variables and references included. Linked servers reproduce the exact provider and options from source. Verify, discover, preview, execute, audit — one flow.</div></div>
     </div>
   </div>
 </section>
@@ -533,10 +534,10 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="feature-body">Select source and target tables. Claude AI maps every column automatically. Override any row, add a fixed SQL value, hide unmapped columns, filter by match confidence.</div>
         <ul class="feature-points">
           <li>Target-driven layout — every target column shown, source is a dropdown</li>
-          <li>✦ Visual mode — drag-and-drop pill view with connection lines and fullscreen</li>
+          <li><i class="ic ic-sparkle"></i> Visual mode — drag-and-drop pill view with connection lines and fullscreen</li>
           <li>Fixed value column — type any SQL literal (N'Value', NULL, GETDATE())</li>
-          <li>⚠ Truncation warnings when source char type is wider than target</li>
-          <li>👁 Show/Hide Unmapped toggle to focus on what matters</li>
+          <li><i class="ic ic-warning"></i> Truncation warnings when source char type is wider than target</li>
+          <li><i class="ic ic-eye"></i> Show/Hide Unmapped toggle to focus on what matters</li>
           <li>AI uses Haiku with automatic retry on overload</li>
         </ul>
       </div>
@@ -544,7 +545,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="mock-topbar">
           <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
           <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Object Mapping · Simple Map</div>
-          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)">👁 Hide Unmapped</div>
+          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-eye"></i> Hide Unmapped</div>
         </div>
         <div class="mock-body">
           <div style="display:grid;grid-template-columns:1fr 0.7fr 1fr 0.8fr 0.8fr;gap:0.3rem;padding:0.25rem 0;margin-bottom:0.3rem">
@@ -577,16 +578,16 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <li>Bezier connection lines redraw on every scroll and resize</li>
           <li>Click a line (or the ✕ on a target pill) to remove the mapping</li>
           <li>Green / amber / red / grey pills — HIGH / MEDIUM / LOW / unmapped</li>
-          <li>⛶ Fullscreen toggle expands to the full browser window; Esc to exit</li>
+          <li><i class="ic ic-fullscreen"></i> Fullscreen toggle expands to the full browser window; Esc to exit</li>
           <li>Bidirectional state sync with the Table view — switch any time</li>
         </ul>
-        <div style="margin-top:1rem;font-size:12px;color:var(--text3);font-style:italic">👉 Try it — drag a source pill onto a target, or click a line to remove it</div>
+        <div style="margin-top:1rem;font-size:12px;color:var(--text3);font-style:italic"><i class="ic ic-user"></i> Try it — drag a source pill onto a target, or click a line to remove it</div>
       </div>
       <div class="mock" id="vm-mock">
         <div class="mock-topbar">
           <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
           <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Object Mapping · Visual view</div>
-          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)">⛶ Fullscreen</div>
+          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-fullscreen"></i> Fullscreen</div>
         </div>
         <div class="mock-body" style="padding:0.75rem 0.5rem">
           <div class="vm-canvas" id="vm-canvas">
@@ -624,8 +625,8 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
             <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
               <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--teal)">dbo.ClientMaster</span>
               <span style="font-size:9px;color:var(--text3);margin-left:auto">5 mapped</span>
-              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
-              <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">👁 Hide Unmapped</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-robot"></i> AI map</span>
+              <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-eye"></i> Hide Unmapped</span>
             </div>
             <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · @ClientID · 5 cols mapped</div>
           </div>
@@ -633,7 +634,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
             <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
               <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent)">dbo.ClientAddress</span>
               <span style="font-size:9px;color:var(--text3);margin-left:auto">4 mapped</span>
-              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-robot"></i> AI map</span>
             </div>
             <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: GUID · FK → @ClientID</div>
           </div>
@@ -641,7 +642,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
             <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
               <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--amber)">dbo.ClientContact</span>
               <span style="font-size:9px;color:var(--text3);margin-left:auto">3 mapped</span>
-              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-robot"></i> AI map</span>
             </div>
             <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · FK → @ClientID</div>
           </div>
@@ -755,7 +756,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <li>Run all, run selected (checkboxes), or run one source at a time</li>
           <li>Inline result rows shown with your chosen report columns</li>
           <li>Export to Excel — summary + one sheet per failed script</li>
-          <li>⏹ Stop mid-run at any time</li>
+          <li><i class="ic ic-stop"></i> Stop mid-run at any time</li>
         </ul>
       </div>
       <div class="mock">
@@ -777,7 +778,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:9px;font-family:var(--mono)">
             <span style="color:var(--green)">✓ Pass: <span id="val-pass-count">0</span></span>
             <span style="color:var(--red)">✕ Fail: <span id="val-fail-count">0</span></span>
-            <span style="color:var(--text3)">⏳ Pending: <span id="val-pend-count">0</span></span>
+            <span style="color:var(--text3)"><i class="ic ic-hourglass"></i> Pending: <span id="val-pend-count">0</span></span>
           </div>
         </div>
       </div>
@@ -828,7 +829,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <li>Task table with status, priority, phase, owner and due date</li>
           <li>Blocker management with impact level and resolution tracking</li>
           <li>7-stage execution phase tracker — click to set current phase</li>
-          <li>🔗 Jira &amp; Smartsheet sync — bidirectional, field-mapped, full sync history</li>
+          <li><i class="ic ic-link"></i> Jira &amp; Smartsheet sync — bidirectional, field-mapped, full sync history</li>
           <li>Activity log records every change automatically</li>
         </ul>
       </div>
@@ -874,7 +875,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         </div>
         <div style="background:var(--bg3);border-top:0.5px solid var(--border);padding:0.4rem 0.6rem;display:flex;gap:0.5rem;font-family:var(--mono);font-size:9px;color:var(--text3)">
           <span style="color:var(--green)">▶ Run (Ctrl+Enter)</span>
-          <span>|</span><span>🔍 Find</span><span>|</span><span>⬇ Export</span>
+          <span>|</span><span><i class="ic ic-search"></i> Find</span><span>|</span><span><i class="ic ic-download"></i> Export</span>
         </div>
         <div style="padding:0.4rem 0.6rem">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.3rem;font-family:var(--mono);font-size:9px;background:var(--bg3);border-radius:4px;padding:0.3rem">
@@ -904,7 +905,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div class="dual-mode animate-on-scroll" style="margin-top:3rem">
       <div class="mode-card driver-assist">
         <div class="mode-card-head">
-          <div class="mode-icon mode-icon-da">🚗</div>
+          <div class="mode-icon mode-icon-da"><i class="ic ic-truck"></i> </div>
           <div>
             <div class="mode-name">AI-Assisted Migration</div>
             <div class="mode-tag">YOU DECIDE · AI ASSISTS</div>
@@ -922,7 +923,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 
       <div class="mode-card autopilot">
         <div class="mode-card-head">
-          <div class="mode-icon mode-icon-ap">🤖</div>
+          <div class="mode-icon mode-icon-ap"><i class="ic ic-robot"></i> </div>
           <div>
             <div class="mode-name">Agentive Migration</div>
             <div class="mode-tag">FULLY AUTONOMOUS · YOU SUPERVISE</div>
@@ -934,7 +935,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <li>Executes phases end-to-end with retries and back-off</li>
           <li>Self-heals on transient errors; pauses on data anomalies</li>
           <li>Streams progress — you see every action in the activity log</li>
-          <li>Hit ⏸ Pause or ⏹ Kill at any time — full rollback supported</li>
+          <li>Hit <i class="ic ic-pause"></i> Pause or <i class="ic ic-stop"></i> Kill at any time — full rollback supported</li>
         </ul>
       </div>
     </div>
@@ -950,12 +951,12 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Mode:</div>
           <div style="display:flex;background:var(--bg);border-radius:5px;padding:2px;gap:2px">
             <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">AI-Assisted</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:rgba(107,78,142,0.18);color:var(--purple)">🤖 Agentive</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:rgba(107,78,142,0.18);color:var(--purple)"><i class="ic ic-robot"></i> Agentive</div>
           </div>
           <div style="margin-left:auto;display:flex;align-items:center;gap:0.4rem">
             <span style="width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite"></span>
             <span style="font-size:9px;font-family:var(--mono);color:var(--green)">RUNNING</span>
-            <button style="font-size:9px;font-family:var(--mono);padding:3px 8px;border-radius:4px;background:var(--red-g);color:var(--red);border:0.5px solid rgba(240,64,112,0.3)">⏹ Kill</button>
+            <button style="font-size:9px;font-family:var(--mono);padding:3px 8px;border-radius:4px;background:var(--red-g);color:var(--red);border:0.5px solid rgba(240,64,112,0.3)"><i class="ic ic-stop"></i> Kill</button>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:0.6rem">
@@ -970,7 +971,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <span style="color:var(--green)">[12:04:21]</span> ✓ Connected to source · 342 tables discovered<br>
           <span style="color:var(--green)">[12:04:38]</span> ✓ AI mapping complete · 47 columns · 2 truncation warnings auto-resolved<br>
           <span style="color:var(--accent)">[12:05:02]</span> ⟳ Loading dbo.Transaction · batch 8/24 · 5,000 rows/sec<br>
-          <span style="color:var(--amber)">[12:05:14]</span> ⚠ Transient timeout on dbo.Voucher — retrying with back-off (1/3)<br>
+          <span style="color:var(--amber)">[12:05:14]</span> <i class="ic ic-warning"></i> Transient timeout on dbo.Voucher — retrying with back-off (1/3)<br>
           <span style="color:var(--green)">[12:05:19]</span> ✓ Recovered · continuing
         </div>
       </div>
@@ -1002,14 +1003,14 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="mock-topbar">
           <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · BI Dashboard · Sample Project</div>
-          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)">⬇ Export</div>
+          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-download"></i> Export</div>
         </div>
         <div class="mock-body">
           <!-- Tab strip -->
           <div style="display:flex;gap:0.3rem;margin-bottom:0.6rem;border-bottom:0.5px solid var(--border);padding-bottom:0.4rem">
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3)">📊 BI Dashboard</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📄 Exec Summary</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📑 Conversion Report</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-chart"></i> BI Dashboard</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)"><i class="ic ic-doc"></i> Exec Summary</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)"><i class="ic ic-book"></i> Conversion Report</div>
             <div style="margin-left:auto;font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">+ Add chart</div>
           </div>
 
@@ -1110,7 +1111,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="mock-topbar">
           <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · Executive Project Summary · auto-generated</div>
-          <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)">✨ Regenerate</div>
+          <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-sparkle"></i> Regenerate</div>
         </div>
         <div class="mock-body" style="padding:1.1rem 1.25rem;background:#fafafa;color:#1a1a1a;font-family:'Helvetica Neue',Arial,sans-serif">
           <div style="font-size:8px;color:#6b7280;letter-spacing:0.1em;font-family:var(--mono);text-transform:uppercase;margin-bottom:4px">Project Status Report · 2 May 2026</div>
@@ -1131,7 +1132,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           </div>
           <div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid #e5e7eb;font-size:8px;color:#6b7280;font-family:var(--mono);display:flex;justify-content:space-between">
             <span>Generated by Cygenix · 2 May 2026 · 09:14</span>
-            <span>📄 Export PDF · 📧 Email stakeholders</span>
+            <span><i class="ic ic-doc"></i> Export PDF · <i class="ic ic-mail"></i> Email stakeholders</span>
           </div>
         </div>
       </div>
@@ -1179,11 +1180,11 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="mock-body">
           <!-- Q&A: What does this table do? -->
           <div style="display:flex;gap:0.5rem;margin-bottom:0.7rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">👤</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0"><i class="ic ic-user"></i> </div>
             <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">What does <span style="font-family:var(--mono);background:var(--bg);padding:1px 5px;border-radius:3px;color:var(--teal);font-size:10px">dbo.Transaction</span> do?</div>
           </div>
           <div style="display:flex;gap:0.5rem;margin-bottom:0.9rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)">✨</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-sparkle"></i> </div>
             <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
               <div style="font-size:11px;color:var(--text);line-height:1.55;margin-bottom:0.4rem"><strong style="color:var(--accent)">Transaction</strong> stores financial transaction header records — one row per outgoing payment. Each row captures who was paid, the amount, the originating account and the posting period. It links to <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">TransactionDetail</span> for line-level breakdowns and <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">Counterparty</span> for the recipient.</div>
               <div style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.5rem">
@@ -1197,11 +1198,11 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 
           <!-- Q&A: Which tables hold financial data? -->
           <div style="display:flex;gap:0.5rem;margin-bottom:0.7rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">👤</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0"><i class="ic ic-user"></i> </div>
             <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">Which tables hold financial data?</div>
           </div>
           <div style="display:flex;gap:0.5rem;margin-bottom:0.9rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)">✨</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-sparkle"></i> </div>
             <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
               <div style="font-size:11px;color:var(--text);line-height:1.55;margin-bottom:0.5rem">Found <strong style="color:var(--accent)">14 tables</strong> with financial data, grouped into three clusters:</div>
               <div style="display:flex;flex-direction:column;gap:0.35rem">
@@ -1223,11 +1224,11 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 
           <!-- Q&A: Where is config held? -->
           <div style="display:flex;gap:0.5rem;margin-bottom:0.7rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">👤</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0"><i class="ic ic-user"></i> </div>
             <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">Where is the system configuration held?</div>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)">✨</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-sparkle"></i> </div>
             <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
               <div style="font-size:11px;color:var(--text);line-height:1.55"><span style="font-family:var(--mono);font-size:10px;color:var(--teal)">SystemSetting</span> holds key-value runtime settings (78 entries). <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">FeatureFlag</span> stores per-module flags. Lookup codes live in <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">LookupCode</span> and its 23 child tables (e.g. <span style="font-family:var(--mono);font-size:10px;color:var(--text2)">CurrencyCode</span>, <span style="font-family:var(--mono);font-size:10px;color:var(--text2)">StatusCode</span>).</div>
             </div>
@@ -1237,7 +1238,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <div style="margin-top:0.8rem;display:flex;align-items:center;gap:0.4rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem">
             <span style="font-size:11px;color:var(--text3)">→</span>
             <span style="font-size:10px;color:var(--text3);font-style:italic;flex:1">Ask another question…</span>
-            <span style="font-size:8px;font-family:var(--mono);background:var(--glow);color:var(--accent);padding:2px 7px;border-radius:100px">✨ Ask</span>
+            <span style="font-size:8px;font-family:var(--mono);background:var(--glow);color:var(--accent);padding:2px 7px;border-radius:100px"><i class="ic ic-sparkle"></i> Ask</span>
           </div>
         </div>
       </div>
@@ -1260,9 +1261,9 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="mock-body">
           <!-- Tabs -->
           <div style="display:flex;gap:0.3rem;margin-bottom:0.7rem;border-bottom:0.5px solid var(--border);padding-bottom:0.4rem">
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3)">⏰ Upcoming</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📜 Run history</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">⚙ All jobs</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-clock"></i> Upcoming</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)"><i class="ic ic-doc"></i> Run history</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)"><i class="ic ic-cog"></i> All jobs</div>
           </div>
 
           <!-- Upcoming jobs -->
@@ -1423,11 +1424,11 @@ if(mapBody){
       const isTrunc=r[0]==='description_text';
       const isFixed=r[4]!=='';
       const badgeCls=r[5]==='high'?'c-high':r[5]==='med'?'c-med':r[5]==='fixed'?'c-high':'c-low';
-      const badgeTxt=r[5]==='high'?'HIGH':r[5]==='med'?'MED ⚠':r[5]==='fixed'?'FIXED':'LOW';
+      const badgeTxt=r[5]==='high'?'HIGH':r[5]==='med'?'MED ':r[5]==='fixed'?'FIXED':'LOW';
       d.innerHTML=`
         <div style="font-family:var(--mono);font-size:9px;color:${r[5]==='low'?'var(--text3)':'var(--text2)'}">${r[0]}</div>
         <div style="font-size:8px;color:var(--text3);font-family:var(--mono)">${r[1]}</div>
-        <div style="font-family:var(--mono);font-size:9px;color:${r[2]==='—'?'var(--text3)':'var(--teal)'}">${r[2]}${isTrunc?'<span style="font-size:8px;color:var(--amber)"> ⚠ LEFT(100)</span>':''}</div>
+        <div style="font-family:var(--mono);font-size:9px;color:${r[2]==='—'?'var(--text3)':'var(--teal)'}">${r[2]}${isTrunc?'<span style="font-size:8px;color:var(--amber)"> <i class="ic ic-warning"></i> LEFT(100)</span>':''}</div>
         <div style="font-family:var(--mono);font-size:9px;color:${isFixed?'var(--teal)':'var(--text3)'}">${r[4]||'—'}</div>
         <div><span class="confidence ${badgeCls}">${badgeTxt}</span></div>`;
       mapBody.appendChild(d);
@@ -1451,7 +1452,7 @@ if(valBody){
     setTimeout(()=>{
       const row=document.createElement('div');
       row.className='val-row';
-      const badge=r[1]==='pass'?'<span class="val-badge v-pass">🟢 Pass</span>':r[1]==='fail'?'<span class="val-badge v-fail">🔴 Fail</span>':'<span class="val-badge v-pending">— pending —</span>';
+      const badge=r[1]==='pass'?'<span class="val-badge v-pass"><i class="ic-dot" style="color:var(--green)"></i> Pass</span>':r[1]==='fail'?'<span class="val-badge v-fail"><i class="ic-dot" style="color:var(--red)"></i> Fail</span>':'<span class="val-badge v-pending">— pending —</span>';
       row.innerHTML=`<input type="checkbox" ${r[1]!=='pending'?'checked':''} style="accent-color:var(--accent);width:10px;flex-shrink:0"><div class="val-name">${r[0]}</div>${badge}<div class="val-rows">${r[2]>0?r[2]+' rows':''}</div>`;
       valBody.appendChild(row);
       if(r[1]==='pass'){vp++;document.getElementById('val-pass-count').textContent=vp;}
@@ -1689,8 +1690,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeAbout();
 });
 </script>
-<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
-<script src="/cygenix-a11y.js?v=bae7e7832f" defer></script>
+<script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
 </body>
 </html>

@@ -632,7 +632,7 @@
     return `<div class="cyg-proj-area">
       <button type="button" class="cyg-proj-btn" id="cyg-proj-btn" aria-haspopup="menu" aria-expanded="false"
               title="Active project — everything below acts on this project">
-        <span class="cyg-proj-ic">🏢</span>
+        <span class="cyg-proj-ic"><i class="ic ic-factory"></i> </span>
         <span class="cyg-nav-item-label" id="cyg-proj-name">${escapeHtml(name || 'No project selected')}</span>
         <span class="cyg-proj-chev">▾</span>
       </button>
@@ -1128,7 +1128,7 @@
     btn.type = 'button';
     btn.setAttribute('aria-label', 'Open menu');
     btn.setAttribute('aria-expanded', 'false');
-    btn.innerHTML = '☰';
+    btn.innerHTML = '<i class="ic ic-menu"></i>';
 
     const backdrop = document.createElement('div');
     backdrop.className = 'cyg-mobile-backdrop';
@@ -1138,7 +1138,7 @@
       document.body.classList.toggle('cyg-mobile-open', open);
       btn.setAttribute('aria-expanded', String(open));
       btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-      btn.innerHTML = open ? '✕' : '☰';
+      btn.innerHTML = open ? '✕' : '<i class="ic ic-menu"></i>';
     };
 
     btn.addEventListener('click', () => setOpen(!document.body.classList.contains('cyg-mobile-open')));

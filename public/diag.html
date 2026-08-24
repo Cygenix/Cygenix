@@ -21,6 +21,7 @@
 </style>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 </head>
 <body>
 <h1>Cygenix — Connection Diagnostics</h1>
@@ -49,7 +50,7 @@ async function run() {
   const ok   = m => log('✓ ' + m, 'ok');
   const err  = m => log('✗ ' + m, 'err');
   const inf  = m => log('  ' + m, 'inf');
-  const warn = m => log('⚠ ' + m, 'warn');
+  const warn = m => log('' + m, 'warn');
   const hdr  = m => log('\n▸ ' + m, 'hdr');
 
   log('Cygenix Diagnostics — ' + new Date().toLocaleTimeString(), 'warn');
@@ -75,8 +76,8 @@ async function run() {
         } else if (d.apiKeyConfigured === false) {
           err('Health function works BUT API key is NOT set');
           warn('Fix: Netlify → Site configuration → Environment variables');
-          warn('     Add variable: ANTHROPIC_API_KEY = your key from console.anthropic.com');
-          warn('     Then: Deploys → Trigger deploy → Deploy site');
+          warn(' Add variable: ANTHROPIC_API_KEY = your key from console.anthropic.com');
+          warn(' Then: Deploys → Trigger deploy → Deploy site');
         } else {
           ok('Health function reachable (unexpected response format)');
         }
@@ -86,7 +87,7 @@ async function run() {
     } else if (r.status === 404) {
       err('Health function NOT FOUND (404)');
       warn('Fix: Make sure netlify/functions/health.js exists in your GitHub repo');
-      warn('     The file must be at: netlify/functions/health.js (not inside public/)');
+      warn(' The file must be at: netlify/functions/health.js (not inside public/)');
     } else {
       err('Health function returned error HTTP ' + r.status);
     }
@@ -147,7 +148,7 @@ async function run() {
       if (txt.includes('API key') || txt.includes('ANTHROPIC')) {
         warn('→ Root cause: ANTHROPIC_API_KEY not set in Netlify environment variables');
         warn('Fix: Netlify → Site config → Environment variables → Add ANTHROPIC_API_KEY');
-        warn('     Then redeploy: Deploys → Trigger deploy → Deploy site');
+        warn(' Then redeploy: Deploys → Trigger deploy → Deploy site');
       }
     } else if (r.status === 401) {
       err('Unauthorised (401) — API key is invalid');
@@ -185,7 +186,7 @@ async function run() {
     } else if (r.status === 404) {
       err('Redirect NOT working — /api/analyse returns 404');
       warn('Fix: Make sure netlify.toml is in the ROOT of your repo (not inside public/)');
-      warn('     Contents should include:');
+      warn(' Contents should include:');
       warn('     [[redirects]]');
       warn('       from = "/api/*"');
       warn('       to = "/.netlify/functions/:splat"');

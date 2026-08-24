@@ -8,6 +8,7 @@
 <!-- Site-wide theme overrides — must load BEFORE the theme pre-paint script
      below so its CSS variables are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <script>
 (function(){
@@ -175,7 +176,7 @@ code,.mono{font-family:var(--mono)}
      means nothing in the sidebar highlights. Users navigate to this page
      via the "Data Generator" tab on Dashboard → Connections. -->
 <div id="cyg-sidebar-mount" data-active="connections"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <div id="dg-main">
 
@@ -192,14 +193,14 @@ code,.mono{font-family:var(--mono)}
       <div class="b-title">Status</div>
       <div id="dg-src-status" class="b-status">Not yet tested</div>
     </div>
-    <button id="dg-test-btn" class="dg-btn dg-btn-ghost" onclick="dgTestConnection()">🔍 Test connection</button>
+    <button id="dg-test-btn" class="dg-btn dg-btn-ghost" onclick="dgTestConnection()"><i class="ic ic-search"></i> Test connection</button>
   </div>
 
   <!-- Table configuration -->
   <div class="dg-panel">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:0.75rem">
       <div>
-        <div class="dg-panel-title" style="margin-bottom:0.25rem">📋 Tables to generate</div>
+        <div class="dg-panel-title" style="margin-bottom:0.25rem"><i class="ic ic-clipboard"></i> Tables to generate</div>
         <div class="dg-panel-sub" style="margin-bottom:0">Click a table to edit its columns. Row-count controls appear at the bottom of each table's expanded view.</div>
       </div>
       <div style="display:flex;gap:0.5rem;flex-shrink:0">
@@ -212,7 +213,7 @@ code,.mono{font-family:var(--mono)}
 
   <!-- Preview -->
   <div class="dg-panel">
-    <div class="dg-panel-title">👁 Preview <span style="font-weight:400;color:var(--text2);font-size:11px;margin-left:0.5rem">first 5 rows per table — updates when you edit columns or row counts</span></div>
+    <div class="dg-panel-title"><i class="ic ic-eye"></i> Preview <span style="font-weight:400;color:var(--text2);font-size:11px;margin-left:0.5rem">first 5 rows per table — updates when you edit columns or row counts</span></div>
     <div id="dg-preview-tabs" class="dg-preview-tabs"></div>
     <div id="dg-preview-content" class="dg-preview"></div>
   </div>
@@ -222,9 +223,9 @@ code,.mono{font-family:var(--mono)}
     <div class="dg-actions">
       <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
         <button id="dg-generate-btn" class="dg-btn dg-btn-primary" onclick="dgGenerate()">▶ Generate data</button>
-        <button id="dg-preview-btn" class="dg-btn dg-btn-ghost" onclick="dgRefreshPreview()">🔄 Refresh preview</button>
+        <button id="dg-preview-btn" class="dg-btn dg-btn-ghost" onclick="dgRefreshPreview()"><i class="ic ic-sync"></i> Refresh preview</button>
       </div>
-      <button id="dg-drop-btn" class="dg-btn dg-btn-danger" onclick="dgDropAll()">🗑 Drop all demo tables</button>
+      <button id="dg-drop-btn" class="dg-btn dg-btn-danger" onclick="dgDropAll()"><i class="ic ic-trash"></i> Drop all demo tables</button>
     </div>
     <div id="dg-progress-wrap" style="display:none;margin-top:1rem">
       <div style="font-size:11px;color:var(--text2);display:flex;justify-content:space-between">
@@ -237,14 +238,14 @@ code,.mono{font-family:var(--mono)}
 
   <!-- Log -->
   <div class="dg-panel">
-    <div class="dg-panel-title">📜 Activity log</div>
+    <div class="dg-panel-title"><i class="ic ic-doc"></i> Activity log</div>
     <div id="dg-log" class="dg-log"><div class="dg-log-line">Ready. Configure tables above, then click Generate.</div></div>
   </div>
 
 </div>
 
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
+<script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -852,7 +853,7 @@ function refreshBanner(){
   const conn = readSourceConn();
   const stat = document.getElementById('dg-src-status');
   if (!conn){
-    stat.textContent = '⚠ Not configured';
+    stat.textContent = 'Not configured';
     stat.className = 'b-status warn';
   } else if (stat.textContent === 'Not yet tested' || stat.className.indexOf('warn') >= 0){
     stat.textContent = 'Configured — click Test';
@@ -865,7 +866,7 @@ async function dgTestConnection(){
   const stat = document.getElementById('dg-src-status');
   const btn  = document.getElementById('dg-test-btn');
   if (!conn){
-    stat.textContent = '⚠ No source connection — set one in Dashboard → Connections';
+    stat.textContent = 'No source connection — set one in Dashboard → Connections';
     stat.className = 'b-status warn';
     return;
   }
@@ -914,7 +915,7 @@ function renderTables(){
           '<span id="dg-count-' + tableName + '">' + rowCount.toLocaleString() + '</span> rows' +
         '</div>' +
         '<div style="display:flex;gap:0.4rem;margin-left:0.75rem">' +
-          '<button class="dg-btn dg-btn-ghost" style="padding:0.25rem 0.55rem;font-size:10.5px" onclick="event.stopPropagation();dgImproveWithAI(\'' + tableName + '\')" title="Ask Claude for realistic sample values for this table\'s columns. Runs once at prep time, cached for the demo.">✨ AI</button>' +
+          '<button class="dg-btn dg-btn-ghost" style="padding:0.25rem 0.55rem;font-size:10.5px" onclick="event.stopPropagation();dgImproveWithAI(\'' + tableName + '\')" title="Ask Claude for realistic sample values for this table\'s columns. Runs once at prep time, cached for the demo."><i class="ic ic-sparkle"></i> AI</button>' +
           '<button class="dg-btn dg-btn-danger" style="padding:0.25rem 0.55rem;font-size:10.5px" onclick="event.stopPropagation();dgDeleteTable(\'' + tableName + '\')" title="Delete this table from the schema (does not touch the database)">✕</button>' +
         '</div>' +
       '</div>' +
@@ -1252,7 +1253,7 @@ async function dgImproveWithAI(tableName){
     'No markdown fences, no commentary — just the JSON.';
 
   const btn = document.querySelector('button[onclick*="dgImproveWithAI(\'' + tableName + '\')"]');
-  if (btn){ btn.disabled = true; btn.textContent = '✨ …'; }
+  if (btn){ btn.disabled = true; btn.textContent = '…'; }
   logLine('Asking Claude for sample values for dbo.' + tableName + '…', 'info');
 
   try {
@@ -1302,7 +1303,7 @@ async function dgImproveWithAI(tableName){
   } catch (e){
     logLine('AI improve failed: ' + (e.message || e), 'err');
   } finally {
-    if (btn){ btn.disabled = false; btn.textContent = '✨ AI'; }
+    if (btn){ btn.disabled = false; btn.textContent = 'AI'; }
   }
 }
 window.dgImproveWithAI = dgImproveWithAI;

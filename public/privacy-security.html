@@ -8,6 +8,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -152,7 +153,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 <div class="container">
 
   <div class="page-head">
-    <div class="page-title">🔒 Privacy &amp; Security</div>
+    <div class="page-title"><i class="ic ic-lock"></i> Privacy &amp; Security</div>
     <div class="page-sub">
       Control how much of your data reaches Claude during a migration. Settings are stored in your browser (localStorage) and apply across all Cygenix pages that call AI.
       These controls affect what Cygenix sends to the Anthropic API on your behalf — they do not change anything about Anthropic's own
@@ -166,7 +167,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     <div class="panel-head"><div class="panel-title">How Cygenix uses AI — plain-English disclosure</div></div>
     <div class="panel-body">
       <div class="disclosure-section">
-        <div class="disclosure-title sees">⚠ Where Claude currently sees data</div>
+        <div class="disclosure-title sees"><i class="ic ic-warning"></i> Where Claude currently sees data</div>
         <ul class="disclosure-list">
           <li><strong>Dedup AI review</strong> — sends row values from MED-confidence clusters to help judge if they're true duplicates (names, addresses, phone numbers, etc.). <em>Only the columns you ticked as match columns, only the clusters that are ambiguous.</em></li>
           <li><strong>SQL Editor AI helper</strong> — sends whatever SQL you write in the editor, including any literal values in WHERE clauses or INSERT statements.</li>
@@ -198,15 +199,15 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     <div class="panel-body">
       <div class="mode-grid">
         <div class="mode-card" data-mode="full" onclick="setMode('full')">
-          <div class="mode-title">🟢 Full</div>
+          <div class="mode-title"><i class="ic-dot" style="color:var(--green)"></i> Full</div>
           <div class="mode-body">All AI features enabled. Row data and schema can be sent to Claude for mapping, dedup review, and SQL help.</div>
         </div>
         <div class="mode-card" data-mode="schema-only" onclick="setMode('schema-only')">
-          <div class="mode-title">🟡 Schema-only</div>
+          <div class="mode-title"><i class="ic-dot" style="color:var(--amber)"></i> Schema-only</div>
           <div class="mode-body">AI features that would send row data are blocked. Schema-level AI (column mapping) still works. Recommended for client production migrations.</div>
         </div>
         <div class="mode-card" data-mode="no-ai" onclick="setMode('no-ai')">
-          <div class="mode-title">🔴 No AI</div>
+          <div class="mode-title"><i class="ic-dot" style="color:var(--red)"></i> No AI</div>
           <div class="mode-body">All Anthropic API calls disabled. Cygenix works as a pure SQL tool — mapping is manual, no AI assistance anywhere.</div>
         </div>
       </div>
@@ -249,7 +250,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
   <div class="panel">
     <div class="panel-head">
       <div class="panel-title">AI access audit log</div>
-      <button class="btn btn-sm" onclick="exportLog()">⬇ Export CSV</button>
+      <button class="btn btn-sm" onclick="exportLog()"><i class="ic ic-download"></i> Export CSV</button>
       <button class="btn btn-sm" onclick="clearLogUI()" style="color:var(--red)">Clear log</button>
     </div>
     <div class="panel-body" style="padding:0">

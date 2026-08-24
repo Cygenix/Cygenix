@@ -174,7 +174,7 @@
           <div class="ch-sub" id="ch-diff-stats">${formatDate(v.createdAt)} · ${escapeHtml(v.userId || '')}</div>
         </div>
         <div style="display:flex;gap:6px">
-          <button class="ch-btn primary" id="ch-revert-btn">↶ Revert to v${v.version}</button>
+          <button class="ch-btn primary" id="ch-revert-btn"><i class="ic ic-undo"></i> Revert to v${v.version}</button>
         </div>
       </div>
       <div class="ch-compare" id="ch-compare-pane">
@@ -308,7 +308,7 @@
             'Could not save a pre-revert snapshot: ' + e.message +
             '\n\nProceed with the revert anyway? Current state will NOT be recoverable.'
           )) {
-            if (revertBtn) { revertBtn.disabled = false; revertBtn.textContent = '↶ Revert to this version'; }
+            if (revertBtn) { revertBtn.disabled = false; revertBtn.textContent = 'Revert to this version'; }
             return;
           }
         }
@@ -354,7 +354,7 @@
     } catch (err) {
       alert('Revert failed: ' + err.message);
     } finally {
-      if (revertBtn) { revertBtn.disabled = false; revertBtn.textContent = '↶ Revert to this version'; }
+      if (revertBtn) { revertBtn.disabled = false; revertBtn.textContent = 'Revert to this version'; }
     }
   }
 

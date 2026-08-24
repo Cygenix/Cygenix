@@ -9,6 +9,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -268,7 +269,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <body>
 
 <div id="cyg-sidebar-mount" data-active="project-builder"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <div class="topbar">
   <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Execute Migration</span></a>
@@ -305,7 +306,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
     </div>
     <div style="display:flex;gap:0.4rem;padding:0.5rem 0.75rem 0.75rem">
       <div class="add-sql-btn" onclick="openSqlModal()" style="flex:1;margin:0">+ Add SQL job</div>
-      <div class="add-sql-btn" onclick="openBulkImportModal()" style="flex:1;margin:0" title="Import one or more .sql files as jobs">📥 Import .sql</div>
+      <div class="add-sql-btn" onclick="openBulkImportModal()" style="flex:1;margin:0" title="Import one or more .sql files as jobs"><i class="ic ic-download"></i> Import .sql</div>
     </div>
   </div>
 
@@ -317,13 +318,13 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <!-- populated by refreshProjectSelector() -->
         </select>
         <button class="btn btn-ghost btn-sm" onclick="newProjectPrompt()" title="Create a new project">+ New</button>
-        <button class="btn btn-ghost btn-sm" onclick="renameProjectPrompt()" title="Rename this project">✎ Rename</button>
-        <button class="btn btn-ghost btn-sm" onclick="deleteProjectPrompt()" title="Delete this project" style="color:var(--red)">🗑</button>
+        <button class="btn btn-ghost btn-sm" onclick="renameProjectPrompt()" title="Rename this project"><i class="ic ic-edit"></i> Rename</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteProjectPrompt()" title="Delete this project" style="color:var(--red)"><i class="ic ic-trash"></i> </button>
       </div>
       <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
-        <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
-        <button class="btn btn-ghost btn-sm" id="create-task-btn" onclick="openCreateTaskModal()" title="Package selected jobs as a single composite job. Then schedule it from Dashboard → Task Agent → + New schedule.">📦 Create task</button>
+        <button class="btn btn-ghost btn-sm" onclick="saveProject()"><i class="ic ic-save"></i> Save</button>
+        <button class="btn btn-ghost btn-sm" id="create-task-btn" onclick="openCreateTaskModal()" title="Package selected jobs as a single composite job. Then schedule it from Dashboard → Task Agent → + New schedule."><i class="ic ic-package"></i> Create task</button>
         <!-- Staging mode toggle.
              • Unchecked (default) = Incremental: each Run appends rows to staging
                with a fresh dm_run_id. Only rows in 'pending' state are loaded to
@@ -353,7 +354,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
              Adds one source query per run (cheap — just keys, not data).
              Skipped entirely when there's no WHERE clause on the job.
 
-             A ⚠ warning indicator next to the label appears when any
+             A warning indicator next to the label appears when any
              selected step's totalRows exceeds AUDIT_SOURCE_LARGE_TABLE_THRESHOLD
              (100,000 by default). The indicator's tooltip shows which
              tables are large and approximately how many extra rows will
@@ -374,10 +375,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
              NOT NULL, FK orphans) before anything runs. -->
         <button class="btn btn-ghost btn-sm" id="preflight-btn" onclick="runPreflight()"
                 title="Simulate the selected jobs on a sample of real data: projected failures by column, the values that will reject, and an estimated runtime — without writing a row.">
-          🛫 Preflight
+          <i class="ic ic-takeoff"></i> Preflight
         </button>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
-        <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
+        <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)"><i class="ic ic-stop"></i> Stop</button>
         <!-- Top-level rollback: undoes the most recent run by deleting
              every target row this run created. Hidden until a run with
              rollback-supported steps completes; showRollbackButtons()
@@ -387,7 +388,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
                 onclick="rollbackLastRun()"
                 style="display:none;color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)"
                 title="Roll back the most recent run — deletes the rows it loaded into target. Per-step rollback is also available next to each step's row count.">
-          ↶ Rollback last run
+          Rollback last run
         </button>
       </div>
     </div>
@@ -410,7 +411,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           </div>
           <div style="display:flex;gap:0.5rem">
             <input class="conn-input" id="proj-src-conn" placeholder="(not configured — open Connections page)" readonly style="cursor:default;opacity:0.85">
-            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">🔌 Test source</button>
+            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0"><i class="ic ic-plug"></i> Test source</button>
           </div>
           <div class="conn-status" id="src-conn-status"></div>
         </div>
@@ -421,7 +422,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           </div>
           <div style="display:flex;gap:0.5rem">
             <input class="conn-input" id="proj-tgt-conn" placeholder="(not configured — open Connections page)" readonly style="cursor:default;opacity:0.85">
-            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">🔌 Test target</button>
+            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0"><i class="ic ic-plug"></i> Test target</button>
           </div>
           <div class="conn-status" id="tgt-conn-status"></div>
         </div>
@@ -438,7 +439,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
            steps whose source jobs belong to a DIFFERENT project. Hidden by
            default; populated and shown by detectOrphanedSteps(). -->
       <div id="orphan-banner" style="display:none;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.35);border-radius:8px;padding:0.6rem 0.85rem;margin:0.5rem 0;align-items:center;gap:0.75rem;flex-wrap:wrap">
-        <span style="font-size:18px;line-height:1">⚠️</span>
+        <span style="font-size:18px;line-height:1"><i class="ic ic-warning"></i> </span>
         <div style="flex:1;min-width:200px">
           <div style="font-size:12px;font-weight:600;color:var(--amber)" id="orphan-banner-title">This project has steps that belong elsewhere</div>
           <div style="font-size:11px;color:var(--text2);margin-top:2px" id="orphan-banner-detail"></div>
@@ -457,7 +458,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 
       <div id="steps-list">
         <div class="empty-steps" id="steps-empty">
-          <div style="font-size:32px;opacity:0.3;margin-bottom:0.75rem">📋</div>
+          <div style="font-size:32px;opacity:0.3;margin-bottom:0.75rem"><i class="ic ic-clipboard"></i> </div>
           <div style="font-size:14px;color:var(--text2);margin-bottom:0.4rem">No steps yet</div>
           <div style="font-size:12px">Click a migration job on the left to add it</div>
         </div>
@@ -477,8 +478,8 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <!-- Log tools: always-visible copy actions so users can grab the full log
              or the last SQL that was dispatched to the DB when debugging failures. -->
         <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap">
-          <button type="button" class="btn btn-ghost btn-sm" id="copy-log-btn" onclick="copyExecLog()" title="Copy the full execution log to the clipboard">📋 Copy log</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="copy-last-sql-btn" onclick="copyLastExecutedSQL()" title="Copy the last SQL statement that was sent to the database" disabled>📋 Copy last SQL</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="copy-log-btn" onclick="copyExecLog()" title="Copy the full execution log to the clipboard"><i class="ic ic-clipboard"></i> Copy log</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="copy-last-sql-btn" onclick="copyLastExecutedSQL()" title="Copy the last SQL statement that was sent to the database" disabled><i class="ic ic-clipboard"></i> Copy last SQL</button>
           <span id="copy-hint" style="font-size:11px;color:var(--text3);align-self:center"></span>
         </div>
         <div class="exec-log" id="exec-log"></div>
@@ -600,6 +601,6 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 
 <script src="/cygenix-resume.js?v=f002a6878e" defer></script>
 <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
-<script src="/project-builder-app.js?v=ab14d58194" defer></script>
+<script src="/project-builder-app.js?v=172dba1133" defer></script>
 </body>
 </html>

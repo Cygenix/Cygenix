@@ -13,7 +13,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 // AUTOSAVE FETCH GUARD — must run BEFORE cygenix-cosmos-sync.js loads.
 //
-// When the dashboard's "⚡ Generate SQL — Bulk" runner opens this page in
+// When the dashboard's "<i class="ic ic-bolt"></i> Generate SQL — Bulk" runner opens this page in
 // a hidden iframe with ?autosave=1, we need to prevent the iframe's
 // CygenixSync.init() from pulling stale data from Cosmos and overwriting
 // localStorage. Each iframe runs init() at module load — synchronously
@@ -394,13 +394,13 @@ async function ddlRun() {
 
   const btn = document.getElementById('ddl-run-btn');
   btn.disabled = true;
-  btn.textContent = '⏳ Running…';
+  btn.textContent = 'Running…';
   ddlShowResult('Executing against ' + _ddlCtx.createSide + ' (' + _ddlCtx.createDialect + ')…', 'info');
 
   try {
     const res = await dbCall(_ddlCtx.conn, { action:'execute', sql });
     if (res && res.error) {
-      ddlShowResult('🔴 ' + res.error, 'err');
+      ddlShowResult('' + res.error, 'err');
       btn.disabled = false; btn.textContent = '▶ Run';
       return;
     }
@@ -418,7 +418,7 @@ async function ddlRun() {
     }
     setTimeout(ddlCloseModal, 1200);
   } catch (e) {
-    ddlShowResult('🔴 Error: ' + (e.message || String(e)), 'err');
+    ddlShowResult('Error: ' + (e.message || String(e)), 'err');
     btn.disabled = false; btn.textContent = '▶ Run';
   }
 }
@@ -1012,7 +1012,7 @@ function toggleVisualFullscreen(viewId){
   document.body.style.overflow = nowFs ? 'hidden' : '';
   // Update button label
   const btn = el.querySelector('.visual-fs-btn');
-  if(btn) btn.textContent = nowFs ? '⛶ Exit fullscreen' : '⛶ Fullscreen';
+  if(btn) btn.textContent = nowFs ? 'Exit fullscreen' : 'Fullscreen';
   // Lines need redrawing after layout change
   scheduleLineRedraw();
   setTimeout(scheduleLineRedraw, 100);  // after CSS transition settles
@@ -1932,7 +1932,7 @@ function autoFixAgentive(){
     return head + '\n' + sample + more;
   }
   const preview = [
-    plan.warnings.length ? '⚠  '+plan.warnings.join('\n⚠  ')+'\n' : '',
+    plan.warnings.length ? ' '+plan.warnings.join('\n ')+'\n' : '',
     block('Clean dead source refs', plan.deadRefs,
       d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} ← ${d.oldSrc}  (clear srcCol)`),
     block('Fix date casts', plan.dateCasts,
@@ -1988,7 +1988,7 @@ function toggleUnmappedCols(){
   _hidingUnmapped = !_hidingUnmapped;
   const btn = $('btn-toggle-unmapped');
   if(btn){
-    btn.textContent = _hidingUnmapped ? '👁 Show Unmapped' : '👁 Hide Unmapped';
+    btn.textContent = _hidingUnmapped ? 'Show Unmapped' : 'Hide Unmapped';
     btn.style.color = _hidingUnmapped ? 'var(--amber)' : '';
     btn.style.borderColor = _hidingUnmapped ? 'rgba(245,158,11,0.4)' : '';
   }
@@ -2060,15 +2060,15 @@ function renderLineageHtml(chain, impact){
 
   let chainHtml = '';
   for (const h of chain){
-    if (h.kind === 'target') chainHtml += hop('🎯', esc(h.table) + '.<b>' + esc(h.column) + '</b>', 'target column');
-    else if (h.kind === 'transform') chainHtml += hop('⚙️', 'Transform: ' + esc(h.transform), 'applied per row during the load');
-    else if (h.kind === 'literal') chainHtml += hop('📌', 'Fixed value: <span style="font-family:var(--mono);color:var(--teal)">' + esc(h.value) + '</span>', esc(h.note || ''));
-    else if (h.kind === 'wasis') chainHtml += hop('🔁', h.rules.length + ' Was/Is rule' + (h.rules.length === 1 ? '' : 's'),
+    if (h.kind === 'target') chainHtml += hop('<i class="ic ic-target"></i> ', esc(h.table) + '.<b>' + esc(h.column) + '</b>', 'target column');
+    else if (h.kind === 'transform') chainHtml += hop('', 'Transform: ' + esc(h.transform), 'applied per row during the load');
+    else if (h.kind === 'literal') chainHtml += hop('<i class="ic ic-pin"></i> ', 'Fixed value: <span style="font-family:var(--mono);color:var(--teal)">' + esc(h.value) + '</span>', esc(h.note || ''));
+    else if (h.kind === 'wasis') chainHtml += hop('', h.rules.length + ' Was/Is rule' + (h.rules.length === 1 ? '' : 's'),
       h.rules.slice(0, 6).map(r => '<span style="font-family:var(--mono)">' + esc(r.oldVal) + ' → ' + esc(r.newVal) + '</span>').join(' · ')
       + (h.rules.length > 6 ? ' · +' + (h.rules.length - 6) + ' more' : ''));
-    else if (h.kind === 'source') chainHtml += hop('🗄', esc(h.table) + '.<b>' + esc(h.column) + '</b>',
+    else if (h.kind === 'source') chainHtml += hop('<i class="ic ic-archive"></i> ', esc(h.table) + '.<b>' + esc(h.column) + '</b>',
       'source column' + (h.fromJoin ? ' — arrives via a JOIN' : ''));
-    else if (h.kind === 'filter') chainHtml += hop('🚦', 'Source filter',
+    else if (h.kind === 'filter') chainHtml += hop('', 'Source filter',
       (h.where ? 'WHERE <span style="font-family:var(--mono)">' + esc(h.where) + '</span>' : '')
       + (h.groupBy ? (h.where ? ' · ' : '') + 'GROUP BY <span style="font-family:var(--mono)">' + esc(h.groupBy) + '</span>' : ''));
     else if (h.kind === 'unmapped') chainHtml += hop('∅', 'Unmapped', 'nothing feeds this column — if it is NOT NULL without a default, every row rejects');
@@ -2106,7 +2106,7 @@ async function runEvidenceMap(){
   if (hasEdits && !confirm('Replace the current mapping with evidence-based proposals? Fixed values and manual picks will be overwritten.')) return;
 
   const btn = $('evidence-map-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '🧬 Sampling…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Sampling…'; }
   showStatus('Evidence map: sampling both tables…', 'info');
   try {
     const res = await CygenixEvidenceMap.emRun(srcTable, tgtTable, {
@@ -2127,7 +2127,7 @@ async function runEvidenceMap(){
   } catch (e) {
     showStatus('Evidence map failed: ' + e.message, 'error');
   }
-  if (btn) { btn.disabled = false; btn.textContent = '🧬 Evidence map'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Evidence map'; }
 }
 
 function autoMap(src, tgt){
@@ -2330,7 +2330,7 @@ function renderMappingTable(){
     // NOT NULL inline blocking message — sits under the target column name
     // so it reads as part of the row context, not floating somewhere else.
     const notNullMsgHtml = notNullBlocking
-      ? `<div style="margin-top:3px;color:var(--red);font-size:10px;font-weight:600">⚠ NOT NULL — must be mapped or given a fixed value</div>`
+      ? `<div style="margin-top:3px;color:var(--red);font-size:10px;font-weight:600"><i class="ic ic-warning"></i> NOT NULL — must be mapped or given a fixed value</div>`
       : (isNotNull && !isIdentity
           ? `<div style="margin-top:2px;color:var(--text3);font-size:9px;font-weight:500">NOT NULL</div>`
           : '');
@@ -2350,7 +2350,7 @@ function renderMappingTable(){
         ${notNullMsgHtml}
       </td>
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
-        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})">⚠ LEFT(${truncLen})</span>`:''}
+        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})"><i class="ic ic-warning"></i> LEFT(${truncLen})</span>`:''}
         ${identityBadgeHtml}
       </td>
       <td><select class="map-select" ${disAttr} style="width:80px${identityLocked?';cursor:not-allowed':''}" onchange="updateTransform(${i},this.value)">
@@ -2374,7 +2374,7 @@ function renderMappingTable(){
   // Reset hide-unmapped toggle when mapping rebuilt
   _hidingUnmapped = false;
   const btn = $('btn-toggle-unmapped');
-  if(btn){ btn.textContent='👁 Hide Unmapped'; btn.style.color=''; btn.style.borderColor=''; }
+  if(btn){ btn.textContent='Hide Unmapped'; btn.style.color=''; btn.style.borderColor=''; }
   // Re-apply any active filter after re-render
   applyMapFilter();
 }
@@ -2949,7 +2949,7 @@ function renderClauseNotes(){
         + '<button class="gb-wand" onclick="fixGroupBy()" '
         + 'title="Wrap each of these in MAX() so the statement runs, keeping one row per group. '
         + 'Each lands in that row’s Fixed value box, where you can edit or clear it.">'
-        + '🪄 Fix ' + offenders.length + ' column' + (offenders.length===1?'':'s') + '</button>';
+        + '<i class="ic ic-wand"></i> Fix ' + offenders.length + ' column' + (offenders.length===1?'':'s') + '</button>';
     } else {
       gEl.style.display = 'block';
       gEl.style.color = 'var(--text3)';
@@ -3120,7 +3120,7 @@ function renderOTMCards(){
         <span style="font-size:10px;color:var(--text3);margin-left:4px">${mappedCount} mapped</span>
         <div style="margin-left:auto;display:flex;gap:0.4rem">
           ${joinCols.length?`<button onclick="showOTMJoinColPicker(${ti})" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer">+ Joined col</button>`:''}
-          <button onclick="aiMapOTM(${ti})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--purple);cursor:pointer" id="ai-map-btn-${ti}">🤖 AI map</button>
+          <button onclick="aiMapOTM(${ti})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--purple);cursor:pointer" id="ai-map-btn-${ti}"><i class="ic ic-robot"></i> AI map</button>
           <button onclick="moveTgt(${ti},-1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" ${ti===0?'disabled':''}>↑</button>
           <button onclick="moveTgt(${ti},1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" ${ti===targetTables.length-1?'disabled':''}>↓</button>
           <button onclick="removeTgt(${ti})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:2px 4px">✕</button>
@@ -3153,8 +3153,8 @@ function renderOTMCards(){
       <!-- Mapping rows — driven off TARGET columns -->
       <div style="padding:0.5rem 0.875rem">
         <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">
-          <input placeholder="🔍 Filter…" style="flex:1;min-width:100px;max-width:180px;font-size:11px;padding:2px 6px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono);outline:none" oninput="filterOTMRows(${ti},this.value)" id="otm-filter-${ti}">
-          <button class="btn btn-ghost btn-sm" id="otm-hide-btn-${ti}" onclick="toggleOTMUnmapped(${ti})" style="font-size:10px;padding:2px 7px">👁 Hide Unmapped</button>
+          <input placeholder="Filter…" style="flex:1;min-width:100px;max-width:180px;font-size:11px;padding:2px 6px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono);outline:none" oninput="filterOTMRows(${ti},this.value)" id="otm-filter-${ti}">
+          <button class="btn btn-ghost btn-sm" id="otm-hide-btn-${ti}" onclick="toggleOTMUnmapped(${ti})" style="font-size:10px;padding:2px 7px"><i class="ic ic-eye"></i> Hide Unmapped</button>
         </div>
         <div style="overflow-x:auto">
         <table class="map-table" style="margin-bottom:0.4rem" id="otm-table-${ti}">
@@ -3234,7 +3234,7 @@ function renderOTMCards(){
               : '';
 
             const notNullMsgHtml = notNullBlocking
-              ? `<div style="margin-top:3px;color:var(--red);font-size:10px;font-weight:600">⚠ NOT NULL — must be mapped or given a fixed value</div>`
+              ? `<div style="margin-top:3px;color:var(--red);font-size:10px;font-weight:600"><i class="ic ic-warning"></i> NOT NULL — must be mapped or given a fixed value</div>`
               : (isNotNull && !isIdentity
                   ? `<div style="margin-top:2px;color:var(--text3);font-size:9px;font-weight:500">NOT NULL</div>`
                   : '');
@@ -3251,7 +3251,7 @@ function renderOTMCards(){
                 ${notNullMsgHtml}
               </td>
               <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
-                ${esc(tc.type||'')}${willTrunc?`<br><span style="color:var(--amber);font-size:9px">⚠ LEFT(${truncLen})</span>`:''}
+                ${esc(tc.type||'')}${willTrunc?`<br><span style="color:var(--amber);font-size:9px"><i class="ic ic-warning"></i> LEFT(${truncLen})</span>`:''}
                 ${identityBadgeHtml}
               </td>
               <td><select class="map-select" ${disAttr} style="width:75px${identityLocked?';cursor:not-allowed':''}" onchange="updateOTMTransform(${ti},'${esc(tc.name)}',this.value)">
@@ -3301,7 +3301,7 @@ function toggleOTMUnmapped(ti){
   _otmHideUnmapped[ti] = !_otmHideUnmapped[ti];
   const btn=document.getElementById('otm-hide-btn-'+ti);
   if(btn){
-    btn.textContent = _otmHideUnmapped[ti] ? '👁 Show Unmapped' : '👁 Hide Unmapped';
+    btn.textContent = _otmHideUnmapped[ti] ? 'Show Unmapped' : 'Hide Unmapped';
     btn.style.color = _otmHideUnmapped[ti] ? 'var(--amber)' : '';
   }
   filterOTMRows(ti, document.getElementById('otm-filter-'+ti)?.value||'');
@@ -3426,7 +3426,7 @@ async function aiMapOTM(ti){
   if(!srcTable){ alert('Select a source table first.'); return; }
 
   const btn=$('ai-map-btn-'+ti);
-  if(btn){ btn.textContent='⏳'; btn.disabled=true; }
+  if(btn){ btn.textContent=''; btn.disabled=true; }
 
   const joinCols=(typeof getJoinColumns==='function')?getJoinColumns():[];
   const srcCols=[...(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name), ...joinCols.map(c=>c.name)];
@@ -3473,7 +3473,7 @@ async function aiMapOTM(ti){
   } catch(e){
     showStatus('AI map error: '+e.message,'err');
   }
-  if(btn){ btn.textContent='🤖 AI map'; btn.disabled=false; }
+  if(btn){ btn.textContent='AI map'; btn.disabled=false; }
 }
 
 // ── OTM SQL generation ────────────────────────────────────────────────────────
@@ -3689,15 +3689,15 @@ function generateOTMSQL(){
         // result in an outer ISNULL when the target column rejects NULLs.
         const _tgtNotNull = tgtCol ? tgtCol.nullable === false : false;
         switch((m.transform||'NONE').toUpperCase()){
-          case 'TRIM': return '  TRIM('+baseExpr+')';
-          case 'UPPER': return '  UPPER('+baseExpr+')';
-          case 'LOWER': return '  LOWER('+baseExpr+')';
-          case 'CAST': return '  CAST('+baseExpr+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
+          case 'TRIM': return ' TRIM('+baseExpr+')';
+          case 'UPPER': return ' UPPER('+baseExpr+')';
+          case 'LOWER': return ' LOWER('+baseExpr+')';
+          case 'CAST': return ' CAST('+baseExpr+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
           case 'DATE_CAST': return '  '+buildDateCastExpr(baseExpr, tgtCol?.type||'DATETIME2',  _tgtNotNull);
           case 'SAFE_GUID':    return '  '+buildSafeCastExpr('SAFE_GUID',    baseExpr, tgtCol?.type||'UNIQUEIDENTIFIER', _tgtNotNull);
           case 'SAFE_NUMERIC': return '  '+buildSafeCastExpr('SAFE_NUMERIC', baseExpr, tgtCol?.type||'INT',              _tgtNotNull);
           case 'SAFE_TRUNC':   return '  '+buildSafeCastExpr('SAFE_TRUNC',   baseExpr, tgtCol?.type||'NVARCHAR(MAX)',    _tgtNotNull);
-          default: if(truncLen) return '  LEFT('+baseExpr+', '+truncLen+')'; return '  '+baseExpr;
+          default: if(truncLen) return ' LEFT('+baseExpr+', '+truncLen+')'; return '  '+baseExpr;
         }
       }),
       ...fkCols.map(fk=>`  ${fk.refTableVar}`)
@@ -3731,7 +3731,7 @@ function generateOTMSQL(){
   });
 
   if(truncWarnings.length){
-    let wb='-- ⚠ TRUNCATION WARNINGS:\n';
+    let wb='-- TRUNCATION WARNINGS:\n';
     truncWarnings.forEach(w=>{ wb+=`--   ${w.tgtTable}.${w.tgtCol}: truncated to ${w.tgtLen}\n`; });
     sql=wb+'\n'+sql;
   }
@@ -3846,7 +3846,7 @@ function openDriveScriptPicker(files){
       +'<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+escp(folder)+'</span></div>';
   }).join(''):'<div style="padding:1.6rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">No .sql files in the Drive yet.<br>Save one with “Save to Drive”, or save a job.</div>';
   ov.innerHTML='<div style="background:var(--bg2,#fff);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:540px;max-height:76vh;display:flex;flex-direction:column;box-shadow:0 20px 60px -20px rgba(0,0,0,.5)">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.1rem;border-bottom:1px solid var(--border)"><b style="font-size:14px">🗂 Open from Drive</b><button id="dsp-close" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.1rem;border-bottom:1px solid var(--border)"><b style="font-size:14px"><i class="ic ic-archive"></i> Open from Drive</b><button id="dsp-close" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
     +'<div id="dsp-list" style="overflow-y:auto;padding:.5rem">'+rows+'</div></div>';
   document.body.appendChild(ov);
   ov.querySelector('#dsp-close').addEventListener('click',()=>ov.remove());
@@ -3955,7 +3955,7 @@ function saveAsJob(){
     }
     showStatus('✓ Saved job: '+jobName,'info');
     $('save-job-btn').textContent='✓ Saved';
-    setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
+    setTimeout(()=>{ $('save-job-btn').textContent='Save as job'; },2000);
     if(wasNew && $('job-name-input')) $('job-name-input').value='';
 
   } else {
@@ -4007,7 +4007,7 @@ function saveAsJob(){
     }
     showStatus('✓ Saved OTM job: '+jobName,'info');
     $('save-job-btn').textContent='✓ Saved';
-    setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
+    setTimeout(()=>{ $('save-job-btn').textContent='Save as job'; },2000);
     if(wasNew && $('job-name-input')) $('job-name-input').value='';
   }
   // Saved successfully — drop the in-progress draft. The next page load will
@@ -4464,7 +4464,7 @@ function renderLoadMapList(){
   if(!filtered.length){
     list.innerHTML='<div style="padding:2rem 1rem;text-align:center;color:var(--text3);font-size:12px">'+
       (jobs.length===0
-        ? 'No saved maps yet. Create a mapping and click 💾 Save as job.'
+        ? 'No saved maps yet. Create a mapping and click Save as job.'
         : 'No maps match your filters.')+
       '</div>';
     return;
@@ -4496,7 +4496,7 @@ function renderLoadMapList(){
         <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:3px;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
           <span style="font-size:10px;color:${typeColor};font-weight:500;flex-shrink:0">${typeLabel}</span>
-          <span style="font-size:10px;color:var(--text3);font-weight:500;flex-shrink:0" title="Project">📁 ${projLabel}</span>
+          <span style="font-size:10px;color:var(--text3);font-weight:500;flex-shrink:0" title="Project"><i class="ic ic-folder"></i> ${projLabel}</span>
           ${isCurrent?'<span style="font-size:10px;color:var(--accent);font-weight:500;flex-shrink:0">• currently editing</span>':''}
         </div>
         <div style="font-size:11px;color:var(--text2);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
@@ -4507,7 +4507,7 @@ function renderLoadMapList(){
         </div>
       </div>
       <button class="btn btn-primary btn-sm" onclick="loadMapById('${esc(j.id)}')" ${isCurrent?'disabled':''} title="${isCurrent?'Already loaded':'Load this map'}">
-        ${isCurrent?'Loaded':'📂 Load'}
+        ${isCurrent?'Loaded':'Load'}
       </button>
       <button class="btn btn-ghost btn-sm" onclick="deleteSavedJob('${esc(j.id)}')" title="Delete this saved map" style="color:var(--red);border-color:rgba(240,70,70,0.3)">✕</button>
     </div>`;
@@ -5025,7 +5025,7 @@ function renderJoinBuilder(containerId,allTables,baseTable){
             ${['INNER','LEFT','RIGHT','FULL OUTER'].map(t=>`<option value="${t}" ${j.type===t?'selected':''}>${t}</option>`).join('')}
           </select>
           <div style="position:relative">
-            <input id="join-tbl-inp-${i}" value="${(()=>{const t=(window._joinAllTables||[]).find(t=>t.value===j.table);return t?t.label:j.table||'';})()}" placeholder="🔍 Search tables…" autocomplete="off" spellcheck="false"
+            <input id="join-tbl-inp-${i}" value="${(()=>{const t=(window._joinAllTables||[]).find(t=>t.value===j.table);return t?t.label:j.table||'';})()}" placeholder="Search tables…" autocomplete="off" spellcheck="false"
               onfocus="openJoinTableDrop(${i})" oninput="filterJoinTableDrop(${i},this.value)" onblur="setTimeout(()=>closeJoinTableDrop(${i}),180)"
               style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;box-sizing:border-box">
             <div id="join-tbl-drop-${i}" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:0 0 var(--r) var(--r);max-height:180px;overflow-y:auto;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.3)"></div>
@@ -5037,7 +5037,7 @@ function renderJoinBuilder(containerId,allTables,baseTable){
           <input id="join-on-${i}" value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
             placeholder="e.g. [dbo].[client].[clnum] = [dbo].[matter].[mclient]"
             class="join-on-input">
-          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)" title="AI ON clause">🤖 AI</button>
+          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)" title="AI ON clause"><i class="ic ic-robot"></i> AI</button>
         </div>
         ${j.table?`<div style="font-size:10px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">${j.cols?j.cols.length+' columns available':'Loading…'}</div>`:''}
       </div>`).join('')}`;

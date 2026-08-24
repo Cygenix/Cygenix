@@ -93,6 +93,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/nav.js?v=cba1c59a84" defer></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 </head>
 <body>
 
@@ -103,8 +104,8 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
     <input id="job-name-input" class="form-input" style="width:280px;font-family:var(--serif);font-size:13px" placeholder="Job name…">
   </div>
   <div class="topbar-right">
-    <button class="btn btn-purple btn-sm" onclick="remapWithClaude()" id="ai-remap-btn">🤖 AI re-map</button>
-    <button class="btn btn-green btn-sm" onclick="saveJob()">💾 Save job</button>
+    <button class="btn btn-purple btn-sm" onclick="remapWithClaude()" id="ai-remap-btn"><i class="ic ic-robot"></i> AI re-map</button>
+    <button class="btn btn-green btn-sm" onclick="saveJob()"><i class="ic ic-save"></i> Save job</button>
     <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
   </div>
 </div>
@@ -137,7 +138,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
     <!-- Column mapping -->
     <div class="panel" style="padding:0;overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:0.5px solid var(--border)">
-        <div class="panel-title" style="margin-bottom:0">🗂 Column mapping <span id="mapped-count" style="font-size:11px;color:var(--text3);font-weight:400"></span></div>
+        <div class="panel-title" style="margin-bottom:0"><i class="ic ic-archive"></i> Column mapping <span id="mapped-count" style="font-size:11px;color:var(--text3);font-weight:400"></span></div>
         <div style="display:flex;gap:0.5rem">
           <button class="btn btn-ghost btn-sm" onclick="addMappingRow()">+ Add row</button>
           <button class="btn btn-ghost btn-sm" onclick="clearUnmapped()">Remove unmapped</button>
@@ -169,14 +170,14 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
     <!-- Was/Is panel -->
     <div class="panel">
       <div class="panel-title">
-        🔄 Was/Is Rules
+        Was/Is Rules
         <span id="wasis-count-badge" style="display:none;font-size:10px;background:var(--amber-bg);color:var(--amber);padding:1px 8px;border-radius:100px;font-family:var(--mono)">0</span>
       </div>
 
       <!-- Upload -->
       <div class="upload-zone" onclick="document.getElementById('wasis-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--amber)'" ondragleave="this.style.borderColor=''" ondrop="handleWasisDrop(event)">
         <input type="file" id="wasis-file" accept=".csv,.xlsx,.xls,.tsv" style="display:none" onchange="loadWasisFile(this.files[0])">
-        📎 Drop Was/Is CSV or Excel here, or click to browse
+        Drop Was/Is CSV or Excel here, or click to browse
       </div>
 
       <!-- Manual add -->
@@ -203,17 +204,17 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 
       <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" id="wasis-clear-btn" onclick="clearWasis()" style="display:none;color:var(--red)">✕ Clear all</button>
-        <button class="btn btn-ghost btn-sm" onclick="exportWasisCSV()" id="wasis-export-btn" style="display:none">⬇ Export CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportWasisCSV()" id="wasis-export-btn" style="display:none"><i class="ic ic-download"></i> Export CSV</button>
       </div>
     </div>
 
     <!-- API key for AI remap -->
     <div class="panel">
-      <div class="panel-title">🤖 Claude AI re-mapping</div>
+      <div class="panel-title"><i class="ic ic-robot"></i> Claude AI re-mapping</div>
       <div class="form-label">Anthropic API key</div>
       <div style="display:flex;gap:0.5rem">
         <input type="password" id="api-key" class="form-input" placeholder="sk-ant-…">
-        <button class="btn btn-ghost btn-sm" onclick="toggleKey()">👁</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleKey()"><i class="ic ic-eye"></i> </button>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:0.5rem">
         Paste your target table's column definitions below and Claude will remap intelligently.
@@ -224,12 +225,12 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
         <div class="form-label">Target table columns (paste DDL or column list)</div>
         <textarea id="tgt-cols-input" class="form-input" rows="5" style="font-family:var(--mono);font-size:11px;resize:vertical" placeholder="ColumnName DataType&#10;run_number SMALLINT&#10;code NVARCHAR(50)&#10;…or paste CREATE TABLE DDL"></textarea>
       </div>
-      <button class="btn btn-purple btn-sm" onclick="remapWithClaude()" style="margin-top:0.75rem;width:100%;justify-content:center">🤖 Re-map with Claude AI</button>
+      <button class="btn btn-purple btn-sm" onclick="remapWithClaude()" style="margin-top:0.75rem;width:100%;justify-content:center"><i class="ic ic-robot"></i> Re-map with Claude AI</button>
     </div>
 
     <!-- Notes -->
     <div class="panel">
-      <div class="panel-title">📝 Notes</div>
+      <div class="panel-title"><i class="ic ic-edit"></i> Notes</div>
       <textarea id="job-notes" class="form-input" rows="4" style="font-family:var(--serif);resize:vertical" placeholder="Add migration notes, observations or instructions…"></textarea>
     </div>
 
@@ -270,7 +271,7 @@ const WASIS_KEY = 'cygenix_wasis_rules';
   if (job.insightNotes || job.insightConfidence){
     const el = document.getElementById('insight-notes');
     el.style.display = 'block';
-    el.innerHTML = '🔬 Created from Data Insights · Confidence: <strong style="color:var(--purple)">'+(job.insightConfidence||'—')+'</strong>' +
+    el.innerHTML = '<i class="ic ic-flask"></i> Created from Data Insights · Confidence: <strong style="color:var(--purple)">'+(job.insightConfidence||'—')+'</strong>' +
       (job.insightNotes ? ' · '+job.insightNotes : '');
   }
 
@@ -317,7 +318,7 @@ function renderMapping(){
   if (!mapping.length || (mapping.length===1 && !mapping[0].srcCol && !mapping[0].tgtCol)) {
     tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text3);font-size:13px">
       No columns yet — use <strong style="color:var(--text2)">+ Add row</strong> to add manually,
-      or paste column definitions and use <strong style="color:var(--purple)">🤖 AI re-map</strong>.
+      or paste column definitions and use <strong style="color:var(--purple)"><i class="ic ic-robot"></i> AI re-map</strong>.
     </td></tr>`;
     document.getElementById('mapped-count').textContent = '';
     return;
@@ -342,7 +343,7 @@ function renderMapping(){
         </select>
       </td>
       <td style="text-align:center">
-        ${wasisCount ? `<span style="font-size:10px;padding:1px 6px;border-radius:100px;background:var(--amber-bg);color:var(--amber);font-family:var(--mono)">🔄 ${wasisCount}</span>` : '<span style="color:var(--text3);font-size:10px">—</span>'}
+        ${wasisCount ? `<span style="font-size:10px;padding:1px 6px;border-radius:100px;background:var(--amber-bg);color:var(--amber);font-family:var(--mono)"><i class="ic ic-sync"></i> ${wasisCount}</span>` : '<span style="color:var(--text3);font-size:10px">—</span>'}
       </td>
       <td>
         ${m.confidence ? `<span class="conf-badge ${confCls}">${m.confidence}</span>` : ''}
@@ -525,7 +526,7 @@ async function remapWithClaude(){
   const MAX_COLS = 80;
   const srcCols  = mapping.slice(0, MAX_COLS).map(m=>`${m.srcCol} (${m.srcType||'unknown type'})`).join('\n');
   const hasMore  = mapping.length > MAX_COLS;
-  if (hasMore) showStatus('⚠ Processing first ' + MAX_COLS + ' of ' + mapping.length + ' columns. Re-run for the rest.', 'ok');
+  if (hasMore) showStatus('Processing first ' + MAX_COLS + ' of ' + mapping.length + ' columns. Re-run for the rest.', 'ok');
 
   const prompt = `You are a database migration expert. Map the following SOURCE columns to the TARGET columns using intelligent name matching and type compatibility.
 
@@ -551,7 +552,7 @@ Respond ONLY with a valid JSON array — no markdown, no explanation:
 ]`;
 
   const btn = document.getElementById('ai-remap-btn');
-  btn.disabled=true; btn.textContent='🤖 Mapping…';
+  btn.disabled=true; btn.textContent='Mapping…';
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages',{
@@ -574,7 +575,7 @@ Respond ONLY with a valid JSON array — no markdown, no explanation:
         const repaired = raw.slice(0, lastBrace + 1) + ']';
         try {
           mapped = JSON.parse(repaired);
-          showStatus('⚠ Response was truncated — ' + mapped.length + ' of ' + mapping.length + ' columns mapped. Re-run for remaining.', 'ok');
+          showStatus('Response was truncated — ' + mapped.length + ' of ' + mapping.length + ' columns mapped. Re-run for remaining.', 'ok');
         } catch {
           throw new Error('Could not parse Claude response — try with fewer columns or a shorter column list.');
         }
@@ -593,7 +594,7 @@ Respond ONLY with a valid JSON array — no markdown, no explanation:
   } catch(e){
     showStatus('✕ AI mapping failed: '+e.message.slice(0,100), 'err');
   } finally {
-    btn.disabled=false; btn.textContent='🤖 AI re-map';
+    btn.disabled=false; btn.textContent='AI re-map';
   }
 }
 

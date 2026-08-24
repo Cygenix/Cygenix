@@ -9,6 +9,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -174,7 +175,7 @@ code{font-family:var(--mono);font-size:11px;background:var(--bg4);padding:1px 5p
 <div class="page">
 
   <div class="page-header">
-    <div class="guide-tag">📖 Step-by-step guide</div>
+    <div class="guide-tag"><i class="ic ic-book"></i> Step-by-step guide</div>
     <div class="page-title">How to map a table</div>
     <div class="page-sub">Connect your databases, select tables, run AI mapping, review, generate SQL and save as a migration job. 7 steps, ~10 minutes.</div>
   </div>
@@ -197,17 +198,17 @@ const STEPS = [
     heading: 'Connect to your databases',
     body: 'Before mapping, the Mapper needs to read both schemas. Set up your connections in Dashboard → Configure → Connections first. If already configured, the Mapper connects automatically when it opens.',
     render() { return `
-      <div class="tip"><div class="tip-icon">ℹ</div><div>Connections are set up once in <strong>Dashboard → Configure → Connections</strong>. After that, the Mapper remembers them automatically every time you open it.</div></div>
+      <div class="tip"><div class="tip-icon"><i class="ic ic-info"></i> </div><div>Connections are set up once in <strong>Dashboard → Configure → Connections</strong>. After that, the Mapper remembers them automatically every time you open it.</div></div>
       <div class="ui-mock">
         <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--amber)"></div>Mapper · Connection bar (not yet connected)</div>
         <div class="ui-mock-content">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <div style="flex:1;padding:6px 10px;border-radius:5px;border:0.5px solid rgba(245,166,35,0.3);background:rgba(245,166,35,0.06);font-size:12px;font-family:var(--mono);color:var(--amber)">Source: not connected</div>
-            <div class="btn btn-primary" style="font-size:11px;padding:5px 10px">🔌 Connect</div>
+            <div class="btn btn-primary" style="font-size:11px;padding:5px 10px"><i class="ic ic-plug"></i> Connect</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <div style="flex:1;padding:6px 10px;border-radius:5px;border:0.5px solid rgba(245,166,35,0.3);background:rgba(245,166,35,0.06);font-size:12px;font-family:var(--mono);color:var(--amber)">Target: not connected</div>
-            <div class="btn btn-primary" style="font-size:11px;padding:5px 10px">🔌 Connect</div>
+            <div class="btn btn-primary" style="font-size:11px;padding:5px 10px"><i class="ic ic-plug"></i> Connect</div>
           </div>
         </div>
       </div>
@@ -232,7 +233,7 @@ const STEPS = [
       <div class="ui-mock">
         <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--green)"></div>Source panel</div>
         <div class="ui-mock-content">
-          <div class="mock-input">🔍 cli…</div>
+          <div class="mock-input"><i class="ic ic-search"></i> cli…</div>
           <div class="mock-row">dbo.ClientHistory</div>
           <div class="mock-row active">▶ dbo.Clients <span style="font-size:10px;color:var(--accent);font-family:var(--serif);margin-left:4px">Selected</span></div>
           <div class="mock-row">dbo.ClientContacts</div>
@@ -246,7 +247,7 @@ const STEPS = [
         <div style="padding:4px 10px;border-radius:5px;border:0.5px solid var(--border2);font-size:12px;font-family:var(--mono);background:var(--bg3)">Tel_No</div>
         <div style="padding:4px 10px;border-radius:5px;border:0.5px solid var(--border2);font-size:12px;font-family:var(--mono);background:var(--bg3)">LegacyCode</div>
       </div>
-      <div class="tip"><div class="tip-icon">ℹ</div><div>The column type (VARCHAR, INT, DATETIME etc.) is shown when you hover over each chip. This helps spot potential data type mismatches before mapping.</div></div>
+      <div class="tip"><div class="tip-icon"><i class="ic ic-info"></i> </div><div>The column type (VARCHAR, INT, DATETIME etc.) is shown when you hover over each chip. This helps spot potential data type mismatches before mapping.</div></div>
     `; }
   },
   {
@@ -257,14 +258,14 @@ const STEPS = [
       <div class="ui-mock">
         <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--green)"></div>Target panel</div>
         <div class="ui-mock-content">
-          <div class="mock-input">🔍 Search target tables…</div>
+          <div class="mock-input"><i class="ic ic-search"></i> Search target tables…</div>
           <div class="mock-row">dbo.Clients_New</div>
           <div class="mock-row active">▶ dbo.ClientsMigrated <span style="font-size:10px;color:var(--accent);font-family:var(--serif);margin-left:4px">Selected</span></div>
           <div class="mock-row">dbo.ClientArchive</div>
         </div>
       </div>
-      <div class="warn"><div class="warn-icon">⚠</div><div>If the target table doesn't exist yet, create it in the <strong>SQL Editor</strong> first using a CREATE TABLE statement, then come back to Mapper.</div></div>
-      <div class="tip"><div class="tip-icon">ℹ</div><div>For <strong>one-to-many</strong> mapping (splitting one source table across two targets), click <strong>+ Add target table</strong> at the bottom of the right panel. Each target gets its own column mapping.</div></div>
+      <div class="warn"><div class="warn-icon"><i class="ic ic-warning"></i> </div><div>If the target table doesn't exist yet, create it in the <strong>SQL Editor</strong> first using a CREATE TABLE statement, then come back to Mapper.</div></div>
+      <div class="tip"><div class="tip-icon"><i class="ic ic-info"></i> </div><div>For <strong>one-to-many</strong> mapping (splitting one source table across two targets), click <strong>+ Add target table</strong> at the bottom of the right panel. Each target gets its own column mapping.</div></div>
     `; }
   },
   {
@@ -273,7 +274,7 @@ const STEPS = [
     body: 'Click AI Map columns and Claude analyses both table schemas, matches columns by name, data type and business context, then fills in the mapping grid automatically. This takes a few seconds.',
     render() { return `
       <div class="action-bar">
-        <div class="btn btn-ai">✨ AI Map columns</div>
+        <div class="btn btn-ai"><i class="ic ic-sparkle"></i> AI Map columns</div>
         <div class="btn">Clear all</div>
       </div>
       <div style="margin:0.75rem 0;font-size:13px;font-weight:500;color:var(--text)">Result after AI mapping:</div>
@@ -302,7 +303,7 @@ const STEPS = [
         <div class="map-arr">—</div>
         <div class="map-tgt none">No match found</div>
       </div>
-      <div class="tip"><div class="tip-icon">ℹ</div><div><strong class="badge badge-ai" style="font-size:10px">AI</strong> = Claude matched by semantic meaning (e.g. <code>FullName</code> → <code>ClientName</code>). <strong class="badge badge-mapped" style="font-size:10px">✓</strong> = exact name match. Columns with no match need manual assignment — drag them from the source list.</div></div>
+      <div class="tip"><div class="tip-icon"><i class="ic ic-info"></i> </div><div><strong class="badge badge-ai" style="font-size:10px">AI</strong> = Claude matched by semantic meaning (e.g. <code>FullName</code> → <code>ClientName</code>). <strong class="badge badge-mapped" style="font-size:10px">✓</strong> = exact name match. Columns with no match need manual assignment — drag them from the source list.</div></div>
     `; }
   },
   {
@@ -348,7 +349,7 @@ const STEPS = [
     body: 'Once the mapping looks correct, click Generate SQL. Cygenix produces three scripts automatically: the main INSERT migration, a schema validation query, and a row-count verification.',
     render() { return `
       <div class="action-bar">
-        <div class="btn btn-primary">⚡ Generate SQL</div>
+        <div class="btn btn-primary"><i class="ic ic-bolt"></i> Generate SQL</div>
       </div>
       <div class="sql-block">
         <span class="cmt">-- Cygenix migration: dbo.Clients → dbo.ClientsMigrated</span><br>
@@ -366,8 +367,8 @@ const STEPS = [
         &nbsp;&nbsp;<span class="col">Tel_No</span>          <span class="cmt">-- AI: Tel_No → PhoneNumber</span><br>
         <span class="kw">FROM</span> <span class="tbl">dbo.Clients</span><span class="cmt">;</span>
       </div>
-      <div class="tip"><div class="tip-icon">ℹ</div><div>Switch between the <strong>Insert</strong>, <strong>Schema</strong>, and <strong>Verify</strong> tabs to see all three generated scripts. You can edit the SQL directly in the editor before running it.</div></div>
-      <div class="warn"><div class="warn-icon">⚠</div><div>Always run the <strong>Schema</strong> validation script first, then the <strong>Insert</strong>, then the <strong>Verify</strong> row-count check. This order prevents data issues.</div></div>
+      <div class="tip"><div class="tip-icon"><i class="ic ic-info"></i> </div><div>Switch between the <strong>Insert</strong>, <strong>Schema</strong>, and <strong>Verify</strong> tabs to see all three generated scripts. You can edit the SQL directly in the editor before running it.</div></div>
+      <div class="warn"><div class="warn-icon"><i class="ic ic-warning"></i> </div><div>Always run the <strong>Schema</strong> validation script first, then the <strong>Insert</strong>, then the <strong>Verify</strong> row-count check. This order prevents data issues.</div></div>
     `; }
   },
   {
@@ -376,7 +377,7 @@ const STEPS = [
     body: 'Click Save as job to store this mapping permanently. Jobs appear on the Dashboard, can be re-run, edited, and grouped into a full migration sequence.',
     render() { return `
       <div class="action-bar">
-        <div class="btn btn-primary">💾 Save as job</div>
+        <div class="btn btn-primary"><i class="ic ic-save"></i> Save as job</div>
       </div>
       <div class="ui-mock">
         <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--green)"></div>Dashboard · Jobs panel</div>
@@ -401,7 +402,7 @@ const STEPS = [
         <div class="success-title">✓ Mapping complete</div>
         <div class="success-body">Your job is saved to Cosmos DB and syncs across all your devices automatically. To edit it later, go to Dashboard → Jobs, find the job, and click Edit — the Mapper reopens with all mappings pre-loaded.</div>
       </div>
-      <div class="tip"><div class="tip-icon">ℹ</div><div>To run the migration, click <strong>Run</strong> on the job card. This sends the SQL to the SQL Editor where you can execute it against your target database and see real-time row counts.</div></div>
+      <div class="tip"><div class="tip-icon"><i class="ic ic-info"></i> </div><div>To run the migration, click <strong>Run</strong> on the job card. This sends the SQL to the SQL Editor where you can execute it against your target database and see real-time row counts.</div></div>
     `; }
   }
 ];
@@ -458,6 +459,6 @@ function go(n) {
 
 go(0);
 </script>
-<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cookie-consent.js?v=14f483464b" defer></script>
 </body>
 </html>

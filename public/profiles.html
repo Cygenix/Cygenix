@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <script>
 (function(){
@@ -93,7 +94,7 @@ select.inp{cursor:pointer}
 <div class="page">
   <div class="cp-head">
     <div>
-      <div class="cp-title">🔒 Connection Profiles</div>
+      <div class="cp-title"><i class="ic ic-lock"></i> Connection Profiles</div>
       <div class="cp-sub">A profile is a governed pairing of one source and one target. Artifacts bind to a
         profile — never to whatever connection happens to be loaded — so every run can prove which databases
         it touched. Once the first profile exists, writes require an active profile, an UNKNOWN environment
@@ -215,8 +216,8 @@ select.inp{cursor:pointer}
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=7e0395ba10" defer></script>
-<script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <script>
 'use strict';
@@ -297,7 +298,7 @@ function renderConns(){
       + '<td class="mono">' + esc(P.cpStandardName(store, c)) + '</td>'
       + '<td><input class="inp mini" value="' + esc(meta.owner) + '" '
       + 'onchange="cpMetaEdit(\'' + c.id + '\',\'owner\',this.value)"></td>'
-      + '<td>' + (locked ? '<span class="chip info" title="Referenced by a non-retired profile">🔒 locked</span>' : '') + '</td>'
+      + '<td>' + (locked ? '<span class="chip info" title="Referenced by a non-retired profile"><i class="ic ic-lock"></i> locked</span>' : '') + '</td>'
       + '</tr>';
   }).join('') : '<tr><td colspan="8" class="empty">No saved connections yet. Save the live source and target '
     + 'under names on the Connections page first — profiles pair SAVED connections, never the live boxes.</td></tr>';
@@ -505,7 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(renderAll, 600);
 });
 </script>
-<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 </body>
 </html>

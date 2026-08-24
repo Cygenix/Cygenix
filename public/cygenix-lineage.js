@@ -181,14 +181,16 @@
     };
   }
 
+  /* icon is markup: it renders into the impact drawer, so it carries the
+     shared icon class rather than a glyph that would differ per platform */
   const TYPE_META = {
-    task:       { icon: '📦', label: 'Task' },
-    recon:      { icon: '💬', label: 'Reconciliation check' },
-    wasis:      { icon: '🔁', label: 'Was/Is rule' },
-    job:        { icon: '⛓', label: 'Downstream job' },
-    validation: { icon: '🔍', label: 'Validation' },
-    preflight:  { icon: '🛫', label: 'Preflight finding' },
-    fk:         { icon: '🔗', label: 'Foreign key' },
+    task:       { icon: '<i class="ic ic-package"></i>',    label: 'Task' },
+    recon:      { icon: '<i class="ic ic-chat"></i>',       label: 'Reconciliation check' },
+    wasis:      { icon: '<i class="ic ic-sync"></i>',       label: 'Was/Is rule' },
+    job:        { icon: '<i class="ic ic-chain"></i>',      label: 'Downstream job' },
+    validation: { icon: '<i class="ic ic-search"></i>',     label: 'Validation' },
+    preflight:  { icon: '<i class="ic ic-takeoff"></i>',    label: 'Preflight finding' },
+    fk:         { icon: '<i class="ic ic-link"></i>',       label: 'Foreign key' },
   };
 
   const api = { lnColumnLineage, lnImpact, lnHeadline, buildContext, TYPE_META, sameTable };

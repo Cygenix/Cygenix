@@ -189,8 +189,8 @@ function _setSyncPill(state, text){
   el.textContent = text || (
     state === 'busy'  ? '⟳ syncing'  :
     state === 'ok'    ? '✓ cosmos'   :
-    state === 'err'   ? '⚠ sync error':
-    state === 'local' ? '💾 local'   : ''
+    state === 'err'   ? 'sync error':
+    state === 'local' ? 'local'   : ''
   );
 }
 
@@ -266,7 +266,7 @@ async function _runSync(){
     }
     _setSyncPill('ok');
   } catch (e) {
-    _setSyncPill('err', '⚠ ' + (e.message || 'sync error'));
+    _setSyncPill('err', '' + (e.message || 'sync error'));
   } finally {
     _syncInFlight = false;
     if (_syncQueued) {
@@ -331,7 +331,7 @@ async function _cosmosInitialLoad(){
     // Push any local-only or stale-on-server reports.
     _scheduleSync();
   } catch (e) {
-    _setSyncPill('err', '⚠ ' + (e.message || 'load failed'));
+    _setSyncPill('err', '' + (e.message || 'load failed'));
     // Stay on local-only; user can still work, sync will retry on next change.
   }
 }
@@ -402,7 +402,7 @@ function rbDeleteCurrent(){
   if (_cosmosAvailable()) {
     _cosmosDeleteReport(deletedId).catch(e => {
       console.warn('Cosmos delete failed:', e.message);
-      _setSyncPill('err', '⚠ delete unsynced');
+      _setSyncPill('err', 'delete unsynced');
     });
   }
 }
@@ -1584,15 +1584,14 @@ function dsRenderCard(d, idx){
     + escapeHtml(c.label) + '</option>'
   ).join('');
   const noConn = conns.length === 0
-    ? '<option value="">⚠ No connections available</option>'
+    ? '<option value=""><i class="ic ic-warning"></i> No connections available</option>'
     : '';
 
   const isVisual = d.mode !== 'raw';
   const open = d.openSections || {};
 
   // Header
-  const head = ''
-    + '<div class="ds-head">'
+  const head = '<div class="ds-head">'
     +   '<input class="ds-name" value="' + escapeHtml(d.name || '') + '" placeholder="Dataset name" '
     +     'onchange="dsUpdate(' + idx + ',\'name\',this.value);dsRender()">'
     +   '<select class="ds-conn" onchange="dsConnChange(' + idx + ',this.value)">' + noConn + connOptions + '</select>'
@@ -1601,7 +1600,7 @@ function dsRenderCard(d, idx){
     +     '<button class="' + (!isVisual ? 'active' : '') + '" onclick="dsToggleMode(' + idx + ',\'raw\')">Raw SQL</button>'
     +   '</div>'
     +   '<button class="btn btn-primary btn-sm" onclick="dsTestRun(' + idx + ')">▶ Test run</button>'
-    +   '<button class="btn btn-red btn-sm" onclick="dsRemove(' + idx + ')">🗑</button>'
+    +   '<button class="btn btn-red btn-sm" onclick="dsRemove(' + idx + ')"><i class="ic ic-trash"></i> </button>'
     + '</div>';
 
   // Body — visual or raw
@@ -1899,7 +1898,7 @@ function dsRenderSqlPreview(d, idx){
   }
   return '<div class="ds-sql-box">' + escapeHtml(sql) + '</div>'
        + '<div style="margin-top:0.4rem">'
-       +   '<button class="ds-add-btn" onclick="dsCopyToRaw(' + idx + ')">📋 Copy to raw editor</button>'
+       +   '<button class="ds-add-btn" onclick="dsCopyToRaw(' + idx + ')"><i class="ic ic-clipboard"></i> Copy to raw editor</button>'
        + '</div>';
 }
 
@@ -1931,7 +1930,7 @@ function dsRenderAiBody(d, idx){
        +   '<textarea class="ds-ai-input" placeholder="e.g. Total revenue per matter for the last 12 months, grouped by office" '
        +     'oninput="dsUpdate(' + idx + ',\'aiPrompt\',this.value)">' + escapeHtml(d.aiPrompt || '') + '</textarea>'
        +   '<div class="ds-ai-row">'
-       +     '<button class="btn btn-purple btn-sm" onclick="dsAiSuggest(' + idx + ')">✨ Generate SQL</button>'
+       +     '<button class="btn btn-purple btn-sm" onclick="dsAiSuggest(' + idx + ')"><i class="ic ic-sparkle"></i> Generate SQL</button>'
        +     statusLine
        +   '</div>'
        + '</div>';
@@ -2315,8 +2314,7 @@ function paRenderCard(p, idx){
     '<option value="' + t.v + '"' + (p.type === t.v ? ' selected' : '') + '>' + t.l + '</option>'
   ).join('');
 
-  const head = ''
-    + '<div class="pa-head">'
+  const head = '<div class="pa-head">'
     +   '<span class="pa-name-prefix">@</span>'
     +   '<input class="pa-name" value="' + escapeHtml(p.name || '') + '" placeholder="paramName" '
     +     'onchange="paUpdateName(' + idx + ',this.value)">'
@@ -2330,8 +2328,7 @@ function paRenderCard(p, idx){
     +   '<button class="ds-rm-btn" title="Remove" onclick="paRemove(' + idx + ')">✕</button>'
     + '</div>';
 
-  const body = ''
-    + '<div class="pa-body">'
+  const body = '<div class="pa-body">'
     +   paRenderDefault(p, idx)
     +   (p.type === 'dropdown' ? paRenderDropdownOptions(p, idx) : '')
     +   paRenderHint(p)
@@ -2381,8 +2378,7 @@ function paRenderDropdownOptions(p, idx){
   const isStatic = p.optionsKind === 'static';
   const isQuery  = p.optionsKind === 'query';
 
-  const toggle = ''
-    + '<div class="pa-row">'
+  const toggle = '<div class="pa-row">'
     +   '<label>Options from</label>'
     +   '<div class="pa-options-toggle">'
     +     '<button class="' + (isStatic ? 'active' : '') + '" onclick="paUpdate(' + idx + ',\'optionsKind\',\'static\');paRender()">Static list</button>'
@@ -2422,7 +2418,7 @@ function paRenderQueryOptions(p, idx){
     '<option value="' + escapeHtml(c.id) + '"' + (c.id === connKey ? ' selected' : '') + '>'
     + escapeHtml(c.label) + '</option>'
   ).join('');
-  const noConn = conns.length === 0 ? '<option value="">⚠ No connections available</option>' : '';
+  const noConn = conns.length === 0 ? '<option value=""><i class="ic ic-warning"></i> No connections available</option>' : '';
 
   // Result strip
   let resultStrip;
@@ -2844,7 +2840,7 @@ function laRender(){
 function laRenderSection(s, idx, r){
   const datasets = r.datasets || [];
   const dsOptions = datasets.length === 0
-    ? '<option value="">⚠ No datasets defined</option>'
+    ? '<option value=""><i class="ic ic-warning"></i> No datasets defined</option>'
     : datasets.map(d =>
         '<option value="' + escapeHtml(d.id) + '"' + (s.datasetId === d.id ? ' selected' : '') + '>'
         + escapeHtml(d.name || 'Unnamed dataset') + '</option>'
@@ -2859,8 +2855,7 @@ function laRenderSection(s, idx, r){
     '<option value="' + t.v + '"' + (s.type === t.v ? ' selected' : '') + '>' + t.l + '</option>'
   ).join('');
 
-  const head = ''
-    + '<div class="la-head">'
+  const head = '<div class="la-head">'
     +   '<button class="ds-chev' + (s.uiOpen !== false ? ' open' : '') + '" '
     +     'style="background:transparent;border:none;color:var(--text3);cursor:pointer;padding:0 4px;font-size:9px" '
     +     'onclick="laToggleOpen(' + idx + ')">▶</button>'
@@ -2964,7 +2959,7 @@ function laRenderZones(s, idx){
 function laRenderColumnsZone(s, idx, t){
   const cols = t.columns || [];
   const head = '<div class="la-zone-head">'
-             + '<span class="la-zone-title">📋 Columns</span>'
+             + '<span class="la-zone-title"><i class="ic ic-clipboard"></i> Columns</span>'
              + '<span class="la-zone-meta">' + cols.length + ' column' + (cols.length === 1 ? '' : 's') + '</span>'
              + '</div>';
   const body = cols.length === 0
@@ -2978,7 +2973,7 @@ function laRenderColumnChip(s, sIdx, c, cIdx){
   const fieldExists = fields.some(f => f.name === c.field);
   const meta = (c.agg ? c.agg.toUpperCase() + ' · ' : '')
              + (c.format || 'auto')
-             + (fieldExists ? '' : ' · ⚠ field missing');
+             + (fieldExists ? '' : ' · field missing');
 
   const head = '<div class="la-chip-head">'
              + '<span class="la-chip-handle" title="Reorder">⋮⋮</span>'
@@ -2986,7 +2981,7 @@ function laRenderColumnChip(s, sIdx, c, cIdx){
              + '<span class="la-chip-meta">' + escapeHtml(meta) + '</span>'
              + '<button class="la-chip-toggle" title="Move up"     onclick="laMoveColumn(' + sIdx + ',' + cIdx + ',-1)">▲</button>'
              + '<button class="la-chip-toggle" title="Move down"   onclick="laMoveColumn(' + sIdx + ',' + cIdx + ',1)">▼</button>'
-             + '<button class="la-chip-toggle" title="Edit"        onclick="laToggleColumn(' + sIdx + ',' + cIdx + ')">' + (c._open ? '▾' : '✎') + '</button>'
+             + '<button class="la-chip-toggle" title="Edit"        onclick="laToggleColumn(' + sIdx + ',' + cIdx + ')">' + (c._open ? '▾' : '<i class="ic ic-edit"></i> ') + '</button>'
              + '<button class="la-chip-rm"     title="Remove"      onclick="laRemoveColumn(' + sIdx + ',' + cIdx + ')">✕</button>'
              + '</div>';
 
@@ -3049,7 +3044,7 @@ function laRenderColumnChip(s, sIdx, c, cIdx){
 function laRenderRowGroupsZone(s, idx, t){
   const groups = t.rowGroups || [];
   const head = '<div class="la-zone-head">'
-             + '<span class="la-zone-title">📂 Row groups</span>'
+             + '<span class="la-zone-title"><i class="ic ic-folder-open"></i> Row groups</span>'
              + '<span class="la-zone-meta">' + groups.length + ' level' + (groups.length === 1 ? '' : 's') + '</span>'
              + '</div>';
   const body = groups.length === 0
@@ -3062,7 +3057,7 @@ function laRenderGroupChip(s, sIdx, g, gIdx, total){
   const fields = laBoundFields(s);
   const fieldExists = fields.some(f => f.name === g.field);
   const level = (gIdx + 1) + (gIdx === 0 ? ' · outermost' : (gIdx === total - 1 && total > 1 ? ' · innermost' : ''));
-  const meta = 'Level ' + level + (fieldExists ? '' : ' · ⚠ field missing');
+  const meta = 'Level ' + level + (fieldExists ? '' : ' · field missing');
 
   const head = '<div class="la-chip-head">'
              + '<span class="la-chip-handle" title="Reorder">⋮⋮</span>'
@@ -3070,7 +3065,7 @@ function laRenderGroupChip(s, sIdx, g, gIdx, total){
              + '<span class="la-chip-meta">' + escapeHtml(meta) + '</span>'
              + '<button class="la-chip-toggle" title="Move up"     onclick="laMoveGroup(' + sIdx + ',' + gIdx + ',-1)">▲</button>'
              + '<button class="la-chip-toggle" title="Move down"   onclick="laMoveGroup(' + sIdx + ',' + gIdx + ',1)">▼</button>'
-             + '<button class="la-chip-toggle" title="Edit"        onclick="laToggleGroup(' + sIdx + ',' + gIdx + ')">' + (g._open ? '▾' : '✎') + '</button>'
+             + '<button class="la-chip-toggle" title="Edit"        onclick="laToggleGroup(' + sIdx + ',' + gIdx + ')">' + (g._open ? '▾' : '<i class="ic ic-edit"></i> ') + '</button>'
              + '<button class="la-chip-rm"     title="Remove"      onclick="laRemoveGroup(' + sIdx + ',' + gIdx + ')">✕</button>'
              + '</div>';
 
@@ -3120,7 +3115,7 @@ function laRenderSortChip(s, sIdx, srt, sortIdx){
        +   '<div class="la-chip-head">'
        +     '<span class="la-chip-handle" title="Reorder">⋮⋮</span>'
        +     '<span class="la-chip-field">' + escapeHtml(srt.field) + '</span>'
-       +     '<span class="la-chip-meta">' + (fieldExists ? '' : '⚠ field missing') + '</span>'
+       +     '<span class="la-chip-meta">' + (fieldExists ? '' : '<i class="ic ic-warning"></i> field missing') + '</span>'
        +     '<select class="la-chip-select" style="min-width:90px" '
        +       'onchange="laUpdateSort(' + sIdx + ',' + sortIdx + ',\'dir\',this.value)">'
        +       '<option value="asc"'  + (srt.dir === 'asc'  ? ' selected' : '') + '>↑ asc</option>'
@@ -3284,7 +3279,7 @@ function laRenderFieldPanelMtx(s, idx){
 function laRenderMtxZones(s, idx){
   const m = s.matrix || {};
   return '<div class="la-zones">'
-       +   laRenderMtxZone(s, idx, 'rowGroups', '📂 Row groups',    'Click a field name to add a row group. Multiple row groups nest left-to-right.', 'la-zone-mtx-row')
+       +   laRenderMtxZone(s, idx, 'rowGroups', 'Row groups',    'Click a field name to add a row group. Multiple row groups nest left-to-right.', 'la-zone-mtx-row')
        +   laRenderMtxZone(s, idx, 'colGroups', '↔️ Column groups', 'Click ＋C next to a field to add a column group. Multiple column groups stack as header tiers.', 'la-zone-mtx-col')
        +   laRenderMtxValues(s, idx)
        + '</div>';
@@ -3305,14 +3300,14 @@ function laRenderMtxZone(s, sIdx, kind, title, emptyMsg, extraClass){
 function laRenderMtxGroupChip(s, sIdx, kind, g, gIdx, total){
   const fields = laBoundFields(s);
   const exists = fields.some(f => f.name === g.field);
-  const meta = (kind === 'rowGroups' ? 'Level ' + (gIdx + 1) : 'Tier ' + (gIdx + 1)) + (exists ? '' : ' · ⚠ field missing');
+  const meta = (kind === 'rowGroups' ? 'Level ' + (gIdx + 1) : 'Tier ' + (gIdx + 1)) + (exists ? '' : ' · field missing');
   const head = '<div class="la-chip-head">'
              + '<span class="la-chip-handle" title="Reorder">⋮⋮</span>'
              + '<span class="la-chip-field">' + escapeHtml(g.field) + '</span>'
              + '<span class="la-chip-meta">' + escapeHtml(meta) + '</span>'
              + '<button class="la-chip-toggle" onclick="laMtxMove(' + sIdx + ',\'' + kind + '\',' + gIdx + ',-1)">▲</button>'
              + '<button class="la-chip-toggle" onclick="laMtxMove(' + sIdx + ',\'' + kind + '\',' + gIdx + ',1)">▼</button>'
-             + '<button class="la-chip-toggle" onclick="laMtxToggle(' + sIdx + ',\'' + kind + '\',' + gIdx + ')">' + (g._open ? '▾' : '✎') + '</button>'
+             + '<button class="la-chip-toggle" onclick="laMtxToggle(' + sIdx + ',\'' + kind + '\',' + gIdx + ')">' + (g._open ? '▾' : '<i class="ic ic-edit"></i> ') + '</button>'
              + '<button class="la-chip-rm"     onclick="laMtxRemove(' + sIdx + ',\'' + kind + '\',' + gIdx + ')">✕</button>'
              + '</div>';
   if (!g._open) return '<div class="la-chip">' + head + '</div>';
@@ -3354,14 +3349,14 @@ function laRenderMtxValues(s, sIdx){
 function laRenderMtxValueChip(s, sIdx, v, vIdx){
   const fields = laBoundFields(s);
   const exists = fields.some(f => f.name === v.field);
-  const meta = (v.agg ? v.agg.toUpperCase() + ' · ' : '') + (v.format || 'auto') + (exists ? '' : ' · ⚠ field missing');
+  const meta = (v.agg ? v.agg.toUpperCase() + ' · ' : '') + (v.format || 'auto') + (exists ? '' : ' · field missing');
   const head = '<div class="la-chip-head">'
              + '<span class="la-chip-handle">⋮⋮</span>'
              + '<span class="la-chip-field">' + escapeHtml(v.field) + '</span>'
              + '<span class="la-chip-meta">' + escapeHtml(meta) + '</span>'
              + '<button class="la-chip-toggle" onclick="laMtxMove(' + sIdx + ',\'values\',' + vIdx + ',-1)">▲</button>'
              + '<button class="la-chip-toggle" onclick="laMtxMove(' + sIdx + ',\'values\',' + vIdx + ',1)">▼</button>'
-             + '<button class="la-chip-toggle" onclick="laMtxToggle(' + sIdx + ',\'values\',' + vIdx + ')">' + (v._open ? '▾' : '✎') + '</button>'
+             + '<button class="la-chip-toggle" onclick="laMtxToggle(' + sIdx + ',\'values\',' + vIdx + ')">' + (v._open ? '▾' : '<i class="ic ic-edit"></i> ') + '</button>'
              + '<button class="la-chip-rm"     onclick="laMtxRemove(' + sIdx + ',\'values\',' + vIdx + ')">✕</button>'
              + '</div>';
   if (!v._open) return '<div class="la-chip">' + head + '</div>';
@@ -3499,9 +3494,9 @@ function laRenderFieldPanelChart(s, idx){
 function laRenderChartConfig(s, idx){
   const c = s.chart || {};
   const variants = [
-    { v: 'bar',  l: '📊 Bar' },
-    { v: 'line', l: '📈 Line' },
-    { v: 'pie',  l: '🥧 Pie' }
+    { v: 'bar',  l: 'Bar' },
+    { v: 'line', l: 'Line' },
+    { v: 'pie',  l: 'Pie' }
   ];
   const variantToggle = '<div class="la-variant-toggle">'
                       +   variants.map(v =>
@@ -3577,7 +3572,7 @@ function laRenderChartConfig(s, idx){
 //        a. fetch dataset rows with parameter substitution
 //        b. pvBuildTable(section, rows) → tree (groups → rows + subtotals)
 //        c. pvRenderTable(section, tree) → HTML
-//   3. user clicks 📥 Export Excel → pvExportXlsx() — produces multi-sheet
+//   3. user clicks <i class="ic ic-download"></i> Export Excel → pvExportXlsx() — produces multi-sheet
 //      xlsx, one sheet per section, with proper formatting (numbers as
 //      numbers, dates as dates) so follow-on Excel work just works.
 //
@@ -4068,7 +4063,7 @@ function pvRenderSection(s, idx){
   if (!last) {
     body = '<div class="pv-no-layout">Section not run yet.</div>';
   } else if (last.error) {
-    body = '<div class="pv-section-error">⚠ ' + escapeHtml(last.error) + '</div>';
+    body = '<div class="pv-section-error"><i class="ic ic-warning"></i> ' + escapeHtml(last.error) + '</div>';
   } else if (last.rowCount === 0) {
     body = '<div class="pv-empty-rows">Query returned 0 rows.</div>';
   } else if (s.type === 'matrix') {
@@ -5501,7 +5496,7 @@ function pvAddCanvasToPdf(pdf, canvas){
 //     note:         string  // optional user-supplied note ("Q1 board pack")
 //   }
 //
-// Runs are saved manually via the 💾 button on the Preview tab. They show
+// Runs are saved manually via the <i class="ic ic-save"></i> button on the Preview tab. They show
 // up in the Runs tab where the user can re-render or delete them.
 //
 // Size budget: per-document Cosmos limit is 2 MB. We persist *trees* not
@@ -5720,7 +5715,7 @@ function rnRender(){
   if (runs.length === 0) {
     list.innerHTML = '';
     empty.style.display = '';
-    empty.innerHTML = 'No saved runs yet. Run the report on the Preview tab and click <strong>💾 Save run</strong> to capture a snapshot.';
+    empty.innerHTML = 'No saved runs yet. Run the report on the Preview tab and click <strong><i class="ic ic-save"></i> Save run</strong> to capture a snapshot.';
     return;
   }
   empty.style.display = 'none';
@@ -5747,10 +5742,10 @@ function rnRenderCard(run, idx){
   const meta = sectionCount + ' section' + (sectionCount === 1 ? '' : 's')
              + ' · ' + totalRows.toLocaleString() + ' row' + (totalRows === 1 ? '' : 's')
              + (errorCount > 0 ? ' · ' + errorCount + ' error' + (errorCount === 1 ? '' : 's') : '')
-             + (truncated ? ' · ⚠ truncated' : '');
+             + (truncated ? ' · truncated' : '');
 
   const note = run.note
-    ? '<div class="rn-note">📝 ' + escapeHtml(run.note) + '</div>'
+    ? '<div class="rn-note"><i class="ic ic-edit"></i> ' + escapeHtml(run.note) + '</div>'
     : '';
 
   return '<div class="rn-card" id="rn-card-' + run.id + '">'
@@ -5760,8 +5755,8 @@ function rnRenderCard(run, idx){
        +   '</div>'
        +   '<div class="rn-params">' + pillsHtml + '</div>'
        +   '<div class="rn-actions">'
-       +     '<button class="btn btn-primary btn-sm" title="Re-render this saved snapshot in the Preview tab" onclick="rnRestore(\'' + run.id + '\')">👁 View</button>'
-       +     '<button class="btn btn-red btn-sm"     title="Delete this saved run"                              onclick="rnDelete(\'' + run.id + '\')">🗑</button>'
+       +     '<button class="btn btn-primary btn-sm" title="Re-render this saved snapshot in the Preview tab" onclick="rnRestore(\'' + run.id + '\')"><i class="ic ic-eye"></i> View</button>'
+       +     '<button class="btn btn-red btn-sm"     title="Delete this saved run"                              onclick="rnDelete(\'' + run.id + '\')"><i class="ic ic-trash"></i> </button>'
        +   '</div>'
        +   note
        + '</div>';

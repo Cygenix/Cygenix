@@ -519,7 +519,7 @@
     try {
       res = await dbCall(getSrcConn(), { action: 'execute', sql });
     } catch (e) {
-      if (tableEl) tableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px">🔴 Login discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
+      if (tableEl) tableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px"><i class="ic-dot" style="color:var(--red)"></i> Login discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
       return;
     }
 
@@ -752,7 +752,7 @@
         dbCall(getSrcConn(), { action: 'execute', sql: sqlOperators }),
       ]);
     } catch (e) {
-      if (tableEl) tableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px">🔴 Job discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
+      if (tableEl) tableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px"><i class="ic-dot" style="color:var(--red)"></i> Job discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
       return;
     }
 
@@ -860,7 +860,7 @@
         ? '<span style="color:var(--green)">enabled</span>'
         : '<span style="color:var(--amber)">disabled</span>';
       const warnHtml = j.warnings.length
-        ? j.warnings.map(w => '<span style="color:var(--amber);font-size:10.5px;display:block;line-height:1.4" title="' + escHtml(w.detail) + '">⚠ ' + escHtml(w.detail) + '</span>').join('')
+        ? j.warnings.map(w => '<span style="color:var(--amber);font-size:10.5px;display:block;line-height:1.4" title="' + escHtml(w.detail) + '"><i class="ic ic-warning"></i> ' + escHtml(w.detail) + '</span>').join('')
         : '<span style="color:var(--text3);font-style:italic;font-size:10.5px">none</span>';
       html += `
         <tr>
@@ -961,7 +961,7 @@
         dbCall(getSrcConn(), { action: 'execute', sql: sqlParamValues }),
       ]);
     } catch (e) {
-      if (projTableEl) projTableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px">🔴 SSIS discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
+      if (projTableEl) projTableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px"><i class="ic-dot" style="color:var(--red)"></i> SSIS discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
       return;
     }
 
@@ -1025,9 +1025,9 @@
       bits.push('<strong>Source SSISDB:</strong> ' + (src.exists ? '<span style="color:var(--green)">present</span>' : '<span style="color:var(--text3)">not present</span>'));
       bits.push(' &nbsp;·&nbsp; <strong>Target SSISDB:</strong> ' + (tgt.exists ? '<span style="color:var(--green)">present</span>' : '<span style="color:var(--amber)">missing — will be created by preview/execute</span>'));
       if (!tgt.exists) {
-        bits.push('<br><span style="color:var(--amber);font-size:11px">⚠ Target SSISDB will be auto-created. CLR will be enabled and a master key created using the password supplied above. Provide a strong password.</span>');
+        bits.push('<br><span style="color:var(--amber);font-size:11px"><i class="ic ic-warning"></i> Target SSISDB will be auto-created. CLR will be enabled and a master key created using the password supplied above. Provide a strong password.</span>');
       } else if (!tgt.clrEnabled) {
-        bits.push('<br><span style="color:var(--amber);font-size:11px">⚠ Target has SSISDB but CLR is disabled. CLR will be enabled at server level (this is harmless and required for SSISDB to function).</span>');
+        bits.push('<br><span style="color:var(--amber);font-size:11px"><i class="ic ic-warning"></i> Target has SSISDB but CLR is disabled. CLR will be enabled at server level (this is harmless and required for SSISDB to function).</span>');
       }
       bits.push('</div>');
       banner.innerHTML = bits.join('');
@@ -1555,7 +1555,7 @@
         dbCall(getSrcConn(), { action: 'execute', sql: sqlLogins }),
       ]);
     } catch (e) {
-      if (tableEl) tableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px">🔴 Linked-server discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
+      if (tableEl) tableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px"><i class="ic-dot" style="color:var(--red)"></i> Linked-server discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
       return;
     }
 
@@ -1720,7 +1720,7 @@
       }
 
       const warnHtml = ls.warnings.length
-        ? ls.warnings.map(w => '<span style="color:' + (w.kind === 'exists-on-target' ? 'var(--amber)' : 'var(--text2)') + ';font-size:10.5px;display:block;line-height:1.4">⚠ ' + escHtml(w.detail) + '</span>').join('')
+        ? ls.warnings.map(w => '<span style="color:' + (w.kind === 'exists-on-target' ? 'var(--amber)' : 'var(--text2)') + ';font-size:10.5px;display:block;line-height:1.4"><i class="ic ic-warning"></i> ' + escHtml(w.detail) + '</span>').join('')
         : '<span style="color:var(--text3);font-style:italic;font-size:10.5px">none</span>';
 
       html += `
@@ -1781,7 +1781,7 @@
     const nameLit = "N'" + tsqlEsc(ls.name) + "'";
     out.push("-- ── Linked server: " + ls.name + " (" + (ls.provider || '?') + ") ──");
     if (ls.warnings.length) {
-      for (const w of ls.warnings) out.push("-- ⚠ " + w.detail);
+      for (const w of ls.warnings) out.push("-- " + w.detail);
     }
     out.push("IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE name = " + nameLit + " AND server_id > 0)");
     out.push("BEGIN");
@@ -1803,7 +1803,7 @@
     // SSMS "Not be made" mode), which is the source's actual config.
     const skipLogin = !!SM.linkedServerSkipLogin[ls.name];
     if (skipLogin) {
-      out.push("  -- ⚠ Login mapping intentionally skipped for this linked server.");
+      out.push("  -- Login mapping intentionally skipped for this linked server.");
       out.push("  --   The server definition is created but no sp_addlinkedsrvlogin call is issued,");
       out.push("  --   which means SQL Server's default behaviour applies: pass-through using the");
       out.push("  --   local login's identity. Add a login mapping manually if that's not desired.");
@@ -1938,13 +1938,13 @@
         if (l.is_disabled) out.push('ALTER LOGIN ' + tsqlIdent(l.name) + ' DISABLE;');
         for (const role of l.server_roles) {
           out.push('IF NOT EXISTS (');
-          out.push('  SELECT 1');
-          out.push('  FROM   sys.server_role_members rm');
-          out.push('  JOIN   sys.server_principals    r ON r.principal_id = rm.role_principal_id');
-          out.push('  JOIN   sys.server_principals    m ON m.principal_id = rm.member_principal_id');
-          out.push('  WHERE  r.name = N\'' + tsqlEsc(role) + '\' AND m.name = N\'' + tsqlEsc(l.name) + '\'');
+          out.push(' SELECT 1');
+          out.push(' FROM   sys.server_role_members rm');
+          out.push(' JOIN   sys.server_principals    r ON r.principal_id = rm.role_principal_id');
+          out.push(' JOIN   sys.server_principals    m ON m.principal_id = rm.member_principal_id');
+          out.push(' WHERE  r.name = N\'' + tsqlEsc(role) + '\' AND m.name = N\'' + tsqlEsc(l.name) + '\'');
           out.push(')');
-          out.push('  ALTER SERVER ROLE ' + tsqlIdent(role) + ' ADD MEMBER ' + tsqlIdent(l.name) + ';');
+          out.push(' ALTER SERVER ROLE ' + tsqlIdent(role) + ' ADD MEMBER ' + tsqlIdent(l.name) + ';');
         }
         out.push('GO');
         out.push('');
@@ -2004,7 +2004,7 @@
       for (const j of selectedJobs) {
         out.push('-- ── job: ' + j.name + ' ──');
         if (j.warnings.length) {
-          for (const w of j.warnings) out.push('-- ⚠ ' + w.detail);
+          for (const w of j.warnings) out.push('-- ' + w.detail);
         }
         out.push(buildJobBlock(j));
         out.push('GO');
@@ -2133,10 +2133,10 @@
       const lines = [];
       lines.push(ind + 'CREATE LOGIN ' + tsqlIdent(l.name));
       if (!l.password_hash) {
-        lines.push(ind + '  -- ⚠ Password hash unreadable on source — login will not be created.');
+        lines.push(ind + '  -- Password hash unreadable on source — login will not be created.');
         return ind + '/*\n' + lines.join('\n') + '\n' + ind + '*/';
       }
-      lines.push(ind + '  WITH PASSWORD = ' + l.password_hash + ' HASHED');
+      lines.push(ind + ' WITH PASSWORD = ' + l.password_hash + ' HASHED');
       if (l.sid) lines.push(ind + '     , SID = ' + l.sid);
       lines.push(ind + '     , DEFAULT_DATABASE = ' + tsqlIdent(l.default_database_name));
       lines.push(ind + '     , DEFAULT_LANGUAGE = ' + tsqlIdent(l.default_language_name));
@@ -2146,7 +2146,7 @@
     }
     const lines = [];
     lines.push(ind + 'CREATE LOGIN ' + tsqlIdent(l.name) + ' FROM WINDOWS');
-    lines.push(ind + '  WITH DEFAULT_DATABASE = ' + tsqlIdent(l.default_database_name));
+    lines.push(ind + ' WITH DEFAULT_DATABASE = ' + tsqlIdent(l.default_database_name));
     lines.push(ind + '     , DEFAULT_LANGUAGE = ' + tsqlIdent(l.default_language_name) + ';');
     return lines.join('\n');
   }
@@ -2263,7 +2263,7 @@
         if (SM.targetProxies.has(s.proxy_name)) {
           out.push("    , @proxy_name          = N'" + tsqlEsc(s.proxy_name) + "'");
         } else {
-          out.push("    -- ⚠ proxy '" + s.proxy_name + "' missing on target; step will run as Agent service account until proxy is created");
+          out.push("    -- proxy '" + s.proxy_name + "' missing on target; step will run as Agent service account until proxy is created");
         }
       }
       out.push("  ;");

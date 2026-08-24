@@ -81,6 +81,7 @@ code{font-family:var(--mono);font-size:12px;background:var(--bg3);border:0.5px s
 section{margin-bottom:0.5rem}
 </style>
 <link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 </head>
 <body>
 
@@ -139,8 +140,8 @@ section{margin-bottom:0.5rem}
       <h1>Cygenix Help Guide</h1>
       <p class="lead">Cygenix is an AI-powered database migration platform. It connects to your source and target SQL Server databases, maps columns using Claude AI, applies value translations, validates results, and delivers professional reports — all from the browser.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.5rem">
-        <div class="card"><div class="card-title">🗺 <span style="color:var(--teal)">Mapper</span></div><p>Target-driven column mapping with AI, fixed values, Was/Is rules and one-to-many support.</p></div>
-        <div class="card"><div class="card-title">✅ <span style="color:var(--amber)">Validation</span></div><p>Add any table as a validation source. Pick the SQL column, report columns and run connection.</p></div>
+        <div class="card"><div class="card-title"><i class="ic ic-map"></i> <span style="color:var(--teal)">Mapper</span></div><p>Target-driven column mapping with AI, fixed values, Was/Is rules and one-to-many support.</p></div>
+        <div class="card"><div class="card-title"><i class="ic ic-check-circle"></i> <span style="color:var(--amber)">Validation</span></div><p>Add any table as a validation source. Pick the SQL column, report columns and run connection.</p></div>
       </div>
     </section>
 
@@ -172,7 +173,7 @@ section{margin-bottom:0.5rem}
       <h2>Configure (live DB migration)</h2>
       <p>The legacy 5-step Configure wizard walks through source connection, target connection, column mapping, SQL preview and save. New migrations should use the <strong>Mapper</strong> directly, which provides a richer target-driven mapping experience.</p>
       <h3 id="configure-source">Source database</h3>
-      <p>Connect to the database you are migrating <em>from</em>. Use a direct connection string or Azure Function URL. Click <strong>🔌 Connect source DB</strong> to test and load the schema.</p>
+      <p>Connect to the database you are migrating <em>from</em>. Use a direct connection string or Azure Function URL. Click <strong><i class="ic ic-plug"></i> Connect source DB</strong> to test and load the schema.</p>
       <h3 id="configure-target">Target database</h3>
       <p>Connect to the database you are migrating <em>into</em>. Same connection modes as source.</p>
       <h3 id="configure-map">Select & Map</h3>
@@ -192,17 +193,17 @@ section{margin-bottom:0.5rem}
       <ul>
         <li><strong>AI map</strong> — Claude Haiku automatically maps all target columns. Retries automatically on overload (up to 3 attempts).</li>
         <li><strong>Fixed value</strong> — type any SQL literal in the Fixed value column to override the source. Examples: <code>N'Enterprise'</code>, <code>NULL</code>, <code>GETDATE()</code>, <code>0</code></li>
-        <li><strong>Truncation warning</strong> — if the source char type is wider than the target, a <span style="font-size:11px;padding:1px 6px;border-radius:100px;background:var(--amber-bg);color:var(--amber);font-family:var(--mono)">⚠ LEFT(N)</span> badge appears and LEFT() is auto-applied in the SQL</li>
-        <li><strong>👁 Hide/Show Unmapped</strong> — toggle to show only columns that have a source or fixed value</li>
+        <li><strong>Truncation warning</strong> — if the source char type is wider than the target, a <span style="font-size:11px;padding:1px 6px;border-radius:100px;background:var(--amber-bg);color:var(--amber);font-family:var(--mono)"><i class="ic ic-warning"></i> LEFT(N)</span> badge appears and LEFT() is auto-applied in the SQL</li>
+        <li><strong><i class="ic ic-eye"></i> Hide/Show Unmapped</strong> — toggle to show only columns that have a source or fixed value</li>
         <li><strong>Filter bar</strong> — filter rows by text or match level (HIGH / MEDIUM / LOW / Unmapped / Fixed)</li>
         <li><strong>Sort</strong> — click column headers to sort Source, Target or Match</li>
-        <li><strong>✂ Remove unused</strong> — removes unmapped rows from the generated SQL (with ↩ undo)</li>
+        <li><strong><i class="ic ic-scissors"></i> Remove unused</strong> — removes unmapped rows from the generated SQL (with ↩ undo)</li>
       </ul>
 
       <h3 id="mapper-otm">One-to-many map</h3>
       <p>Maps one source table into multiple target tables in a single operation. Add as many target table cards as needed using <strong>+ Add target table</strong>.</p>
       <ul>
-        <li>Each card has its own target-driven mapping grid, AI map button, filter and 👁 Hide Unmapped toggle</li>
+        <li>Each card has its own target-driven mapping grid, AI map button, filter and <i class="ic ic-eye"></i> Hide Unmapped toggle</li>
         <li><strong>PK mode</strong> per card: Identity (auto-increment), GUID (NEWID()), or Natural key</li>
         <li><strong>PK variable</strong> — name the variable (e.g. @ClientID) that captures the inserted PK for use in FK columns of child cards</li>
         <li><strong>FK rows</strong> — add foreign key columns that reference the PK variable of a parent card</li>
@@ -211,7 +212,7 @@ section{margin-bottom:0.5rem}
       </ul>
 
       <h3 id="mapper-sql">Generated SQL</h3>
-      <p>SQL is generated automatically as you edit. Click <strong>⚡ Generate SQL</strong> to scroll to the SQL panel and refresh it explicitly.</p>
+      <p>SQL is generated automatically as you edit. Click <strong><i class="ic ic-bolt"></i> Generate SQL</strong> to scroll to the SQL panel and refresh it explicitly.</p>
       <ul>
         <li>Three-part database names: <code>[SourceDB].[dbo].[table]</code> and <code>[TargetDB].[dbo].[table]</code></li>
         <li>Bare column names in SELECT: <code>[colName]</code> (no schema prefix)</li>
@@ -245,7 +246,7 @@ section{margin-bottom:0.5rem}
     <section id="wasis">
       <h2>Was/Is mapping</h2>
       <p>Was/Is mapping translates specific values during migration — for example converting status codes <code>A</code> → <code>Active</code>, or renaming department codes to match the target system.</p>
-      <p>Prepare a CSV or Excel file with columns: field name, old value (Was), new value (Is). Load it in the Mapper using the Was/Is panel. Columns with rules applied show a <span style="font-size:11px;padding:2px 7px;border-radius:100px;background:rgba(245,158,11,0.15);color:var(--amber);font-family:var(--mono)">🔄 N rules</span> badge.</p>
+      <p>Prepare a CSV or Excel file with columns: field name, old value (Was), new value (Is). Load it in the Mapper using the Was/Is panel. Columns with rules applied show a <span style="font-size:11px;padding:2px 7px;border-radius:100px;background:rgba(245,158,11,0.15);color:var(--amber);font-family:var(--mono)"><i class="ic ic-sync"></i> N rules</span> badge.</p>
       <div class="warn"><strong>Note:</strong> Was/Is rules are case-sensitive by default. Ensure Was values exactly match the source data.</div>
     </section>
 
@@ -272,9 +273,9 @@ section{margin-bottom:0.5rem}
         <li><strong>▶ Run</strong> (source card) — runs all scripts for that source only</li>
         <li><strong>▶</strong> (row button) — runs a single script</li>
       </ul>
-      <p>A script <span style="font-size:11px;padding:1px 7px;border-radius:100px;background:var(--green-bg);color:var(--green);font-family:var(--mono)">✓ Pass</span> if it returns zero rows. It <span style="font-size:11px;padding:1px 7px;border-radius:100px;background:var(--red-bg);color:var(--red);font-family:var(--mono)">✕ Fail</span> if it returns any rows (those rows are the problem data). Click <strong>👁 View</strong> on a failed script to see the rows inline, filtered to your chosen report columns.</p>
-      <p>Click <strong>📊 Export</strong> to download an Excel file with a summary sheet and one sheet per failed script.</p>
-      <div class="tip"><strong>Tip:</strong> Validation sources are saved to localStorage (<code>cygenix_validation_sources</code>). Click ✏ Edit on any source card to update its column selections without losing the configuration.</div>
+      <p>A script <span style="font-size:11px;padding:1px 7px;border-radius:100px;background:var(--green-bg);color:var(--green);font-family:var(--mono)">✓ Pass</span> if it returns zero rows. It <span style="font-size:11px;padding:1px 7px;border-radius:100px;background:var(--red-bg);color:var(--red);font-family:var(--mono)">✕ Fail</span> if it returns any rows (those rows are the problem data). Click <strong><i class="ic ic-eye"></i> View</strong> on a failed script to see the rows inline, filtered to your chosen report columns.</p>
+      <p>Click <strong><i class="ic ic-chart"></i> Export</strong> to download an Excel file with a summary sheet and one sheet per failed script.</p>
+      <div class="tip"><strong>Tip:</strong> Validation sources are saved to localStorage (<code>cygenix_validation_sources</code>). Click <i class="ic ic-edit"></i> Edit on any source card to update its column selections without losing the configuration.</div>
     </section>
 
     <section id="insights">
@@ -306,7 +307,7 @@ section{margin-bottom:0.5rem}
         <li><strong>Row verification</strong> — COUNT(*) check after each page insert to confirm rows were written.</li>
         <li><strong>Index disable hint</strong> — adds ALTER INDEX DISABLE/REBUILD comments in generated SQL (you run manually in SSMS).</li>
       </ul>
-      <p>Use <strong>⬇ Export</strong> to save settings as a JSON file. Use <strong>⬆ Import</strong> to restore from a saved file. The Configuration summary panel shows warnings for conflicting settings (e.g. API timeout less than query timeout).</p>
+      <p>Use <strong><i class="ic ic-download"></i> Export</strong> to save settings as a JSON file. Use <strong><i class="ic ic-upload"></i> Import</strong> to restore from a saved file. The Configuration summary panel shows warnings for conflicting settings (e.g. API timeout less than query timeout).</p>
     </section>
 
     <section id="project-settings">
@@ -326,7 +327,7 @@ section{margin-bottom:0.5rem}
         <li>Drag-and-drop to reorder steps</li>
       </ul>
       <h3>Running a project</h3>
-      <p>Click <strong>▶ Run project</strong>. Each step shows a live status: ⚪ pending → 🟡 running → 🟢 complete / 🔴 failed / 🟠 error. On failure you can Retry, Skip or Abort the run. A full execution log is captured and included in the Conversion Report.</p>
+      <p>Click <strong>▶ Run project</strong>. Each step shows a live status: <i class="ic-dot" style="color:var(--text3)"></i> pending → <i class="ic-dot" style="color:var(--amber)"></i> running → <i class="ic-dot" style="color:var(--green)"></i> complete / <i class="ic-dot" style="color:var(--red)"></i> failed / <i class="ic-dot" style="color:var(--amber)"></i> error. On failure you can Retry, Skip or Abort the run. A full execution log is captured and included in the Conversion Report.</p>
     </section>
 
     <section id="reports">
@@ -343,7 +344,7 @@ section{margin-bottom:0.5rem}
 
     <section id="inventory">
       <h2>Inventory</h2>
-      <p>Store project documents, schema files, data dictionaries, mapping documents and Was/Is tables. Files can be uploaded, previewed (CSV, images) and downloaded. Client uploads appear in a separate <strong>👤 Client submissions</strong> section.</p>
+      <p>Store project documents, schema files, data dictionaries, mapping documents and Was/Is tables. Files can be uploaded, previewed (CSV, images) and downloaded. Client uploads appear in a separate <strong><i class="ic ic-user"></i> Client submissions</strong> section.</p>
     </section>
 
     <section id="client-portal">
@@ -366,7 +367,7 @@ section{margin-bottom:0.5rem}
           <tr><td><strong>Login failed / token error</strong></td><td>Managed Identity may not have database access. Run: <code>CREATE USER [identity-name] FROM EXTERNAL PROVIDER</code> and grant <code>db_datareader</code> / <code>db_datawriter</code>.</td></tr>
           <tr><td><strong>AI map error: Overloaded</strong></td><td>Claude is busy. The mapper automatically retries 3 times with exponential backoff. If it still fails, wait a moment and try again.</td></tr>
           <tr><td><strong>AI map error: Unterminated JSON</strong></td><td>The table has many columns and the AI response was truncated. The mapper applies automatic JSON repair. If columns are missing, try remapping individual sections.</td></tr>
-          <tr><td><strong>Validation — table not found</strong></td><td>Ensure the connection in the validation source matches the database where the validation table lives. Use ✏ Edit on the source card to update the connection.</td></tr>
+          <tr><td><strong>Validation — table not found</strong></td><td>Ensure the connection in the validation source matches the database where the validation table lives. Use <i class="ic ic-edit"></i> Edit on the source card to update the connection.</td></tr>
           <tr><td><strong>Calendar events not showing</strong></td><td>Task events appear only if the task has a start or due date set. Project completion appears only if a Target completion date is set in Project Settings.</td></tr>
           <tr><td><strong>Performance preset not applying</strong></td><td>After clicking a preset, click <strong>Save settings</strong>. Presets fill the form but do not auto-save.</td></tr>
           <tr><td><strong>Jobs disappear after refresh</strong></td><td>Jobs are stored in browser localStorage. Clearing browser data removes them. Export a backup from Configure → Backup & Restore before clearing storage.</td></tr>
