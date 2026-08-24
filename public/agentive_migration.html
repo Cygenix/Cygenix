@@ -9,6 +9,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -385,7 +386,7 @@ body.cyg-collapsed .topbar{left:54px}
 <body>
 
 <div id="cyg-sidebar-mount" data-active="agentive-migration"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 <script>
 // Sidebar width mirror — same pattern as sql-editor.html
 (function mirrorSidebarWidth(){
@@ -436,7 +437,7 @@ body.cyg-collapsed .topbar{left:54px}
     <span id="topbar-status" style="font-size:11.5px;color:var(--text3);margin-left:0.5rem"></span>
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
-    <button class="btn btn-ghost btn-sm" onclick="window.location.href='/dashboard.html#connections'" title="Manage source and target connections">⚡ Connections</button>
+    <button class="btn btn-ghost btn-sm" onclick="window.location.href='/dashboard.html#connections'" title="Manage source and target connections"><i class="ic ic-bolt"></i> Connections</button>
   </div>
 </div>
 
@@ -1712,7 +1713,7 @@ body.cyg-collapsed .topbar{left:54px}
       const buttonLabel = isExpanded ? 'Close' : (pickedInGroup > 0 ? 'Refine' : 'Open');
       const cardClass = 'action-card' + (isExpanded ? ' active' : '') + (pickedInGroup > 0 ? ' has-picks' : '');
       const piiNote = g.piiCount > 0
-        ? `<div style="font-size:10.5px;color:var(--amber);margin-top:2px">⚠ ${g.piiCount} PII column${g.piiCount === 1 ? '' : 's'}</div>`
+        ? `<div style="font-size:10.5px;color:var(--amber);margin-top:2px"><i class="ic ic-warning"></i> ${g.piiCount} PII column${g.piiCount === 1 ? '' : 's'}</div>`
         : '';
       const icon = g.icon ? `<span style="font-size:18px;margin-right:6px">${escapeHtml(g.icon)}</span>` : '';
       return `
@@ -1775,7 +1776,7 @@ body.cyg-collapsed .topbar{left:54px}
         } else {
           targetHtml = `
             <div style="display:flex;align-items:center;gap:0.45rem">
-              <span style="color:var(--amber);font-size:11.5px">⚠ No target chosen yet</span>
+              <span style="color:var(--amber);font-size:11.5px"><i class="ic ic-warning"></i> No target chosen yet</span>
               <button class="btn btn-sm" data-open-target-picker="${escapeHtml(t.fullName)}" style="padding:2px 8px;font-size:11px">Pick target</button>
             </div>`;
         }
@@ -2444,7 +2445,7 @@ body.cyg-collapsed .topbar{left:54px}
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:0.85rem;flex-wrap:wrap;justify-content:flex-end">
-          <div class="status-meta" title="Elapsed time since run started">⏱ ${elapsedStr}</div>
+          <div class="status-meta" title="Elapsed time since run started"><i class="ic ic-clock"></i> ${elapsedStr}</div>
           <div class="status-meta" title="Model round-trips so far (cap: ${turnCap})">Turn ${turnCount}/${turnCap}</div>
           ${proposalCount > 0 ? `<div class="status-meta">${proposalCount} proposal${proposalCount === 1 ? '' : 's'}</div>` : ''}
           <div class="cost-meter">
@@ -2766,7 +2767,7 @@ body.cyg-collapsed .topbar{left:54px}
                     <div class="mapping-meta">
                       ${cols.length} column${cols.length === 1 ? '' : 's'}
                       ${high > 0 ? ` · ${high} high` : ''}${med > 0 ? ` · ${med} medium` : ''}${low > 0 ? ` · ${low} low` : ''}
-                      ${warn > 0 ? ` · ⚠ ${warn} warning${warn === 1 ? '' : 's'}` : ''}
+                      ${warn > 0 ? ` · ${warn} warning${warn === 1 ? '' : 's'}` : ''}
                     </div>
                     ${j.reasoning ? `<div class="decision-reasoning" style="margin-top:6px">${escapeHtml(j.reasoning)}</div>` : ''}
                   </div>`;
@@ -2790,7 +2791,7 @@ body.cyg-collapsed .topbar{left:54px}
             <div class="section-label">Risks</div>
             ${risks.map(r => `
               <div class="decision">
-                <div class="decision-reasoning">⚠ ${escapeHtml(r)}</div>
+                <div class="decision-reasoning"><i class="ic ic-warning"></i> ${escapeHtml(r)}</div>
               </div>`).join('')}
           </div>` : ''}
 

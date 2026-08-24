@@ -984,7 +984,7 @@ function renderDMLResult(affected, ms, sql) {
 
   wrap.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:0.5rem;padding:2rem">
-      <div style="font-size:28px">✅</div>
+      <div style="font-size:28px"><i class="ic ic-check-circle"></i> </div>
       <div style="font-size:16px;font-weight:600;color:var(--green)">${affected.toLocaleString()} row${affected!==1?'s':''} ${verb}</div>
       <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Completed in ${ms}ms</div>
     </div>`;
@@ -1194,7 +1194,7 @@ function updateSchemaStatusBar(schema, which) {
     return;
   }
   const dbName = schema.database || (which === 'target' ? 'Target DB' : 'Source DB');
-  bar.textContent = '📋 ' + which + ': ' + dbName + ' · ' + schema.tables.length + ' tables loaded';
+  bar.textContent = which + ': ' + dbName + ' · ' + schema.tables.length + ' tables loaded';
   bar.style.display = 'block';
 }
 
@@ -1358,8 +1358,7 @@ function renderOBConnection(connKind, connTag, schema, search) {
   if (Array.isArray(schema.procedures)) procedures = schema.procedures.filter(matchProc);
   if (Array.isArray(schema.functions))  functions  = schema.functions.filter(matchFunc);
 
-  const sectionsHtml = ''
-    + renderOBSection(connKind, 'tables',     'Tables',     tables,     'table')
+  const sectionsHtml = renderOBSection(connKind, 'tables',     'Tables',     tables,     'table')
     + renderOBSection(connKind, 'views',      'Views',      views,      'view')
     + renderOBSection(connKind, 'procedures', 'Procedures', procedures, 'procedure')
     + renderOBSection(connKind, 'functions',  'Functions',  functions,  'function');
@@ -1752,7 +1751,7 @@ function updateSchemaStatusBar(srcSchema, tgtSchema) {
   }
   const parts = [summary(srcSchema, 'Source'), summary(tgtSchema, 'Target')].filter(Boolean);
   if (parts.length) {
-    bar.textContent = '📋 ' + parts.join('   |   ');
+    bar.textContent = parts.join('   |   ');
     bar.style.display = 'block';
   } else {
     bar.style.display = 'none';
@@ -2252,7 +2251,7 @@ function toggleFullscreen() {
   isFullscreen = !isFullscreen;
   document.body.classList.toggle('fullscreen', isFullscreen);
   const btn = document.getElementById('fs-btn');
-  if (btn) { btn.textContent = isFullscreen ? '⛶' : '⛶'; btn.title = isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F11)'; btn.style.color = isFullscreen ? 'var(--accent)' : ''; }
+  if (btn) { btn.textContent = isFullscreen ? '' : ''; btn.title = isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F11)'; btn.style.color = isFullscreen ? 'var(--accent)' : ''; }
   if (isFullscreen) {
     // Also expand the editor pane to use full width
     const layout = document.querySelector('.editor-layout');
@@ -2537,14 +2536,12 @@ function renderLibItem(kind, item) {
 
   let actions = '';
   if (kind === 'script') {
-    actions = ''
-      + '<button class="lib-action-btn"          onclick="event.stopPropagation();loadScript(\''+item.id+'\')"          title="Open this script in the editor">Open</button>'
+    actions = '<button class="lib-action-btn"          onclick="event.stopPropagation();loadScript(\''+item.id+'\')"          title="Open this script in the editor">Open</button>'
       + '<button class="lib-action-btn primary"  onclick="event.stopPropagation();moveScriptToJob(\''+item.id+'\')"   title="Promote to a Migration Job">Move to Job</button>'
       + '<button class="lib-action-btn"          onclick="event.stopPropagation();duplicateScript(\''+item.id+'\')"   title="Duplicate this script">Duplicate</button>'
       + '<button class="lib-action-btn danger"   onclick="event.stopPropagation();deleteScript(\''+item.id+'\')"      title="Delete">Delete</button>';
   } else {
-    actions = ''
-      + '<button class="lib-action-btn"          onclick="event.stopPropagation();loadJobSQL(\''+item.id+'\')"        title="Open this job in the editor">Open</button>'
+    actions = '<button class="lib-action-btn"          onclick="event.stopPropagation();loadJobSQL(\''+item.id+'\')"        title="Open this job in the editor">Open</button>'
       + '<button class="lib-action-btn primary"  onclick="event.stopPropagation();ejectJobToScript(\''+item.id+'\')"  title="Copy SQL out as a fresh script">Eject to Script</button>'
       + '<button class="lib-action-btn"          onclick="event.stopPropagation();saveJobToDrive(\''+item.id+'\')"    title="Save this job&#39;s SQL to the Co-Worker Drive">To Drive</button>'
       + '<button class="lib-action-btn danger"   onclick="event.stopPropagation();deleteJobConfirm(\''+item.id+'\')"  title="Delete">Delete</button>';
@@ -2601,7 +2598,7 @@ function setEditorContext(type, id, name) {
   // Configure Save button label/colour and the contextual action button
   if (type === 'job') {
     if (saveBtn) {
-      saveBtn.textContent  = '💾 Save to Job';
+      saveBtn.textContent  = 'Save to Job';
       saveBtn.title        = 'Save SQL changes back to the loaded job';
       saveBtn.className    = 'btn btn-teal btn-sm';
     }
@@ -2613,19 +2610,19 @@ function setEditorContext(type, id, name) {
     }
   } else if (type === 'script') {
     if (saveBtn) {
-      saveBtn.textContent  = '💾 Save Script';
+      saveBtn.textContent  = 'Save Script';
       saveBtn.title        = 'Save changes to this script';
       saveBtn.className    = 'btn btn-green btn-sm';
     }
     if (ctxBtn) {
-      ctxBtn.textContent   = '➕ Promote to Job';
+      ctxBtn.textContent   = 'Promote to Job';
       ctxBtn.title         = 'Move this script into a Migration Job';
       ctxBtn.style.display = '';
       ctxBtn.dataset.action = 'promote';
     }
   } else {
     if (saveBtn) {
-      saveBtn.textContent  = '💾 Save as Script';
+      saveBtn.textContent  = 'Save as Script';
       saveBtn.title        = 'Save the current SQL as a new draft script';
       saveBtn.className    = 'btn btn-green btn-sm';
     }
@@ -2779,8 +2776,7 @@ function confirmDialog(opts) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay open';
-    overlay.innerHTML = ''
-      + '<div class="modal" role="dialog">'
+    overlay.innerHTML = '<div class="modal" role="dialog">'
       +   '<div class="modal-title">' + esc(title) + '</div>'
       +   '<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:1.25rem">' + body + '</div>'
       +   '<div class="modal-actions">'
@@ -2895,7 +2891,7 @@ function openDrivePicker(files) {
       + '<span style="font-size:11px;color:var(--text3);white-space:nowrap">' + esc(folder) + '</span></div>';
   }).join('') : '<div style="padding:1.6rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">No .sql files in the Drive yet.<br>Save one with “Save to Drive…”, or use “To Drive” on a job.</div>';
   ov.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:540px;max-height:76vh;display:flex;flex-direction:column;box-shadow:var(--shadow-strong)">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.1rem;border-bottom:1px solid var(--border)"><b style="font-size:14px">🗂 Open from Co-Worker Drive</b><button id="dp-close" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.1rem;border-bottom:1px solid var(--border)"><b style="font-size:14px"><i class="ic ic-archive"></i> Open from Co-Worker Drive</b><button id="dp-close" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
     + '<div id="dp-list" style="overflow-y:auto;padding:.5rem">' + rows + '</div></div>';
   document.body.appendChild(ov);
   ov.querySelector('#dp-close').addEventListener('click', () => ov.remove());
@@ -2930,7 +2926,7 @@ function applySqlToEditor(sql, name, driveId) {
   // to that exact file rather than creating a new script.
   if (currentDriveFile) {
     const sb = document.getElementById('save-btn');
-    if (sb) { sb.textContent = '💾 Save to Drive'; sb.title = 'Save changes back to “' + (name || 'file') + '” in the Co-Worker Drive'; }
+    if (sb) { sb.textContent = 'Save to Drive'; sb.title = 'Save changes back to “' + (name || 'file') + '” in the Co-Worker Drive'; }
   }
   try { updateStatus(); } catch (_) {}
   try { clearResults(); } catch (_) {}
@@ -3035,8 +3031,7 @@ function updateGeneratedJobWarning(job) {
   var banner = document.createElement('div');
   banner.id = 'gen-job-warning';
   banner.className = 'gen-job-warning';
-  banner.innerHTML = ''
-    + '<div class="gjw-icon">⚠</div>'
+  banner.innerHTML = '<div class="gjw-icon"><i class="ic ic-warning"></i> </div>'
     + '<div class="gjw-body">'
     +   '<div class="gjw-title">This SQL was generated by Object Mapping</div>'
     +   '<div class="gjw-sub">'

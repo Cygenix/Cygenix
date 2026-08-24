@@ -9,6 +9,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -329,7 +330,7 @@ body.cyg-collapsed{padding-left:54px}
 
 <div class="toast" id="toast"></div>
 
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 <script>
 // ── Config & state ────────────────────────────────────────────────────────────
 const PROJECTS_KEY    = 'cygenix_projects';
@@ -504,7 +505,7 @@ function renderProjects(){
 
   if (_projects.length === 0) {
     container.innerHTML = `<div class="empty">
-      <div class="empty-icon">📁</div>
+      <div class="empty-icon"><i class="ic ic-folder"></i> </div>
       <div class="empty-title">No projects yet</div>
       <div class="empty-text">Create your first project to start grouping jobs and artifacts.</div>
       <button class="btn btn-primary" onclick="openProjectModal()">+ New Project</button>

@@ -346,7 +346,7 @@ const SAS = 'https://acct.blob.core.windows.net/cont?sv=2024-01-01&sr=c&sp=racwl
 
   // Front end.
   check('the row offers Rename and Delete',
-    />✎ Rename<\/button>/.test(app) && /blobSourceDeleteFile\(/.test(app));
+    /<i class="ic ic-edit"><\/i> Rename<\/button>/.test(app) && /blobSourceDeleteFile\(/.test(app));
   check('the delete control is styled destructively and carries an accessible name',
     /style="color:var\(--red\)"[^']*blobSourceDeleteFile|aria-label="Delete this file"/.test(app));
   check('both are disabled with a reason when the SAS cannot do them, never hidden',

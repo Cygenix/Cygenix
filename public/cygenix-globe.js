@@ -1,7 +1,7 @@
 /* ============================================================================
    cygenix-globe.js — where the estate's data sits, on a globe
    ----------------------------------------------------------------------------
-   The eighth Schema Explorer view. Registers a 🌐 Globe tab on the same tab
+   The eighth Schema Explorer view. Registers a Globe tab on the same tab
    bar as the rest, discovers which tables carry geography, aggregates them by
    region, and draws the result as extruded bars standing off a rotatable
    sphere — filterable and groupable by the same business areas the Data map
@@ -1290,7 +1290,7 @@ var CSS = [
   '.cg-tip{position:absolute;left:0;top:0}',
   '.cg-crumb{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}',
   '.cg-crumb-btn{appearance:none;border:0;background:none;padding:0;font:inherit;font-size:12.5px;',
-  '  color:var(--cdm-accent);cursor:pointer;text-decoration:underline}',
+  ' color:var(--cdm-accent);cursor:pointer;text-decoration:underline}',
   '.cg-crumb-btn:disabled{color:var(--cdm-text);text-decoration:none;cursor:default;font-weight:600}',
   '.cg-crumb-sep{color:var(--cdm-text-3);font-size:12.5px}',
   '.cg-check{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--cdm-text-2);cursor:pointer}',
@@ -1380,7 +1380,7 @@ function install(){
      no tab state of our own to keep in step. */
   return window.seRegisterMap({
     id: 'globe',
-    label: '🌐 Globe',
+    label: 'Globe',
     group: 'Estate maps',
     show: function () { panel.style.display = 'block'; showPanel(); },
     hide: function () { panel.style.display = 'none'; hideTip(); },

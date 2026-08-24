@@ -100,7 +100,7 @@ h1 em{font-style:italic;color:var(--accent)}
 .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:1.25rem}
 .feature{background:var(--surface);padding:1.75rem;transition:background 0.15s}
 .feature:hover{background:var(--surface2)}
-.feature-icon{font-size:1.4rem;margin-bottom:0.75rem}
+.feature-icon{font-size:1.4rem;margin-bottom:0.75rem;color:var(--accent);line-height:1}
 .feature h3{font-size:15px;font-weight:500;color:var(--ink);margin-bottom:0.4rem}
 .feature p{font-size:13px;color:var(--ink3);line-height:1.65}
 
@@ -175,6 +175,7 @@ h1 em{font-style:italic;color:var(--accent)}
 }
 </style>
 <link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 </head>
 <body>
 
@@ -292,47 +293,47 @@ h1 em{font-style:italic;color:var(--accent)}
   <p class="section-sub">No stitching together separate tools. Cygenix handles the full lifecycle — from first connection to final report.</p>
   <div class="features-grid">
     <div class="feature">
-      <div class="feature-icon">🤖</div>
+      <div class="feature-icon"><i class="ic ic-robot"></i> </div>
       <h3>AI column mapping</h3>
-      <p>Claude Haiku maps every target column automatically. Override any row, add fixed SQL values, and get ⚠ truncation warnings when types don't fit.</p>
+      <p>Claude Haiku maps every target column automatically. Override any row, add fixed SQL values, and get <i class="ic ic-warning"></i> truncation warnings when types don't fit.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">🔄</div>
+      <div class="feature-icon"><i class="ic ic-sync"></i> </div>
       <h3>One-to-many mapping</h3>
       <p>Map a single source table into multiple target tables with FK relationships, PK variables and per-card AI mapping — all in one generated SQL script.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">✅</div>
+      <div class="feature-icon"><i class="ic ic-check-circle"></i> </div>
       <h3>Flexible validation</h3>
       <p>Add any table as a validation source. Pick the SQL column, choose report columns, and run pre/post-migration checks against any database.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">💻</div>
+      <div class="feature-icon"><i class="ic ic-monitor"></i> </div>
       <h3>SQL Editor</h3>
       <p>Full-featured SQL workspace with script library, find & replace, results grid, history, Excel export and an AI assistant that writes SQL on request.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">📅</div>
+      <div class="feature-icon"><i class="ic ic-calendar"></i> </div>
       <h3>Project Planner</h3>
       <p>Calendar (year/month/week/day), tasks, blockers, phase tracker and activity log — driven by your project completion date. Syncs with Smartsheet and Jira.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">⚡</div>
+      <div class="feature-icon"><i class="ic ic-bolt"></i> </div>
       <h3>Performance tuning</h3>
       <p>Configure fetch page size, batch size, concurrency, timeouts and retry behaviour. Presets for Small DB, Large DB, Azure SQL and Cautious mode.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">📊</div>
+      <div class="feature-icon"><i class="ic ic-chart"></i> </div>
       <h3>Professional reports</h3>
       <p>Export client-ready Excel reports with summary, migration results, column mapping, Was/Is rules applied and full execution log.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">💬</div>
+      <div class="feature-icon"><i class="ic ic-chat"></i> </div>
       <h3>Ask AI assistant</h3>
       <p>Project-aware AI with full context of your tasks, jobs, blockers and timeline. Ask anything — it only answers about your migration project.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">🔌</div>
+      <div class="feature-icon"><i class="ic ic-plug"></i> </div>
       <h3>Azure native</h3>
       <p>Azure SQL with Managed Identity — no passwords in connection strings. Deployed on Netlify with an Azure Function backend for secure DB access.</p>
     </div>

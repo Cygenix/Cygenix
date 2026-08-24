@@ -8,6 +8,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -126,14 +127,14 @@ th:hover .sort-ind{opacity:0.75}
 
   <div class="page-head">
     <div>
-      <div class="page-title">⚙ System parameters</div>
+      <div class="page-title"><i class="ic ic-cog"></i> System parameters</div>
       <div class="page-sub">Parameters are tokens like <code>@@StartDate</code> that get substituted with their value wherever they appear — in generated SQL, custom SQL jobs, WHERE clauses, Was/Is rules, transforms, and literal values. The code is derived automatically from the name.</div>
     </div>
     <div class="toolbar">
       <input type="file" id="import-file" accept=".csv,.json" style="display:none" onchange="importFile(this)">
-      <button class="btn" onclick="document.getElementById('import-file').click()" title="Import from CSV or JSON">⬆ Import</button>
-      <button class="btn" onclick="exportCSV()" title="Download as CSV">⬇ Export CSV</button>
-      <button class="btn" onclick="exportJSON()" title="Download as JSON">⬇ Export JSON</button>
+      <button class="btn" onclick="document.getElementById('import-file').click()" title="Import from CSV or JSON"><i class="ic ic-upload"></i> Import</button>
+      <button class="btn" onclick="exportCSV()" title="Download as CSV"><i class="ic ic-download"></i> Export CSV</button>
+      <button class="btn" onclick="exportJSON()" title="Download as JSON"><i class="ic ic-download"></i> Export JSON</button>
       <button class="btn btn-primary" onclick="addRow()">+ Add parameter</button>
     </div>
   </div>
@@ -144,13 +145,13 @@ th:hover .sort-ind{opacity:0.75}
       Use the code exactly as shown (case-insensitive) wherever you want the value substituted.
     </div>
     <div class="filter-bar" id="filter-bar" style="display:none">
-      <input type="text" id="filter-input" class="filter-input" placeholder="🔍 Filter by name, description, value, or code…" oninput="applyFilter()">
+      <input type="text" id="filter-input" class="filter-input" placeholder="Filter by name, description, value, or code…" oninput="applyFilter()">
       <button class="btn btn-sm" id="filter-clear" onclick="clearFilter()" title="Clear filter" style="display:none">✕ Clear</button>
       <span id="filter-count" class="filter-count"></span>
     </div>
     <div id="list-wrap">
       <div class="empty" id="empty-state">
-        <div class="emoji">🏷</div>
+        <div class="emoji"><i class="ic ic-tag"></i> </div>
         <div>No parameters yet.</div>
         <div style="font-size:11px;margin-top:0.4rem">Click <strong>+ Add parameter</strong>, or import a CSV/JSON file.</div>
       </div>
@@ -167,7 +168,7 @@ th:hover .sort-ind{opacity:0.75}
         <tbody id="params-tbody"></tbody>
       </table>
       <div class="empty" id="empty-filter-state" style="display:none">
-        <div class="emoji">🔎</div>
+        <div class="emoji"><i class="ic ic-search"></i> </div>
         <div>No parameters match the filter.</div>
         <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="clearFilter();return false" style="color:var(--accent)">clear the filter</a>.</div>
       </div>

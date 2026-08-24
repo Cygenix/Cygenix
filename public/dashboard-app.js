@@ -986,7 +986,7 @@ async function startAnalysis() {
           allTables.push(...tables);
           setBody(`Parsed ${file.name}: found ${tables.length} table(s) with ${tables.reduce((s,t) => s+t.rows.length,0)} total rows`);
         } else {
-          setBody(`⚠ Could not extract table data from ${file.name} — it may be an unsupported format`);
+          setBody(`Could not extract table data from ${file.name} — it may be an unsupported format`);
         }
       } else {
         binaryFiles.push(file.name);
@@ -1138,8 +1138,8 @@ ${buildWasisSummary(wasisRules, wasisApplicationLog)}`;
     $('migration-code').textContent = migrationSQL;
     $('result-tabs').style.display  = 'flex';
     $('analysis-cta').innerHTML = `
-      <button class="btn btn-teal btn-sm" onclick="downloadSQL('schema','${escapeAttr(jobName)}')">⬇ Schema .sql (${Math.ceil(schemaSQL.length/1024)}KB)</button>
-      <button class="btn btn-primary btn-sm" onclick="downloadSQL('migration','${escapeAttr(jobName)}')">⬇ Migration .sql (${Math.ceil(migrationSQL.length/1024)}KB)</button>`;
+      <button class="btn btn-teal btn-sm" onclick="downloadSQL('schema','${escapeAttr(jobName)}')"><i class="ic ic-download"></i> Schema .sql (${Math.ceil(schemaSQL.length/1024)}KB)</button>
+      <button class="btn btn-primary btn-sm" onclick="downloadSQL('migration','${escapeAttr(jobName)}')"><i class="ic ic-download"></i> Migration .sql (${Math.ceil(migrationSQL.length/1024)}KB)</button>`;
 
     // Build column mapping for report
     const jobColumnMapping = allTables.flatMap(t => {
@@ -1964,7 +1964,7 @@ function _bulkGenCleanupIframe(){
 function _bulkGenUpdateRow(jobId, status, message){
   const row = document.querySelector(`[data-bgrow="${jobId}"]`);
   if (!row) return;
-  const icon = status === 'running' ? '⏳'
+  const icon = status === 'running' ? ''
              : status === 'ok'      ? '✓'
              : status === 'fail'    ? '✕'
              : status === 'queue'   ? '·'
@@ -2177,16 +2177,16 @@ function buildValidationSQL(originalSQL, sampleSize){
     'SET XACT_ABORT ON;',
     'SET NOCOUNT ON;',
     'BEGIN TRY',
-    '  BEGIN TRAN;',
+    ' BEGIN TRAN;',
     '',
     injected,
     '',
-    '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+    ' IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
     "  PRINT 'CYGENIX_VALIDATION_OK';",
     'END TRY',
     'BEGIN CATCH',
-    '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
-    '  THROW;',
+    ' IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+    ' THROW;',
     'END CATCH;'
   ].join('\n');
 }
@@ -2291,7 +2291,7 @@ function _validateRenderList(){
 function _validateUpdateRow(jobId, status, message){
   const row = document.querySelector(`[data-vrow="${jobId}"]`);
   if (!row) return;
-  const icon = status === 'running' ? '⏳'
+  const icon = status === 'running' ? ''
              : status === 'ok'      ? '✓'
              : status === 'fail'    ? '✕'
              : '·';
@@ -2944,7 +2944,7 @@ async function startSetupCheck(){
 function _setupCheckUpdateRow(idx, status, message){
   const row = document.querySelector(`[data-sfrow="${idx}"]`);
   if (!row) return;
-  const icon = status === 'running' ? '⏳'
+  const icon = status === 'running' ? ''
              : status === 'ok'      ? '✓'
              : status === 'fail'    ? '✕'
              : status === 'err'     ? '!'
@@ -3676,24 +3676,24 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb, opts){
       'SET XACT_ABORT ON;\n' +
       'SET NOCOUNT ON;\n' +
       'BEGIN TRY\n' +
-      '  BEGIN TRAN;\n' +
+      ' BEGIN TRAN;\n' +
       '\n' +
       migrationBody + '\n' +
       '\n' +
-      '  IF @Commit = 1\n' +
-      '  BEGIN\n' +
-      '    IF @@TRANCOUNT > 0 COMMIT TRAN;\n' +
+      ' IF @Commit = 1\n' +
+      ' BEGIN\n' +
+      ' IF @@TRANCOUNT > 0 COMMIT TRAN;\n' +
       "    PRINT 'CYGENIX: @Commit=1 → COMMITTED. Rows persisted to target.';\n" +
-      '  END\n' +
-      '  ELSE\n' +
-      '  BEGIN\n' +
-      '    IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
+      ' END\n' +
+      ' ELSE\n' +
+      ' BEGIN\n' +
+      ' IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
       "    PRINT 'CYGENIX: @Commit=0 → ROLLED BACK (dry-run). Set @Commit=1 and re-run to persist.';\n" +
-      '  END\n' +
+      ' END\n' +
       'END TRY\n' +
       'BEGIN CATCH\n' +
-      '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
-      '  THROW;\n' +
+      ' IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
+      ' THROW;\n' +
       'END CATCH;\n';
 
   // Section 6: cleanup
@@ -3722,7 +3722,7 @@ function _pkgRenderProgressList(){
 function _pkgUpdateRow(jobId, status, message){
   const row = document.querySelector(`[data-pkrow="${jobId}"]`);
   if (!row) return;
-  const icon = status === 'running' ? '⏳'
+  const icon = status === 'running' ? ''
              : status === 'ok'      ? '✓'
              : status === 'fail'    ? '✕'
              : '·';
@@ -3850,12 +3850,12 @@ function jobsTableHTML(jobs) {
     // before falling back to the shared classification, so the badge and the
     // donut always tell the same story about a settled job.
     const raw = String(j.executionStatus || j.status || '').toLowerCase();
-    if (raw === 'running') return '<span class="badge" style="background:var(--amber-bg);color:var(--amber)">🟡 Running</span>';
+    if (raw === 'running') return '<span class="badge" style="background:var(--amber-bg);color:var(--amber)"><i class="ic-dot" style="color:var(--amber)"></i> Running</span>';
     const b = jobBucket(j);
-    if (b === 'complete') return '<span class="badge badge-green">🟢 Complete</span>';
-    if (b === 'failed')   return '<span class="badge" style="background:var(--red-bg);color:var(--red)">🔴 Failed</span>';
+    if (b === 'complete') return '<span class="badge badge-green"><i class="ic-dot" style="color:var(--green)"></i> Complete</span>';
+    if (b === 'failed')   return '<span class="badge" style="background:var(--red-bg);color:var(--red)"><i class="ic-dot" style="color:var(--red)"></i> Failed</span>';
     if (b === 'ready')    return '<span class="badge badge-green">SQL Ready</span>';
-    return '<span class="badge" style="background:var(--bg3);color:var(--text3)">⚪ Pending</span>';
+    return '<span class="badge" style="background:var(--bg3);color:var(--text3)"><i class="ic-dot" style="color:var(--text3)"></i> Pending</span>';
   }
 
   function lastRunText(j) {
@@ -3886,7 +3886,7 @@ function jobsTableHTML(jobs) {
       // Combined chip — small, accent colour, sits next to the type badge.
       // Renders as "v3 · 24/05/26, 14:32" when both are present.
       const versionChip = (v || lmStr)
-        ? `<span style="font-size:9px;padding:1px 6px;margin-left:4px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono);font-weight:500" title="Auto-versioned on each meaningful change. Click 🕐 to see full history.">${v}${v&&lmStr?' · ':''}${lmStr}</span>`
+        ? `<span style="font-size:9px;padding:1px 6px;margin-left:4px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono);font-weight:500" title="Auto-versioned on each meaningful change. Click to see full history.">${v}${v&&lmStr?' · ':''}${lmStr}</span>`
         : '';
       // Conditional action buttons. Soft-deleted rows show Restore + Hard
       // Delete only — everything else is hidden because edit/generate
@@ -3894,14 +3894,14 @@ function jobsTableHTML(jobs) {
       const isDel = !!j._deleted;
       const actions = isDel ? `
           <button class="btn" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.25)" onclick="restoreJob('${j.id}')" title="Restore from Trash">↩ Restore</button>
-          <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="hardDeleteJob('${j.id}')" title="Permanent delete">🗑 Delete forever</button>
+          <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="hardDeleteJob('${j.id}')" title="Permanent delete"><i class="ic ic-trash"></i> Delete forever</button>
         ` : `
-          <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(107,78,142,0.25)" title="Edit">✏</button>
-          <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history">🕐</button>
-          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(23,130,124,0.25)" title="Open SQL in editor">🖊</button>` : ''}
+          <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(107,78,142,0.25)" title="Edit"><i class="ic ic-edit"></i> </button>
+          <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history"><i class="ic ic-clock"></i> </button>
+          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(23,130,124,0.25)" title="Open SQL in editor"><i class="ic ic-edit"></i> </button>` : ''}
           <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
-          <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename">✎</button>
-          <button class="btn btn-ghost" onclick="startEditSource('${j.id}')" title="Edit source table">⛁</button>
+          <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename"><i class="ic ic-edit"></i> </button>
+          <button class="btn btn-ghost" onclick="startEditSource('${j.id}')" title="Edit source table"><i class="ic ic-database"></i> </button>
           <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Move to Trash">✕</button>
         `;
       const rowStyle = isDel ? 'opacity:0.6;background:rgba(240,70,70,0.04)' : '';
@@ -4195,7 +4195,7 @@ function toggleShowDeleted(){
   renderAllJobs();
   // Update the dropdown's label so the user can see the active state.
   const btn = document.getElementById('show-deleted-btn');
-  if (btn) btn.textContent = _showDeletedJobs ? '↩ Hide deleted' : '🗑 Show deleted';
+  if (btn) btn.textContent = _showDeletedJobs ? '↩ Hide deleted' : 'Show deleted';
 }
 
 // ── safeMutateJob / safeRemoveJob / safeUpsertJob ──────────────────────────
@@ -4386,7 +4386,7 @@ function renderDashboard() {
 
 // ── Cutover Confidence ───────────────────────────────────────────────────────
 // One honest number for the programme director: mapping confidence, the
-// latest Preflight forecast (Execute page → 🛫 Preflight) and delivery
+// latest Preflight forecast (Execute page → Preflight) and delivery
 // state, rolled up by cygenix-preflight.js. Components without data are
 // excluded and named, never faked; no data at all shows as no data.
 function renderCutoverConfidence() {
@@ -4407,7 +4407,7 @@ function renderCutoverConfidence() {
       + '<span>' + escHtml(p.label) + ' <span style="color:var(--text3)">· ' + escHtml(p.note) + '</span></span>'
       + '<b style="font-family:var(--mono)">' + (p.hasData ? p.score : '—') + '</b></div>').join('')
       + '<div style="font-size:11px;color:var(--text3);padding-top:6px">Weighted over components with data. '
-      + 'Run 🛫 Preflight on the Execute page to feed the risk component.</div>';
+      + 'Run <i class="ic ic-takeoff"></i> Preflight on the Execute page to feed the risk component.</div>';
   }
 }
 function toggleConfidenceDetail() {
@@ -4489,7 +4489,7 @@ function renderDashboardSchedules(schedules){
 
   const rows = sorted.map(s => {
     const trigger = s.chainAfter
-      ? '<span class="badge badge-purple" title="Fires after its parent succeeds">⛓ Chained</span>'
+      ? '<span class="badge badge-purple" title="Fires after its parent succeeds"><i class="ic ic-chain"></i> Chained</span>'
       : '<span class="badge badge-blue" style="font-family:var(--mono)">' + escapeHtml(s.humanReadable || s.cron || '—') + '</span>';
     // A paused schedule may still carry a stale nextRunAt from when it was
     // enabled. Showing it would state a run that is not going to happen.
@@ -5460,7 +5460,7 @@ function renderProjectStatus(){
         </div>
         <div style="display:flex;gap:0.4rem;align-items:center">
           <button id="ps-ai-btn" class="btn btn-ghost btn-sm" onclick="generateProjectAiSummary()" style="font-size:11px;padding:0.35rem 0.7rem">
-            ${cached ? '↻ Regenerate' : '✨ Generate summary'}
+            ${cached ? '↻ Regenerate' : 'Generate summary'}
           </button>
         </div>
       </div>
@@ -5802,7 +5802,7 @@ ${JSON.stringify(snapshot, null, 2)}`;
   } catch(err){
     bodyEl.textContent = `Could not generate summary: ${err.message}`;
     btn.disabled = false;
-    btn.textContent = originalLabel || '✨ Generate summary';
+    btn.textContent = originalLabel || 'Generate summary';
   }
 }
 
@@ -5889,7 +5889,7 @@ function codePanel(job, type) {
       <div style="font-size:14px;font-weight:600">${job.name}</div>
       <div style="display:flex;gap:0.5rem;align-items:center">
         <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${job.totalRows?.toLocaleString()||'?'} rows · ${Math.ceil((content||'').length/1024)}KB</span>
-        <button class="btn ${btnClass} btn-sm" onclick="downloadJobSQL('${job.id}','${type}')">⬇ Download</button>
+        <button class="btn ${btnClass} btn-sm" onclick="downloadJobSQL('${job.id}','${type}')"><i class="ic ic-download"></i> Download</button>
       </div>
     </div>
     <div style="position:relative">
@@ -6664,7 +6664,7 @@ async function renderReportsList() {
       + '</div>'
       + '<div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">'
       +   errBadge
-      +   '<button class="btn btn-sm" style="background:transparent;color:var(--text2);border:0.5px solid var(--border2);font-size:12px;padding:0.45rem 0.9rem" onclick="openReportSettings(\'' + r.id + '\')" title="Reconciliation settings for this report\'s jobs">⚙ Settings</button>'
+      +   '<button class="btn btn-sm" style="background:transparent;color:var(--text2);border:0.5px solid var(--border2);font-size:12px;padding:0.45rem 0.9rem" onclick="openReportSettings(\'' + r.id + '\')" title="Reconciliation settings for this report\'s jobs"><i class="ic ic-cog"></i> Settings</button>'
       +   '<button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25);font-size:12px;padding:0.45rem 1.1rem" onclick="openSavedReport(\'' + r.id + '\')">View</button>'
       +   '<button class="btn btn-sm" style="background:transparent;color:var(--red);border:0.5px solid rgba(239,68,68,0.25);font-size:12px;padding:0.45rem 0.9rem" onclick="deleteSavedReport(\'' + r.id + '\', \'' + name.replace(/'/g,"\\'") + '\')" title="Delete this report">✕</button>'
       + '</div>'
@@ -7710,14 +7710,14 @@ function updateInvCount() {
 
 // ── Type config ───────────────────────────────────────────────────────────────
 const DOC_TYPES = {
-  artifact:   { label: 'Project Artifact',  icon: '✉️', cls: 'doc-type-artifact'   },
-  wasis:      { label: 'Was/Is Mapping',   icon: '🔄', cls: 'doc-type-wasis'      },
-  dictionary: { label: 'Data Dictionary',  icon: '📖', cls: 'doc-type-dictionary' },
-  schema:     { label: 'Schema Mapping',   icon: '🗂️', cls: 'doc-type-schema'     },
-  rules:      { label: 'Business Rules',   icon: '⚙️', cls: 'doc-type-rules'      },
-  signoff:    { label: 'Client Sign-off',  icon: '✅', cls: 'doc-type-signoff'    },
-  notes:      { label: 'Notes',            icon: '📝', cls: 'doc-type-notes'      },
-  other:      { label: 'Other',            icon: '📄', cls: 'doc-type-other'      },
+  artifact:   { label: 'Project Artifact',  icon: '<i class="ic ic-mail"></i>', cls: 'doc-type-artifact'   },
+  wasis:      { label: 'Was/Is Mapping',   icon: '<i class="ic ic-sync"></i>', cls: 'doc-type-wasis'      },
+  dictionary: { label: 'Data Dictionary',  icon: '<i class="ic ic-book"></i>', cls: 'doc-type-dictionary' },
+  schema:     { label: 'Schema Mapping',   icon: '<i class="ic ic-archive"></i>', cls: 'doc-type-schema'     },
+  rules:      { label: 'Business Rules',   icon: '<i class="ic ic-cog"></i>', cls: 'doc-type-rules'      },
+  signoff:    { label: 'Client Sign-off',  icon: '<i class="ic ic-check-circle"></i>', cls: 'doc-type-signoff'    },
+  notes:      { label: 'Notes',            icon: '<i class="ic ic-edit"></i>', cls: 'doc-type-notes'      },
+  other:      { label: 'Other',            icon: '<i class="ic ic-doc"></i>', cls: 'doc-type-other'      },
 };
 
 // ── Upload flow ───────────────────────────────────────────────────────────────
@@ -7910,7 +7910,7 @@ function renderInventory() {
     const docs = buckets.get(pid);
     const proj = pid ? projectById.get(pid) : null;
     const title = proj ? escHtml(proj.name || proj.id) : 'Unassigned';
-    const icon  = proj ? '📁' : '📂';
+    const icon  = proj ? '' : '';
     const meta  = docs.length + ' doc' + (docs.length === 1 ? '' : 's');
     const activeBadge = pid && pid === activeProjectId
       ? '<span class="badge badge-blue" style="font-size:10px;margin-left:8px">Active</span>'
@@ -7954,9 +7954,9 @@ function invRenderDocCard(doc, projectById) {
     <div class="inv-doc-name" title="${escHtml(doc.name)}">${escHtml(doc.name)}</div>
     <div class="inv-doc-meta">${doc.ext.toUpperCase()} · ${size} · ${date}</div>
     <div class="inv-doc-actions">
-      <button class="btn btn-ghost btn-sm" onclick="invPreview('${doc.id}')" style="font-size:11px;flex:1;justify-content:center">👁 Preview</button>
-      <button class="btn btn-ghost btn-sm" onclick="invMoveDoc('${doc.id}')" style="font-size:11px;flex:1;justify-content:center" title="Move to a project folder">📁 Move</button>
-      <button class="btn btn-ghost btn-sm" onclick="invDownloadDoc('${doc.id}')" style="font-size:11px;flex:1;justify-content:center">⬇</button>
+      <button class="btn btn-ghost btn-sm" onclick="invPreview('${doc.id}')" style="font-size:11px;flex:1;justify-content:center"><i class="ic ic-eye"></i> Preview</button>
+      <button class="btn btn-ghost btn-sm" onclick="invMoveDoc('${doc.id}')" style="font-size:11px;flex:1;justify-content:center" title="Move to a project folder"><i class="ic ic-folder"></i> Move</button>
+      <button class="btn btn-ghost btn-sm" onclick="invDownloadDoc('${doc.id}')" style="font-size:11px;flex:1;justify-content:center"><i class="ic ic-download"></i> </button>
     </div>
   </div>`;
 }
@@ -8085,7 +8085,7 @@ function invPreview(id) {
       <div style="font-size:48px;margin-bottom:1rem">${cfg.icon}</div>
       <div style="font-size:14px;color:var(--text2);margin-bottom:0.5rem">${escHtml(doc.name)}</div>
       <div style="font-size:12px;margin-bottom:1.5rem">${doc.ext.toUpperCase()} files cannot be previewed directly.</div>
-      <button class="btn btn-primary" onclick="invDownloadDoc('${doc.id}')">⬇ Download to view</button>
+      <button class="btn btn-primary" onclick="invDownloadDoc('${doc.id}')"><i class="ic ic-download"></i> Download to view</button>
     </div>`;
   }
 
@@ -8114,8 +8114,8 @@ function renderWasIs(content, delim) {
   if (isWasIs && headers.length === 2) {
     return `<table class="wasis-table">
       <thead><tr>
-        <th style="color:var(--red)">⬅ Was (${escHtml(headers[0])})</th>
-        <th style="color:var(--green)">➡ Is (${escHtml(headers[1])})</th>
+        <th style="color:var(--red)">← Was (${escHtml(headers[0])})</th>
+        <th style="color:var(--green)">→ Is (${escHtml(headers[1])})</th>
       </tr></thead>
       <tbody>${rows.map(r => `<tr>
         <td class="wasis-was">${escHtml(r[0]||'')}</td>
@@ -8918,7 +8918,7 @@ async function presSaveConfig() {
 
   const prev = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ Saving…';
+  btn.textContent = 'Saving…';
   try {
     const cfg = presBuildConfig();
     const r = await cygenixFetch('/.netlify/functions/reports', {
@@ -9157,7 +9157,7 @@ async function refreshCreditGauge() {
   if (!wrap) return;
 
   if (!key) {
-    wrap.innerHTML = '<div style="font-size:12px;color:var(--amber);padding:0.5rem 0">⚠ Enter your Anthropic API key above first</div>';
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--amber);padding:0.5rem 0"><i class="ic ic-warning"></i> Enter your Anthropic API key above first</div>';
     return;
   }
 
@@ -9207,7 +9207,7 @@ async function refreshCreditGauge() {
         if (testRes.status === 400 && data.error?.message?.includes('credit')) {
           renderCreditGauge(wrap, null, 'empty');
         } else if (testRes.status === 401) {
-          wrap.innerHTML = '<div style="font-size:12px;color:var(--red);padding:0.5rem 0">🔴 Invalid API key — check your key in the topbar</div>';
+          wrap.innerHTML = '<div style="font-size:12px;color:var(--red);padding:0.5rem 0"><i class="ic-dot" style="color:var(--red)"></i> Invalid API key — check your key in the topbar</div>';
         } else {
           wrap.innerHTML = '<div style="font-size:12px;color:var(--red);padding:0.5rem 0">Error: ' + (data.error?.message || testRes.statusText) + '</div>';
         }
@@ -9236,7 +9236,7 @@ function renderCreditGauge(wrap, data, status) {
   const statusColour = isOk ? 'var(--green)'  : 'var(--red)';
   const statusBg     = isOk ? 'var(--green-bg)' : 'var(--red-bg)';
   const statusBorder = isOk ? 'rgba(34,201,122,0.3)' : 'rgba(240,70,70,0.25)';
-  const statusIcon   = isOk ? '⛽' : '🪫';
+  const statusIcon   = isOk ? '' : '';
   const statusText   = isOk ? 'Credits available — AI features are working' : 'Credits exhausted — please top up at console.anthropic.com';
 
   wrap.innerHTML = `
@@ -9272,15 +9272,15 @@ function renderCreditGauge(wrap, data, status) {
           <div style="position:absolute;top:0;bottom:0;left:${isOk ? '68%' : '3%'};width:3px;background:white;border-radius:2px;transition:left 0.5s;box-shadow:0 0 4px rgba(0,0,0,0.5)"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:4px">
-          <span>🔴 Top up needed</span>
-          <span>${isOk ? '🟢 Good to go' : '⚠ Please top up'}</span>
+          <span><i class="ic-dot" style="color:var(--red)"></i> Top up needed</span>
+          <span>${isOk ? '<i class="ic-dot" style="color:var(--green)"></i> Good to go' : '<i class="ic ic-warning"></i> Please top up'}</span>
         </div>
       </div>
 
       ${isOk ? '' : `
       <a href="https://console.anthropic.com/settings/billing" target="_blank"
         style="display:inline-flex;align-items:center;gap:0.4rem;background:var(--accent);color:white;border:none;border-radius:var(--r);padding:6px 14px;font-size:12px;cursor:pointer;text-decoration:none;font-family:var(--serif);width:fit-content">
-        💳 Top up at console.anthropic.com →
+        Top up at console.anthropic.com →
       </a>`}
 
       <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">
@@ -9544,12 +9544,12 @@ async function testProjConn(which) {
       await new Promise(r => setTimeout(r, 2500));
       data = await attempt();
     }
-    resultEl.textContent='🟢 Connected · '+data.database+' · '+(data.user||'').split('@')[0];
+    resultEl.textContent='Connected · '+data.database+' · '+(data.user||'').split('@')[0];
     resultEl.style.color='var(--green)';
     if (dotEl) dotEl.style.background='var(--green)';
     saveProjectConnections();
   } catch(e) {
-    resultEl.textContent='🔴 '+e.message;
+    resultEl.textContent= e.message;
     resultEl.style.color='var(--red)';
     if (dotEl) dotEl.style.background='var(--red)';
   }
@@ -10334,7 +10334,7 @@ function sconnRender(side){
       <span class="sconn-dialect">${dialect}</span>
       <span onclick="sconnLoad('${entry.id}')">${nameEsc}</span>
       <span class="sconn-actions">
-        <button class="sconn-action-btn" onclick="sconnRename('${entry.id}')" title="Rename">✎</button>
+        <button class="sconn-action-btn" onclick="sconnRename('${entry.id}')" title="Rename"><i class="ic ic-edit"></i> </button>
         <button class="sconn-action-btn danger" onclick="sconnDelete('${entry.id}')" title="Delete">✕</button>
       </span>
     </span>`;
@@ -10546,8 +10546,8 @@ function lsRenderDrafts(){
       </div>
       <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="lsRunSetup('${d.id}')" title="Execute sp_addlinkedserver on target">▶ Run setup</button>
-        <button class="btn btn-ghost btn-sm" onclick="lsPreviewSql('${d.id}')">👁 Preview SQL</button>
-        <button class="btn btn-ghost btn-sm" onclick="lsEditDraft('${d.id}')">✎ Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="lsPreviewSql('${d.id}')"><i class="ic ic-eye"></i> Preview SQL</button>
+        <button class="btn btn-ghost btn-sm" onclick="lsEditDraft('${d.id}')"><i class="ic ic-edit"></i> Edit</button>
         <button class="btn btn-ghost btn-sm" onclick="lsDeleteDraft('${d.id}')" style="color:var(--red)">✕ Delete draft</button>
       </div>
       <div id="ls-draft-result-${d.id}" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;display:none;padding:0.4rem 0.6rem;border-radius:var(--r)"></div>
@@ -10744,7 +10744,7 @@ async function lsRunSetup(id){
 
   const target = lsDescribeTarget();
   if (target.kind === 'none'){
-    lsShowResult(id, '🔴 No target database connection configured. Set it up in the Database connections tab first.', 'err');
+    lsShowResult(id, 'No target database connection configured. Set it up in the Database connections tab first.', 'err');
     return;
   }
   if (!cpPageGuardWrite('Linked server setup')) return;
@@ -10758,7 +10758,7 @@ async function lsRunSetup(id){
 
   const tgtConn = impGetConn('tgt');
   if (!tgtConn){
-    lsShowResult(id, '🔴 No target database connection configured.', 'err');
+    lsShowResult(id, 'No target database connection configured.', 'err');
     return;
   }
 
@@ -10800,7 +10800,7 @@ function lsShowSetupError(id, rawMsg, draft){
 
   if (isPerm){
     el.innerHTML = `
-      <div style="color:var(--red);font-weight:500;margin-bottom:6px">🔴 Permission denied</div>
+      <div style="color:var(--red);font-weight:500;margin-bottom:6px"><i class="ic-dot" style="color:var(--red)"></i> Permission denied</div>
       <div style="font-size:11.5px;color:var(--text2);line-height:1.5;margin-bottom:8px">
         The target SQL Server rejected the request: <em>${escHtml(rawMsg)}</em>
       </div>
@@ -10819,7 +10819,7 @@ function lsShowSetupError(id, rawMsg, draft){
       </div>`;
   } else {
     el.innerHTML = `
-      <div style="color:var(--red);font-weight:500;margin-bottom:6px">🔴 Setup failed</div>
+      <div style="color:var(--red);font-weight:500;margin-bottom:6px"><i class="ic-dot" style="color:var(--red)"></i> Setup failed</div>
       <div style="font-size:11.5px;color:var(--text2);line-height:1.5;font-family:var(--mono);word-break:break-word">${escHtml(rawMsg)}</div>`;
   }
 }
@@ -10846,7 +10846,7 @@ async function lsRefreshServerList(){
 
   const tgtConn = impGetConn('tgt');
   if (!tgtConn){
-    container.innerHTML = '<div style="font-size:11px;color:var(--amber);padding:0.5rem 0">⚠ No target database connection configured. Set it up in the Database connections tab first.</div>';
+    container.innerHTML = '<div style="font-size:11px;color:var(--amber);padding:0.5rem 0"><i class="ic ic-warning"></i> No target database connection configured. Set it up in the Database connections tab first.</div>';
     if (counter) counter.textContent = '–';
     return;
   }
@@ -10884,7 +10884,7 @@ async function lsRefreshServerList(){
       </div>`;
     }).join('');
   } catch (e) {
-    container.innerHTML = '<div style="font-size:11px;color:var(--red);padding:0.5rem 0">🔴 Could not list linked servers: ' + escHtml(e.message || String(e)) + '</div>';
+    container.innerHTML = '<div style="font-size:11px;color:var(--red);padding:0.5rem 0"><i class="ic-dot" style="color:var(--red)"></i> Could not list linked servers: ' + escHtml(e.message || String(e)) + '</div>';
     if (counter) counter.textContent = '–';
   }
 }
@@ -11048,7 +11048,7 @@ async function rstProbe(force){
   const R = CygenixRestore;
   const btn = $('rst-probe-btn');
   if (rstState.caps && !force) return;
-  if (btn){ btn.disabled = true; btn.textContent = '🔍 Probing…'; }
+  if (btn){ btn.disabled = true; btn.textContent = 'Probing…'; }
   try {
     const r = await rstDbCall({ action: 'execute', sql: R.rdProbeSql });
     const row = (r.recordset && r.recordset[0]) || {};
@@ -11063,7 +11063,7 @@ async function rstProbe(force){
     $('rst-caps').textContent = e.message;
     rstRenderCaps();
   }
-  if (btn){ btn.disabled = false; btn.textContent = '🔍 Detect capabilities'; }
+  if (btn){ btn.disabled = false; btn.textContent = 'Detect capabilities'; }
 }
 
 // Disable — never hide — what the target cannot do, with the reason.
@@ -11133,7 +11133,7 @@ async function rstInspect(){
     rstState.files = R.rdParseFileList(f.recordset || []);
     let verified = '';
     try { await rstDbCall({ action: 'execute', sql: sqls.verifySql }); verified = ' · checksum verified ✓'; }
-    catch (e) { verified = ' · ⚠ VERIFYONLY failed: ' + (R.rdTranslateError(e.message).friendly || e.message); }
+    catch (e) { verified = ' · VERIFYONLY failed: ' + (R.rdTranslateError(e.message).friendly || e.message); }
     status.textContent = rstState.header.length + ' backup set(s), ' + rstState.files.length + ' file(s)' + verified;
     rstRenderContents();
     // Suggest the restored name BEFORE building the moves, so the file
@@ -11145,7 +11145,7 @@ async function rstInspect(){
     // Version downgrade — surfaced immediately, not at run time.
     const tgtMajor = rstState.probe && rstState.probe.major_version;
     const v = R.rdVersionBlock(rstState.header[0] && rstState.header[0].softwareVersionMajor, tgtMajor);
-    if (v.blocked) status.innerHTML = '<span style="color:var(--red)">⛔ ' + escHtml(v.message) + '</span>';
+    if (v.blocked) status.innerHTML = '<span style="color:var(--red)"><i class="ic ic-blocked"></i> ' + escHtml(v.message) + '</span>';
   } catch (e) {
     const t = R.rdTranslateError(e.message);
     status.innerHTML = '<span style="color:var(--red)">' + escHtml(t.friendly || e.message) + '</span>';
@@ -11218,7 +11218,7 @@ function rstValidate(){
   const box = $('rst-validation');
   box.innerHTML =
     v.errors.map(e => '<div style="font-size:12px;color:var(--red);margin-bottom:2px">✕ ' + escHtml(e) + '</div>').join('')
-    + v.warnings.map(w => '<div style="font-size:12px;color:var(--amber);margin-bottom:2px">⚠ ' + escHtml(w) + '</div>').join('')
+    + v.warnings.map(w => '<div style="font-size:12px;color:var(--amber);margin-bottom:2px"><i class="ic ic-warning"></i> ' + escHtml(w) + '</div>').join('')
     + (v.ok ? '<div style="font-size:12px;color:var(--green)">✓ Plan is valid for this target.</div>' : '');
   if (v.ok){
     $('rst-sql').textContent = R.rdBuildRestoreSql(plan);
@@ -11739,22 +11739,22 @@ async function blobSourceCommitRename(blobNameEncoded){
 
   if (!newName || newName === oldName){ blobSourceCancelRename(); return; }
   if (newName.includes('..') || newName.includes('\\') || newName.startsWith('/') || newName.endsWith('/')){
-    say('🔴 That name is not valid: no "..", no backslashes, no leading or trailing slash.', 'var(--red)');
+    say('That name is not valid: no "..", no backslashes, no leading or trailing slash.', 'var(--red)');
     return;
   }
   // The listing can be stale, which is why the proxy also sends a
   // precondition — but catching it here saves a round trip and says so
   // without the user losing what they typed.
   if ((BlobSourceState.activeBlobs || []).some(b => b.name === newName)){
-    say('🔴 "' + newName + '" already exists in this container. Pick a different name.', 'var(--red)');
+    say('"' + newName + '" already exists in this container. Pick a different name.', 'var(--red)');
     return;
   }
 
-  say('⏳ Renaming — Azure copies the blob, then removes the original…');
+  say('Renaming — Azure copies the blob, then removes the original…');
   const r = await blobSourceProxyJson('blob-rename', { blobName: oldName, newName });
 
   if (!r.ok){
-    say('🔴 Rename failed: ' + r.error + ' The original is untouched.', 'var(--red)');
+    say('Rename failed: ' + r.error + ' The original is untouched.', 'var(--red)');
     return;
   }
   BlobSourceState.renaming = '';
@@ -11762,7 +11762,7 @@ async function blobSourceCommitRename(blobNameEncoded){
   // A partial rename — copied but the original still there — is reported as
   // the amber half-success it is, not as done.
   if (r.renamed) say('✓ Renamed to ' + newName + '.', 'var(--green)');
-  else say('⚠ ' + (r.message || 'The rename did not finish.'), 'var(--amber)');
+  else say('' + (r.message || 'The rename did not finish.'), 'var(--amber)');
 }
 
 // ── Delete ─────────────────────────────────────────────────────────────────
@@ -11787,11 +11787,11 @@ async function blobSourceDeleteFile(blobNameEncoded){
     + 'the file for its retention window; if not, it is gone.')) return;
 
   const resultEl = document.getElementById('blob-browser-result');
-  if (resultEl){ resultEl.textContent = '⏳ Deleting ' + blobName + '…'; resultEl.style.color = 'var(--text3)'; }
+  if (resultEl){ resultEl.textContent = 'Deleting ' + blobName + '…'; resultEl.style.color = 'var(--text3)'; }
 
   const r = await blobSourceProxyJson('blob-delete', { blobName });
   if (!r.ok){
-    if (resultEl){ resultEl.textContent = '🔴 Delete failed: ' + r.error; resultEl.style.color = 'var(--red)'; }
+    if (resultEl){ resultEl.textContent = 'Delete failed: ' + r.error; resultEl.style.color = 'var(--red)'; }
     return;
   }
   await blobSourceReloadFiles();
@@ -11878,10 +11878,10 @@ async function blobSourceTest(){
     return;
   }
 
-  blobSourceSetAddResult('⏳ Testing — calling list-container on ' + parsed.accountName + '/' + parsed.containerName + '…');
+  blobSourceSetAddResult('Testing — calling list-container on ' + parsed.accountName + '/' + parsed.containerName + '…');
   const result = await blobSourceListContainer(parsed);
   if (!result.ok){
-    blobSourceSetAddResult('🔴 ' + result.error, 'err');
+    blobSourceSetAddResult('' + result.error, 'err');
     return;
   }
 
@@ -11898,7 +11898,7 @@ async function blobSourceTest(){
   const next = existing.concat([entry]);
   const written = blobSourceWriteAll(next);
   if (!written){
-    blobSourceSetAddResult('🔴 Connected, but failed to save locally (storage quota or signed out?).', 'err');
+    blobSourceSetAddResult('Connected, but failed to save locally (storage quota or signed out?).', 'err');
     return;
   }
 
@@ -11964,7 +11964,7 @@ function blobSourceRenderSaved(){
       +       (permHtml ? ' &nbsp;·&nbsp; ' + permHtml : '')
       +     '</div>'
       +   '</div>'
-      +   '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)" onclick="blobSourceOpenBrowser(\'' + e.id + '\')">📂 Browse files</button>'
+      +   '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)" onclick="blobSourceOpenBrowser(\'' + e.id + '\')"><i class="ic ic-folder-open"></i> Browse files</button>'
       +   '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="blobSourceDelete(\'' + e.id + '\')" title="Remove this saved source">✕</button>'
       + '</div>';
   }).join('');
@@ -12034,7 +12034,7 @@ async function blobSourceOpenBrowser(id){
   if (wrap) wrap.style.display = 'block';
   if (nameEl) nameEl.textContent = entry.name;
   if (metaEl) metaEl.textContent = parsed.accountName + ' / ' + parsed.containerName;
-  if (resultEl){ resultEl.textContent = '⏳ Listing files…'; resultEl.style.color = 'var(--text3)'; }
+  if (resultEl){ resultEl.textContent = 'Listing files…'; resultEl.style.color = 'var(--text3)'; }
   if (tbody) tbody.innerHTML = '';
 
   // Upload panel: available as soon as the container is open, so an empty
@@ -12055,13 +12055,13 @@ async function blobSourceReloadFiles(){
   const resultEl = document.getElementById('blob-browser-result');
   const tbody = document.querySelector('#blob-files-table tbody');
   const filterBar = document.getElementById('blob-filter-bar');
-  if (resultEl){ resultEl.textContent = '⏳ Listing files…'; resultEl.style.color = 'var(--text3)'; }
+  if (resultEl){ resultEl.textContent = 'Listing files…'; resultEl.style.color = 'var(--text3)'; }
   if (tbody) tbody.innerHTML = '';
   if (filterBar) filterBar.style.display = 'none';
 
   const r = await blobSourceListContainer(BlobSourceState.activeParsed);
   if (!r.ok){
-    if (resultEl){ resultEl.textContent = '🔴 ' + r.error; resultEl.style.color = 'var(--red)'; }
+    if (resultEl){ resultEl.textContent = r.error; resultEl.style.color = 'var(--red)'; }
     return;
   }
   BlobSourceState.activeBlobs = r.blobs;
@@ -12171,11 +12171,11 @@ function blobSourceRenderFiles(){
     // back to the same character on the far side.
     const enc = encodeURIComponent(b.name).replace(/'/g, '%27');
     const importBtn = (usable && !tooBig)
-      ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)" onclick="blobSourceImportFile(\'' + enc + '\')">⬆ Import</button>'
+      ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)" onclick="blobSourceImportFile(\'' + enc + '\')"><i class="ic ic-upload"></i> Import</button>'
       : '';
     const downloadBtn = !tooBig
-      ? '<button class="btn btn-ghost btn-sm" onclick="blobSourceDownloadFile(\'' + enc + '\')" title="Download to your machine">⬇ Download</button>'
-      : '<button class="btn btn-sm" style="background:rgba(245,158,11,0.12);color:var(--amber);border:0.5px solid rgba(245,158,11,0.35)" onclick="blobSourceCopyAzcopy(\'' + enc + '\')" title="File is over 100MB. Click to copy an azcopy command to your clipboard — paste into PowerShell or Terminal to download directly from Azure.">📋 Copy azcopy</button>';
+      ? '<button class="btn btn-ghost btn-sm" onclick="blobSourceDownloadFile(\'' + enc + '\')" title="Download to your machine"><i class="ic ic-download"></i> Download</button>'
+      : '<button class="btn btn-sm" style="background:rgba(245,158,11,0.12);color:var(--amber);border:0.5px solid rgba(245,158,11,0.35)" onclick="blobSourceCopyAzcopy(\'' + enc + '\')" title="File is over 100MB. Click to copy an azcopy command to your clipboard — paste into PowerShell or Terminal to download directly from Azure."><i class="ic ic-clipboard"></i> Copy azcopy</button>';
 
     // Straight into the Restore tab for the file types SQL Server restores
     // from. Not gated on the 100MB cap: nothing transfers through us here —
@@ -12208,13 +12208,13 @@ function blobSourceRenderFiles(){
       + ' onclick="blobSourceStartRename(\'' + enc + '\')"'
       + ' title="' + (canRen
           ? 'Rename this blob. Azure has no rename — Cygenix copies it to the new name, then deletes the original.'
-          : 'This SAS cannot rename: a rename needs Create/Write and Delete (sp=…cwd…).') + '">✎ Rename</button>'
+          : 'This SAS cannot rename: a rename needs Create/Write and Delete (sp=…cwd…).') + '"><i class="ic ic-edit"></i> Rename</button>'
       + '<button class="btn btn-ghost btn-sm" style="color:var(--red)"' + (canDel ? '' : ' disabled')
       + ' onclick="blobSourceDeleteFile(\'' + enc + '\')"'
       + ' aria-label="Delete this file"'
       + ' title="' + (canDel
           ? 'Delete this blob from the container. Cygenix cannot undo it.'
-          : 'This SAS cannot delete: it needs the Delete permission (sp=…d…).') + '">🗑</button>';
+          : 'This SAS cannot delete: it needs the Delete permission (sp=…d…).') + '"><i class="ic ic-trash"></i> </button>';
 
     const actionCell = '<div style="display:inline-flex;gap:0.4rem;align-items:center;justify-content:flex-end;flex-wrap:wrap">'
       + importBtn + restoreBtn + downloadBtn + copyBtns + manageBtns + '</div>';
@@ -12290,12 +12290,12 @@ async function blobSourceImportFile(blobNameEncoded){
   }
   const blobName = decodeURIComponent(blobNameEncoded);
   const resultEl = document.getElementById('blob-browser-result');
-  if (resultEl){ resultEl.textContent = '⏳ Downloading ' + blobName + ' via Cygenix proxy…'; resultEl.style.color = 'var(--text3)'; }
+  if (resultEl){ resultEl.textContent = 'Downloading ' + blobName + ' via Cygenix proxy…'; resultEl.style.color = 'var(--text3)'; }
 
   const userId = blobSourceCurrentUserId();
   if (!userId){
     if (resultEl){
-      resultEl.textContent = '🔴 You need to be signed in to download files.';
+      resultEl.textContent = 'You need to be signed in to download files.';
       resultEl.style.color = 'var(--red)';
     }
     return;
@@ -12319,7 +12319,7 @@ async function blobSourceImportFile(blobNameEncoded){
     });
   } catch (e){
     if (resultEl){
-      resultEl.textContent = '🔴 Could not reach Cygenix proxy. Check your internet connection. (' + (e && e.message || e) + ')';
+      resultEl.textContent = 'Could not reach Cygenix proxy. Check your internet connection. (' + (e && e.message || e) + ')';
       resultEl.style.color = 'var(--red)';
     }
     return;
@@ -12336,7 +12336,7 @@ async function blobSourceImportFile(blobNameEncoded){
       msg = 'File too large for proxy (max 100MB). ' + msg;
     }
     if (resultEl){
-      resultEl.textContent = '🔴 Download failed: ' + msg;
+      resultEl.textContent = 'Download failed: ' + msg;
       resultEl.style.color = 'var(--red)';
     }
     return;
@@ -12346,7 +12346,7 @@ async function blobSourceImportFile(blobNameEncoded){
   try { arrayBuf = await resp.arrayBuffer(); }
   catch (e){
     if (resultEl){
-      resultEl.textContent = '🔴 Failed to read download body: ' + (e && e.message || e);
+      resultEl.textContent = 'Failed to read download body: ' + (e && e.message || e);
       resultEl.style.color = 'var(--red)';
     }
     return;
@@ -12395,12 +12395,12 @@ async function blobSourceDownloadFile(blobNameEncoded){
   }
   const blobName = decodeURIComponent(blobNameEncoded);
   const resultEl = document.getElementById('blob-browser-result');
-  if (resultEl){ resultEl.textContent = '⏳ Downloading ' + blobName + ' via Cygenix proxy…'; resultEl.style.color = 'var(--text3)'; }
+  if (resultEl){ resultEl.textContent = 'Downloading ' + blobName + ' via Cygenix proxy…'; resultEl.style.color = 'var(--text3)'; }
 
   const userId = blobSourceCurrentUserId();
   if (!userId){
     if (resultEl){
-      resultEl.textContent = '🔴 You need to be signed in to download files.';
+      resultEl.textContent = 'You need to be signed in to download files.';
       resultEl.style.color = 'var(--red)';
     }
     return;
@@ -12422,7 +12422,7 @@ async function blobSourceDownloadFile(blobNameEncoded){
     });
   } catch (e){
     if (resultEl){
-      resultEl.textContent = '🔴 Could not reach Cygenix proxy. (' + (e && e.message || e) + ')';
+      resultEl.textContent = 'Could not reach Cygenix proxy. (' + (e && e.message || e) + ')';
       resultEl.style.color = 'var(--red)';
     }
     return;
@@ -12439,7 +12439,7 @@ async function blobSourceDownloadFile(blobNameEncoded){
       msg = 'File too large for proxy (max 100MB). ' + msg;
     }
     if (resultEl){
-      resultEl.textContent = '🔴 Download failed: ' + msg;
+      resultEl.textContent = 'Download failed: ' + msg;
       resultEl.style.color = 'var(--red)';
     }
     return;
@@ -12449,7 +12449,7 @@ async function blobSourceDownloadFile(blobNameEncoded){
   try { arrayBuf = await resp.arrayBuffer(); }
   catch (e){
     if (resultEl){
-      resultEl.textContent = '🔴 Failed to read download body: ' + (e && e.message || e);
+      resultEl.textContent = 'Failed to read download body: ' + (e && e.message || e);
       resultEl.style.color = 'var(--red)';
     }
     return;
@@ -12530,7 +12530,7 @@ async function blobSourceCopyAzcopy(blobNameEncoded){
     } else {
       // Clipboard refused — surface the command in a prompt so the user
       // can copy it manually.
-      resultEl.textContent = '⚠ Could not access clipboard. Command shown in popup — copy manually.';
+      resultEl.textContent = 'Could not access clipboard. Command shown in popup — copy manually.';
       resultEl.style.color = 'var(--amber)';
       try { window.prompt('Copy this azcopy command:', cmd); } catch {}
     }
@@ -12691,9 +12691,9 @@ function blobUploadRenderQueue(){
       : '';
 
     const icon = item.status === 'done' ? '✓'
-               : item.status === 'error' ? '🔴'
-               : item.status === 'skipped' ? '⚠'
-               : item.status === 'uploading' ? '⏳' : '·';
+               : item.status === 'error' ? ''
+               : item.status === 'skipped' ? ''
+               : item.status === 'uploading' ? '' : '·';
 
     return ''
       + '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.45rem 0.6rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r)">'
@@ -12720,7 +12720,7 @@ function blobUploadRenderQueue(){
     else if (overwrite && perms && !perms.canOverwrite) reason = 'This SAS cannot replace existing files (needs Write).';
     go.disabled = !!reason;
     go.title = reason || ('Upload ' + pending + ' file' + (pending === 1 ? '' : 's'));
-    go.textContent = pending > 1 ? ('⬆ Upload ' + pending + ' files') : '⬆ Upload';
+    go.textContent = pending > 1 ? ('Upload ' + pending + ' files') : 'Upload';
   }
 }
 
@@ -12790,10 +12790,10 @@ async function blobUploadStart(){
   if (!parsed){ alert('No blob source is open.'); return; }
 
   const pre = blobUploadPrefix();
-  if (!pre.ok){ blobUploadSetStatus('🔴 ' + pre.error, 'err'); return; }
+  if (!pre.ok){ blobUploadSetStatus('' + pre.error, 'err'); return; }
 
   const userId = blobSourceCurrentUserId();
-  if (!userId){ blobUploadSetStatus('🔴 You need to be signed in to upload.', 'err'); return; }
+  if (!userId){ blobUploadSetStatus('You need to be signed in to upload.', 'err'); return; }
 
   const overwrite = !!document.getElementById('blob-upload-overwrite')?.checked;
   const pending = BlobUploadState.queue.filter(i => i.status === 'queued' || i.status === 'error');
@@ -12830,7 +12830,7 @@ async function blobUploadStart(){
     item.status = 'uploading';
     item.pct = 0;
     item.error = '';
-    blobUploadSetStatus('⏳ Uploading ' + blobUploadTargetName(item) + ' (' + (done + failed + 1) + ' of ' + pending.length + ')…');
+    blobUploadSetStatus('Uploading ' + blobUploadTargetName(item) + ' (' + (done + failed + 1) + ' of ' + pending.length + ')…');
     blobUploadRenderQueue();
 
     const r = await blobUploadOne(item, sasUrl, userId, overwrite);
@@ -12849,7 +12849,7 @@ async function blobUploadStart(){
 
   if (done && !failed)      blobUploadSetStatus('✓ Uploaded ' + done + ' file' + (done === 1 ? '' : 's') + '.', 'ok');
   else if (done && failed)  blobUploadSetStatus('✓ ' + done + ' uploaded · ' + failed + ' not uploaded — see the list.', 'warn');
-  else                      blobUploadSetStatus('🔴 Nothing uploaded — see the list for why.', 'err');
+  else                      blobUploadSetStatus('Nothing uploaded — see the list for why.', 'err');
 
   // Refresh the listing so the new files appear (and so a later overwrite
   // check is made against reality rather than a pre-upload snapshot).
@@ -12976,7 +12976,7 @@ function impHandleFile(file){
   if (meta){
     meta.style.display = 'block';
     meta.style.color = '';
-    meta.innerHTML = `⏳ Parsing <strong>${escP(file.name)}</strong> (${(file.size/1024).toFixed(1)} KB)…`;
+    meta.innerHTML = `<i class="ic ic-hourglass"></i> Parsing <strong>${escP(file.name)}</strong> (${(file.size/1024).toFixed(1)} KB)…`;
   }
 
   if (isCSV){
@@ -13048,7 +13048,7 @@ function impParseCSVStreaming(file){
 
   const meta = document.getElementById('imp-file-meta');
   if (meta){
-    meta.innerHTML = `⏳ Streaming <strong>${escP(file.name)}</strong> (${(file.size/1024/1024).toFixed(1)} MB) — counting rows…`;
+    meta.innerHTML = `<i class="ic ic-hourglass"></i> Streaming <strong>${escP(file.name)}</strong> (${(file.size/1024/1024).toFixed(1)} MB) — counting rows…`;
   }
 
   // Throttled progress updates so we don't thrash the DOM on huge files.
@@ -13083,7 +13083,7 @@ function impParseCSVStreaming(file){
       const now = Date.now();
       if (now - lastProgressUpdate > 250 && meta){
         lastProgressUpdate = now;
-        meta.innerHTML = `⏳ Streaming <strong>${escP(file.name)}</strong> — ${totalRows.toLocaleString()} rows counted so far…`;
+        meta.innerHTML = `<i class="ic ic-hourglass"></i> Streaming <strong>${escP(file.name)}</strong> — ${totalRows.toLocaleString()} rows counted so far…`;
       }
     },
     complete: () => {
@@ -13162,7 +13162,7 @@ function impOpenSheetModal(fileName, wb, sheets){
       }
     } catch {}
     return `<div class="imp-exists-row" data-sheet-idx="${idx}">
-      <div style="font-size:18px">📊</div>
+      <div style="font-size:18px"><i class="ic ic-chart"></i> </div>
       <div>
         <strong>${escP(name)}</strong>
         <span>${rowHint || 'Click to import this sheet'}</span>
@@ -13379,7 +13379,7 @@ function impShowError(msg){
   if (meta){
     meta.style.display = 'block';
     meta.style.color = 'var(--red)';
-    meta.innerHTML = '🔴 ' + escP(msg);
+    meta.innerHTML = escP(msg);
   }
   console.warn('[data-import]', msg);
 }
@@ -13741,9 +13741,9 @@ async function impExecuteInMemory(tableName, mode){
 
     impRunResult(`✓ Imported ${totalRows.toLocaleString()} rows into ${tableName}.`, 'ok');
   } catch (e) {
-    impRunResult('🔴 Import failed: ' + (e.message || e), 'err');
+    impRunResult('Import failed: ' + (e.message || e), 'err');
   } finally {
-    if (btn){ btn.disabled = false; btn.textContent = '⬆ Import to database'; }
+    if (btn){ btn.disabled = false; btn.textContent = 'Import to database'; }
     impSetAbortVisible(false);
     impAbortRequested = false;
   }
@@ -13932,10 +13932,10 @@ async function impExecuteStreaming(tableName, mode){
     if (e && e.aborted){
       impRunResult('✕ Aborted by user.', 'info');
     } else {
-      impRunResult('🔴 Import failed: ' + (e.message || e), 'err');
+      impRunResult('Import failed: ' + (e.message || e), 'err');
     }
   } finally {
-    if (btn){ btn.disabled = false; btn.textContent = '⬆ Import to database'; }
+    if (btn){ btn.disabled = false; btn.textContent = 'Import to database'; }
     impSetAbortVisible(false);
     impAbortRequested = false;
   }
@@ -14217,11 +14217,11 @@ function impBatchRender(){
   tbody.innerHTML = impBatch.units.map(u => {
     let statusHtml = '';
     if (u.status === 'pending')    statusHtml = '<span style="color:var(--text3)">Waiting…</span>';
-    else if (u.status === 'parsing')   statusHtml = '<span style="color:var(--text2)">⏳ Parsing…</span>';
+    else if (u.status === 'parsing')   statusHtml = '<span style="color:var(--text2)"><i class="ic ic-hourglass"></i> Parsing…</span>';
     else if (u.status === 'parsed')    statusHtml = '<span style="color:var(--text2)">✓ Parsed · waiting to import</span>';
-    else if (u.status === 'importing') statusHtml = `<span style="color:var(--text2)">⏳ Importing ${(u.importedRows||0).toLocaleString()}/${(u.rowCount||0).toLocaleString()}…</span>`;
+    else if (u.status === 'importing') statusHtml = `<span style="color:var(--text2)"><i class="ic ic-hourglass"></i> Importing ${(u.importedRows||0).toLocaleString()}/${(u.rowCount||0).toLocaleString()}…</span>`;
     else if (u.status === 'done')      statusHtml = `<span style="color:var(--green)">✓ Done · ${(u.rowCount||0).toLocaleString()} rows</span>`;
-    else if (u.status === 'error')     statusHtml = `<span style="color:var(--red)" title="${escP(u.error||'')}">🔴 ${escP((u.error||'Failed').slice(0,80))}</span>`;
+    else if (u.status === 'error')     statusHtml = `<span style="color:var(--red)" title="${escP(u.error||'')}"><i class="ic-dot" style="color:var(--red)"></i> ${escP((u.error||'Failed').slice(0,80))}</span>`;
 
     // View icon — opens the SQL editor with a SELECT TOP 1000 against this
     // unit's table on the connection it was imported into. Only enabled when
@@ -14233,9 +14233,9 @@ function impBatchRender(){
       const tip = impBatch.running
         ? 'Open in SQL editor (new tab — import in progress)'
         : 'Open in SQL editor';
-      viewBtn = `<button class="btn btn-ghost btn-sm" title="${tip}" onclick="impBatchView('${escP(u.id)}')" style="padding:2px 6px;font-size:13px;line-height:1">👁</button>`;
+      viewBtn = `<button class="btn btn-ghost btn-sm" title="${tip}" onclick="impBatchView('${escP(u.id)}')" style="padding:2px 6px;font-size:13px;line-height:1"><i class="ic ic-eye"></i> </button>`;
     } else {
-      viewBtn = `<span style="color:var(--text3);font-size:13px;opacity:0.3;padding:2px 6px" title="${u.status === 'done' ? 'Imported before View support — re-import to enable' : 'Available once import completes'}">👁</span>`;
+      viewBtn = `<span style="color:var(--text3);font-size:13px;opacity:0.3;padding:2px 6px" title="${u.status === 'done' ? 'Imported before View support — re-import to enable' : 'Available once import completes'}"><i class="ic ic-eye"></i> </span>`;
     }
 
     return `<tr>
@@ -14640,7 +14640,7 @@ async function impBatchRun(){
   }
 
   impBatch.running = false;
-  if (btn){ btn.disabled = false; btn.textContent = '⬆ Import all files'; }
+  if (btn){ btn.disabled = false; btn.textContent = 'Import all files'; }
   impBatchSetAbortVisible(false);
   impBatchSaveState();  // final state — includes final statuses for all units
   const totalRowsImported = impBatch.units.filter(u=>u.status==='done').reduce((a,u)=>a+(u.rowCount||0),0);
@@ -15279,7 +15279,7 @@ function openIntegrationModal(id){
         <label for="in-enable-toggle">Enabled — receive Cygenix events</label>
       </div>
     `;
-    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="testIntegration('${id}')">🧪 Test webhook</button>`;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="testIntegration('${id}')"><i class="ic ic-flask"></i> Test webhook</button>`;
 
   } else if (id === 'smtp'){
     body = configFieldsHTML + `
@@ -15299,7 +15299,7 @@ function openIntegrationModal(id){
         <label for="in-enable-toggle">Enabled — email me when a migration run finishes</label>
       </div>
     `;
-    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="testIntegration('${id}')">🧪 Test &amp; send</button>`;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="testIntegration('${id}')"><i class="ic ic-flask"></i> Test &amp; send</button>`;
 
   } else if (id === 'json-export'){
     body = `
@@ -15310,7 +15310,7 @@ function openIntegrationModal(id){
         The bundle includes: project metadata · source/target connection strings · groups and steps · associated jobs (with mappings + SQL). It does NOT include: API keys · privacy audit log · other projects.
       </div>
     `;
-    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runIntegration('${id}')">⬇ Download bundle</button>`;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runIntegration('${id}')"><i class="ic ic-download"></i> Download bundle</button>`;
 
   } else if (id === 'json-import'){
     body = `
@@ -15336,7 +15336,7 @@ function openIntegrationModal(id){
         "Replace current project" overwrites the active project's groups, steps, connection strings, and jobs. There is no undo. Use "Create as new project" unless you're certain.
       </div>
     `;
-    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runImportIntegration()">📥 Import bundle</button>`;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runImportIntegration()"><i class="ic ic-download"></i> Import bundle</button>`;
 
   } else if (id === 'csv-jobs'){
     body = `
@@ -15344,7 +15344,7 @@ function openIntegrationModal(id){
         Exports every job in the library as a CSV — includes project name, job name, source, target, created date, and status. Useful for inventory review in Excel or Google Sheets.
       </div>
     `;
-    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runIntegration('${id}')">⬇ Download CSV</button>`;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runIntegration('${id}')"><i class="ic ic-download"></i> Download CSV</button>`;
   }
 
   const modalHTML = `
@@ -15363,7 +15363,7 @@ function openIntegrationModal(id){
           <div id="in-result" style="display:none"></div>
         </div>
         <div class="in-modal-foot">
-          <button class="btn btn-ghost btn-sm" onclick="saveIntegrationConfig('${id}')">💾 Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="saveIntegrationConfig('${id}')"><i class="ic ic-save"></i> Save</button>
           ${primaryBtn}
           <button class="btn btn-ghost btn-sm" onclick="closeIntegrationModal()">Close</button>
         </div>
@@ -15427,7 +15427,7 @@ function openContactSalesModal(connectorId){
         </div>
         <div class="in-modal-foot">
           <button class="btn btn-ghost btn-sm" onclick="closeIntegrationModal()">Close</button>
-          <a class="btn btn-primary btn-sm" href="${mailto}" style="text-decoration:none">📧 Email sales</a>
+          <a class="btn btn-primary btn-sm" href="${mailto}" style="text-decoration:none"><i class="ic ic-mail"></i> Email sales</a>
         </div>
       </div>
     </div>`;
@@ -15453,13 +15453,13 @@ function saveIntegrationConfig(id){
 async function testIntegration(id){
   // Save first so test uses the current form values
   saveIntegrationConfig(id);
-  showInResult('ok', '⏳ Testing…');
+  showInResult('ok', 'Testing…');
   const r = await window.CygenixIntegrations.test(id);
   showInResult(r.ok ? 'ok' : 'err', (r.ok ? '✓ ' : '✕ ') + r.message);
 }
 
 async function runIntegration(id){
-  showInResult('ok', '⏳ Running…');
+  showInResult('ok', 'Running…');
   const r = await window.CygenixIntegrations.run(id);
   showInResult(r.ok ? 'ok' : 'err', (r.ok ? '✓ ' : '✕ ') + r.message);
   if (r.ok && typeof showToast === 'function') showToast(r.message);
@@ -15469,7 +15469,7 @@ async function runImportIntegration(){
   const file = document.getElementById('in-import-file')?.files?.[0];
   if (!file){ showInResult('err', '✕ Pick a file first'); return; }
   const mode = (document.querySelector('input[name="in-import-mode"]:checked') || {value:'new'}).value;
-  showInResult('ok', '⏳ Reading…');
+  showInResult('ok', 'Reading…');
   try {
     const text = await file.text();
     const bundle = JSON.parse(text);
@@ -16182,9 +16182,9 @@ function switchSysTab(tab){
   if (subParams) subParams.style.display = onParams ? '' : 'none';
   if (subWasis)  subWasis.style.display  = onWasis  ? '' : 'none';
   if (title){
-    title.textContent = onParams ? '⚙ System parameters'
-                      : onWasis  ? '🔄 Was/Is value mapping'
-                      :            '📍 Where parameters are used';
+    title.textContent = onParams ? 'System parameters'
+                      : onWasis  ? 'Was/Is value mapping'
+                      :            'Where parameters are used';
   }
 
   // Lazy-init the Was/Is tab the first time it's opened
@@ -16380,7 +16380,7 @@ function wiRender(){
       <td><input class="sp-cell-input mono" value="${wiEsc(row.oldVal)}" oninput="wiUpdateField(${origIdx},'oldVal',this.value)" placeholder="old value"></td>
       <td><input class="sp-cell-input mono" value="${wiEsc(row.newVal)}" oninput="wiUpdateField(${origIdx},'newVal',this.value)" placeholder="new value"></td>
       <td><input class="sp-cell-input" value="${wiEsc(row.desc)}" oninput="wiUpdateField(${origIdx},'desc',this.value)" placeholder="optional note"></td>
-      <td style="text-align:right;white-space:nowrap"><button id="wi-fan-${origIdx}" class="sp-icon-btn" onclick="wiCopyToAllTables(${origIdx})" title="${wiEsc(fanTitle)}" ${fanAttrs}>🪄 <span style="font-size:10px;color:var(--text3);margin-left:2px">copy to</span></button> <button class="sp-icon-btn danger" onclick="wiRemoveRow(${origIdx})" title="Delete">✕</button></td>
+      <td style="text-align:right;white-space:nowrap"><button id="wi-fan-${origIdx}" class="sp-icon-btn" onclick="wiCopyToAllTables(${origIdx})" title="${wiEsc(fanTitle)}" ${fanAttrs}><i class="ic ic-wand"></i> <span style="font-size:10px;color:var(--text3);margin-left:2px">copy to</span></button> <button class="sp-icon-btn danger" onclick="wiRemoveRow(${origIdx})" title="Delete">✕</button></td>
     </tr>`;
   }).join('');
 }
@@ -17066,7 +17066,7 @@ function ta_renderUnscheduledPanel() {
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:0.7rem 0.9rem;border:0.5px solid var(--border);border-radius:var(--r);background:var(--bg2);margin-bottom:0.5rem">
       <div style="min-width:0;flex:1">
         <div style="display:flex;align-items:center;gap:0.5rem">
-          <span class="badge badge-amber" style="font-size:10px">⚙ needs schedule</span>
+          <span class="badge badge-amber" style="font-size:10px"><i class="ic ic-cog"></i> needs schedule</span>
           <strong style="color:var(--text)">${escapeHtml(j.name || '(unnamed)')}</strong>
         </div>
         ${meta ? '<div style="font-size:11px;color:var(--text3);margin-top:3px">' + escapeHtml(meta) + '</div>' : ''}
@@ -17133,7 +17133,7 @@ function ta_renderSchedules() {
   }
   const rows = TA.schedules.map(s => {
     const trigger = s.chainAfter
-      ? '<span class="badge badge-purple" title="Fires after parent succeeds">⛓ Chained</span>'
+      ? '<span class="badge badge-purple" title="Fires after parent succeeds"><i class="ic ic-chain"></i> Chained</span>'
       : '<span class="badge badge-blue" style="font-family:var(--mono)">' + escapeHtml(s.humanReadable || s.cron || '—') + '</span>';
     const next = s.nextRunAt
       ? '<span style="font-family:var(--mono);font-size:11px;color:var(--text2)">' + ta_fmtDateTime(s.nextRunAt) + '</span>'
@@ -17157,7 +17157,7 @@ function ta_renderSchedules() {
       <td>
         <div class="jobs-actions">
           <button class="btn btn-primary btn-sm" onclick="ta_runNow('${s.id}', this)" title="Trigger now">▶ Run</button>
-          <button class="btn btn-ghost btn-sm" onclick="ta_openScheduleModal('${s.id}')" title="Edit">✎</button>
+          <button class="btn btn-ghost btn-sm" onclick="ta_openScheduleModal('${s.id}')" title="Edit"><i class="ic ic-edit"></i> </button>
           <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="ta_deleteSchedule('${s.id}')" title="Delete">✕</button>
         </div>
       </td>
@@ -17495,7 +17495,7 @@ function renderNotifyServer(){
     </div>
     ${detail}
     <div style="margin-top:0.9rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
-      <button class="btn btn-sm" onclick="pushNotifySettings(true)" ${s.serverDelivery ? '' : 'disabled'}>⬆ Copy settings to my account</button>
+      <button class="btn btn-sm" onclick="pushNotifySettings(true)" ${s.serverDelivery ? '' : 'disabled'}><i class="ic ic-upload"></i> Copy settings to my account</button>
       <span id="nt-server-result" style="font-size:11.5px;font-family:var(--mono)"></span>
     </div>`;
 }
@@ -17540,7 +17540,7 @@ async function pushNotifySettings(showResult, forceOn){
   const on = (forceOn === undefined)
     ? !!(NT.server && NT.server.serverDelivery)
     : !!forceOn;
-  if (el){ el.textContent = '⏳ saving…'; el.style.color = 'var(--text3)'; }
+  if (el){ el.textContent = 'saving…'; el.style.color = 'var(--text3)'; }
   try {
     const r = await ta_sched('save-notify-settings', { settings: notifySettingsPayload(on) });
     NT.server = r.settings || null;
@@ -17691,7 +17691,7 @@ function renderNotifyConnectors(){
 
   const testBtn = anyConn
     ? `<div style="margin-top:0.9rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
-         <button class="btn btn-sm" onclick="sendTestNotification()">🧪 Send a test event</button>
+         <button class="btn btn-sm" onclick="sendTestNotification()"><i class="ic ic-flask"></i> Send a test event</button>
          <span style="font-size:11px;color:var(--text3)">Delivers a sample "completed" event to every enabled connector.</span>
          <span id="nt-test-result" style="font-size:11.5px;font-family:var(--mono)"></span>
        </div>` : '';
@@ -17703,7 +17703,7 @@ function renderNotifyConnectors(){
 // which is a different question from whether a given event is switched on.
 async function sendTestNotification(){
   const el = document.getElementById('nt-test-result');
-  if (el){ el.textContent = '⏳ sending…'; el.style.color = 'var(--text3)'; }
+  if (el){ el.textContent = 'sending…'; el.style.color = 'var(--text3)'; }
   try {
     const results = await window.CygenixIntegrations.emit('cygenix.migration.success', {
       status: 'success', project: 'Test', job: 'Test notification',
@@ -18013,7 +18013,7 @@ function ta_updateCronPreview() {
   if (!preview) return;
   if (!expr) { preview.textContent = ''; return; }
   const parts = expr.split(/\s+/);
-  if (parts.length !== 5) { preview.textContent = '⚠ cron must have 5 fields'; preview.style.color='var(--amber)'; return; }
+  if (parts.length !== 5) { preview.textContent = 'cron must have 5 fields'; preview.style.color='var(--amber)'; return; }
   preview.style.color = 'var(--text3)';
   const [mi, h, dom, mo, dow] = parts;
   const mode = ta_currentTriggerMode();

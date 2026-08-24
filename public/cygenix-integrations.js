@@ -27,7 +27,7 @@
       name: 'Webhook',
       description: 'POST JSON payloads to any URL. Use it to signal external systems when migrations run.',
       category: 'notifications',
-      icon: '🪝',
+      icon: '<i class="ic ic-link"></i>',
       status: 'available',
       configFields: [
         { key: 'url',     label: 'Webhook URL',  type: 'url',    placeholder: 'https://your-service.example.com/hook' },
@@ -39,7 +39,7 @@
       name: 'JSON project export',
       description: 'Export the active project (settings, groups, jobs, mappings) as a single JSON bundle.',
       category: 'export',
-      icon: '📤',
+      icon: '<i class="ic ic-upload"></i>',
       status: 'available',
       configFields: []
     },
@@ -48,7 +48,7 @@
       name: 'JSON project import',
       description: 'Read a Cygenix JSON bundle from your computer and create / replace a project from it.',
       category: 'import',
-      icon: '📥',
+      icon: '<i class="ic ic-download"></i>',
       status: 'available',
       configFields: []
     },
@@ -63,7 +63,7 @@
       name: 'Email (SMTP)',
       description: 'Email notifications on migration completion.',
       category: 'notifications',
-      icon: '📧',
+      icon: '<i class="ic ic-mail"></i>',
       status: 'available',
       configFields: [
         { key: 'host', label: 'SMTP host',   type: 'text',     placeholder: 'smtp.office365.com' },
@@ -79,25 +79,25 @@
       name: 'Jobs CSV export',
       description: 'Export the jobs library as a CSV file, suitable for spreadsheet review or hand-off.',
       category: 'export',
-      icon: '📊',
+      icon: '<i class="ic ic-chart"></i>',
       status: 'available',
       configFields: []
     },
 
     // ── Coming soon — honest placeholders ──────────────────────────────
-    { id: 'adf',       name: 'Azure Data Factory', description: 'Trigger ADF pipelines from Cygenix events.',   category: 'etl',          icon: '🏭', status: 'coming-soon' },
-    { id: 'ssis',      name: 'SQL Server Integration Services', description: 'Kick off SSIS packages after migration.', category: 'etl',          icon: '📦', status: 'coming-soon' },
-    { id: 'fivetran',  name: 'Fivetran',           description: 'Orchestrate Fivetran connectors around conversion runs.', category: 'etl',   icon: '🚚', status: 'coming-soon' },
-    { id: 'airbyte',   name: 'Airbyte',            description: 'Trigger Airbyte syncs as pipeline steps.',     category: 'etl',          icon: '🌀', status: 'coming-soon' },
-    { id: 'dbt',       name: 'dbt Cloud',          description: 'Run dbt jobs after migration completes.',      category: 'etl',          icon: '🧱', status: 'coming-soon' },
-    { id: 'slack',     name: 'Slack',              description: 'Post migration status updates to a Slack channel.', category: 'notifications', icon: '💬', status: 'coming-soon' },
-    { id: 'teams',     name: 'Microsoft Teams',    description: 'Post migration events to a Teams channel.',    category: 'notifications', icon: '👥', status: 'coming-soon' },
-    { id: 'jira',      name: 'Jira',               description: 'File issues automatically on migration failure.',category: 'workflow',     icon: '🎯', status: 'coming-soon' },
-    { id: 'azdo',      name: 'Azure DevOps',       description: 'Create work items for failed validations.',     category: 'workflow',     icon: '🔷', status: 'coming-soon' },
-    { id: 'github',    name: 'GitHub',             description: 'Commit generated SQL scripts to a repository.',  category: 'workflow',     icon: '🐙', status: 'coming-soon' },
-    { id: 's3',        name: 'AWS S3',             description: 'Upload conversion reports to S3 buckets.',     category: 'storage',       icon: '🪣', status: 'coming-soon' },
-    { id: 'blob',      name: 'Azure Blob Storage', description: 'Archive migration bundles to Azure Blob.',     category: 'storage',       icon: '📦', status: 'coming-soon' },
-    { id: 'sharepoint',name: 'SharePoint',         description: 'Push reports to a SharePoint document library.',category: 'storage',      icon: '📁', status: 'coming-soon' },
+    { id: 'adf',       name: 'Azure Data Factory', description: 'Trigger ADF pipelines from Cygenix events.',   category: 'etl',          icon: '<i class="ic ic-factory"></i>', status: 'coming-soon' },
+    { id: 'ssis',      name: 'SQL Server Integration Services', description: 'Kick off SSIS packages after migration.', category: 'etl',          icon: '<i class="ic ic-package"></i>', status: 'coming-soon' },
+    { id: 'fivetran',  name: 'Fivetran',           description: 'Orchestrate Fivetran connectors around conversion runs.', category: 'etl',   icon: '<i class="ic ic-truck"></i>', status: 'coming-soon' },
+    { id: 'airbyte',   name: 'Airbyte',            description: 'Trigger Airbyte syncs as pipeline steps.',     category: 'etl',          icon: '<i class="ic ic-sync"></i>', status: 'coming-soon' },
+    { id: 'dbt',       name: 'dbt Cloud',          description: 'Run dbt jobs after migration completes.',      category: 'etl',          icon: '<i class="ic ic-package"></i>', status: 'coming-soon' },
+    { id: 'slack',     name: 'Slack',              description: 'Post migration status updates to a Slack channel.', category: 'notifications', icon: '<i class="ic ic-chat"></i>', status: 'coming-soon' },
+    { id: 'teams',     name: 'Microsoft Teams',    description: 'Post migration events to a Teams channel.',    category: 'notifications', icon: '<i class="ic ic-users"></i>', status: 'coming-soon' },
+    { id: 'jira',      name: 'Jira',               description: 'File issues automatically on migration failure.',category: 'workflow',     icon: '<i class="ic ic-target"></i>', status: 'coming-soon' },
+    { id: 'azdo',      name: 'Azure DevOps',       description: 'Create work items for failed validations.',     category: 'workflow',     icon: '<i class="ic ic-target"></i>', status: 'coming-soon' },
+    { id: 'github',    name: 'GitHub',             description: 'Commit generated SQL scripts to a repository.',  category: 'workflow',     icon: '<i class="ic ic-link"></i>', status: 'coming-soon' },
+    { id: 's3',        name: 'AWS S3',             description: 'Upload conversion reports to S3 buckets.',     category: 'storage',       icon: '<i class="ic ic-bucket"></i>', status: 'coming-soon' },
+    { id: 'blob',      name: 'Azure Blob Storage', description: 'Archive migration bundles to Azure Blob.',     category: 'storage',       icon: '<i class="ic ic-package"></i>', status: 'coming-soon' },
+    { id: 'sharepoint',name: 'SharePoint',         description: 'Push reports to a SharePoint document library.',category: 'storage',      icon: '<i class="ic ic-folder"></i>', status: 'coming-soon' },
   ];
 
   // ─── Storage ─────────────────────────────────────────────────────────────

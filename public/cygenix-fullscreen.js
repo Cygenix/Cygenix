@@ -49,13 +49,13 @@ function fsElement(){ return document.fullscreenElement || document.webkitFullsc
    already exist, with their own backgrounds — still wins. */
 var CSS = [
   '.' + TARGET_CLASS + ':fullscreen,.' + TARGET_CLASS + ':-webkit-full-screen{',
-  '  width:100vw;height:100vh;max-height:100vh;border-radius:0;margin:0;overflow:auto;background:var(--bg2)}',
+  ' width:100vw;height:100vh;max-height:100vh;border-radius:0;margin:0;overflow:auto;background:var(--bg2)}',
   /* Doubled class: this stylesheet is injected ahead of the page's own so a
      page rule for a real :fullscreen target still wins, but the element being
      pinned is usually position:relative in that same page stylesheet, and a
      single class would lose to it on source order. */
   '.' + PSEUDO_CLASS + '.' + PSEUDO_CLASS + '{position:fixed;inset:0;z-index:10050;width:100vw;height:100vh;',
-  '  max-height:100vh;margin:0;border-radius:0;overflow:auto;background:var(--bg2)}',
+  ' max-height:100vh;margin:0;border-radius:0;overflow:auto;background:var(--bg2)}',
   /* The consent banner is fixed at z-index 9999 and would sit over a
      pseudo-full-screen map; while the real API is in use it is painted under
      the full-screen layer anyway, so hide it either way. */

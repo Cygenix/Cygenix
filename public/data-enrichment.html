@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <script>
 (function(){
@@ -163,7 +164,7 @@ tr.decided td{opacity:0.55}
 
 <div class="page">
   <div class="en-head">
-    <div class="en-title">✨ Data Enrichment · Profile completion</div>
+    <div class="en-title"><i class="ic ic-sparkle"></i> Data Enrichment · Profile completion</div>
     <div class="en-sub">Take thin records — an email address, a company name — and fill the gaps from reference
       data. Pick a source table, map the fields you want completed, set a provider order, then run. The engine
       normalises inputs, decides which reference record is <em>actually</em> a match, reconciles sources that
@@ -172,9 +173,9 @@ tr.decided td{opacity:0.55}
       <b>nothing is written until you review and apply.</b></div>
     <div class="en-session">
       <span class="mono" id="en-sess-state">New session</span>
-      <button class="btn" onclick="enSaveSessionAs()">💾 Save session</button>
-      <button class="btn" onclick="enOpenSessions()">📂 Open…</button>
-      <button class="btn" onclick="enNewSession()">✚ New</button>
+      <button class="btn" onclick="enSaveSessionAs()"><i class="ic ic-save"></i> Save session</button>
+      <button class="btn" onclick="enOpenSessions()"><i class="ic ic-folder-open"></i> Open…</button>
+      <button class="btn" onclick="enNewSession()"><i class="ic ic-plus"></i> New</button>
     </div>
   </div>
 
@@ -233,7 +234,7 @@ tr.decided td{opacity:0.55}
             <button class="btn" onclick="enAddMapping()">+ Map field</button>
           </div>
           <div class="warnbox" style="margin-top:10px">
-            <span>⚠</span><div><b>Verify-only fields.</b> Phone, email status, company number, SIC code and
+            <span><i class="ic ic-warning"></i> </span><div><b>Verify-only fields.</b> Phone, email status, company number, SIC code and
             revenue can never be filled by inference — <b>provider-attested or nothing</b>. The engine enforces
             it; this note is just the warning.</div>
           </div>
@@ -278,7 +279,7 @@ tr.decided td{opacity:0.55}
             <label>Ask — rules in plain English</label>
             <textarea class="inp" id="en-nl" placeholder="Only enrich UK accounts that are missing a phone number. Don't touch anything where the account is marked dissolved."></textarea>
             <div style="display:flex;gap:6px;margin-top:6px">
-              <button class="btn" onclick="enCompile()">⚙ Compile to rules</button>
+              <button class="btn" onclick="enCompile()"><i class="ic ic-cog"></i> Compile to rules</button>
               <button class="btn" onclick="enClearRules()">Clear</button>
               <span class="mono muted" id="en-scope-note" style="font-size:10.5px;align-self:center"></span>
             </div>
@@ -321,7 +322,7 @@ tr.decided td{opacity:0.55}
           </div></div>
         </div>
 
-        <div class="empty" id="en-empty">✨<br>Pick a source, map the fields you want completed, then run
+        <div class="empty" id="en-empty"><i class="ic ic-sparkle"></i> <br>Pick a source, map the fields you want completed, then run
           enrichment to see proposed values here.</div>
 
         <div id="en-results" style="display:none">
@@ -402,9 +403,9 @@ tr.decided td{opacity:0.55}
 
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
-<script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
+<script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
 <script src="/cygenix-enrichment.js?v=024cc71acc" defer></script>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <script>
 'use strict';
@@ -1329,7 +1330,7 @@ function enOpenApply(){
     + '<div class="sql">' + esc(rollback) + '</div>'
     + '<div style="margin-top:12px;display:flex;gap:6px;align-items:center">'
     + '<button class="btn btn-primary" id="en-btn-register" onclick="enRegisterJobs()">Register both as jobs →</button>'
-    + '<button class="btn btn-danger" id="en-btn-exec" onclick="enExecuteApply()">⚡ Execute apply now</button>'
+    + '<button class="btn btn-danger" id="en-btn-exec" onclick="enExecuteApply()"><i class="ic ic-bolt"></i> Execute apply now</button>'
     + '<span class="muted" style="font-size:10.5px">Execute writes to ' + side.toLowerCase() + ' immediately.</span>'
     + '</div>';
   $('en-scrim').classList.add('show');
@@ -1487,7 +1488,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 </script>
-<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 </body>
 </html>

@@ -10,6 +10,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-history.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
@@ -593,25 +594,25 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-api.js?v=923ff2d8c9" defer></script>
 <script src="/cygenix-schema-graph.js?v=7342c9d73d" defer></script>
 <script src="/cygenix-subject-map.js?v=dbc44c8eb3" defer></script>
-<script src="/cygenix-subject-harvest.js?v=b15d4ee907" defer></script>
-<script src="/cygenix-subject-triage.js?v=259690e173" defer></script>
+<script src="/cygenix-subject-harvest.js?v=223a1d8144" defer></script>
+<script src="/cygenix-subject-triage.js?v=da00f1f118" defer></script>
 <script src="/cygenix-exclusion-rules.js?v=8e49dbbb79" defer></script>
-<script src="/cygenix-infer-schema.js?v=c197ec85e0" defer></script>
-<script src="/cygenix-fullscreen.js?v=9934aab360" defer></script>
+<script src="/cygenix-infer-schema.js?v=14ac937190" defer></script>
+<script src="/cygenix-fullscreen.js?v=402d3dccce" defer></script>
 <!-- Adds its own four map tabs to the tab bar the moment it loads. Deferred, so
      seSwitchTab and smTables are already defined when it wraps them. -->
-<script src="/cygenix-data-maps.js?v=1d72dbabd1" defer></script>
+<script src="/cygenix-data-maps.js?v=23e8e5bed1" defer></script>
 <!-- The Globe registers last, so its tab sits at the end of the row. -->
 <script src="/cygenix-geo-index.js?v=7fe109193e" defer></script>
-<script src="/cygenix-globe.js?v=df36f477fa" defer></script>
+<script src="/cygenix-globe.js?v=95b4f5af27" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <div class="page">
   <div class="se-head">
     <div>
-      <div class="se-title">🗺 Schema Explorer</div>
+      <div class="se-title"><i class="ic ic-map"></i> Schema Explorer</div>
       <div class="se-sub">Explore the target schema and see what your saved maps actually cover.</div>
     </div>
 
@@ -626,7 +627,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 
     <div class="se-head-actions">
       <button class="btn" id="se-reload" onclick="seReloadSchema()" title="Schema queries are slow on wide databases, so the result is cached. This refetches it.">↻ Reload schema</button>
-      <button class="btn" onclick="sePaletteOpen()" title="Search every table and column">🔍 Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
+      <button class="btn" onclick="sePaletteOpen()" title="Search every table and column"><i class="ic ic-search"></i> Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
     </div>
   </div>
 
@@ -757,7 +758,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
     <div class="da-hd">
       <span class="da-sub" id="da-src-label"></span>
       <span style="flex:1"></span>
-      <div class="da-field"><span class="da-ic">🔍</span>
+      <div class="da-field"><span class="da-ic"><i class="ic ic-search"></i> </span>
         <input id="da-q" type="search" placeholder="Find a table…" aria-label="Find a table"></div>
       <div class="da-seg" role="group" aria-label="Database side">
         <button data-da-side="src" aria-pressed="true">Source</button>
@@ -1016,8 +1017,8 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
         <div><div class="panel-title">Load order</div>
         <div class="panel-sub">Foreign keys decide what has to exist first. Tables in the same wave have no dependency on each other and can run together.</div></div>
         <div style="margin-left:auto;display:flex;gap:0.4rem">
-          <button class="btn" onclick="cvExportComposite()">⬇ Composite job</button>
-          <button class="btn btn-primary" onclick="cvSaveComposite()">💾 Save as job</button>
+          <button class="btn" onclick="cvExportComposite()"><i class="ic ic-download"></i> Composite job</button>
+          <button class="btn btn-primary" onclick="cvSaveComposite()"><i class="ic ic-save"></i> Save as job</button>
           <button class="btn" id="cv-fs-waves" title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
         </div>
       </div>
@@ -1682,7 +1683,7 @@ function smRenderCanvas(){
     const why = filteredOut
       ? 'All ' + num(g.tables.length) + ' tables are excluded by the current filters.'
       : (g && g.reason ? esc(g.reason) : 'No tables to draw.');
-    empty.innerHTML = '<div class="se-empty-icon">🗺</div>'
+    empty.innerHTML = '<div class="se-empty-icon"><i class="ic ic-map"></i> </div>'
       + '<div class="se-empty-title">'
       + (noConn ? 'No schema to explore yet'
         : filteredOut ? 'Everything is filtered out' : 'This database has no tables') + '</div>'
@@ -1718,7 +1719,7 @@ function smRenderCanvas(){
       const isFk = t.fkColumns.indexOf(c.name) >= 0;
       const isHit = traceHits && traceHits.has(c.name);
       return '<div class="sm-col' + (isHit ? ' sm-col-hit' : '') + '" data-col="' + esc(c.name) + '">'
-        + '<span class="sm-col-key">' + (isPk ? '🔑' : (isFk ? '↗' : '')) + '</span>'
+        + '<span class="sm-col-key">' + (isPk ? '<i class="ic ic-key"></i> ' : (isFk ? '↗' : '')) + '</span>'
         + '<span class="' + (isFk ? 'sm-col-fk' : '') + '">' + esc(c.name) + '</span>'
         + (c.type ? '<span class="sm-col-type">' + esc(c.type) + '</span>' : '')
         + '</div>';
@@ -2248,7 +2249,7 @@ async function smRenderInspector(){
     body.innerHTML = cols.map(c => {
       const pk = (node.primaryKeys || []).indexOf(c.name) >= 0;
       const fk = node.fkColumns.indexOf(c.name) >= 0;
-      return '<div class="sm-kv"><b>' + (pk ? '🔑 ' : (fk ? '↗ ' : '')) + esc(c.name) + '</b>'
+      return '<div class="sm-kv"><b>' + (pk ? '<i class="ic ic-key"></i> ' : (fk ? '↗ ' : '')) + esc(c.name) + '</b>'
         + '<span>' + esc(c.type) + (c.nullable ? '' : ' NOT NULL') + (c.isIdentity ? ' IDENTITY' : '') + '</span></div>';
     }).join('');
     return;
@@ -2336,7 +2337,7 @@ function smDdl(node){
   const lines = cols.map(c =>
     '  ' + q(c.name) + ' ' + c.type + (c.isIdentity ? ' IDENTITY(1,1)' : '') + (c.nullable ? ' NULL' : ' NOT NULL'));
   if ((node.primaryKeys || []).length){
-    lines.push('  CONSTRAINT ' + q('PK_' + node.name) + ' PRIMARY KEY (' + node.primaryKeys.map(q).join(', ') + ')');
+    lines.push(' CONSTRAINT ' + q('PK_' + node.name) + ' PRIMARY KEY (' + node.primaryKeys.map(q).join(', ') + ')');
   }
   let sql = 'CREATE TABLE ' + q(node.schema) + '.' + q(node.name) + ' (\n' + lines.join(',\n') + '\n);';
   const fks = SM.graph.edges.filter(e => e.from === node.key);
@@ -4170,7 +4171,7 @@ function xpChip(rule, count, opts){
     + '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="xpToggle(\'' + enc + '\')" '
     + 'aria-label="' + esc(rule.label) + '">'
     + '<span style="font-size:12px">' + esc(rule.label) + '</span>'
-    + (o.warn ? '<span style="color:var(--amber);font-size:11px" title="See the warning below before ticking">⚠</span>' : '')
+    + (o.warn ? '<span style="color:var(--amber);font-size:11px" title="See the warning below before ticking"><i class="ic ic-warning"></i> </span>' : '')
     + (o.rec ? '<span class="am-key" style="color:var(--green)">recommended</span>' : '')
     + '</label>'
     + '<span style="margin-left:auto;font-size:11px;color:var(--text3);font-family:var(--mono)">'
@@ -4241,7 +4242,7 @@ function xpRender(){
   if (x.sel.tgt_low_row){
     const lowCand = xpLowRowCandidates();
     h += '<div class="am-xp-warn" style="border:1px solid var(--amber);border-radius:8px;padding:0.5rem 0.7rem;'
-      + 'font-size:11.5px;color:var(--text2);margin:0.3rem 0 0.5rem">⚠ '
+      + 'font-size:11.5px;color:var(--text2);margin:0.3rem 0 0.5rem">'
       + amFmt(lowCand) + ' candidate targets under 10 rows would be removed. '
       + esc(XR.XR_LOW_ROW_WARNING) + '</div>';
   }
@@ -4321,11 +4322,11 @@ function xpRenderPreviewOnly(){
         + '<span style="color:var(--text3);min-width:150px;text-align:right">' + esc(o.reason) + '</span></div>').join('');
   }
   if (eff.migrate)
-    h += '<div style="font-size:11.5px;color:var(--amber);margin-top:0.4rem">⚠ '
+    h += '<div style="font-size:11.5px;color:var(--amber);margin-top:0.4rem"><i class="ic ic-warning"></i> '
       + eff.migrate + ' excluded table' + (eff.migrate === 1 ? ' is' : 's are')
       + ' currently in the Migrate lane</div>';
   if (eff.big.length){
-    h += '<div style="font-size:11.5px;color:var(--amber);margin-top:0.2rem">⚠ '
+    h += '<div style="font-size:11.5px;color:var(--amber);margin-top:0.2rem"><i class="ic ic-warning"></i> '
       + eff.big.map(o => esc(o.name) + ' holds ' + amFmt(o.rows) + ' rows').join(' · ')
       + ' — confirm these are copies</div>'
       + '<label style="display:flex;gap:0.45rem;align-items:center;font-size:11.5px;margin-top:0.3rem;cursor:pointer">'
@@ -4777,7 +4778,7 @@ function amRenderQueue(){
       : (d
       ? (d.target
           ? '<span class="am-status ok">✓ ' + esc(d.target) + (d.by === 'saved map' ? ' · saved map' : '') + '</span>'
-          : '<span class="am-status triage">⌫ no home — rejected</span>')
+          : '<span class="am-status triage"><i class="ic ic-trash"></i> no home — rejected</span>')
       : (suppressed
           ? '<span class="am-status triage" title="Top candidates are tied — margin under 0.08. The drawer lists them.">≈ no candidate — tied</span>'
           : (top
@@ -4871,7 +4872,7 @@ function amQBody(t, d, enc, tr){
         + '</div>' + amEvBars(c.ev) + '</div>').join('')
       : '<div style="font-size:11.5px;color:var(--text3);padding:0.3rem 0">No candidate cleared the floor in this area. Reassign the area, or reject.</div>')
     + '<div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;flex-wrap:wrap">'
-    + '<button class="btn" style="padding:2px 8px;font-size:10.5px;color:var(--red)" onclick="amReject(\'' + enc + '\')">⌫ No home — reject</button>'
+    + '<button class="btn" style="padding:2px 8px;font-size:10.5px;color:var(--red)" onclick="amReject(\'' + enc + '\')"><i class="ic ic-trash"></i> No home — reject</button>'
     + areaBtn
     + '</div></div>';
 }
@@ -5542,7 +5543,7 @@ document.addEventListener('DOMContentLoaded', () => {
   smUpdateSideButtons();
 });
 </script>
-<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 </body>
 </html>

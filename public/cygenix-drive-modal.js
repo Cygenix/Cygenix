@@ -47,9 +47,9 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
   function fmtSize(n) { if (n == null) return '—'; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB'; return (n / 1073741824).toFixed(2) + ' GB'; }
   function fileIcon(name) { const e = (name.split('.').pop() || '').toLowerCase();
-    if (e === 'sql') return '🗄'; if (/^(md|markdown|txt|text|doc|rtf)$/.test(e)) return '📄';
-    if (/^(csv|tsv|xls|xlsx)$/.test(e)) return '📊'; if (/^(json|xml|ya?ml|ini|cfg|conf)$/.test(e)) return '🔧';
-    if (/^(png|jpe?g|gif|svg|webp|bmp)$/.test(e)) return '🖼'; if (/^(zip|bak|gz|7z|rar|tar)$/.test(e)) return '🗜'; return '📎'; }
+    if (e === 'sql') return ''; if (/^(md|markdown|txt|text|doc|rtf)$/.test(e)) return '';
+    if (/^(csv|tsv|xls|xlsx)$/.test(e)) return ''; if (/^(json|xml|ya?ml|ini|cfg|conf)$/.test(e)) return '';
+    if (/^(png|jpe?g|gif|svg|webp|bmp)$/.test(e)) return ''; if (/^(zip|bak|gz|7z|rar|tar)$/.test(e)) return ''; return ''; }
   const fsSupported = () => 'showDirectoryPicker' in window;
   async function ensurePerm(h) { if (!h) return false; const o = { mode: 'readwrite' }; try { if ((await h.queryPermission(o)) === 'granted') return true; return (await h.requestPermission(o)) === 'granted'; } catch (_) { return false; } }
 
@@ -260,7 +260,7 @@
     $bg.innerHTML = `
       <div class="cygdm-modal" role="dialog" aria-label="Co-Worker Drive">
         <div class="cygdm-h" id="cygdm-h">
-          <b>🗂 Drive — Co-Worker workspace</b>
+          <b><i class="ic ic-archive"></i> Drive — Co-Worker workspace</b>
           <div class="cygdm-ctrls">
             <button id="cygdm-min" title="Minimize" aria-label="Minimize">—</button>
             <button id="cygdm-max" title="Maximize" aria-label="Maximize">⤢</button>
@@ -269,12 +269,12 @@
         </div>
         <div class="cygdm-bar">
           <div class="cygdm-crumbs" id="cygdm-crumbs"></div>
-          <button class="cygdm-btn" id="cygdm-selectall" title="Select every item in this folder">☑ Select all</button>
+          <button class="cygdm-btn" id="cygdm-selectall" title="Select every item in this folder"><i class="ic ic-check-circle"></i> Select all</button>
           <button class="cygdm-btn" id="cygdm-newfolder" title="Create a folder here">＋ Folder</button>
-          <button class="cygdm-btn" id="cygdm-upfiles" title="Upload files here">⬆ Files</button>
-          <button class="cygdm-btn" id="cygdm-upfolder" title="Upload a whole folder (keeps its structure)">⬆ Folder</button>
+          <button class="cygdm-btn" id="cygdm-upfiles" title="Upload files here"><i class="ic ic-upload"></i> Files</button>
+          <button class="cygdm-btn" id="cygdm-upfolder" title="Upload a whole folder (keeps its structure)"><i class="ic ic-upload"></i> Folder</button>
           <button class="cygdm-btn" id="cygdm-sync" title="Map &amp; sync the Drive with a folder on your computer">⇄ Sync folder</button>
-          <button class="cygdm-btn" id="cygdm-cloudsync" title="Sync this Drive with your account so it's available on any computer">☁ Sync to cloud</button>
+          <button class="cygdm-btn" id="cygdm-cloudsync" title="Sync this Drive with your account so it's available on any computer"><i class="ic ic-cloud"></i> Sync to cloud</button>
           <input type="search" class="cygdm-search" id="cygdm-search" placeholder="Search drive…" spellcheck="false">
         </div>
         <div class="cygdm-mapb" id="cygdm-map" style="display:none"></div>
@@ -415,7 +415,7 @@
       lastIndex = index; renderDrive();
     });
 
-    const ic = document.createElement('div'); ic.className = 'cygdm-ic'; ic.textContent = isFolder ? '📁' : fileIcon(n.name);
+    const ic = document.createElement('div'); ic.className = 'cygdm-ic'; ic.textContent = isFolder ? '' : fileIcon(n.name);
     const nm = document.createElement('div'); nm.className = 'cygdm-nm'; nm.textContent = n.name;
     const meta = document.createElement('div'); meta.className = 'cygdm-meta'; meta.textContent = isFolder ? 'folder' : fmtSize(n.size);
     const acts = document.createElement('div'); acts.className = 'cygdm-acts';
@@ -435,7 +435,7 @@
       });
     } else {
       row.onclick = e => { if (e.target.closest('.cygdm-acts') || e.target.closest('.cygdm-cb')) return; downloadFile(n); };
-      const dl = document.createElement('button'); dl.title = 'Download'; dl.textContent = '⭳'; dl.onclick = e => { e.stopPropagation(); downloadFile(n); }; acts.appendChild(dl);
+      const dl = document.createElement('button'); dl.title = 'Download'; dl.textContent = ''; dl.onclick = e => { e.stopPropagation(); downloadFile(n); }; acts.appendChild(dl);
     }
 
     // Every row is draggable: a single file drag still drops into a host editor
@@ -458,11 +458,11 @@
     });
     row.addEventListener('dragend', () => { if ($bg) $bg.classList.remove('dragging'); dragIds = null; if ($body) $body.querySelectorAll('.drop-into').forEach(r => r.classList.remove('drop-into')); });
 
-    const mv = document.createElement('button'); mv.title = 'Move to folder…'; mv.textContent = '📂';
+    const mv = document.createElement('button'); mv.title = 'Move to folder…'; mv.textContent = '';
     mv.onclick = e => { e.stopPropagation(); openMovePicker([n.id]); }; acts.appendChild(mv);
-    const rn = document.createElement('button'); rn.title = 'Rename'; rn.textContent = '✎';
+    const rn = document.createElement('button'); rn.title = 'Rename'; rn.textContent = '';
     rn.onclick = async e => { e.stopPropagation(); const nn = prompt('Rename to:', n.name); if (nn == null) return; await driveRename(n.id, nn); renderDrive(); }; acts.appendChild(rn);
-    const del = document.createElement('button'); del.title = 'Delete'; del.textContent = '🗑';
+    const del = document.createElement('button'); del.title = 'Delete'; del.textContent = '';
     del.onclick = async e => { e.stopPropagation(); if (!confirm('Delete “' + n.name + '”' + (isFolder ? ' and everything inside it' : '') + '?')) return; await driveRemove(n.id); selected.delete(n.id); if (cwd === n.id) cwd = n.parentId || ''; renderDrive(); }; acts.appendChild(del);
 
     row.appendChild(cb); row.appendChild(ic); row.appendChild(nm); row.appendChild(meta); row.appendChild(acts);
@@ -488,7 +488,7 @@
     $selAllBtn.disabled = none;
     $selAllBtn.style.opacity = none ? '0.45' : '';
     const all = allVisibleSelected();
-    $selAllBtn.textContent = all ? '☐ Deselect all' : '☑ Select all';
+    $selAllBtn.textContent = all ? 'Deselect all' : 'Select all';
     $selAllBtn.title = none
       ? 'Nothing here to select'
       : (all ? 'Clear the current selection' : 'Select every item in this folder');
@@ -501,8 +501,8 @@
     bar.innerHTML =
       '<span class="cygdm-selcount">' + selected.size + ' selected</span>' +
       '<button class="cygdm-btn" data-act="all">' + (allOn ? 'Deselect all' : 'Select all') + '</button>' +
-      '<button class="cygdm-btn" data-act="move">📂 Move to…</button>' +
-      '<button class="cygdm-btn cygdm-danger" data-act="del">🗑 Delete</button>' +
+      '<button class="cygdm-btn" data-act="move"><i class="ic ic-folder-open"></i> Move to…</button>' +
+      '<button class="cygdm-btn cygdm-danger" data-act="del"><i class="ic ic-trash"></i> Delete</button>' +
       '<button class="cygdm-btn" data-act="clear">Clear</button>';
     bar.querySelector('[data-act="all"]').onclick = toggleSelectAll;
     bar.querySelector('[data-act="move"]').onclick = () => openMovePicker([...selected]);
@@ -526,9 +526,9 @@
     const all = await dall(); const byId = {}; all.forEach(n => byId[n.id] = n);
     const isUnderMoved = fid => { let cur = fid, g = 0; while (cur && g++ < 100) { if (idset.has(cur)) return true; const n = byId[cur]; if (!n) break; cur = n.parentId || ''; } return false; };
     const pathOf = n => { const parts = [n.name]; let p = n.parentId, g = 0; while (p && byId[p] && g++ < 50) { parts.unshift(byId[p].name); p = byId[p].parentId; } return parts.join(' / '); };
-    const targets = [{ id: '', label: '🗂 Home' }].concat(
+    const targets = [{ id: '', label: 'Home' }].concat(
       all.filter(n => n.kind === 'folder' && !isUnderMoved(n.id))
-         .map(f => ({ id: f.id, label: '📁 ' + pathOf(f) }))
+         .map(f => ({ id: f.id, label: '' + pathOf(f) }))
          .sort((a, b) => a.label.localeCompare(b.label))
     );
     const ov = document.createElement('div'); ov.className = 'cygdm-mp';
@@ -552,7 +552,7 @@
   async function renderDrive() {
     if (!$body) return;
     const path = cwd ? await driveFolderPath(cwd) : [];
-    let cr = '<a data-id="">🗂 Home</a>';
+    let cr = '<a data-id=""><i class="ic ic-archive"></i> Home</a>';
     for (const f of path) cr += '<span class="sep">/</span><a data-id="' + esc(f.id) + '">' + esc(f.name) + '</a>';
     if (searchQ) cr += '<span class="sep">/</span><span style="color:var(--text3)">search “' + esc(searchQ) + '”</span>';
     $crumbs.innerHTML = cr;
@@ -568,7 +568,7 @@
     if (!items.length) {
       $body.innerHTML = '<div class="cygdm-empty">' + (searchQ
         ? 'No files or folders match “' + esc(searchQ) + '”.'
-        : 'This folder is empty.<br>Drag files in, or use <b>⬆ Files</b> / <b>⬆ Folder</b> / <b>＋ Folder</b>.<br><br>Anything you put here becomes the co-worker\'s workspace — it can read and build on these files.') + '</div>';
+        : 'This folder is empty.<br>Drag files in, or use <b><i class="ic ic-upload"></i> Files</b> / <b><i class="ic ic-upload"></i> Folder</b> / <b>＋ Folder</b>.<br><br>Anything you put here becomes the co-worker\'s workspace — it can read and build on these files.') + '</div>';
     } else {
       $body.innerHTML = '';
       if (selected.size) $body.appendChild(selectionBar());
@@ -619,10 +619,10 @@
     }
     const s = window.CygenixDriveSync.status();
     let label, cls = 'cygdm-cloud';
-    if (s.state === 'syncing')          { label = '☁ Syncing…';                cls += ' busy'; }
-    else if (s.state === 'error')       { label = '☁ ' + (s.message || 'Sync failed'); cls += ' err'; }
-    else if (s.state === 'signed-out')  { label = '☁ Sign in to sync'; }
-    else                                { label = '☁ ' + (s.message || 'Synced to your account'); }
+    if (s.state === 'syncing')          { label = 'Syncing…';                cls += ' busy'; }
+    else if (s.state === 'error')       { label = (s.message || 'Sync failed'); cls += ' err'; }
+    else if (s.state === 'signed-out')  { label = 'Sign in to sync'; }
+    else                                { label = (s.message || 'Synced to your account'); }
     $cloud.textContent = label;
     $cloud.className = cls;
   }
@@ -642,7 +642,7 @@
     $map.style.display = 'flex';
     $map.innerHTML =
       '<span class="dm-ic">⇄</span>' +
-      '<span class="dm-txt">Synced with <span class="dm-path" title="Local sync folder. Browsers only reveal the folder name, not its full disk path.">📁 ' + esc(mapHandle.name) + '</span> · last sync ' + esc(when) + '</span>' +
+      '<span class="dm-txt">Synced with <span class="dm-path" title="Local sync folder. Browsers only reveal the folder name, not its full disk path."><i class="ic ic-folder"></i> ' + esc(mapHandle.name) + '</span> · last sync ' + esc(when) + '</span>' +
       '<button class="cygdm-btn" id="cygdm-syncnow">Sync now</button>' +
       '<button class="cygdm-btn" id="cygdm-unmap">Unmap</button>';
     $map.querySelector('#cygdm-syncnow').addEventListener('click', syncNow);

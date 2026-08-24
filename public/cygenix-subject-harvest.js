@@ -37,16 +37,16 @@
   function shColumnsSql(off, page) {
     const p = page || COL_PAGE;
     return 'WITH t AS (\n'
-      + '  SELECT TABLE_SCHEMA s, TABLE_NAME n\n'
-      + '  FROM INFORMATION_SCHEMA.TABLES\n'
-      + '  ORDER BY TABLE_SCHEMA, TABLE_NAME\n'
-      + '  OFFSET ' + (off | 0) + ' ROWS FETCH NEXT ' + p + ' ROWS ONLY\n'
+      + ' SELECT TABLE_SCHEMA s, TABLE_NAME n\n'
+      + ' FROM INFORMATION_SCHEMA.TABLES\n'
+      + ' ORDER BY TABLE_SCHEMA, TABLE_NAME\n'
+      + ' OFFSET ' + (off | 0) + ' ROWS FETCH NEXT ' + p + ' ROWS ONLY\n'
       + ')\n'
       + 'SELECT t.s, t.n,\n'
       + "       STRING_AGG(CAST(c.COLUMN_NAME + ':' + LEFT(c.DATA_TYPE,3) AS varchar(max)), ',') AS c\n"
       + 'FROM t\n'
       + 'JOIN INFORMATION_SCHEMA.COLUMNS c\n'
-      + '  ON c.TABLE_SCHEMA = t.s AND c.TABLE_NAME = t.n\n'
+      + ' ON c.TABLE_SCHEMA = t.s AND c.TABLE_NAME = t.n\n'
       + 'GROUP BY t.s, t.n;';
   }
   function shPkSql(off, page) {
@@ -55,9 +55,9 @@
       + "       STRING_AGG(CAST(k.COLUMN_NAME AS varchar(max)), ',') AS pk\n"
       + 'FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc\n'
       + 'JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k\n'
-      + '  ON  k.CONSTRAINT_NAME = tc.CONSTRAINT_NAME\n'
-      + '  AND k.TABLE_SCHEMA    = tc.TABLE_SCHEMA\n'
-      + '  AND k.TABLE_NAME      = tc.TABLE_NAME\n'
+      + ' ON  k.CONSTRAINT_NAME = tc.CONSTRAINT_NAME\n'
+      + ' AND k.TABLE_SCHEMA    = tc.TABLE_SCHEMA\n'
+      + ' AND k.TABLE_NAME      = tc.TABLE_NAME\n'
       + "WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'\n"
       + 'GROUP BY tc.TABLE_SCHEMA, tc.TABLE_NAME\n'
       + 'ORDER BY 1,2 OFFSET ' + (off | 0) + ' ROWS FETCH NEXT ' + p + ' ROWS ONLY;';

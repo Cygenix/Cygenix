@@ -10,6 +10,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
   <title>Data Quality Review — Cygenix</title>
 
@@ -75,7 +76,7 @@
 
   <!-- Shared connections helper (gives us CygenixConnections.srcConn / tgtConn) -->
   <script src="/connections.js?v=d199ff3358" defer></script>
-  <script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
+  <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
 
   <!-- SheetJS for client-side Excel export. Same CDN pattern other pages use. -->
   <script>
@@ -1052,7 +1053,7 @@
           <span>Skip row-count cap</span>
         </label>
 
-        <button class="btn"         id="cancel-btn" onclick="cancelReview()" style="display:none">⏹ Cancel</button>
+        <button class="btn"         id="cancel-btn" onclick="cancelReview()" style="display:none"><i class="ic ic-stop"></i> Cancel</button>
         <button class="btn btn-primary" id="run-btn"    onclick="runReview()">▶ Run Review</button>
       </div>
 
@@ -1150,8 +1151,8 @@
             <option value="source">Source DB</option>
             <option value="target">Target DB</option>
           </select>
-          <button class="btn btn-sm" id="schema-load-btn"   onclick="loadSchema()">⬇ Load schema</button>
-          <button class="btn btn-sm" id="suggest-rels-btn"  onclick="suggestRels()" title="Use AI to propose inferred relationships from your schema (table + column names + sample data). Review and approve before adding.">🪄 Suggest with AI</button>
+          <button class="btn btn-sm" id="schema-load-btn"   onclick="loadSchema()"><i class="ic ic-download"></i> Load schema</button>
+          <button class="btn btn-sm" id="suggest-rels-btn"  onclick="suggestRels()" title="Use AI to propose inferred relationships from your schema (table + column names + sample data). Review and approve before adding."><i class="ic ic-wand"></i> Suggest with AI</button>
           <span class="schema-status" id="schema-status">Schema not loaded — typing-only mode.</span>
         </div>
 
@@ -1296,7 +1297,7 @@
   </main>
 
   <!-- Sidebar (auto-mounts on DOMContentLoaded) -->
-  <script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+  <script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
   <!-- Toast -->
   <div id="toast"></div>
@@ -1365,7 +1366,7 @@
     const label = document.getElementById('conn-label');
     label.textContent = conn
       ? '✓ ' + getConnLabel() + ' connection ready'
-      : '⚠ No ' + getConnLabel() + ' configured — set in Connections';
+      : 'No ' + getConnLabel() + ' configured — set in Connections';
     label.classList.toggle('ok',   !!conn);
     label.classList.toggle('warn', !conn);
   }
@@ -1685,7 +1686,7 @@
   // ────────────────────────────────────────────────────────────────────────
   function setRunUI(running) {
     document.getElementById('run-btn').disabled    = running;
-    document.getElementById('run-btn').textContent = running ? '⏳ Running…' : '▶ Run Review';
+    document.getElementById('run-btn').textContent = running ? 'Running…' : '▶ Run Review';
     document.getElementById('cancel-btn').style.display = running ? '' : 'none';
     document.getElementById('skip-cap-toggle').disabled = running;
   }
@@ -2361,8 +2362,8 @@
       </div>
       <div style="flex:1"></div>
       <div style="display:flex;gap:0.4rem;align-items:center">
-        <button class="btn btn-green btn-sm" onclick="exportToExcel()">⬇ Export to Excel</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCurrentReport()">🗑 Delete</button>
+        <button class="btn btn-green btn-sm" onclick="exportToExcel()"><i class="ic ic-download"></i> Export to Excel</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCurrentReport()"><i class="ic ic-trash"></i> Delete</button>
       </div>
     `;
     document.getElementById('result-summary').innerHTML = summaryHtml;
@@ -2497,7 +2498,7 @@
       // the report when used.
       const actions =
         '<div class="r-actions">' +
-          '<button class="r-act" title="Rename" onclick="event.stopPropagation(); startInlineRename(\'' + r.id + '\')">✏</button>' +
+          '<button class="r-act" title="Rename" onclick="event.stopPropagation(); startInlineRename(\'' + r.id + '\')"><i class="ic ic-edit"></i> </button>' +
           '<button class="r-act r-act-del" title="Delete" onclick="event.stopPropagation(); deleteReportById(\'' + r.id + '\')">✕</button>' +
         '</div>';
       return `
@@ -3183,7 +3184,7 @@
 
     const btn = document.getElementById('suggest-rels-btn');
     btn.disabled = true;
-    btn.textContent = '🪄 Preparing…';
+    btn.textContent = 'Preparing…';
     setSchemaStatus('Categorising schema…', 'busy');
 
     try {
@@ -3281,7 +3282,7 @@
       setSchemaStatus('AI suggest prep failed', 'error');
     } finally {
       btn.disabled    = false;
-      btn.textContent = '🪄 Suggest with AI';
+      btn.textContent = 'Suggest with AI';
     }
   }
 
@@ -3722,7 +3723,7 @@
         status: 'info',
         issuesFound: 0,
         items: [],
-        note: 'No inferred relationships configured for this project. Use the Validate Lookups tab to add some (or use 🪄 Suggest with AI).'
+        note: 'No inferred relationships configured for this project. Use the Validate Lookups tab to add some (or use Suggest with AI).'
       };
     }
 
@@ -3951,7 +3952,7 @@
       // payload so the model sees actual values (3-letter timekeeper
       // initials, ISO currency codes, etc.) — critical for inferring FKs
       // when column names are abbreviated (e.g. mbillaty → timekeep).
-      btn.textContent = '🔬 Sampling…';
+      btn.textContent = 'Sampling…';
       setSchemaStatus('Sampling column values…', 'busy');
       let samplesByKey;
       try {
@@ -3965,7 +3966,7 @@
                 'Sampling ' + completed + ' / ' + planned + ' column values…',
                 'busy'
               );
-              btn.textContent = '🔬 Sampling ' + completed + '/' + planned;
+              btn.textContent = 'Sampling ' + completed + '/' + planned;
             }
             console.log('[suggest] sampling progress', done, '/', planned);
           });
@@ -4021,12 +4022,12 @@
       const errorMessages  = [];
 
       for (let i = 0; i < chunks.length; i++) {
-        btn.textContent = '🪄 Thinking… ' + (i + 1) + '/' + chunks.length;
+        btn.textContent = 'Thinking… ' + (i + 1) + '/' + chunks.length;
         setSchemaStatus('AI batch ' + (i + 1) + ' of ' + chunks.length + '…', 'busy');
         let lastError = null, success = false;
         for (let attempt = 0; attempt <= CHUNK_MAX_RETRIES && !success; attempt++) {
           if (attempt > 0) {
-            btn.textContent = '🪄 Retry ' + (i + 1) + '/' + chunks.length;
+            btn.textContent = 'Retry ' + (i + 1) + '/' + chunks.length;
             setSchemaStatus('Batch ' + (i + 1) + ' retry…', 'busy');
           }
           try {
@@ -4072,7 +4073,7 @@
       _runInProgress   = false;
       _cancelRequested = false;
       btn.disabled    = false;
-      btn.textContent = '🪄 Suggest with AI';
+      btn.textContent = 'Suggest with AI';
     }
   }
 

@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <script>
 (function(){
@@ -132,7 +133,7 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="effort-estimator"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 <script src="/cygenix-effort-model.js?v=6b544c7a30" defer></script>
 
 <div class="page">
@@ -154,7 +155,7 @@ table.es{border-collapse:separate;border-spacing:0;font-size:11.5px}
       <input type="file" id="es-load-file" accept=".json,application/json" style="display:none"
              onchange="esLoadEstimateFile(this.files[0]); this.value='';">
       <button class="btn btn-sm" onclick="esExportCsv()">⤓ CSV</button>
-      <button class="btn btn-sm" onclick="window.print()">⎙ Print</button>
+      <button class="btn btn-sm" onclick="window.print()"><i class="ic ic-print"></i> Print</button>
     </div>
   </div>
 
@@ -652,7 +653,7 @@ function esRenderRates(){
     + window.CygenixEffortModel.EM_BASELINE_UNITS.map(u =>
         '<option value="' + u + '"' + (doc.baseline.unit === u ? ' selected' : '') + '>' + u + '</option>').join('')
     + '</select>'
-    + '<button class="btn btn-sm" onclick="esCalibrate()" title="Tune days per FP so that ticking EVERY module on EVERY use case fits exactly into the baseline — partial scopes then price proportionally inside the standard quote">⚖ Calibrate rate to baseline</button>'
+    + '<button class="btn btn-sm" onclick="esCalibrate()" title="Tune days per FP so that ticking EVERY module on EVERY use case fits exactly into the baseline — partial scopes then price proportionally inside the standard quote"><i class="ic ic-scale"></i> Calibrate rate to baseline</button>'
     + '</div></div>'
     + '</div>';
 }

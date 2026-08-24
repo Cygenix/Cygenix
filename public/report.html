@@ -7,6 +7,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -104,7 +105,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
 /* ── Artifact sources (inline citations + list beneath narrative) ─────────── */
 .narrative-sources{margin-top:1.25rem;padding-top:1rem;border-top:0.5px dashed var(--border)}
 .sources-title{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;display:inline-flex;align-items:center;gap:6px}
-.sources-title::before{content:'📎';font-size:12px}
+.sources-title::before{content:'';font-size:12px}
 .sources-sub{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.35rem;margin-top:0.35rem;font-weight:500}
 .sources-list{list-style:none;padding:0;margin:0;font-size:12px;line-height:1.7;color:var(--text2)}
 .sources-list li{padding:3px 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}
@@ -154,9 +155,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
 .col-transform{flex-shrink:0;font-size:11px;background:var(--accent-light);color:var(--accent);padding:1px 6px;border-radius:4px;font-family:var(--mono)}
 /* ── Warnings / notes ───────────────────────────────────────────────────────── */
 .warning-item{display:flex;gap:0.75rem;padding:0.6rem 0.75rem;background:var(--amber-light);border-radius:8px;margin-bottom:0.5rem;font-size:13px;color:#92400e}
-.warning-item::before{content:'⚠';flex-shrink:0}
+.warning-item::before{content:'';flex-shrink:0}
 .note-item{display:flex;gap:0.75rem;padding:0.6rem 0.75rem;background:var(--accent-light);border-radius:8px;margin-bottom:0.5rem;font-size:13px;color:#1e3a8a}
-.note-item::before{content:'ℹ';flex-shrink:0}
+.note-item::before{content:'';flex-shrink:0}
 /* ── Signature block ─────────────────────────────────────────────────────────── */
 .sig-block{display:grid;grid-template-columns:1fr 1fr;gap:3rem;margin-top:2rem}
 .sig-line{border-top:0.5px solid var(--border2);padding-top:0.5rem;font-size:12px;color:var(--text3)}
@@ -255,9 +256,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
   <div class="toolbar-logo">Cyge<span>nix</span> <span style="font-size:11px;color:#555a6a;margin-left:4px;font-family:var(--mono)">Migration Report</span></div>
   <div class="toolbar-actions">
     <a href="/dashboard.html" class="btn btn-ghost">← Dashboard</a>
-    <button class="btn btn-ghost" onclick="window.print()">🖨 Print</button>
-    <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn">📊 Export to Excel</button>
-    <button class="btn btn-ghost" onclick="saveToCygenix()" id="save-btn">💾 Save Report</button>
+    <button class="btn btn-ghost" onclick="window.print()"><i class="ic ic-print"></i> Print</button>
+    <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn"><i class="ic ic-chart"></i> Export to Excel</button>
+    <button class="btn btn-ghost" onclick="saveToCygenix()" id="save-btn"><i class="ic ic-save"></i> Save Report</button>
   </div>
 </div>
 <!-- REPORT -->
@@ -599,7 +600,7 @@ function buildThroughputTooltip(t){
   }
   if (t.sampleNote === 'small'){
     lines.push('');
-    lines.push('⚠ Sub-second sample — throughput may be volatile');
+    lines.push('Sub-second sample — throughput may be volatile');
   }
   return lines.join('\n');
 }
@@ -1227,7 +1228,7 @@ function renderReport(d) {
           // parameter names that the runner inserted as literal text.
           render: v => v != null && v !== ''
             ? '<span style="color:var(--green)">' + String(v) + '</span>'
-            : '<span style="color:var(--amber)">⚠ unresolved</span>' },
+            : '<span style="color:var(--amber)"><i class="ic ic-warning"></i> unresolved</span>' },
         { key: 'jobName',    label: 'Job',           type: 'text', size: 12 },
         { key: 'srcTable',   label: 'Source table',  type: 'text', mono: true, size: 11, muted: true },
         { key: 'tgtCol',     label: 'Target column', type: 'text', mono: true,
@@ -2488,7 +2489,7 @@ async function saveToCygenix() {
   if (!btn) return;
   const prev = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ Saving…';
+  btn.textContent = 'Saving…';
   try {
     let report;
     try {
@@ -2529,7 +2530,7 @@ async function saveToCygenix() {
 // ── Excel Export ──────────────────────────────────────────────────────────────
 function exportToExcel() {
   const btn = document.getElementById('excel-btn');
-  btn.textContent = '⏳ Building…'; btn.disabled = true;
+  btn.textContent = 'Building…'; btn.disabled = true;
   // Load SheetJS (xlsx-js-style fork — same API as xlsx@0.18.5 but supports
   // cell styling on write: bold, fills, borders, alignment, number formats).
   // The stock xlsx community edition silently drops .s style properties.
@@ -2537,7 +2538,7 @@ function exportToExcel() {
   const s = document.createElement('script');
   s.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
   s.onload  = doExport;
-  s.onerror = () => { alert('Could not load Excel library. Check your internet connection.'); btn.textContent='📊 Export to Excel'; btn.disabled=false; };
+  s.onerror = () => { alert('Could not load Excel library. Check your internet connection.'); btn.textContent='Export to Excel'; btn.disabled=false; };
   document.head.appendChild(s);
 }
 function doExport() {
@@ -3311,10 +3312,10 @@ function doExport() {
     const dateStr  = new Date().toISOString().slice(0,10);
     const filename = 'cygenix_report_'+projName+'_'+dateStr+'.xlsx';
     XLSX.writeFile(wb, filename);
-    btn.textContent = '📊 Export to Excel'; btn.disabled = false;
+    btn.textContent = 'Export to Excel'; btn.disabled = false;
   } catch(e) {
     alert('Export failed: '+e.message);
-    btn.textContent = '📊 Export to Excel'; btn.disabled = false;
+    btn.textContent = 'Export to Excel'; btn.disabled = false;
   }
 }
 </script>

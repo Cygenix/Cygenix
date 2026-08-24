@@ -10,6 +10,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-history.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
@@ -412,9 +413,9 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
-<script src="/cygenix-lineage.js?v=2105daad19" defer></script>
-<script src="/cygenix-evidence-map.js?v=09bc776038" defer></script>
-<script src="/object-mapping-app.js?v=ece9266a70" defer></script>
+<script src="/cygenix-lineage.js?v=8f95fd90fe" defer></script>
+<script src="/cygenix-evidence-map.js?v=1ac6eb9b14" defer></script>
+<script src="/object-mapping-app.js?v=1396145f8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script>
 // Belt-and-braces second layer: even with the fetch guard, also patch the
@@ -443,11 +444,11 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 </script>
 <script src="/cygenix-api.js?v=923ff2d8c9" defer></script>
-<script src="/cygenix-history.js?v=ef9138d3cf" defer></script>
+<script src="/cygenix-history.js?v=ee80298417" defer></script>
 <script src="/cygenix-drive.js?v=43733ac277" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="object-mapping"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <div class="page">
   <!-- Page header -->
@@ -463,22 +464,22 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="mode-btn" id="mode-otm" onclick="setMode('otm')">⊞ One-to-many</button>
       </div>
       <div class="mode-toggle" id="view-toggle" style="margin-left:0">
-        <button class="mode-btn active" id="view-table" onclick="setView('table')" title="Table view">☰ Table</button>
-        <button class="mode-btn" id="view-visual" onclick="setView('visual')" title="Visual drag-and-drop view">✦ Visual</button>
+        <button class="mode-btn active" id="view-table" onclick="setView('table')" title="Table view"><i class="ic ic-menu"></i> Table</button>
+        <button class="mode-btn" id="view-visual" onclick="setView('visual')" title="Visual drag-and-drop view"><i class="ic ic-sparkle"></i> Visual</button>
       </div>
-      <button class="btn btn-green btn-sm" onclick="newMap()" title="Start a new map (will prompt to save current work)">✨ New map</button>
-      <button class="btn btn-teal btn-sm" onclick="openLoadMapModal()" title="Load an existing saved map">📂 Load map</button>
-      <button class="btn btn-ghost btn-sm" onclick="openScriptFromDrive()" title="Open a saved SQL script from the Drive">🗂 Open from Drive</button>
+      <button class="btn btn-green btn-sm" onclick="newMap()" title="Start a new map (will prompt to save current work)"><i class="ic ic-sparkle"></i> New map</button>
+      <button class="btn btn-teal btn-sm" onclick="openLoadMapModal()" title="Load an existing saved map"><i class="ic ic-folder-open"></i> Load map</button>
+      <button class="btn btn-ghost btn-sm" onclick="openScriptFromDrive()" title="Open a saved SQL script from the Drive"><i class="ic ic-archive"></i> Open from Drive</button>
       <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
       <input id="job-name-input" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Job name (optional)" maxlength="120" />
-      <button class="btn btn-ghost btn-sm" id="open-history-btn" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">🕐 History</button>
-      <button class="btn btn-primary btn-sm" id="save-job-btn" onclick="saveAsJob()" disabled>💾 Save as job</button>
+      <button class="btn btn-ghost btn-sm" id="open-history-btn" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">History</button>
+      <button class="btn btn-primary btn-sm" id="save-job-btn" onclick="saveAsJob()" disabled><i class="ic ic-save"></i> Save as job</button>
     </div>
   </div>
 
   <!-- Edit job banner (shown when ?edit= param present) -->
   <div class="edit-banner" id="edit-banner" style="display:none">
-    <span>✏️ Editing saved job:</span>
+    <span><i class="ic ic-edit"></i> Editing saved job:</span>
     <strong id="edit-job-name"></strong>
     <button class="btn btn-ghost btn-sm" onclick="cancelEdit()" style="margin-left:auto"
             title="Stop editing and go back to your maps">✕ Cancel edit</button>
@@ -491,7 +492,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not configured</span>
-    <a href="/dashboard.html#connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none">⚙ Manage connections</a>
+    <a href="/dashboard.html#connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none"><i class="ic ic-cog"></i> Manage connections</a>
   </div>
 
   <!-- Status -->
@@ -506,7 +507,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="panel">
         <div class="panel-head" onclick="toggleSrcPanel()" style="cursor:pointer;user-select:none" title="Click to collapse">
           <div style="display:flex;align-items:center;gap:0.5rem">
-            <div class="panel-title">📋 Source table</div>
+            <div class="panel-title"><i class="ic ic-clipboard"></i> Source table</div>
             <span class="badge badge-teal" id="src-col-count" style="display:none"></span>
           </div>
           <span id="src-panel-toggle" style="color:var(--text3);font-size:14px;line-height:1;transition:transform 0.2s">▼</span>
@@ -514,7 +515,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="panel-body" id="src-panel-body">
           <div class="search-wrap" style="margin-bottom:0.75rem;position:relative">
             <button type="button" class="search-icon-btn" onclick="event.stopPropagation();openTablePicker('src')"
-                    title="Browse all source tables">🔍</button>
+                    title="Browse all source tables"><i class="ic ic-search"></i> </button>
             <input id="src-table-input" class="form-input" placeholder="Search source tables…" autocomplete="off"
               oninput="filterDrop('src');ddlCheckCreateVisibility('src')" onfocus="openDrop('src')" onclick="event.stopPropagation()">
             <div class="search-drop" id="src-drop" style="display:none"></div>
@@ -533,7 +534,7 @@ document.addEventListener('DOMContentLoaded', function(){
               <div style="display:flex;gap:0.25rem">
                 <button class="size-btn active" id="sz-m" onclick="event.stopPropagation();setColHeight('m')">M</button>
                 <button class="size-btn" id="sz-l" onclick="event.stopPropagation();setColHeight('l')">L</button>
-                <button class="size-btn" id="sz-xl" onclick="event.stopPropagation();setColHeight('xl')">⛶</button>
+                <button class="size-btn" id="sz-xl" onclick="event.stopPropagation();setColHeight('xl')"><i class="ic ic-fullscreen"></i> </button>
               </div>
             </div>
             <div class="src-col-list" id="src-col-list" style="max-height:220px"></div>
@@ -547,7 +548,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
       <!-- Options -->
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">⚙️ Options</div></div>
+        <div class="panel-head"><div class="panel-title"><i class="ic ic-cog"></i> Options</div></div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:0.875rem">
           <!-- Transaction mode (OTM only) -->
           <div id="tx-mode-wrap">
@@ -566,7 +567,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <div>
             <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
               WHERE conditions (optional)
-              <button onclick="openWhereModal()" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)">🤖 AI help</button>
+              <button onclick="openWhereModal()" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)"><i class="ic ic-robot"></i> AI help</button>
             </label>
             <div id="where-rows"></div>
             <button class="btn btn-ghost btn-sm" onclick="addWhereCond()" style="width:100%;margin-top:0.3rem;justify-content:center">+ Add condition</button>
@@ -619,10 +620,10 @@ document.addEventListener('DOMContentLoaded', function(){
       <div id="mode-single-panel">
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">🎯 Target table</div>
+            <div class="panel-title"><i class="ic ic-target"></i> Target table</div>
             <div style="display:flex;gap:0.5rem;align-items:center">
               <span class="badge badge-green" id="map-stats" style="display:none"></span>
-              <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()">🤖 Re-map</button>
+              <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()"><i class="ic ic-robot"></i> Re-map</button>
               <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none;color:var(--teal);border-color:rgba(23,130,124,0.3)">+ Joined col</button>
             </div>
           </div>
@@ -630,7 +631,7 @@ document.addEventListener('DOMContentLoaded', function(){
             <!-- Target table picker -->
             <div class="search-wrap" style="margin-bottom:1rem;position:relative">
               <button type="button" class="search-icon-btn" onclick="event.stopPropagation();openTablePicker('tgt')"
-                      title="Browse all target tables">🔍</button>
+                      title="Browse all target tables"><i class="ic ic-search"></i> </button>
               <input id="tgt-table-input" class="form-input" placeholder="Search target tables…" autocomplete="off"
                 oninput="filterDrop('tgt');ddlCheckCreateVisibility('tgt')" onfocus="openDrop('tgt')">
               <div class="search-drop" id="tgt-drop" style="display:none"></div>
@@ -645,7 +646,7 @@ document.addEventListener('DOMContentLoaded', function(){
             <!-- Was/Is status banner (rules managed in System Parameters) -->
             <div id="wasis-status" style="display:none;background:var(--bg3);border:0.5px solid rgba(245,158,11,0.2);border-radius:var(--r);padding:0.625rem 0.875rem;margin-bottom:1rem;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap">
               <span>
-                <span style="color:var(--amber);font-weight:600">🔄 Was/Is:</span>
+                <span style="color:var(--amber);font-weight:600"><i class="ic ic-sync"></i> Was/Is:</span>
                 <span id="wasis-status-text">No rules loaded</span>
                 <span style="opacity:0.7"> — manage in</span>
                 <a href="dashboard.html#system-parameters" style="color:var(--accent);text-decoration:none">System parameters → Was/Is value mapping</a>
@@ -657,7 +658,7 @@ document.addEventListener('DOMContentLoaded', function(){
             <div id="mapping-wrap" style="display:none">
               <!-- Filter + sort toolbar -->
               <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-                <input id="map-filter" class="form-input" style="flex:1;min-width:140px;max-width:260px;font-size:12px;padding:0.35rem 0.6rem" placeholder="🔍 Filter columns…" oninput="applyMapFilter()">
+                <input id="map-filter" class="form-input" style="flex:1;min-width:140px;max-width:260px;font-size:12px;padding:0.35rem 0.6rem" placeholder="Filter columns…" oninput="applyMapFilter()">
                 <select id="map-filter-match" class="form-input" style="width:120px;font-size:12px;padding:0.35rem 0.5rem" onchange="applyMapFilter()">
                   <option value="">All rows</option>
                   <option value="HIGH">HIGH match</option>
@@ -666,7 +667,7 @@ document.addEventListener('DOMContentLoaded', function(){
                   <option value="unmapped">Unmapped only</option>
                   <option value="fixed">Fixed value</option>
                 </select>
-                <button class="btn btn-ghost btn-sm" id="btn-toggle-unmapped" onclick="toggleUnmappedCols()" title="Show or hide rows with no source column and no fixed value">👁 Hide Unmapped</button>
+                <button class="btn btn-ghost btn-sm" id="btn-toggle-unmapped" onclick="toggleUnmappedCols()" title="Show or hide rows with no source column and no fixed value"><i class="ic ic-eye"></i> Hide Unmapped</button>
                 <button class="btn btn-ghost btn-sm" onclick="clearMapFilter()" title="Clear filter">✕ Clear</button>
                 <!-- Evidence-based auto-mapping: profiles a sample of real
                      values on both sides (cardinality, format fingerprints,
@@ -675,7 +676,7 @@ document.addEventListener('DOMContentLoaded', function(){
                 <button class="btn btn-ghost btn-sm" id="evidence-map-btn" onclick="runEvidenceMap()"
                         style="color:var(--purple);border-color:rgba(107,78,142,0.35)"
                         title="Propose mappings from measured evidence — value overlap, format fingerprints, cardinality and type behaviour on a sample of real data — instead of name matching. Each proposal shows its reasoning; hover the score in the Match column.">
-                  🧬 Evidence map
+                  Evidence map
                 </button>
                 <span id="map-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
               </div>
@@ -695,8 +696,8 @@ document.addEventListener('DOMContentLoaded', function(){
                 </table>
               </div>
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
-                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
-                <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
+                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()"><i class="ic ic-bolt"></i> Generate SQL</button>
+                <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map."><i class="ic ic-tools"></i> Auto-fix (Agentive)</button>
               </div>
             </div>
 
@@ -704,7 +705,7 @@ document.addEventListener('DOMContentLoaded', function(){
             <div id="visual-single" class="visual-view" style="display:none">
               <div class="visual-toolbar">
                 <div class="visual-hint" style="margin:0">Drag a source column onto a target column to map it. Click a connection line to remove.</div>
-                <button class="visual-fs-btn" onclick="toggleVisualFullscreen('visual-single')" title="Fullscreen (Esc to exit)">⛶ Fullscreen</button>
+                <button class="visual-fs-btn" onclick="toggleVisualFullscreen('visual-single')" title="Fullscreen (Esc to exit)"><i class="ic ic-fullscreen"></i> Fullscreen</button>
               </div>
               <div class="visual-canvas" id="vs-canvas">
                 <div class="visual-col" id="vs-src-col">
@@ -718,8 +719,8 @@ document.addEventListener('DOMContentLoaded', function(){
                 </div>
               </div>
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
-                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
-                <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
+                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()"><i class="ic ic-bolt"></i> Generate SQL</button>
+                <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map."><i class="ic ic-tools"></i> Auto-fix (Agentive)</button>
               </div>
             </div>
             <!-- Empty canvas: recent maps. Occupies this space only while no
@@ -733,7 +734,7 @@ document.addEventListener('DOMContentLoaded', function(){
                 </div>
                 <p class="rm-sub" id="rm-sub">Pick up where you left off, or choose source and target tables above to start fresh.</p>
                 <div class="rm-controls">
-                  <input class="rm-filter" id="rm-filter" placeholder="🔍 Filter recent maps…"
+                  <input class="rm-filter" id="rm-filter" placeholder="Filter recent maps…"
                          oninput="renderRecentMaps(this.value)" autocomplete="off">
                   <label class="rm-skip" title="Skip the confirmation when deleting a map from a tile. Deletes still go to Trash and can be restored from Dashboard → Show deleted.">
                     <input type="checkbox" id="rm-skip-confirm" onchange="rmSetSkipConfirm(this.checked)">
@@ -756,7 +757,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="panel">
           <div class="panel-head">
             <div style="display:flex;align-items:center;gap:0.5rem">
-              <div class="panel-title">🎯 Target tables</div>
+              <div class="panel-title"><i class="ic ic-target"></i> Target tables</div>
               <span class="badge badge-teal" id="tgt-count" style="display:none">0</span>
             </div>
             <button class="btn btn-primary btn-sm" onclick="addOTMTarget()">+ Add target table</button>
@@ -764,7 +765,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <div class="panel-body" style="padding-bottom:0.5rem">
             <div class="search-wrap" style="max-width:380px;margin-bottom:1rem">
               <button type="button" class="search-icon-btn" onclick="event.stopPropagation();openTablePicker('otm-tgt')"
-                      title="Browse all target tables">🔍</button>
+                      title="Browse all target tables"><i class="ic ic-search"></i> </button>
               <input id="otm-tgt-input" class="form-input" placeholder="Search target tables to add…" autocomplete="off"
                 oninput="filterDrop('otm-tgt')" onfocus="openDrop('otm-tgt')">
               <div class="search-drop" id="otm-tgt-drop" style="display:none"></div>
@@ -780,7 +781,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <div id="visual-otm" class="visual-view" style="display:none;padding:0 1.25rem 1rem">
             <div class="visual-toolbar">
               <div class="visual-hint" style="margin:0">Drag a source column onto a target column to map it. Click a connection line to remove.</div>
-              <button class="visual-fs-btn" onclick="toggleVisualFullscreen('visual-otm')" title="Fullscreen (Esc to exit)">⛶ Fullscreen</button>
+              <button class="visual-fs-btn" onclick="toggleVisualFullscreen('visual-otm')" title="Fullscreen (Esc to exit)"><i class="ic ic-fullscreen"></i> Fullscreen</button>
             </div>
             <div class="visual-canvas" id="vo-canvas">
               <div class="visual-col" id="vo-src-col">
@@ -794,8 +795,8 @@ document.addEventListener('DOMContentLoaded', function(){
             </div>
           </div>
           <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap" id="otm-actions" style="display:none">
-            <button class="btn btn-primary btn-sm" onclick="generateOTMSQL()">⚡ Generate cursor SQL</button>
-            <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
+            <button class="btn btn-primary btn-sm" onclick="generateOTMSQL()"><i class="ic ic-bolt"></i> Generate cursor SQL</button>
+            <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map."><i class="ic ic-tools"></i> Auto-fix (Agentive)</button>
           </div>
         </div>
       </div>
@@ -803,15 +804,15 @@ document.addEventListener('DOMContentLoaded', function(){
       <!-- ══ SQL PREVIEW (both modes) ══ -->
       <div class="panel" id="sql-panel" style="display:none">
         <div class="panel-head">
-          <div class="panel-title">⚡ Generated SQL</div>
+          <div class="panel-title"><i class="ic ic-bolt"></i> Generated SQL</div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value">✂ Remove unused</button>
+            <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value"><i class="ic ic-scissors"></i> Remove unused</button>
             <button class="btn btn-ghost btn-sm" id="undo-remove-btn" onclick="undoRemoveUnmappedCols()" style="display:none;color:var(--amber)">↩ Undo remove</button>
-            <button class="btn btn-ghost btn-sm" onclick="copySQL()">📋 Copy</button>
-            <button class="btn btn-ghost btn-sm" onclick="saveScriptToDrive()" title="Save this SQL as a script in the Drive">🗂 Save to Drive</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadSQL()">⬇ Download</button>
-            <button class="btn btn-ghost btn-sm" id="open-history-btn-2" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">🕐 History</button>
-            <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn" title="Save as a job — mirrored to the Drive (SQL Editor / Jobs)">💾 Save as job</button>
+            <button class="btn btn-ghost btn-sm" onclick="copySQL()"><i class="ic ic-clipboard"></i> Copy</button>
+            <button class="btn btn-ghost btn-sm" onclick="saveScriptToDrive()" title="Save this SQL as a script in the Drive"><i class="ic ic-archive"></i> Save to Drive</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadSQL()"><i class="ic ic-download"></i> Download</button>
+            <button class="btn btn-ghost btn-sm" id="open-history-btn-2" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">History</button>
+            <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn" title="Save as a job — mirrored to the Drive (SQL Editor / Jobs)"><i class="ic ic-save"></i> Save as job</button>
           </div>
         </div>
         <div class="panel-body">
@@ -824,7 +825,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <div class="sql-box" id="sql-output"></div>
           <!-- Warnings -->
           <div id="sql-warnings" style="display:none;margin-top:0.75rem">
-            <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:0.4rem">⚠ Warnings</div>
+            <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:0.4rem"><i class="ic ic-warning"></i> Warnings</div>
             <div id="sql-warnings-list" style="font-size:12px;color:var(--text2);line-height:1.8"></div>
           </div>
         </div>
@@ -838,7 +839,7 @@ document.addEventListener('DOMContentLoaded', function(){
 <div class="modal-overlay" id="where-modal">
   <div class="modal">
     <div class="modal-head">
-      <div style="font-size:14px;font-weight:600">🤖 AI WHERE clause builder</div>
+      <div style="font-size:14px;font-weight:600"><i class="ic ic-robot"></i> AI WHERE clause builder</div>
       <button onclick="closeWhereModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">✕</button>
     </div>
     <div class="modal-body">
@@ -911,7 +912,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <div style="display:flex;gap:0.5rem;justify-content:flex-end;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('new-map-modal').classList.remove('open')">Cancel</button>
         <button class="btn btn-red btn-sm" onclick="confirmNewMap('discard')">Discard &amp; continue</button>
-        <button class="btn btn-green btn-sm" onclick="confirmNewMap('save')">💾 Save &amp; continue</button>
+        <button class="btn btn-green btn-sm" onclick="confirmNewMap('save')"><i class="ic ic-save"></i> Save &amp; continue</button>
       </div>
     </div>
   </div>
@@ -921,12 +922,12 @@ document.addEventListener('DOMContentLoaded', function(){
 <div class="modal-overlay" id="load-map-modal">
   <div class="modal" style="width:720px">
     <div class="modal-head">
-      <div style="font-size:14px;font-weight:600">📂 Load existing map</div>
+      <div style="font-size:14px;font-weight:600"><i class="ic ic-folder-open"></i> Load existing map</div>
       <button onclick="document.getElementById('load-map-modal').classList.remove('open')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">✕</button>
     </div>
     <div class="modal-body">
       <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap">
-        <input id="load-map-search" class="form-input" style="flex:1;min-width:200px;font-family:var(--serif)" placeholder="🔍 Search by name, source or target…" oninput="renderLoadMapList()">
+        <input id="load-map-search" class="form-input" style="flex:1;min-width:200px;font-family:var(--serif)" placeholder="Search by name, source or target…" oninput="renderLoadMapList()">
         <select id="load-map-project-filter" class="form-input" style="width:auto;font-family:var(--serif);font-size:12px;max-width:220px" onchange="renderLoadMapList()" title="Filter by project">
           <!-- populated by populateLoadMapProjectFilter() -->
         </select>
@@ -979,7 +980,7 @@ document.addEventListener('DOMContentLoaded', function(){
 <div id="lineage-drawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:440px;max-width:92vw;background:var(--bg2);border-left:0.5px solid var(--border2);z-index:9000;overflow-y:auto;box-shadow:-18px 0 50px rgba(0,0,0,0.45)">
   <div style="padding:0.9rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg2);z-index:1">
     <div>
-      <div style="font-size:13px;font-weight:600">🧭 Lineage &amp; impact</div>
+      <div style="font-size:13px;font-weight:600"><i class="ic ic-compass"></i> Lineage &amp; impact</div>
       <div id="lineage-subtitle" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></div>
     </div>
     <button onclick="closeLineage()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:17px" title="Close (Esc)">✕</button>
@@ -987,7 +988,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <div id="lineage-body" style="padding:1rem 1.1rem"></div>
 </div>
 
-<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 </body>
 </html>

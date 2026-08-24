@@ -67,7 +67,7 @@
         box-shadow:var(--shadow-strong)
       ">
         <div style="flex:1;min-width:240px">
-          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">🍪 Cookie preferences</div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px"><i class="ic ic-info"></i> Cookie preferences</div>
           <div style="font-size:12px;color:var(--text2);line-height:1.55">
             We use essential cookies to keep you logged in and save your work. We also use functional cookies to sync your data across devices.
             <a href="/privacy.html#cookies" style="color:var(--accent);text-decoration:none"> Learn more</a>
@@ -185,7 +185,7 @@
     const btn = document.createElement('button');
     btn.id = 'cc-settings-btn';
     btn.title = 'Cookie settings';
-    btn.innerHTML = '🍪';
+    btn.innerHTML = '';
     btn.onclick = openPanel;
     btn.style.cssText = `
       position:fixed;bottom:1.25rem;right:1.25rem;z-index:8888;

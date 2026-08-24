@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <script>
 (function(){
@@ -206,7 +207,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="project-plan-grid"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 <script src="/cygenix-project-plan.js?v=e0223dd788" defer></script>
 <!-- The Configurator's engine: the "From Configurator" import computes the
      estimate here rather than duplicating any of its numbers. -->
@@ -216,7 +217,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 
   <div class="page-header">
     <div>
-      <div class="page-title">🗓 Project Plan</div>
+      <div class="page-title"><i class="ic ic-calendar"></i> Project Plan</div>
       <div class="page-sub">The delivery plan as a task grid: phases down the side, a month-by-week
         timeline across the top. Pick a tool, then click or drag across the weeks — work bars take the
         phase's tint, milestones stand up in green with their name. Everything saves as you go and
@@ -229,7 +230,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
       <button class="btn btn-sm" onclick="ppDeletePlan()">Delete</button>
       <button class="btn btn-sm" onclick="ppExportCsv()">⤓ CSV</button>
       <button class="btn btn-sm" onclick="ppExportExcel()" title="Download the grid as an Excel workbook — phase colours, bars and milestones intact">⤓ Excel</button>
-      <button class="btn btn-sm" onclick="window.print()">⎙ Print</button>
+      <button class="btn btn-sm" onclick="window.print()"><i class="ic ic-print"></i> Print</button>
       <button class="btn btn-sm" id="pf-open-btn" onclick="pfOpen()" title="Every plan on one shared timeline — one lane per project, striped by phase, with milestones, the today line and a by-resource view that hatches double-bookings">▤ Portfolio</button>
     </div>
   </div>
@@ -241,7 +242,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
         <button class="btn btn-sm" onclick="pfClose()">← Back to plan</button>
         <div class="pf-seg" role="group" aria-label="Portfolio mode">
           <button id="pf-mode-project" class="on" onclick="pfSetMode('project')">▤ By project</button>
-          <button id="pf-mode-resource" onclick="pfSetMode('resource')">☺ By resource</button>
+          <button id="pf-mode-resource" onclick="pfSetMode('resource')"><i class="ic ic-user"></i> By resource</button>
         </div>
         <div class="pf-seg" role="group" aria-label="Zoom">
           <button id="pf-zoom-mo" class="on" onclick="pfSetZoom('mo')">Months</button>
@@ -269,7 +270,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
       <div class="pp-seg" role="group" aria-label="Paint tool">
         <button id="pp-tool-work" class="active" onclick="ppSetTool('work')">▮ Work</button>
         <button id="pp-tool-mile" onclick="ppSetTool('mile')">▲ Milestone</button>
-        <button id="pp-tool-erase" onclick="ppSetTool('erase')">⌫ Erase</button>
+        <button id="pp-tool-erase" onclick="ppSetTool('erase')"><i class="ic ic-trash"></i> Erase</button>
       </div>
       <input id="pp-mile-label" class="form-input" style="width:130px" value="Meeting 1"
              aria-label="Milestone label" title="The label the next milestone click will place">
@@ -890,7 +891,7 @@ function pfResourceRows(projects){
       const bg = a.length === 1 ? pfHex(c0, 0.34)
         : 'linear-gradient(135deg, ' + pfHex(c0, 0.4) + ' 0 50%, ' + pfHex(PF_DOT[a[1].id % PF_DOT.length], 0.4) + ' 50% 100%)';
       const tip = a.map(x => x.name + ' (' + (x.client || '—') + ')').join('\n')
-        + (a.length > 1 ? '\n⚠ booked on ' + a.length + ' projects this week' : '');
+        + (a.length > 1 ? '\nbooked on ' + a.length + ' projects this week' : '');
       return { bg, clash: a.length > 1, tip };
     };
     return '<div class="pf-row"><div class="pf-left"><div class="pf-chev"></div>'

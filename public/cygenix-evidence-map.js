@@ -250,7 +250,7 @@
     } else if (comp.cardinality !== null && srcProfile.distinctRatio <= 0.2 && tgtProfile.distinctRatio <= 0.2) {
       reasons.push('both low-cardinality code sets');
     }
-    if (comp.type === 0) reasons.push('⚠ type clash: sampled ' + srcProfile.typeGuess + ' values against ' + tgtCol.type);
+    if (comp.type === 0) reasons.push('type clash: sampled ' + srcProfile.typeGuess + ' values against ' + tgtCol.type);
     else if (comp.type === 0.5) reasons.push('castable with care (' + srcProfile.typeGuess + ' → ' + tgtCol.type + ')');
     if (comp.name >= 0.85) reasons.push('names match');
     else if (comp.name >= 0.5) reasons.push('names similar');

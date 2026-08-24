@@ -9,6 +9,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -115,7 +116,7 @@ select.form-input option{background:var(--bg3)}
 <body>
 
 <div id="cyg-sidebar-mount" data-active="performance"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <div class="page">
   <div style="margin-bottom:1.5rem">
@@ -587,7 +588,7 @@ const cfg=loadSettings();
 applyToUI(cfg);
 renderSummary(cfg);
 </script>
-<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 </body>
 </html>

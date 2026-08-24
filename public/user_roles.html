@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <script>
 (function(){
@@ -102,7 +103,7 @@ select:focus,input[type=text]:focus{border-color:var(--accent)}
 </head>
 <body>
 <div id="cyg-sidebar-mount" data-active="user-roles"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <div class="page">
   <div class="page-header">
@@ -133,7 +134,7 @@ select:focus,input[type=text]:focus{border-color:var(--accent)}
     </div>
     <div id="users-wrap" class="loading">Loading users…</div>
     <div class="note-strip" id="users-note" style="display:none">
-      <span>ℹ️</span><span>New teammates appear here automatically the first time they sign in. Invite them by
+      <span><i class="ic ic-info"></i> </span><span>New teammates appear here automatically the first time they sign in. Invite them by
       granting access in your Microsoft Entra tenant (the application requires assignment), then assign roles here
       once they show up. Read-only view — role changes need the Organisation Owner or a Platform Administrator.</span>
     </div>
@@ -176,8 +177,8 @@ select:focus,input[type=text]:focus{border-color:var(--accent)}
           entry.</div>
       </div>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-sm" id="verify-btn" onclick="verifyChain()" data-rbac-role="OW,PA,AU">⛓ Verify chain</button>
-        <button class="btn btn-ghost btn-sm" onclick="exportAudit()" data-rbac-role="PA,AU">⬇ Export</button>
+        <button class="btn btn-ghost btn-sm" id="verify-btn" onclick="verifyChain()" data-rbac-role="OW,PA,AU"><i class="ic ic-chain"></i> Verify chain</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportAudit()" data-rbac-role="PA,AU"><i class="ic ic-download"></i> Export</button>
         <button class="btn btn-ghost btn-sm" onclick="loadAudit()">↻ Refresh</button>
       </div>
     </div>
@@ -215,7 +216,7 @@ async function loadMe(){
       || '<span class="muted small">No roles yet — a Platform Administrator needs to assign you one. You can sign in and view, nothing more.</span>';
     const col = ME.collapsed || [];
     document.getElementById('me-collapsed').innerHTML = col.length
-      ? '<div class="warn-strip"><span>⚠️</span><span><b>Collapsed segregation:</b> you hold role pairs the model keeps apart ('
+      ? '<div class="warn-strip"><span><i class="ic ic-warning"></i> </span><span><b>Collapsed segregation:</b> you hold role pairs the model keeps apart ('
         + col.map(c=>esc(c.note)).join('; ')
         + '). Conflicting acts are still refused individually and this state is recorded — on a multi-person project, spread these roles out.</span></div>'
       : '';
@@ -241,7 +242,7 @@ async function loadUsers(){
           + (canAssign ? ' <span class="x" onclick="revoke(\''+esc(u.oid)+'\',\''+r+'\')" title="Revoke '+r+'">×</span>' : '')
           + '</span>').join('');
         const collapsed = (u.collapsed && u.collapsed.length)
-          ? ' <span title="Holds role pairs the model separates: '+esc(u.collapsed.map(c=>c.note).join('; '))+'" style="cursor:help">⚠️</span>' : '';
+          ? ' <span title="Holds role pairs the model separates: '+esc(u.collapsed.map(c=>c.note).join('; '))+'" style="cursor:help"><i class="ic ic-warning"></i> </span>' : '';
         const assign = canAssign
           ? '<select id="as-'+esc(u.oid)+'" class="btn-sm"><option value="">+ role…</option>'
             + ASSIGNABLE.filter(r=>!u.roles.includes(r)).map(r=>'<option value="'+r+'">'+r+' — '+esc((ROLE_META[r]||{}).name||r)+'</option>').join('')
@@ -345,7 +346,7 @@ async function verifyChain(){
   btn.disabled = true;
   try {
     const v = await api('?what=audit&verify=1');
-    toast(v.ok ? '⛓ Chain intact — '+v.count+' entries verified' : '⚠ Chain BROKEN at entry '+v.brokenAt+' ('+v.reason+')');
+    toast(v.ok ? 'Chain intact — '+v.count+' entries verified' : 'Chain BROKEN at entry '+v.brokenAt+' ('+v.reason+')');
   } catch (e) { toast(e.message); }
   btn.disabled = false;
 }

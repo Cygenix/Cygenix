@@ -233,7 +233,7 @@ function updateAuditSourceWarning(){
     lines.join('\n') + '\n\n' +
     'This is an extra source query per job — fine for most cases, but if a job is very large the audit may take noticeable time. Untick Audit Source on this run if you want to skip it.';
   ind.title = tip;
-  ind.textContent = '⚠';
+  ind.textContent = '';
   ind.style.display = 'inline-block';
 }
 
@@ -1111,7 +1111,7 @@ function renderSteps() {
             const tip = 'Roll back ' + rollableInGroup + ' job' + (rollableInGroup === 1 ? '' : 's') +
                         ' in this group — deletes the rows loaded into target. Runs in reverse step order so foreign-key dependencies between jobs unwind cleanly.';
             return '<button class="group-icon-btn" onclick="rollbackGroup(' + gi + ')" title="' + tip.replace(/"/g, '&quot;') +
-                   '" style="color:var(--amber);font-size:11px;padding:2px 8px">↶ Rollback</button>';
+                   '" style="color:var(--amber);font-size:11px;padding:2px 8px"><i class="ic ic-undo"></i> Rollback</button>';
           })()}
           <button class="group-icon-btn" onclick="moveGroup(${gi},-1)" title="Move up" ${gi===0?'disabled':''}>↑</button>
           <button class="group-icon-btn" onclick="moveGroup(${gi},1)"  title="Move down" ${gi===project.groups.length-1?'disabled':''}>↓</button>
@@ -1137,7 +1137,7 @@ function renderSteps() {
         card.draggable = true;
 
         const isMigration = step.type === 'migration';
-        const icon  = isMigration ? '🔗' : '📝';
+        const icon  = isMigration ? '' : '';
         const color = isMigration ? 'var(--teal-bg)' : 'var(--accent-glow)';
         const baseMeta = isMigration
           ? esc(step.srcTable||'?') + ' → ' + esc(step.tgtTable||'?') + ' · ' + (step.columnMapping?.filter(m=>m.tgtCol).length||0) + ' cols'
@@ -1191,7 +1191,7 @@ function renderSteps() {
         // call from outside.
         const meta = step.progress ? buildProgressMeta(step.progress) : (baseMeta + runStatsHtml);
         const statusCls = 'status-' + (step.status||'pending');
-        const statusEmoji = {pending:'⚪',running:'🟡',passed:'🟢',failed:'🔴',skipped:'🟠'}[step.status||'pending'] || '⚪';
+        const statusEmoji = {pending:'<i class="ic-dot" style="color:var(--text3)"></i>',running:'<i class="ic-dot" style="color:var(--amber)"></i>',passed:'<i class="ic-dot" style="color:var(--green)"></i>',failed:'<i class="ic-dot" style="color:var(--red)"></i>',skipped:'<i class="ic-dot" style="color:var(--amber)"></i>'}[step.status||'pending'] || '<i class="ic-dot" style="color:var(--text3)"></i>';
         const runBtnId = `run-step-${gi}-${si}`;
         const logId    = `log-${gi}-${si}`;
 
@@ -1218,8 +1218,8 @@ function renderSteps() {
               <span class="step-status ${statusCls}">${step.status||'pending'}</span>
               <button class="btn btn-sm" onclick="runSingleStep(${gi},${si})" id="${runBtnId}"
                 style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.25);padding:3px 8px">▶ Run</button>
-              ${step.rollbackSupported && (step.rowsInserted || 0) > 0 ? `<button class="btn btn-ghost btn-sm" onclick="rollbackStep(${gi},${si})" title="Roll back the last run for this job — delete the ${(step.rowsInserted||0).toLocaleString()} rows it loaded into the target." style="padding:3px 8px;color:var(--amber);border-color:rgba(245,158,11,0.25)">↶ Rollback</button>` : ''}
-              <button class="btn btn-ghost btn-sm" onclick="editStepJob(${gi},${si})" title="${editTitle}" style="padding:3px 8px;color:var(--purple);border-color:rgba(107,78,142,0.25)" ${editDisabled?'disabled':''}>✏ Edit</button>
+              ${step.rollbackSupported && (step.rowsInserted || 0) > 0 ? `<button class="btn btn-ghost btn-sm" onclick="rollbackStep(${gi},${si})" title="Roll back the last run for this job — delete the ${(step.rowsInserted||0).toLocaleString()} rows it loaded into the target." style="padding:3px 8px;color:var(--amber);border-color:rgba(245,158,11,0.25)"><i class="ic ic-undo"></i> Rollback</button>` : ''}
+              <button class="btn btn-ghost btn-sm" onclick="editStepJob(${gi},${si})" title="${editTitle}" style="padding:3px 8px;color:var(--purple);border-color:rgba(107,78,142,0.25)" ${editDisabled?'disabled':''}><i class="ic ic-edit"></i> Edit</button>
               <button class="btn btn-ghost btn-sm" onclick="deleteStep(${gi},${si})" style="color:var(--red);padding:3px 8px">✕</button>
               ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${gi},${si})" style="padding:3px 8px">Log</button>` : ''}
             </div>
@@ -3011,7 +3011,7 @@ async function performRollback(steps, description){
     totalStagingLoaded += preview.stagingLoaded;
     const drift = preview.stagingLoaded - preview.targetMatching;
     const driftNote = drift > 0
-      ? ' (⚠ ' + drift + ' originally-loaded row(s) no longer in target — may have been deleted or modified elsewhere)'
+      ? ' (' + drift + ' originally-loaded row(s) no longer in target — may have been deleted or modified elsewhere)'
       : '';
     lines.push('• ' + step.name + ' (' + step.tgtTable + '): ' +
                preview.targetMatching + ' of ' + preview.stagingLoaded + ' rows still in target' + driftNote);
@@ -3094,7 +3094,7 @@ async function runSingleStep(gi, si) {
   if (!step) return;
   const btnId = 'run-step-'+gi+'-'+si;
   const btn = document.getElementById(btnId);
-  if (btn) { btn.disabled=true; btn.textContent='⏳'; }
+  if (btn) { btn.disabled=true; btn.textContent=''; }
 
   // Use the same hardened resolvers as the "Run selected" path (effectiveSrcConn
   // and effectiveTgtConn) — those check project.srcConn first, then fall back
@@ -3189,13 +3189,13 @@ async function runPreflight() {
   const box = document.getElementById('preflight-report');
   if (btn) btn.disabled = true;
   box.style.display = '';
-  box.innerHTML = '<div class="pf-panel"><div class="pf-progress">🛫 Preflight: sampling source data…</div></div>';
+  box.innerHTML = '<div class="pf-panel"><div class="pf-progress"><i class="ic ic-takeoff"></i> Preflight: sampling source data…</div></div>';
   try {
     const report = await CygenixPreflight.pfRunPreflight(flat.map(x => x.step), {
       srcConn, tgtConn, dbCall, sampleSize: 1000,
       onProgress: (done, total, jr) => {
         const p = box.querySelector('.pf-progress');
-        if (p) p.textContent = '🛫 Preflight: ' + done + ' of ' + total + ' analysed — ' + jr.name;
+        if (p) p.textContent = 'Preflight: ' + done + ' of ' + total + ' analysed — ' + jr.name;
       },
     });
     CygenixPreflight.pfSave(project.id, report);
@@ -3212,10 +3212,10 @@ function renderPreflightReport(report) {
   if (!box || !report) return;
   const P = CygenixPreflight;
   const BANNER = {
-    green:   ['🟢', 'Clear to run', 'no projected rejections in the sample'],
-    amber:   ['🟠', 'Loads, with silent changes', 'rows will load but some values change (rounding, truncated fractions, character substitution)'],
-    red:     ['🔴', 'Will reject rows', 'the load is forecast to fail rows — fix the findings below before running'],
-    unknown: ['⚪', 'Not fully analysed', 'some jobs could not be simulated'],
+    green:   ['', 'Clear to run', 'no projected rejections in the sample'],
+    amber:   ['', 'Loads, with silent changes', 'rows will load but some values change (rounding, truncated fractions, character substitution)'],
+    red:     ['', 'Will reject rows', 'the load is forecast to fail rows — fix the findings below before running'],
+    unknown: ['', 'Not fully analysed', 'some jobs could not be simulated'],
   };
   const [icon, title, subtitle] = BANNER[report.verdict] || BANNER.unknown;
   const totRows = report.jobs.reduce((a, j) => a + (j.totalRows || 0), 0);
@@ -3333,7 +3333,7 @@ async function runProject() {
   const copyHint = document.getElementById('copy-hint');
   if (copyHint) copyHint.textContent = '';
   document.getElementById('run-btn').disabled = true;
-  document.getElementById('run-btn').textContent = '⏹ Running…';
+  document.getElementById('run-btn').textContent = 'Running…';
   document.getElementById('stop-btn').style.display = 'inline-flex';
   abortRequested = false;
 
@@ -3451,7 +3451,7 @@ async function runProject() {
 
   document.getElementById('exec-prog').style.width = '100%';
   document.getElementById('exec-pct').textContent  = '100%';
-  const summary = failed===0 ? '✓ All '+total+' steps passed' : '⚠ '+passed+' passed, '+failed+' failed';
+  const summary = failed===0 ? '✓ All '+total+' steps passed' : ''+passed+' passed, '+failed+' failed';
   document.getElementById('exec-title').textContent = summary;
   log('\n'+summary, failed===0?'ok':'err');
   document.getElementById('run-btn').disabled=false;
@@ -3508,8 +3508,8 @@ async function runProject() {
   // Show report button + Save-to-Cosmos button. Save is user-requested (not
   // auto) — see saveReportToCloud() below for the POST to reports.js.
   document.getElementById('exec-btns').innerHTML =
-    `<button class="btn btn-primary btn-sm" onclick="window.open('/report.html','_blank')" style="background:var(--purple);border-color:rgba(107,78,142,0.3)">📄 View Conversion Report</button>
-     <button class="btn btn-sm" id="save-report-btn" onclick="saveReportToCloud()" style="background:transparent;border:0.5px solid var(--border2);color:var(--text);margin-left:0.5rem">💾 Save Report</button>`;
+    `<button class="btn btn-primary btn-sm" onclick="window.open('/report.html','_blank')" style="background:var(--purple);border-color:rgba(107,78,142,0.3)"><i class="ic ic-doc"></i> View Conversion Report</button>
+     <button class="btn btn-sm" id="save-report-btn" onclick="saveReportToCloud()" style="background:transparent;border:0.5px solid var(--border2);color:var(--text);margin-left:0.5rem"><i class="ic ic-save"></i> Save Report</button>`;
 }
 
 // Save the current cygenix_report to Cosmos via reports.js function.
@@ -3519,7 +3519,7 @@ async function saveReportToCloud() {
   const btn = document.getElementById('save-report-btn');
   if (!btn) return;
   const prev = btn.textContent;
-  btn.disabled = true; btn.textContent = '⏳ Saving…';
+  btn.disabled = true; btn.textContent = 'Saving…';
   try {
     let report;
     try {
@@ -3587,8 +3587,8 @@ function waitForDecision() {
     const btns = document.getElementById('exec-btns');
     btns.innerHTML = `
       <button class="btn btn-amber btn-sm" onclick="window._dec('retry')">↩ Retry</button>
-      <button class="btn btn-ghost btn-sm" onclick="window._dec('skip')">⏭ Skip</button>
-      <button class="btn btn-red btn-sm" onclick="window._dec('abort')">⏹ Abort</button>`;
+      <button class="btn btn-ghost btn-sm" onclick="window._dec('skip')"><i class="ic ic-skip"></i> Skip</button>
+      <button class="btn btn-red btn-sm" onclick="window._dec('abort')"><i class="ic ic-stop"></i> Abort</button>`;
     window._dec = c => { btns.innerHTML=''; resolve(c); };
   });
 }
@@ -3804,12 +3804,12 @@ async function captureResumePoint(a) {
   R.rsSave(project.id, step, point);
   step._resumePoint = point;
   if (plan.resumable) {
-    add('⛑ Resume point: row ' + plan.resumeOffset.toLocaleString()
+    add('Resume point: row ' + plan.resumeOffset.toLocaleString()
       + (point.totalRows ? ' of ' + point.totalRows.toLocaleString() : '')
       + ' — ' + plan.reason);
-    if (patch.kind === 'patch') add('⛑ Proposed patch: ' + patch.transform + ' on ' + patch.srcCol + ' → ' + patch.tgtCol + ' (' + patch.why + ')');
+    if (patch.kind === 'patch') add('Proposed patch: ' + patch.transform + ' on ' + patch.srcCol + ' → ' + patch.tgtCol + ' (' + patch.why + ')');
   } else {
-    add('⛑ Resume not offered: ' + plan.reason);
+    add('Resume not offered: ' + plan.reason);
   }
   return point;
 }
@@ -3828,11 +3828,11 @@ function resumeCardHtml(gi, si, step) {
   const buttons = !p.plan || !p.plan.resumable
     ? '<span style="color:var(--text3)">' + esc((p.plan && p.plan.reason) || '') + '</span>'
     : (p.patch && p.patch.kind === 'patch'
-        ? `<button class="btn btn-sm" onclick="applyResumePatchAndGo(${gi},${si})" style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.3);padding:3px 9px">⚡ Apply ${esc(p.patch.transform)} &amp; resume</button>`
+        ? `<button class="btn btn-sm" onclick="applyResumePatchAndGo(${gi},${si})" style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.3);padding:3px 9px"><i class="ic ic-bolt"></i> Apply ${esc(p.patch.transform)} &amp; resume</button>`
         : '')
       + `<button class="btn btn-ghost btn-sm" onclick="resumeStepNow(${gi},${si})" style="padding:3px 9px">▶ Resume from ${where ? esc(where.split(' of ')[0]) : 'failure'}</button>`;
   return `<div class="resume-card" style="display:block;border-top:0.5px dashed rgba(245,158,11,0.4);background:rgba(245,158,11,0.05);padding:0.55rem 0.8rem;border-radius:0 0 var(--r) var(--r)">
-    <div style="font-size:11.5px;font-weight:600;color:var(--amber)">⛑ Self-healing resume <span style="font-weight:400;color:var(--text3)">· failed ${esc(when)}${where ? ' · resume at ' + esc(where) : ''}</span></div>
+    <div style="font-size:11.5px;font-weight:600;color:var(--amber)"><i class="ic ic-shield"></i> Self-healing resume <span style="font-weight:400;color:var(--text3)">· failed ${esc(when)}${where ? ' · resume at ' + esc(where) : ''}</span></div>
     <div style="font-size:11px;color:var(--text2);margin:3px 0 6px">${esc(String(p.error).slice(0, 180))}</div>
     ${p.patch && p.patch.kind !== 'none' ? `<div style="font-size:11px;margin-bottom:6px"><b>${p.patch.kind === 'patch' ? 'Patch' : p.patch.kind === 'retry' ? 'Diagnosis' : 'Advice'}:</b> ${esc(p.patch.why || '')}</div>` : ''}
     <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center">
@@ -3960,7 +3960,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
           totalInserted += cnt;
           add('  ' + tgtName + ': ' + cnt.toLocaleString() + ' rows in table');
         } catch(ce) {
-          add('  Could not count rows in ' + tgtName + ': ' + ce.message);
+          add(' Could not count rows in ' + tgtName + ': ' + ce.message);
           perTableCounts.push({ name: tgtName, rows: 0 });
         }
       }
@@ -3993,14 +3993,14 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
               if (fails.length === 0) {
                 add('Reconciliation ✓: ' + res.groups.length + ' group(s) all matched (metric ' + res.metric + '(' + res.sourceColumn + ') by ' + res.groupByColumn + ')');
               } else {
-                add('Reconciliation ⚠: ' + fails.length + ' of ' + res.groups.length + ' group(s) failed tolerance ' + fmt(res.tolerance));
+                add('Reconciliation : ' + fails.length + ' of ' + res.groups.length + ' group(s) failed tolerance ' + fmt(res.tolerance));
                 fails.forEach(g => add('  • ' + res.groupByColumn + '=' + g.key + ': source=' + fmt(g.sourceValue) + ', target=' + fmt(g.targetValue) + ', delta=' + fmt(g.delta)));
               }
             } else {
               if (res.passed) {
                 add('Reconciliation ✓: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta));
               } else {
-                add('Reconciliation ⚠: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
+                add('Reconciliation : source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
               }
             }
           }
@@ -4125,14 +4125,14 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
               if (fails.length === 0) {
                 add('Reconciliation ✓: ' + rr.groups.length + ' group(s) all matched (metric ' + rr.metric + '(' + rr.sourceColumn + ') by ' + rr.groupByColumn + ')');
               } else {
-                add('Reconciliation ⚠: ' + fails.length + ' of ' + rr.groups.length + ' group(s) failed tolerance ' + fmt(rr.tolerance));
+                add('Reconciliation : ' + fails.length + ' of ' + rr.groups.length + ' group(s) failed tolerance ' + fmt(rr.tolerance));
                 fails.forEach(g => add('  • ' + rr.groupByColumn + '=' + g.key + ': source=' + fmt(g.sourceValue) + ', target=' + fmt(g.targetValue) + ', delta=' + fmt(g.delta)));
               }
             } else {
               if (rr.passed) {
                 add('Reconciliation ✓: source=' + fmt(rr.sourceValue) + ', target=' + fmt(rr.targetValue) + ', delta=' + fmt(rr.delta));
               } else {
-                add('Reconciliation ⚠: source=' + fmt(rr.sourceValue) + ', target=' + fmt(rr.targetValue) + ', delta=' + fmt(rr.delta) + ' (tolerance ' + fmt(rr.tolerance) + ')');
+                add('Reconciliation : source=' + fmt(rr.sourceValue) + ', target=' + fmt(rr.targetValue) + ', delta=' + fmt(rr.delta) + ' (tolerance ' + fmt(rr.tolerance) + ')');
               }
             }
           }
@@ -4151,9 +4151,9 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   // carries over to the paginated builder below.
   if (step.insertSQL && typeof step.insertSQL === 'string' && step.insertSQL.trim()) {
     if (!sameConnection) {
-      add('ℹ Source and target are different connections — running via paginated path. Transforms and Was/Is rules from the saved mapping WILL be applied to each row in JavaScript before insert.');
+      add('Source and target are different connections — running via paginated path. Transforms and Was/Is rules from the saved mapping WILL be applied to each row in JavaScript before insert.');
     } else {
-      add('ℹ Saved INSERT SQL is ' + step.insertSQL.length.toLocaleString() + ' chars (>' + SAVED_SQL_INLINE_LIMIT.toLocaleString() + ') — running via paginated path to keep individual statements small. Transforms and Was/Is rules from the saved mapping WILL be applied per row.');
+      add('Saved INSERT SQL is ' + step.insertSQL.length.toLocaleString() + ' chars (>' + SAVED_SQL_INLINE_LIMIT.toLocaleString() + ') — running via paginated path to keep individual statements small. Transforms and Was/Is rules from the saved mapping WILL be applied per row.');
     }
   }
 
@@ -4183,7 +4183,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   if (step.insertSQL && typeof step.insertSQL === 'string' && step.insertSQL.trim()) {
     add('Using paginated path with column-level transforms from saved mapping.');
   } else {
-    add('⚠ No saved insertSQL on this job — copying columns by name (no transforms applied). Open the Object Mapping editor and re-save the job to define transforms.');
+    add('No saved insertSQL on this job — copying columns by name (no transforms applied). Open the Object Mapping editor and re-save the job to define transforms.');
   }
 
   const PAGE_SIZE   = 500;   // rows fetched per page from source
@@ -4260,7 +4260,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   let offset = resumeBase;
   let firstPage = true;
   let hasMore = true;
-  if (resume) add('⛑ Resuming from row ' + resumeBase.toLocaleString() + ' (run ' + (resume.runId || '?') + ') — earlier rows are already staged');
+  if (resume) add('Resuming from row ' + resumeBase.toLocaleString() + ' (run ' + (resume.runId || '?') + ') — earlier rows are already staged');
   // ── Staging context ────────────────────────────────────────────────────
   // Set up the per-step staging context. runCtx pulls the run-id and
   // reload flag from the top-level runProject call. When this function is
@@ -4294,7 +4294,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   // failure point on the failing page, deleted by source key so staging is
   // contiguous again before rereading).
   if (resume && resume.cleanup && Array.isArray(resume.cleanup.chunks) && resume.cleanup.chunks.length) {
-    add('⛑ Cleaning ' + resume.cleanup.keys + ' possibly-staged row(s) from the failing page (by source key) before resuming…');
+    add('Cleaning ' + resume.cleanup.keys + ' possibly-staged row(s) from the failing page (by source key) before resuming…');
     for (const sql of resume.cleanup.chunks) await dbCall(tgtConn, { action: 'execute', sql });
   }
 
@@ -4366,9 +4366,9 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
         if (targetPk && targetPk.col){
           add('Target PK detected: [' + targetPk.col + '] (' + targetPk.kind + ') — rollback supported for this run');
         } else if (targetPk && targetPk.kind === 'composite'){
-          add('⚠ Target has composite PK (' + (targetPk.cols || []).join(', ') + ') — rollback NOT supported in this version');
+          add('Target has composite PK (' + (targetPk.cols || []).join(', ') + ') — rollback NOT supported in this version');
         } else {
-          add('⚠ No target PK detected — rollback will NOT be supported for this run');
+          add('No target PK detected — rollback will NOT be supported for this run');
         }
         if (identityColumns.size){
           add('Identity columns excluded from staging (target auto-generates): ' +
@@ -4475,11 +4475,11 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
             try {
               dump = JSON.stringify(pageRes2).slice(0, 400);
             } catch { dump = String(pageRes2).slice(0, 400); }
-            firstBatchErrorMsg = '' + errCount + ' batch error(s) on page ' + pageNum +
+            firstBatchErrorMsg = errCount + ' batch error(s) on page ' + pageNum +
                                  ' — backend did not return a recognizable error message field. Raw: ' + dump;
           }
         }
-        add('  ⚠ ' + errCount + ' batch error(s) on this page' +
+        add('  ' + errCount + ' batch error(s) on this page' +
             (firstBatchErrorMsg ? ' — ' + firstBatchErrorMsg : ''));
         // If the backend tells us which batch(es) failed, replace the captured
         // sample SQL with the actual failing batch so "Copy last SQL" gives
@@ -4519,7 +4519,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
             pageStartOffset: curPageStart, srcRowKeyCol, stagingFull, batchSize: INSERT_BATCH,
             runCtx, totalRows, stagedSoFar: resumeBase + totalInserted, tgtConn, mapping, add,
           });
-          add('⛑ Stopping at the first failing page — a resume point has been saved on this step.');
+          add('Stopping at the first failing page — a resume point has been saved on this step.');
           hasMore = false;
         }
       }
@@ -4552,7 +4552,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
           pageStartOffset: curPageStart, srcRowKeyCol, stagingFull, batchSize: INSERT_BATCH,
           runCtx, totalRows, stagedSoFar: resumeBase + totalInserted, tgtConn, mapping, add,
         });
-      } catch (e2) { add('⚠ Could not save a resume point: ' + e2.message); }
+      } catch (e2) { add('Could not save a resume point: ' + e2.message); }
     }
     step.rowsInserted = totalInserted;
     return { ok:false, log:stepLog, error:e.message, rowsInserted: totalInserted };
@@ -4665,7 +4665,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
     // The constant AUDIT_SOURCE_LARGE_TABLE_THRESHOLD also drives the
     // toolbar warning indicator.
     if ((step.totalRows || 0) > AUDIT_SOURCE_LARGE_TABLE_THRESHOLD){
-      add('⚠ Audit Source on large source (~' + step.totalRows.toLocaleString() +
+      add('Audit Source on large source (~' + step.totalRows.toLocaleString() +
           ' rows) — this may take a moment.');
     }
     try {
@@ -4696,7 +4696,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
         add('Audit Source: nothing to capture (no WHERE clause).');
       }
     } catch (e) {
-      add('⚠ Audit Source failed (migration itself succeeded): ' + e.message);
+      add('Audit Source failed (migration itself succeeded): ' + e.message);
     }
   } else if (runCtx.auditSource && !step.srcWhere){
     add('Audit Source: skipped (no WHERE clause on this job).');
@@ -4714,14 +4714,14 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
           if (fails.length === 0) {
             add('Reconciliation ✓: ' + res.groups.length + ' group(s) all matched (metric ' + res.metric + '(' + res.sourceColumn + ') by ' + res.groupByColumn + ')');
           } else {
-            add('Reconciliation ⚠: ' + fails.length + ' of ' + res.groups.length + ' group(s) failed tolerance ' + fmt(res.tolerance));
+            add('Reconciliation : ' + fails.length + ' of ' + res.groups.length + ' group(s) failed tolerance ' + fmt(res.tolerance));
             fails.forEach(g => add('  • ' + res.groupByColumn + '=' + g.key + ': source=' + fmt(g.sourceValue) + ', target=' + fmt(g.targetValue) + ', delta=' + fmt(g.delta)));
           }
         } else {
           if (res.passed) {
             add('Reconciliation ✓: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta));
           } else {
-            add('Reconciliation ⚠: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
+            add('Reconciliation : source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
           }
         }
       }

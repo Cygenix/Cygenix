@@ -10,6 +10,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -199,7 +200,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
   <!-- Page header -->
   <div class="page-header">
     <div>
-      <div class="page-title">🗺 Mapper</div>
+      <div class="page-title"><i class="ic ic-map"></i> Mapper</div>
       <div class="page-sub">Map source columns to one or more target tables and generate migration SQL</div>
     </div>
     <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
@@ -209,13 +210,13 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
         <button class="mode-btn" id="mode-otm" onclick="setMode('otm')">⊞ One-to-many</button>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
-      <button class="btn btn-primary btn-sm" id="save-job-btn" onclick="saveAsJob()" disabled>💾 Save as job</button>
+      <button class="btn btn-primary btn-sm" id="save-job-btn" onclick="saveAsJob()" disabled><i class="ic ic-save"></i> Save as job</button>
     </div>
   </div>
 
   <!-- Edit job banner (shown when ?edit= param present) -->
   <div class="edit-banner" id="edit-banner" style="display:none">
-    <span>✏️ Editing saved job:</span>
+    <span><i class="ic ic-edit"></i> Editing saved job:</span>
     <strong id="edit-job-name"></strong>
     <button class="btn btn-ghost btn-sm" onclick="clearEditMode()" style="margin-left:auto">✕ Cancel edit</button>
   </div>
@@ -224,11 +225,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
   <div class="conn-banner" id="conn-banner">
     <div class="conn-dot idle" id="src-dot"></div>
     <span class="conn-label" id="src-label">Source: not connected</span>
-    <button class="conn-btn" id="src-connect-btn" onclick="connectSrc()">🔌 Connect</button>
+    <button class="conn-btn" id="src-connect-btn" onclick="connectSrc()"><i class="ic ic-plug"></i> Connect</button>
     <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not connected</span>
-    <button class="conn-btn" id="tgt-connect-btn" onclick="connectTgt()">🔌 Connect</button>
+    <button class="conn-btn" id="tgt-connect-btn" onclick="connectTgt()"><i class="ic ic-plug"></i> Connect</button>
   </div>
 
   <!-- Status -->
@@ -243,14 +244,14 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
       <div class="panel">
         <div class="panel-head" onclick="toggleSrcPanel()" style="cursor:pointer;user-select:none" title="Click to collapse">
           <div style="display:flex;align-items:center;gap:0.5rem">
-            <div class="panel-title">📋 Source table</div>
+            <div class="panel-title"><i class="ic ic-clipboard"></i> Source table</div>
             <span class="badge badge-teal" id="src-col-count" style="display:none"></span>
           </div>
           <span id="src-panel-toggle" style="color:var(--text3);font-size:14px;line-height:1;transition:transform 0.2s">▼</span>
         </div>
         <div class="panel-body" id="src-panel-body">
           <div class="search-wrap" style="margin-bottom:0.75rem">
-            <input id="src-table-input" class="form-input" placeholder="🔍 Search source tables…" autocomplete="off"
+            <input id="src-table-input" class="form-input" placeholder="Search source tables…" autocomplete="off"
               oninput="filterDrop('src')" onfocus="openDrop('src')" onclick="event.stopPropagation()">
             <div class="search-drop" id="src-drop" style="display:none"></div>
           </div>
@@ -261,7 +262,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
               <div style="display:flex;gap:0.25rem">
                 <button class="size-btn active" id="sz-m" onclick="event.stopPropagation();setColHeight('m')">M</button>
                 <button class="size-btn" id="sz-l" onclick="event.stopPropagation();setColHeight('l')">L</button>
-                <button class="size-btn" id="sz-xl" onclick="event.stopPropagation();setColHeight('xl')">⛶</button>
+                <button class="size-btn" id="sz-xl" onclick="event.stopPropagation();setColHeight('xl')"><i class="ic ic-fullscreen"></i> </button>
               </div>
             </div>
             <div class="src-col-list" id="src-col-list" style="max-height:220px"></div>
@@ -275,7 +276,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 
       <!-- Options -->
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">⚙️ Options</div></div>
+        <div class="panel-head"><div class="panel-title"><i class="ic ic-cog"></i> Options</div></div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:0.875rem">
           <!-- Transaction mode (OTM only) -->
           <div id="tx-mode-wrap">
@@ -289,7 +290,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
           <div>
             <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
               WHERE clause (optional)
-              <button onclick="openWhereModal()" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)">🤖 AI help</button>
+              <button onclick="openWhereModal()" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)"><i class="ic ic-robot"></i> AI help</button>
             </label>
             <input id="src-where" class="form-input" style="font-family:var(--mono)" placeholder="e.g. active = 1 AND status = 'O'">
           </div>
@@ -318,17 +319,17 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
       <div id="mode-single-panel">
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">🎯 Target table</div>
+            <div class="panel-title"><i class="ic ic-target"></i> Target table</div>
             <div style="display:flex;gap:0.5rem;align-items:center">
               <span class="badge badge-green" id="map-stats" style="display:none"></span>
-              <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()">🤖 Re-map</button>
+              <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()"><i class="ic ic-robot"></i> Re-map</button>
               <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none;color:var(--teal);border-color:rgba(23,130,124,0.3)">+ Joined col</button>
             </div>
           </div>
           <div class="panel-body">
             <!-- Target table picker -->
             <div class="search-wrap" style="margin-bottom:1rem">
-              <input id="tgt-table-input" class="form-input" placeholder="🔍 Search target tables…" autocomplete="off"
+              <input id="tgt-table-input" class="form-input" placeholder="Search target tables…" autocomplete="off"
                 oninput="filterDrop('tgt')" onfocus="openDrop('tgt')">
               <div class="search-drop" id="tgt-drop" style="display:none"></div>
             </div>
@@ -338,16 +339,16 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
               <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
                 <div>
                   <div style="font-size:12px;font-weight:600;color:var(--amber);display:flex;align-items:center;gap:6px">
-                    🔄 Was/Is value mapping
+                    Was/Is value mapping
                     <span class="badge badge-green" id="wasis-badge" style="display:none">Active</span>
                   </div>
                   <div style="font-size:11px;color:var(--text3);margin-top:2px" id="wasis-desc">Upload a Was/Is file to translate old values to new values during migration</div>
                 </div>
                 <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
                   <input type="file" id="wasis-file" style="display:none" accept=".csv,.tsv,.xlsx,.xls,.txt" onchange="loadWasisFile(this.files[0])">
-                  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wasis-file').click()">⬆ Load Wasis file</button>
+                  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wasis-file').click()"><i class="ic ic-upload"></i> Load Wasis file</button>
                   <button class="btn btn-ghost btn-sm" id="wasis-clear-btn" onclick="clearWasis()" style="display:none;color:var(--red)">✕ Clear</button>
-                  <button class="btn btn-ghost btn-sm" id="wasis-preview-btn" onclick="toggleWasisPreview()" style="display:none">👁 Preview</button>
+                  <button class="btn btn-ghost btn-sm" id="wasis-preview-btn" onclick="toggleWasisPreview()" style="display:none"><i class="ic ic-eye"></i> Preview</button>
                 </div>
               </div>
               <div id="wasis-preview" style="display:none;margin-top:0.75rem;overflow-x:auto;max-height:180px;overflow-y:auto">
@@ -363,7 +364,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
             <div id="mapping-wrap" style="display:none">
               <!-- Filter + sort toolbar -->
               <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-                <input id="map-filter" class="form-input" style="flex:1;min-width:140px;max-width:260px;font-size:12px;padding:0.35rem 0.6rem" placeholder="🔍 Filter columns…" oninput="applyMapFilter()">
+                <input id="map-filter" class="form-input" style="flex:1;min-width:140px;max-width:260px;font-size:12px;padding:0.35rem 0.6rem" placeholder="Filter columns…" oninput="applyMapFilter()">
                 <select id="map-filter-match" class="form-input" style="width:120px;font-size:12px;padding:0.35rem 0.5rem" onchange="applyMapFilter()">
                   <option value="">All rows</option>
                   <option value="HIGH">HIGH match</option>
@@ -372,7 +373,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
                   <option value="unmapped">Unmapped only</option>
                   <option value="fixed">Fixed value</option>
                 </select>
-                <button class="btn btn-ghost btn-sm" id="btn-toggle-unmapped" onclick="toggleUnmappedCols()" title="Show or hide rows with no source column and no fixed value">👁 Hide Unmapped</button>
+                <button class="btn btn-ghost btn-sm" id="btn-toggle-unmapped" onclick="toggleUnmappedCols()" title="Show or hide rows with no source column and no fixed value"><i class="ic ic-eye"></i> Hide Unmapped</button>
                 <button class="btn btn-ghost btn-sm" onclick="clearMapFilter()" title="Clear filter">✕ Clear</button>
                 <span id="map-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
               </div>
@@ -392,7 +393,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
                 </table>
               </div>
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
-                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
+                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()"><i class="ic ic-bolt"></i> Generate SQL</button>
               </div>
             </div>
             <div id="single-empty" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
@@ -407,14 +408,14 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
         <div class="panel">
           <div class="panel-head">
             <div style="display:flex;align-items:center;gap:0.5rem">
-              <div class="panel-title">🎯 Target tables</div>
+              <div class="panel-title"><i class="ic ic-target"></i> Target tables</div>
               <span class="badge badge-teal" id="tgt-count" style="display:none">0</span>
             </div>
             <button class="btn btn-primary btn-sm" onclick="addOTMTarget()">+ Add target table</button>
           </div>
           <div class="panel-body" style="padding-bottom:0.5rem">
             <div class="search-wrap" style="max-width:380px;margin-bottom:1rem">
-              <input id="otm-tgt-input" class="form-input" placeholder="🔍 Search target tables to add…" autocomplete="off"
+              <input id="otm-tgt-input" class="form-input" placeholder="Search target tables to add…" autocomplete="off"
                 oninput="filterDrop('otm-tgt')" onfocus="openDrop('otm-tgt')">
               <div class="search-drop" id="otm-tgt-drop" style="display:none"></div>
             </div>
@@ -425,7 +426,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
             Connect source and target databases, pick a source table, then add target tables above
           </div>
           <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap" id="otm-actions" style="display:none">
-            <button class="btn btn-primary btn-sm" onclick="generateOTMSQL()">⚡ Generate cursor SQL</button>
+            <button class="btn btn-primary btn-sm" onclick="generateOTMSQL()"><i class="ic ic-bolt"></i> Generate cursor SQL</button>
           </div>
         </div>
       </div>
@@ -433,13 +434,13 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
       <!-- ══ SQL PREVIEW (both modes) ══ -->
       <div class="panel" id="sql-panel" style="display:none">
         <div class="panel-head">
-          <div class="panel-title">⚡ Generated SQL</div>
+          <div class="panel-title"><i class="ic ic-bolt"></i> Generated SQL</div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value">✂ Remove unused</button>
+            <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value"><i class="ic ic-scissors"></i> Remove unused</button>
             <button class="btn btn-ghost btn-sm" id="undo-remove-btn" onclick="undoRemoveUnmappedCols()" style="display:none;color:var(--amber)">↩ Undo remove</button>
-            <button class="btn btn-ghost btn-sm" onclick="copySQL()">📋 Copy</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadSQL()">⬇ Download</button>
-            <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn">💾 Save as job</button>
+            <button class="btn btn-ghost btn-sm" onclick="copySQL()"><i class="ic ic-clipboard"></i> Copy</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadSQL()"><i class="ic ic-download"></i> Download</button>
+            <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn"><i class="ic ic-save"></i> Save as job</button>
           </div>
         </div>
         <div class="panel-body">
@@ -452,7 +453,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
           <div class="sql-box" id="sql-output"></div>
           <!-- Warnings -->
           <div id="sql-warnings" style="display:none;margin-top:0.75rem">
-            <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:0.4rem">⚠ Warnings</div>
+            <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:0.4rem"><i class="ic ic-warning"></i> Warnings</div>
             <div id="sql-warnings-list" style="font-size:12px;color:var(--text2);line-height:1.8"></div>
           </div>
         </div>
@@ -466,7 +467,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 <div class="modal-overlay" id="where-modal">
   <div class="modal">
     <div class="modal-head">
-      <div style="font-size:14px;font-weight:600">🤖 AI WHERE clause builder</div>
+      <div style="font-size:14px;font-weight:600"><i class="ic ic-robot"></i> AI WHERE clause builder</div>
       <button onclick="closeWhereModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">✕</button>
     </div>
     <div class="modal-body">
@@ -628,7 +629,7 @@ function setBanner(side, state, text){
   if(lbl) lbl.textContent = text;
   const el = side==='src'?dot:tDot;
   if(el) el.className = 'conn-dot '+(state==='ok'?'ok':state==='connecting'?'idle':'err');
-  if(btn) btn.textContent = state==='ok'?'↻ Refresh':'🔌 Connect';
+  if(btn) btn.textContent = state==='ok'?'↻ Refresh':'Connect';
 }
 
 // ── Mode toggle ───────────────────────────────────────────────────────────────
@@ -920,7 +921,7 @@ function toggleUnmappedCols(){
   _hidingUnmapped = !_hidingUnmapped;
   const btn = $('btn-toggle-unmapped');
   if(btn){
-    btn.textContent = _hidingUnmapped ? '👁 Show Unmapped' : '👁 Hide Unmapped';
+    btn.textContent = _hidingUnmapped ? 'Show Unmapped' : 'Hide Unmapped';
     btn.style.color = _hidingUnmapped ? 'var(--amber)' : '';
     btn.style.borderColor = _hidingUnmapped ? 'rgba(245,158,11,0.4)' : '';
   }
@@ -981,7 +982,7 @@ function renderMappingTable(){
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
       <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${esc(m.tgtCol)}</td>
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
-        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})">⚠ LEFT(${truncLen})</span>`:''}
+        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})"><i class="ic ic-warning"></i> LEFT(${truncLen})</span>`:''}
       </td>
       <td><select class="map-select" style="width:80px" onchange="updateTransform(${i},this.value)">
         ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
@@ -1000,7 +1001,7 @@ function renderMappingTable(){
   // Reset hide-unmapped toggle when mapping rebuilt
   _hidingUnmapped = false;
   const btn = $('btn-toggle-unmapped');
-  if(btn){ btn.textContent='👁 Hide Unmapped'; btn.style.color=''; btn.style.borderColor=''; }
+  if(btn){ btn.textContent='Hide Unmapped'; btn.style.color=''; btn.style.borderColor=''; }
   // Re-apply any active filter after re-render
   applyMapFilter();
 }
@@ -1198,7 +1199,7 @@ function renderOTMCards(){
         <span style="font-size:10px;color:var(--text3);margin-left:4px">${mappedCount} mapped</span>
         <div style="margin-left:auto;display:flex;gap:0.4rem">
           ${joinCols.length?`<button onclick="showOTMJoinColPicker(${ti})" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer">+ Joined col</button>`:''}
-          <button onclick="aiMapOTM(${ti})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--purple);cursor:pointer" id="ai-map-btn-${ti}">🤖 AI map</button>
+          <button onclick="aiMapOTM(${ti})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--purple);cursor:pointer" id="ai-map-btn-${ti}"><i class="ic ic-robot"></i> AI map</button>
           <button onclick="moveTgt(${ti},-1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" ${ti===0?'disabled':''}>↑</button>
           <button onclick="moveTgt(${ti},1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" ${ti===targetTables.length-1?'disabled':''}>↓</button>
           <button onclick="removeTgt(${ti})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:2px 4px">✕</button>
@@ -1231,8 +1232,8 @@ function renderOTMCards(){
       <!-- Mapping rows — driven off TARGET columns -->
       <div style="padding:0.5rem 0.875rem">
         <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">
-          <input placeholder="🔍 Filter…" style="flex:1;min-width:100px;max-width:180px;font-size:11px;padding:2px 6px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono);outline:none" oninput="filterOTMRows(${ti},this.value)" id="otm-filter-${ti}">
-          <button class="btn btn-ghost btn-sm" id="otm-hide-btn-${ti}" onclick="toggleOTMUnmapped(${ti})" style="font-size:10px;padding:2px 7px">👁 Hide Unmapped</button>
+          <input placeholder="Filter…" style="flex:1;min-width:100px;max-width:180px;font-size:11px;padding:2px 6px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono);outline:none" oninput="filterOTMRows(${ti},this.value)" id="otm-filter-${ti}">
+          <button class="btn btn-ghost btn-sm" id="otm-hide-btn-${ti}" onclick="toggleOTMUnmapped(${ti})" style="font-size:10px;padding:2px 7px"><i class="ic ic-eye"></i> Hide Unmapped</button>
         </div>
         <div style="overflow-x:auto">
         <table class="map-table" style="margin-bottom:0.4rem" id="otm-table-${ti}">
@@ -1256,7 +1257,7 @@ function renderOTMCards(){
               </select></td>
               <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
               <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${esc(tc.name)}</td>
-              <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(tc.type||'')}${willTrunc?`<br><span style="color:var(--amber);font-size:9px">⚠ LEFT(${truncLen})</span>`:''}</td>
+              <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(tc.type||'')}${willTrunc?`<br><span style="color:var(--amber);font-size:9px"><i class="ic ic-warning"></i> LEFT(${truncLen})</span>`:''}</td>
               <td><select class="map-select" style="width:75px" onchange="updateOTMTransform(${ti},'${esc(tc.name)}',this.value)">
                 ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
               </select></td>
@@ -1299,7 +1300,7 @@ function toggleOTMUnmapped(ti){
   _otmHideUnmapped[ti] = !_otmHideUnmapped[ti];
   const btn=document.getElementById('otm-hide-btn-'+ti);
   if(btn){
-    btn.textContent = _otmHideUnmapped[ti] ? '👁 Show Unmapped' : '👁 Hide Unmapped';
+    btn.textContent = _otmHideUnmapped[ti] ? 'Show Unmapped' : 'Hide Unmapped';
     btn.style.color = _otmHideUnmapped[ti] ? 'var(--amber)' : '';
   }
   filterOTMRows(ti, document.getElementById('otm-filter-'+ti)?.value||'');
@@ -1383,7 +1384,7 @@ async function aiMapOTM(ti){
   if(!srcTable){ alert('Select a source table first.'); return; }
 
   const btn=$('ai-map-btn-'+ti);
-  if(btn){ btn.textContent='⏳'; btn.disabled=true; }
+  if(btn){ btn.textContent=''; btn.disabled=true; }
 
   const joinCols=(typeof getJoinColumns==='function')?getJoinColumns():[];
   const srcCols=[...(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name), ...joinCols.map(c=>c.name)];
@@ -1429,7 +1430,7 @@ async function aiMapOTM(ti){
   } catch(e){
     showStatus('AI map error: '+e.message,'err');
   }
-  if(btn){ btn.textContent='🤖 AI map'; btn.disabled=false; }
+  if(btn){ btn.textContent='AI map'; btn.disabled=false; }
 }
 
 // ── OTM SQL generation ────────────────────────────────────────────────────────
@@ -1553,11 +1554,11 @@ function generateOTMSQL(){
           if(sl>tl&&tl!==Infinity){ truncLen=tl; truncWarnings.push({srcCol:m.srcCol,tgtCol:m.tgtCol,tgtTable:tt.fullName,tgtLen:tl}); }
         }
         switch((m.transform||'NONE').toUpperCase()){
-          case 'TRIM': return '  TRIM('+varName+')';
-          case 'UPPER': return '  UPPER('+varName+')';
-          case 'LOWER': return '  LOWER('+varName+')';
-          case 'CAST': return '  CAST('+varName+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
-          default: if(truncLen) return '  LEFT('+varName+', '+truncLen+')'; return '  '+varName;
+          case 'TRIM': return ' TRIM('+varName+')';
+          case 'UPPER': return ' UPPER('+varName+')';
+          case 'LOWER': return ' LOWER('+varName+')';
+          case 'CAST': return ' CAST('+varName+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
+          default: if(truncLen) return ' LEFT('+varName+', '+truncLen+')'; return '  '+varName;
         }
       }),
       ...fkCols.map(fk=>`  ${fk.refTableVar}`)
@@ -1582,7 +1583,7 @@ function generateOTMSQL(){
   });
 
   if(truncWarnings.length){
-    let wb='-- ⚠ TRUNCATION WARNINGS:\n';
+    let wb='-- TRUNCATION WARNINGS:\n';
     truncWarnings.forEach(w=>{ wb+=`--   ${w.tgtTable}.${w.tgtCol}: truncated to ${w.tgtLen}\n`; });
     sql=wb+'\n'+sql;
   }
@@ -1674,7 +1675,7 @@ function saveAsJob(){
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
     showStatus('✓ Saved job: '+jobName,'info');
     $('save-job-btn').textContent='✓ Saved';
-    setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
+    setTimeout(()=>{ $('save-job-btn').textContent='Save as job'; },2000);
 
   } else {
     // OTM
@@ -1703,7 +1704,7 @@ function saveAsJob(){
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
     showStatus('✓ Saved OTM job: '+jobName,'info');
     $('save-job-btn').textContent='✓ Saved';
-    setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
+    setTimeout(()=>{ $('save-job-btn').textContent='Save as job'; },2000);
   }
 }
 
@@ -2044,7 +2045,7 @@ function renderJoinBuilder(containerId,allTables,baseTable){
             ${['INNER','LEFT','RIGHT','FULL OUTER'].map(t=>`<option value="${t}" ${j.type===t?'selected':''}>${t}</option>`).join('')}
           </select>
           <div style="position:relative">
-            <input id="join-tbl-inp-${i}" value="${(()=>{const t=(window._joinAllTables||[]).find(t=>t.value===j.table);return t?t.label:j.table||'';})()}" placeholder="🔍 Search tables…" autocomplete="off" spellcheck="false"
+            <input id="join-tbl-inp-${i}" value="${(()=>{const t=(window._joinAllTables||[]).find(t=>t.value===j.table);return t?t.label:j.table||'';})()}" placeholder="Search tables…" autocomplete="off" spellcheck="false"
               onfocus="openJoinTableDrop(${i})" oninput="filterJoinTableDrop(${i},this.value)" onblur="setTimeout(()=>closeJoinTableDrop(${i}),180)"
               style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;box-sizing:border-box">
             <div id="join-tbl-drop-${i}" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:0 0 var(--r) var(--r);max-height:180px;overflow-y:auto;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.3)"></div>
@@ -2056,7 +2057,7 @@ function renderJoinBuilder(containerId,allTables,baseTable){
           <input id="join-on-${i}" value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
             placeholder="e.g. [dbo].[client].[clnum] = [dbo].[matter].[mclient]"
             class="join-on-input">
-          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)" title="AI ON clause">🤖 AI</button>
+          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)" title="AI ON clause"><i class="ic ic-robot"></i> AI</button>
         </div>
         ${j.table?`<div style="font-size:10px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">${j.cols?j.cols.length+' columns available':'Loading…'}</div>`:''}
       </div>`).join('')}`;

@@ -91,7 +91,7 @@
         </label>
         <button id="cyg-psd-delete-selected" class="btn btn-danger btn-sm" disabled
           style="opacity:0.5;cursor:not-allowed"
-          title="Delete the selected jobs">🗑 Delete selected</button>
+          title="Delete the selected jobs"><i class="ic ic-trash"></i> Delete selected</button>
         <span id="cyg-psd-select-count" style="font-size:12px;color:var(--text3)"></span>
         <span style="font-size:12px;color:var(--text3);margin-left:auto">
           Generated on demand — not stored. Click <strong>Generate</strong> on any job to download a fresh PDF.
@@ -253,7 +253,7 @@
     if (noJobsAtAll) {
       return `
         <div style="padding:3rem 2rem;text-align:center;background:var(--bg2);border:1px dashed var(--border);border-radius:8px;color:var(--text2)">
-          <div style="font-size:2.5rem;margin-bottom:1rem">📄</div>
+          <div style="font-size:2.5rem;margin-bottom:1rem"><i class="ic ic-doc"></i> </div>
           <h3 style="color:var(--text);margin:0 0 0.5rem 0;font-size:1.1rem">No jobs yet</h3>
           <p style="margin:0;font-size:0.9rem;line-height:1.5">
             Once you've run a migration job, it'll appear here and you can generate a Project Summary Document.
@@ -309,8 +309,8 @@
           </div>
         </div>
         <div style="display:flex;gap:0.5rem;flex-shrink:0">
-          <button class="btn btn-ghost btn-sm" data-preview="${attr(job.id)}" title="Preview in a new tab">👁 Preview</button>
-          <button class="btn btn-primary btn-sm" data-generate="${attr(job.id)}" title="Generate and download as PDF">📄 Generate</button>
+          <button class="btn btn-ghost btn-sm" data-preview="${attr(job.id)}" title="Preview in a new tab"><i class="ic ic-eye"></i> Preview</button>
+          <button class="btn btn-primary btn-sm" data-generate="${attr(job.id)}" title="Generate and download as PDF"><i class="ic ic-doc"></i> Generate</button>
         </div>
       </div>`;
   }
@@ -351,7 +351,7 @@
     const deleteBtn = view.querySelector('#cyg-psd-delete-selected');
     if (deleteBtn) {
       deleteBtn.disabled = true;
-      deleteBtn.textContent = '⏳ Deleting…';
+      deleteBtn.textContent = 'Deleting…';
     }
 
     try {
@@ -367,7 +367,7 @@
         toast('Local save failed: ' + (e.message || 'unknown error'), 'error');
         if (deleteBtn) {
           deleteBtn.disabled = false;
-          deleteBtn.textContent = '🗑 Delete selected';
+          deleteBtn.textContent = 'Delete selected';
         }
         return;
       }
@@ -423,7 +423,7 @@
       // handles the disabled/opacity, but the textContent is ours to
       // manage. Without this the button gets stuck saying "Deleting…"
       // even after the operation finished.
-      if (deleteBtn) deleteBtn.textContent = '🗑 Delete selected';
+      if (deleteBtn) deleteBtn.textContent = 'Delete selected';
 
       // Re-render to remove the rows. renderJobList() calls
       // updateSelectionUI() at the end, so the master checkbox / count /
@@ -443,7 +443,7 @@
       toast('Delete failed: ' + (e.message || 'unknown error'), 'error');
       if (deleteBtn) {
         deleteBtn.disabled = false;
-        deleteBtn.textContent = '🗑 Delete selected';
+        deleteBtn.textContent = 'Delete selected';
       }
     }
   }

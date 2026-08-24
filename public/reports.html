@@ -482,6 +482,7 @@ body.cyg-collapsed{padding-left:54px}
 
 </style>
 <link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 </head>
 <body>
 <script src="/connections.js?v=d199ff3358" defer></script>
@@ -490,14 +491,14 @@ body.cyg-collapsed{padding-left:54px}
 
 <!-- Sidebar: data-active matches the new 'report-builder' key in cygenix-sidebar.js -->
 <div id="cyg-sidebar-mount" data-active="report-builder"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <div class="page">
 
   <!-- Page header -->
   <div class="page-header">
     <div>
-      <div class="page-title">📊 Report Builder</div>
+      <div class="page-title"><i class="ic ic-chart"></i> Report Builder</div>
       <div class="page-sub">Build paginated tabular and visual reports against migration jobs or any saved connection. Define datasets, parameters, layouts, and export to Excel. Reports save to your account and can be re-run with different parameters.</div>
       <div class="page-tags">
         <span style="color:var(--text2);font-weight:500">Layouts:</span>
@@ -507,7 +508,7 @@ body.cyg-collapsed{padding-left:54px}
       </div>
     </div>
     <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-      <span id="rb-sync-pill" class="cyg-sync-pill local" title="Cosmos sync status">💾 local</span>
+      <span id="rb-sync-pill" class="cyg-sync-pill local" title="Cosmos sync status"><i class="ic ic-save"></i> local</span>
       <span id="rb-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</span>
       <button class="btn btn-purple btn-sm" onclick="rbAddReport()">＋ New report</button>
     </div>
@@ -523,7 +524,7 @@ body.cyg-collapsed{padding-left:54px}
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not configured</span>
     <button class="conn-btn" onclick="dsReloadAllSchemas()" style="margin-left:auto" title="Re-fetch schemas (use after structural DB changes)">↻ Reload schemas</button>
-    <a href="/dashboard.html#connections" class="conn-btn">⚙ Manage connections</a>
+    <a href="/dashboard.html#connections" class="conn-btn"><i class="ic ic-cog"></i> Manage connections</a>
   </div>
 
   <!-- Status bar -->
@@ -557,17 +558,17 @@ body.cyg-collapsed{padding-left:54px}
         <!-- Name + delete -->
         <div class="rb-editor-head">
           <input class="rb-name-input" id="rb-name" placeholder="Untitled report" oninput="rbRenameCurrent(this.value)">
-          <button class="btn btn-red btn-sm" onclick="rbDeleteCurrent()">🗑 Delete</button>
+          <button class="btn btn-red btn-sm" onclick="rbDeleteCurrent()"><i class="ic ic-trash"></i> Delete</button>
           <button class="btn btn-primary btn-sm" onclick="rbRunCurrent()">▶ Run</button>
         </div>
 
         <!-- Tab bar -->
         <div class="cx-tabs">
-          <button class="cx-tab cx-tab-active" data-rb-tab="datasets"   onclick="rbSwitchTab('datasets')">📥 Datasets</button>
-          <button class="cx-tab"               data-rb-tab="parameters" onclick="rbSwitchTab('parameters')">⚙️ Parameters</button>
-          <button class="cx-tab"               data-rb-tab="layout"     onclick="rbSwitchTab('layout')">📐 Layout</button>
-          <button class="cx-tab"               data-rb-tab="preview"    onclick="rbSwitchTab('preview')">👁 Preview</button>
-          <button class="cx-tab"               data-rb-tab="runs"       onclick="rbSwitchTab('runs')">🕘 Runs</button>
+          <button class="cx-tab cx-tab-active" data-rb-tab="datasets"   onclick="rbSwitchTab('datasets')"><i class="ic ic-download"></i> Datasets</button>
+          <button class="cx-tab"               data-rb-tab="parameters" onclick="rbSwitchTab('parameters')"><i class="ic ic-cog"></i> Parameters</button>
+          <button class="cx-tab"               data-rb-tab="layout"     onclick="rbSwitchTab('layout')"><i class="ic ic-tools"></i> Layout</button>
+          <button class="cx-tab"               data-rb-tab="preview"    onclick="rbSwitchTab('preview')"><i class="ic ic-eye"></i> Preview</button>
+          <button class="cx-tab"               data-rb-tab="runs"       onclick="rbSwitchTab('runs')"><i class="ic ic-clock"></i> Runs</button>
         </div>
 
         <!-- Tab panes ──────────────────────────────────────────────────────
@@ -624,9 +625,9 @@ body.cyg-collapsed{padding-left:54px}
                 Fill in any parameters, click <strong style="font-style:normal;color:var(--text2)">▶ Run</strong>, and the report renders below using your Layout config. Excel export becomes available after a successful run.
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-                <button class="btn btn-green btn-sm" onclick="pvSaveRun()" id="pv-save-btn" disabled>💾 Save run</button>
-                <button class="btn btn-ghost btn-sm" onclick="pvExportXlsx()" id="pv-export-btn" disabled title="Export Excel with embedded chart images, bold totals, and frozen headers">📥 Export Excel</button>
-                <button class="btn btn-ghost btn-sm" onclick="pvExportPdf()"  id="pv-pdf-btn"    disabled title="Export PDF (A4 landscape, one section per page block)">📄 Export PDF</button>
+                <button class="btn btn-green btn-sm" onclick="pvSaveRun()" id="pv-save-btn" disabled><i class="ic ic-save"></i> Save run</button>
+                <button class="btn btn-ghost btn-sm" onclick="pvExportXlsx()" id="pv-export-btn" disabled title="Export Excel with embedded chart images, bold totals, and frozen headers"><i class="ic ic-download"></i> Export Excel</button>
+                <button class="btn btn-ghost btn-sm" onclick="pvExportPdf()"  id="pv-pdf-btn"    disabled title="Export PDF (A4 landscape, one section per page block)"><i class="ic ic-doc"></i> Export PDF</button>
                 <button class="btn btn-primary btn-sm" onclick="pvRun()">▶ Run</button>
               </div>
             </div>
@@ -646,7 +647,7 @@ body.cyg-collapsed{padding-left:54px}
               <button class="btn btn-ghost btn-sm" onclick="rnRefresh()">↻ Refresh</button>
             </div>
             <div id="rn-list"></div>
-            <div id="rn-empty" class="empty-state">No saved runs yet. Run the report on the Preview tab and click <strong>💾 Save run</strong> to capture a snapshot.</div>
+            <div id="rn-empty" class="empty-state">No saved runs yet. Run the report on the Preview tab and click <strong><i class="ic ic-save"></i> Save run</strong> to capture a snapshot.</div>
           </div></div>
         </div>
 
@@ -657,6 +658,6 @@ body.cyg-collapsed{padding-left:54px}
 
 </div><!-- /.page -->
 
-<script src="/reports-app.js?v=291effe0ab" defer></script>
+<script src="/reports-app.js?v=b224a8181b" defer></script>
 </body>
 </html>

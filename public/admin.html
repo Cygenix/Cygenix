@@ -9,6 +9,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -141,7 +142,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
 
 /* ── Empty state ── */
 .empty{text-align:center;padding:3rem;color:var(--text3)}
-.empty-icon{font-size:2rem;margin-bottom:0.75rem}
+.empty-icon{font-size:2rem;margin-bottom:0.75rem;color:var(--text3);line-height:1}
 .empty-text{font-size:13px}
 
 /* ── Loading ── */
@@ -298,7 +299,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       </div>
 
       <div class="netlify-note">
-        💡 <strong>Auth is managed by Netlify Identity.</strong> Use this panel to view user data and manage access. To invite users or change passwords, also use the
+        <i class="ic ic-info"></i> <strong>Auth is managed by Netlify Identity.</strong> Use this panel to view user data and manage access. To invite users or change passwords, also use the
         <a href="https://app.netlify.com" target="_blank">Netlify Console → Identity tab</a>.
         User records here come from Cosmos DB and are created on first login.
       </div>
@@ -345,7 +346,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       </div>
 
       <div class="netlify-note">
-        ℹ️ <strong>Invitations are sent directly from Netlify Identity.</strong>
+        <i class="ic ic-info"></i> <strong>Invitations are sent directly from Netlify Identity.</strong>
         Click the button above to open the Netlify Identity panel, then click <strong>Invite users</strong> and enter the email address.
         The user receives an email with a link to set their password and access <strong>cygenix.co.uk</strong>.
       </div>
@@ -388,12 +389,12 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
           </div>
           <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
             <div style="padding:12px 16px;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--bg3);flex:1;min-width:200px">
-              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">🔓 Open registration</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px"><i class="ic ic-lock"></i> Open registration</div>
               <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Anyone can create a free account. Good for public beta.</div>
               <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">Netlify → Identity → Registration → Open</div>
             </div>
             <div style="padding:12px 16px;border-radius:var(--r);border:0.5px solid rgba(74,91,214,0.3);background:var(--accent-glow);flex:1;min-width:200px">
-              <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px">🔒 Invite only</div>
+              <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px"><i class="ic ic-lock"></i> Invite only</div>
               <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Only invited users can register. Best for controlled testing.</div>
               <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">Netlify → Identity → Registration → Invite only</div>
             </div>
@@ -681,7 +682,7 @@ async function loadUsers() {
       // Fall back to showing what we can from the audit log
       tbody.innerHTML = `<tr><td colspan="6">
         <div class="empty">
-          <div class="empty-icon">🔧</div>
+          <div class="empty-icon"><i class="ic ic-tools"></i> </div>
           <div class="empty-text">The admin-users endpoint needs to be added to the Azure Function.<br>
           For now, use <a href="https://app.netlify.com" target="_blank" style="color:var(--accent)">Netlify → Identity</a> to manage users.</div>
         </div>
@@ -710,7 +711,7 @@ async function loadUsers() {
     const errText = await adminRes.text();
     tbody.innerHTML = `<tr><td colspan="6">
       <div class="empty">
-        <div class="empty-icon">⚠️</div>
+        <div class="empty-icon"><i class="ic ic-warning"></i> </div>
         <div class="empty-text">Failed to load users: ${errText}<br><br>
           Check that <code>NETLIFY_TOKEN</code> is set in your Azure Function environment variables.
         </div>
@@ -729,7 +730,7 @@ async function loadUsers() {
 function renderUsers(users) {
   const tbody = document.getElementById('users-tbody');
   if (!users.length) {
-    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No users yet</div></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon"><i class="ic ic-users"></i> </div><div class="empty-text">No users yet</div></div></td></tr>';
     return;
   }
 
@@ -747,7 +748,9 @@ function renderUsers(users) {
       ? new Date(u.trialEndsAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})
       : (u.trialEndsAt === null ? '<span style="color:var(--green)">never</span>' : '—');
     const lastSync = u.updatedAt ? new Date(u.updatedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
-    const provider = u.provider === 'google' ? '🔵 ' : u.provider === 'azure' ? '🟦 ' : '✉️ ';
+    const provider = u.provider === 'google' ? '<i class="ic-dot" style="color:var(--accent)"></i> '
+      : u.provider === 'azure' ? '<i class="ic-dot" style="color:var(--teal)"></i> '
+      : '<i class="ic ic-mail"></i> ';
 
     return `<tr onclick="openUserModal('${u.email}')" style="cursor:pointer">
       <td>
@@ -1049,7 +1052,7 @@ async function loadActivity() {
 
   tbody.innerHTML = `<tr><td colspan="4">
     <div class="empty">
-      <div class="empty-icon">📋</div>
+      <div class="empty-icon"><i class="ic ic-clipboard"></i> </div>
       <div class="empty-text">Activity log requires the audit endpoint in the Azure Function.<br>
       Data syncs are being recorded in Cosmos DB → audit container.</div>
     </div>
@@ -1078,7 +1081,7 @@ async function loadWaitlist() {
     const entries = data.entries || [];
 
     if (!entries.length) {
-      tbody.innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No waitlist submissions yet.<br>Submissions from <a href="/register.html" style="color:var(--accent)">/register.html</a> will appear here.</div></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-icon"><i class="ic ic-clipboard"></i> </div><div class="empty-text">No waitlist submissions yet.<br>Submissions from <a href="/register.html" style="color:var(--accent)">/register.html</a> will appear here.</div></div></td></tr>`;
       return;
     }
 

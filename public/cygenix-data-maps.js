@@ -182,7 +182,7 @@ var TABS = [
         + ' tables. Flow: how the estate splits by volume band and move plan.';
     },
     note:'Ribbon width is the number of FK references, not rows. Self-referencing ribbons stay inside their own arc — a domain that mostly points at itself is a domain you can lift in one piece.' },
-  { id:'burst',   label:'✳ Radial burst',
+  { id:'burst',   label:'<i class="ic ic-sparkle"></i> Radial burst',
     title:'Radial burst — one spoke per table family',
     sub:'Spoke length is log-scaled, so four orders of magnitude fit in one ring. Sectors are domains, ordered clockwise.',
     note:'The long tail is the point: most spokes are short. A log scale is used because a linear one would render everything except the top ten as a flat rim.' },
@@ -1194,7 +1194,7 @@ var CSS = [
 /* Styled only for the standalone prototype; inside the console the .btn class
    it also carries is the one that wins. */
 '.cdm-fsbtn{appearance:none;border:1px solid var(--cdm-border-2);background:var(--cdm-surface);',
-'  border-radius:7px;padding:5px 11px;font:inherit;font-size:12px;color:var(--cdm-text-2);cursor:pointer;white-space:nowrap}',
+' border-radius:7px;padding:5px 11px;font:inherit;font-size:12px;color:var(--cdm-text-2);cursor:pointer;white-space:nowrap}',
 '.cdm-plot{padding:6px 10px 14px}',
 '.cdm-rail{display:flex;flex-direction:column;gap:12px}',
 '.cdm-rail h3{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--cdm-text-3);font-weight:500;margin:0 0 9px}',

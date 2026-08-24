@@ -10,6 +10,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -333,14 +334,14 @@ body.cyg-collapsed{padding-left:54px}
 <!-- Sidebar — `data-active="balancing"` matches the NAV key in
      /cygenix-sidebar.js so this item gets highlighted. -->
 <div id="cyg-sidebar-mount" data-active="balancing"></div>
-<script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+<script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
 
 <div class="page">
 
   <!-- Page header -->
   <div class="page-header">
     <div>
-      <div class="page-title">⚖️ Balancing &amp; Metrics</div>
+      <div class="page-title"><i class="ic ic-scale"></i> Balancing &amp; Metrics</div>
       <div class="page-sub">Define and run financial balance checks — debits = credits, control totals, and GL balancing — against the source and target connections set on the Dashboard.</div>
       <div class="page-tags">
         <span style="color:var(--text2);font-weight:500">Checks:</span>
@@ -366,7 +367,7 @@ body.cyg-collapsed{padding-left:54px}
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not configured</span>
     <button class="conn-btn" id="reload-schema-btn" onclick="balReloadSchemas()" style="margin-left:auto">↻ Reload schema</button>
-    <a href="/dashboard.html#connections" class="conn-btn">⚙ Manage connections</a>
+    <a href="/dashboard.html#connections" class="conn-btn"><i class="ic ic-cog"></i> Manage connections</a>
   </div>
 
   <!-- Status bar -->
@@ -374,12 +375,12 @@ body.cyg-collapsed{padding-left:54px}
 
   <!-- Tab bar -->
   <div class="cx-tabs">
-    <button class="cx-tab cx-tab-active" data-bal-tab="debits-credits" onclick="balSwitchTab('debits-credits')">⚖️ Debits = Credits</button>
+    <button class="cx-tab cx-tab-active" data-bal-tab="debits-credits" onclick="balSwitchTab('debits-credits')"><i class="ic ic-scale"></i> Debits = Credits</button>
     <button class="cx-tab" data-bal-tab="control-totals" onclick="balSwitchTab('control-totals')">Σ Control totals</button>
-    <button class="cx-tab" data-bal-tab="gl-balancing" onclick="balSwitchTab('gl-balancing')">📒 GL balancing</button>
-    <button class="cx-tab" data-bal-tab="trial-balance" onclick="balSwitchTab('trial-balance')">📋 Trial Balance</button>
-    <button class="cx-tab" data-bal-tab="custom" onclick="balSwitchTab('custom')">🛠️ Custom</button>
-    <button class="cx-tab" data-bal-tab="results" onclick="balSwitchTab('results')">📊 Results</button>
+    <button class="cx-tab" data-bal-tab="gl-balancing" onclick="balSwitchTab('gl-balancing')"><i class="ic ic-book"></i> GL balancing</button>
+    <button class="cx-tab" data-bal-tab="trial-balance" onclick="balSwitchTab('trial-balance')"><i class="ic ic-clipboard"></i> Trial Balance</button>
+    <button class="cx-tab" data-bal-tab="custom" onclick="balSwitchTab('custom')"><i class="ic ic-tools"></i> Custom</button>
+    <button class="cx-tab" data-bal-tab="results" onclick="balSwitchTab('results')"><i class="ic ic-chart"></i> Results</button>
   </div>
 
   <!-- Tabs -->
@@ -449,7 +450,7 @@ body.cyg-collapsed{padding-left:54px}
     <div class="panel"><div class="panel-body">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
         <div style="font-size:12px;color:var(--text3);line-height:1.6;flex:1;min-width:280px">
-          Build custom financial reports across multiple tables. Pick tables, define joins, group/filter/aggregate, and run against source or target. Use AI Assist (📜 panel inside each report) to start from a natural-language prompt or refine the SQL.
+          Build custom financial reports across multiple tables. Pick tables, define joins, group/filter/aggregate, and run against source or target. Use AI Assist (panel inside each report) to start from a natural-language prompt or refine the SQL.
         </div>
         <button class="btn btn-purple btn-sm" onclick="cbAddReport()">＋ Add report</button>
       </div>
@@ -936,8 +937,7 @@ function balRenderCheckCard(type, c, idx, run){
         : '<span class="run-status fail">✕ FAIL · ' + escapeHtml(balFormatTs(run.ts)) + '</span>')
     : '<span class="run-status idle">Not yet run</span>';
 
-  const head = ''
-    + '<div class="check-head">'
+  const head = '<div class="check-head">'
     + '  <input type="text" class="check-name" value="' + escapeHtml(c.name || '') + '" placeholder="Check name" '
     + '         oninput="balUpdate(\'' + type + '\',' + idx + ',\'name\',this.value)">'
     + '  ' + status
@@ -1046,8 +1046,7 @@ function balFieldGrid(fields, type, idx){
             ? ('bal-' + type + '-' + idx + '-' + f.pick.tableField)
             : '';
           const updateSpec = type + ':' + idx + ':' + f.key;
-          cellInner = ''
-            + '<div class="search-wrap">'
+          cellInner = '<div class="search-wrap">'
             +   '<input id="' + id + '" type="text"'
             +     ' class="picker-input"'
             +     ' data-pick-kind="' + escapeHtml(f.pick.kind) + '"'
@@ -1424,14 +1423,13 @@ function tbRenderReportCard(r, idx, run){
 
   // Header — name, last run timestamp, action buttons. Download buttons
   // are disabled until a run exists.
-  const head = ''
-    + '<div class="check-head">'
+  const head = '<div class="check-head">'
     + '  <input type="text" class="check-name" value="' + escapeHtml(r.name || '') + '" placeholder="Report name" '
     + '         oninput="tbUpdate(' + idx + ',\'name\',this.value)">'
     + '  ' + lastRunStr
     + '  <button class="btn btn-ghost btn-sm" onclick="tbRun(' + idx + ')">▶ Run</button>'
-    + '  <button class="btn btn-ghost btn-sm" onclick="tbDownload(' + idx + ',\'csv\')"' + (downloadAvailable ? '' : ' disabled') + '>⬇ CSV</button>'
-    + '  <button class="btn btn-ghost btn-sm" onclick="tbDownload(' + idx + ',\'xlsx\')"' + (downloadAvailable ? '' : ' disabled') + '>⬇ Excel</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="tbDownload(' + idx + ',\'csv\')"' + (downloadAvailable ? '' : ' disabled') + '><i class="ic ic-download"></i> CSV</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="tbDownload(' + idx + ',\'xlsx\')"' + (downloadAvailable ? '' : ' disabled') + '><i class="ic ic-download"></i> Excel</button>'
     + '  <button class="btn btn-ghost btn-sm" onclick="tbRemove(' + idx + ')" style="color:var(--red)">✕</button>'
     + '</div>';
 
@@ -1443,8 +1441,7 @@ function tbRenderReportCard(r, idx, run){
   const sourceFields = tbRenderSideFields('src', r.src || {}, idx, srcSchema);
   const targetFields = tbRenderSideFields('tgt', r.tgt || {}, idx, tgtSchema);
 
-  const body = ''
-    + '<div style="margin-bottom:0.75rem">' + periodFields + '</div>'
+  const body = '<div style="margin-bottom:0.75rem">' + periodFields + '</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:0.75rem">'
     +   '<div>'
     +     '<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem">Source side</div>'
@@ -1485,8 +1482,7 @@ function tbRenderPeriodFields(r, idx){
       + 'oninput="tbUpdate(' + idx + ',\'period.single\',this.value)">'
       + '</div>';
   } else if (p.mode === 'range') {
-    extra = ''
-      + '<div class="field-cell">'
+    extra = '<div class="field-cell">'
       +   '<label>From</label>'
       +   '<input type="text" value="' + escapeHtml(p.from || '') + '" placeholder="202601" '
       +   'oninput="tbUpdate(' + idx + ',\'period.from\',this.value)">'
@@ -1560,8 +1556,7 @@ function tbRenderSideFields(side, s, idx, sch){
   if (mode === 'view') {
     // View mode: pick a view/table that already has period+account+balance shape.
     const tableInputId = 'tb-' + idx + '-' + side + '-view';
-    fields = ''
-      + '<div class="field-cell"><label>Source mode</label>' + modeSelect + '</div>'
+    fields = '<div class="field-cell"><label>Source mode</label>' + modeSelect + '</div>'
       + '<div class="field-cell"><label>TB view/table</label>' + pickerInput('view', s.view, 'tables') + '</div>'
       + '<div class="field-cell"><label>Period column</label>' + pickerInput('periodCol', s.periodCol || 'period', 'columns', tableInputId) + '</div>'
       + '<div class="field-cell"><label>Account column</label>' + pickerInput('accountCol', s.accountCol || 'account', 'columns', tableInputId) + '</div>'
@@ -1573,15 +1568,13 @@ function tbRenderSideFields(side, s, idx, sch){
     // user picks period+account columns; the method controls which other
     // column(s) to sum.
     const tableInputId = 'tb-' + idx + '-' + side + '-table';
-    fields = ''
-      + '<div class="field-cell"><label>Source mode</label>' + modeSelect + '</div>'
+    fields = '<div class="field-cell"><label>Source mode</label>' + modeSelect + '</div>'
       + '<div class="field-cell"><label>Journal table</label>' + pickerInput('table', s.table, 'tables') + '</div>'
       + '<div class="field-cell"><label>Period column</label>' + pickerInput('periodCol', s.periodCol || 'period', 'columns', tableInputId) + '</div>'
       + '<div class="field-cell"><label>Account column</label>' + pickerInput('accountCol', s.accountCol || 'account', 'columns', tableInputId) + '</div>'
       + '<div class="field-cell" style="grid-column:1/-1"><label>Balance method</label>' + methodSelect('balanceMethod', s.balanceMethod || 'debit-credit') + '</div>';
     if ((s.balanceMethod || 'debit-credit') === 'debit-credit') {
-      fields += ''
-        + '<div class="field-cell"><label>Debit column</label>' + pickerInput('debitCol', s.debitCol || 'debit', 'columns', tableInputId) + '</div>'
+      fields += '<div class="field-cell"><label>Debit column</label>' + pickerInput('debitCol', s.debitCol || 'debit', 'columns', tableInputId) + '</div>'
         + '<div class="field-cell"><label>Credit column</label>' + pickerInput('creditCol', s.creditCol || 'credit', 'columns', tableInputId) + '</div>';
     } else {
       fields += '<div class="field-cell"><label>Amount column (signed)</label>' + pickerInput('amountCol', s.amountCol || 'amount', 'columns', tableInputId) + '</div>';
@@ -1599,8 +1592,7 @@ function tbRenderPreview(run){
   const shown = rows.slice(0, PREVIEW_LIMIT);
   const totals = run.totals || tbComputeTotals(rows);
 
-  const summary = ''
-    + '<div class="tb-summary">'
+  const summary = '<div class="tb-summary">'
     +   '<div class="tb-summary-item"><strong>' + rows.length.toLocaleString() + '</strong> account-rows</div>'
     +   '<div class="tb-summary-item"><strong>' + (totals.srcTotal || 0).toLocaleString(undefined,{maximumFractionDigits:2}) + '</strong> source total</div>'
     +   '<div class="tb-summary-item"><strong>' + (totals.tgtTotal || 0).toLocaleString(undefined,{maximumFractionDigits:2}) + '</strong> target total</div>'
@@ -1611,8 +1603,7 @@ function tbRenderPreview(run){
         : '<div class="tb-summary-item ok"><strong>0</strong> mismatching account-rows</div>')
     + '</div>';
 
-  const tableHtml = ''
-    + '<div class="tb-preview-wrap">'
+  const tableHtml = '<div class="tb-preview-wrap">'
     +   '<table class="tb-preview"><thead><tr>'
     +     '<th>Period</th><th>Account</th>'
     +     '<th style="text-align:right">Source</th>'
@@ -2088,8 +2079,7 @@ function cbRenderReportCard(r, idx, run){
     : '<span class="run-status idle">Not yet run</span>';
   const downloadAvailable = run && Array.isArray(run.rows) && run.rows.length > 0;
 
-  const head = ''
-    + '<div class="check-head">'
+  const head = '<div class="check-head">'
     + '  <input type="text" class="check-name" value="' + escapeHtml(r.name || '') + '" placeholder="Report name" '
     + '         oninput="cbUpdate(' + idx + ',\'name\',this.value)">'
     + '  ' + lastRunStr
@@ -2098,20 +2088,19 @@ function cbRenderReportCard(r, idx, run){
     +     '<button class="' + (side === 'target' ? 'active' : '') + '" onclick="cbSetSide(' + idx + ',\'target\')">Target</button>'
     +   '</div>'
     + '  <button class="btn btn-ghost btn-sm" onclick="cbRun(' + idx + ')">▶ Run</button>'
-    + '  <button class="btn btn-ghost btn-sm" onclick="cbDownload(' + idx + ',\'csv\')"' + (downloadAvailable ? '' : ' disabled') + '>⬇ CSV</button>'
-    + '  <button class="btn btn-ghost btn-sm" onclick="cbDownload(' + idx + ',\'xlsx\')"' + (downloadAvailable ? '' : ' disabled') + '>⬇ Excel</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="cbDownload(' + idx + ',\'csv\')"' + (downloadAvailable ? '' : ' disabled') + '><i class="ic ic-download"></i> CSV</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="cbDownload(' + idx + ',\'xlsx\')"' + (downloadAvailable ? '' : ' disabled') + '><i class="ic ic-download"></i> Excel</button>'
     + '  <button class="btn btn-ghost btn-sm" onclick="cbRemove(' + idx + ')" style="color:var(--red)">✕</button>'
     + '</div>';
 
   // Sections — collapsible. Each section has a head + body; clicks toggle.
-  const sections = ''
-    + cbSection(idx, 'tables',  '📋 Tables',  r.tables.length + ' picked', cbRenderTablesSection(r, idx, sideShort, ready), r.openSections && r.openSections.tables !== false)
-    + cbSection(idx, 'joins',   '🔗 Joins',   r.joins.length + ' join' + (r.joins.length === 1 ? '' : 's'), cbRenderJoinsSection(r, idx, sideShort, ready), r.openSections && r.openSections.joins !== false)
-    + cbSection(idx, 'selects', '🔢 Output columns', r.selects.length + ' field' + (r.selects.length === 1 ? '' : 's'), cbRenderSelectsSection(r, idx, sideShort, ready), r.openSections && r.openSections.selects !== false)
+  const sections = cbSection(idx, 'tables',  'Tables',  r.tables.length + ' picked', cbRenderTablesSection(r, idx, sideShort, ready), r.openSections && r.openSections.tables !== false)
+    + cbSection(idx, 'joins',   'Joins',   r.joins.length + ' join' + (r.joins.length === 1 ? '' : 's'), cbRenderJoinsSection(r, idx, sideShort, ready), r.openSections && r.openSections.joins !== false)
+    + cbSection(idx, 'selects', 'Output columns', r.selects.length + ' field' + (r.selects.length === 1 ? '' : 's'), cbRenderSelectsSection(r, idx, sideShort, ready), r.openSections && r.openSections.selects !== false)
     + cbSection(idx, 'group',   'Σ Group by', r.groupBy.length + ' field' + (r.groupBy.length === 1 ? '' : 's'), cbRenderGroupSection(r, idx, sideShort, ready), r.openSections && r.openSections.group === true)
-    + cbSection(idx, 'filter',  '🔍 Where / Order by / Limit', '', cbRenderFilterSection(r, idx), r.openSections && r.openSections.filter === true)
-    + cbSection(idx, 'ai',      '✨ AI Assist', (r.aiHistory && r.aiHistory.length ? r.aiHistory.length + ' messages' : 'idle'), cbRenderAiSection(r, idx), r.openSections && r.openSections.ai === true)
-    + cbSection(idx, 'sql',     '📜 Generated SQL', r.useRaw ? 'using raw' : 'auto', cbRenderSqlSection(r, idx), r.openSections && r.openSections.sql !== false);
+    + cbSection(idx, 'filter',  'Where / Order by / Limit', '', cbRenderFilterSection(r, idx), r.openSections && r.openSections.filter === true)
+    + cbSection(idx, 'ai',      'AI Assist', (r.aiHistory && r.aiHistory.length ? r.aiHistory.length + ' messages' : 'idle'), cbRenderAiSection(r, idx), r.openSections && r.openSections.ai === true)
+    + cbSection(idx, 'sql',     'Generated SQL', r.useRaw ? 'using raw' : 'auto', cbRenderSqlSection(r, idx), r.openSections && r.openSections.sql !== false);
 
   // Inline preview + summary if a run exists
   let preview = '';
@@ -2171,8 +2160,7 @@ function cbRenderTablesSection(r, idx, sideShort, ready){
   // Picker input — uses the same data-pick-* contract as elsewhere on the
   // page, but its data-pick-update routes to a custom handler so we can
   // append to the array instead of overwriting a scalar.
-  const picker = ''
-    + '<div class="search-wrap" style="max-width:340px">'
+  const picker = '<div class="search-wrap" style="max-width:340px">'
     +   '<input type="text" class="picker-input"'
     +     ' data-pick-kind="tables"'
     +     ' data-pick-side="' + sideShort + '"'
@@ -2622,7 +2610,7 @@ function cbRenderSqlSection(r, idx){
     +     '<input type="checkbox"' + (useRaw ? ' checked' : '') + ' onchange="cbToggleRaw(' + idx + ',this.checked)">'
     +     toggleLabel
     +   '</label>'
-    +   (!useRaw && !buildErr ? '<button class="cb-add-btn" onclick="cbCopyToRaw(' + idx + ')">📋 Copy to raw editor</button>' : '')
+    +   (!useRaw && !buildErr ? '<button class="cb-add-btn" onclick="cbCopyToRaw(' + idx + ')"><i class="ic ic-clipboard"></i> Copy to raw editor</button>' : '')
     + '</div>'
     + display;
 }
@@ -2781,8 +2769,7 @@ function cbRenderPreview(run){
     + '<div class="tb-summary-item"><strong>' + headers.length + '</strong> columns</div>'
     + '</div>';
 
-  const tableHtml = ''
-    + '<div class="tb-preview-wrap">'
+  const tableHtml = '<div class="tb-preview-wrap">'
     +   '<table class="tb-preview"><thead><tr>'
     +   headers.map(h => '<th>' + escapeHtml(h) + '</th>').join('')
     +   '</tr></thead><tbody>'
@@ -2913,8 +2900,7 @@ function cbRenderAiSection(r, idx){
     ? history.map(m => cbRenderAiMessage(m, idx)).join('')
     : '<div class="cb-ai-msg system">Describe the report you want — for example: <em>"Total revenue by region by month for Q1 2026, filtered to active accounts"</em>. I\'ll suggest a SQL query you can apply.</div>';
 
-  const inputRow = ''
-    + '<div class="cb-ai-input-row">'
+  const inputRow = '<div class="cb-ai-input-row">'
     +   '<textarea class="cb-ai-textarea" id="cb-ai-input-' + idx + '" placeholder="Ask for a report or refinement…"></textarea>'
     +   '<button class="btn btn-purple btn-sm" onclick="cbAiSend(' + idx + ')">Send</button>'
     +   (history.length ? '<button class="btn btn-ghost btn-sm" onclick="cbAiClear(' + idx + ')" title="Clear conversation">↺</button>' : '')

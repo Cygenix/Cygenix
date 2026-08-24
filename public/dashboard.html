@@ -10,6 +10,7 @@
      This must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-history.css">
 <meta name="theme-color" content="#FFFFFF">
@@ -1259,10 +1260,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
-<script src="/cygenix-integrations.js?v=460ebe6c49" defer></script>
+<script src="/cygenix-integrations.js?v=b0fa905cf6" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-api.js?v=923ff2d8c9" defer></script>
-<script src="/cygenix-history.js?v=ef9138d3cf" defer></script>
+<script src="/cygenix-history.js?v=ee80298417" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js" defer></script>
 <script>
 // PapaParse (~50KB) and XLSX (~900KB) serve only click-gated import/export
@@ -1313,7 +1314,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <span>Subscription</span>
             <span id="user-menu-tier-badge" style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3);padding:2px 7px;border-radius:100px"></span>
           </a>
-          <a href="/admin.html" id="user-menu-admin-link" style="display:none;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">⚙ Admin panel</a>
+          <a href="/admin.html" id="user-menu-admin-link" style="display:none;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'"><i class="ic ic-cog"></i> Admin panel</a>
           <div onclick="signOut()" style="padding:0.5rem;font-size:13px;color:var(--red);cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">Sign out</div>
         </div>
       </div>
@@ -1325,11 +1326,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        initial showView in startup code. Updated dynamically via
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
-  <script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
+  <script src="/cygenix-sidebar.js?v=ce47f4a2d6" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
-  <script src="/cygenix-profiles.js?v=bc2f904538" defer></script>
-  <script src="/dashboard-app.js?v=b1f0aace8e" defer></script>
+  <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
+  <script src="/dashboard-app.js?v=1fc2f7044c" defer></script>
 
 
   <!-- MAIN -->
@@ -1438,7 +1439,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       </div>
 
       <div class="alert alert-amber" id="key-alert">
-        <strong>⚠ Anthropic API key required.</strong> Enter your API key from
+        <strong><i class="ic ic-warning"></i> Anthropic API key required.</strong> Enter your API key from
         <a href="https://console.anthropic.com" target="_blank" style="color:var(--amber)">console.anthropic.com</a>
         — it stays in your browser session only and is never stored on any server.<br><br>
         <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.5rem;flex-wrap:wrap">
@@ -1466,22 +1467,22 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div class="panel-header" style="margin-bottom:0.75rem"><div class="panel-title" style="font-size:13px">SQL Server Target</div></div>
             <div class="target-grid">
               <div class="target-card selected" onclick="selectTarget(this,'Microsoft SQL Server (on-premises)')">
-                <div class="t-icon">🗄️</div>
+                <div class="t-icon"><i class="ic ic-archive"></i> </div>
                 <div class="t-name">SQL Server</div>
                 <div class="t-sub">On-premises</div>
               </div>
               <div class="target-card" onclick="selectTarget(this,'Azure SQL Database')">
-                <div class="t-icon">☁️</div>
+                <div class="t-icon"><i class="ic ic-cloud"></i> </div>
                 <div class="t-name">Azure SQL</div>
                 <div class="t-sub">Cloud managed</div>
               </div>
               <div class="target-card" onclick="selectTarget(this,'SQL Server Express (on-premises)')">
-                <div class="t-icon">💾</div>
+                <div class="t-icon"><i class="ic ic-save"></i> </div>
                 <div class="t-name">SQL Express</div>
                 <div class="t-sub">Free edition</div>
               </div>
               <div class="target-card" onclick="selectTarget(this,'Google Cloud SQL for SQL Server')">
-                <div class="t-icon">🟦</div>
+                <div class="t-icon"><i class="ic-dot" style="color:var(--accent)"></i> </div>
                 <div class="t-name">Cloud SQL</div>
                 <div class="t-sub">Google Cloud</div>
               </div>
@@ -1501,7 +1502,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
           <div class="file-list" id="file-list"></div>
           <div id="wasis-banner" style="display:none;margin-bottom:0.75rem;background:rgba(245,158,11,0.1);border:0.5px solid rgba(245,158,11,0.3);border-radius:var(--r);padding:0.6rem 0.875rem;font-size:12px;color:var(--amber);display:none">
-            🔄 <strong>Was/Is mapping loaded</strong> — <span id="wasis-rule-count">0</span> value translation rules will be applied during migration
+            <i class="ic ic-sync"></i> <strong>Was/Is mapping loaded</strong> — <span id="wasis-rule-count">0</span> value translation rules will be applied during migration
           </div>
           <div id="analyse-btn-wrap" style="display:none">
             <button class="btn btn-primary btn-full" id="analyse-btn" onclick="startAnalysis()">
@@ -1549,12 +1550,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="panel-header">
         <div class="panel-title">All Migration Jobs</div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)">⚡ Generate SQL</button>
+          <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)"><i class="ic ic-bolt"></i> Generate SQL</button>
           <button class="btn btn-ghost" onclick="openValidateModal()" title="Dry-run TOP 100 INSERT inside a transaction (rolls back) — catches range, NOT NULL, FK and parse errors before a real migration">✓ Validate</button>
-          <button class="btn btn-ghost" onclick="openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column">📋 Setup Check</button>
-          <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">⬇ Export Scripts</button>
-          <button class="btn btn-ghost" onclick="openExportPackageModal()" title="Export each selected job as a self-contained .sql package: target schema + source staging table + source data + migration. Runs on any SQL Server with no Cygenix needed.">📦 Export Package</button>
-          <button class="btn btn-ghost" id="show-deleted-btn" onclick="toggleShowDeleted()" title="Toggle between active jobs and the Trash (soft-deleted jobs). Restore or permanently delete from the Trash view.">🗑 Show deleted</button>
+          <button class="btn btn-ghost" onclick="openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column"><i class="ic ic-clipboard"></i> Setup Check</button>
+          <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files"><i class="ic ic-download"></i> Export Scripts</button>
+          <button class="btn btn-ghost" onclick="openExportPackageModal()" title="Export each selected job as a self-contained .sql package: target schema + source staging table + source data + migration. Runs on any SQL Server with no Cygenix needed."><i class="ic ic-package"></i> Export Package</button>
+          <button class="btn btn-ghost" id="show-deleted-btn" onclick="toggleShowDeleted()" title="Toggle between active jobs and the Trash (soft-deleted jobs). Restore or permanently delete from the Trash view."><i class="ic ic-trash"></i> Show deleted</button>
           <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
         </div>
       </div>
@@ -1714,7 +1715,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
         <div class="modal-actions">
           <button class="btn btn-ghost" id="setup-check-cancel-btn" onclick="closeSetupCheckModal()">Cancel</button>
-          <button class="btn btn-ghost" id="setup-check-export-btn" onclick="exportSetupCheckReport()" style="display:none">⬇ Export CSV</button>
+          <button class="btn btn-ghost" id="setup-check-export-btn" onclick="exportSetupCheckReport()" style="display:none"><i class="ic ic-download"></i> Export CSV</button>
           <button class="btn btn-primary" id="setup-check-start-btn" onclick="startSetupCheck()">Start</button>
         </div>
       </div>
@@ -1805,7 +1806,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
         </div>
         <div class="panel">
-          <div style="font-size:13px;font-weight:600;margin-bottom:1rem;color:var(--amber)">⚡ Schema guidance via filename + metadata</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:1rem;color:var(--amber)"><i class="ic ic-bolt"></i> Schema guidance via filename + metadata</div>
           <div style="font-size:13px;color:var(--text2);line-height:2">
             <span class="badge badge-amber" style="margin-right:6px">.bak</span> SQL Server backup files<br>
             <span class="badge badge-amber" style="margin-right:6px">.mdb</span> Microsoft Access databases<br>
@@ -1834,26 +1835,26 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-project-settings" class="view">
       <div class="panel-header">
         <div>
-          <div class="panel-title">⚙️ Settings</div>
+          <div class="panel-title"><i class="ic ic-cog"></i> Settings</div>
           <div class="panel-sub">App-level configuration — API credentials, backups, and general preferences. For project metadata (name, client, dates, source/target), open <a href="/projects.html" style="color:var(--accent)">Projects</a>.</div>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="saveAppPreferences()">💾 Save preferences</button>
+        <button class="btn btn-primary btn-sm" onclick="saveAppPreferences()"><i class="ic ic-save"></i> Save preferences</button>
       </div>
 
       <!-- ─── QUICK BACKUP BANNER ─── -->
       <div style="background:rgba(74,91,214,0.08);border:0.5px solid rgba(74,91,214,0.3);border-radius:var(--r);padding:0.85rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
         <div>
-          <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:2px">💾 Quick backup</div>
+          <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:2px"><i class="ic ic-save"></i> Quick backup</div>
           <div style="font-size:11px;color:var(--text2)" id="quick-backup-last-run">Download a full backup of all your jobs, projects, connections and rules.</div>
         </div>
-        <button class="btn btn-primary" onclick="quickBackupNow()" style="white-space:nowrap;flex-shrink:0">⬇ Download backup now</button>
+        <button class="btn btn-primary" onclick="quickBackupNow()" style="white-space:nowrap;flex-shrink:0"><i class="ic ic-download"></i> Download backup now</button>
       </div>
 
       <!-- ─── API KEY & CREDIT ─── -->
       <div class="panel" style="margin-bottom:1.25rem">
         <div class="panel-header" style="margin-bottom:0.85rem">
           <div>
-            <div class="panel-title" style="font-size:13px">🔑 API key &amp; credit</div>
+            <div class="panel-title" style="font-size:13px"><i class="ic ic-key"></i> API key &amp; credit</div>
             <div class="panel-sub">Anthropic API key used for all Claude calls. Stored in your browser session only — never sent to any Cygenix server.</div>
           </div>
         </div>
@@ -1882,7 +1883,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="panel" style="margin-bottom:1.25rem">
         <div class="panel-header" style="margin-bottom:0.85rem">
           <div>
-            <div class="panel-title" style="font-size:13px">🎛️ General preferences</div>
+            <div class="panel-title" style="font-size:13px"><i class="ic ic-cog"></i> General preferences</div>
             <div class="panel-sub">Defaults applied across the app on every page load.</div>
           </div>
         </div>
@@ -1934,14 +1935,14 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div style="margin-top:2.5rem;padding-top:1.5rem;border-top:0.5px solid var(--border)">
         <div class="panel-header">
           <div>
-            <div class="panel-title">💾 Backup &amp; Restore</div>
+            <div class="panel-title"><i class="ic ic-save"></i> Backup &amp; Restore</div>
             <div class="panel-sub">Export all project data to a JSON file, or restore from a previous backup</div>
           </div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
           <div class="panel">
-            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">📦 Export backup</div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem"><i class="ic ic-package"></i> Export backup</div>
             <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Creates a single JSON file containing:</div>
             <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:1.25rem">
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>All projects (and active project)</div>
@@ -1951,15 +1952,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Project artifacts</div>
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>API key</div>
             </div>
-            <button class="btn btn-green" onclick="backupAll()" style="width:100%;justify-content:center">⬇ Download backup.json</button>
+            <button class="btn btn-green" onclick="backupAll()" style="width:100%;justify-content:center"><i class="ic ic-download"></i> Download backup.json</button>
           </div>
 
           <div class="panel">
-            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">📂 Restore from backup</div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem"><i class="ic ic-folder-open"></i> Restore from backup</div>
             <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Upload a Cygenix backup file to restore your project state. Existing data will be merged.</div>
             <div style="border:1.5px dashed var(--border2);border-radius:var(--r);padding:1.5rem;text-align:center;cursor:pointer;background:var(--bg3);margin-bottom:0.875rem" onclick="document.getElementById('restore-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--accent)'" ondragleave="this.style.borderColor=''" ondrop="handleRestoreDrop(event)">
               <input type="file" id="restore-file" accept=".json" style="display:none" onchange="restoreBackup(this.files[0])">
-              <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4">📂</div>
+              <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4"><i class="ic ic-folder-open"></i> </div>
               <div style="font-size:13px;color:var(--text2)">Drop backup.json here or click to browse</div>
             </div>
             <div id="restore-status" style="font-size:12px;color:var(--text3);min-height:16px"></div>
@@ -1967,7 +1968,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
 
         <div class="panel">
-          <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">🕐 Auto-backup history</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem"><i class="ic ic-clock"></i> Auto-backup history</div>
           <div id="backup-history-list" style="font-size:12px;color:var(--text3)">Loading…</div>
         </div>
       </div>
@@ -1984,7 +1985,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div style="margin-top:2.5rem;padding-top:1.5rem;border-top:0.5px solid var(--border)">
         <div class="panel-header">
           <div>
-            <div class="panel-title">🔐 Import / Export connections</div>
+            <div class="panel-title"><i class="ic ic-lock"></i> Import / Export connections</div>
             <div class="panel-sub">Move saved source/target connections — including passwords and Azure Function keys — between devices. Connection <em>names</em> sync automatically through your account; <em>secrets</em> stay local by design, and this is how you move them manually.</div>
           </div>
         </div>
@@ -1992,10 +1993,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
           <!-- EXPORT CARD -->
           <div class="panel">
-            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">⬇ Export connections</div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem"><i class="ic ic-download"></i> Export connections</div>
             <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Pick which saved connections to include, then download a plaintext JSON file.</div>
             <div style="background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.3);border-radius:6px;padding:0.6rem 0.75rem;font-size:11px;color:var(--amber);line-height:1.5;margin-bottom:1rem">
-              ⚠ <strong>Plaintext export.</strong> The downloaded file contains database
+              <i class="ic ic-warning"></i> <strong>Plaintext export.</strong> The downloaded file contains database
               passwords and Azure Function keys in cleartext. Treat it like a credentials
               file — don't email it, don't commit it, delete it once imported.
             </div>
@@ -2007,11 +2008,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
           <!-- IMPORT CARD -->
           <div class="panel">
-            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">⬆ Import connections</div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem"><i class="ic ic-upload"></i> Import connections</div>
             <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Load a previously exported JSON file. You'll see what's in it and can pick which entries to import. Existing entries with the same name will be replaced.</div>
             <div style="border:1.5px dashed var(--border2);border-radius:var(--r);padding:1.5rem;text-align:center;cursor:pointer;background:var(--bg3);margin-bottom:0.875rem" onclick="document.getElementById('connio-import-file').click()">
               <input type="file" id="connio-import-file" accept=".json,application/json" style="display:none" onchange="connioReadImportFile(this)">
-              <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4">🔐</div>
+              <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4"><i class="ic ic-lock"></i> </div>
               <div style="font-size:13px;color:var(--text2)">Click to choose a connections JSON file</div>
             </div>
             <div id="connio-import-status" style="font-size:11px;color:var(--text3);margin-top:0.75rem;font-family:var(--mono);min-height:1em"></div>
@@ -2041,7 +2042,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <!-- PRIVACY & SECURITY VIEW -->
     <div id="view-privacy-security" class="view">
       <div class="ps-head">
-        <div class="ps-title">🔒 Governance</div>
+        <div class="ps-title"><i class="ic ic-lock"></i> Governance</div>
         <div class="ps-sub">
           Control how much of your data reaches Claude during a migration. Settings are stored in your browser (localStorage) and apply across all Cygenix pages that call AI.
           These controls affect what Cygenix sends to the Anthropic API on your behalf — they do not change anything about Anthropic's own
@@ -2055,7 +2056,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="ps-panel-head"><div class="ps-panel-title">How Cygenix uses AI — plain-English disclosure</div></div>
         <div class="ps-panel-body">
           <div class="ps-disc-section">
-            <div class="ps-disc-title sees">⚠ Where Claude currently sees data</div>
+            <div class="ps-disc-title sees"><i class="ic ic-warning"></i> Where Claude currently sees data</div>
             <ul class="ps-disc-list">
               <li><strong>Dedup AI review</strong> — sends row values from MED-confidence clusters to help judge if they're true duplicates (names, addresses, phone numbers, etc.). <em>Only the columns you ticked as match columns, only the clusters that are ambiguous.</em></li>
               <li><strong>SQL Editor AI helper</strong> — sends whatever SQL you write in the editor, including any literal values in WHERE clauses or INSERT statements.</li>
@@ -2087,15 +2088,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="ps-panel-body">
           <div class="ps-mode-grid">
             <div class="ps-mode-card" data-mode="full" onclick="psSetMode('full')">
-              <div class="ps-mode-title">🟢 Full</div>
+              <div class="ps-mode-title"><i class="ic-dot" style="color:var(--green)"></i> Full</div>
               <div class="ps-mode-body">All AI features enabled. Row data and schema can be sent to Claude for mapping, dedup review, and SQL help.</div>
             </div>
             <div class="ps-mode-card" data-mode="schema-only" onclick="psSetMode('schema-only')">
-              <div class="ps-mode-title">🟡 Schema-only</div>
+              <div class="ps-mode-title"><i class="ic-dot" style="color:var(--amber)"></i> Schema-only</div>
               <div class="ps-mode-body">AI features that would send row data are blocked. Schema-level AI (column mapping) still works. Recommended for client production migrations.</div>
             </div>
             <div class="ps-mode-card" data-mode="no-ai" onclick="psSetMode('no-ai')">
-              <div class="ps-mode-title">🔴 No AI</div>
+              <div class="ps-mode-title"><i class="ic-dot" style="color:var(--red)"></i> No AI</div>
               <div class="ps-mode-body">All Anthropic API calls disabled. Cygenix works as a pure SQL tool — mapping is manual, no AI assistance anywhere.</div>
             </div>
           </div>
@@ -2138,7 +2139,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="ps-panel">
         <div class="ps-panel-head">
           <div class="ps-panel-title">AI access audit log</div>
-          <button class="btn btn-sm" onclick="psExportLog()">⬇ Export CSV</button>
+          <button class="btn btn-sm" onclick="psExportLog()"><i class="ic ic-download"></i> Export CSV</button>
           <button class="btn btn-sm" onclick="psClearLog()" style="color:var(--red)">Clear log</button>
         </div>
         <div style="padding:0">
@@ -2153,7 +2154,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <!-- INTEGRATIONS VIEW -->
     <div id="view-integrations" class="view">
       <div class="in-head">
-        <div class="in-title">🔌 Integrations</div>
+        <div class="in-title"><i class="ic ic-plug"></i> Integrations</div>
         <div class="in-sub">
           Connect Cygenix to external tools — import/export project bundles, post webhooks on migration events, email notifications, and more. Settings are stored in your browser (localStorage), never on Cygenix servers. One exception: Email (SMTP) cannot run in a browser, so its credentials are relayed to Cygenix over HTTPS at the moment a message is sent — used to open the connection, then discarded. Each connector says what it does with your details.
         </div>
@@ -2184,7 +2185,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
          both switches must be on for anything to be delivered. -->
     <div id="view-notifications" class="view">
       <div style="max-width:820px">
-        <h2 style="font-size:20px;font-weight:600;margin-bottom:0.4rem">🔔 Notifications</h2>
+        <h2 style="font-size:20px;font-weight:600;margin-bottom:0.4rem"><i class="ic ic-bell"></i> Notifications</h2>
         <div style="font-size:12.5px;color:var(--text2);line-height:1.65;margin-bottom:1.5rem">
           Choose which events on <strong>Schedules → Task Agent</strong> send a notification. Each event
           is delivered to every connector you have enabled in
@@ -2238,26 +2239,26 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-system-parameters" class="view">
       <div class="sp-head">
         <div>
-          <div class="sp-title" id="sp-view-title">⚙ System parameters</div>
+          <div class="sp-title" id="sp-view-title"><i class="ic ic-cog"></i> System parameters</div>
           <div class="sp-sub" id="sp-view-sub-params">Parameters are tokens like <code>@@StartDate</code> that get substituted with their value wherever they appear — in generated SQL, custom SQL jobs, WHERE clauses, Wasis rules, transforms, and literal values. The code is derived automatically from the name. Pick a <strong>Type</strong>: <code>number</code> emits unquoted, <code>text</code> and <code>date</code> emit quoted (<code>'ABC'</code>, <code>'20260101'</code>), <code>raw</code> passes through verbatim for expressions like <code>GETDATE()</code> or <code>NULL</code>.</div>
           <div class="sp-sub" id="sp-view-sub-wasis" style="display:none">Was/Is rules translate old source values to new target values during migration. Each rule matches on an optional source table and field (leave blank to match any) and rewrites <code>oldVal</code> → <code>newVal</code> via a generated <code>CASE</code> expression.</div>
         </div>
         <div class="sp-toolbar" id="sp-toolbar-params">
           <input type="file" id="sp-import-file" accept=".csv,.json" style="display:none" onchange="spImportFile(this)">
-          <button class="btn" onclick="document.getElementById('sp-import-file').click()" title="Import from CSV or JSON">⬆ Import</button>
-          <button class="btn" onclick="spExportCSV()" title="Download as CSV">⬇ Export CSV</button>
-          <button class="btn" onclick="spExportJSON()" title="Download as JSON">⬇ Export JSON</button>
+          <button class="btn" onclick="document.getElementById('sp-import-file').click()" title="Import from CSV or JSON"><i class="ic ic-upload"></i> Import</button>
+          <button class="btn" onclick="spExportCSV()" title="Download as CSV"><i class="ic ic-download"></i> Export CSV</button>
+          <button class="btn" onclick="spExportJSON()" title="Download as JSON"><i class="ic ic-download"></i> Export JSON</button>
           <button class="btn btn-primary" onclick="spAddRow()">+ Add parameter</button>
-          <button class="btn" onclick="spConfirmSave()" title="Confirm and flush all parameters to storage">💾 Save</button>
+          <button class="btn" onclick="spConfirmSave()" title="Confirm and flush all parameters to storage"><i class="ic ic-save"></i> Save</button>
           <span id="sp-save-status" style="font-size:11px;color:var(--text3);font-family:var(--mono);align-self:center;margin-left:0.25rem;opacity:0;transition:opacity 0.2s"></span>
         </div>
         <div class="sp-toolbar" id="sp-toolbar-wasis" style="display:none">
           <input type="file" id="wi-import-file" accept=".csv,.tsv,.xlsx,.xls,.txt,.json" style="display:none" onchange="wiImportFile(this)">
-          <button class="btn" onclick="document.getElementById('wi-import-file').click()" title="Import from CSV, TSV, Excel, or JSON">⬆ Import</button>
-          <button class="btn" onclick="wiExportCSV()" title="Download as CSV">⬇ Export CSV</button>
-          <button class="btn" onclick="wiExportJSON()" title="Download as JSON">⬇ Export JSON</button>
+          <button class="btn" onclick="document.getElementById('wi-import-file').click()" title="Import from CSV, TSV, Excel, or JSON"><i class="ic ic-upload"></i> Import</button>
+          <button class="btn" onclick="wiExportCSV()" title="Download as CSV"><i class="ic ic-download"></i> Export CSV</button>
+          <button class="btn" onclick="wiExportJSON()" title="Download as JSON"><i class="ic ic-download"></i> Export JSON</button>
           <button class="btn btn-primary" onclick="wiAddRow()">+ Add rule</button>
-          <button class="btn" onclick="wiConfirmSave()" title="Confirm and flush all rules to storage">💾 Save</button>
+          <button class="btn" onclick="wiConfirmSave()" title="Confirm and flush all rules to storage"><i class="ic ic-save"></i> Save</button>
           <span id="wi-save-status" style="font-size:11px;color:var(--text3);font-family:var(--mono);align-self:center;margin-left:0.25rem;opacity:0;transition:opacity 0.2s"></span>
         </div>
       </div>
@@ -2265,13 +2266,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <!-- Tab bar -->
       <div class="cx-tabs sp-tabs" style="display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border)">
         <button class="cx-tab cx-tab-active" data-sp-tab="params" onclick="switchSysTab('params')">
-          ⚙ Parameters
+          Parameters
         </button>
         <button class="cx-tab" data-sp-tab="wasis" onclick="switchSysTab('wasis')">
-          🔄 Was/Is value mapping
+          Was/Is value mapping
         </button>
         <button class="cx-tab" data-sp-tab="usage" onclick="switchSysTab('usage')">
-          📍 Where used
+          Where used
         </button>
       </div>
 
@@ -2282,13 +2283,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           Use the code exactly as shown (case-insensitive) wherever you want the value substituted.
         </div>
         <div class="sp-filter-bar" id="sp-filter-bar" style="display:none">
-          <input type="text" id="sp-filter-input" class="sp-filter-input" placeholder="🔍 Filter by name, description, value, or code…" oninput="spApplyFilter()">
+          <input type="text" id="sp-filter-input" class="sp-filter-input" placeholder="Filter by name, description, value, or code…" oninput="spApplyFilter()">
           <button class="btn btn-sm" id="sp-filter-clear" onclick="spClearFilter()" title="Clear filter" style="display:none">✕ Clear</button>
           <span id="sp-filter-count" class="sp-filter-count"></span>
         </div>
         <div id="sp-list-wrap">
           <div class="sp-empty" id="sp-empty-state">
-            <div class="sp-emoji">🏷</div>
+            <div class="sp-emoji"><i class="ic ic-tag"></i> </div>
             <div>No parameters yet.</div>
             <div style="font-size:11px;margin-top:0.4rem">Click <strong>+ Add parameter</strong>, or import a CSV/JSON file.</div>
           </div>
@@ -2307,7 +2308,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <tbody id="sp-params-tbody"></tbody>
           </table>
           <div class="sp-empty" id="sp-empty-filter-state" style="display:none">
-            <div class="sp-emoji">🔎</div>
+            <div class="sp-emoji"><i class="ic ic-search"></i> </div>
             <div>No parameters match the filter.</div>
             <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="spClearFilter();return false">clear the filter</a>.</div>
           </div>
@@ -2330,16 +2331,16 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
           <div class="conn-dot idle" id="wi-tgt-dot"></div>
           <span class="conn-label" id="wi-tgt-label">Target: not configured</span>
-          <a href="#connections" onclick="showView('connections');return false" class="conn-btn" style="margin-left:auto;text-decoration:none">⚙ Manage connections</a>
+          <a href="#connections" onclick="showView('connections');return false" class="conn-btn" style="margin-left:auto;text-decoration:none"><i class="ic ic-cog"></i> Manage connections</a>
         </div>
         <div class="sp-filter-bar" id="wi-filter-bar" style="display:none">
-          <input type="text" id="wi-filter-input" class="sp-filter-input" placeholder="🔍 Filter by table, field, old value, new value, or description…" oninput="wiApplyFilter()">
+          <input type="text" id="wi-filter-input" class="sp-filter-input" placeholder="Filter by table, field, old value, new value, or description…" oninput="wiApplyFilter()">
           <button class="btn btn-sm" id="wi-filter-clear" onclick="wiClearFilter()" title="Clear filter" style="display:none">✕ Clear</button>
           <span id="wi-filter-count" class="sp-filter-count"></span>
         </div>
         <div id="wi-list-wrap">
           <div class="sp-empty" id="wi-empty-state">
-            <div class="sp-emoji">🔄</div>
+            <div class="sp-emoji"><i class="ic ic-sync"></i> </div>
             <div>No Was/Is rules yet.</div>
             <div style="font-size:11px;margin-top:0.4rem">Click <strong>+ Add rule</strong>, or import a CSV/TSV/XLSX/JSON file.</div>
           </div>
@@ -2357,7 +2358,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <tbody id="wi-rules-tbody"></tbody>
           </table>
           <div class="sp-empty" id="wi-empty-filter-state" style="display:none">
-            <div class="sp-emoji">🔎</div>
+            <div class="sp-emoji"><i class="ic ic-search"></i> </div>
             <div>No rules match the filter.</div>
             <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="wiClearFilter();return false">clear the filter</a>.</div>
           </div>
@@ -2383,13 +2384,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           on this device — jobs not loaded locally won't appear here.
         </div>
         <div class="sp-filter-bar" id="usage-filter-bar" style="display:none">
-          <input type="text" id="usage-filter-input" class="sp-filter-input" placeholder="🔍 Filter by parameter, job, table, or column…" oninput="usageApplyFilter()">
+          <input type="text" id="usage-filter-input" class="sp-filter-input" placeholder="Filter by parameter, job, table, or column…" oninput="usageApplyFilter()">
           <button class="btn btn-sm" id="usage-filter-clear" onclick="usageClearFilter()" title="Clear filter" style="display:none">✕ Clear</button>
           <button class="btn btn-sm" onclick="usageRefresh()" title="Re-scan all jobs in localStorage">↻ Refresh</button>
           <span id="usage-filter-count" style="font-size:11px;color:var(--text3);align-self:center;margin-left:auto"></span>
         </div>
         <div class="sp-empty" id="usage-empty-state">
-          <div class="sp-emoji">📍</div>
+          <div class="sp-emoji"><i class="ic ic-pin"></i> </div>
           <div>No parameter references found.</div>
           <div style="font-size:11px;margin-top:0.4rem">Once a job's column mapping uses an <code>@@Token</code>, it will appear here.</div>
         </div>
@@ -2407,7 +2408,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <tbody id="usage-tbody"></tbody>
         </table>
         <div class="sp-empty" id="usage-empty-filter-state" style="display:none">
-          <div class="sp-emoji">🔎</div>
+          <div class="sp-emoji"><i class="ic ic-search"></i> </div>
           <div>No references match the filter.</div>
           <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="usageClearFilter();return false">clear the filter</a>.</div>
         </div>
@@ -2419,7 +2420,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-connections" class="view">
       <div class="panel-header">
         <div>
-          <div class="panel-title">🔌 Project Connections</div>
+          <div class="panel-title"><i class="ic ic-plug"></i> Project Connections</div>
           <div class="panel-sub">Configure source and target database connections once — all pages inherit these settings automatically</div>
           <div style="margin-top:0.5rem;font-size:11px;color:var(--text3);display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <span style="color:var(--text2);font-weight:500">Supported:</span>
@@ -2429,7 +2430,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
         <div style="display:flex;gap:0.75rem;align-items:center">
           <div id="conn-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</div>
-          <button id="conn-tab-save-btn" class="btn btn-primary btn-sm" onclick="saveProjectConnections()">💾 Save connections</button>
+          <button id="conn-tab-save-btn" class="btn btn-primary btn-sm" onclick="saveProjectConnections()"><i class="ic ic-save"></i> Save connections</button>
           <button id="conn-tab-clear-btn" class="btn btn-ghost btn-sm" onclick="clearProjectConnections()" style="color:var(--red)">✕ Clear all</button>
         </div>
       </div>
@@ -2437,22 +2438,22 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <!-- Tab bar -->
       <div class="cx-tabs" style="display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border)">
         <button class="cx-tab cx-tab-active" data-tab="databases" onclick="switchConnTab('databases')">
-          🔌 Database connections
+          Database connections
         </button>
         <button class="cx-tab" data-tab="import" onclick="switchConnTab('import')">
-          ⬆ Data import
+          Data import
         </button>
         <button class="cx-tab" data-tab="restore" onclick="switchConnTab('restore')" title="Restore a database onto the configured target, or roll back a migration.">
-          ♻ Restore database
+          Restore database
         </button>
         <button class="cx-tab" data-tab="linked" onclick="switchConnTab('linked')">
-          🔗 Linked servers
+          Linked servers
         </button>
         <button class="cx-tab" data-tab="blob" onclick="switchConnTab('blob')">
-          ☁ Azure Blob Source
+          Azure Blob Source
         </button>
         <a class="cx-tab" href="/data-generator.html" style="text-decoration:none" title="Populate a source database with realistic demo data for migration demonstrations">
-          🎲 Data Generator
+          Data Generator
         </a>
       </div>
 
@@ -2473,13 +2474,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                  is configured. Database name and saved nickname only — the
                  raw string carries a password. -->
             <div id="src-conn-locked" class="conn-locked" style="display:none">
-              <span class="conn-locked-icon">🔒</span>
+              <span class="conn-locked-icon"><i class="ic ic-lock"></i> </span>
               <span class="conn-locked-main">
                 <span class="conn-locked-label" id="src-conn-locked-label">Database</span>
                 <span class="conn-locked-value" id="src-conn-locked-value"></span>
               </span>
               <span class="conn-locked-nick" id="src-conn-locked-nick" style="display:none"></span>
-              <button class="btn btn-ghost btn-sm" onclick="connReveal('src')" title="Show the connection details so they can be edited">✎ Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="connReveal('src')" title="Show the connection details so they can be edited"><i class="ic ic-edit"></i> Edit</button>
             </div>
             <div id="src-direct-wrap">
               <label class="form-label">Connection string</label>
@@ -2493,9 +2494,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <input id="proj-src-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
             </div>
             <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.25rem">
-              <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')">🔌 Connect &amp; test</button>
-              <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('src')" title="Save current connection under a name">💾 Save as…</button>
-              <button id="src-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('src')" title="Hide the connection details again" style="display:none">🔒 Hide</button>
+              <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')"><i class="ic ic-plug"></i> Connect &amp; test</button>
+              <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('src')" title="Save current connection under a name"><i class="ic ic-save"></i> Save as…</button>
+              <button id="src-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('src')" title="Hide the connection details again" style="display:none"><i class="ic ic-lock"></i> Hide</button>
             </div>
             <div id="src-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
 
@@ -2519,13 +2520,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <button id="tgt-mode-azure" class="btn btn-sm" onclick="connReveal('tgt');setTgtMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
             </div>
             <div id="tgt-conn-locked" class="conn-locked" style="display:none">
-              <span class="conn-locked-icon">🔒</span>
+              <span class="conn-locked-icon"><i class="ic ic-lock"></i> </span>
               <span class="conn-locked-main">
                 <span class="conn-locked-label" id="tgt-conn-locked-label">Database</span>
                 <span class="conn-locked-value" id="tgt-conn-locked-value"></span>
               </span>
               <span class="conn-locked-nick" id="tgt-conn-locked-nick" style="display:none"></span>
-              <button class="btn btn-ghost btn-sm" onclick="connReveal('tgt')" title="Show the connection details so they can be edited">✎ Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="connReveal('tgt')" title="Show the connection details so they can be edited"><i class="ic ic-edit"></i> Edit</button>
             </div>
             <div id="tgt-direct-wrap" style="display:none">
               <label class="form-label">Connection string</label>
@@ -2539,9 +2540,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <input id="proj-tgt-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
             </div>
             <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.25rem">
-              <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')">🔌 Connect &amp; test</button>
-              <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('tgt')" title="Save current connection under a name">💾 Save as…</button>
-              <button id="tgt-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('tgt')" title="Hide the connection details again" style="display:none">🔒 Hide</button>
+              <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')"><i class="ic ic-plug"></i> Connect &amp; test</button>
+              <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('tgt')" title="Save current connection under a name"><i class="ic ic-save"></i> Save as…</button>
+              <button id="tgt-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('tgt')" title="Hide the connection details again" style="display:none"><i class="ic ic-lock"></i> Hide</button>
             </div>
             <div id="tgt-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
 
@@ -2578,7 +2579,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <span id="rst-target-family" style="font-size:10px;font-weight:600;font-family:var(--mono);padding:2px 8px;border-radius:100px;border:0.5px solid var(--border2);color:var(--text2)">not probed</span>
             <span id="rst-caps" style="font-size:11px;color:var(--text2)"></span>
             <span style="margin-left:auto;display:flex;gap:0.5rem">
-              <button class="btn btn-ghost btn-sm" onclick="rstProbe(true)" id="rst-probe-btn">🔍 Detect capabilities</button>
+              <button class="btn btn-ghost btn-sm" onclick="rstProbe(true)" id="rst-probe-btn"><i class="ic ic-search"></i> Detect capabilities</button>
               <a href="#" class="btn btn-ghost btn-sm" onclick="switchConnTab('databases');return false" style="text-decoration:none">Change target →</a>
             </span>
           </div>
@@ -2601,7 +2602,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <pre id="rst-cred-sql" style="font-size:10.5px;color:var(--text2);white-space:pre-wrap;margin-top:0.35rem"></pre></details>
             </div>
             <div style="margin-top:0.7rem;display:flex;gap:0.5rem;align-items:center">
-              <button class="btn btn-primary btn-sm" onclick="rstInspect()" id="rst-inspect-btn">🔍 Inspect backup</button>
+              <button class="btn btn-primary btn-sm" onclick="rstInspect()" id="rst-inspect-btn"><i class="ic ic-search"></i> Inspect backup</button>
               <span id="rst-inspect-status" style="font-size:11.5px;color:var(--text3)"></span>
             </div>
           </div>
@@ -2646,10 +2647,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <!-- Validation + run -->
         <div class="panel" style="padding:1rem">
           <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="rstValidate()" id="rst-validate-btn">✔ Validate only</button>
+            <button class="btn btn-ghost btn-sm" onclick="rstValidate()" id="rst-validate-btn"><i class="ic ic-check"></i> Validate only</button>
             <button class="btn btn-sm" onclick="rstRun()" id="rst-run-btn" disabled
                     style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.4);font-weight:600">
-              ♻ Run restore
+              Run restore
             </button>
             <button class="btn btn-ghost btn-sm" onclick="rstBringOnline()" id="rst-online-btn" style="display:none" title="RESTORE DATABASE ... WITH RECOVERY — brings a database stuck in RESTORING online">⤴ Bring online</button>
             <span id="rst-run-status" style="font-size:12px;color:var(--text2)"></span>
@@ -2682,7 +2683,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
           <div id="imp-drop" class="imp-drop" onclick="document.getElementById('imp-file').click()" ondragover="impDragOver(event)" ondragleave="impDragLeave(event)" ondrop="impDrop(event)">
             <input type="file" id="imp-file" accept=".csv,.tsv,.txt,.xlsx,.xls" multiple style="display:none" onchange="impHandleFiles(this.files)">
-            <div style="font-size:28px;margin-bottom:0.4rem;opacity:0.5">📄</div>
+            <div style="font-size:28px;margin-bottom:0.4rem;opacity:0.5"><i class="ic ic-doc"></i> </div>
             <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop one or more CSV / Excel files here, or click to browse</div>
             <div style="font-size:11px;color:var(--text3)">Single file → schema preview · Multiple files → auto-import to <strong>source</strong> DB as <code style="font-family:var(--mono)">dbo.&lt;filename&gt;</code></div>
           </div>
@@ -2728,7 +2729,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div id="imp-batch-summary" style="font-size:12px;color:var(--text3);font-family:var(--mono);min-height:18px;margin-top:0.75rem;padding:0.5rem 0.75rem;background:var(--bg3);border-radius:var(--r);display:none"></div>
 
           <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
-            <button id="imp-batch-run-btn" class="btn btn-primary btn-sm" onclick="impBatchRun()">⬆ Import all files</button>
+            <button id="imp-batch-run-btn" class="btn btn-primary btn-sm" onclick="impBatchRun()"><i class="ic ic-upload"></i> Import all files</button>
             <button id="imp-batch-abort-btn" class="btn btn-sm" style="display:none;background:rgba(239,68,68,0.1);color:var(--red);border:0.5px solid rgba(239,68,68,0.4)" onclick="impBatchAbort()">✕ Abort batch</button>
             <button class="btn btn-ghost btn-sm" onclick="impBatchReset()">✕ Clear batch</button>
           </div>
@@ -2740,7 +2741,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div style="font-size:13px;font-weight:600">2 · Review schema</div>
             <span style="font-size:10.5px;color:var(--text3)">Types inferred from first 500 rows. Override any column using the dropdown.</span>
             <button class="btn btn-ghost btn-sm" onclick="impAllToMax()" style="margin-left:auto;font-size:11px" title="Set every column to TEXT (MAX). Good for problem files — imports always succeed, clean up in SQL after.">
-              🛟 All to TEXT (MAX)
+              All to TEXT (MAX)
             </button>
           </div>
           <div style="overflow-x:auto">
@@ -2771,7 +2772,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
           <div id="imp-run-result" style="font-size:12px;color:var(--text3);font-family:var(--mono);min-height:20px;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:var(--bg3);border-radius:var(--r);display:none"></div>
           <div style="display:flex;gap:0.5rem">
-            <button id="imp-run-btn" class="btn btn-primary btn-sm" onclick="impRun()">⬆ Import to database</button>
+            <button id="imp-run-btn" class="btn btn-primary btn-sm" onclick="impRun()"><i class="ic ic-upload"></i> Import to database</button>
             <button id="imp-abort-btn" class="btn btn-sm" style="display:none;background:rgba(239,68,68,0.1);color:var(--red);border:0.5px solid rgba(239,68,68,0.4)" onclick="impAbortRun()">✕ Abort import</button>
             <button class="btn btn-ghost btn-sm" onclick="impReset()">✕ Start over</button>
           </div>
@@ -2809,7 +2810,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <span style="font-size:10.5px;color:var(--text3)">Configure the remote DB, save as a draft, then run the SQL explicitly.</span>
           </div>
           <div style="font-size:11px;color:var(--text3);margin-bottom:1rem;line-height:1.5;background:var(--bg3);padding:8px 12px;border-radius:var(--r)">
-            <strong style="color:var(--amber)">⚠ Requires elevated permissions</strong> on the target SQL Server (<code style="background:var(--bg4);padding:1px 4px;border-radius:3px">ALTER ANY LINKED SERVER</code> or <code style="background:var(--bg4);padding:1px 4px;border-radius:3px">sysadmin</code>). Drafts are stored locally — nothing runs until you click <em>Run setup</em>.
+            <strong style="color:var(--amber)"><i class="ic ic-warning"></i> Requires elevated permissions</strong> on the target SQL Server (<code style="background:var(--bg4);padding:1px 4px;border-radius:3px">ALTER ANY LINKED SERVER</code> or <code style="background:var(--bg4);padding:1px 4px;border-radius:3px">sysadmin</code>). Drafts are stored locally — nothing runs until you click <em>Run setup</em>.
           </div>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
@@ -2855,7 +2856,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
 
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" onclick="lsSaveDraft()">💾 Save draft</button>
+            <button class="btn btn-primary btn-sm" onclick="lsSaveDraft()"><i class="ic ic-save"></i> Save draft</button>
             <button class="btn btn-ghost btn-sm" onclick="lsClearDraftForm()">✕ Clear form</button>
             <span id="ls-draft-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
           </div>
@@ -2912,7 +2913,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
           <div id="blob-add-result" style="font-size:11.5px;color:var(--text3);font-family:var(--mono);min-height:18px;margin-bottom:0.75rem"></div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" onclick="blobSourceTest()">🔌 Test &amp; save</button>
+            <button class="btn btn-primary btn-sm" onclick="blobSourceTest()"><i class="ic ic-plug"></i> Test &amp; save</button>
             <button class="btn btn-ghost btn-sm" onclick="blobSourceClearForm()">✕ Clear</button>
             <span style="font-size:10.5px;color:var(--text3);margin-left:auto">
               SAS perms: <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Read</code> + <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">List</code> to browse and download · add <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Create</code> + <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Write</code> to upload · File transfer goes via Cygenix to bypass storage-account CORS restrictions. 100MB cap per file.
@@ -2949,7 +2950,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                after the user has picked files and waited for a 403. -->
           <div id="blob-upload-panel" style="display:none;margin-bottom:0.9rem;border:0.5px solid var(--border);border-radius:var(--r);background:var(--bg3)">
             <div style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.75rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap">
-              <div style="font-size:12px;font-weight:600">⬆ Upload files to this container</div>
+              <div style="font-size:12px;font-weight:600"><i class="ic ic-upload"></i> Upload files to this container</div>
               <span id="blob-upload-perm" style="font-size:10.5px;font-family:var(--mono);color:var(--text3)"></span>
               <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="blobUploadToggle()" id="blob-upload-toggle">Hide</button>
             </div>
@@ -2980,7 +2981,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <div id="blob-upload-queue" style="margin-top:0.75rem;display:none;flex-direction:column;gap:0.4rem"></div>
 
               <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.75rem;flex-wrap:wrap">
-                <button class="btn btn-primary btn-sm" id="blob-upload-go" onclick="blobUploadStart()" disabled>⬆ Upload</button>
+                <button class="btn btn-primary btn-sm" id="blob-upload-go" onclick="blobUploadStart()" disabled><i class="ic ic-upload"></i> Upload</button>
                 <button class="btn btn-ghost btn-sm" onclick="blobUploadClearQueue()">✕ Clear</button>
                 <span id="blob-upload-status" style="font-size:11.5px;font-family:var(--mono);color:var(--text3);margin-left:auto"></span>
               </div>
@@ -2992,7 +2993,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                no re-fetch on keystroke. -->
           <div id="blob-filter-bar" style="display:none;align-items:center;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap">
             <input id="blob-filter-search" class="form-input" style="flex:1;min-width:200px;font-family:var(--mono);font-size:12px"
-                   placeholder="🔍 Filter files…"
+                   placeholder="Filter files…"
                    oninput="blobSourceRenderFiles()">
             <div style="display:flex;gap:0.25rem;align-items:center">
               <button class="btn btn-sm blob-type-chip blob-type-chip-active" data-type="all"   onclick="blobSourceSetTypeFilter('all')">All</button>
@@ -3033,7 +3034,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-server-migration" class="view">
       <div class="panel-header">
         <div>
-          <div class="panel-title">🛡 Server Migration</div>
+          <div class="panel-title"><i class="ic ic-shield"></i> Server Migration</div>
           <div class="panel-sub" style="font-size:11.5px;color:var(--text3);margin-top:3px">
             Replicate server-level objects between SQL Server instances. Requires sysadmin on both source and target.
           </div>
@@ -3072,7 +3073,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <span id="sm-tgt-msg" style="font-size:12px;color:var(--text2);font-family:var(--mono)">Click Verify to test connection.</span>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" onclick="ServerMigration.verifyConnections()">🔍 Verify both</button>
+            <button class="btn btn-primary btn-sm" onclick="ServerMigration.verifyConnections()"><i class="ic ic-search"></i> Verify both</button>
             <button class="btn btn-primary btn-sm" id="sm-proceed-btn" disabled onclick="ServerMigration.showStep('discover')">Proceed to discover →</button>
             <span style="font-size:10.5px;color:var(--text3)">Connections come from the Connections tab. Change them there if needed.</span>
           </div>
@@ -3121,7 +3122,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div id="sm-discover-logins-panel" class="panel" style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
             <div style="font-size:13px;font-weight:600">Logins on source</div>
-            <input id="sm-login-filter" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1;min-width:160px;max-width:280px" placeholder="🔍 Filter by name…" oninput="ServerMigration._filterLoginsChanged()">
+            <input id="sm-login-filter" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1;min-width:160px;max-width:280px" placeholder="Filter by name…" oninput="ServerMigration._filterLoginsChanged()">
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:11px;color:var(--text3);cursor:pointer">
               <input type="checkbox" id="sm-show-system" onchange="ServerMigration._filterLoginsChanged()" style="cursor:pointer">
               Show system logins
@@ -3137,7 +3138,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div id="sm-discover-jobs-panel" class="panel" style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
             <div style="font-size:13px;font-weight:600">SQL Agent jobs on source</div>
-            <input id="sm-job-filter" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1;min-width:160px;max-width:280px" placeholder="🔍 Filter by name…" oninput="ServerMigration._filterJobsChanged()">
+            <input id="sm-job-filter" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1;min-width:160px;max-width:280px" placeholder="Filter by name…" oninput="ServerMigration._filterJobsChanged()">
             <span style="font-size:10.5px;color:var(--text3);font-style:italic">Operators are auto-included. Proxies, credentials &amp; alerts are out of scope for this phase.</span>
           </div>
           <div id="sm-jobs-summary" style="font-size:11.5px;color:var(--text2);margin-bottom:0.75rem"></div>
@@ -3195,7 +3196,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div style="font-size:13px;font-weight:600">Generated T-SQL</div>
             <span style="font-size:10.5px;color:var(--text3)">Password hashes are redacted in this view but sent in full at execution time.</span>
             <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="ServerMigration.showStep('discover')">← Back to selection</button>
-            <button id="sm-copy-sql-btn" class="btn btn-ghost btn-sm" onclick="ServerMigration.copyPreviewSql()" title="Copies the full SQL with real password hashes — handle with care.">📋 Copy SQL</button>
+            <button id="sm-copy-sql-btn" class="btn btn-ghost btn-sm" onclick="ServerMigration.copyPreviewSql()" title="Copies the full SQL with real password hashes — handle with care."><i class="ic ic-clipboard"></i> Copy SQL</button>
             <button class="btn btn-primary btn-sm" onclick="ServerMigration.executeNow()">▶ Execute on target</button>
           </div>
           <pre id="sm-preview-pre" style="background:var(--bg3);color:var(--text2);padding:1rem;border-radius:var(--r);font-family:var(--mono);font-size:11px;line-height:1.5;white-space:pre-wrap;max-height:600px;overflow:auto;margin:0;border:0.5px solid var(--border)"></pre>
@@ -3219,7 +3220,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="panel" style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
             <div style="font-size:13px;font-weight:600">Migration complete</div>
-            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="ServerMigration.downloadAudit()">⬇ Download audit (JSON)</button>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="ServerMigration.downloadAudit()"><i class="ic ic-download"></i> Download audit (JSON)</button>
             <button class="btn btn-primary btn-sm" onclick="ServerMigration.startOver()">↻ Run another migration</button>
           </div>
           <div id="sm-audit-summary"></div>
@@ -3246,14 +3247,14 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <h3>Table already exists</h3>
         <p id="imp-exists-body">The table <code id="imp-exists-tablename" style="background:var(--bg3);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:12px"></code> already exists in the destination. What would you like to do?</p>
         <div class="imp-exists-row" onclick="impProceed('append')">
-          <div style="font-size:18px">➕</div>
+          <div style="font-size:18px"><i class="ic ic-plus"></i> </div>
           <div>
             <strong>Append to existing</strong>
             <span>Insert the new rows alongside current data. Column names and order must match.</span>
           </div>
         </div>
         <div class="imp-exists-row danger" onclick="impProceed('overwrite')">
-          <div style="font-size:18px">⚠️</div>
+          <div style="font-size:18px"><i class="ic ic-warning"></i> </div>
           <div>
             <strong>Overwrite (drop + recreate)</strong>
             <span>DROP the existing table and recreate it from this file. All existing rows will be deleted. Cannot be undone.</span>
@@ -3272,21 +3273,21 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <p id="imp-validate-summary">Review the issues below and decide how to handle them.</p>
         <div class="imp-issue-list" id="imp-validate-issues"></div>
         <div class="imp-exists-row" onclick="impValidateProceed('null')">
-          <div style="font-size:18px">🔄</div>
+          <div style="font-size:18px"><i class="ic ic-sync"></i> </div>
           <div>
             <strong>Convert bad values to NULL</strong>
             <span>Keep every row. Values that don't fit the chosen type are stored as NULL. Recommended when a small number of values are dirty.</span>
           </div>
         </div>
         <div class="imp-exists-row" onclick="impValidateProceed('skip')">
-          <div style="font-size:18px">⏭️</div>
+          <div style="font-size:18px"><i class="ic ic-skip"></i> </div>
           <div>
             <strong>Skip affected rows</strong>
             <span>Drop any row that has at least one bad value. Only clean rows get imported.</span>
           </div>
         </div>
         <div class="imp-exists-row" onclick="impValidateProceed('max')">
-          <div style="font-size:18px">🛟</div>
+          <div style="font-size:18px"><i class="ic ic-shield"></i> </div>
           <div>
             <strong>Switch affected columns to TEXT (MAX)</strong>
             <span>Change just the problem columns to NVARCHAR(MAX) and import everything as-is. Escape hatch — fix it up in SQL after.</span>
@@ -3329,14 +3330,14 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <input type="file" id="inv-file-input" style="display:none" multiple
             accept=".csv,.xlsx,.xls,.txt,.pdf,.docx,.doc,.md,.json,.sql,.png,.jpg,.jpeg"
             onchange="invHandleFiles(this.files)">
-          <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4">📁</div>
+          <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4"><i class="ic ic-folder"></i> </div>
           <div style="font-size:12px;color:var(--text);font-weight:500;margin-bottom:0.2rem">Drop files here or click</div>
           <div style="font-size:10px;color:var(--text3);line-height:1.7">CSV · Excel · PDF · Word<br>SQL · Markdown · Images</div>
         </div>
 
         <!-- Add note button -->
         <button class="btn btn-ghost" onclick="invAddNote()" style="width:100%;justify-content:center;margin-bottom:1.5rem;font-size:12px">
-          📝 Add a note
+          Add a note
         </button>
 
         <!-- Filter by type -->
@@ -3348,37 +3349,37 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </button>
           <button class="inv-filter" onclick="invFilter('wasis')" data-filter="wasis"
             style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
-            🔄 Was/Is Mapping <span id="inv-count-wasis" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+            <i class="ic ic-sync"></i> Was/Is Mapping <span id="inv-count-wasis" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
           </button>
           <button class="inv-filter" onclick="invFilter('dictionary')" data-filter="dictionary"
             style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
-            📖 Data Dictionary <span id="inv-count-dictionary" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+            <i class="ic ic-book"></i> Data Dictionary <span id="inv-count-dictionary" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
           </button>
           <button class="inv-filter" onclick="invFilter('schema')" data-filter="schema"
             style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
-            🗂️ Schema Mapping <span id="inv-count-schema" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+            <i class="ic ic-archive"></i> Schema Mapping <span id="inv-count-schema" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
           </button>
           <button class="inv-filter" onclick="invFilter('rules')" data-filter="rules"
             style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
-            ⚙️ Business Rules <span id="inv-count-rules" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+            <i class="ic ic-cog"></i> Business Rules <span id="inv-count-rules" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
           </button>
           <button class="inv-filter" onclick="invFilter('signoff')" data-filter="signoff"
             style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
-            ✅ Client Sign-off <span id="inv-count-signoff" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+            <i class="ic ic-check-circle"></i> Client Sign-off <span id="inv-count-signoff" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
           </button>
           <button class="inv-filter" onclick="invFilter('notes')" data-filter="notes"
             style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
-            📝 Notes <span id="inv-count-notes" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+            <i class="ic ic-edit"></i> Notes <span id="inv-count-notes" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
           </button>
           <button class="inv-filter" onclick="invFilter('other')" data-filter="other"
             style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
-            📄 Other <span id="inv-count-other" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+            <i class="ic ic-doc"></i> Other <span id="inv-count-other" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
           </button>
         </div>
 
         <!-- Was/Is status indicator -->
         <div id="wasis-status-panel" style="display:none;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);padding:0.75rem;margin-top:1rem">
-          <div style="font-size:11px;font-weight:600;color:var(--amber);margin-bottom:0.25rem">🔄 Was/Is active</div>
+          <div style="font-size:11px;font-weight:600;color:var(--amber);margin-bottom:0.25rem"><i class="ic ic-sync"></i> Was/Is active</div>
           <div style="font-size:11px;color:var(--text3)" id="wasis-status-text">0 rules loaded</div>
         </div>
       </div>
@@ -3397,7 +3398,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">organised by project folder</span>
           </div>
           <div style="font-size:13px;color:var(--text2);line-height:1.6;background:var(--bg2);border:0.5px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r-lg);padding:0.85rem 1.1rem">
-            <span style="font-size:15px;margin-right:4px">✨</span>
+            <span style="font-size:15px;margin-right:4px"><i class="ic ic-sparkle"></i> </span>
             <strong style="color:var(--text);font-weight:600">Context for Claude AI.</strong>
             Documents uploaded here — emails, client briefs, sign-offs, attachments — are made available to Claude when generating narratives for conversion reports tied to this project. The AI uses them to add context, explain anomalies, and cite sources inline (e.g. <code style="font-family:var(--mono);font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--accent)">[Email, 14&nbsp;Apr]</code>). Upload artifacts into a project folder and they'll be picked up automatically the next time that project's report runs.
           </div>
@@ -3420,49 +3421,49 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0.75rem;margin-bottom:1.25rem">
             <div class="inv-type-btn" onclick="invSelectType('artifact')" data-type="artifact"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
-              <div style="font-size:24px;margin-bottom:0.4rem">✉️</div>
+              <div style="font-size:24px;margin-bottom:0.4rem"><i class="ic ic-mail"></i> </div>
               <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Project Artifact</div>
               <div style="font-size:11px;color:var(--text3)">Emails, briefs, attachments</div>
             </div>
             <div class="inv-type-btn" onclick="invSelectType('wasis')" data-type="wasis"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
-              <div style="font-size:24px;margin-bottom:0.4rem">🔄</div>
+              <div style="font-size:24px;margin-bottom:0.4rem"><i class="ic ic-sync"></i> </div>
               <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Was/Is Mapping</div>
               <div style="font-size:11px;color:var(--text3)">Old → new values</div>
             </div>
             <div class="inv-type-btn" onclick="invSelectType('dictionary')" data-type="dictionary"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
-              <div style="font-size:24px;margin-bottom:0.4rem">📖</div>
+              <div style="font-size:24px;margin-bottom:0.4rem"><i class="ic ic-book"></i> </div>
               <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Data Dictionary</div>
               <div style="font-size:11px;color:var(--text3)">Field definitions</div>
             </div>
             <div class="inv-type-btn" onclick="invSelectType('schema')" data-type="schema"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
-              <div style="font-size:24px;margin-bottom:0.4rem">🗂️</div>
+              <div style="font-size:24px;margin-bottom:0.4rem"><i class="ic ic-archive"></i> </div>
               <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Schema Mapping</div>
               <div style="font-size:11px;color:var(--text3)">Source → target</div>
             </div>
             <div class="inv-type-btn" onclick="invSelectType('rules')" data-type="rules"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
-              <div style="font-size:24px;margin-bottom:0.4rem">⚙️</div>
+              <div style="font-size:24px;margin-bottom:0.4rem"><i class="ic ic-cog"></i> </div>
               <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Business Rules</div>
               <div style="font-size:11px;color:var(--text3)">Logic & transforms</div>
             </div>
             <div class="inv-type-btn" onclick="invSelectType('signoff')" data-type="signoff"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
-              <div style="font-size:24px;margin-bottom:0.4rem">✅</div>
+              <div style="font-size:24px;margin-bottom:0.4rem"><i class="ic ic-check-circle"></i> </div>
               <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Client Sign-off</div>
               <div style="font-size:11px;color:var(--text3)">Approvals</div>
             </div>
             <div class="inv-type-btn" onclick="invSelectType('notes')" data-type="notes"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
-              <div style="font-size:24px;margin-bottom:0.4rem">📝</div>
+              <div style="font-size:24px;margin-bottom:0.4rem"><i class="ic ic-edit"></i> </div>
               <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Notes</div>
               <div style="font-size:11px;color:var(--text3)">Free text notes</div>
             </div>
             <div class="inv-type-btn" onclick="invSelectType('other')" data-type="other"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
-              <div style="font-size:24px;margin-bottom:0.4rem">📄</div>
+              <div style="font-size:24px;margin-bottom:0.4rem"><i class="ic ic-doc"></i> </div>
               <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Other</div>
               <div style="font-size:11px;color:var(--text3)">General document</div>
             </div>
@@ -3472,7 +3473,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
         <!-- Add note form -->
         <div id="inv-note-form" style="display:none;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.5rem;margin-bottom:1.5rem">
-          <div style="font-size:14px;font-weight:600;margin-bottom:1rem">📝 Add a note</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:1rem"><i class="ic ic-edit"></i> Add a note</div>
           <input id="inv-note-title" placeholder="Note title…" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;margin-bottom:0.75rem;display:block"/>
           <textarea id="inv-note-body" placeholder="Write your notes here…" rows="4"
             style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;resize:vertical;line-height:1.6;display:block;margin-bottom:0.75rem"></textarea>
@@ -3484,7 +3485,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
         <!-- Document grid -->
         <div id="inv-empty" style="text-align:center;padding:5rem 1rem;color:var(--text3);display:none">
-          <div style="font-size:48px;margin-bottom:1rem;opacity:0.2">📂</div>
+          <div style="font-size:48px;margin-bottom:1rem;opacity:0.2"><i class="ic ic-folder-open"></i> </div>
           <div style="font-size:15px;color:var(--text2);margin-bottom:0.4rem;font-weight:500">No documents yet</div>
           <div style="font-size:12px;line-height:1.8">Drop files on the left panel to upload<br>or click the upload zone to browse</div>
         </div>
@@ -3512,7 +3513,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-search" class="view">
       <div class="panel-header">
         <div>
-          <div class="panel-title">🔍 Search</div>
+          <div class="panel-title"><i class="ic ic-search"></i> Search</div>
           <div class="panel-sub">Find jobs, maps, projects, artifacts and saved reports from one place</div>
         </div>
       </div>
@@ -3546,7 +3547,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-task-agent" class="view">
       <div class="panel-header">
         <div>
-          <div class="panel-title">⏱ Task Agent</div>
+          <div class="panel-title"><i class="ic ic-clock"></i> Task Agent</div>
           <div class="panel-sub">Schedule migration jobs on cron, run on demand, chain jobs on success</div>
         </div>
         <div style="display:flex;gap:0.5rem">
@@ -3606,7 +3607,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </label>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:-0.5rem">
-        Snapshots freeze the SQL at a point in time. Use <button type="button" class="btn btn-ghost btn-sm" style="padding:0.2rem 0.5rem;font-size:10px" onclick="ta_createVersionFromSelected()">📸 Snapshot current SQL</button> to make a new one from the selected job.
+        Snapshots freeze the SQL at a point in time. Use <button type="button" class="btn btn-ghost btn-sm" style="padding:0.2rem 0.5rem;font-size:10px" onclick="ta_createVersionFromSelected()"><i class="ic ic-file"></i> Snapshot current SQL</button> to make a new one from the selected job.
       </div>
 
       <div style="border-top:0.5px solid var(--border);padding-top:0.9rem">
@@ -3851,7 +3852,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div style="font-size:11px;color:var(--text3);margin-top:2px" id="preview-doc-meta"></div>
       </div>
       <div style="display:flex;gap:0.75rem;align-items:center">
-        <button class="btn btn-ghost btn-sm" onclick="invDownloadDoc(invPreviewId)">⬇ Download</button>
+        <button class="btn btn-ghost btn-sm" onclick="invDownloadDoc(invPreviewId)"><i class="ic ic-download"></i> Download</button>
         <button class="btn btn-ghost btn-sm" onclick="closeInvPreview()">✕ Close</button>
       </div>
     </div>
@@ -3860,7 +3861,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 </div>
 
 <!-- REPORT RECONCILIATION SETTINGS MODAL ─────────────────────────────────────
-     Opened from the ⚙ button on a Conversion Reports card. Shows the
+     Opened from the button on a Conversion Reports card. Shows the
      reconciliation config for ONLY the jobs that were part of that specific
      report. Replaces the old global Reports → Settings nav item with a
      per-report panel so the scope matches what the user is actually editing.
@@ -3944,7 +3945,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
         <div class="pres-save-row">
           <button class="btn btn-ghost btn-sm" onclick="presResetConfig()">↺ Reset</button>
-          <button class="btn btn-primary btn-sm" id="pres-save-btn" onclick="presSaveConfig()">💾 Save presentation</button>
+          <button class="btn btn-primary btn-sm" id="pres-save-btn" onclick="presSaveConfig()"><i class="ic ic-save"></i> Save presentation</button>
         </div>
       </div>
     </div>
@@ -3991,8 +3992,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Close</button>
-      <button class="btn btn-teal" id="modal-download-schema" onclick="downloadModalSQL('schema')">⬇ Download Schema .sql</button>
-      <button class="btn btn-primary" id="modal-download-migration" onclick="downloadModalSQL('migration')">⬇ Download Migration .sql</button>
+      <button class="btn btn-teal" id="modal-download-schema" onclick="downloadModalSQL('schema')"><i class="ic ic-download"></i> Download Schema .sql</button>
+      <button class="btn btn-primary" id="modal-download-migration" onclick="downloadModalSQL('migration')"><i class="ic ic-download"></i> Download Migration .sql</button>
     </div>
   </div>
 </div>
@@ -4005,7 +4006,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:16px;width:100%;max-width:540px;box-shadow:0 24px 64px rgba(0,0,0,0.5);overflow:hidden">
     <!-- Header -->
     <div style="background:linear-gradient(135deg,#3A322D 0%,#241F1C 100%);padding:2rem 2rem 1.5rem;text-align:center;position:relative">
-      <div style="font-size:2.5rem;margin-bottom:0.5rem">🚀</div>
+      <div style="font-size:2.5rem;margin-bottom:0.5rem"><i class="ic ic-rocket"></i> </div>
       <div style="font-size:1.2rem;font-weight:700;color:#fff;margin-bottom:0.35rem;letter-spacing:-0.02em">Welcome to Cygenix</div>
       <div style="font-size:13px;color:rgba(255,255,255,0.6)">AI-powered SQL database migration — let's get you started</div>
       <button onclick="dismissOnboarding()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:20px;line-height:1">✕</button>
@@ -4015,7 +4016,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:1rem">Recommended first steps</div>
       <div style="display:flex;flex-direction:column;gap:0.6rem">
         <div onclick="onboardGoTo('project-settings')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
-          <div style="width:36px;height:36px;border-radius:8px;background:var(--amber-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚙</div>
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--amber-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ic ic-cog"></i> </div>
           <div style="flex:1">
             <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Set up your project</div>
             <div style="font-size:11px;color:var(--text3)">Enter your project name, completion date, source and target systems</div>
@@ -4023,7 +4024,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="color:var(--text3);font-size:14px">›</div>
         </div>
         <div onclick="onboardGoTo('connections')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border2)'">
-          <div style="width:36px;height:36px;border-radius:8px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🔌</div>
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ic ic-plug"></i> </div>
           <div style="flex:1">
             <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Connect your databases</div>
             <div style="font-size:11px;color:var(--text3)">Add your source and target SQL Server connection strings</div>
@@ -4031,7 +4032,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="color:var(--text3);font-size:14px">›</div>
         </div>
         <div onclick="onboardGoTo('mapper')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--teal)'" onmouseout="this.style.borderColor='var(--border2)'">
-          <div style="width:36px;height:36px;border-radius:8px;background:var(--teal-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🤖</div>
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--teal-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ic ic-robot"></i> </div>
           <div style="flex:1">
             <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Create your first mapping</div>
             <div style="font-size:11px;color:var(--text3)">Select tables and let Claude AI map your columns automatically</div>
@@ -4039,7 +4040,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="color:var(--text3);font-size:14px">›</div>
         </div>
         <div onclick="onboardGoTo('help')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
-          <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-glow);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📖</div>
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-glow);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ic ic-book"></i> </div>
           <div style="flex:1">
             <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Read the guide</div>
             <div style="font-size:11px;color:var(--text3)">Full documentation covering every feature of the platform</div>
@@ -4063,11 +4064,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 </div>
 <!-- end .app -->
 
-<script src="/cookie-consent.js?v=8bc63de620" defer></script>
+<script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 </body>
 </html>
 
 
 
-<script src="/cygenix-project-summary.js?v=9cd6d42e60" defer></script>
+<script src="/cygenix-project-summary.js?v=3152198653" defer></script>
