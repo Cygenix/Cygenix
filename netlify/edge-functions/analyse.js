@@ -5,6 +5,12 @@
 
 import { verifyRequestAuth } from './_lib/verify-entra.js';
 
+/* The model is a pinned snapshot and will be retired eventually; keep it in
+   ONE place and overridable without a redeploy. Set ANTHROPIC_MODEL in the
+   Netlify environment to change it. */
+const MODEL = (typeof Deno !== 'undefined' && Deno.env.get('ANTHROPIC_MODEL'))
+  || 'claude-sonnet-5';
+
 export default async function handler(request, context) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -111,7 +117,7 @@ Generate real runnable SQL — not placeholders.`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL,
         max_tokens: 4096,
         messages: [{ role: 'user', content: prompt }],
       }),

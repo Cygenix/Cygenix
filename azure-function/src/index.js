@@ -2110,7 +2110,7 @@ app.http('data', {
           const SUGGEST_MAX_LOOKUPS   = 200;
           const SUGGEST_MAX_TX_TABLES = 5000;
           const SUGGEST_MAX_COLS_PER  = 60;
-          const MODEL                 = 'claude-sonnet-4-5';
+          const MODEL                 = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
           let stage = 'init';
 
           try {
@@ -2774,7 +2774,7 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
               method:  'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
               body:    JSON.stringify({
-                model:     'claude-sonnet-4-20250514',
+                model:     process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
                 max_tokens: Math.min(16000, Math.max(2000, representatives.length * 25)),   // ~25 tokens per result row
                 messages:  [{ role: 'user', content: prompt }]
               }),
@@ -3419,7 +3419,7 @@ app.http('narrative', {
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model:      'claude-sonnet-4-5',
+          model:      process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
           max_tokens: 600,
           system:     NARRATIVE_SYSTEM_PROMPT,
           messages: [{

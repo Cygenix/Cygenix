@@ -351,7 +351,10 @@ async function loadMessages(runId, sinceSeq) {
   return resources;
 }
 
-// ── Token cost (claude-sonnet-4-5: $3/MTok in, $15/MTok out) ────────────────
+// ── Token cost ──────────────────────────────────────────────────────────────
+// Sonnet-tier rates ($3/MTok in, $15/MTok out), which is what ANTHROPIC_MODEL
+// defaults to. Point that env var at a different tier and this estimate drifts:
+// Opus costs more, Haiku less. It is an estimate for the run log, not a bill.
 function estimateCostUSD(usage) {
   const inputCost  = (usage.input_tokens  || 0) * (3.00 / 1_000_000);
   const outputCost = (usage.output_tokens || 0) * (15.00 / 1_000_000);
@@ -1233,7 +1236,7 @@ function estimateTokens(messages, systemPrompt) {
 // finalText is the model's free-form fallback message).
 async function runAgentLoop(run, conns, ctx) {
   const anthropic = getAnthropic();
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 
   // ── Load project memory (best-effort) ─────────────────────────────────
   // Memory is per-(user, project). If the run has no projectId attached

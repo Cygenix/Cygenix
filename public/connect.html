@@ -8,6 +8,7 @@
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -1650,7 +1651,7 @@ Rules:
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: CygenixModel.primary(),
       max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }]
     })
@@ -3332,7 +3333,7 @@ async function sendWherePrompt(tableName, colsStr, apiKey) {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 512,
+      body: JSON.stringify({ model: CygenixModel.primary(), max_tokens: 512,
         system, messages: [{ role: 'user', content: prompt }] })
     });
     const data = await res.json();
@@ -3557,7 +3558,7 @@ async function aiJoinHelp(i) {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 256, messages: [{ role: 'user', content: prompt }] })
+      body: JSON.stringify({ model: CygenixModel.primary(), max_tokens: 256, messages: [{ role: 'user', content: prompt }] })
     });
     const data = await res.json();
     const text = (data.content?.[0]?.text || '').trim().replace(/^ON\s+/i, '').replace(/;$/, '');

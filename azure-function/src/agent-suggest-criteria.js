@@ -311,7 +311,7 @@ Suggest 3–6 filter criteria for migrating this group. Return JSON only.`;
         body: JSON.stringify({
           // Haiku 4.5 — fast and cheap, plenty smart enough for structured
           // suggestion of well-bounded length.
-          model:      'claude-haiku-4-5-20251001',
+          model:      process.env.ANTHROPIC_MODEL_FAST || 'claude-haiku-4-5-20251001',
           max_tokens: 1200,
           system:     SYSTEM_PROMPT,
           messages: [{ role: 'user', content: userMsg }]

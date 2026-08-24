@@ -1508,7 +1508,7 @@ async function dsAiSuggest(idx){
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: CygenixModel.primary(),
         max_tokens: 2000,
         system: sysPrompt,
         messages: [{ role: 'user', content: userPrompt }]
