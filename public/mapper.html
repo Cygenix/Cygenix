@@ -1385,7 +1385,10 @@ async function aiMapOTM(ti){
   if(!srcTable){ alert('Select a source table first.'); return; }
 
   const btn=$('ai-map-btn-'+ti);
-  if(btn){ btn.textContent=''; btn.disabled=true; }
+  // Was blanked by the icon sweep: the button sat empty and disabled for
+  // the whole AI call, with nothing to say it was working.
+  const _busy = window.CygenixBusy && CygenixBusy.start('AI map', { button: btn, label: 'AI map' });
+  if(btn && !_busy){ btn.textContent='AI map…'; btn.disabled=true; }
 
   const joinCols=(typeof getJoinColumns==='function')?getJoinColumns():[];
   const srcCols=[...(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name), ...joinCols.map(c=>c.name)];
@@ -1431,7 +1434,8 @@ async function aiMapOTM(ti){
   } catch(e){
     showStatus('AI map error: '+e.message,'err');
   }
-  if(btn){ btn.textContent='AI map'; btn.disabled=false; }
+  if(_busy) _busy.done();
+  else if(btn){ btn.textContent='AI map'; btn.disabled=false; }
 }
 
 // ── OTM SQL generation ────────────────────────────────────────────────────────
@@ -2156,5 +2160,6 @@ async function aiJoinHelp(i){
   if(window._onJoinChange) window._onJoinChange(window._joinState);
 }
 </script>
+<script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 </body>
 </html>

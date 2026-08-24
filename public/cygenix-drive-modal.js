@@ -210,7 +210,7 @@
       .cygdm-meta{font-size:11px;color:var(--text3,#7a8090);flex-shrink:0}
       .cygdm-acts{display:flex;gap:.15rem;flex-shrink:0;opacity:0;transition:opacity .1s}
       .cygdm-row:hover .cygdm-acts,.cygdm-row:focus-within .cygdm-acts{opacity:1}
-      .cygdm-acts button{background:none;border:none;color:var(--text3,#7a8090);cursor:pointer;font-size:13px;padding:3px 5px;border-radius:5px;line-height:1}
+      .cygdm-acts button{background:none;border:none;color:var(--text3,#7a8090);cursor:pointer;font-size:13px;padding:3px 5px;border-radius:5px;line-height:1;display:inline-flex;align-items:center}
       .cygdm-acts button:hover{color:var(--accent,#4a5bd6);background:var(--bg3,#f4f5f8)}
       .cygdm-empty{padding:2.2rem 1rem;text-align:center;color:var(--text3,#7a8090);font-size:12.5px;line-height:1.7}
 
@@ -435,7 +435,7 @@
       });
     } else {
       row.onclick = e => { if (e.target.closest('.cygdm-acts') || e.target.closest('.cygdm-cb')) return; downloadFile(n); };
-      const dl = document.createElement('button'); dl.title = 'Download'; dl.textContent = ''; dl.onclick = e => { e.stopPropagation(); downloadFile(n); }; acts.appendChild(dl);
+      const dl = document.createElement('button'); dl.title = 'Download'; dl.innerHTML = '<i class="ic ic-download"></i>'; dl.onclick = e => { e.stopPropagation(); downloadFile(n); }; acts.appendChild(dl);
     }
 
     // Every row is draggable: a single file drag still drops into a host editor
@@ -458,11 +458,11 @@
     });
     row.addEventListener('dragend', () => { if ($bg) $bg.classList.remove('dragging'); dragIds = null; if ($body) $body.querySelectorAll('.drop-into').forEach(r => r.classList.remove('drop-into')); });
 
-    const mv = document.createElement('button'); mv.title = 'Move to folder…'; mv.textContent = '';
+    const mv = document.createElement('button'); mv.title = 'Move to folder…'; mv.innerHTML = '<i class="ic ic-folder-open"></i>';
     mv.onclick = e => { e.stopPropagation(); openMovePicker([n.id]); }; acts.appendChild(mv);
-    const rn = document.createElement('button'); rn.title = 'Rename'; rn.textContent = '';
+    const rn = document.createElement('button'); rn.title = 'Rename'; rn.innerHTML = '<i class="ic ic-edit"></i>';
     rn.onclick = async e => { e.stopPropagation(); const nn = prompt('Rename to:', n.name); if (nn == null) return; await driveRename(n.id, nn); renderDrive(); }; acts.appendChild(rn);
-    const del = document.createElement('button'); del.title = 'Delete'; del.textContent = '';
+    const del = document.createElement('button'); del.title = 'Delete'; del.innerHTML = '<i class="ic ic-trash"></i>';
     del.onclick = async e => { e.stopPropagation(); if (!confirm('Delete “' + n.name + '”' + (isFolder ? ' and everything inside it' : '') + '?')) return; await driveRemove(n.id); selected.delete(n.id); if (cwd === n.id) cwd = n.parentId || ''; renderDrive(); }; acts.appendChild(del);
 
     row.appendChild(cb); row.appendChild(ic); row.appendChild(nm); row.appendChild(meta); row.appendChild(acts);
