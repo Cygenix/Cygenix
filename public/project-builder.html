@@ -35,7 +35,7 @@
   }
 })();
 </script>
-<title>Cygenix – Conversion Project</title>
+<title>Cygenix – Batches</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -164,6 +164,17 @@ select.proj-name-input:focus{background-color:var(--bg3);border-radius:6px}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:1.25rem;border-bottom:0.5px solid var(--border)}
 .modal-body{padding:1.25rem}
 .modal-footer{padding:1rem 1.25rem;border-top:0.5px solid var(--border);display:flex;justify-content:flex-end;gap:0.75rem}
+/* ── Batch picker rows ────────────────────────────────────────────────── */
+.batch-row{display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0.75rem;border:0.5px solid var(--border);
+  border-radius:var(--r);margin-bottom:0.45rem;background:var(--bg);transition:border-color .12s}
+.batch-row:hover{border-color:var(--accent)}
+.batch-row.current{border-color:var(--accent);background:var(--accent-glow)}
+.batch-name{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:0.4rem}
+.batch-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px}
+.batch-current-tag{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  padding:1px 5px;border-radius:3px;background:var(--accent);color:#fff}
+.batch-acts{margin-left:auto;display:flex;gap:0.35rem;flex-shrink:0}
+.batch-empty{font-size:12.5px;color:var(--text3);line-height:1.6;padding:1rem 0.25rem;text-align:center}
 .form-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
 .form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none}
 .form-input:focus{border-color:var(--accent)}
@@ -269,10 +280,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <body>
 
 <div id="cyg-sidebar-mount" data-active="project-builder"></div>
-<script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
+<script src="/cygenix-sidebar.js?v=2b1c7efe14" defer></script>
 
 <div class="topbar">
-  <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Execute Migration</span></a>
+  <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Batches</span></a>
   <div class="topbar-right">
     <div class="user-pill" onclick="signOut()">
       <div class="avatar" id="user-avatar">?</div>
@@ -323,6 +334,12 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       </div>
       <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
+        <!-- Batches: named arrangements of the jobs below. Save keeps the
+             CURRENT arrangement on the project; Load swaps in a saved one. -->
+        <button class="btn btn-ghost btn-sm" id="batch-load-btn" onclick="openBatchPicker()"
+                title="Load a saved batch — a named set of jobs, groups and run order"><i class="ic ic-folder-open"></i> Load batch</button>
+        <button class="btn btn-ghost btn-sm" onclick="openSaveBatchPrompt()"
+                title="Save the jobs below as a named batch you can load again"><i class="ic ic-archive"></i> Save as batch</button>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()"><i class="ic ic-save"></i> Save</button>
         <button class="btn btn-ghost btn-sm" id="create-task-btn" onclick="openCreateTaskModal()" title="Package selected jobs as a single composite job. Then schedule it from Dashboard → Task Agent → + New schedule."><i class="ic ic-package"></i> Create task</button>
         <!-- Staging mode toggle.
@@ -490,6 +507,31 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 </div>
 
 <!-- SQL Modal -->
+<!-- ── Batch picker ────────────────────────────────────────────────────────
+     A batch is a named arrangement of the jobs below: which jobs, in which
+     groups, in what order. Saved per project. Loading one replaces what is on
+     screen — the jobs themselves are untouched, since a batch stores their ids
+     rather than a copy of them. -->
+<div class="modal-overlay" id="batch-modal" style="display:none" onclick="if(event.target===this)closeBatchPicker()">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <div>
+        <div style="font-size:14px;font-weight:600">Saved batches</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px" id="batch-modal-sub"></div>
+      </div>
+      <button onclick="closeBatchPicker()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div class="modal-body" style="padding-top:0.85rem">
+      <div id="batch-list"></div>
+      <div id="batch-msg" style="display:none;margin-top:0.85rem;font-size:12px;line-height:1.55;padding:0.6rem 0.75rem;border-radius:var(--r)"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-ghost btn-sm" onclick="openSaveBatchPrompt()"><i class="ic ic-archive"></i> Save current as a batch</button>
+      <button class="btn btn-ghost" onclick="closeBatchPicker()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="sql-modal" style="display:none" onclick="if(event.target===this)closeSqlModal()">
   <div class="modal">
     <div class="modal-header">
@@ -601,7 +643,8 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 
 <script src="/cygenix-resume.js?v=f002a6878e" defer></script>
 <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
-<script src="/project-builder-app.js?v=fa8e75b14f" defer></script>
+<script src="/cygenix-batches.js?v=cb5942e034" defer></script>
+<script src="/project-builder-app.js?v=aa12c5a67d" defer></script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>

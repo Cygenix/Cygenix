@@ -732,6 +732,9 @@ function deleteProjectPrompt(){
   const removedId = project.id;
   projects = projects.filter(p => p.id !== removedId);
   persistProjectsList();
+  // Its saved batches go with it — they are arrangements OF this project's
+  // jobs, and leaving them behind would accumulate silently forever.
+  try { if (window.CygenixBatches) CygenixBatches.deleteProjectBatches(removedId); } catch (e) {}
   // Switch to the first remaining project
   project = projects[0];
   localStorage.setItem(ACTIVE_ID_KEY, project.id);
@@ -924,7 +927,22 @@ function addJobAsStep(jobIndex) {
   try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
   const job = jobs[jobIndex];
   if (!job) return;
+  const step = stepFromJob(job);
+  // Add to the last (or most recently used) group; ensure at least one group exists
+  ensureAtLeastOneGroup();
+  const gi = (typeof project._lastGroupIdx === 'number' && project.groups[project._lastGroupIdx])
+    ? project._lastGroupIdx : project.groups.length - 1;
+  project.groups[gi].steps.push(step);
+  renderSteps();
+  markDirty();
+  showToast('Added to "'+project.groups[gi].name+'": ' + step.name);
+}
 
+// Build a runnable step from a job record. Extracted from addJobAsStep so
+// loading a saved batch produces steps IDENTICAL to ones added by hand —
+// a batch stores job ids, not a copy of the job, so every field below is
+// re-read from the live job each time it is loaded.
+function stepFromJob(job) {
   // Detect whether this is a raw SQL script job (saved from SQL Editor)
   // or a mapping-based migration job (saved from Simple Map / One-to-Many)
   const isSqlJob = job.type === 'sql' || job.jobType === 'sql' || job.jobType === 'sql-script';
@@ -961,14 +979,7 @@ function addJobAsStep(jobIndex) {
     status:          'pending',
     log:             ''
   };
-  // Add to the last (or most recently used) group; ensure at least one group exists
-  ensureAtLeastOneGroup();
-  const gi = (typeof project._lastGroupIdx === 'number' && project.groups[project._lastGroupIdx])
-    ? project._lastGroupIdx : project.groups.length - 1;
-  project.groups[gi].steps.push(step);
-  renderSteps();
-  markDirty();
-  showToast('Added to "'+project.groups[gi].name+'": ' + step.name);
+  return step;
 }
 
 // ── Steps (rendered inside groups) ────────────────────────────────────────────
@@ -5730,3 +5741,210 @@ function confirmCreateTask(){
   showToast('Task packaged — open Task Agent → + New schedule to schedule it');
 }
 
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Batches — named arrangements of the jobs on this screen
+   ──────────────────────────────────────────────────────────────────────────
+   A batch is which jobs, in which groups, in what order. Before this there
+   was exactly one arrangement per project, held on the project record, so a
+   second one (a full load and a nightly delta; a smoke set and the real run)
+   meant destroying the first.
+
+   A batch stores job IDS, not copies of the jobs. Editing a job's mapping
+   therefore updates every batch that includes it — a batch is a running
+   order, not a fork. The cost is that a job deleted afterwards leaves a hole,
+   which is why loading reports what it could not find instead of quietly
+   loading a step that would fail at run time.
+
+   All the rules live in cygenix-batches.js, which is tested without a
+   browser. This half only draws and asks.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function batchApi() { return window.CygenixBatches; }
+
+function liveJobs() {
+  try { return JSON.parse(localStorage.getItem('cygenix_jobs') || '[]') || []; }
+  catch { return []; }
+}
+
+function batchUser() {
+  try { return (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || null; }
+  catch { return null; }
+}
+
+function batchMessage(tone, text) {
+  const el = document.getElementById('batch-msg');
+  if (!el) return;
+  if (!tone) { el.style.display = 'none'; el.textContent = ''; return; }
+  const colour = { ok: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)' }[tone] || 'var(--text3)';
+  const bg = { ok: 'rgba(34,197,94,0.10)', warn: 'rgba(178,106,0,0.10)', bad: 'rgba(239,68,68,0.10)' }[tone] || 'var(--bg3)';
+  el.style.display = 'block';
+  el.style.background = bg;
+  el.style.border = '0.5px solid ' + colour;
+  el.style.color = 'var(--text2)';
+  el.textContent = text;
+}
+
+function openBatchPicker() {
+  const m = document.getElementById('batch-modal');
+  if (!m) return;
+  batchMessage(null);
+  renderBatchList();
+  m.style.display = 'flex';
+}
+function closeBatchPicker() {
+  const m = document.getElementById('batch-modal');
+  if (m) m.style.display = 'none';
+}
+
+function renderBatchList() {
+  const list = document.getElementById('batch-list');
+  const sub  = document.getElementById('batch-modal-sub');
+  const B = batchApi();
+  if (!list) return;
+  if (!B) {
+    list.innerHTML = '<div class="batch-empty">The batches module did not load — refresh the page.</div>';
+    return;
+  }
+  const all = B.batchesFor(project.id);
+  if (sub) {
+    sub.textContent = all.length
+      ? all.length + ' saved for "' + (project.name || 'this project') + '"'
+      : 'None saved yet for "' + (project.name || 'this project') + '"';
+  }
+  if (!all.length) {
+    list.innerHTML = '<div class="batch-empty">No saved batches yet.<br>'
+      + 'Arrange the jobs below the way you want them, then <b>Save current as a batch</b> — '
+      + 'you can load that arrangement back at any time.</div>';
+    return;
+  }
+  const jobs = liveJobs();
+  const known = new Set(jobs.map(j => j && j.id).filter(Boolean));
+  list.innerHTML = all.map(b => {
+    const isCurrent = B.sameArrangement(b.groups, project.groups);
+    // Count the holes up front: the row should say a batch is short BEFORE
+    // you load it, not after.
+    const gone = (b.groups || []).reduce((n, g) =>
+      n + (g.steps || []).filter(s => !known.has(s.jobId)).length, 0);
+    const when = b.savedAt ? new Date(b.savedAt).toLocaleString('en-GB') : 'unknown date';
+    return `<div class="batch-row${isCurrent ? ' current' : ''}">
+      <div style="min-width:0;flex:1">
+        <div class="batch-name">${escB(b.name)}${isCurrent ? '<span class="batch-current-tag">on screen</span>' : ''}</div>
+        <div class="batch-meta">${b.jobCount || 0} job${(b.jobCount === 1) ? '' : 's'} · ${b.groupCount || 0} group${(b.groupCount === 1) ? '' : 's'} · ${escB(when)}${b.savedBy ? ' · ' + escB(b.savedBy) : ''}</div>
+        ${gone ? `<div class="batch-meta" style="color:var(--amber)">${gone} job${gone === 1 ? '' : 's'} no longer exist${gone === 1 ? 's' : ''} — ${gone === (b.jobCount || 0) ? 'nothing left to load' : 'will be skipped'}</div>` : ''}
+      </div>
+      <div class="batch-acts">
+        <button class="btn btn-primary btn-sm" onclick="loadBatch('${escB(b.id)}')"${gone === (b.jobCount || 0) ? ' disabled title="Every job in this batch has been deleted"' : ''}>Load</button>
+        <button class="btn btn-ghost btn-sm" onclick="renameBatchPrompt('${escB(b.id)}')" title="Rename"><i class="ic ic-edit"></i></button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteBatchPrompt('${escB(b.id)}')" title="Delete"><i class="ic ic-trash"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// The page has no shared escaper in scope here; batch names are user text and
+// go straight into markup, so they need one.
+function escB(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function openSaveBatchPrompt() {
+  const B = batchApi();
+  if (!B) { showToast('The batches module did not load — refresh the page.'); return; }
+  if (!B.countSteps(project.groups)) {
+    alert('There are no jobs to save.\n\nAdd jobs from the list on the left first, then save the arrangement as a batch.');
+    return;
+  }
+  const suggested = (project.name || 'Batch') + ' — ' + new Date().toLocaleDateString('en-GB');
+  const name = (prompt('Name for this batch:\n\n'
+    + B.countSteps(project.groups) + ' job(s) in ' + project.groups.length + ' group(s).\n'
+    + 'Saving over an existing name replaces it.', suggested) || '').trim();
+  if (!name) return;
+  const existing = B.batchesFor(project.id)
+    .some(b => String(b.name).toLowerCase() === name.toLowerCase());
+  if (existing && !confirm('A batch called "' + name + '" already exists.\n\nReplace it?')) return;
+  try {
+    const res = B.saveBatch(project.id, name, project.groups, { user: batchUser() });
+    showToast((res.replaced ? 'Replaced batch: ' : 'Saved batch: ') + res.record.name);
+    if (document.getElementById('batch-modal')?.style.display === 'flex') {
+      renderBatchList();
+      batchMessage('ok', (res.replaced ? 'Replaced' : 'Saved') + ' "' + res.record.name + '" — '
+        + res.record.jobCount + ' job(s) in ' + res.record.groupCount + ' group(s).');
+    }
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function loadBatch(batchId) {
+  const B = batchApi();
+  if (!B) return;
+  const batch = B.getBatch(project.id, batchId);
+  if (!batch) { batchMessage('bad', 'That batch no longer exists.'); renderBatchList(); return; }
+
+  // Loading replaces what is on screen. Unsaved work is the user's, so ask.
+  const onScreen = B.countSteps(project.groups);
+  if (isDirty && onScreen && !confirm(
+      'The jobs on screen have unsaved changes.\n\nLoading "' + batch.name
+      + '" replaces them. Continue?')) return;
+  if (!isDirty && onScreen && !B.sameArrangement(batch.groups, project.groups) && !confirm(
+      'Replace the ' + onScreen + ' job(s) on screen with "' + batch.name + '"?')) return;
+
+  const res = B.resolveBatch(batch, liveJobs(), (job) => stepFromJob(job));
+  if (!res.restored) {
+    batchMessage('bad', 'Nothing to load — every job in "' + batch.name
+      + '" has since been deleted. Delete the batch, or re-create those jobs in Object Mapping.');
+    return;
+  }
+  project.groups = res.groups;
+  ensureAtLeastOneGroup();
+  // The loaded arrangement is not on the project until the user saves it —
+  // marking dirty says so rather than pretending the load was a save.
+  markDirty();
+  hydrateProjectIntoUI();
+  const summary = B.loadSummary(res, batch.name);
+  if (res.missing.length) {
+    batchMessage('warn', summary + ' Press Save to keep this arrangement on the project.');
+    showToast(summary);
+  } else {
+    closeBatchPicker();
+    showToast(summary + ' Press Save to keep it.');
+  }
+}
+
+function renameBatchPrompt(batchId) {
+  const B = batchApi();
+  if (!B) return;
+  const b = B.getBatch(project.id, batchId);
+  if (!b) { renderBatchList(); return; }
+  const next = (prompt('Rename batch:', b.name) || '').trim();
+  if (!next || next === b.name) return;
+  try {
+    B.renameBatch(project.id, batchId, next);
+    renderBatchList();
+    batchMessage('ok', 'Renamed to "' + next + '".');
+  } catch (e) {
+    batchMessage('bad', e.message);
+  }
+}
+
+function deleteBatchPrompt(batchId) {
+  const B = batchApi();
+  if (!B) return;
+  const b = B.getBatch(project.id, batchId);
+  if (!b) { renderBatchList(); return; }
+  if (!confirm('Delete the batch "' + b.name + '"?\n\n'
+    + 'The jobs themselves are not deleted — only this saved arrangement of them.')) return;
+  B.deleteBatch(project.id, batchId);
+  renderBatchList();
+  batchMessage('ok', 'Deleted "' + b.name + '".');
+}
+
+// Escape closes the picker, like every other modal on this page.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('batch-modal')?.style.display === 'flex') {
+    closeBatchPicker();
+  }
+});

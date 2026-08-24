@@ -1327,7 +1327,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        initial showView in startup code. Updated dynamically via
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
-  <script src="/cygenix-sidebar.js?v=4c31e97dff" defer></script>
+  <script src="/cygenix-sidebar.js?v=2b1c7efe14" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
@@ -2857,7 +2857,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           The Microsoft MSDASQL ↔ psqlODBC path silently fails on many SQL Server installs (Msg 7303/7399 with no error detail) even when the driver and network work. SQL Server → SQL Server linked servers work fine. For pulling Postgres data into your conversion database, use
           <a href="#" onclick="showView('connections');switchConnTab('import');return false" style="color:var(--accent);text-decoration:none">Data import</a>
           or
-          <a href="#" onclick="window.location.href='/project-builder.html';return false" style="color:var(--accent);text-decoration:none">Execute</a>
+          <a href="#" onclick="window.location.href='/project-builder.html';return false" style="color:var(--accent);text-decoration:none">Batches</a>
           — both reach Postgres directly via Cygenix's proxy, no MSDASQL.
         </div>
 

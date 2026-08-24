@@ -105,7 +105,10 @@
     { section: 'Run', group:'run', items: [
       { key:'jobs-group', label:'Jobs', icon: iconPlay(), children: [
         { key:'jobs',            label:'All Jobs', view:'jobs',                  icon: iconList() },
-        { key:'project-builder', label:'Execute',  href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
+        // The key stays 'project-builder' — pages set data-active on it and the
+        // dashboard routes from it. Only the visible name changed: the screen is
+        // where you assemble and run a BATCH of jobs, and it now says so.
+        { key:'project-builder', label:'Batches',  href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
       ]},
       // Project Planner was removed along with its page. With one child left
       // the "Planner & Schedules" expander earned nothing, so this is a plain
