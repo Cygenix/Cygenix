@@ -607,7 +607,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-globe.js?v=95b4f5af27" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
-<script src="/cygenix-sidebar.js?v=2b1c7efe14" defer></script>
+<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
 
 <div class="page">
   <div class="se-head">
@@ -741,6 +741,11 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
                   aria-label="Hide the inspector">›</button>
           <div style="min-width:0"><div class="panel-title" id="sm-insp-title">Inspector</div>
           <div class="panel-sub" id="sm-insp-sub">Pick a table</div></div>
+          <!-- A table you are looking at here is a table you might want to
+               stream. Carries the connection and the table name only. -->
+          <button class="btn" id="sm-tostream" style="display:none;margin-left:auto"
+                  onclick="smAddToStream()" title="Start a data stream carrying this table">
+            <i class="ic ic-stream"></i> Add to data stream</button>
         </div>
         <div class="sm-insp-tabs" role="tablist" aria-label="Table detail">
           <button class="sm-insp-tab active" data-it="columns" onclick="smInspTab('columns')" role="tab">Columns</button>
@@ -2212,6 +2217,22 @@ function smJoinPick(key){
   smRenderInspector();
 }
 
+// ── Hand-off to Data Stream ───────────────────────────────────────────────
+// The selected table, straight into the Stream Designer. IDENTIFIERS ONLY in
+// the URL — the connection id and the table name — never a row value, a
+// column value or anything from a payload. Deep-linking is only safe to paste
+// to a colleague if that rule is absolute.
+function smAddToStream(){
+  const key = SM.selected;
+  const node = key && SM.graph && SM.graph.byKey[key];
+  if (!node) return;
+  const table = node.schema ? node.schema + '.' + node.name : node.name;
+  const params = new URLSearchParams();
+  params.set('connection', SM.side === 'tgt' ? 'conn_tgt_01' : 'conn_src_01');
+  params.set('tables', table);
+  location.href = '/data_stream_designer.html?' + params.toString();
+}
+
 // ── Inspector ─────────────────────────────────────────────────────────────
 function smInspTab(t){
   SM.inspTab = t;
@@ -2224,12 +2245,15 @@ async function smRenderInspector(){
   if (!body) return;
   const key = SM.selected;
   const node = key && SM.graph && SM.graph.byKey[key];
+  const toStream = $('sm-tostream');
   if (!node){
     title.textContent = 'Inspector';
     sub.textContent = 'Pick a table';
+    if (toStream) toStream.style.display = 'none';
     body.innerHTML = '<div class="muted" style="padding:0">Select a table in the tree or the diagram.</div>';
     return;
   }
+  if (toStream) toStream.style.display = '';
   title.textContent = node.name;
   sub.textContent = node.schema + ' · ' + num(node.rowCount) + ' rows' + (node.kind === 'view' ? ' · view' : '');
 
@@ -5549,7 +5573,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=f398642fa8"></script>
+<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
 <script>
 CygenixAssistant.registerPage('schema-explorer');
 /* Assistant adapters — schema reads answered by the same graph engine the

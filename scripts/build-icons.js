@@ -54,6 +54,7 @@ const ICONS = {
   fullscreen:`<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" ${S}/>`,
   stop:      `<rect x="4" y="4" width="8" height="8" rx="1" ${S}/>`,
   pause:     `<path d="M6 3.5v9M10 3.5v9" ${S13}/>`,
+  play:      `<path d="M4.5 3 12.5 8l-8 5z" ${S}/>`,
   skip:      `<path d="M4 3.5 10 8l-6 4.5z" ${S}/><path d="M12 3.5v9" ${S}/>`,
   // ── objects and concepts ──
   robot:     `<rect x="2.5" y="5" width="11" height="8" rx="1.6" ${S}/><path d="M8 2.2V5" ${S}/><circle cx="8" cy="1.9" r="0.9" ${S}/><circle cx="5.8" cy="8.6" r="0.85" fill="currentColor"/><circle cx="10.2" cy="8.6" r="0.85" fill="currentColor"/>`,
@@ -61,6 +62,10 @@ const ICONS = {
   wand:      `<path d="M3 13 10.5 5.5" ${S}/><path d="M12.4 3.6 13.6 4.8 11.7 6.7 10.5 5.5z" ${S}/><path d="M5.5 2.5v2M4.5 3.5h2M12 9v1.8M11.1 9.9h1.8" ${S}/>`,
   plug:      `<path d="M6 2v3.5M10 2v3.5" ${S}/><path d="M4 5.5h8v2a4 4 0 0 1-8 0z" ${S}/><path d="M8 11.5V14" ${S}/>`,
   chart:     `<path d="M2.5 13.5h11" ${S}/><path d="M4.5 13.5V8M8 13.5V4M11.5 13.5v-3.5" ${S}/>`,
+  /* Three lanes flowing right, the middle one carrying an arrowhead. A stream
+     is continuous and directional, and both have to read at 12px — which is
+     why it is lanes-with-an-arrow rather than a pipe or a wave. */
+  stream:    `<path d="M2 4.2h7.5M2 8h11M2 11.8h7.5" ${S}/><path d="M11.4 5.9 13.4 4.2l-2-1.7M11.4 13.5l2-1.7-2-1.7" ${S}/>`,
   clock:     `<circle cx="8" cy="8" r="5.5" ${S}/><path d="M8 4.8V8l2.2 1.6" ${S}/>`,
   hourglass: `<path d="M4.5 2.5h7M4.5 13.5h7" ${S}/><path d="M5 2.5c0 3 3 4 3 5.5s-3 2.5-3 5.5M11 2.5c0 3-3 4-3 5.5s3 2.5 3 5.5" ${S}/>`,
   calendar:  `<rect x="2.5" y="3.5" width="11" height="10" rx="1" ${S}/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" ${S}/>`,

@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-datastream.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Design a data stream: what it reads, what it carries, and where it delivers.">
+<title>Cygenix – Stream Designer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;--r-lg:14px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1rem 1.25rem;max-width:1600px}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden}
+.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.panel-title{font-size:12px;font-weight:600;letter-spacing:0.02em}
+.panel-sub{font-size:11px;color:var(--text3)}
+.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap;display:inline-flex;align-items:center;gap:0.35rem}
+.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn:disabled{opacity:0.45;cursor:default}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{color:#fff;opacity:0.9}
+input.ds-input,select.ds-input,textarea.ds-input{width:100%}
+select.ds-input{cursor:pointer}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ds-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.7rem}
+</style>
+</head>
+<body>
+<!-- The rail stays on Streams: the Designer is a step inside that screen's
+     workflow, and losing your place in the console mid-form is disorienting. -->
+<div id="cyg-sidebar-mount" data-active="data-stream"></div>
+
+<div class="page">
+  <div class="ds-head">
+    <div>
+      <div class="ds-title"><i class="ic ic-stream"></i> <span id="ds-h1">New data stream</span></div>
+      <div class="ds-sub" id="ds-hsub">Five steps: what it reads, what it carries, where it goes, how it delivers, and a last look.</div>
+    </div>
+    <div class="ds-head-actions">
+      <button class="btn" onclick="dsCancel()">Cancel</button>
+      <button class="btn" onclick="dsSaveDraft()"><i class="ic ic-save"></i> Save draft</button>
+      <button class="btn btn-primary" id="ds-create" onclick="dsCreate()"><i class="ic ic-play"></i> Create &amp; start</button>
+    </div>
+  </div>
+
+  <div id="ds-notfound" style="display:none"></div>
+
+  <div class="ds-designer" id="ds-designer">
+    <div class="panel ds-rail" id="ds-rail"></div>
+    <div class="panel" id="ds-stepwrap"><div class="ds-step" id="ds-step"></div></div>
+    <div class="panel ds-summary">
+      <div class="panel-header"><div class="panel-title">This stream</div>
+        <span class="panel-sub" id="ds-sum-state"></span></div>
+      <div class="ds-insp-body" id="ds-summary"></div>
+    </div>
+  </div>
+</div>
+
+<div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
+
+<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/connections.js?v=d199ff3358"></script>
+<script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
+<script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
+<script src="/cygenix-datastream-page.js?v=611f28656e"></script>
+<script>
+'use strict';
+const DS = window.CygenixDataStream;
+const U  = window.CygenixDataStreamUI;
+const P  = window.CygenixDataStreamPage;
+
+let draft = null;
+let step = 1;
+let editingId = null;      // set when editing an existing stream (not a clone)
+let dirty = false;
+let capability = null;     // the last capability check result
+
+const STEPS = [
+  { n: 1, t: 'Source of change',     s: 'which side, and how' },
+  { n: 2, t: 'Objects',              s: 'what to carry' },
+  { n: 3, t: 'Destination',          s: 'where it lands' },
+  { n: 4, t: 'Delivery & guardrails',s: 'batching, retries, drift' },
+  { n: 5, t: 'Review',               s: 'in plain English' },
+];
+
+document.addEventListener('DOMContentLoaded', () => {
+  P.boot();
+  const q = P.query();
+
+  if (q.stream) {
+    const existing = DS.getStream(P.state, q.stream);
+    if (!existing) { showNotFound(q.stream); return; }
+    if (q.clone === '1') {
+      draft = DS.duplicateStream(P.state, q.stream);
+      editingId = null;
+    } else {
+      draft = JSON.parse(JSON.stringify(existing));
+      editingId = existing.id;
+    }
+  } else {
+    // An abandoned draft is offered back rather than silently resumed or
+    // silently binned — either would be a decision made on the user's behalf.
+    const wip = DS.wipLoad(P.projectId);
+    if (wip && wip.name && confirm('You have an unfinished stream draft ("' + wip.name
+        + '"). Pick it up where you left off?')) {
+      draft = wip;
+    } else {
+      draft = DS.blankDraft(P.projectId);
+      if (wip) DS.wipClear(P.projectId);
+    }
+    seedFromQuery(q);
+  }
+
+  const wanted = parseInt(q.step, 10);
+  if (wanted >= 1 && wanted <= 5) step = wanted;
+
+  document.getElementById('ds-h1').textContent = editingId ? 'Edit stream — ' + draft.name : 'New data stream';
+  document.getElementById('ds-create').innerHTML = editingId
+    ? '<i class="ic ic-save"></i> Save changes'
+    : '<i class="ic ic-play"></i> Create &amp; start';
+
+  render();
+  window.addEventListener('beforeunload', (e) => {
+    if (!dirty) return;
+    DS.wipSave(P.projectId, draft);      // the draft survives either way
+    e.preventDefault();
+    e.returnValue = '';
+  });
+});
+
+/* Pre-seeding from Schema Explorer's "Add to data stream". The URL carries
+   identifiers only — a connection id and table names — never anything from a
+   row. */
+function seedFromQuery(q) {
+  if (q.connection) {
+    const c = savedConnection(q.connection);
+    draft.capture.connectionId = q.connection;
+    draft.capture.connectionLabel = c ? connLabel(c) : q.connection;
+    if (c && c.side === 'tgt') draft.capture.side = 'target';
+  }
+  if (q.tables) {
+    q.tables.split(',').map(t => t.trim()).filter(Boolean).forEach(t => toggleTable(t, true));
+    if (!draft.name) draft.name = 'Stream from ' + (draft.capture.connectionLabel || 'source');
+    step = 2;
+  }
+}
+
+function showNotFound(id) {
+  document.getElementById('ds-designer').style.display = 'none';
+  const el = document.getElementById('ds-notfound');
+  el.style.display = 'block';
+  el.innerHTML = '<div class="panel">' + U.emptyState({
+    icon: 'blocked', title: 'That stream no longer exists',
+    body: 'The link points at ' + id + ', which has been deleted or belongs to another project.',
+    actionHtml: '<a class="btn btn-primary" href="/data_stream.html">Back to Streams</a>',
+  }) + '</div>';
+  document.getElementById('ds-create').disabled = true;
+}
+
+/* ── Connections ────────────────────────────────────────────────────────── */
+function savedConnections() {
+  try {
+    if (window.CygenixConnections && CygenixConnections.savedGetAll) {
+      return CygenixConnections.savedGetAll() || [];
+    }
+  } catch (e) { /* module absent */ }
+  return [];
+}
+function savedConnection(id) { return savedConnections().filter(c => c.id === id)[0] || null; }
+/* Names only. A connection string never reaches this screen's markup, its
+   URL, or the draft that gets saved to localStorage. */
+function connLabel(c) { return String(c.name || c.id || 'connection'); }
+
+/* The project's own two connections, first, because those are what a stream
+   almost always reads from. */
+function projectConnections() {
+  const out = [
+    { id: 'conn_src_01', name: 'Project source connection', side: 'src', project: true, cdcEnabled: false },
+    { id: 'conn_tgt_01', name: 'Project target connection', side: 'tgt', project: true, cdcEnabled: true },
+  ];
+  savedConnections().forEach(c => out.push(c));
+  return out;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────
+   Real schema when the Schema Explorer has cached one; otherwise the module's
+   own demo objects, clearly labelled as such. Inventing table names silently
+   would be worse than saying where they came from. */
+function availableTables() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || key.indexOf('cygenix_schema_') !== 0) continue;
+      const doc = JSON.parse(localStorage.getItem(key) || 'null');
+      const g = doc && doc.graph;
+      (g && g.tables || []).forEach(t => {
+        const name = (t.schema ? t.schema + '.' : '') + t.name;
+        if (out.some(x => x.table === name)) return;
+        out.push({
+          table: name,
+          rowsEstimate: t.rowCount == null ? 0 : t.rowCount,
+          keys: (t.columns || []).filter(c => c.isPk).map(c => c.name),
+          sensitiveColumns: (t.columns || []).filter(c => /email|phone|nino|ssn|dob|password/i.test(c.name))
+            .map(c => c.name),
+          live: true,
+        });
+      });
+    }
+  } catch (e) { /* nothing cached */ }
+  if (out.length) return out;
+  return demoTables();
+}
+function demoTables() {
+  const side = draft.capture.side === 'target' ? 'target' : 'source';
+  const pool = side === 'source'
+    ? [['dbo.customers', 2600, ['id'], ['email']], ['dbo.addresses', 4120, ['address_id'], []],
+       ['dbo.orders', 88400, ['order_id'], []], ['dbo.order_line', 412000, ['order_id', 'line_no'], []],
+       ['dbo.matters', 15200, ['matter_id'], []], ['dbo.staging_tmp', 0, [], []]]
+    : [['dbo.client', 2590, ['clid'], ['clemail']], ['dbo.matter', 15180, ['mid'], []],
+       ['dbo.ledger', 240500, ['lid'], []]];
+  return pool.map(([table, rows, keys, sens]) =>
+    ({ table, rowsEstimate: rows, keys, sensitiveColumns: sens, live: false }));
+}
+
+function toggleTable(name, on) {
+  const has = draft.objects.some(o => o.table === name);
+  if (on && !has) {
+    const meta = availableTables().filter(t => t.table === name)[0]
+      || { table: name, rowsEstimate: 0, keys: [], sensitiveColumns: [] };
+    draft.objects.push({
+      table: name,
+      keys: (meta.keys || []).slice(),
+      ops: ['I', 'U', 'D'],
+      filter: '',
+      columnPolicy: 'all',
+      excludedColumns: [],
+      // Sensitive columns are masked BY DEFAULT and the form says so. An
+      // unmasked sensitive column has to be a choice somebody made.
+      masked: (meta.sensitiveColumns || []).slice(),
+      sensitiveColumns: (meta.sensitiveColumns || []).slice(),
+      rowsEstimate: meta.rowsEstimate || 0,
+      state: 'paused',
+    });
+  } else if (!on && has) {
+    draft.objects = draft.objects.filter(o => o.table !== name);
+  }
+  touch();
+}
+
+/* ── Render ─────────────────────────────────────────────────────────────── */
+function touch() { dirty = true; DS.wipSave(P.projectId, draft); render(); }
+
+function render() {
+  const v = DS.validateDesign(draft);
+  renderRail(v);
+  renderStep(v);
+  renderSummary(v);
+}
+
+function renderRail(v) {
+  document.getElementById('ds-rail').innerHTML = STEPS.map(s => {
+    const errs = v.errors[s.n - 1] || [];
+    const visited = s.n < step || v.valid;
+    const cls = s.n === step ? ' on' : errs.length && visited ? ' bad' : !errs.length && visited ? ' done' : '';
+    const mark = !errs.length && visited ? '✓' : String(s.n);
+    return '<button type="button" class="' + cls.trim() + '" onclick="goStep(' + s.n + ')"'
+      + ' aria-current="' + (s.n === step) + '">'
+      + '<span class="n">' + mark + '</span>'
+      + '<span class="t">' + s.t + '<small>' + s.s + '</small></span></button>';
+  }).join('');
+}
+
+function goStep(n) {
+  step = Math.max(1, Math.min(5, n));
+  P.setUrl({ step: step === 1 ? null : String(step), stream: editingId || P.query().stream || null,
+             clone: P.query().clone || null });
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderStep(v) {
+  const el = document.getElementById('ds-step');
+  const errs = v.errors[step - 1] || [];
+  const errHtml = errs.length
+    ? '<div class="ds-note error ds-steperr">' + errs.map(U.esc).join('<br>') + '</div>' : '';
+  el.innerHTML = errHtml + [step1, step2, step3, step4, step5][step - 1]() + navHtml(v);
+}
+
+function navHtml(v) {
+  // Forward movement is blocked only where THIS step is genuinely invalid.
+  const blocked = (v.errors[step - 1] || []).length > 0;
+  return '<div style="display:flex;gap:0.45rem;margin-top:1.2rem;padding-top:0.9rem;border-top:0.5px solid var(--border)">'
+    + (step > 1 ? '<button class="btn" onclick="goStep(' + (step - 1) + ')">← Back</button>' : '')
+    + (step < 5 ? '<button class="btn btn-primary" style="margin-left:auto"' + (blocked ? ' disabled' : '')
+        + ' onclick="goStep(' + (step + 1) + ')">Next: ' + STEPS[step].t + ' →</button>' : '')
+    + '</div>';
+}
+
+/* ── Step 1 — source of change ──────────────────────────────────────────── */
+function step1() {
+  const conns = projectConnections();
+  const side = draft.capture.side;
+  const card = (s, title, body) =>
+    '<button type="button" class="ds-card' + (side === s ? ' on' : '') + '" onclick="setSide(\'' + s + '\')">'
+    + '<div class="h">' + U.sideBadge(s) + ' ' + title + '</div><div class="b">' + body + '</div></button>';
+
+  const methods = ['log', 'poll', 'trigger', 'feed'].map(m => {
+    const rec = m === 'log' && supportsLog() ? '<span class="rec">Recommended</span>' : '';
+    return '<label class="ds-radio"><input type="radio" name="ds-method" value="' + m + '"'
+      + (draft.capture.method === m ? ' checked' : '') + ' onchange="setMethod(\'' + m + '\')">'
+      + '<span>' + DS.METHOD_LABEL[m] + rec
+      + '<span class="b">' + U.esc(DS.METHOD_BLURB[m]) + '</span></span></label>';
+  }).join('');
+
+  const feedFields = draft.capture.method !== 'feed' ? '' :
+      '<div class="ds-field"><label class="lbl" for="ds-feedname">Feed name</label>'
+    + '<input id="ds-feedname" class="ds-input" type="text" value="' + U.esc(draft.capture.feedName || '')
+    + '" oninput="draft.capture.feedName=this.value;touch()" placeholder="clickstream-web"></div>'
+    + '<div class="ds-field"><label class="lbl" for="ds-feedshape">Payload shape</label>'
+    + '<textarea id="ds-feedshape" class="ds-input" rows="3" style="font-family:var(--mono);font-size:11px"'
+    + ' oninput="draft.capture.feedShape=this.value;touch()"'
+    + ' placeholder=\'{ "eventId": "...", "userId": 1, "action": "click" }\'>'
+    + U.esc(draft.capture.feedShape || '') + '</textarea></div>'
+    + '<div class="ds-field"><label class="lbl" for="ds-feedkey">Key path</label>'
+    + '<input id="ds-feedkey" class="ds-input" type="text" style="font-family:var(--mono)" value="'
+    + U.esc(draft.capture.feedKeyPath || '') + '" oninput="draft.capture.feedKeyPath=this.value;touch()"'
+    + ' placeholder="$.eventId"><div class="hint">Which field identifies the record, for ordering and upserts.</div></div>';
+
+  return '<h3>Step 1 — Source of change</h3>'
+    + '<p class="lead">A stream reads one side of this project. Which side it reads is the first thing '
+      + 'anyone looking at it will want to know, so it is the first thing you pick.</p>'
+
+    + '<div class="ds-field"><label class="lbl">Read from</label><div class="ds-cards">'
+      + card('source', 'Source connection', 'Feed a downstream system while the migration is still being built, '
+          + 'or close the delta window at cutover.')
+      + card('target', 'Target connection', 'Feed legacy or satellite systems that have not been retired yet.')
+      + '</div></div>'
+
+    + '<div class="ds-field"><label class="lbl" for="ds-conn">Connection</label>'
+      + '<select id="ds-conn" class="ds-input" onchange="setConnection(this.value)">'
+      + '<option value="">Choose a connection…</option>'
+      + conns.map(c => '<option value="' + U.esc(c.id) + '"'
+          + (draft.capture.connectionId === c.id ? ' selected' : '') + '>'
+          + U.esc(connLabel(c)) + (c.project ? '' : ' (saved)') + '</option>').join('')
+      + '</select><div class="hint">Connections come from '
+      + '<a href="/dashboard.html#goto=connections" style="color:var(--accent)">Connect → Connections</a>. '
+      + 'A stream stores the connection’s id, never its credentials.</div></div>'
+
+    + '<div class="ds-field"><label class="lbl">Capture method</label>' + methods + '</div>'
+    + feedFields
+
+    + '<div class="ds-field"><label class="lbl">Capability check</label>'
+      + '<div id="ds-cap">' + capabilityHtml() + '</div>'
+      + '<button class="btn" style="margin-top:0.5rem" onclick="runCapability()">'
+      + '<i class="ic ic-sync"></i> Run the check</button></div>'
+
+    + '<div class="ds-field"><label class="lbl">Starting point</label>'
+      + [['initial-then-stream', 'Snapshot everything, then stream',
+          'Copy what is there now, then follow the changes. The safest default, and the slowest to start.'],
+         ['none', 'Stream new changes only',
+          'Nothing historical is copied. Use when the destination is already current.'],
+         ['snapshot-only', 'Snapshot only (one-off)',
+          'Copy what is there now and stop. Not really a stream — a one-shot load.']]
+        .map(([v2, t, b]) => '<label class="ds-radio"><input type="radio" name="ds-snap" value="' + v2 + '"'
+          + (draft.capture.snapshot === v2 ? ' checked' : '')
+          + ' onchange="draft.capture.snapshot=\'' + v2 + '\';touch()">'
+          + '<span>' + t + '<span class="b">' + b + '</span></span></label>').join('')
+      + '</div>';
+}
+
+function supportsLog() {
+  const c = savedConnection(draft.capture.connectionId) || {};
+  return !!c.cdcEnabled || draft.capture.connectionId === 'conn_tgt_01';
+}
+function setSide(s) {
+  draft.capture.side = s;
+  // The objects belong to the side that was chosen; keeping them across a
+  // side switch would leave source tables on a target stream.
+  if (draft.objects.length && !confirmKeepObjects()) draft.objects = [];
+  touch();
+}
+function confirmKeepObjects() {
+  return confirm('This stream already has ' + draft.objects.length + ' object(s) selected from the other side.\n\n'
+    + 'Keep them? Cancel clears the selection so you can pick from the new side.');
+}
+function setMethod(m) {
+  draft.capture.method = m;
+  draft.capture.methodLabel = DS.methodLabel(m, draft.capture.connectionLabel);
+  capability = null;
+  touch();
+}
+function setConnection(id) {
+  const c = id === 'conn_src_01' || id === 'conn_tgt_01'
+    ? projectConnections().filter(x => x.id === id)[0]
+    : savedConnection(id);
+  draft.capture.connectionId = id || null;
+  draft.capture.connectionLabel = c ? connLabel(c) : '';
+  // A connection knows which side it is. Letting the two cards and the
+  // connection disagree produced a review sentence that read "Reads changes
+  // from Project target connection (source)" — a stream contradicting itself
+  // about the one thing this screen exists to make obvious.
+  if (c && c.side) draft.capture.side = c.side === 'tgt' ? 'target' : 'source';
+  draft.capture.methodLabel = DS.methodLabel(draft.capture.method, draft.capture.connectionLabel);
+  capability = null;
+  touch();
+}
+
+function capabilityHtml() {
+  if (!capability) return '<div class="ds-note">Not checked yet. Run it before you rely on log-based capture.</div>';
+  const level = { ok: 'ok', info: 'info', warn: 'warn', error: 'error' };
+  let html = capability.findings.filter(Boolean).map(f =>
+    '<div class="ds-note ' + level[f.level] + '" style="margin-bottom:0.35rem">' + U.esc(f.text) + '</div>').join('');
+  if (capability.remedies) {
+    html += '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.4rem">'
+      + capability.remedies.map(r => r.id === 'sql'
+        ? '<button class="btn" onclick="sendCdcSqlToEditor()"><i class="ic ic-doc"></i> ' + U.esc(r.label) + '</button>'
+        : '<button class="btn" onclick="setMethod(\'poll\')">' + U.esc(r.label) + '</button>').join('')
+      + '</div>';
+  }
+  return html;
+}
+function runCapability() {
+  const c = savedConnection(draft.capture.connectionId)
+    || projectConnections().filter(x => x.id === draft.capture.connectionId)[0]
+    || { name: draft.capture.connectionLabel };
+  capability = DS.capabilityCheck({ label: connLabel(c), cdcEnabled: !!c.cdcEnabled }, draft.capture.method);
+  document.getElementById('ds-cap').innerHTML = capabilityHtml();
+  P.announce(capability.ok ? 'Capability check passed.' : 'Capability check found a problem.');
+}
+/* The remedy writes the script into the SQL Editor. It never executes it —
+   enabling CDC is a sysadmin-level change and belongs in front of a human. */
+function sendCdcSqlToEditor() {
+  const c = savedConnection(draft.capture.connectionId) || { name: draft.capture.connectionLabel };
+  const engine = /postgres/i.test(connLabel(c)) ? 'postgres' : /mysql/i.test(connLabel(c)) ? 'mysql' : 'mssql';
+  try { localStorage.setItem('cygenix_sql_editor_draft', DS.enableCdcSql(engine)); } catch (e) { /* storage full */ }
+  DS.wipSave(P.projectId, draft);
+  location.href = '/sql-editor.html';
+}
+
+/* ── Step 2 — objects ───────────────────────────────────────────────────── */
+let tableFilter = '';
+function step2() {
+  if (draft.capture.method === 'feed') {
+    return '<h3>Step 2 — Objects</h3>'
+      + '<div class="ds-note info">An external feed has no tables to pick. Cygenix takes whatever you post '
+      + 'to it and keys each record by the path you gave in step 1'
+      + (draft.capture.feedKeyPath ? ' (<code>' + U.esc(draft.capture.feedKeyPath) + '</code>)' : '')
+      + '.</div>';
+  }
+  const all = availableTables();
+  const live = all.length && all[0].live;
+  const shown = all.filter(t => !tableFilter || t.table.toLowerCase().indexOf(tableFilter.toLowerCase()) !== -1);
+  const chosen = new Set(draft.objects.map(o => o.table));
+
+  return '<h3>Step 2 — Objects</h3>'
+    + '<p class="lead">Which tables this stream carries, and what it does to each one on the way past.</p>'
+    + (live ? '' : '<div class="ds-note warn" style="margin-bottom:0.7rem">No schema is cached for this project yet, '
+        + 'so this list is the module’s demo objects. Open the '
+        + '<a href="/schema_explorer.html" style="color:inherit;text-decoration:underline">Schema Explorer</a> '
+        + 'once to read the real one.</div>')
+    + '<div class="ds-picker"><div>'
+      + '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.5rem">'
+        + '<label class="sr-only" for="ds-tfilter">Filter tables</label>'
+        + '<input id="ds-tfilter" class="ds-input" type="search" placeholder="Filter tables…" value="'
+          + U.esc(tableFilter) + '" oninput="tableFilter=this.value;render();focusFilter()" style="flex:1;min-width:140px">'
+        + '<button class="btn" onclick="bulkSelect(\'all\')">Select all</button>'
+        + '<button class="btn" onclick="bulkSelect(\'core\')" title="The tables holding 95% of the rows">Select the 95% core</button>'
+        + '<button class="btn" onclick="bulkSelect(\'nonempty\')">Exclude empty tables</button>'
+        + '<button class="btn" onclick="bulkSelect(\'none\')">Clear</button></div>'
+      + '<div class="ds-tlist">' + (shown.length ? shown.map(t =>
+          '<label class="ds-trow"><input type="checkbox"' + (chosen.has(t.table) ? ' checked' : '')
+          + ' onchange="toggleTable(\'' + U.escArg(t.table) + '\', this.checked)">'
+          + '<span class="nm">' + U.esc(t.table) + '</span>'
+          + '<span class="tags">'
+            + (!(t.keys || []).length ? '<span class="ds-tag">no key</span>' : '')
+            + ((t.sensitiveColumns || []).length ? '<span class="ds-tag sens">sensitive</span>' : '')
+          + '</span>'
+          + '<span class="rc">' + (t.rowsEstimate || 0).toLocaleString() + '</span></label>').join('')
+        : '<div class="ds-dim" style="padding:0.8rem">Nothing matches that filter.</div>') + '</div>'
+      + '</div>'
+      + '<div>' + objectConfigHtml() + '</div></div>';
+}
+function focusFilter() {
+  const el = document.getElementById('ds-tfilter');
+  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+function bulkSelect(kind) {
+  const all = availableTables();
+  if (kind === 'none') { draft.objects = []; touch(); return; }
+  if (kind === 'all') { all.forEach(t => toggleTable(t.table, true)); return; }
+  if (kind === 'nonempty') {
+    draft.objects = draft.objects.filter(o => (o.rowsEstimate || 0) > 0);
+    touch(); return;
+  }
+  if (kind === 'core') {
+    // The smallest set of tables that holds 95% of the estate's rows — the
+    // Schema Explorer's vocabulary, and the honest answer to "just the
+    // important ones".
+    const sorted = all.slice().sort((a, b) => (b.rowsEstimate || 0) - (a.rowsEstimate || 0));
+    const total = sorted.reduce((a, t) => a + (t.rowsEstimate || 0), 0);
+    let acc = 0;
+    draft.objects = [];
+    for (const t of sorted) {
+      if (acc / (total || 1) >= 0.95) break;
+      acc += t.rowsEstimate || 0;
+      toggleTable(t.table, true);
+    }
+    return;
+  }
+}
+
+let openObject = null;
+function objectConfigHtml() {
+  if (!draft.objects.length) {
+    return '<div class="ds-note">Nothing selected yet. Tick a table to configure how it is carried.</div>';
+  }
+  const o = draft.objects.filter(x => x.table === openObject)[0] || draft.objects[0];
+  openObject = o.table;
+  const upsertish = draft.destination.writeMode === 'upsert' || draft.destination.writeMode === 'merge';
+  return '<div class="panel"><div class="panel-header"><div class="panel-title">'
+      + U.esc(o.table) + '</div>'
+      + '<select class="ds-input" style="margin-left:auto;width:auto" onchange="openObject=this.value;render()">'
+      + draft.objects.map(x => '<option value="' + U.esc(x.table) + '"'
+          + (x.table === o.table ? ' selected' : '') + '>' + U.esc(x.table) + '</option>').join('')
+      + '</select></div><div class="ds-insp-body">'
+
+    + '<div class="ds-field"><label class="lbl" for="ds-keys">Key column(s)</label>'
+      + '<input id="ds-keys" class="ds-input" style="font-family:var(--mono)" value="'
+      + U.esc((o.keys || []).join(', ')) + '" oninput="setKeys(\'' + U.escArg(o.table) + '\', this.value)">'
+      + (!(o.keys || []).length && upsertish
+          ? '<div class="ds-note error" style="margin-top:0.35rem">'
+            + draft.destination.writeMode + ' needs a key. Give one, or switch the write mode to Append.</div>'
+          : '<div class="hint">Auto-detected from the schema. Edit if the real business key differs.</div>')
+      + '</div>'
+
+    + '<div class="ds-field"><label class="lbl">Operations captured</label>'
+      + ['I', 'U', 'D'].map(op => '<label class="ds-radio" style="padding:2px 0">'
+        + '<input type="checkbox"' + ((o.ops || []).indexOf(op) !== -1 ? ' checked' : '')
+        + ' onchange="toggleOp(\'' + U.escArg(o.table) + '\',\'' + op + '\',this.checked)">'
+        + '<span>' + U.opBadge(op) + ' ' + U.OP_TITLE[op] + '</span></label>').join('')
+      + '</div>'
+
+    + '<div class="ds-field"><label class="lbl" for="ds-filterpred">Row filter</label>'
+      + '<input id="ds-filterpred" class="ds-input" style="font-family:var(--mono)" placeholder="status &lt;&gt; \'TEST\'"'
+      + ' value="' + U.esc(o.filter || '') + '" oninput="setFilterPred(\'' + U.escArg(o.table) + '\', this.value)">'
+      + '<div class="hint" id="ds-pred-hint">A SQL predicate. Rows that fail it are never captured.</div></div>'
+
+    + ((o.sensitiveColumns || []).length ? '<div class="ds-field"><label class="lbl">Sensitive columns</label>'
+        + '<div class="hint" style="margin-bottom:0.35rem">The Schema Explorer classified these as sensitive, '
+        + 'so they are masked by default. Unticking one sends real values downstream.</div>'
+        + o.sensitiveColumns.map(c => '<label class="ds-radio" style="padding:2px 0">'
+          + '<input type="checkbox"' + ((o.masked || []).indexOf(c) !== -1 ? ' checked' : '')
+          + ' onchange="toggleMask(\'' + U.escArg(o.table) + '\',\'' + U.escArg(c) + '\',this.checked)">'
+          + '<span>Mask <code>' + U.esc(c) + '</code></span></label>').join('')
+        + '</div>' : '')
+
+    + '<div class="ds-field"><label class="lbl" for="ds-excl">Columns to exclude</label>'
+      + '<input id="ds-excl" class="ds-input" style="font-family:var(--mono)" placeholder="password_hash, internal_notes"'
+      + ' value="' + U.esc((o.excludedColumns || []).join(', ')) + '"'
+      + ' oninput="setExcluded(\'' + U.escArg(o.table) + '\', this.value)"></div>'
+
+    + '</div></div>';
+}
+function objOf(t) { return draft.objects.filter(o => o.table === t)[0]; }
+function setKeys(t, v) {
+  const o = objOf(t); if (!o) return;
+  o.keys = v.split(',').map(x => x.trim()).filter(Boolean);
+  dirty = true; DS.wipSave(P.projectId, draft); refreshValidity();
+}
+function toggleOp(t, op, on) {
+  const o = objOf(t); if (!o) return;
+  o.ops = on ? (o.ops || []).concat([op]) : (o.ops || []).filter(x => x !== op);
+  touch();
+}
+function toggleMask(t, col, on) {
+  const o = objOf(t); if (!o) return;
+  o.masked = on ? (o.masked || []).concat([col]) : (o.masked || []).filter(x => x !== col);
+  touch();
+}
+function setFilterPred(t, v) {
+  const o = objOf(t); if (!o) return;
+  o.filter = v;
+  // Validate without redrawing: a rerender on every keystroke moves the caret.
+  const hint = document.getElementById('ds-pred-hint');
+  const bad = v && !/^[A-Za-z0-9_.\s'"()<>=!,%+\-*/]*$/.test(v);
+  if (hint) {
+    hint.textContent = bad
+      ? 'That does not look like a SQL predicate — check the quoting.'
+      : 'A SQL predicate. Rows that fail it are never captured.';
+    hint.style.color = bad ? 'var(--red)' : '';
+  }
+  dirty = true; DS.wipSave(P.projectId, draft);
+}
+function setExcluded(t, v) {
+  const o = objOf(t); if (!o) return;
+  o.excludedColumns = v.split(',').map(x => x.trim()).filter(Boolean);
+  o.columnPolicy = o.excludedColumns.length ? 'all-except' : 'all';
+  dirty = true; DS.wipSave(P.projectId, draft);
+}
+
+/* ── Step 3 — destination ───────────────────────────────────────────────── */
+function step3() {
+  const kinds = DS.ENUMS.destKind.map(k =>
+    '<button type="button" class="ds-card' + (draft.destination.kind === k ? ' on' : '') + '"'
+    + ' onclick="setDestKind(\'' + k + '\')"><div class="h">' + DS.DEST_KIND_LABEL[k] + '</div>'
+    + '<div class="b">' + destBlurb(k) + '</div></button>').join('');
+
+  const modes = DS.ENUMS.writeMode.map(m =>
+    '<label class="ds-radio"><input type="radio" name="ds-wm" value="' + m + '"'
+    + (draft.destination.writeMode === m ? ' checked' : '') + ' onchange="setWriteMode(\'' + m + '\')">'
+    + '<span>' + capitalise(m.replace('-', ' ')) + '<span class="b">' + DS.WRITE_MODE_BLURB[m] + '</span></span></label>').join('');
+
+  const preview = draft.objects.slice(0, 6).map(o =>
+    '<div class="ds-kv"><b><code>' + U.esc(o.table) + '</code></b><span>→ '
+    + U.esc(DS.resolveObjectName(draft, o.table)) + '</span></div>').join('')
+    || '<div class="ds-dim">Pick objects in step 2 to see how they resolve.</div>';
+
+  return '<h3>Step 3 — Destination</h3>'
+    + '<p class="lead">Where the changes land, and what landing means — replacing a row, adding one, '
+      + 'or keeping every version.</p>'
+    + '<div class="ds-field"><label class="lbl">Kind</label><div class="ds-cards">' + kinds + '</div></div>'
+    + '<div class="ds-field"><label class="lbl" for="ds-dest">Destination</label>'
+      + destPicker() + '</div>'
+    + '<div class="ds-field"><label class="lbl">Write mode</label>' + modes + '</div>'
+    + '<div class="ds-grid2">'
+      + '<div class="ds-field"><label class="lbl" for="ds-prefix">Object prefix</label>'
+        + '<input id="ds-prefix" class="ds-input" style="font-family:var(--mono)" value="'
+        + U.esc(draft.destination.objectPrefix || '') + '"'
+        + ' oninput="draft.destination.objectPrefix=this.value;touch()"></div>'
+      + '<div class="ds-field"><label class="lbl" for="ds-schema">Schema override</label>'
+        + '<input id="ds-schema" class="ds-input" style="font-family:var(--mono)" value="'
+        + U.esc(draft.destination.schemaOverride || '') + '"'
+        + ' oninput="draft.destination.schemaOverride=this.value;touch()" placeholder="RAW_LEGACY"></div>'
+    + '</div>'
+    + '<div class="ds-field"><label class="lbl">Resolved names</label>' + preview
+      + (draft.objects.length > 6 ? '<div class="hint">…and ' + (draft.objects.length - 6) + ' more.</div>' : '')
+      + '</div>'
+    + '<div class="ds-field"><label class="lbl" for="ds-mapping">Shape the payload with an Object Mapping</label>'
+      + '<select id="ds-mapping" class="ds-input" onchange="draft.destination.mappingId=this.value||null;touch()">'
+      + '<option value="">Deliver raw change records</option>'
+      + savedMappings().map(m => '<option value="' + U.esc(m.id) + '"'
+          + (draft.destination.mappingId === m.id ? ' selected' : '') + '>Apply mapping: '
+          + U.esc(m.name) + '</option>').join('')
+      + '</select><div class="hint">A stream can deliver mapped rows rather than raw ones, using work you '
+      + 'have already done in Object Mapping.</div></div>';
+}
+function destBlurb(k) {
+  return { database: 'Another database — a warehouse, a reporting copy, a client platform.',
+    broker: 'A Kafka or Event Hub topic other systems subscribe to.',
+    webhook: 'An HTTPS endpoint Cygenix posts each batch to.',
+    file: 'A landing zone — files dropped for something else to pick up.',
+    'cygenix-target': 'This project’s own migration target. The cutover shape.' }[k] || '';
+}
+function destPicker() {
+  const k = draft.destination.kind;
+  if (k === 'database' || k === 'broker') {
+    const conns = savedConnections();
+    return '<select id="ds-dest" class="ds-input" onchange="setDestConn(this.value)">'
+      + '<option value="">Choose…</option>'
+      + conns.map(c => '<option value="' + U.esc(c.id) + '"'
+          + (draft.destination.connectionId === c.id ? ' selected' : '') + '>'
+          + U.esc(connLabel(c)) + '</option>').join('')
+      + '</select>'
+      + '<div style="margin-top:0.4rem"><a class="btn" href="/dashboard.html#goto=connections">'
+      + '<i class="ic ic-plus"></i> New connection</a></div>'
+      + (conns.length ? '' : '<div class="ds-note warn" style="margin-top:0.4rem">No saved connections. '
+          + 'Add one in Connect → Connections, or name the destination by hand below.</div>')
+      + '<input class="ds-input" style="margin-top:0.4rem" placeholder="…or name it, e.g. SNOWFLAKE-EU · RAW_LEGACY"'
+      + ' value="' + U.esc(draft.destination.label || '') + '"'
+      + ' oninput="draft.destination.label=this.value;touch()">';
+  }
+  if (k === 'cygenix-target') {
+    return '<div class="ds-note info">Delivers into this project’s own target connection — the shape you '
+      + 'want at cutover, where batches move the bulk and the stream trickles the changes since.</div>'
+      + '<input class="ds-input" style="margin-top:0.4rem" value="'
+      + U.esc(draft.destination.label || 'Project target connection') + '"'
+      + ' oninput="draft.destination.label=this.value;touch()">';
+  }
+  return '<input id="ds-dest" class="ds-input" style="font-family:var(--mono)" value="'
+    + U.esc(draft.destination.label || '') + '" oninput="draft.destination.label=this.value;touch()"'
+    + ' placeholder="' + (k === 'webhook' ? 'https://example.internal/hooks/cygenix' : 'adls://bucket/landing') + '">';
+}
+function setDestKind(k) {
+  draft.destination.kind = k;
+  if (k === 'cygenix-target' && !draft.destination.label) draft.destination.label = 'Project target connection';
+  touch();
+}
+function setDestConn(id) {
+  const c = savedConnections().filter(x => x.id === id)[0];
+  draft.destination.connectionId = id || null;
+  if (c) draft.destination.label = connLabel(c);
+  touch();
+}
+function setWriteMode(m) { draft.destination.writeMode = m; touch(); }
+function capitalise(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function savedMappings() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || key.indexOf('cygenix_objmap_wip_') !== 0) continue;
+      out.push({ id: key.slice('cygenix_objmap_wip_'.length), name: key.slice('cygenix_objmap_wip_'.length) });
+    }
+  } catch (e) { /* storage unavailable */ }
+  return out;
+}
+
+/* ── Step 4 — delivery and guardrails ───────────────────────────────────── */
+function step4() {
+  const d = draft.delivery;
+  const num = (id, label, value, hint, min) =>
+    '<div class="ds-field"><label class="lbl" for="' + id + '">' + label + '</label>'
+    + '<input id="' + id + '" class="ds-input" type="number" min="' + (min == null ? 0 : min) + '" value="' + value + '"'
+    + ' oninput="setDelivery(\'' + id.replace('ds-d-', '') + '\', this.value)">'
+    + (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>';
+
+  return '<h3>Step 4 — Delivery &amp; guardrails</h3>'
+    + '<p class="lead">How hard this stream is allowed to push, and what it does when the destination '
+      + 'changes shape underneath it.</p>'
+    + '<div class="ds-grid2">'
+      + num('ds-d-batchSize', 'Batch size', d.batchSize, 'Records per delivery.', 1)
+      + num('ds-d-maxIntervalMs', 'Max flush interval (ms)', d.maxIntervalMs, 'Deliver even if the batch is not full.', 250)
+      + num('ds-d-retries', 'Retries', d.retries, 'Before a record is dead-lettered.', 0)
+      + num('ds-d-lagThresholdSeconds', 'Lag threshold (s)', d.lagThresholdSeconds,
+          'Past this, the stream reads as Lagging.', 1)
+      + num('ds-d-maxEventsPerMin', 'Max events / min', d.maxEventsPerMin || 0, '0 means no limit.', 0)
+    + '</div>'
+    + '<div class="ds-field"><label class="lbl" for="ds-ordering">Ordering guarantee</label>'
+      + '<select id="ds-ordering" class="ds-input" onchange="setDelivery(\'ordering\', this.value)">'
+      + DS.ENUMS.ordering.map(o => '<option value="' + o + '"' + (d.ordering === o ? ' selected' : '') + '>'
+          + { 'per-key': 'Per key — changes to one row arrive in order',
+              global: 'Global — every change in order (slowest)',
+              none: 'None — fastest, no ordering promised' }[o] + '</option>').join('')
+      + '</select></div>'
+    + '<div class="ds-field"><label class="ds-radio" style="padding:0"><input type="checkbox"'
+      + (d.dlq ? ' checked' : '') + ' onchange="setDelivery(\'dlq\', this.checked)">'
+      + '<span>Dead-letter records that exhaust their retries'
+      + '<span class="b">Off means a record that cannot be delivered is dropped, silently. Leave it on.</span>'
+      + '</span></label></div>'
+    + '<div class="ds-field"><label class="lbl">On schema drift</label>'
+      + [['pause', 'Pause the stream', 'Stop and wait for a person. The default, and the only one that cannot lose data.'],
+         ['evolve', 'Evolve the destination', 'Add the new column downstream and carry on.'],
+         ['ignore-new-columns', 'Ignore new columns', 'Keep delivering the columns you configured; new ones are dropped.']]
+        .map(([v, t, b]) => '<label class="ds-radio"><input type="radio" name="ds-drift" value="' + v + '"'
+          + (d.onSchemaDrift === v ? ' checked' : '') + ' onchange="setDelivery(\'onSchemaDrift\',\'' + v + '\')">'
+          + '<span>' + t + '<span class="b">' + b + '</span></span></label>').join('')
+      + '</div>'
+    + '<div class="ds-field"><label class="lbl" for="ds-window">Active window</label>'
+      + '<input id="ds-window" class="ds-input" placeholder="19:00-06:00 — leave blank to stream all day"'
+      + ' value="' + U.esc(d.activeWindow || '') + '" oninput="setDelivery(\'activeWindow\', this.value)">'
+      + '<div class="hint">For a source that cannot take the read load during business hours.</div></div>'
+    + '<div class="ds-field"><label class="lbl">Guardrail level</label>'
+      + [['confirm_all', 'Confirm every change',
+          'The assistant asks before it touches this stream at all.'],
+         ['confirm_destructive', 'Confirm destructive only',
+          'Reads and pauses go through; starting, replaying and deleting always ask.']]
+        .map(([v, t, b]) => '<label class="ds-radio"><input type="radio" name="ds-guard" value="' + v + '"'
+          + (d.guardrail === v ? ' checked' : '') + ' onchange="setDelivery(\'guardrail\',\'' + v + '\')">'
+          + '<span>' + t + '<span class="b">' + b + '</span></span></label>').join('')
+      + '<div class="hint">Starting, replaying and deleting a stream count as destructive at both levels.</div></div>'
+    + '<div class="ds-field"><label class="lbl" for="ds-retention">Stream Store retention (hours)</label>'
+      + '<input id="ds-retention" class="ds-input" type="number" min="1" value="'
+      + ((draft.profile && draft.profile.retentionHours) || 72) + '"'
+      + ' oninput="draft.profile.retentionHours=Math.max(1,parseInt(this.value,10)||1);touch()">'
+      + '<div class="hint">How far back a replay can reach. Longer costs storage; shorter costs recoverability.</div></div>';
+}
+function setDelivery(key, value) {
+  const numeric = ['batchSize', 'maxIntervalMs', 'retries', 'lagThresholdSeconds', 'maxEventsPerMin'];
+  draft.delivery[key] = numeric.indexOf(key) !== -1 ? (parseInt(value, 10) || 0) : value;
+  dirty = true;
+  DS.wipSave(P.projectId, draft);
+  refreshValidity();
+}
+
+/* ── Step 5 — review ────────────────────────────────────────────────────── */
+function step5() {
+  const v = DS.validateDesign(draft);
+  const est = DS.snapshotEstimate(draft);
+  // Step 5's own errors are already printed at the top of the step by
+  // renderStep. Repeating them here said "Give the stream a name." twice on
+  // one screen, which reads as two separate problems.
+  const blockers = v.errors.slice(0, 4).flat();
+  return '<h3>Step 5 — Review</h3>'
+    + '<p class="lead">What you have configured, in one sentence. If it does not read the way you meant it, '
+      + 'the wrong step is above.</p>'
+    // Typing the name must not redraw the step — that would move the caret on
+    // every keystroke — but it MUST update whether Create & start is live.
+    // Leaving the button disabled after the last missing field is filled in is
+    // a dead end with nothing on screen explaining it.
+    + '<div class="ds-field"><label class="lbl" for="ds-name">Name</label>'
+      + '<input id="ds-name" class="ds-input" value="' + U.esc(draft.name || '') + '"'
+      + ' oninput="draft.name=this.value;dirty=true;DS.wipSave(P.projectId,draft);refreshValidity()"'
+      + ' placeholder="Source → Reporting warehouse"></div>'
+    + '<div class="ds-review" style="margin:0.9rem 0">' + U.esc(DS.reviewSentence(draft)) + '</div>'
+    + '<div class="ds-note ' + (est.rows > 1000000 ? 'warn' : 'info') + '">' + U.esc(est.note) + '</div>'
+    + (v.warnings.length ? '<div class="ds-note warn" style="margin-top:0.6rem">'
+        + v.warnings.map(U.esc).join('<br>') + '</div>' : '')
+    + (blockers.length ? '<div class="ds-note error" style="margin-top:0.6rem">'
+        + blockers.map(U.esc).join('<br>') + '</div>' : '')
+    + '<div style="display:flex;gap:0.45rem;margin-top:1rem;flex-wrap:wrap;align-items:center">'
+      + '<button class="btn" onclick="dsSaveDraft()"><i class="ic ic-save"></i> Save as draft</button>'
+      + '<button class="btn btn-primary" id="ds-create-go" onclick="dsCreate()"' + (v.valid ? '' : ' disabled') + '>'
+      + (editingId ? '<i class="ic ic-save"></i> Save changes' : '<i class="ic ic-play"></i> Create &amp; start')
+      + '</button>'
+      // A disabled button with no reason beside it is a dead end. This says
+      // which step is unfinished, and updates as the draft becomes valid.
+      + '<span class="hint" id="ds-create-hint" style="margin:0">'
+      + (v.valid ? '' : 'Step ' + v.firstInvalidStep + ' still needs finishing.') + '</span>'
+      + '</div>';
+}
+
+/* Re-evaluate the draft WITHOUT redrawing the step the user is typing into.
+   The rail, the summary rail and the Create button all reflect validity, and
+   all three would otherwise go stale mid-form. */
+function refreshValidity() {
+  const v = DS.validateDesign(draft);
+  renderRail(v);
+  renderSummary(v);
+  const go = document.getElementById('ds-create-go');
+  if (go) go.disabled = !v.valid;
+  const hint = document.getElementById('ds-create-hint');
+  if (hint) hint.textContent = v.valid ? '' : 'Step ' + v.firstInvalidStep + ' still needs finishing.';
+}
+
+/* ── Live summary rail ──────────────────────────────────────────────────── */
+function renderSummary(v) {
+  const val = v || DS.validateDesign(draft);
+  document.getElementById('ds-sum-state').textContent = val.valid ? 'ready' : 'incomplete';
+  const tables = draft.objects.length;
+  const masked = draft.objects.reduce((a, o) => a + (o.masked || []).length, 0);
+  document.getElementById('ds-summary').innerHTML =
+      '<div class="ds-kv"><b>Name</b><span>' + U.esc(draft.name || '—') + '</span></div>'
+    + '<div class="ds-kv"><b>Reads from</b><span>' + U.sideBadge(draft.capture.side) + '</span></div>'
+    + '<div class="ds-kv"><b>Connection</b><span>' + U.esc(draft.capture.connectionLabel || '—') + '</span></div>'
+    + '<div class="ds-kv"><b>Capture</b><span>' + U.esc(DS.METHOD_LABEL[draft.capture.method] || '—') + '</span></div>'
+    + '<div class="ds-kv"><b>Objects</b><span>' + tables + '</span></div>'
+    + '<div class="ds-kv"><b>Masked columns</b><span>' + masked + '</span></div>'
+    + '<div class="ds-kv"><b>Destination</b><span>' + U.esc(draft.destination.label || '—') + '</span></div>'
+    + '<div class="ds-kv"><b>Write mode</b><span>' + U.esc(draft.destination.writeMode) + '</span></div>'
+    + '<div class="ds-kv"><b>Retention</b><span>' + ((draft.profile && draft.profile.retentionHours) || 72) + 'h</span></div>'
+    + '<div style="height:0.6rem"></div>'
+    + '<div class="ds-review" style="font-size:11.5px;line-height:1.65">'
+      + U.esc(DS.reviewSentence(draft)) + '</div>';
+}
+
+/* ── Save / create / cancel ─────────────────────────────────────────────── */
+function dsSaveDraft() {
+  if (!draft.name) draft.name = 'Untitled stream';
+  if (editingId) {
+    DS.updateStream(P.state, editingId, draft);
+  } else {
+    const created = DS.createStream(P.state, Object.assign({}, draft, { name: draft.name }), { start: false });
+    editingId = created.id;
+  }
+  P.persist();
+  DS.wipClear(P.projectId);
+  dirty = false;
+  P.announce('Saved as a draft.');
+  location.href = '/data_stream.html' + DS.buildQuery({ stream: editingId });
+}
+
+/* Create & start ALWAYS confirms: it begins reading a production database,
+   and no guardrail level makes that a quiet action. */
+function dsCreate() {
+  const v = DS.validateDesign(draft);
+  if (!v.valid) {
+    goStep(v.firstInvalidStep || 1);
+    P.announce('That step needs finishing first.');
+    return;
+  }
+  const est = DS.snapshotEstimate(draft);
+  if (editingId) {
+    DS.updateStream(P.state, editingId, draft);
+    P.persist();
+    DS.wipClear(P.projectId);
+    dirty = false;
+    location.href = '/data_stream.html' + DS.buildQuery({ stream: editingId });
+    return;
+  }
+  if (!confirm(U.confirmText('start', {
+        name: draft.name, connection: draft.capture.connectionLabel,
+        destination: draft.destination.label, snapshotNote: est.note }))) return;
+  const created = DS.createStream(P.state, draft, { start: true });
+  P.persist();
+  DS.wipClear(P.projectId);
+  dirty = false;
+  location.href = '/data_stream.html' + DS.buildQuery({ stream: created.id });
+}
+
+function dsCancel() {
+  if (dirty && !confirm('Leave without saving?\n\nYour draft is kept, so you can pick it up next time you '
+      + 'open the Designer.')) return;
+  if (dirty) DS.wipSave(P.projectId, draft);
+  dirty = false;
+  const ref = document.referrer;
+  location.href = (ref && ref.indexOf('/data_stream') !== -1) ? ref : '/data_stream.html';
+}
+</script>
+<script src="/cygenix-busy.js?v=6b748aa0aa"></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
+<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script>CygenixAssistant.registerPage('data-stream');</script>
+</body>
+</html>

@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-datastream.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Throughput, lag, store depth and alerts across every data stream.">
+<title>Cygenix – Stream Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;--r-lg:14px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1rem 1.25rem;max-width:1600px}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden}
+.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.panel-title{font-size:12px;font-weight:600;letter-spacing:0.02em}
+.panel-sub{font-size:11px;color:var(--text3)}
+.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap;display:inline-flex;align-items:center;gap:0.35rem}
+.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn.on{color:var(--accent);border-color:rgba(74,91,214,0.45);background:var(--accent-glow)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+/* align-items:start, or a short panel stretches to match a tall neighbour and
+   leaves a block of empty background under its chart. */
+.mon-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.7rem;margin-bottom:0.7rem;align-items:start}
+@media(max-width:1000px){.mon-grid{grid-template-columns:minmax(0,1fr)}}
+.mon-bottom{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:0.7rem}
+@media(max-width:1100px){.mon-bottom{grid-template-columns:minmax(0,1fr)}}
+.mon-alert{display:flex;gap:0.6rem;align-items:flex-start;padding:0.6rem 0.9rem;border-bottom:0.5px solid var(--border)}
+.mon-alert:last-child{border-bottom:none}
+.mon-alert .st{flex:none;margin-top:2px}
+.mon-alert .txt{min-width:0}
+.mon-alert .txt .h{font-size:12px;font-weight:500}
+.mon-alert .txt .b{font-size:11px;color:var(--text3);line-height:1.5;margin-top:2px}
+.mon-audit{max-height:300px;overflow:auto}
+.mon-audit .row{display:flex;gap:0.6rem;padding:5px 0.9rem;border-bottom:0.5px solid var(--border);font-size:11.5px;align-items:baseline}
+.mon-audit .row:last-child{border-bottom:none}
+.mon-audit .t{font-family:var(--mono);font-size:10px;color:var(--text3);white-space:nowrap}
+.mon-audit .a{font-family:var(--mono);font-size:10.5px;color:var(--text2)}
+.mon-audit .who{margin-left:auto;font-size:10.5px;color:var(--text3);white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="cyg-sidebar-mount" data-active="data-stream-monitor"></div>
+
+<div class="page">
+  <div class="ds-head">
+    <div>
+      <div class="ds-title"><i class="ic ic-chart"></i> Stream Monitor</div>
+      <div class="ds-sub">Throughput, lag and store depth across every stream, and the rules that fire when
+        one of them goes wrong.</div>
+    </div>
+    <div class="ds-head-actions">
+      <div id="mon-range"></div>
+      <a class="btn" href="/performance.html"><i class="ic ic-monitor"></i> Performance</a>
+    </div>
+  </div>
+
+  <div class="ds-kpis" id="ds-kpis"></div>
+
+  <div class="mon-grid">
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Events in vs out</div>
+        <span class="panel-sub">captured against delivered</span></div>
+      <div class="ds-insp-body"><div id="mon-throughput"></div>
+        <div class="ds-legend"><span><i style="background:var(--accent)"></i>captured</span>
+          <span><i style="background:var(--teal)"></i>delivered</span>
+          <span>The gap between them is what the Stream Store is holding.</span></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Lag over time</div>
+        <span class="panel-sub" id="mon-lag-sub"></span></div>
+      <div class="ds-insp-body"><div id="mon-lag"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Store depth</div>
+        <span class="panel-sub">records captured but not yet delivered</span></div>
+      <div class="ds-insp-body"><div id="mon-depth"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Errors</div>
+        <span class="panel-sub">delivery failures and dead letters</span></div>
+      <div class="ds-insp-body"><div id="mon-errors"></div></div>
+    </div>
+  </div>
+
+  <div class="mon-bottom">
+    <div>
+      <div class="panel" style="margin-bottom:0.7rem">
+        <div class="panel-header"><div class="panel-title">Events by table</div>
+          <span class="panel-sub" id="mon-heat-sub">five-minute buckets</span></div>
+        <div class="ds-insp-body"><div id="mon-heat"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">What has been done to these streams</div>
+          <span class="panel-sub">every create, start, pause, replay and retention change</span></div>
+        <div class="mon-audit" id="mon-audit"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Alerts</div>
+        <span class="panel-sub" id="mon-alert-sub"></span></div>
+      <div id="mon-alerts"></div>
+      <div class="ds-insp-body" style="border-top:0.5px solid var(--border)">
+        <div class="ds-note">A firing alert is recorded here and, where
+          <a href="/dashboard.html#goto=notifications" style="color:var(--accent)">Settings → Notifications</a>
+          has a channel configured, handed to that channel. This module does not send its own mail.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
+
+<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
+<script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
+<script src="/cygenix-datastream-page.js?v=611f28656e"></script>
+<script>
+'use strict';
+const DS = window.CygenixDataStream;
+const U  = window.CygenixDataStreamUI;
+const P  = window.CygenixDataStreamPage;
+
+/* The time range is a count of 2s points, so every chart on the screen covers
+   exactly the same window — charts that disagreed about "an hour" would be
+   worse than no charts. */
+const RANGES = [
+  { id: '15m', label: '15m', points: 450 },
+  { id: '1h',  label: '1h',  points: 1800 },
+  { id: '24h', label: '24h', points: 43200 },
+  { id: '7d',  label: '7d',  points: 302400 },
+];
+let range = '15m';
+
+document.addEventListener('DOMContentLoaded', () => {
+  P.boot();
+  const q = P.query();
+  if (RANGES.some(r => r.id === q.range)) range = q.range;
+  P.onTick(paint);
+  P.start();
+  paint();
+});
+
+function points(s) {
+  const want = (RANGES.filter(r => r.id === range)[0] || RANGES[0]).points;
+  return (s.points || []).slice(-want);
+}
+/* Points are per stream per tick, so collapse them onto one series per tick
+   before charting — otherwise five streams would draw a sawtooth. */
+function byTick(s, pick) {
+  const pts = points(s);
+  const buckets = new Map();
+  pts.forEach(p => {
+    const k = p.t;
+    buckets.set(k, (buckets.get(k) || 0) + pick(p));
+  });
+  return Array.from(buckets.values());
+}
+
+function paint(state) {
+  const s = state || P.state;
+  if (!s) return;
+  paintRange();
+  paintKpis(s);
+  paintCharts(s);
+  paintHeat(s);
+  paintAlerts(s);
+  paintAudit(s);
+}
+
+function paintRange() {
+  document.getElementById('mon-range').innerHTML =
+    '<div style="display:flex;gap:0.3rem">' + RANGES.map(r =>
+      '<button class="btn' + (range === r.id ? ' on' : '') + '" onclick="setRange(\'' + r.id + '\')">'
+      + r.label + '</button>').join('') + '</div>';
+}
+function setRange(r) {
+  range = r;
+  P.setUrl({ range: r === '15m' ? null : r });
+  paint();
+}
+
+function paintKpis(s) {
+  const k = DS.kpis(s);
+  const tile = (label, figure, cls, context) =>
+    '<div class="ds-kpi" role="group"><div class="ds-kpi-label">' + label + '</div>'
+    + '<div class="ds-kpi-figure' + (cls ? ' ' + cls : '') + '">' + figure + '</div>'
+    + '<div class="ds-kpi-context">' + context + '</div></div>';
+  const level = DS.lagLevel(k.maxLagSeconds, 30);
+  document.getElementById('ds-kpis').innerHTML =
+      tile('Streams running', k.running + ' of ' + k.total, '', k.paused + ' paused · ' + k.failed + ' failed')
+    + tile('Events / min', DS.formatCount(k.eventsPerMin), '', 'captured across every running stream')
+    + tile('Max lag', DS.formatLag(k.maxLagSeconds),
+        level === 'red' ? 'bad' : level === 'amber' ? 'warn' : '',
+        k.worstStream ? U.esc(k.worstStream) : 'no stream is behind')
+    + tile('Dead letters', String(k.dlqDepth), k.dlqDepth ? 'bad' : '', 'waiting for a requeue');
+}
+
+function paintCharts(s) {
+  const ins = byTick(s, p => p.in);
+  const outs = byTick(s, p => p.out);
+  const rows = ins.map((v, i) => ({ a: outs[i] || 0, b: Math.max(0, v - (outs[i] || 0)) }));
+  document.getElementById('mon-throughput').innerHTML =
+    U.barChart(rows.slice(-90), { label: 'Events captured and delivered per tick', height: 110 });
+
+  // Lag is the WORST stream's lag, not an average: an average hides the one
+  // stream that is in trouble behind four that are fine.
+  const worstLag = [];
+  const pts = points(s);
+  const perTick = new Map();
+  pts.forEach(p => perTick.set(p.t, Math.max(perTick.get(p.t) || 0, p.lagSeconds)));
+  perTick.forEach(v => worstLag.push(v));
+  document.getElementById('mon-lag').innerHTML =
+    U.lineChart(worstLag.slice(-90), { threshold: 30, label: 'Worst lag in seconds', height: 110 });
+  document.getElementById('mon-lag-sub').textContent = 'the worst stream at each moment · 30s rule';
+
+  document.getElementById('mon-depth').innerHTML =
+    U.lineChart(byTick(s, p => p.storeDepth).slice(-90), { label: 'Records held in the Stream Store', height: 110 });
+
+  const errs = byTick(s, p => p.errors);
+  document.getElementById('mon-errors').innerHTML = errs.some(v => v > 0)
+    ? U.lineChart(errs.slice(-90), { label: 'Streams in a failed state', height: 110 })
+    : '<div class="ds-note ok">No stream has failed in this window.</div>';
+}
+
+function paintHeat(s) {
+  const grid = DS.heatGrid(s, 300000, 12);
+  const el = document.getElementById('mon-heat');
+  if (!grid.rows.length) {
+    el.innerHTML = '<div class="ds-note">Nothing captured yet, so there is no volume to shade.</div>';
+    return;
+  }
+  document.getElementById('mon-heat-sub').textContent =
+    grid.rows.length + ' table(s) · five-minute buckets · peak ' + grid.peak + ' per cell';
+  const heads = Array.from({ length: grid.buckets }, (_, i) => {
+    const t = new Date(grid.endsAt - (grid.buckets - i) * grid.bucketMs);
+    return '<th>' + String(t.getUTCHours()).padStart(2, '0') + ':'
+      + String(t.getUTCMinutes()).padStart(2, '0') + '</th>';
+  }).join('');
+  el.innerHTML = '<div class="ds-tablewrap"><table class="ds-heat">'
+    + '<thead><tr><th></th>' + heads + '</tr></thead><tbody>'
+    + grid.rows.slice(0, 14).map(r => '<tr><td class="lbl">' + U.esc(r.table) + '</td>'
+      + r.cells.map(c => '<td class="cell" title="' + c + ' event(s)"><i style="opacity:'
+        + (c ? (0.18 + 0.82 * (c / (grid.peak || 1))).toFixed(2) : '0.06') + '"></i></td>').join('')
+      + '</tr>').join('')
+    + '</tbody></table></div>';
+}
+
+function paintAlerts(s) {
+  const alerts = DS.alertsOf(s);
+  const firing = alerts.filter(a => a.state === 'firing');
+  document.getElementById('mon-alert-sub').textContent =
+    firing.length ? firing.length + ' firing' : 'all quiet';
+  document.getElementById('mon-alerts').innerHTML = alerts.map(a => {
+    const cls = a.state === 'firing' ? 'ds-st-failed' : 'ds-st-running';
+    return '<div class="mon-alert">'
+      + '<span class="st ds-pill ' + cls + '"><i class="ic ic-dot"></i>'
+        + (a.state === 'firing' ? 'Firing' : 'OK') + '</span>'
+      + '<div class="txt"><div class="h">' + U.esc(a.label) + '</div>'
+      + '<div class="b">' + (a.state === 'firing'
+        ? a.streams.map(x => U.esc(x.name)).join(', ') + ' · last fired '
+          + DS.relativeTime(a.lastFiredAt, s.clockNow)
+        : 'No stream meets this condition.') + '</div></div></div>';
+  }).join('');
+}
+
+/* Every state change this module made, newest first. The organisation's
+   hash-chained trail lives in Report & Govern → Audit Log; this is the
+   module's own record, and it is what makes a replay accountable after the
+   fact rather than just possible. */
+function paintAudit(s) {
+  const el = document.getElementById('mon-audit');
+  const rows = (s.audit || []).slice(0, 60);
+  if (!rows.length) { el.innerHTML = '<div class="ds-insp-body ds-dim">Nothing yet.</div>'; return; }
+  el.innerHTML = rows.map(a => {
+    const stream = a.streamId ? DS.getStream(s, a.streamId) : null;
+    return '<div class="row"><span class="t" title="' + U.esc(a.at) + '">'
+      + U.esc(String(a.at).slice(11, 19)) + '</span>'
+      + '<span class="a">' + U.esc(a.action) + '</span>'
+      + '<span>' + U.esc(stream ? stream.name : (a.streamId || '')) + detailText(a) + '</span>'
+      + '<span class="who">' + U.esc(String(a.actor || '').split('@')[0]) + '</span></div>';
+  }).join('');
+}
+function detailText(a) {
+  const d = a.detail;
+  if (!d) return '';
+  if (d.records !== undefined) return ' · ' + Number(d.records).toLocaleString() + ' record(s)';
+  if (d.table) return ' · ' + d.table;
+  if (d.to !== undefined && d.from !== undefined) return ' · ' + d.from + 'h → ' + d.to + 'h';
+  if (d.pendingInStore !== undefined) return ' · ' + Number(d.pendingInStore).toLocaleString() + ' pending';
+  return '';
+}
+</script>
+<script src="/cygenix-busy.js?v=6b748aa0aa"></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
+<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script>CygenixAssistant.registerPage('data-stream-monitor');</script>
+</body>
+</html>

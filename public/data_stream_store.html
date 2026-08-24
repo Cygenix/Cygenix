@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-datastream.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="The retained, queryable buffer every captured change passes through.">
+<title>Cygenix – Stream Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;--r-lg:14px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1rem 1.25rem;max-width:1600px}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:0.7rem}
+.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.panel-title{font-size:12px;font-weight:600;letter-spacing:0.02em}
+.panel-sub{font-size:11px;color:var(--text3)}
+.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap;display:inline-flex;align-items:center;gap:0.35rem}
+.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn:disabled{opacity:0.45;cursor:default}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{color:#fff;opacity:0.9}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.st-detail{background:var(--bg3);padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border)}
+.st-detail .ds-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.7rem}
+</style>
+</head>
+<body>
+<div id="cyg-sidebar-mount" data-active="data-stream-store"></div>
+
+<div class="page">
+  <div class="ds-head">
+    <div>
+      <div class="ds-title"><i class="ic ic-database"></i> Stream Store</div>
+      <div class="ds-sub">The streaming database: a retained, queryable buffer that every captured change
+        passes through between capture and delivery. Query it while the data is still arriving.</div>
+    </div>
+    <div class="ds-head-actions">
+      <a class="btn" href="/data_stream.html"><i class="ic ic-stream"></i> Streams</a>
+      <button class="btn" onclick="CygenixDataStreamPage.paletteOpen()" title="Search streams and tables">
+        <i class="ic ic-search"></i> Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
+    </div>
+  </div>
+
+  <div class="ds-kpis" id="ds-kpis"></div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Topics</div>
+      <span class="panel-sub" id="st-sub">one per streamed object</span>
+    </div>
+    <div id="st-topics"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Continuous query</div>
+      <span class="panel-sub">running against the retained records, refreshed on every tick</span>
+      <button class="btn" style="margin-left:auto" onclick="stOpenInEditor()">
+        <i class="ic ic-doc"></i> Open in SQL Editor</button>
+    </div>
+    <div class="ds-insp-body">
+      <div class="ds-query">
+        <div>
+          <div class="ds-qlist" id="st-qlist"></div>
+          <div class="ds-qsql" id="st-qsql" style="margin-top:0.5rem"></div>
+        </div>
+        <div>
+          <div id="st-qresult"></div>
+        </div>
+      </div>
+      <div class="ds-note" style="margin-top:0.7rem">These three run for real against what the store is
+        holding. A general stream SQL engine is not part of this build — anything else is refused rather
+        than faked.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Retention</div>
+      <span class="panel-sub">how far back a replay can reach, per stream</span>
+    </div>
+    <div id="st-retention"></div>
+  </div>
+</div>
+
+<!-- ⌘K -->
+<div class="ds-palette" id="ds-palette" role="dialog" aria-modal="true" aria-label="Search streams and tables"
+     onclick="if(event.target===this)CygenixDataStreamPage.paletteClose()">
+  <div class="ds-palette-box">
+    <input class="ds-palette-input" id="ds-palette-input" type="text" placeholder="Search streams and tables…"
+           oninput="CygenixDataStreamPage.paletteFilter()" onkeydown="CygenixDataStreamPage.paletteKey(event)"
+           aria-controls="ds-palette-list">
+    <div class="ds-palette-list" id="ds-palette-list" role="listbox"></div>
+  </div>
+</div>
+
+<div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
+
+<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
+<script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
+<script src="/cygenix-datastream-page.js?v=611f28656e"></script>
+<script>
+'use strict';
+const DS = window.CygenixDataStream;
+const U  = window.CygenixDataStreamUI;
+const P  = window.CygenixDataStreamPage;
+
+let openTopic = null;
+let queryId = DS.CANNED_QUERIES[0].id;
+
+document.addEventListener('DOMContentLoaded', () => {
+  P.boot();
+  P.wireCopy();
+  const q = P.query();
+  if (q.topic) openTopic = q.topic;
+  P.onTick(paint);
+  P.start();
+  paint();
+});
+
+function paint(state) {
+  const s = state || P.state;
+  if (!s) return;
+  paintKpis(s);
+  paintTopics(s);
+  paintQuery(s);
+  paintRetention(s);
+}
+
+function paintKpis(s) {
+  const t = DS.storeTotals(s);
+  const tile = (label, figure, context) =>
+    '<div class="ds-kpi" role="group"><div class="ds-kpi-label">' + label + '</div>'
+    + '<div class="ds-kpi-figure">' + figure + '</div>'
+    + '<div class="ds-kpi-context">' + context + '</div></div>';
+  const window_ = t.minRetentionHours === t.maxRetentionHours
+    ? t.maxRetentionHours + 'h'
+    : t.minRetentionHours + '–' + t.maxRetentionHours + 'h';
+  document.getElementById('ds-kpis').innerHTML =
+      tile('Records retained', DS.formatCount(t.records), t.topics + ' topic(s) across every stream')
+    + tile('Store size', DS.formatBytes(t.bytes), 'change records, not table data')
+    + tile('Retention window', window_, 'how far back a replay can reach')
+    + tile('Oldest record', t.oldestRecordAt ? DS.relativeTime(t.oldestRecordAt, s.clockNow) : '—',
+        t.oldestRecordAt ? 'anything older has been evicted' : 'nothing retained yet');
+}
+
+function paintTopics(s) {
+  const topics = DS.topicsOf(s);
+  const el = document.getElementById('st-topics');
+  document.getElementById('st-sub').textContent = topics.length + ' topic(s), one per streamed object';
+  if (!topics.length) {
+    el.innerHTML = U.emptyState({ icon: 'database', title: 'The Stream Store is empty',
+      body: 'Every captured change is written here before it is delivered, and kept for the stream’s '
+        + 'retention window. Nothing is streaming yet, so there is nothing to hold.',
+      actionHtml: '<a class="btn btn-primary" href="/data_stream.html">Go to Streams</a>' });
+    return;
+  }
+  el.innerHTML = '<div class="ds-tablewrap"><table class="ds-table">'
+    + '<thead><tr><th>Topic</th><th>Stream</th><th class="ds-right">Records</th><th class="ds-right">Bytes</th>'
+    + '<th>Oldest → newest</th><th>Checkpoint</th><th class="ds-right">Consumer lag</th></tr></thead><tbody>'
+    + topics.map(t => topicRow(t, s)).join('') + '</tbody></table></div>';
+  el.querySelectorAll('tbody tr[data-topic]').forEach(tr => {
+    tr.addEventListener('click', () => toggleTopic(tr.getAttribute('data-topic')));
+  });
+}
+
+function topicRow(t, s) {
+  const behind = (t.consumers[0] || {}).offsetBehind || 0;
+  const row = '<tr data-topic="' + U.esc(t.topic) + '"' + (openTopic === t.topic ? ' class="sel"' : '') + '>'
+    + '<td><div class="ds-cell-name" style="font-family:var(--mono);font-size:11.5px">' + U.esc(t.topic) + '</div>'
+      + '<div class="ds-cell-sub">' + t.retentionHours + 'h retention</div></td>'
+    + '<td><span class="ds-num">' + U.esc(t.streamName) + '</span></td>'
+    + '<td class="ds-right"><span class="ds-num">' + t.records.toLocaleString() + '</span></td>'
+    + '<td class="ds-right"><span class="ds-num">' + DS.formatBytes(t.bytes) + '</span></td>'
+    + '<td><span class="ds-num">' + (t.oldestRecordAt ? U.esc(t.oldestRecordAt.slice(5, 16).replace('T', ' ')) : '—')
+      + ' → ' + (t.newestRecordAt ? U.esc(t.newestRecordAt.slice(5, 16).replace('T', ' ')) : '—') + '</span></td>'
+    + '<td>' + U.monoCopy(t.checkpoint, { max: 16 }) + '</td>'
+    + '<td class="ds-right"><span class="ds-num' + (behind > 500 ? ' ds-lag-amber' : '') + '">'
+      + behind.toLocaleString() + '</span></td></tr>';
+  if (openTopic !== t.topic) return row;
+  return row + '<tr><td colspan="7" style="padding:0"><div class="st-detail">'
+    + '<div class="ds-grid2">'
+      + '<div><div class="ds-kpi-label">Checkpoint</div><div class="ds-num">'
+        + U.monoCopy(t.checkpoint, { max: 30 }) + '</div>'
+        + '<div class="ds-kpi-context">Delivery has committed everything up to here.</div></div>'
+      + '<div><div class="ds-kpi-label">Consumer</div><div class="ds-num">'
+        + U.esc((t.consumers[0] || {}).name || '—') + '</div>'
+        + '<div class="ds-kpi-context">' + behind.toLocaleString() + ' record(s) behind the head.</div></div>'
+      + '<div><div class="ds-kpi-label">Retention</div><div class="ds-num">' + t.retentionHours + ' hours</div>'
+        + '<div class="ds-kpi-context">Replay cannot reach further back than this.</div></div>'
+    + '</div>'
+    + '<div style="margin-top:0.6rem;display:flex;gap:0.4rem;flex-wrap:wrap">'
+      + '<a class="btn" href="/data_stream_events.html'
+        + DS.buildQuery({ stream: t.streamId, table: t.table }) + '">See these change records →</a>'
+      + '<a class="btn" href="/data_stream.html' + DS.buildQuery({ stream: t.streamId })
+        + '">Open the stream →</a></div>'
+    + '</div></td></tr>';
+}
+function toggleTopic(topic) {
+  openTopic = openTopic === topic ? null : topic;
+  P.setUrl({ topic: openTopic });
+  paint();
+}
+
+/* ── Continuous query ───────────────────────────────────────────────────── */
+function paintQuery(s) {
+  document.getElementById('st-qlist').innerHTML = DS.CANNED_QUERIES.map(q =>
+    '<button type="button" class="' + (queryId === q.id ? 'on' : '') + '" onclick="setQuery(\''
+    + q.id + '\')">' + U.esc(q.label) + '</button>').join('');
+  const q = DS.CANNED_QUERIES.filter(x => x.id === queryId)[0];
+  document.getElementById('st-qsql').textContent = q.sql;
+
+  let result;
+  try { result = DS.runCannedQuery(s, queryId); }
+  catch (e) {
+    document.getElementById('st-qresult').innerHTML = '<div class="ds-note error">' + U.esc(e.message) + '</div>';
+    return;
+  }
+  const el = document.getElementById('st-qresult');
+  if (!result.rows.length) {
+    el.innerHTML = '<div class="ds-note">No rows — nothing has been captured in that window yet.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="ds-tablewrap" style="max-height:280px;overflow:auto">'
+    + '<table class="ds-table"><thead><tr>'
+    + result.columns.map(c => '<th>' + U.esc(c) + '</th>').join('') + '</tr></thead><tbody>'
+    + result.rows.slice(0, 60).map(r => '<tr style="cursor:default">'
+      + r.map(v => '<td><span class="ds-num">' + U.esc(v) + '</span></td>').join('') + '</tr>').join('')
+    + '</tbody></table></div>'
+    + '<div class="ds-kpi-context" style="margin-top:0.4rem">' + result.rows.length
+      + ' row(s) · re-evaluated every ' + (DS.TICK_MS / 1000) + 's against the live store</div>';
+}
+function setQuery(id) { queryId = id; paint(); }
+
+/* Hands the query to the SQL Editor rather than pretending this panel is one.
+   The editor is where SQL is written in this console; a second one here would
+   be a second place to maintain. */
+function stOpenInEditor() {
+  const q = DS.CANNED_QUERIES.filter(x => x.id === queryId)[0];
+  const preamble = '-- Continuous query from the Cygenix Stream Store.\n'
+    + '-- stream_events is the retained change buffer; rewrite it against your\n'
+    + '-- own tables before running it on a database.\n\n';
+  try { localStorage.setItem('cygenix_sql_editor_draft', preamble + q.sql); } catch (e) { /* storage full */ }
+  location.href = '/sql-editor.html';
+}
+
+/* ── Retention ──────────────────────────────────────────────────────────── */
+function paintRetention(s) {
+  const el = document.getElementById('st-retention');
+  if (!s.streams.length) { el.innerHTML = '<div class="ds-insp-body ds-dim">No streams yet.</div>'; return; }
+  el.innerHTML = '<div class="ds-tablewrap"><table class="ds-table">'
+    + '<thead><tr><th>Stream</th><th class="ds-right">Retained</th><th>Retention</th>'
+    + '<th>Eviction policy</th><th></th></tr></thead><tbody>'
+    + s.streams.map(st => '<tr style="cursor:default">'
+      + '<td><div class="ds-cell-name">' + U.esc(st.name) + '</div>'
+        + '<div class="ds-cell-sub">' + U.statusPill(st) + '</div></td>'
+      + '<td class="ds-right"><span class="ds-num">' + st.metrics.storeRecords.toLocaleString() + '</span></td>'
+      + '<td><input class="ds-input" type="number" min="1" style="width:88px" value="'
+        + ((st.profile || {}).retentionHours || 72) + '" id="ret-' + U.esc(st.id) + '"> hours</td>'
+      + '<td><select class="ds-input" onchange="setEviction(\'' + U.escArg(st.id) + '\', this.value)">'
+        + [['drop-oldest', 'Drop the oldest records'], ['pause-capture', 'Pause capture instead']]
+          .map(([v, l]) => '<option value="' + v + '"'
+            + (((st.profile || {}).eviction || 'drop-oldest') === v ? ' selected' : '') + '>' + l + '</option>').join('')
+        + '</select></td>'
+      + '<td><button class="btn" onclick="applyRetention(\'' + U.escArg(st.id) + '\')">Apply</button></td>'
+      + '</tr>').join('')
+    + '</tbody></table></div>';
+}
+function applyRetention(id) {
+  const input = document.getElementById('ret-' + id);
+  const hours = Math.max(1, parseInt(input.value, 10) || 1);
+  const s = DS.getStream(P.state, id);
+  const was = (s.profile || {}).retentionHours || 72;
+  if (hours === was) return;
+  const impact = DS.retentionImpact(P.state, id, hours);
+  // Shortening retention destroys replay history. Say how much, before.
+  if (impact.losesHistory && !confirm(U.confirmText('retention',
+      { from: was, to: hours, recordsLost: impact.recordsLost }))) {
+    input.value = was;
+    return;
+  }
+  DS.setRetention(P.state, id, hours);
+  P.persist();
+  paint();
+  P.announce('Retention on ' + s.name + ' set to ' + hours + ' hours.');
+}
+function setEviction(id, policy) {
+  DS.setEvictionPolicy(P.state, id, policy);
+  P.persist();
+  P.announce('Eviction policy updated.');
+}
+</script>
+<script src="/cygenix-busy.js?v=6b748aa0aa"></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
+<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script>CygenixAssistant.registerPage('data-stream-store');</script>
+</body>
+</html>
