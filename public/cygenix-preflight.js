@@ -117,6 +117,38 @@
     return s.slice(i + 1).replace(/[eE].*$/, '').replace(/0+$/, '').length;
   }
 
+  // The shared transform rules. In the browser they arrive as a global; under
+  // Node (the tests) they are required. Resolved once, lazily, so a page that
+  // does not load the module simply forecasts on raw values as it always did.
+  var _tx;
+  function transformModule() {
+    if (_tx !== undefined) return _tx;
+    _tx = null;
+    try {
+      if (typeof CygenixTransform !== 'undefined') _tx = CygenixTransform;
+      else if (root && root.CygenixTransform) _tx = root.CygenixTransform;
+      else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {
+        _tx = require('./cygenix-transform.js');
+      }
+    } catch (e) { _tx = null; }
+    return _tx;
+  }
+
+  // The value the load will insert for this mapping — source value with the
+  // column's transform applied. Falls back to the raw value when the shared
+  // transform module is unavailable (an older cached page), which is the
+  // behaviour this forecast had before it could see transforms at all.
+  function pfMappedValue(m, v, tgtCol) {
+    var T = transformModule();
+    if (!T) return v;
+    try {
+      return T.txApply(m, v, {
+        tgtType: (tgtCol && tgtCol.type) || m.tgtType || '',
+        tgtNotNull: tgtCol ? tgtCol.nullable === false : false,
+      }).value;
+    } catch (e) { return v; }
+  }
+
   // ── Per-value check ───────────────────────────────────────────────────────
   // Returns null (fits) or { code } naming why this value fails or changes.
 
@@ -456,7 +488,13 @@
           spec.nullable = tc.nullable; spec.isIdentity = tc.isIdentity; spec.hasDefault = !!tc.default;
           const hasLiteral = !!(m.literalValue || m.fixedValue);
           if (hasLiteral || !m.srcCol) continue;         // literals resolve at run time; nothing to sample
-          const samples = rows.map(r => r[m.srcCol]);
+          // Judge the value the load will actually INSERT, not the raw source
+          // value. The forecast used to read straight from the source and so
+          // reported rejections the mapping already handles — a column CAST to
+          // NVARCHAR(8) was still forecast red for every value longer than 8.
+          // The transform rules are shared with the runner (cygenix-transform.js)
+          // precisely so the forecast and the load cannot drift apart.
+          const samples = rows.map(r => pfMappedValue(m, r[m.srcCol], tc));
           for (const f of pfCheckColumn(samples, spec, {})) {
             const proj = pfProject(f.count, jr.sampled, jr.totalRows);
             jr.findings.push({
