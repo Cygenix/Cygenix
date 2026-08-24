@@ -101,7 +101,36 @@ check('the nav starts transparent over the hero and solidifies past it',
   && /hero\.offsetHeight/.test(index),
   'a white band above the ink would cut the page in two');
 
-// ── 8. Mockup chrome is Cygenix, not macOS ──────────────────────────────────
+// ── 8. The theme does not stop at the fold ──────────────────────────────────
+// A dark hero followed by a plain white page reads as two different sites.
+// The brand surface recurs, alternating, all the way to the closing call.
+const order = [...index.matchAll(/<section class="(?:section|cta-section)([^"]*)"/g)]
+  .map(m => /section--ink/.test(m[1]) ? 'ink' : 'light');
+check('the brand surface returns down the page, not only in the hero',
+  order.filter(x => x === 'ink').length >= 5, JSON.stringify(order));
+check('the bands alternate — two dark sections in a row would collapse the rhythm',
+  !order.join(',').includes('ink,ink'), order.join(' '));
+check('the page closes on the brand surface, bookending the hero',
+  /<section class="cta-section section--ink/.test(index));
+check('every dark band draws the hero\'s glow and grid, and mirrors it alternately',
+  /\.section--ink::before\{[^}]*radial-gradient\(760px 420px at 20% -10%/.test(index)
+  && /\.section--ink::after\{[^}]*background-size:52px 52px/.test(index)
+  && /\.section--ink\.flip::before\{/.test(index)
+  && /\.section--ink\.flip::after\{/.test(index));
+// The sections carry inline `color:var(--text2)` in many places, and an inline
+// style beats any class rule — so a dark band has to move the TOKEN.
+check('a dark band re-tones by remapping tokens, so inline colours follow it',
+  /\.section--ink\{[^}]*--text:#ffffff/.test(index)
+  && /\.section--ink\{[^}]*--text2:rgba\(255,255,255,0\.62\)/.test(index)
+  && /\.section--ink\{[^}]*--accent:var\(--accent-ink\)/.test(index));
+check('a product mockup inside a dark band maps the tokens back — it shows the console',
+  /\.section--ink \.mock\{[^}]*--text:#1A1D21/.test(index)
+  && /\.section--ink \.mock\{[^}]*--bg2:#FFFFFF/.test(index)
+  && /\.section--ink \.mock\{[^}]*--accent:#4A5BD6/.test(index));
+check('the ticker under the hero stays on the ink rather than cutting it off',
+  /\.ticker-wrap\{[^}]*background:var\(--ink\)/.test(index));
+
+// ── 9. Mockup chrome is Cygenix, not macOS ──────────────────────────────────
 check('the mockup window dots are neutral, not a borrowed traffic light',
   /\.mock-dot\{[^}]*background:var\(--border2\)/.test(index)
   && !/#f04070|#f5a623|#10d48a/.test(index));

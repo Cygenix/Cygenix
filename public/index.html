@@ -198,6 +198,39 @@ nav.solid .nav-links a:hover{color:var(--text)}
 .stat-num span{color:var(--accent-ink)}
 .stat-label{font-size:10.5px;color:rgba(255,255,255,0.45);font-family:var(--mono);margin-top:5px;letter-spacing:0.05em}
 .section{padding:6rem 2rem;position:relative;z-index:1}
+/* ── The brand surface, reused ────────────────────────────────────────────
+   The hero establishes the identity; without this it stopped at the fold and
+   the rest of the page read as a different site. Alternating sections carry
+   the same ink, the same glows and the same masked grid.
+
+   Re-toning is done by REMAPPING THE TOKENS rather than overriding colours:
+   the sections are full of inline `color:var(--text2)` and the like, and an
+   inline style beats any class rule. Remap the variable and every one of
+   them follows. The product mockups inside then map the tokens BACK, because
+   a screenshot of the console should look like the console. */
+.section--ink{
+  background:var(--ink);color:#fff;position:relative;overflow:hidden;
+  --text:#ffffff;--text2:rgba(255,255,255,0.62);--text3:rgba(255,255,255,0.45);
+  --border:rgba(255,255,255,0.10);--border2:rgba(255,255,255,0.18);
+  --bg2:rgba(255,255,255,0.04);--bg3:rgba(255,255,255,0.06);--bg4:rgba(255,255,255,0.09);
+  --accent:var(--accent-ink);--glow:rgba(142,160,255,0.12);
+}
+.section--ink::before{content:'';position:absolute;inset:0;background:radial-gradient(760px 420px at 20% -10%,rgba(74,91,214,0.40),transparent 60%),radial-gradient(620px 360px at 110% 110%,rgba(58,166,182,0.28),transparent 60%);pointer-events:none}
+.section--ink::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:52px 52px;-webkit-mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%);mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%);pointer-events:none}
+/* mirror the glow on every other dark band so the page does not repeat */
+.section--ink.flip::before{background:radial-gradient(760px 420px at 80% -10%,rgba(74,91,214,0.34),transparent 60%),radial-gradient(620px 360px at -10% 110%,rgba(58,166,182,0.24),transparent 60%)}
+.section--ink.flip::after{-webkit-mask-image:radial-gradient(circle at 70% 45%,#000,transparent 78%);mask-image:radial-gradient(circle at 70% 45%,#000,transparent 78%)}
+.section--ink > *{position:relative;z-index:1}
+/* a product screenshot keeps the product's own light palette */
+.section--ink .mock{
+  --text:#1A1D21;--text2:#565B63;--text3:#363D49;
+  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
+  --bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;--accent:#4A5BD6;--glow:rgba(74,91,214,0.10);
+  border-color:rgba(255,255,255,0.12);box-shadow:0 24px 70px rgba(0,0,0,0.45)
+}
+.section--ink .btn-primary{background:#4A5BD6}
+.section--ink .btn-secondary{background:rgba(255,255,255,0.06);color:#fff;border-color:rgba(255,255,255,0.16)}
+.section--ink .btn-secondary:hover{background:rgba(255,255,255,0.11);color:#fff}
 .section-tag{font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem}
 .section-title{font-size:clamp(1.8rem,3.2vw,2.5rem);font-weight:700;letter-spacing:-0.025em;line-height:1.15;margin-bottom:1rem}
 .section-sub{font-size:15px;color:var(--text2);line-height:1.7;max-width:560px}
@@ -262,7 +295,6 @@ nav.solid .nav-links a:hover{color:var(--text)}
 .flow-step-label{font-size:11px;font-weight:600;color:var(--text);line-height:1.3}
 .flow-arrow{color:var(--text3);font-size:1.2rem;flex-shrink:0;padding:0 0.5rem;margin-top:-0.5rem}
 .cta-section{padding:8rem 2rem;text-align:center;position:relative;z-index:1}
-.cta-section::before{content:'';position:absolute;inset:0;background:none;pointer-events:none}
 .cta-title{font-size:clamp(2rem,4vw,3rem);font-weight:700;letter-spacing:-0.03em;margin-bottom:1rem}
 .cta-sub{font-size:15px;color:var(--text2);max-width:500px;margin:0 auto 2.5rem;line-height:1.7}
 .cta-btns{display:flex;gap:1rem;justify-content:center}
@@ -294,7 +326,11 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 .about-close:hover{border-color:var(--accent);color:var(--accent)}
 @keyframes aboutFade{from{opacity:0}to{opacity:1}}
 @keyframes aboutRise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-.ticker-wrap{overflow:hidden;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);background:var(--bg2);padding:0.6rem 0}
+/* sits directly under the hero, so it stays on the ink — a white strip here
+   ended the brand surface with a hard cut */
+.ticker-wrap{overflow:hidden;border-top:0.5px solid rgba(255,255,255,0.10);border-bottom:0.5px solid rgba(255,255,255,0.10);background:var(--ink);padding:0.7rem 0;position:relative;z-index:1}
+.ticker-item{color:rgba(255,255,255,0.45)}
+.ticker-item span{color:var(--accent-ink)}
 .ticker{display:flex;gap:4rem;white-space:nowrap;animation:tick 30s linear infinite}
 .ticker-item{display:flex;align-items:center;gap:0.5rem;font-size:11px;color:var(--text3);font-family:var(--mono)}
 .ticker-item span{color:var(--accent)}
@@ -547,7 +583,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <div class="divider"></div>
 
 <!-- MAPPER -->
-<section class="section" id="mapper">
+<section class="section section--ink" id="mapper">
   <div class="container-sm">
     <div class="animate-on-scroll" style="text-align:center">
       <div class="section-tag">Intelligent Column Mapping</div>
@@ -771,7 +807,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <div class="divider"></div>
 
 <!-- VALIDATION -->
-<section class="section" id="validation">
+<section class="section section--ink flip" id="validation">
   <div class="container">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
       <div>
@@ -868,7 +904,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <div class="divider"></div>
 
 <!-- SQL EDITOR -->
-<section class="section" id="sql-editor">
+<section class="section section--ink" id="sql-editor">
   <div class="container">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
       <div>
@@ -1010,7 +1046,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <div class="divider"></div>
 
 <!-- REPORTING TOOL -->
-<section class="section" id="reporting">
+<section class="section section--ink flip" id="reporting">
   <div class="container">
     <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:5rem;align-items:center" class="animate-on-scroll">
       <div>
@@ -1277,7 +1313,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <div class="divider"></div>
 
 <!-- TASK AGENT (JOB SCHEDULER) -->
-<section class="section" id="task-agent">
+<section class="section section--ink" id="task-agent">
   <div class="container">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
       <div class="mock">
@@ -1406,7 +1442,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 </section>
 
 <!-- CTA -->
-<section class="cta-section">
+<section class="cta-section section--ink flip">
   <div class="cta-title">Ready to migrate<br>with confidence?</div>
   <div class="cta-sub">Cygenix handles the complexity — AI column mapping, AI-Assisted and fully Agentive migration modes, interactive BI reporting with auto-generated executive summaries, plain-English data insights, scheduled jobs, cross-engine migration, file imports, validation, dedup detection, project planning, integrations with Jira and Smartsheet, and AI report narratives grounded in your project documents — so your team can focus on the migration, not the tooling.</div>
   <div class="cta-btns">
