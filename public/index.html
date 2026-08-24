@@ -43,6 +43,13 @@
   --amber:#B26A00;--amber-g:rgba(178,106,0,0.12);
   --red:#C0392B;--red-g:rgba(192,57,43,0.12);
   --teal:#0F6E6C;--purple:#6B4E8E;
+  /* the brand surface, shared with login.html — one dark, one gradient */
+  --ink:#12141c;--faint:#9aa0af;
+  --mark-a:#6d5df2;--mark-b:#4a7cf3;
+  /* the accent lifted for dark ground: #4A5BD6 has too little
+     contrast on --ink to carry a headline */
+  --accent-ink:#8ea0ff;--accent-ink2:#a9b6ff;
+  --r:10px;
   --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --sans:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
@@ -148,30 +155,51 @@ body::after{
 @media (prefers-reduced-motion: reduce){
   body::before,body::after,.grid-glow{animation:none}
 }
-nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:var(--bg2);border-bottom:1px solid var(--border)}
-.nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}.nav-logo span{color:var(--accent)}
+/* Over the hero the bar is part of the brand surface — a white band above
+   the ink would cut the page in two. It solidifies once the hero is past. */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:transparent;border-bottom:1px solid transparent;transition:background 0.25s ease,border-color 0.25s ease}
+nav.solid{background:var(--bg2);border-bottom-color:var(--border)}
+nav .nav-logo{color:#fff}
+nav .nav-links a{color:rgba(255,255,255,0.72)}
+nav .nav-links a:hover{color:#fff}
+nav.solid .nav-logo{color:var(--text)}
+nav.solid .nav-links a{color:var(--text2)}
+nav.solid .nav-links a:hover{color:var(--text)}
+.nav-logo{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--text)}
+.nav-logo b{font-size:18px;font-weight:700;letter-spacing:-0.015em}
+.mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,var(--mark-a),var(--mark-b));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -4px rgba(74,91,214,.6);flex:none}
+.mark svg{width:21px;height:21px;display:block}
 .nav-links{display:flex;gap:2rem;align-items:center}
-.nav-links a{font-size:13px;color:var(--text2);text-decoration:none;transition:color 0.2s}.nav-links a:hover{color:var(--text)}
-.nav-cta{background:var(--accent);color:#fff;padding:0.45rem 1.1rem;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s}.nav-cta:hover{background:var(--accent2);color:#fff}
-.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6rem 2rem 4rem;position:relative;z-index:1}
-.hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--glow);border:1px solid var(--border2);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:600;color:var(--accent);font-family:var(--sans);letter-spacing:0.05em;margin-bottom:2rem;animation:fadeUp 0.6s ease both}
+.nav-links a{font-size:13px;text-decoration:none;transition:color 0.2s}
+.nav-cta{background:var(--accent);color:#fff;padding:0.5rem 1.1rem;border-radius:var(--r);font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s;box-shadow:0 6px 16px -6px rgba(74,91,214,.6)}.nav-cta:hover{background:var(--accent2);color:#fff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8rem 2rem 5rem;position:relative;z-index:1;overflow:hidden;background:var(--ink);color:#fff}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(760px 420px at 20% -10%,rgba(74,91,214,0.40),transparent 60%),radial-gradient(620px 360px at 110% 110%,rgba(58,166,182,0.28),transparent 60%)}
+.hero::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:52px 52px;-webkit-mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%);mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%)}
+.hero > *{position:relative;z-index:1}
+.hero-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:600;color:var(--accent-ink2);font-family:var(--sans);letter-spacing:0.05em;margin-bottom:2rem;animation:fadeUp 0.6s ease both}
 .hero-badge::before{content:'◆';font-size:8px}
-.hero h1{font-size:clamp(2.8rem,7vw,5.5rem);font-weight:800;letter-spacing:-0.04em;line-height:1.05;margin-bottom:1.5rem;animation:fadeUp 0.6s ease 0.1s both}
-.line1{display:block;color:var(--text)}
-.line2{display:block;color:var(--accent)}
-.hero-sub{font-size:clamp(1rem,2vw,1.2rem);color:var(--text2);max-width:640px;line-height:1.7;margin-bottom:2.5rem;font-weight:400;animation:fadeUp 0.6s ease 0.2s both}
+.hero h1{font-size:clamp(2.4rem,5.4vw,4.2rem);font-weight:700;letter-spacing:-0.03em;line-height:1.08;margin-bottom:1.5rem;animation:fadeUp 0.6s ease 0.1s both}
+.line1{display:block;color:#fff}
+.line2{display:block;color:var(--accent-ink)}
+.hero-sub{font-size:clamp(1rem,1.5vw,1.1rem);color:rgba(255,255,255,0.62);max-width:640px;line-height:1.6;margin-bottom:2.5rem;font-weight:400;animation:fadeUp 0.6s ease 0.2s both}
 .hero-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp 0.6s ease 0.3s both}
-.btn-hero{padding:0.75rem 1.75rem;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;border:none;transition:all 0.2s}
-.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent2)}
-.btn-secondary{background:transparent;color:var(--text);border:0.5px solid var(--border2)}.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+.btn-hero{display:inline-flex;align-items:center;justify-content:center;height:46px;padding:0 1.6rem;border-radius:var(--r);font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;border:none;transition:all 0.2s}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 6px 16px -6px rgba(74,91,214,.6)}.btn-primary:hover{background:var(--accent2);color:#fff}
+/* the secondary button appears on both grounds: on the light closing call to
+   action it is the console's ghost button, on the ink hero it is a lifted
+   translucent panel — the same shape, read correctly against each */
+.btn-secondary{background:var(--bg2);color:var(--text);border:1px solid var(--border2)}
+.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+.hero .btn-secondary{background:rgba(255,255,255,0.06);color:#fff;border-color:rgba(255,255,255,0.16)}
+.hero .btn-secondary:hover{background:rgba(255,255,255,0.11);color:#fff;border-color:rgba(255,255,255,0.28)}
 .stats-row{display:flex;gap:3rem;justify-content:center;flex-wrap:wrap;padding:1.5rem 2rem;animation:fadeUp 0.6s ease 0.4s both}
 .stat{text-align:center}
-.stat-num{font-size:2rem;font-weight:800;letter-spacing:-0.03em;color:var(--text);line-height:1}
-.stat-num span{color:var(--accent)}
-.stat-label{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;letter-spacing:0.05em}
+.stat-num{font-size:1.7rem;font-weight:700;letter-spacing:-0.02em;color:#fff;line-height:1}
+.stat-num span{color:var(--accent-ink)}
+.stat-label{font-size:10.5px;color:rgba(255,255,255,0.45);font-family:var(--mono);margin-top:5px;letter-spacing:0.05em}
 .section{padding:6rem 2rem;position:relative;z-index:1}
 .section-tag{font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem}
-.section-title{font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-0.03em;line-height:1.1;margin-bottom:1rem}
+.section-title{font-size:clamp(1.8rem,3.2vw,2.5rem);font-weight:700;letter-spacing:-0.025em;line-height:1.15;margin-bottom:1rem}
 .section-sub{font-size:15px;color:var(--text2);line-height:1.7;max-width:560px}
 .container{max-width:1200px;margin:0 auto}
 .container-sm{max-width:860px;margin:0 auto}
@@ -179,14 +207,14 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .feature-block{display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center;padding:5rem 0}
 .feature-block.reverse{direction:rtl}.feature-block.reverse > *{direction:ltr}
 .feature-tag{font-size:10px;font-family:var(--mono);color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.75rem}
-.feature-title{font-size:1.9rem;font-weight:700;letter-spacing:-0.03em;line-height:1.15;margin-bottom:1rem}
+.feature-title{font-size:1.65rem;font-weight:700;letter-spacing:-0.025em;line-height:1.2;margin-bottom:1rem}
 .feature-body{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem}
 .feature-points{list-style:none;display:flex;flex-direction:column;gap:0.6rem}
 .feature-points li{font-size:13px;color:var(--text2);display:flex;align-items:flex-start;gap:0.6rem;line-height:1.6}
 .feature-points li::before{content:'→';color:var(--accent);flex-shrink:0;font-family:var(--mono);margin-top:1px}
 .mock{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(22,26,32,0.14);position:relative}
 .mock-topbar{background:var(--bg3);border-bottom:0.5px solid var(--border);padding:0.6rem 1rem;display:flex;align-items:center;gap:0.6rem}
-.mock-dot{width:8px;height:8px;border-radius:50%}
+.mock-dot{width:8px;height:8px;border-radius:50%;background:var(--border2)}
 .mock-body{padding:1rem;font-size:11px}
 .mapping-row{display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04)}
 .col-pill{background:var(--bg4);border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:10px;color:var(--text2);white-space:nowrap}
@@ -235,7 +263,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .flow-arrow{color:var(--text3);font-size:1.2rem;flex-shrink:0;padding:0 0.5rem;margin-top:-0.5rem}
 .cta-section{padding:8rem 2rem;text-align:center;position:relative;z-index:1}
 .cta-section::before{content:'';position:absolute;inset:0;background:none;pointer-events:none}
-.cta-title{font-size:clamp(2.2rem,5vw,3.5rem);font-weight:800;letter-spacing:-0.04em;margin-bottom:1rem}
+.cta-title{font-size:clamp(2rem,4vw,3rem);font-weight:700;letter-spacing:-0.03em;margin-bottom:1rem}
 .cta-sub{font-size:15px;color:var(--text2);max-width:500px;margin:0 auto 2.5rem;line-height:1.7}
 .cta-btns{display:flex;gap:1rem;justify-content:center}
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -307,7 +335,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 .bar{flex:1;background:linear-gradient(180deg,var(--accent),var(--accent2));border-radius:3px 3px 0 0;position:relative;min-height:4px;animation:barGrow 0.7s cubic-bezier(0.2,0.8,0.2,1) both}
 .bar.bar-teal{background:linear-gradient(180deg,var(--teal),#3D4EC4)}
 .bar.bar-purple{background:linear-gradient(180deg,var(--purple),#3D4EC4)}
-.bar.bar-green{background:linear-gradient(180deg,var(--green),#0a8f5d)}
+.bar.bar-green{background:linear-gradient(180deg,var(--green),var(--teal))}
 .bar-label{position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:7px;font-family:var(--mono);color:var(--text3);white-space:nowrap}
 @keyframes barGrow{from{transform:scaleY(0);transform-origin:bottom}to{transform:scaleY(1);transform-origin:bottom}}
 .line-chart-wrap{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.4rem;position:relative}
@@ -377,7 +405,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <div class="orb orb2"></div>
 
 <nav>
-  <div class="nav-logo">Cyge<span>nix</span></div>
+  <a class="nav-logo" href="/" aria-label="Cygenix home"><span class="mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span><b>Cygenix</b></a>
   <div class="nav-links">
     <a href="#features">Features</a>
     <a href="#mapper">Mapping</a>
@@ -543,7 +571,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Object Mapping · Simple Map</div>
           <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-eye"></i> Hide Unmapped</div>
         </div>
@@ -585,7 +613,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </div>
       <div class="mock" id="vm-mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Object Mapping · Visual view</div>
           <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-fullscreen"></i> Fullscreen</div>
         </div>
@@ -617,7 +645,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Object Mapping · One-to-Many · 3 target tables</div>
         </div>
         <div class="mock-body">
@@ -673,7 +701,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Server Migration · Step 4 of 5 · Execute</div>
         </div>
         <div class="mock-body">
@@ -700,31 +728,31 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
             <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 5px;border-radius:3px;font-size:8px">JOB</span>
+            <span style="background:var(--amber-g);color:var(--amber);padding:1px 5px;border-radius:3px;font-size:8px">JOB</span>
             <span style="flex:1">Nightly_DataRefresh</span>
             <span style="color:var(--green);font-size:8px">CREATED · 4 steps</span>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
             <span style="color:var(--amber);width:10px">–</span>
-            <span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 5px;border-radius:3px;font-size:8px">JOB</span>
+            <span style="background:var(--amber-g);color:var(--amber);padding:1px 5px;border-radius:3px;font-size:8px">JOB</span>
             <span style="flex:1">Old_BackupCheck</span>
             <span style="color:var(--amber);font-size:8px">SKIPPED</span>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
             <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:rgba(248,113,113,0.15);color:#f87171;padding:1px 5px;border-radius:3px;font-size:8px">PROJ</span>
+            <span style="background:var(--red-g);color:var(--red);padding:1px 5px;border-radius:3px;font-size:8px">PROJ</span>
             <span style="flex:1">Finance/SalesETL</span>
             <span style="color:var(--green);font-size:8px">DEPLOYED</span>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
             <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:rgba(110,231,183,0.15);color:#6ee7b7;padding:1px 5px;border-radius:3px;font-size:8px">ENV</span>
+            <span style="background:var(--green-g);color:var(--green);padding:1px 5px;border-radius:3px;font-size:8px">ENV</span>
             <span style="flex:1">Finance/Production</span>
             <span style="color:var(--green);font-size:8px">12 vars</span>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
             <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:rgba(251,146,60,0.15);color:#fb923c;padding:1px 5px;border-radius:3px;font-size:8px">LINK</span>
+            <span style="background:var(--amber-g);color:var(--amber);padding:1px 5px;border-radius:3px;font-size:8px">LINK</span>
             <span style="flex:1">LINK_REPORTING</span>
             <span style="color:var(--green);font-size:8px">CREATED</span>
           </div>
@@ -761,7 +789,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Data Validation · 3 sources</div>
         </div>
         <div class="mock-body">
@@ -794,7 +822,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Project Plan · Calendar — April 2026</div>
         </div>
         <div class="mock-body" style="padding:0.5rem">
@@ -858,7 +886,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">SQL Editor · Source DB</div>
         </div>
         <div class="sql-block" style="margin:0.5rem;max-height:130px">
@@ -943,7 +971,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <!-- Mode toggle mock-up -->
     <div class="mock animate-on-scroll" style="margin-top:3rem;max-width:760px;margin-left:auto;margin-right:auto">
       <div class="mock-topbar">
-        <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+        <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
         <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Migration Run · Agentive mode · Phase 3 of 6</div>
       </div>
       <div class="mock-body">
@@ -1001,7 +1029,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · BI Dashboard · Sample Project</div>
           <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-download"></i> Export</div>
         </div>
@@ -1109,28 +1137,28 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div class="animate-on-scroll" style="margin-top:5rem;display:grid;grid-template-columns:1.15fr 1fr;gap:5rem;align-items:center">
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · Executive Project Summary · auto-generated</div>
           <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-sparkle"></i> Regenerate</div>
         </div>
-        <div class="mock-body" style="padding:1.1rem 1.25rem;background:#fafafa;color:#1a1a1a;font-family:'Helvetica Neue',Arial,sans-serif">
-          <div style="font-size:8px;color:#6b7280;letter-spacing:0.1em;font-family:var(--mono);text-transform:uppercase;margin-bottom:4px">Project Status Report · 2 May 2026</div>
-          <div style="font-size:15px;font-weight:700;color:#0f172a;letter-spacing:-0.02em;margin-bottom:0.5rem">ERP Data Migration — Phase 3 of 4</div>
+        <div class="mock-body" style="padding:1.1rem 1.25rem;background:var(--bg2);color:var(--text);font-family:var(--sans)">
+          <div style="font-size:8px;color:var(--text3);letter-spacing:0.1em;font-family:var(--mono);text-transform:uppercase;margin-bottom:4px">Project Status Report · 2 May 2026</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text);letter-spacing:-0.02em;margin-bottom:0.5rem">ERP Data Migration — Phase 3 of 4</div>
           <div style="display:flex;gap:0.4rem;margin-bottom:0.7rem">
-            <span style="font-size:8px;font-family:var(--mono);background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:100px">● ON TRACK</span>
-            <span style="font-size:8px;font-family:var(--mono);background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:100px">2 risks open</span>
-            <span style="font-size:8px;font-family:var(--mono);background:#e0e7ff;color:#3730a3;padding:2px 7px;border-radius:100px">Go-live: 11 Jun 2026</span>
+            <span style="font-size:8px;font-family:var(--mono);background:var(--green-g);color:var(--green);padding:2px 7px;border-radius:100px">● ON TRACK</span>
+            <span style="font-size:8px;font-family:var(--mono);background:var(--amber-g);color:var(--amber);padding:2px 7px;border-radius:100px">2 risks open</span>
+            <span style="font-size:8px;font-family:var(--mono);background:var(--glow);color:var(--accent);padding:2px 7px;border-radius:100px">Go-live: 11 Jun 2026</span>
           </div>
-          <div style="font-size:9.5px;line-height:1.55;color:#374151;margin-bottom:0.6rem">
-            <strong style="color:#0f172a">Executive summary.</strong> The data conversion is progressing on schedule, with 14 of 19 in-scope tables fully migrated and reconciled. Validation pass rate is holding at <strong style="color:#15803d">98.7%</strong>, ahead of the 97% target. Two open issues remain in the financial domain and are being tracked.
+          <div style="font-size:9.5px;line-height:1.55;color:var(--text2);margin-bottom:0.6rem">
+            <strong style="color:var(--text)">Executive summary.</strong> The data conversion is progressing on schedule, with 14 of 19 in-scope tables fully migrated and reconciled. Validation pass rate is holding at <strong style="color:var(--green)">98.7%</strong>, ahead of the 97% target. Two open issues remain in the financial domain and are being tracked.
           </div>
-          <div style="font-size:9.5px;line-height:1.55;color:#374151;margin-bottom:0.5rem">
-            <strong style="color:#0f172a">Progress this week.</strong> Completed Transaction, TransactionDetail and Invoice loads (2.4M rows). Validation suite ran clean on all three. Cutover rehearsal scheduled for 28 May.
+          <div style="font-size:9.5px;line-height:1.55;color:var(--text2);margin-bottom:0.5rem">
+            <strong style="color:var(--text)">Progress this week.</strong> Completed Transaction, TransactionDetail and Invoice loads (2.4M rows). Validation suite ran clean on all three. Cutover rehearsal scheduled for 28 May.
           </div>
-          <div style="font-size:9.5px;line-height:1.55;color:#374151">
-            <strong style="color:#0f172a">Risks &amp; next steps.</strong> Customer master requires a manual reconciliation pass before final load. Business team availability for UAT remains the critical-path dependency.
+          <div style="font-size:9.5px;line-height:1.55;color:var(--text2)">
+            <strong style="color:var(--text)">Risks &amp; next steps.</strong> Customer master requires a manual reconciliation pass before final load. Business team availability for UAT remains the critical-path dependency.
           </div>
-          <div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid #e5e7eb;font-size:8px;color:#6b7280;font-family:var(--mono);display:flex;justify-content:space-between">
+          <div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid var(--border);font-size:8px;color:var(--text3);font-family:var(--mono);display:flex;justify-content:space-between">
             <span>Generated by Cygenix · 2 May 2026 · 09:14</span>
             <span><i class="ic ic-doc"></i> Export PDF · <i class="ic ic-mail"></i> Email stakeholders</span>
           </div>
@@ -1174,7 +1202,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Data Insights · Ask anything about your database</div>
         </div>
         <div class="mock-body">
@@ -1254,7 +1282,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Task Agent · Schedule · 6 jobs queued</div>
           <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)">+ New Job</div>
         </div>
@@ -1693,5 +1721,20 @@ document.addEventListener('keydown', e => {
 <script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
+<script>
+/* The bar is transparent while the hero is behind it and solid afterwards.
+   Threshold is the hero's own height, so it flips exactly at the boundary
+   rather than at a guessed scroll offset. */
+(function(){
+  var nav = document.querySelector('nav'), hero = document.querySelector('.hero');
+  if (!nav || !hero) return;
+  function sync(){
+    nav.classList.toggle('solid', window.scrollY > hero.offsetHeight - 80);
+  }
+  sync();
+  window.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
+})();
+</script>
 </body>
 </html>
