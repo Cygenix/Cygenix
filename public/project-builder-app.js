@@ -2233,7 +2233,15 @@ const StagingArea = (function(){
       // whether rollback support is realistic for this table.
     }
 
-    return { stagingFull, identityColumns, targetPk };
+    // The live target column types, by lower-cased name. The runner needs
+    // these to apply a transform correctly: the editor does NOT save types
+    // onto a mapping, so without them CAST and the width rule had nothing to
+    // work against and a too-long value went to SQL Server untouched.
+    const targetTypes = {};
+    targetCols.forEach(c => {
+      targetTypes[String(c.name).toLowerCase()] = { type: c.type || '', nullable: c.nullable !== false };
+    });
+    return { stagingFull, identityColumns, targetPk, targetTypes };
   }
 
   // Drop the staging table for a given target if it exists. Called BEFORE
@@ -4185,7 +4193,10 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   //   - transform: TRIM   → str.trim()
   //   - transform: UPPER  → str.toUpperCase()
   //   - transform: LOWER  → str.toLowerCase()
-  //   - transform: CAST   → leave to SQL Server's implicit cast on insert
+  //   - transform: CAST   → for a CHARACTER target with a declared length,
+  //                         shorten to it, exactly as CAST(x AS NVARCHAR(n))
+  //                         does inside SQL Server. Other target types are
+  //                         still left to the implicit cast on insert.
   //   - wasisRules        → exact-match substitution (per-row, per-column)
   //
   // What we DO NOT replicate from the editor's saved SQL:
@@ -4284,6 +4295,8 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   // generate a fresh runId here so the staging path still works — single
   // runs are always incremental.
   const runCtx = window._currentRun || { runId: StagingArea.newRunId(), reload: false, resetTables: new Set() };
+  // Per-step tally, so one step's truncations are not attributed to the next.
+  resetValueChanges();
   // Lazily-initialised on first page: the full name of this step's
   // staging table (e.g. "dm_staging.[dbo__Matters]"), the source column
   // we'll record in dm_source_row_id for each staged row, and the set
@@ -4377,6 +4390,13 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
         stagingFull = ensureResult.stagingFull;
         identityColumns = ensureResult.identityColumns || new Set();
         targetPk = ensureResult.targetPk || null;
+        // Give every mapping row the target column's REAL type, read from the
+        // target a moment ago. A saved map carries no types, so before this
+        // the transform ran blind: CAST did nothing and a 14-character value
+        // went into an NVARCHAR(8) column as a full literal, which SQL Server
+        // rejects rather than truncating.
+        const typedCount = applyTargetTypes(mapping, ensureResult.targetTypes);
+        if (typedCount) add('Resolved target column types for ' + typedCount + ' mapped column(s)');
         // Visible feedback on rollback capability — users will appreciate
         // knowing up-front whether rollback will work for this run.
         if (targetPk && targetPk.col){
@@ -4649,6 +4669,15 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   step.targetPkKind      = targetPk && targetPk.kind ? targetPk.kind : null;
   step.rollbackSupported = !!(targetPk && targetPk.col && loadedRowCount > 0);
 
+  // Anything a transform shortened or replaced, per column. Truncation the
+  // user asked for is fine; truncation nobody is told about is not. Reported
+  // beside the completion line rather than inside the load path, so it shows
+  // even on a run that staged rows without loading them.
+  const changes = valueChangeSummary();
+  if (changes.length) {
+    add('Values changed by transforms: ' + changes.join(' · '));
+    step.valueChanges = changes;
+  }
   add('Complete — ' + loadedRowCount.toLocaleString() + ' rows loaded into ' + step.tgtTable +
       ' (staged ' + totalInserted.toLocaleString() + ' from ' + pageNum + ' page(s))');
 
@@ -5511,7 +5540,23 @@ function applyMappingTransform(m, v) {
     }
   }
 
-  // String transforms — only meaningful if there's a string to transform
+  // The value transforms themselves live in cygenix-transform.js, shared with
+  // Preflight — so the forecast and the load can never disagree about what a
+  // transform does. They disagreed before: the editor GENERATED a real
+  // CAST(x AS NVARCHAR(8)) while this function treated CAST as a no-op, so a
+  // mapping that looked right produced SQL that worked and a run that failed
+  // with "String or binary data would be truncated".
+  if (typeof CygenixTransform !== 'undefined') {
+    const res = CygenixTransform.txApply(m, out, {
+      tgtType: m.tgtType || '',
+      tgtNotNull: m.tgtNotNull === true,
+    });
+    if (res.truncated || res.coerced) recordValueChange(m, res);
+    return res.value;
+  }
+
+  // No module (an old cached page): keep the previous behaviour rather than
+  // throwing. Values behave exactly as they did before this change.
   if (out != null) {
     const t = String(m.transform || 'NONE').toUpperCase();
     if (t === 'TRIM' || t === 'UPPER' || t === 'LOWER') {
@@ -5520,30 +5565,48 @@ function applyMappingTransform(m, v) {
       if (t === 'UPPER') out = s.toUpperCase();
       if (t === 'LOWER') out = s.toLowerCase();
     }
-    // CAST: leave value alone — let SQL Server cast the literal on insert.
-    // The target column type drives the cast, not the source. If the
-    // source value is "123" and the target is INT, SQL Server will accept
-    // the N'123' literal and cast it correctly. For binary/uniqueidentifier
-    // types we don't synthesise values here — those need a fixedValue.
   }
-
-  // Auto-truncate strings when source char width > target char width.
-  // Editor wraps these in LEFT(...) in the generated SQL. We replicate by
-  // slicing the JS string. Safe when both types are character types and
-  // we have explicit lengths from the mapping; otherwise no-op.
-  const srcType = String(m.srcType || '').toUpperCase();
-  const tgtType = String(m.tgtType || '').toUpperCase();
-  const isCharish = (t) => /CHAR|TEXT/.test(t);
-  if (out != null && isCharish(srcType) && isCharish(tgtType)) {
-    const lenMatch = tgtType.match(/\((\d+|MAX)\)/);
-    const tgtLen = lenMatch && lenMatch[1] !== 'MAX' ? parseInt(lenMatch[1], 10) : null;
-    if (tgtLen != null) {
-      const s = String(out);
-      if (s.length > tgtLen) out = s.slice(0, tgtLen);
-    }
-  }
-
   return out;
+}
+
+// Give each mapping row the target column's live type and nullability.
+// A saved map holds only column NAMES, so the transform had nothing to
+// measure against until now. Returns how many rows were resolved.
+function applyTargetTypes(mapping, targetTypes) {
+  if (!Array.isArray(mapping) || !targetTypes) return 0;
+  let n = 0;
+  for (const m of mapping) {
+    if (!m || !m.tgtCol) continue;
+    const info = targetTypes[String(m.tgtCol).toLowerCase()];
+    if (!info) continue;
+    // The live target wins over anything stale on the saved map.
+    m.tgtType = info.type || m.tgtType || '';
+    m.tgtNotNull = info.nullable === false;
+    n++;
+  }
+  return n;
+}
+
+// Every value a transform shortened or replaced, counted per column, so the
+// run log can say what changed. Silent truncation is acceptable when it was
+// asked for; silent AND unreported is not.
+let _valueChanges = {};
+function resetValueChanges() { _valueChanges = {}; }
+function recordValueChange(m, res) {
+  const key = (m && m.tgtCol) || '(unknown)';
+  const rec = _valueChanges[key] || (_valueChanges[key] = { truncated: 0, coerced: 0, note: null });
+  if (res.truncated) rec.truncated++;
+  if (res.coerced) rec.coerced++;
+  if (!rec.note && res.note) rec.note = res.note;
+}
+function valueChangeSummary() {
+  return Object.keys(_valueChanges).map(col => {
+    const r = _valueChanges[col];
+    const bits = [];
+    if (r.truncated) bits.push(r.truncated + ' truncated');
+    if (r.coerced) bits.push(r.coerced + ' replaced');
+    return '[' + col + '] ' + bits.join(', ') + (r.note ? ' — ' + r.note : '');
+  });
 }
 
 // Apply step-level Was/Is rules (rules that aren't attached to any specific
