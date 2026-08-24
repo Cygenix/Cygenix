@@ -214,6 +214,16 @@ const check = (name, ok, detail) => {
     JSON.stringify(PP.ppSlotForDate('2026-08', '2026-11-25')) === '{"monthIndex":3,"week":4}'
     && PP.ppSlotForDate('2026-08', '2026-05-01') === null
     && PP.ppSlotForDate('2026-08', 'garbage') === null);
+  // "this week" on the grid: the column a date occupies, or nothing at all
+  check('today maps to its timeline column — the 24th of the start month is week 4',
+    PP.ppNowIndex('2026-08', 4, '2026-08-24') === 3
+    && PP.ppNowIndex('2026-08', 4, '2026-08-01') === 0
+    && PP.ppNowIndex('2026-08', 4, '2026-09-02') === 4);
+  check('a date outside the plan window highlights nothing rather than the nearest edge',
+    PP.ppNowIndex('2026-08', 4, '2026-07-31') === null
+    && PP.ppNowIndex('2026-08', 4, '2026-12-01') === null
+    && PP.ppNowIndex('2026-08', 4, '2026-11-30') === 15
+    && PP.ppNowIndex('2026-08', 4, 'garbage') === null);
 }
 
 // ── Portfolio: every plan on one shared timeline ────────────────────────────
@@ -285,6 +295,21 @@ const check = (name, ok, detail) => {
     /id="pp-start" type="month"/.test(html) && /id="pp-months" type="number"/.test(html));
   check('the phase label stands vertical, exactly like the sheet',
     /writing-mode:vertical-rl/.test(html));
+  check('the current week is marked on the grid, header and column alike',
+    /ppNowIndex\(doc\.timeline\.start, months\.length\)/.test(html)
+    && /isNow \? ' pp-now' : ''/.test(html)
+    && /now \? 'pp-now' : ''/.test(html)
+    && /pp-month-now/.test(html));
+  check('the marker layers over work bars instead of replacing their tint',
+    /\.pp td\.pp-now\{box-shadow:inset/.test(html)
+    && !/\.pp td\.pp-now\{background/.test(html));
+  check('"this week" is the reader\'s week: the local date, never the UTC one',
+    /function ppTodayIso/.test(html) && /getFullYear\(\) \+ '-'/.test(html)
+    && !/new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/.test(html));
+  check('a plan whose window has not started says so rather than marking nothing silently',
+    /today is outside this plan/.test(html) && /pp-nowchip/.test(html));
+  check('the grid scrolls to this week once, not on every repaint',
+    /ppScrolledToNow/.test(html) && /ppScrolledToNow = true/.test(html));
   check('the toolbar offers the From-estimator import, one-way and explicit about it',
     /⇪ From Configurator/.test(html) && /ppImportEstimate/.test(html)
     && /cygenix-effort-model\.js/.test(html) && /ONE-WAY copy/.test(html)
