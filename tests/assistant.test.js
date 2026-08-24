@@ -54,13 +54,14 @@ check('confirm_destructive lets writes run', core.needsConfirmation({ effect: 'w
 check('confirm_destructive still pauses destructive actions',
   core.needsConfirmation({ effect: 'destructive' }, 'confirm_destructive') === true);
 check('an action registered without an effect defaults to write, the safer reading', (() => {
-  A.registerAction({ name: '__test.noeffect', handler: async () => ({}) });
-  const e = A.getActions()['__test.noeffect'].effect;
-  delete A.getActions()['__test.noeffect'];
+  A.registerAction({ name: '__test_noeffect', handler: async () => ({}) });
+  const e = A.getActions()['__test_noeffect'].effect;
+  delete A.getActions()['__test_noeffect'];
   return e === 'write';
 })());
 check('an action without a handler is refused', (() => {
-  try { A.registerAction({ name: '__test.nohandler' }); return false; } catch (e) { return true; }
+  try { A.registerAction({ name: '__test_nohandler', handler: async () => ({}) }); delete A.getActions()['__test_nohandler']; } catch (e) { return false; }
+  try { A.registerAction({ name: '__test_nohandler' }); return false; } catch (e) { return true; }
 })());
 check('the policy is stored per project', (() => {
   store['cygenix_active_project_id'] = 'p1';
@@ -117,35 +118,48 @@ check('tool definitions carry schemas, never handlers',
   defs.every((d) => d.input_schema && !d.handler));
 check('the catalogue stays under the tool cap', defs.length <= core.LIMITS.MAX_TOOLS, defs.length);
 
+/* The outage this pins: Anthropic rejects tool names outside [a-zA-Z0-9_-]
+   with a 400, which surfaced as "That request could not be processed" on
+   every ask — while the model-test button (no tools) stayed green. */
+check('every action name is a legal Anthropic tool name',
+  Object.keys(A.getActions()).every((n) => /^[a-zA-Z0-9_-]{1,64}$/.test(n)),
+  Object.keys(A.getActions()).filter((n) => !/^[a-zA-Z0-9_-]{1,64}$/.test(n)).join(', '));
+check('registering a dotted action name is refused at the developer\'s desk', (() => {
+  try { A.registerAction({ name: 'app.dotted', handler: async () => ({}) }); return false; }
+  catch (e) { return /valid tool name/.test(e.message); }
+})());
+check('the system prompt never mentions an action by an illegal name',
+  !/\b(app|sql|schema|mapping|jobs)\.[a-z_]+/.test(core.buildSystemPrompt({}, A.appMap)));
+
 /* ── 5. The action catalogue — the dangerous ones are shaped right ──────── */
 
 const acts = A.getActions();
-check('there is no action that runs a migration job', !acts['jobs.run'] && !acts['jobs.cancel']);
-check('there is no action that deletes a mapping', !acts['mapping.delete']);
-check('jobs.list tells the model runs happen on the Execute page, not the panel',
-  /never from this panel/.test(acts['jobs.list'].description));
-check('sql.run is a write, so the default policy pauses it', acts['sql.run'].effect === 'write');
-check('sql.run flags a non-SELECT as changing data in its preview',
-  /CHANGES data/.test(acts['sql.run'].preview({ sql: 'DELETE FROM t' }))
-  && !/CHANGES data/.test(acts['sql.run'].preview({ sql: 'SELECT * FROM t' })));
-check('sql.write_editor previews the exact SQL the user is approving',
-  acts['sql.write_editor'].preview({ sql: 'SELECT 1' }) === 'SELECT 1');
-check('app.navigate is page-agnostic and read-effect',
-  acts['app.navigate'].effect === 'read' && !acts['app.navigate'].page);
+check('there is no action that runs a migration job', !acts['jobs_run'] && !acts['jobs_cancel']);
+check('there is no action that deletes a mapping', !acts['mapping_delete']);
+check('jobs_list tells the model runs happen on the Execute page, not the panel',
+  /never from this panel/.test(acts['jobs_list'].description));
+check('sql_run is a write, so the default policy pauses it', acts['sql_run'].effect === 'write');
+check('sql_run flags a non-SELECT as changing data in its preview',
+  /CHANGES data/.test(acts['sql_run'].preview({ sql: 'DELETE FROM t' }))
+  && !/CHANGES data/.test(acts['sql_run'].preview({ sql: 'SELECT * FROM t' })));
+check('sql_write_editor previews the exact SQL the user is approving',
+  acts['sql_write_editor'].preview({ sql: 'SELECT 1' }) === 'SELECT 1');
+check('app_navigate is page-agnostic and read-effect',
+  acts['app_navigate'].effect === 'read' && !acts['app_navigate'].page);
 
-/* app.navigate resolves through the real sidebar map */
+/* app_navigate resolves through the real sidebar map */
 const results = [];
 const t = (label, promise, verdict) => results.push(
   promise.then((v) => check(label, verdict(null, v)), (e) => check(label, verdict(e, null), e && e.message)));
 
 t('navigating to an href page returns a browser navigation',
-  acts['app.navigate'].handler({ page: 'sql-editor' }),
+  acts['app_navigate'].handler({ page: 'sql-editor' }),
   (err, v) => !err && v.__navigate === '/sql-editor.html');
 t('navigating to a dashboard view goes through the shell route',
-  acts['app.navigate'].handler({ page: 'jobs' }),
+  acts['app_navigate'].handler({ page: 'jobs' }),
   (err, v) => !err && v.__navigate === '/dashboard.html#goto=jobs');
 t('navigating to an unknown page fails loudly',
-  acts['app.navigate'].handler({ page: 'nope' }),
+  acts['app_navigate'].handler({ page: 'nope' }),
   (err) => !!err && /Unknown page/.test(err.message));
 
 /* every href in the app map is a page that actually exists */
@@ -170,7 +184,7 @@ env.CygenixConnections = {
   }],
 };
 t('connection reads return names only — never strings, keys or passwords',
-  acts['app.read_screen'].handler({}),
+  acts['app_read_screen'].handler({}),
   (err, v) => {
     if (err) return false;
     const s = JSON.stringify(v);
@@ -182,13 +196,13 @@ t('connection reads return names only — never strings, keys or passwords',
 /* ── 7. Unwired capabilities fail honestly ──────────────────────────────── */
 
 t('an unwired adapter produces the "not wired up" message, not a guess',
-  acts['sql.write_editor'].handler({ sql: 'SELECT 1' }),
+  acts['sql_write_editor'].handler({ sql: 'SELECT 1' }),
   (err) => !!err && /not wired up in this build/.test(err.message));
 t('describe_table without its adapter says so too',
-  acts['schema.describe_table'].handler({ table: 'dbo.customers' }),
+  acts['schema_describe_table'].handler({ table: 'dbo.customers' }),
   (err) => !!err && /not wired up in this build/.test(err.message));
-t('schema.list_tables with no cache tells the model how to get one',
-  acts['schema.list_tables'].handler({}),
+t('schema_list_tables with no cache tells the model how to get one',
+  acts['schema_list_tables'].handler({}),
   (err) => !!err && /Schema Explorer/.test(err.message));
 
 /* the localStorage fallbacks read the console's real keys */
@@ -196,17 +210,17 @@ store['cygenix_jobs'] = JSON.stringify([
   { id: 'j1', name: 'Load accounts', status: 'complete', lastRun: '2026-08-01', lastRowCount: 120 },
   { id: 'j2', name: 'Load contacts', status: 'failed' },
 ]);
-t('jobs.list reads cygenix_jobs and filters by status',
-  acts['jobs.list'].handler({ status: 'failed' }),
+t('jobs_list reads cygenix_jobs and filters by status',
+  acts['jobs_list'].handler({ status: 'failed' }),
   (err, v) => !err && v.count === 1 && v.jobs[0].id === 'j2');
 store['cygenix_sql_scripts'] = JSON.stringify([{ id: 's1', name: 'audit', sql: 'SELECT 1\nSELECT 2' }]);
-t('sql.list_scripts reads the editor script mirror',
-  acts['sql.list_scripts'].handler({}),
+t('sql_list_scripts reads the editor script mirror',
+  acts['sql_list_scripts'].handler({}),
   (err, v) => !err && v[0].name === 'audit' && v[0].lines === 2);
 store['cygenix_schema_abc123'] = JSON.stringify({ v: 1, fetchedAt: 1, graph: {
   tables: [{ schema: 'dbo', name: 'customers', rowCount: 10 }, { schema: 'dbo', name: 'orders', rowCount: 4 }] } });
-t('schema.list_tables answers from the Schema Explorer cache off-page',
-  acts['schema.list_tables'].handler({ pattern: 'cust' }),
+t('schema_list_tables answers from the Schema Explorer cache off-page',
+  acts['schema_list_tables'].handler({ pattern: 'cust' }),
   (err, v) => !err && v.count === 1 && v.tables[0].name === 'customers');
 
 /* ── 8. Durable — the model call and the page wiring ────────────────────── */
