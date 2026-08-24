@@ -136,7 +136,7 @@ function findPage(key) {
 
 A.registerActions([
   {
-    name: 'app.navigate',
+    name: 'app_navigate',
     title: 'Open a screen',
     effect: 'read',
     description: 'Move the user to another Cygenix screen. Use this before any action ' +
@@ -169,7 +169,7 @@ A.registerActions([
   },
 
   {
-    name: 'app.read_screen',
+    name: 'app_read_screen',
     title: 'Read the current screen',
     effect: 'read',
     description: 'Return what the user is currently looking at: page, active project, ' +
@@ -188,7 +188,7 @@ A.registerActions([
   },
 
   {
-    name: 'app.list_capabilities',
+    name: 'app_list_capabilities',
     title: 'List what I can do here',
     effect: 'read',
     description: 'List the actions available, and which page each needs. Use when the ' +
@@ -203,7 +203,7 @@ A.registerActions([
   },
 
   {
-    name: 'app.point_at',
+    name: 'app_point_at',
     title: 'Point at a control',
     effect: 'read',
     description: 'Highlight an element on the current screen and scroll it into view, so ' +
@@ -234,7 +234,7 @@ A.registerActions([
 
 A.registerActions([
   {
-    name: 'sql.read_editor',
+    name: 'sql_read_editor',
     title: 'Read the SQL editor',
     effect: 'read', page: 'sql-editor',
     description: 'Return the SQL currently in the editor.',
@@ -251,7 +251,7 @@ A.registerActions([
     }
   },
   {
-    name: 'sql.write_editor',
+    name: 'sql_write_editor',
     title: 'Write SQL into the editor',
     effect: 'write', page: 'sql-editor',
     description: 'Replace the editor contents. This does NOT execute anything — use it to ' +
@@ -269,7 +269,7 @@ A.registerActions([
     }
   },
   {
-    name: 'sql.run',
+    name: 'sql_run',
     title: 'Run a SQL query',
     effect: 'write', page: 'sql-editor',
     description: 'Execute SQL against the connection selected in the editor and return ' +
@@ -294,7 +294,7 @@ A.registerActions([
     }
   },
   {
-    name: 'sql.list_scripts',
+    name: 'sql_list_scripts',
     title: 'List saved SQL scripts',
     effect: 'read',
     description: 'List the saved scripts in this project.',
@@ -314,7 +314,7 @@ A.registerActions([
 
 A.registerActions([
   {
-    name: 'schema.list_tables',
+    name: 'schema_list_tables',
     title: 'List tables',
     effect: 'read',
     description: 'List tables in the source or target database, optionally filtered by ' +
@@ -346,7 +346,7 @@ A.registerActions([
         }
         if (!tables.length) {
           throw new Error('No schema is cached locally. Open the Schema Explorer once ' +
-            '(app.navigate to schema-explorer) so the schema can be read.');
+            '(app_navigate to schema-explorer) so the schema can be read.');
         }
       }
       if (i.pattern) {
@@ -357,7 +357,7 @@ A.registerActions([
     }
   },
   {
-    name: 'schema.describe_table',
+    name: 'schema_describe_table',
     title: 'Describe a table',
     effect: 'read', page: 'schema-explorer',
     description: 'Return columns, types, nullability, and keys for one table.',
@@ -380,7 +380,7 @@ A.registerActions([
 
 A.registerActions([
   {
-    name: 'mapping.list',
+    name: 'mapping_list',
     title: 'List mappings',
     effect: 'read',
     description: 'List the object mapping work in progress, per source object.',
@@ -416,11 +416,11 @@ A.registerActions([
 
 A.registerActions([
   {
-    name: 'jobs.list',
+    name: 'jobs_list',
     title: 'List jobs',
     effect: 'read',
     description: 'List migration jobs and their most recent status. To run one, take ' +
-      'the user to the Execute page (app.navigate to project-builder) — jobs are ' +
+      'the user to the Execute page (app_navigate to project-builder) — jobs are ' +
       'started there, behind its own confirmations, never from this panel.',
     input_schema: {
       type: 'object',

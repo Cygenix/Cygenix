@@ -87,9 +87,20 @@ var pageKey = null;        // set by registerPage()
 
 var EFFECTS = { read: 0, write: 1, destructive: 2 };
 
+/* Anthropic only accepts tool names matching this; a dotted name (app.navigate)
+   is rejected with a 400 by the real API — which the panel then reported as
+   "That request could not be processed" on every ask. Refusing the name at
+   registration turns that silent whole-panel outage into a loud error at the
+   developer's desk. */
+var TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
+
 function registerAction(def) {
   if (!def || !def.name || typeof def.handler !== 'function') {
     throw new Error('registerAction needs { name, handler }');
+  }
+  if (!TOOL_NAME.test(def.name)) {
+    throw new Error('Action name "' + def.name + '" is not a valid tool name — ' +
+      'use letters, digits, _ or - only (the Anthropic API rejects anything else).');
   }
   if (!(def.effect in EFFECTS)) def.effect = 'write';   // safest default
   actions[def.name] = def;
@@ -104,7 +115,7 @@ function toolDefs() {
   return Object.keys(actions).map(function (name) {
     var a = actions[name];
     var desc = a.description || a.title || name;
-    if (a.page) desc += '\nRequires the "' + a.page + '" page; call app.navigate first if you are elsewhere.';
+    if (a.page) desc += '\nRequires the "' + a.page + '" page; call app_navigate first if you are elsewhere.';
     desc += '\nEffect: ' + a.effect + '.';
     return {
       name: name,
@@ -173,10 +184,10 @@ function buildSystemPrompt(context, appMap) {
 '\n' +
 'HOW TO WORK\n' +
 '- Look before you act. Call a read action to establish the real state rather than\n' +
-'  assuming it. "What am I looking at" is answered from app.read_screen, not a guess.\n' +
-'- Many actions need a specific screen. If you are on the wrong one, call app.navigate\n' +
+'  assuming it. "What am I looking at" is answered from app_read_screen, not a guess.\n' +
+'- Many actions need a specific screen. If you are on the wrong one, call app_navigate\n' +
 '  first; the page will reload and you will get the new context back.\n' +
-'- Prefer showing over telling. app.point_at highlights a control on screen, which is\n' +
+'- Prefer showing over telling. app_point_at highlights a control on screen, which is\n' +
 '  more useful than describing where a button is.\n' +
 '- Do one change at a time. Batch reads freely, but let each write stand on its own so\n' +
 '  the user can follow and approve it.\n' +
@@ -644,7 +655,12 @@ async function runTurn() {
 
   } catch (err) {
     state.status = 'error';
-    state.error = (err && err.mapped && err.mapped.userMessage) || err.message;
+    // This console's user IS its operator, so the mapped admin hint (which
+    // names the actual cause and where to fix it) belongs on screen, not
+    // hidden behind a generic sentence.
+    state.error = (err && err.mapped)
+      ? err.mapped.userMessage + (err.mapped.adminHint ? ' — ' + err.mapped.adminHint : '')
+      : err.message;
     saveState(); render();
   }
 }
@@ -663,7 +679,7 @@ async function executeAll(toolUses, results) {
     if (action.page && collectContext().page !== action.page) {
       results.push(toolResult(tu.id,
         'Not on the required page. Current page is "' + collectContext().page +
-        '"; call app.navigate to "' + action.page + '" first.', true));
+        '"; call app_navigate to "' + action.page + '" first.', true));
       continue;
     }
     if (needsConfirmation(action)) {
