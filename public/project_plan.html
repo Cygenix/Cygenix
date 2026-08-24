@@ -115,6 +115,18 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 .pp-cell:hover{outline:1.5px solid var(--accent);outline-offset:-1.5px}
 .pp-cell .pp-mile{writing-mode:vertical-rl;transform:rotate(180deg);font-size:9.5px;font-weight:600;line-height:1;display:block;margin:2px auto;white-space:nowrap;max-height:120px;overflow:hidden}
 .pp-cell.pp-w1{border-left:1px solid var(--border2)}
+/* ── This week ──
+   Work bars and milestones set their tint as an inline background, so the
+   marker cannot be a background of its own: it is drawn as inset shadows —
+   accent edges plus a wash — which layer OVER any fill without hiding it. */
+.pp td.pp-now{box-shadow:inset 1px 0 0 var(--accent),inset -1px 0 0 var(--accent),
+  inset 0 0 0 999px rgba(74,91,214,0.07)}
+.pp thead th.pp-now{color:var(--accent);font-weight:700;
+  box-shadow:inset 1px 0 0 var(--accent),inset -1px 0 0 var(--accent),inset 0 -2px 0 var(--accent),
+  inset 0 0 0 999px rgba(74,91,214,0.10)}
+.pp thead th.pp-month-now{color:var(--accent)}
+.pp-nowchip{color:var(--accent);font-weight:600}
+.pp-nowchip.off{color:var(--text3);font-weight:400}
 .pp-empty{padding:2rem;text-align:center;font-size:12px;color:var(--text3)}
 
 /* ── Editor drawer ── */
@@ -195,7 +207,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 
 <div id="cyg-sidebar-mount" data-active="project-plan-grid"></div>
 <script src="/cygenix-sidebar.js?v=00b294df17" defer></script>
-<script src="/cygenix-project-plan.js?v=241c0837ba" defer></script>
+<script src="/cygenix-project-plan.js?v=e0223dd788" defer></script>
 <!-- The Configurator's engine: the "From Configurator" import computes the
      estimate here rather than duplicating any of its numbers. -->
 <script src="/cygenix-effort-model.js?v=6b544c7a30" defer></script>
@@ -578,7 +590,22 @@ function ppCellOver(e, key){
 }
 document.addEventListener('mouseup', () => { PPState.painting = false; });
 
+// ── This week ─────────────────────────────────────────────────────────────
+// The local date, not toISOString(): at 00:30 BST the UTC date is still
+// yesterday, and "this week" must mean the operator's week.
+function ppTodayIso(d){
+  const t = d || new Date();
+  return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0')
+    + '-' + String(t.getDate()).padStart(2, '0');
+}
+// Column index of the current week, or null when today falls outside the
+// plan's window — a plan for next year highlights nothing, and says so.
+function ppNowIndex(startYm, months){
+  return window.CygenixProjectPlan.ppNowIndex(startYm, months, ppTodayIso());
+}
+
 // ── Rendering ─────────────────────────────────────────────────────────────
+let ppScrolledToNow = false;
 function ppRenderGrid(){
   const PP = window.CygenixProjectPlan;
   const doc = ppDoc();
@@ -586,6 +613,8 @@ function ppRenderGrid(){
   const rows = PP.ppRows(doc);
   $('pp-start').value = doc.timeline.start;
   $('pp-months').value = doc.timeline.months;
+  const nowIdx = ppNowIndex(doc.timeline.start, months.length);
+  const nowMonth = nowIdx == null ? -1 : Math.floor(nowIdx / PP.PP_WEEKS);
 
   let h = '<thead><tr>'
     + '<th class="pp-left pp-c-phase" rowspan="2"></th>'
@@ -593,10 +622,14 @@ function ppRenderGrid(){
     + '<th class="pp-left pp-c-task" rowspan="2" style="text-align:left">Task</th>'
     + '<th class="pp-left pp-c-res" rowspan="2">Resource</th>'
     + '<th class="pp-left pp-c-com" rowspan="2">Comment</th>'
-    + months.map(m => '<th class="pp-month" colspan="' + PP.PP_WEEKS + '">' + esc(m.label) + '</th>').join('')
+    + months.map((m, mi) => '<th class="pp-month' + (mi === nowMonth ? ' pp-month-now' : '')
+        + '" colspan="' + PP.PP_WEEKS + '">' + esc(m.label) + '</th>').join('')
     + '</tr><tr>'
-    + months.map(() => Array.from({ length: PP.PP_WEEKS }, (_, i) =>
-        '<th' + (i === 0 ? ' class="pp-month"' : '') + '>' + (i + 1) + '</th>').join('')).join('')
+    + months.map((m, mi) => Array.from({ length: PP.PP_WEEKS }, (_, i) => {
+        const now = mi * PP.PP_WEEKS + i === nowIdx;
+        return '<th class="' + (i === 0 ? 'pp-month ' : '') + (now ? 'pp-now' : '') + '"'
+          + (now ? ' title="This week"' : '') + '>' + (i + 1) + '</th>';
+      }).join('')).join('')
     + '</tr></thead><tbody>';
 
   if (!rows.length){
@@ -628,8 +661,10 @@ function ppRenderGrid(){
       + (esc(r.task.resource) || '<span style="color:var(--border2)">—</span>') + '</div></td>'
       + '<td class="pp-left pp-c-com"><div class="pp-com" onclick="ppEditTask(\'' + esc(r.task.id) + '\')">'
       + (esc(r.task.comment) || '<span style="color:var(--border2)">—</span>') + '</div></td>';
-    for (const m of months){
+    for (let mi = 0; mi < months.length; mi++){
+      const m = months[mi];
       for (let w = 1; w <= PP.PP_WEEKS; w++){
+        const isNow = mi * PP.PP_WEEKS + (w - 1) === nowIdx;
         const key = PP.ppCellKey(r.task.id, m.ym, w);
         const c = doc.cells[key];
         let style = '', inner = '';
@@ -638,10 +673,11 @@ function ppRenderGrid(){
           style = 'background:' + PP.PP_MILESTONE.bg;
           inner = '<span class="pp-mile" style="color:' + PP.PP_MILESTONE.fg + '">' + esc(c.label) + '</span>';
         }
-        h += '<td class="pp-cell' + (w === 1 ? ' pp-w1' : '') + '" style="' + style + '"'
+        h += '<td class="pp-cell' + (w === 1 ? ' pp-w1' : '') + (isNow ? ' pp-now' : '') + '" style="' + style + '"'
           + ' onmousedown="ppCellDown(event,\'' + esc(key) + '\')"'
           + ' onmouseover="ppCellOver(event,\'' + esc(key) + '\')"'
-          + ' title="' + esc(m.label) + ' · week ' + w + (c && c.t === 'mile' ? ' · ' + c.label : '') + '">'
+          + ' title="' + esc(m.label) + ' · week ' + w + (isNow ? ' · this week' : '')
+          + (c && c.t === 'mile' ? ' · ' + c.label : '') + '">'
           + inner + '</td>';
       }
     }
@@ -651,8 +687,23 @@ function ppRenderGrid(){
   $('pp-grid').innerHTML = h;
 
   const s = PP.ppStats(doc);
-  $('pp-stats').textContent = s.phases + ' phases · ' + s.tasks + ' tasks · '
-    + s.work + ' work weeks · ' + s.miles + ' milestones';
+  $('pp-stats').innerHTML = esc(s.phases + ' phases · ' + s.tasks + ' tasks · '
+    + s.work + ' work weeks · ' + s.miles + ' milestones') + ' · '
+    + (nowIdx == null
+      ? '<span class="pp-nowchip off" title="Today falls outside this plan\'s window">today is outside this plan</span>'
+      : '<span class="pp-nowchip">now: ' + esc(months[nowMonth].label) + ' week '
+        + ((nowIdx % PP.PP_WEEKS) + 1) + '</span>');
+
+  /* bring this week into view once, so a long plan does not open parked in
+     January — but never again, or every paint would yank the grid back */
+  if (nowIdx != null && !ppScrolledToNow){
+    ppScrolledToNow = true;
+    const cell = $('pp-grid').querySelector('thead th.pp-now');
+    const wrap = document.querySelector('.pp-wrap');
+    if (cell && wrap && cell.offsetLeft > wrap.clientWidth - 120){
+      wrap.scrollLeft = Math.max(0, cell.offsetLeft - wrap.clientWidth * 0.55);
+    }
+  }
 }
 function ppRenderAll(){ ppFillPlanSelect(); ppRenderGrid(); }
 
@@ -734,8 +785,7 @@ function pfVisible(){
 }
 function pfTodayWeek(){
   const PP = window.CygenixProjectPlan;
-  const iso = new Date().toISOString().slice(0, 10);
-  const s = PP.ppSlotForDate(PF.model.start, iso);
+  const s = PP.ppSlotForDate(PF.model.start, ppTodayIso());
   if (!s) return null;
   const w = s.monthIndex * PP.PP_WEEKS + (s.week - 1);
   return w < PF.model.weeks ? w : null;

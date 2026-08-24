@@ -207,6 +207,17 @@
     return { monthIndex, week };
   }
 
+  // Which timeline column a date lands in, or null when it falls outside the
+  // plan's window — before the start, or past the last month. Callers pass a
+  // LOCAL date string: "this week" means the reader's week, not UTC's.
+  function ppNowIndex(startYm, months, iso) {
+    const s = ppSlotForDate(startYm, iso);
+    if (!s) return null;
+    const n = Math.max(1, Math.min(PP_MAX_MONTHS, Number(months) || 1));
+    const i = s.monthIndex * PP_WEEKS + (s.week - 1);
+    return i < n * PP_WEEKS ? i : null;
+  }
+
   function ppFromEstimate(est, r, opts) {
     const o = opts || {};
     const costed = (r && r.perUseCase || []).filter(u => u.fp > 0);
@@ -434,7 +445,7 @@
   const api = {
     PP_VERSION, PP_WEEKS, PP_MAX_MONTHS, PP_PALETTE, PP_AUTO_TINTS, PP_MILESTONE, PP_MONTH_NAMES,
     ppId, ppMonths, ppCellKey, ppNewDoc, ppNormalize, ppPaint, ppStats, ppRows, ppCsv,
-    ppSlotForDate, ppFromEstimate, ppExcelHtml,
+    ppSlotForDate, ppNowIndex, ppFromEstimate, ppExcelHtml,
     ppMonthDiff, ppFpOf, ppPortfolio,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
