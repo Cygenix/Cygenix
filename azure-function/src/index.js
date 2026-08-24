@@ -234,8 +234,13 @@ app.http('db', {
           // shape (for backward compatibility with AI prompts and other
           // consumers) and adds `views`, `procedures`, `functions` alongside.
           const [tablesR, colsR, pkR, viewsR, viewColsR, procsR, funcsR, paramsR] = await Promise.all([
-            // BASE TABLEs with row counts
-            pool.request().query(`SELECT t.TABLE_SCHEMA, t.TABLE_NAME, COALESCE(p.rows,0) AS row_count FROM INFORMATION_SCHEMA.TABLES t LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN(0,1) WHERE t.TABLE_TYPE='BASE TABLE' ORDER BY t.TABLE_SCHEMA,t.TABLE_NAME`),
+            // BASE TABLEs and VIEWs, tagged with `kind`. Views are listed here
+            // (not only in the separate `views` array below) because the Object
+            // Mapping screen reads `tables` to populate its source picker, and a
+            // view is a legitimate mapping source. row_count is NULL for a view:
+            // sys.partitions holds nothing for one, and reporting 0 would read as
+            // "this view is empty" rather than "not counted".
+            pool.request().query(`SELECT t.TABLE_SCHEMA, t.TABLE_NAME, CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind, CASE WHEN t.TABLE_TYPE='VIEW' THEN NULL ELSE COALESCE(p.rows,0) END AS row_count FROM INFORMATION_SCHEMA.TABLES t LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN(0,1) WHERE t.TABLE_TYPE IN ('BASE TABLE','VIEW') AND t.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA') ORDER BY t.TABLE_SCHEMA,t.TABLE_NAME`),
             // Columns (covers tables AND views — INFORMATION_SCHEMA.COLUMNS includes both)
             // NB: previously used COLUMNPROPERTY(..., 'IsIdentity') per row —
             // a scalar-function call per column, 100k+ of them on a wide
@@ -261,11 +266,13 @@ app.http('db', {
           const tables = {};
           for (const t of tablesR.recordset) {
             const k = `${t.TABLE_SCHEMA}.${t.TABLE_NAME}`;
-            tables[k] = { schema: t.TABLE_SCHEMA, name: t.TABLE_NAME, rowCount: parseInt(t.row_count) || 0, columns: [], primaryKeys: [], foreignKeys: [] };
+            tables[k] = { schema: t.TABLE_SCHEMA, name: t.TABLE_NAME, kind: t.kind || 'table', rowCount: t.row_count == null ? null : (parseInt(t.row_count) || 0), columns: [], primaryKeys: [], foreignKeys: [] };
           }
           for (const c of colsR.recordset) {
             const k = `${c.TABLE_SCHEMA}.${c.TABLE_NAME}`;
-            if (!tables[k]) continue; // skip view columns here — they're in viewColsR
+            // Views now live in `tables` too, so their columns belong here as
+            // well — they are still repeated in viewColsR for existing callers.
+            if (!tables[k]) continue;
             let type = c.DATA_TYPE.toUpperCase();
             if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
             else if (c.NUMERIC_PRECISION != null && c.NUMERIC_SCALE != null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
@@ -351,7 +358,7 @@ app.http('db', {
             pool.request().query(`
               SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
                 CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind,
-                CASE WHEN t.TABLE_TYPE='VIEW' THEN 0 ELSE COALESCE(p.rows,0) END AS row_count
+                CASE WHEN t.TABLE_TYPE='VIEW' THEN NULL ELSE COALESCE(p.rows,0) END AS row_count
               FROM INFORMATION_SCHEMA.TABLES t
               LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
               LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
@@ -369,7 +376,7 @@ app.http('db', {
             kind:     t.kind,
             // BIGINT can arrive as a string depending on driver settings; the
             // client wants a number and silently zeroes anything else.
-            rowCount: parseInt(t.row_count) || 0,
+            rowCount: t.row_count == null ? null : (parseInt(t.row_count) || 0),
           }));
           result = {
             success:  true,
@@ -386,6 +393,36 @@ app.http('db', {
         // graph; without it the Explorer drew nodes and no relationships.
         // Multi-column FKs come back as one row per column pair, which is
         // what the client's edge list expects.
+        // The base objects a view reads from — see the twin in db-connect.js.
+        // Byte-identical SQL so both backends answer this the same way.
+        case 'schema-view-deps': {
+          const vSchema = body.schemaName;
+          const vName   = body.tableName;
+          if (!vSchema || !vName) {
+            result = { success: false, error: 'schema-view-deps requires both schemaName and tableName in the request body' };
+            break;
+          }
+          try {
+            const depR = await pool.request()
+              .input('o', sql.NVarChar, `[${String(vSchema).replace(/]/g, ']]')}].[${String(vName).replace(/]/g, ']]')}]`)
+              .query(`
+                SELECT DISTINCT referenced_schema_name AS ref_schema,
+                       referenced_entity_name          AS ref_name
+                FROM   sys.dm_sql_referenced_entities(@o, 'OBJECT')
+                WHERE  referenced_entity_name IS NOT NULL`);
+            result = {
+              success: true,
+              baseObjects: depR.recordset.map(r => ({
+                schema: r.ref_schema || vSchema,
+                name:   r.ref_name,
+              })),
+            };
+          } catch (e) {
+            result = { success: true, baseObjects: [], reason: e.message };
+          }
+          break;
+        }
+
         case 'schema-fks': {
           const fkR = await pool.request().query(`
             SELECT OBJECT_SCHEMA_NAME(fk.parent_object_id) AS fk_schema,

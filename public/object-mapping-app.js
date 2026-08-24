@@ -84,7 +84,23 @@ let tgtAllTables = [];
 let columnMapping = [];    // [{srcCol, tgtCol, transform, match}]
 
 // Target (OTM mode)
-let targetTables = [];     // [{id, fullName, schema, name, columns, pkMode, pkCol, pkVar, mappings, fks}]
+let targetTables = [];     // [{id, fullName, schema, name, columns, pkMode, pkCol, pkVar, mappings, fks, grain, grainKey}]
+
+// ── Source object type ─────────────────────────────────────────────────────
+// Which kinds of database object the SOURCE picker offers: 'table', 'view' or
+// 'both'. A view is a perfectly good thing to migrate FROM — conversion views
+// exist precisely to pre-shape data — so the picker can list them.
+//
+// Note on the name: this file already uses `view` for the Table/Visual LAYOUT
+// toggle (setView, _viewMode, #view-toggle). Everything to do with database
+// views is spelled "objType"/"objectType" so the two never read as the same
+// thing.
+//
+// Views are SOURCE-ONLY. The target picker is filtered to tables regardless of
+// this setting: a view is not a thing you can INSERT into, and offering one
+// would produce SQL that fails at run time.
+let srcObjType = 'table';               // 'table' | 'view' | 'both'
+const OBJTYPE_KEY_PREFIX = 'cygx.om.srcObjType.';
 
 // SQL state
 let generatedSQL = { insert:'', schema:'', verify:'' };
@@ -575,15 +591,28 @@ async function connectSrc(){
       label: t.schema+'.'+t.name,
       schema: t.schema, name: t.name,
       fullName: t.schema+'.'+t.name,
-      rowCount: t.rowCount||0,
+      // A view has no row count — sys.partitions holds nothing for one. null
+      // means "not counted"; 0 would read as "this view is empty".
+      rowCount: (typeof t.rowCount === 'number') ? t.rowCount : null,
+      // 'table' | 'view'. Absent on payloads cached before views were listed,
+      // and a missing kind is a table — that was all this list could hold.
+      objType: t.kind === 'view' ? 'view' : 'table',
       // If paginated: columns loaded lazily via ensureColumns() on table-select.
       // If legacy: columns came with the initial response, use them directly.
       columns: paginated ? null : (t.columns||[]),
       primaryKeys: paginated ? null : (t.primaryKeys||[]),
       foreignKeys: paginated ? null : (t.foreignKeys||[]),
     }));
-    setBanner('src','ok','Source: '+(res.database||parseDbName(srcConn))+' · '+srcAllTables.length+' tables');
+    const srcViewN = srcAllTables.filter(t=>t.objType==='view').length;
+    const srcTableN = srcAllTables.length - srcViewN;
+    setBanner('src','ok','Source: '+(res.database||parseDbName(srcConn))+' · '
+      +srcTableN+' table'+(srcTableN===1?'':'s')
+      +(srcViewN?' · '+srcViewN+' view'+(srcViewN===1?'':'s'):''));
+    // Joins may reach any readable object, tables and views alike — the source
+    // object-type selector governs what you MAP FROM, not what you can join to.
     window._joinAllTables = srcAllTables;
+    loadSrcObjTypePref();
+    renderObjTypeToggle();
   } catch(e){
     setBanner('src','err','Source: '+e.message);
   }
@@ -597,10 +626,15 @@ async function connectTgt(){
   try {
     const { res, paginated } = await _fetchSchemaSmart(tgtConn);
     tgtSchema = res;
-    tgtAllTables = (res.tables||[]).map(t=>({
+    // TABLES ONLY. The backend's table list includes views, and a view was
+    // therefore selectable as a migration target — SQL that fails at run time,
+    // or worse, succeeds against an updatable view nobody meant to write to.
+    // Views are a source-side concept here; the target is always a real table.
+    tgtAllTables = (res.tables||[]).filter(t => t.kind !== 'view').map(t=>({
       value: t.schema+'.'+t.name, label: t.schema+'.'+t.name,
       schema: t.schema, name: t.name, fullName: t.schema+'.'+t.name,
-      rowCount: t.rowCount||0,
+      rowCount: (typeof t.rowCount === 'number') ? t.rowCount : null,
+      objType: 'table',
       columns: paginated ? null : (t.columns||[]),
       primaryKeys: paginated ? null : (t.primaryKeys||[]),
       foreignKeys: paginated ? null : (t.foreignKeys||[]),
@@ -1041,6 +1075,146 @@ function setColHeight(sz){
 // ── Searchable dropdowns ──────────────────────────────────────────────────────
 const dropData = { src:[], tgt:[], 'otm-tgt':[] };
 
+// ── View lineage: the base objects a view reads from ──────────────────────
+// Impact analysis has to see through a view. "What breaks if I drop
+// dbo.clients" must still find a mapping whose source is vw_client_load built
+// on it — otherwise a view in the middle makes the dependency invisible.
+// Best-effort: an older backend that does not know the action, or a broken
+// view, leaves the list empty rather than failing the selection.
+let _srcBaseObjects = [];
+
+async function fetchViewBaseObjects(t){
+  _srcBaseObjects = [];
+  if (!t || t.objType !== 'view' || !srcConn) return;
+  try {
+    const res = await dbCall(srcConn, { action:'schema-view-deps', schemaName: t.schema, tableName: t.name });
+    _srcBaseObjects = (res && res.baseObjects || []).map(o => ({ schema:o.schema, name:o.name }));
+  } catch (e) {
+    // Unknown action on an older Function app, or a view whose base object is
+    // gone. Neither is worth blocking a mapping over.
+    _srcBaseObjects = [];
+  }
+}
+
+// A view has no cached row count. Counting one can be expensive, so it happens
+// only when the user asks — hence the button rather than an automatic count.
+async function countSourceRows(){
+  if (!srcTable || !srcConn) return;
+  const el = $('src-rowcount');
+  if (el) el.textContent = 'counting…';
+  const where = ($('src-where')?.value || '').trim();
+  try {
+    const res = await dbCall(srcConn, {
+      action: 'execute',
+      sql: 'SELECT COUNT_BIG(*) AS n FROM [' + srcTable.schema + '].[' + srcTable.name + ']'
+           + (where ? ' WHERE ' + where : ''),
+    });
+    const n = Number((res.recordset && res.recordset[0] && res.recordset[0].n) || 0);
+    srcTable.rowCount = n;
+    if (el) el.textContent = n.toLocaleString() + ' rows';
+  } catch (e) {
+    // A view whose base object has been dropped fails here, not at list time.
+    // Show what the server actually said — "Invalid object name 'dbo.clients'"
+    // is the whole diagnosis.
+    if (el) el.textContent = 'could not read';
+    showStatus('Could not read ' + srcTable.fullName + ': ' + e.message
+      + (srcTable.objType === 'view' ? ' — the view may reference a base object that no longer exists.' : ''), 'err');
+  }
+}
+
+// ── Source object type: selector, persistence, filtering ──────────────────
+// Persisted per SOURCE CONNECTION, not globally: someone whose legacy database
+// is mapped from conversion views and whose staging database is mapped from
+// tables should not have to re-pick every time they switch.
+function srcConnId(){
+  try {
+    const c = (typeof CygenixConnections !== 'undefined') ? CygenixConnections.get() : null;
+    return (c && (c.srcProfileId || c.srcFnUrl || c.srcConnString)) ? String(c.srcProfileId || c.srcFnUrl || c.srcConnString) : '';
+  } catch (e) { return ''; }
+}
+// The raw connection string is a secret; hash it to a short stable id rather
+// than writing it into a localStorage key that anything can read back.
+function srcObjTypeKey(){
+  const raw = srcConnId();
+  if (!raw) return OBJTYPE_KEY_PREFIX + 'default';
+  let h = 5381;
+  for (let i = 0; i < raw.length; i++) h = ((h * 33) ^ raw.charCodeAt(i)) >>> 0;
+  return OBJTYPE_KEY_PREFIX + h.toString(36);
+}
+function loadSrcObjTypePref(){
+  let v = null;
+  try { v = localStorage.getItem(srcObjTypeKey()); } catch (e) { /* private mode */ }
+  // Anything unrecognised, and any connection we have not seen before, starts
+  // at Tables — the behaviour every existing user already has.
+  srcObjType = (v === 'view' || v === 'both') ? v : 'table';
+}
+function setSrcObjType(v){
+  srcObjType = (v === 'view' || v === 'both') ? v : 'table';
+  try { localStorage.setItem(srcObjTypeKey(), srcObjType); } catch (e) { /* quota */ }
+  renderObjTypeToggle();
+  // Re-filter the list only. Switching the selector must never clear a mapping
+  // in progress: if the current source is now filtered out it stays selected,
+  // and renderObjTypeToggle() says so.
+  const drop = $('src-drop');
+  if (drop && drop.style.display === 'block') renderDrop('src', $('src-table-input')?.value || '');
+  if ($('tbl-picker-modal')?.classList.contains('open') && _tpWhich === 'src') renderTablePicker();
+}
+function renderObjTypeToggle(){
+  ['table','view','both'].forEach(k => {
+    const b = $('src-objtype-' + k);
+    if (b) b.classList.toggle('active', srcObjType === k);
+  });
+  const note = $('src-objtype-note');
+  if (!note) return;
+  const n = (srcAllTables || []).filter(t => t.objType === 'view').length;
+  // The one case worth a word: the object you are mapping from is not in the
+  // list you are now looking at. Say so rather than appearing to have lost it.
+  if (srcTable && !objTypeMatches(srcTable)) {
+    note.style.display = 'block';
+    note.textContent = 'Still mapping from ' + srcTable.fullName + ' — a '
+      + (srcTable.objType === 'view' ? 'view' : 'table') + ', which this filter hides.';
+  } else if (srcObjType !== 'table' && !n) {
+    note.style.display = 'block';
+    note.textContent = 'This connection has no views.';
+  } else {
+    note.style.display = 'none';
+    note.textContent = '';
+  }
+}
+// Does this object pass the current source filter? Target-side lists never
+// call this — they are tables-only by construction.
+function objTypeMatches(t){
+  if (srcObjType === 'both') return true;
+  return (t && t.objType === 'view' ? 'view' : 'table') === srcObjType;
+}
+// Tables first, then views, each alphabetically — so "Both" stays legible.
+function objTypeSort(list){
+  return list.slice().sort((a, b) => {
+    const av = a.objType === 'view' ? 1 : 0, bv = b.objType === 'view' ? 1 : 0;
+    if (av !== bv) return av - bv;
+    return String(a.label || '').localeCompare(String(b.label || ''));
+  });
+}
+// The list a picker should show: filtered for the source, untouched elsewhere.
+// Only 'both' re-sorts — with a single kind the backend's own ORDER BY is
+// already right, and re-sorting client-side would quietly change the order
+// every existing user sees for no benefit.
+function objTypeVisible(which, list){
+  if (which !== 'src') return list;
+  const filtered = list.filter(objTypeMatches);
+  return srcObjType === 'both' ? objTypeSort(filtered) : filtered;
+}
+function objTypeBadge(t){
+  return t && t.objType === 'view'
+    ? '<span class="objtype-badge is-view">VIEW</span>'
+    : '<span class="objtype-badge">TABLE</span>';
+}
+// A view has no row count. Show an em dash, not a zero that would read as
+// "this view returns nothing".
+function rowCountLabel(t){
+  return (t && typeof t.rowCount === 'number') ? t.rowCount.toLocaleString() : '—';
+}
+
 function openDrop(which){
   const q = $(which==='src'?'src-table-input':which==='tgt'?'tgt-table-input':'otm-tgt-input')?.value||'';
   renderDrop(which, q);
@@ -1054,12 +1228,20 @@ function filterDrop(which){
 function renderDrop(which, q){
   const drop = $(which+'-drop');
   if(!drop) return;
-  const all = which==='src' ? srcAllTables : tgtAllTables;
-  if(!all.length){ drop.innerHTML='<div class="drop-empty">Connect database first</div>'; return; }
-  const hits = q ? all.filter(t=>t.label.toLowerCase().includes(q.toLowerCase())).slice(0,80) : all.slice(0,80);
+  const loaded = which==='src' ? srcAllTables : tgtAllTables;
+  if(!loaded.length){ drop.innerHTML='<div class="drop-empty">Connect database first</div>'; return; }
+  const all = objTypeVisible(which, loaded);
+  if(!all.length){
+    drop.innerHTML='<div class="drop-empty">No '+(srcObjType==='view'?'views':'tables')+' on this connection</div>';
+    return;
+  }
+  // Match on the full schema.name and on the bare name, so typing "customers"
+  // finds dbo.customers whichever way the user thinks of it.
+  const ql = q.toLowerCase();
+  const hits = q ? all.filter(t=>t.label.toLowerCase().includes(ql)||t.name.toLowerCase().includes(ql)).slice(0,80) : all.slice(0,80);
   if(!hits.length){ drop.innerHTML='<div class="drop-empty">No match for "'+esc(q)+'"</div>'; return; }
-  drop.innerHTML = hits.map(t=>`<div class="drop-item" onclick="selectTable('${which}','${t.value}')">
-    <span>${esc(t.label)}</span><span class="drop-rows">${(t.rowCount||0).toLocaleString()}</span>
+  drop.innerHTML = hits.map(t=>`<div class="drop-item" onclick="selectTable('${which}','${escAttr(t.value)}')">
+    <span>${which==='src'&&srcObjType!=='table'?objTypeBadge(t):''}${esc(t.label)}</span><span class="drop-rows">${rowCountLabel(t)}</span>
   </div>`).join('');
   if(all.length>80) drop.innerHTML+=`<div class="drop-empty">${all.length-80} more — type to filter</div>`;
 }
@@ -1086,7 +1268,9 @@ function openTablePicker(which){
   _tpWhich = which;
   const tables = tpTablesFor(which === 'otm-tgt' ? 'tgt' : which);
   const title = $('tbl-picker-title');
-  if(title) title.textContent = which === 'src' ? 'Source tables' : 'Target tables';
+  if(title) title.textContent = which === 'src'
+    ? (srcObjType === 'view' ? 'Source views' : srcObjType === 'both' ? 'Source tables & views' : 'Source tables')
+    : 'Target tables';
   const filt = $('tbl-picker-filter');
   if(filt){
     // Carry over whatever was typed inline, so clicking the magnifier
@@ -1112,21 +1296,30 @@ function renderTablePicker(){
   const list = $('tbl-picker-list');
   const sub  = $('tbl-picker-sub');
   if(!list) return;
-  const all = tpTablesFor(_tpWhich === 'otm-tgt' ? 'tgt' : _tpWhich);
-  if(!all.length){
+  const side = _tpWhich === 'otm-tgt' ? 'tgt' : _tpWhich;
+  const loaded = tpTablesFor(side);
+  if(!loaded.length){
     list.innerHTML = '<div class="drop-empty">Connect the database first — no tables loaded.</div>';
     if(sub) sub.textContent = '';
     return;
   }
+  const all = objTypeVisible(side, loaded);
+  const noun = side !== 'src' ? 'table' : srcObjType === 'view' ? 'view' : srcObjType === 'both' ? 'object' : 'table';
+  if(!all.length){
+    list.innerHTML = '<div class="drop-empty">This connection has no ' + noun + 's.</div>';
+    if(sub) sub.textContent = '';
+    return;
+  }
   const q = ($('tbl-picker-filter')?.value || '').trim().toLowerCase();
-  const hits = q ? all.filter(t => String(t.label||'').toLowerCase().includes(q)) : all;
+  const hits = q ? all.filter(t => String(t.label||'').toLowerCase().includes(q)
+                                || String(t.name||'').toLowerCase().includes(q)) : all;
   if(sub){
     sub.textContent = q
-      ? hits.length + ' of ' + all.length + ' tables'
-      : all.length + ' table' + (all.length === 1 ? '' : 's') + ' — click one to pick it';
+      ? hits.length + ' of ' + all.length + ' ' + noun + 's'
+      : all.length + ' ' + noun + (all.length === 1 ? '' : 's') + ' — click one to pick it';
   }
   if(!hits.length){
-    list.innerHTML = '<div class="drop-empty">No table matches “' + esc(q) + '”.</div>';
+    list.innerHTML = '<div class="drop-empty">No ' + noun + ' matches “' + esc(q) + '”.</div>';
     return;
   }
   const current = tpCurrentValue(_tpWhich);
@@ -1134,8 +1327,8 @@ function renderTablePicker(){
   list.innerHTML = hits.map(t => `
     <button type="button" class="tp-row${t.value === current ? ' current' : ''}"
             onclick="pickTableFromPicker('${escAttr(t.value)}')">
-      <span>${tpHighlight(t.label || '', q)}</span>
-      <span class="tp-rows">${(t.rowCount || 0).toLocaleString()} rows</span>
+      <span>${side==='src'&&srcObjType!=='table'?objTypeBadge(t):''}${tpHighlight(t.label || '', q)}</span>
+      <span class="tp-rows">${typeof t.rowCount === 'number' ? t.rowCount.toLocaleString() + ' rows' : 'view'}</span>
     </button>`).join('');
 }
 
@@ -1166,9 +1359,11 @@ function pickTableFromPicker(value){
 function tablePickerKey(e){
   if(e.key === 'Escape'){ closeTablePicker(); return; }
   if(e.key !== 'Enter') return;
-  const all = tpTablesFor(_tpWhich === 'otm-tgt' ? 'tgt' : _tpWhich);
+  const side = _tpWhich === 'otm-tgt' ? 'tgt' : _tpWhich;
+  const all = objTypeVisible(side, tpTablesFor(side));
   const q = ($('tbl-picker-filter')?.value || '').trim().toLowerCase();
-  const hits = q ? all.filter(t => String(t.label||'').toLowerCase().includes(q)) : all;
+  const hits = q ? all.filter(t => String(t.label||'').toLowerCase().includes(q)
+                                || String(t.name||'').toLowerCase().includes(q)) : all;
   if(hits.length === 1) pickTableFromPicker(hits[0].value);
 }
 
@@ -1200,9 +1395,41 @@ async function selectTable(which, value){
   if (inputEl) inputEl.placeholder = priorPlaceholder || '';
 
   if(which==='src'){
+    // ── View sanity checks ────────────────────────────────────────────────
+    // A view can expose two columns of the same name, or an unnamed expression
+    // column. Either produces SQL that will not compile, and the failure would
+    // otherwise surface much later as an unreadable server error. Name the
+    // offending ordinal now.
+    if (t.objType === 'view') {
+      const cols = t.columns || [];
+      const blank = cols.findIndex(c => !String((typeof c === 'string' ? c : c.name) || '').trim());
+      if (blank > -1) {
+        showStatus('View ' + t.fullName + ' has an unnamed column at position ' + (blank + 1)
+          + '. Give it an alias in the view definition before mapping from it.', 'err');
+        return;
+      }
+      const seen = new Map();
+      for (let i = 0; i < cols.length; i++) {
+        const n = String((typeof cols[i] === 'string' ? cols[i] : cols[i].name) || '').toLowerCase();
+        if (seen.has(n)) {
+          showStatus('View ' + t.fullName + ' exposes "' + n + '" twice (positions '
+            + (seen.get(n) + 1) + ' and ' + (i + 1) + '). Alias one of them before mapping from it.', 'err');
+          return;
+        }
+        seen.set(n, i);
+      }
+      // SQL Server reports view columns as nullable far more often than the
+      // base column really is — a computed or joined column is nullable by
+      // construction. Letting that drive NOT NULL validation would block
+      // perfectly good mappings, so a view's nullability is treated as
+      // unknown rather than as a constraint.
+      (t.columns || []).forEach(c => { if (c && typeof c === 'object') c.nullable = true; });
+    }
     $('src-table-input').value=t.label;
     srcTable = t;
     window._joinBaseTable = t;
+    fetchViewBaseObjects(t);
+    renderObjTypeToggle();
     // Refresh join builder with tables excluding self
     const otherTables = srcAllTables.filter(x=>x.value!==value);
     window._joinAllTables = otherTables;
@@ -1214,10 +1441,13 @@ async function selectTable(which, value){
     $('join-panel').style.display='block';
     $('src-col-wrap').style.display='block';
     $('src-col-count').style.display='inline';
-    $('src-col-count').textContent=t.columns.length+' cols';
+    $('src-col-count').textContent=t.columns.length+' cols'+(t.objType==='view'?' · view':'');
+    const rc=$('src-rowcount');
+    if(rc) rc.textContent = (typeof t.rowCount === 'number') ? t.rowCount.toLocaleString()+' rows' : '—';
     renderSrcColList();
     buildMappingIfReady();
-    showStatus('Source: '+t.fullName+' · '+t.columns.length+' columns','info');
+    showStatus('Source: '+t.fullName+' · '+t.columns.length+' columns'
+      +(t.objType==='view'?' · view — rows are counted on demand':''),'info');
   } else if(which==='tgt'){
     $('tgt-table-input').value=t.label;
     tgtTable = t;
@@ -1371,7 +1601,10 @@ async function askClaudeForMapping(src, tgt, apiKey){
   const tgtExcluded = tgtColsAll.length - tgtCols.length;
   const excludeNote = (srcExcluded+tgtExcluded) > 0 ? `\n(${srcExcluded+tgtExcluded} column(s) hidden by privacy exclusion list.)` : '';
   const prompt = 'You are a data migration expert. Map source columns to target columns.\n\n'+
-    'Source table: '+src.fullName+'\nSource columns:\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
+    'Source '+(src.objType==='view'?'VIEW':'table')+': '+src.fullName+
+      (src.objType==='view'?' — a view, likely written to pre-shape data for this migration, '+
+        'so close name matches are expected':'')+
+      '\nSource columns:\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
     'Target table: '+tgt.fullName+'\nTarget columns:\n'+tgtCols.map(c=>'  '+c).join('\n')+excludeNote+'\n\n'+
     'Return a JSON array only — ONE ENTRY PER TARGET COLUMN (not per source column).\n'+
     'Each element: {"srcCol":"matching source col name or empty string","tgtCol":"target col name","transform":"NONE","match":"HIGH|MEDIUM|LOW|","note":"reason"}\n'+
@@ -2123,6 +2356,7 @@ async function runEvidenceMap(){
       + (res.tgtHasData
           ? ' — target holds data, so value overlap was measured'
           : ' — target is empty, so proposals rest on shape, type and names')
+      + (srcTable.objType === 'view' ? ' The source is a view, so its columns may already be target-shaped.' : '')
       + '. Hover a score in the Match column for the reasoning.', 'success');
   } catch (e) {
     showStatus('Evidence map failed: ' + e.message, 'error');
@@ -3083,6 +3317,14 @@ function addOTMTargetFromTable(t){
     pkMode:'identity',
     pkCol:t.columns.find(c=>c.isIdentity||c.name.toLowerCase()==='id'||c.name.toLowerCase().endsWith('_id'))?.name||t.columns[0]?.name||'',
     pkVar:'@'+t.name.replace(/[^a-z0-9]/gi,'')+'Id',
+    // Grain: how many target rows one source row is worth.
+    //   'row'      — one insert per source row (what this screen always did)
+    //   'distinct' — one insert per distinct business key, subsequent source
+    //                rows reusing the parent already inserted for that key
+    // Only 'distinct' makes a view that joins one-to-many usable: such a view
+    // repeats the parent's values on every child row, so a straight insert
+    // creates one parent per child.
+    grain:'row', grainKey:[],
     mappings:[], fks:[]
   };
   targetTables.push(tt);
@@ -3138,6 +3380,29 @@ function renderOTMCards(){
         </select>
         <label style="color:var(--text3)">Var:</label>
         <input value="${esc(tt.pkVar)}" onchange="updateTT(${ti},'pkVar',this.value)" class="form-input" style="width:110px;font-size:11px;padding:2px 6px">
+      </div>
+      <!-- Grain — one target row per source row, or one per distinct key.
+           The control is always present, but it is a view source that makes it
+           necessary: a view joining client→addresses repeats the client on
+           every address row. -->
+      <div style="padding:0.5rem 0.875rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;border-bottom:0.5px solid var(--border);font-size:11px">
+        <label style="color:var(--text3)">Grain:</label>
+        <select class="map-select" style="width:190px" onchange="updateTT(${ti},'grain',this.value)">
+          <option value="row" ${tt.grain!=='distinct'?'selected':''}>One row per source row</option>
+          <option value="distinct" ${tt.grain==='distinct'?'selected':''}>Distinct on business key</option>
+        </select>
+        ${tt.grain==='distinct' ? `
+        <label style="color:var(--text3)">Key:</label>
+        <select class="map-select" multiple size="3" style="width:170px;height:52px;padding:2px 4px"
+                title="Ctrl/Cmd-click to pick more than one column"
+                onchange="updateTTGrainKey(${ti}, this)">
+          ${(srcTable?.columns||[]).map(c=>{const n=typeof c==='string'?c:c.name;
+            return `<option value="${escAttr(n)}" ${(tt.grainKey||[]).includes(n)?'selected':''}>${esc(n)}</option>`;}).join('')}
+        </select>
+        <span style="color:${(tt.grainKey||[]).length?'var(--text3)':'var(--amber)'}">${
+          (tt.grainKey||[]).length ? esc((tt.grainKey||[]).join(', '))
+            : 'pick the source column(s) that identify one ' + esc(tt.name) + ' row'
+        }</span>` : ''}
       </div>
       <!-- FK rows -->
       ${tt.fks.map((fk,fi)=>`
@@ -3286,7 +3551,18 @@ function moveTgt(ti,dir){
   [targetTables[ti],targetTables[j]]=[targetTables[j],targetTables[ti]]; renderOTMCards();
 }
 function removeTgt(ti){ targetTables.splice(ti,1); renderOTMCards(); checkOTMReady(); }
-function updateTT(ti,k,v){ if(targetTables[ti]) targetTables[ti][k]=v; }
+function updateTT(ti,k,v){
+  if(!targetTables[ti]) return;
+  targetTables[ti][k]=v;
+  // Switching grain changes what the card has to show (a key picker appears or
+  // goes away), so this one needs a redraw where the others do not.
+  if(k==='grain') renderOTMCards();
+}
+function updateTTGrainKey(ti, sel){
+  if(!targetTables[ti]) return;
+  targetTables[ti].grainKey = Array.from(sel.selectedOptions).map(o=>o.value);
+  renderOTMCards();
+}
 function updateMapping(ti,mi,k,v){ if(targetTables[ti]?.mappings[mi]) targetTables[ti].mappings[mi][k]=v; }
 function updateFK(ti,fi,k,v){ if(targetTables[ti]?.fks[fi]) targetTables[ti].fks[fi][k]=v; }
 function addMapping(ti){ targetTables[ti].mappings.push({srcCol:'',tgtCol:'',transform:'NONE'}); renderOTMCards(); }
@@ -3432,9 +3708,20 @@ async function aiMapOTM(ti){
   const srcCols=[...(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name), ...joinCols.map(c=>c.name)];
   const tgtCols=tt.columns.filter(c=>!c.isIdentity).map(c=>c.name+' ('+c.type+(c.nullable?'':', NOT NULL')+')');
 
-  // Target-driven prompt — one entry per target column
+  // Target-driven prompt — one entry per target column.
+  // The source's object type is stated because it changes what the names mean:
+  // a conversion view usually exists to pre-shape data for exactly this load,
+  // so its columns are often already target-shaped and a high match rate is
+  // the expected result rather than a sign of over-eager matching.
+  const isView = srcTable.objType === 'view';
+  const fanOut = targetTables.length > 1;
   const prompt='Map source columns to target table columns.\n\n'+
-    'Source: '+srcTable.fullName+'\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
+    'Source: '+srcTable.fullName+' ('+(isView?'a database VIEW':'a table')+')\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
+    (isView?'This is a view, most likely written to pre-shape data for this migration. '+
+      'Its column names may already match the target closely; that is expected, not suspicious.\n\n':'')+
+    (fanOut?'This one source populates '+targetTables.length+' target tables in a single run — '+
+      'this target is one of them ('+targetTables.map(t=>t.name).join(', ')+'). '+
+      'Only claim the columns that belong to THIS table.\n\n':'')+
     'Target: '+tt.fullName+'\n'+tgtCols.map(c=>'  '+c).join('\n')+'\n\n'+
     'Return a JSON array — ONE ENTRY PER TARGET COLUMN.\n'+
     '[{"srcCol":"matching source col or empty string","tgtCol":"target col","transform":"NONE","match":"HIGH|MEDIUM|LOW|"}]\n'+
@@ -3485,7 +3772,46 @@ function generateOTMSQL(){
   if(!srcTable){ alert('Select a source table first.'); return; }
   if(!targetTables.length){ alert('Add at least one target table.'); return; }
 
-  const txMode=$('tx-mode')?.value||'single';
+  // ── Grain must be complete before anything is generated ─────────────────
+  // A target set to "distinct on business key" with no key chosen would emit a
+  // guard that matches nothing, quietly reverting to one row per source row —
+  // the exact duplication the setting exists to prevent.
+  const keyless = targetTables.filter(tt => tt.grain === 'distinct' && !(tt.grainKey||[]).length);
+  if (keyless.length) {
+    alert('Pick a business key for: ' + keyless.map(t=>t.fullName).join(', ') +
+      '\n\nThese targets are set to "Distinct on business key" but no key column is chosen, ' +
+      'so there is nothing to be distinct on.');
+    return;
+  }
+  // A view that joins one-to-many repeats its parent values on every row. If
+  // the source is a view and a parent target is still at row grain, say so
+  // once — it is the most common way a view-based load goes wrong, and it is
+  // silent: you only find out when the target has five copies of every client.
+  const propagates = targetTables.some(tt => (tt.fks||[]).some(fk => fk.refTableVar));
+  if (srcTable.objType === 'view' && propagates) {
+    const rowGrainParents = targetTables.filter((tt, i) =>
+      tt.grain !== 'distinct' &&
+      targetTables.some((o, j) => j > i && (o.fks||[]).some(fk => fk.refTableVar === tt.pkVar)));
+    if (rowGrainParents.length && !confirm(
+      'The source is a view, and ' + rowGrainParents.map(t=>t.fullName).join(', ') +
+      ' feed' + (rowGrainParents.length===1?'s':'') + ' a child target at "one row per source row".\n\n' +
+      'If the view joins one-to-many, every child row repeats its parent — so the parent ' +
+      'target will get one row per child, not one per parent.\n\n' +
+      'Set the grain to "Distinct on business key" if that is the case. Generate anyway?')) {
+      return;
+    }
+  }
+
+  // Independent commits and key propagation do not mix: if a child insert
+  // fails after its parent committed, the parent is left with no children and
+  // no way to tell. Force a single transaction and say why.
+  const txSel = $('tx-mode');
+  let txMode = txSel?.value || 'single';
+  let txForced = false;
+  if (propagates && txMode === 'independent') {
+    txMode = 'single';
+    txForced = true;
+  }
   const where=($('src-where')?.value||'').trim();
   const groupBy=($('src-groupby')?.value||'').trim();
   const srcFull='['+srcTable.schema+'].['+srcTable.name+']';
@@ -3542,8 +3868,18 @@ function generateOTMSQL(){
   let sql='';
   sql+=`-- ╔══════════════════════════════════════════════════════════════════╗\n`;
   sql+=`-- ║  Cygenix One-to-Many Migration\n`;
-  sql+=`-- ║  Source: ${srcDb?srcDb+'.':''}${srcTable.fullName}\n`;
+  sql+=`-- ║  Source: ${srcDb?srcDb+'.':''}${srcTable.fullName}${srcTable.objType==='view'?'  (VIEW)':''}\n`;
+  if(srcTable.objType==='view' && _srcBaseObjects.length){
+    sql+=`-- ║  View reads: ${_srcBaseObjects.map(o=>o.schema+'.'+o.name).join(', ')}\n`;
+  }
   sql+=`-- ║  Targets: ${targetTables.map(t=>(tgtDb?tgtDb+'.':'')+t.fullName).join(', ')}\n`;
+  targetTables.filter(t=>t.grain==='distinct').forEach(t=>{
+    sql+=`-- ║  Grain: ${t.fullName} — one row per distinct ${(t.grainKey||[]).join(' + ')}\n`;
+  });
+  if(txForced){
+    sql+=`-- ║  Transaction: forced to single. A parent key is propagated to a child\n`;
+    sql+=`-- ║    target, and independent commits would orphan children on failure.\n`;
+  }
   sql+=`-- ║  Generated: ${new Date().toISOString().slice(0,19).replace('T',' ')}\n`;
   sql+=`-- ╚══════════════════════════════════════════════════════════════════╝\n\n`;
   // (Source database name kept in the header above for context, but not
@@ -3708,16 +4044,67 @@ function generateOTMSQL(){
     // works correctly whether the value was minted by SQL Server (default
     // path) or supplied explicitly via the override (then OUTPUT INSERTED
     // simply captures the value the user provided). No change needed there.
+    // ── Grain guard ────────────────────────────────────────────────────────
+    // At 'distinct' grain, a source row only inserts if this business key has
+    // not been seen. Crucially the ELSE branch re-reads the existing key into
+    // the PK variable, so children of a repeated parent still point at the row
+    // that was inserted the first time — dedupe and key propagation are the
+    // same problem here, and this solves both.
+    const grainKeyCols = (tt.grain === 'distinct') ? (tt.grainKey || []) : [];
+    let grainIndent = '';
+    if (grainKeyCols.length) {
+      // Match the target column each key column is mapped to; without a
+      // mapping there is nothing in the target to compare against.
+      const pairs = grainKeyCols.map(sc => {
+        const m = (tt.mappings||[]).find(x => x.srcCol === sc && x.tgtCol);
+        return m ? { tgtCol: m.tgtCol, varName: safeVarName(sc), srcCol: sc } : null;
+      }).filter(Boolean);
+      if (pairs.length !== grainKeyCols.length) {
+        const missing = grainKeyCols.filter(sc => !(tt.mappings||[]).some(x => x.srcCol === sc && x.tgtCol));
+        sql += `  -- WARNING: grain key ${missing.join(', ')} is not mapped to a column of ${tt.fullName};\n`;
+        sql += `  --   cannot deduplicate on it. Falling back to one row per source row.\n`;
+        grainKeyCols.length = 0;
+      } else {
+        const pred = pairs.map(p => `[${p.tgtCol}] = ${p.varName}`).join(' AND ');
+        sql += `  -- Grain: one ${tt.name} per distinct ${pairs.map(p=>p.srcCol).join(' + ')}\n`;
+        sql += `  IF NOT EXISTS (SELECT 1 FROM ${tgtFullQ} WHERE ${pred})\n  BEGIN\n`;
+        grainIndent = '  ';
+      }
+    }
+    const I = grainIndent;   // extra indent inside the IF NOT EXISTS block
+
     if(tt.pkMode==='identity'){
-      sql+=`  INSERT INTO ${tgtFullQ} (\n${insertCols}\n  )\n`;
-      sql+=`  OUTPUT INSERTED.[${tt.pkCol}] INTO @tbl${tt.id.replace(/[^a-z0-9]/gi,'')}(Id)\n`;
-      sql+=`  VALUES (\n${insertVals}\n  );\n`;
-      sql+=`  SELECT TOP 1 ${tt.pkVar} = Id FROM @tbl${tt.id.replace(/[^a-z0-9]/gi,'')};\n`;
+      // @tbl is declared once, outside the WHILE loop (T-SQL scoping), so it
+      // accumulates a row per iteration. Without this DELETE, "SELECT TOP 1"
+      // below keeps returning the FIRST row's key and every child from row 2
+      // onwards is attached to row 1's parent. Clearing it each iteration is
+      // what makes the propagation correct.
+      sql+=`  ${I}DELETE FROM @tbl${tt.id.replace(/[^a-z0-9]/gi,'')};\n`;
+      sql+=`  ${I}INSERT INTO ${tgtFullQ} (\n${insertCols}\n  ${I})\n`;
+      sql+=`  ${I}OUTPUT INSERTED.[${tt.pkCol}] INTO @tbl${tt.id.replace(/[^a-z0-9]/gi,'')}(Id)\n`;
+      sql+=`  ${I}VALUES (\n${insertVals}\n  ${I});\n`;
+      sql+=`  ${I}SELECT TOP 1 ${tt.pkVar} = Id FROM @tbl${tt.id.replace(/[^a-z0-9]/gi,'')};\n`;
     } else if(tt.pkMode==='guid'){
-      sql+=`  SET ${tt.pkVar} = NEWID();\n`;
-      sql+=`  INSERT INTO ${tgtFullQ} ([${tt.pkCol}],\n${insertCols}\n  )\n  VALUES (${tt.pkVar},\n${insertVals}\n  );\n`;
+      sql+=`  ${I}SET ${tt.pkVar} = NEWID();\n`;
+      sql+=`  ${I}INSERT INTO ${tgtFullQ} ([${tt.pkCol}],\n${insertCols}\n  ${I})\n  ${I}VALUES (${tt.pkVar},\n${insertVals}\n  ${I});\n`;
     } else {
-      sql+=`  INSERT INTO ${tgtFullQ} (\n${insertCols}\n  )\n  VALUES (\n${insertVals}\n  );\n`;
+      sql+=`  ${I}INSERT INTO ${tgtFullQ} (\n${insertCols}\n  ${I})\n  ${I}VALUES (\n${insertVals}\n  ${I});\n`;
+    }
+
+    // Close the guard, recovering the key of the row already there so any
+    // child insert below still links to the right parent.
+    if (grainKeyCols.length) {
+      const pairs = grainKeyCols.map(sc => {
+        const m = (tt.mappings||[]).find(x => x.srcCol === sc && x.tgtCol);
+        return { tgtCol: m.tgtCol, varName: safeVarName(sc) };
+      });
+      const pred = pairs.map(p => `[${p.tgtCol}] = ${p.varName}`).join(' AND ');
+      sql += `  END\n`;
+      if (tt.pkMode === 'identity' || tt.pkMode === 'guid') {
+        sql += `  ELSE\n`;
+        sql += `    -- already loaded on an earlier source row — reuse its key\n`;
+        sql += `    SELECT TOP 1 ${tt.pkVar} = [${tt.pkCol}] FROM ${tgtFullQ} WHERE ${pred};\n`;
+      }
     }
 
     if (wrapIdentityInsert) {
@@ -3758,7 +4145,14 @@ function generateOTMSQL(){
   generatedSQL={insert:sub(sql), schema:'', verify:sub(verifySQL)};
 
   const warnings=truncWarnings.map(w=>`[${w.srcCol}] → [${w.tgtTable}.${w.tgtCol}] truncated to ${w.tgtLen} chars via LEFT()`);
+  if(txForced) warnings.push('Transaction mode forced to single — a parent key is propagated to a child target, and independent commits would orphan children if a later insert failed.');
+  targetTables.filter(t=>t.grain==='distinct').forEach(t=>{
+    warnings.push(t.fullName + ' loads one row per distinct ' + (t.grainKey||[]).join(' + ') + ', not one per source row.');
+  });
   showSQLOutput(generatedSQL.insert, warnings, true);
+  // The selector now reflects what was actually generated, rather than showing
+  // "Independent" beside SQL that is a single transaction.
+  if(txForced && txSel){ txSel.value='single'; }
   $('save-job-btn').disabled=false;
   $('tab-schema').style.display='none';
   $('tab-verify').style.display='none';
@@ -3913,6 +4307,12 @@ function saveAsJob(){
       projectId: localStorage.getItem('cygenix_active_project_id') || '',
       source: srcTable.fullName,
       sourceTable: srcTable.fullName,
+      // 'TABLE' | 'VIEW'. Absent on every job saved before views could be a
+      // source — read-time defaults treat that as TABLE, so nothing migrates.
+      sourceObjectType: (srcTable.objType === 'view') ? 'VIEW' : 'TABLE',
+      // Lineage only: the base tables behind a view, so impact analysis can
+      // see through it. Empty for a table source.
+      sourceBaseObjects: (srcTable.objType === 'view') ? _srcBaseObjects.slice() : [],
       target: tgtTable.fullName,
       targetTable: tgtTable.fullName,
       columnMapping: columnMapping.filter(m=>m.tgtCol),
@@ -3972,6 +4372,12 @@ function saveAsJob(){
       projectId: localStorage.getItem('cygenix_active_project_id') || '',
       source: srcTable.fullName,
       sourceTable: srcTable.fullName,
+      // 'TABLE' | 'VIEW'. Absent on every job saved before views could be a
+      // source — read-time defaults treat that as TABLE, so nothing migrates.
+      sourceObjectType: (srcTable.objType === 'view') ? 'VIEW' : 'TABLE',
+      // Lineage only: the base tables behind a view, so impact analysis can
+      // see through it. Empty for a table source.
+      sourceBaseObjects: (srcTable.objType === 'view') ? _srcBaseObjects.slice() : [],
       target: targetTables.map(t=>t.fullName).join(', '),
       insertSQL: generatedSQL.insert,
       // WHERE clause — saved structurally so re-opening the OTM editor
@@ -3984,7 +4390,7 @@ function saveAsJob(){
       srcGroupBy:         ($('src-groupby')?.value || '').trim(),
       oneToManyConfig:true,
       joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
-      tables: targetTables.map(tt=>({name:tt.fullName, pkCol:tt.pkCol, pkMode:tt.pkMode, mappings:tt.mappings, fks:tt.fks, rows:0})),
+      tables: targetTables.map(tt=>({name:tt.fullName, pkCol:tt.pkCol, pkMode:tt.pkMode, grain:tt.grain||'row', grainKey:(tt.grainKey||[]).slice(), mappings:tt.mappings, fks:tt.fks, rows:0})),
       columnMapping:[],
       totalRows: srcTable.rowCount||0,
       status:'ready',
@@ -4091,6 +4497,13 @@ async function checkEditMode(){
   // was already loaded from localStorage.
   if(job.wasisRules?.length){ wasisRules=job.wasisRules; renderWasisStatusBanner(); }
 
+  // Source object type. Jobs saved before views could be a source carry
+  // neither field; both default so an old job opens exactly as it always did.
+  // The saved value is informational here — the real object type comes from
+  // the live schema when the source is re-selected below — but the base
+  // objects are worth restoring, since they are what lineage reads.
+  _srcBaseObjects = Array.isArray(job.sourceBaseObjects) ? job.sourceBaseObjects.slice() : [];
+
   // Wait for BOTH schemas to load, then restore source + target + mapping
   const srcFull = job.sourceTable||job.source||'';
   const tgtFull = job.targetTable||job.target||'';
@@ -4179,6 +4592,9 @@ async function restoreJobMapping(job,isOTM){
         addOTMTargetFromTable(t);
         const ti=targetTables.length-1;
         if(jtt.pkMode) targetTables[ti].pkMode=jtt.pkMode;
+        // Jobs saved before grain existed have none — 'row' is what they did.
+        targetTables[ti].grain    = jtt.grain === 'distinct' ? 'distinct' : 'row';
+        targetTables[ti].grainKey = Array.isArray(jtt.grainKey) ? jtt.grainKey.slice() : [];
         if(jtt.pkCol)  targetTables[ti].pkCol=jtt.pkCol;
         if(jtt.mappings) targetTables[ti].mappings = ensureAllTargetCols(jtt.mappings, targetTables[ti]);
         if(jtt.fks)    targetTables[ti].fks=jtt.fks;
@@ -5190,6 +5606,7 @@ async function aiJoinHelp(i){
       jobNameInput: ($('job-name-input')?.value || '').trim(),
       viewMode: window._viewMode || 'table',
       srcFullName: srcTable?.fullName || '',
+      srcObjectType: srcTable ? (srcTable.objType === 'view' ? 'VIEW' : 'TABLE') : 'TABLE',
       tgtFullName: tgtTable?.fullName || '',
       columnMapping: (mode === 'single' && Array.isArray(columnMapping))
                      ? columnMapping.map(m => ({...m})) : [],
@@ -5198,6 +5615,8 @@ async function aiJoinHelp(i){
                         name: tt.fullName,
                         pkCol: tt.pkCol,
                         pkMode: tt.pkMode,
+                        grain: tt.grain || 'row',
+                        grainKey: (tt.grainKey || []).slice(),
                         mappings: tt.mappings ? tt.mappings.map(m => ({...m})) : [],
                         fks: tt.fks ? tt.fks.map(f => ({...f})) : []
                       })) : [],
@@ -5375,6 +5794,8 @@ async function aiJoinHelp(i){
               addOTMTargetFromTable(t);
               const ti = targetTables.length - 1;
               if(stt.pkMode) targetTables[ti].pkMode = stt.pkMode;
+              targetTables[ti].grain    = stt.grain === 'distinct' ? 'distinct' : 'row';
+              targetTables[ti].grainKey = Array.isArray(stt.grainKey) ? stt.grainKey.slice() : [];
               if(stt.pkCol)  targetTables[ti].pkCol  = stt.pkCol;
               if(stt.mappings) targetTables[ti].mappings = ensureAllTargetCols(stt.mappings, targetTables[ti]);
               if(stt.fks)    targetTables[ti].fks = stt.fks;

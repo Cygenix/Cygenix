@@ -204,6 +204,13 @@ body.cyg-collapsed{padding-left:54px}
 .mode-toggle{display:flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:3px;gap:3px}
 .mode-btn{flex:1;text-align:center;padding:0.4rem 1rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
 .mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
+/* TABLE / VIEW tag in the source pickers — only rendered when the object-type
+   filter is showing more than one kind, where it is the only thing telling two
+   similarly named objects apart. */
+.objtype-badge{display:inline-block;font-size:8.5px;font-weight:700;letter-spacing:0.06em;
+  padding:1px 4px;margin-right:6px;border-radius:3px;vertical-align:1px;
+  background:var(--bg4);color:var(--text3);border:0.5px solid var(--border2)}
+.objtype-badge.is-view{background:rgba(168,136,208,0.14);color:var(--purple,#a888d0);border-color:rgba(168,136,208,0.35)}
 
 /* ── Connection banner ── */
 .conn-banner{display:flex;align-items:center;gap:0.75rem;padding:0.625rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:1rem;flex-wrap:wrap}
@@ -414,9 +421,9 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
-<script src="/cygenix-lineage.js?v=8f95fd90fe" defer></script>
+<script src="/cygenix-lineage.js?v=7485fa3d28" defer></script>
 <script src="/cygenix-evidence-map.js?v=1ac6eb9b14" defer></script>
-<script src="/object-mapping-app.js?v=43ed69544f" defer></script>
+<script src="/object-mapping-app.js?v=3a6fcf3c03" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
 <script>
 // Belt-and-braces second layer: even with the fetch guard, also patch the
@@ -514,6 +521,24 @@ document.addEventListener('DOMContentLoaded', function(){
           <span id="src-panel-toggle" style="color:var(--text3);font-size:14px;line-height:1;transition:transform 0.2s">▼</span>
         </div>
         <div class="panel-body" id="src-panel-body">
+          <!-- Source OBJECT TYPE — tables, database views, or both.
+               Named src-objtype-* rather than src-view-*: this page already
+               uses #view-toggle for the Table/Visual LAYOUT switch, and two
+               unrelated meanings of "view" in one file is how a bug gets
+               written. Views are source-only; the target picker below is
+               tables-only whatever is selected here. -->
+          <div style="margin-bottom:0.6rem">
+            <label class="form-label" style="display:block;margin-bottom:0.3rem">Source object</label>
+            <div class="mode-toggle" id="src-objtype-toggle">
+              <button type="button" class="mode-btn active" id="src-objtype-table"
+                      onclick="event.stopPropagation();setSrcObjType('table')" title="List base tables only">Tables</button>
+              <button type="button" class="mode-btn" id="src-objtype-view"
+                      onclick="event.stopPropagation();setSrcObjType('view')" title="List database views only">Views</button>
+              <button type="button" class="mode-btn" id="src-objtype-both"
+                      onclick="event.stopPropagation();setSrcObjType('both')" title="List tables and views together">Both</button>
+            </div>
+            <div id="src-objtype-note" style="display:none;margin-top:5px;font-size:11px;color:var(--text3);line-height:1.45"></div>
+          </div>
           <div class="search-wrap" style="margin-bottom:0.75rem;position:relative">
             <button type="button" class="search-icon-btn" onclick="event.stopPropagation();openTablePicker('src')"
                     title="Browse all source tables"><i class="ic ic-search"></i> </button>
@@ -532,6 +557,12 @@ document.addEventListener('DOMContentLoaded', function(){
           <div id="src-col-wrap" style="display:none">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem">
               <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Columns — drag or click to map</span>
+              <!-- A view has no stored row count and counting one can scan a lot
+                   of data, so it happens on request rather than on selection. -->
+              <span style="font-size:10.5px;color:var(--text3);display:flex;align-items:center;gap:5px">
+                <span id="src-rowcount">—</span>
+                <button class="size-btn" onclick="event.stopPropagation();countSourceRows()" title="Count rows now (runs SELECT COUNT(*))">Count</button>
+              </span>
               <div style="display:flex;gap:0.25rem">
                 <button class="size-btn active" id="sz-m" onclick="event.stopPropagation();setColHeight('m')">M</button>
                 <button class="size-btn" id="sz-l" onclick="event.stopPropagation();setColHeight('l')">L</button>

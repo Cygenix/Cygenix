@@ -12,7 +12,10 @@ const fs = require('fs');
 const vm = require('vm');
 
 const html = (fs.readFileSync(__dirname + '/../public/object_mapping.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/object-mapping-app.js', 'utf8'));
-const start = html.indexOf('// ── Table picker modal ─');
+// The extraction starts at the source object-type helpers rather than the
+// picker itself: the picker filters through them, so stubbing them out would
+// mean testing a stub instead of the shipped filter.
+const start = html.indexOf('// ── Source object type: selector, persistence, filtering ─');
 const end   = html.indexOf('async function selectTable(which, value){');
 if (start < 0 || end < 0 || end < start) {
   console.log('FAIL: could not locate the table picker module in object_mapping.html');
@@ -51,6 +54,11 @@ function build({ srcAllTables = SRC, tgtAllTables = TGT, srcTable = null, tgtTab
     selectTable: (w, v) => { selected.push([w, v]); },
     document: { addEventListener: () => {} },
     srcAllTables, tgtAllTables, srcTable, tgtTable,
+    // The object-type helpers need these; none of them is what is under test.
+    localStorage: { getItem: () => null, setItem: () => {} },
+    OBJTYPE_KEY_PREFIX: 'cygx.om.srcObjType.',
+    srcObjType: 'table',
+    renderDrop: () => {},
   };
   vm.createContext(sb);
   vm.runInContext(html.slice(start, end), sb);
