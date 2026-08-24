@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-datastream.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Feed another datasource continuously from source or target, as changes are found.">
+<title>Cygenix – Data Stream</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;--r-lg:14px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1rem 1.25rem;max-width:100%}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden}
+.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.panel-title{font-size:12px;font-weight:600;letter-spacing:0.02em}
+.panel-sub{font-size:11px;color:var(--text3)}
+.panel-fold{border:0.5px solid var(--border2);background:var(--bg3);color:var(--text3);cursor:pointer;
+  border-radius:5px;font-size:13px;line-height:1;padding:3px 7px;flex:none;font-family:var(--serif)}
+.panel-fold:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap;display:inline-flex;align-items:center;gap:0.35rem}
+.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn:disabled{opacity:0.45;cursor:default}
+.btn.on{color:var(--accent);border-color:rgba(74,91,214,0.45);background:var(--accent-glow)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{color:#fff;opacity:0.9}
+.ds-select{font-family:var(--serif);font-size:12.5px;font-weight:500;padding:0.42rem 2rem 0.42rem 0.7rem;
+  border-radius:8px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;
+  appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);
+  background-position:calc(100% - 15px) calc(50% + 1px),calc(100% - 10px) calc(50% + 1px);
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.ds-select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ds-list-wrap{max-height:calc(100vh - 250px);overflow:auto}
+</style>
+</head>
+<body>
+<div id="cyg-sidebar-mount" data-active="data-stream"></div>
+
+<div class="page">
+  <div class="ds-head">
+    <div>
+      <div class="ds-title"><i class="ic ic-stream"></i> Data Stream</div>
+      <div class="ds-sub">Feed another datasource continuously from source or target, as changes are found.</div>
+    </div>
+
+    <!-- The same set of streams, told three ways. Flow is the one that
+         explains the module without words, so it is not buried. -->
+    <div class="ds-viewsel">
+      <span class="ds-viewsel-lbl" id="ds-viewlbl">View</span>
+      <select id="ds-view" class="ds-select" aria-labelledby="ds-viewlbl" onchange="dsSetView(this.value)">
+        <option value="table">Streams</option>
+        <option value="store">Store</option>
+        <option value="flow">Flow</option>
+      </select>
+    </div>
+
+    <div class="ds-head-actions">
+      <button class="btn btn-primary" onclick="dsNewStream()"><i class="ic ic-plus"></i> New stream</button>
+      <button class="btn" onclick="dsRefresh()" title="Re-read the streams for this project"><i class="ic ic-sync"></i> Refresh</button>
+      <button class="btn" onclick="CygenixDataStreamPage.paletteOpen()" title="Search streams and tables">
+        <i class="ic ic-search"></i> Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
+    </div>
+  </div>
+
+  <!-- KPI strip. Each tile is a filter, because a figure you cannot act on
+       is decoration. -->
+  <div class="ds-kpis" id="ds-kpis"></div>
+
+  <div class="ds-filters" id="ds-filters"></div>
+
+  <div class="ds-grid" id="ds-grid">
+    <div class="panel" id="ds-main-panel">
+      <div class="panel-header">
+        <div class="panel-title" id="ds-main-title">Streams</div>
+        <span class="panel-sub" id="ds-main-sub"></span>
+      </div>
+      <div class="ds-list-wrap" id="ds-main"></div>
+    </div>
+
+    <div class="panel ds-insp" id="ds-insp">
+      <div class="panel-header">
+        <div class="panel-title" id="ds-insp-title">Nothing selected</div>
+        <button class="panel-fold" style="margin-left:auto" onclick="dsToggleInspector()"
+                id="ds-fold" title="Hide the inspector" aria-label="Hide the inspector">❯</button>
+      </div>
+      <div id="ds-insp-inner"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ⌘K -->
+<div class="ds-palette" id="ds-palette" role="dialog" aria-modal="true" aria-label="Search streams and tables"
+     onclick="if(event.target===this)CygenixDataStreamPage.paletteClose()">
+  <div class="ds-palette-box">
+    <input class="ds-palette-input" id="ds-palette-input" type="text" placeholder="Search streams and tables…"
+           oninput="CygenixDataStreamPage.paletteFilter()" onkeydown="CygenixDataStreamPage.paletteKey(event)"
+           aria-controls="ds-palette-list">
+    <div class="ds-palette-list" id="ds-palette-list" role="listbox"></div>
+  </div>
+</div>
+
+<!-- Replay -->
+<div class="ds-modal" id="ds-replay" role="dialog" aria-modal="true" aria-labelledby="ds-replay-title">
+  <div class="ds-modal-card">
+    <div class="ds-modal-head" id="ds-replay-title">Replay from…</div>
+    <div class="ds-modal-body" id="ds-replay-body"></div>
+    <div class="ds-modal-foot">
+      <button class="btn" onclick="dsCloseReplay()">Cancel</button>
+      <button class="btn btn-primary" id="ds-replay-go" onclick="dsDoReplay()">Replay</button>
+    </div>
+  </div>
+</div>
+
+<div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
+
+<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
+<script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
+<script src="/cygenix-datastream-page.js?v=611f28656e"></script>
+<script>
+'use strict';
+const DS = window.CygenixDataStream;
+const U  = window.CygenixDataStreamUI;
+const P  = window.CygenixDataStreamPage;
+
+/* View + selection live in the URL, so a link to "the flow view with the
+   cutover stream selected" is a link somebody can paste. */
+let view = 'table';
+let selectedId = null;
+let inspTab = 'summary';
+let inspOpen = true;
+let filter = { status: 'all', side: 'any', destKind: 'any', text: '', errorsOnly: false };
+
+document.addEventListener('DOMContentLoaded', () => {
+  P.boot();
+  P.wireCopy();
+
+  const q = P.query();
+  if (q.view === 'flow' || q.view === 'store') view = q.view;
+  if (q.stream) selectedId = q.stream;
+  document.getElementById('ds-view').value = view;
+
+  P.onTick(paint);
+  P.start();
+  paint();
+});
+
+/* ── Painting ────────────────────────────────────────────────────────────
+   Rows update IN PLACE on the tick. Replacing the table wholesale would
+   destroy the selection and the scroll position two seconds after the user
+   found the row they wanted, which is the fastest way to make a live screen
+   unusable. Only the cells whose numbers moved are rewritten. */
+function paint(state) {
+  const s = state || P.state;
+  if (!s) return;
+  paintKpis(s);
+  paintFilters(s);
+  const rows = DS.sortStreams(DS.filterStreams(s.streams, filter));
+  if (view === 'flow') paintFlow(rows, s);
+  else if (view === 'store') paintStoreView(rows, s);
+  else paintTable(rows, s);
+  paintInspector(s);
+}
+
+function paintKpis(s) {
+  const k = DS.kpis(s);
+  const el = document.getElementById('ds-kpis');
+  const tile = (id, label, figure, cls, context, on) =>
+    '<button class="ds-kpi' + (on ? ' on' : '') + '" type="button" onclick="dsKpi(\'' + id + '\')">'
+    + '<div class="ds-kpi-label">' + label + '</div>'
+    + '<div class="ds-kpi-figure' + (cls ? ' ' + cls : '') + '">' + figure + '</div>'
+    + '<div class="ds-kpi-context">' + context + '</div></button>';
+
+  const lagLevel = DS.lagLevel(k.maxLagSeconds, 30);
+  el.innerHTML =
+      tile('running', 'Streams running', k.running + ' of ' + k.total, '',
+        k.paused + ' paused · ' + k.failed + ' failed', filter.status === 'running')
+    + tile('rate', 'Events / min', DS.formatCount(k.eventsPerMin), '',
+        'across every running stream', false)
+    + tile('lag', 'Max lag', DS.formatLag(k.maxLagSeconds),
+        lagLevel === 'red' ? 'bad' : lagLevel === 'amber' ? 'warn' : '',
+        k.worstStream ? 'worst stream: ' + U.esc(k.worstStream) : 'no stream is behind',
+        filter.status === 'lagging')
+    + tile('errors', 'Delivery errors', String(k.errorsLastHour),
+        k.errorsLastHour ? 'bad' : '',
+        k.dlqDepth + ' in dead-letter', filter.errorsOnly);
+}
+
+function dsKpi(id) {
+  // Each tile filters to what it counts. Clicking the active one clears it,
+  // so a tile is a toggle rather than a trap.
+  if (id === 'running') filter.status = filter.status === 'running' ? 'all' : 'running';
+  else if (id === 'lag') filter.status = filter.status === 'lagging' ? 'all' : 'lagging';
+  else if (id === 'errors') filter.errorsOnly = !filter.errorsOnly;
+  else return;
+  paint();
+}
+
+function paintFilters(s) {
+  const el = document.getElementById('ds-filters');
+  const chips = [['all', 'All'], ['running', 'Running'], ['lagging', 'Lagging'],
+                 ['paused', 'Paused'], ['failed', 'Failed'], ['draft', 'Draft']];
+  const kinds = ['any'].concat(DS.ENUMS.destKind);
+  let html = chips.map(([v, label]) =>
+    '<button class="ds-chip' + (filter.status === v ? ' on' : '') + '" type="button"'
+    + ' onclick="dsFilter(\'status\',\'' + v + '\')">' + label + '</button>').join('');
+  html += '<span class="ds-sep"></span>';
+  html += ['any', 'source', 'target'].map(v =>
+    '<button class="ds-chip' + (filter.side === v ? ' on' : '') + '" type="button"'
+    + ' onclick="dsFilter(\'side\',\'' + v + '\')">'
+    + (v === 'any' ? 'Either side' : v === 'source' ? 'Source' : 'Target') + '</button>').join('');
+  html += '<span class="ds-sep"></span>';
+  html += '<label class="sr-only" for="ds-kind">Destination kind</label>'
+    + '<select id="ds-kind" class="ds-input" onchange="dsFilter(\'destKind\', this.value)">'
+    + kinds.map(k => '<option value="' + k + '"' + (filter.destKind === k ? ' selected' : '') + '>'
+      + (k === 'any' ? 'Any destination' : DS.DEST_KIND_LABEL[k]) + '</option>').join('')
+    + '</select>';
+  html += '<label class="sr-only" for="ds-text">Filter by name or table</label>'
+    + '<input id="ds-text" class="ds-input" type="search" placeholder="Name, table or destination…"'
+    + ' value="' + U.esc(filter.text) + '" oninput="dsFilter(\'text\', this.value)" style="min-width:200px">';
+  if (filter.errorsOnly) {
+    html += '<span class="ds-activefilter">Streams with delivery errors'
+      + '<button type="button" onclick="dsFilter(\'errorsOnly\', false)" aria-label="Clear this filter">✕</button></span>';
+  }
+  el.innerHTML = html;
+}
+
+function dsFilter(key, value) {
+  filter[key] = value;
+  paint();
+  // Keep focus where it was: rewriting the bar under a typing user would
+  // throw them out of the box on every keystroke.
+  if (key === 'text') {
+    const inp = document.getElementById('ds-text');
+    if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }
+}
+
+function dsSetView(v) {
+  view = v;
+  P.setUrl({ view: v === 'table' ? null : v });
+  paint();
+}
+
+/* ── Streams table ──────────────────────────────────────────────────────── */
+function paintTable(rows, s) {
+  const main = document.getElementById('ds-main');
+  document.getElementById('ds-main-title').textContent = 'Streams';
+  document.getElementById('ds-main-sub').textContent =
+    rows.length + ' of ' + s.streams.length + ' · sorted by what needs attention first';
+
+  if (!s.streams.length) { main.innerHTML = emptyForNoStreams(); return; }
+  if (!rows.length) {
+    main.innerHTML = U.emptyState({ icon: 'search', title: 'No stream matches those filters',
+      body: 'Clear a filter above, or create a stream that does.',
+      actionHtml: '<button class="btn" onclick="dsClearFilters()">Clear filters</button>' });
+    return;
+  }
+
+  const existing = main.querySelector('table');
+  if (!existing || existing.dataset.ids !== rows.map(r => r.id).join(',')) {
+    main.innerHTML = '<div class="ds-tablewrap"><table class="ds-table" data-ids="'
+      + rows.map(r => r.id).join(',') + '">'
+      + '<thead><tr><th>Status</th><th>Name</th><th>Reads from</th><th>Capture</th>'
+      + '<th>Feeds</th><th>Throughput</th><th class="ds-right">Lag</th><th>Last event</th><th></th></tr></thead>'
+      + '<tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
+    wireRows();
+  } else {
+    // In place: only the moving parts.
+    rows.forEach(r => {
+      const tr = main.querySelector('tr[data-id="' + cssId(r.id) + '"]');
+      if (!tr) return;
+      setCell(tr, 'status', U.statusPill(r));
+      setCell(tr, 'spark', U.sparkline(r.metrics.spark) + ' <span class="ds-num">'
+        + DS.formatCount(r.metrics.eventsPerMin) + '/min</span>');
+      setCell(tr, 'lag', U.lagCell(r));
+      setCell(tr, 'last', U.timeAgo(r.lastEventAt, s.clockNow));
+      tr.classList.toggle('sel', r.id === selectedId);
+    });
+  }
+}
+
+function rowHtml(r) {
+  const tables = (r.objects || []).length;
+  const when = new Date(r.createdAt);
+  const created = isFinite(when) ? when.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—';
+  const cdc = (r.capture.method === 'log' || r.capture.method === 'trigger')
+    ? ' <span class="ds-tag">CDC</span>' : '';
+  return '<tr data-id="' + U.esc(r.id) + '"' + (r.id === selectedId ? ' class="sel"' : '') + '>'
+    + '<td data-c="status">' + U.statusPill(r) + '</td>'
+    + '<td><div class="ds-cell-name">' + U.esc(r.name) + '</div>'
+      + '<div class="ds-cell-sub">' + tables + ' table' + (tables === 1 ? '' : 's')
+      + ' · created ' + created + ' by ' + U.esc(shortActor(r.createdBy)) + '</div></td>'
+    + '<td class="ds-nowrap">' + U.sideBadge(r.capture.side)
+      + '<div class="ds-cell-sub">' + U.esc(r.capture.connectionLabel) + '</div></td>'
+    + '<td><div class="ds-num">' + U.esc(r.capture.methodLabel) + cdc + '</div></td>'
+    + '<td><div class="ds-num"><i class="ic ic-' + destIcon(r.destination.kind) + '"></i> '
+      + U.esc(r.destination.label) + '</div>'
+      + '<div class="ds-cell-sub">' + U.esc(r.destination.writeMode) + '</div></td>'
+    + '<td data-c="spark" class="ds-nowrap">' + U.sparkline(r.metrics.spark)
+      + ' <span class="ds-num">' + DS.formatCount(r.metrics.eventsPerMin) + '/min</span></td>'
+    + '<td data-c="lag" class="ds-right">' + U.lagCell(r) + '</td>'
+    + '<td data-c="last">' + U.timeAgo(r.lastEventAt) + '</td>'
+    + '<td><button class="ds-rowmenu-btn" type="button" aria-haspopup="menu"'
+      + ' aria-label="Actions for ' + U.esc(r.name) + '" data-menu="' + U.esc(r.id) + '">⋯</button></td>'
+    + '</tr>';
+}
+
+function setCell(tr, name, html) {
+  const td = tr.querySelector('[data-c="' + name + '"]');
+  if (td && td.innerHTML !== html) td.innerHTML = html;
+}
+function cssId(id) { return String(id).replace(/"/g, ''); }
+function shortActor(a) { return String(a || 'unknown').split('@')[0] + '@…'; }
+function destIcon(kind) {
+  return { database: 'database', broker: 'package', webhook: 'link',
+           file: 'folder', 'cygenix-target': 'target' }[kind] || 'database';
+}
+
+function wireRows() {
+  document.querySelectorAll('#ds-main tbody tr').forEach(tr => {
+    tr.addEventListener('click', () => dsSelect(tr.getAttribute('data-id')));
+  });
+  document.querySelectorAll('#ds-main [data-menu]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dsRowMenu(btn, btn.getAttribute('data-menu'));
+    });
+  });
+}
+
+function emptyForNoStreams() {
+  const conns = connectionCount();
+  if (!conns) {
+    return U.emptyState({ icon: 'plug', title: 'Add a connection first',
+      bodyHtml: 'A stream reads from a connection this project already holds. '
+        + 'Set one up in <a href="/dashboard.html#goto=connections">Connect → Connections</a>, '
+        + 'then come back and point a stream at it.' });
+  }
+  return U.emptyState({ icon: 'stream', title: 'No data streams yet',
+    body: 'A data stream feeds another datasource continuously from source or target, as changes '
+      + 'are found — capture, a retained Stream Store, then delivery. Everything else in Cygenix '
+      + 'moves data in batches; this is the always-on shape.',
+    actionHtml: '<button class="btn btn-primary" onclick="dsNewStream()">'
+      + '<i class="ic ic-plus"></i> Create your first stream</button>' });
+}
+function connectionCount() {
+  try {
+    if (window.CygenixConnections && CygenixConnections.savedGetAll) {
+      return (CygenixConnections.savedGetAll() || []).length;
+    }
+  } catch (e) { /* connections module absent */ }
+  return 1;   // assume configured rather than nagging on a page that cannot tell
+}
+
+/* ── Flow view ──────────────────────────────────────────────────────────── */
+function paintFlow(rows, s) {
+  const main = document.getElementById('ds-main');
+  document.getElementById('ds-main-title').textContent = 'Flow';
+  document.getElementById('ds-main-sub').textContent =
+    'capture → Stream Store → delivery, with the live rate on each hop';
+  if (!rows.length) { main.innerHTML = s.streams.length ? '' : emptyForNoStreams(); return; }
+  main.innerHTML = '<div style="padding:0.7rem 0.9rem">' + rows.map(r =>
+    '<div class="panel ds-flowcard" data-id="' + U.esc(r.id) + '">'
+    + '<div class="panel-header" onclick="dsSelect(\'' + U.escArg(r.id) + '\')">'
+      + U.statusPill(r)
+      + '<div class="panel-title" style="margin-left:0.2rem">' + U.esc(r.name) + '</div>'
+      + '<span class="panel-sub" style="margin-left:auto">' + U.lagCell(r) + ' lag</span></div>'
+    + '<div style="padding:0.7rem 0.9rem">' + U.flowDiagram(r) + '</div></div>').join('') + '</div>';
+}
+
+/* ── Store view ─────────────────────────────────────────────────────────── */
+function paintStoreView(rows, s) {
+  const main = document.getElementById('ds-main');
+  document.getElementById('ds-main-title').textContent = 'Store';
+  document.getElementById('ds-main-sub').textContent = 'what each stream is holding between capture and delivery';
+  if (!rows.length) { main.innerHTML = s.streams.length ? '' : emptyForNoStreams(); return; }
+  main.innerHTML = '<div class="ds-tablewrap"><table class="ds-table">'
+    + '<thead><tr><th>Status</th><th>Stream</th><th class="ds-right">Pending</th>'
+    + '<th class="ds-right">Retained</th><th class="ds-right">Size</th><th>Retention</th>'
+    + '<th>Checkpoint</th></tr></thead><tbody>'
+    + rows.map(r => '<tr data-id="' + U.esc(r.id) + '" onclick="dsSelect(\'' + U.escArg(r.id) + '\')">'
+      + '<td>' + U.statusPill(r) + '</td>'
+      + '<td><div class="ds-cell-name">' + U.esc(r.name) + '</div>'
+        + '<div class="ds-cell-sub">' + (r.objects || []).length + ' topic(s)</div></td>'
+      + '<td class="ds-right"><span class="ds-num">' + r.metrics.pendingInStore.toLocaleString() + '</span></td>'
+      + '<td class="ds-right"><span class="ds-num">' + r.metrics.storeRecords.toLocaleString() + '</span></td>'
+      + '<td class="ds-right"><span class="ds-num">' + DS.formatBytes(r.metrics.storeRecords * 435) + '</span></td>'
+      + '<td><span class="ds-num">' + ((r.profile || {}).retentionHours || 72) + 'h</span></td>'
+      + '<td>' + U.monoCopy(r.capture.position.lsn, { max: 18 }) + '</td></tr>').join('')
+    + '</tbody></table></div>'
+    + '<div style="padding:0.7rem 0.9rem"><a class="btn" href="/data_stream_store.html">'
+    + 'Open the Stream Store →</a></div>';
+}
+
+/* ── Inspector ──────────────────────────────────────────────────────────── */
+function dsSelect(id) {
+  selectedId = (selectedId === id) ? null : id;
+  inspOpen = true;
+  P.setUrl({ stream: selectedId });
+  paint();
+}
+function dsToggleInspector() {
+  inspOpen = !inspOpen;
+  paint();
+}
+function dsInspTab(t) { inspTab = t; paintInspector(); }
+
+function paintInspector(state) {
+  const s = state || P.state;
+  const grid = document.getElementById('ds-grid');
+  const stream = selectedId ? DS.getStream(s, selectedId) : null;
+  grid.classList.toggle('no-insp', !inspOpen || !stream);
+  document.getElementById('ds-fold').textContent = inspOpen ? '❯' : '❮';
+
+  if (!stream) {
+    document.getElementById('ds-insp-title').textContent = 'Nothing selected';
+    document.getElementById('ds-insp-inner').innerHTML =
+      '<div class="ds-insp-body ds-dim">Pick a stream to see its configuration, objects, lag and recent changes.</div>';
+    return;
+  }
+  document.getElementById('ds-insp-title').textContent = stream.name;
+
+  const tabs = [['summary', 'Summary'], ['objects', 'Objects'], ['lag', 'Lag'],
+                ['recent', 'Recent'], ['errors', 'Errors']];
+  const body = { summary: inspSummary, objects: inspObjects, lag: inspLag,
+                 recent: inspRecent, errors: inspErrors }[inspTab](stream, s);
+
+  document.getElementById('ds-insp-inner').innerHTML =
+    '<div class="ds-insp-tabs" role="tablist">' + tabs.map(([k, label]) =>
+      '<button class="ds-insp-tab' + (inspTab === k ? ' active' : '') + '" role="tab"'
+      + ' aria-selected="' + (inspTab === k) + '" onclick="dsInspTab(\'' + k + '\')">' + label + '</button>').join('')
+    + '</div><div class="ds-insp-body">' + body + '</div>' + inspActions(stream);
+}
+
+function inspActions(s) {
+  const live = DS.isLive(s.status);
+  const b = [];
+  if (s.status === 'draft' || s.status === 'stopped') {
+    b.push('<button class="btn btn-primary" onclick="dsStart(\'' + U.escArg(s.id) + '\')"><i class="ic ic-play"></i> Start</button>');
+  } else if (live) {
+    b.push('<button class="btn" onclick="dsPause(\'' + U.escArg(s.id) + '\')"><i class="ic ic-pause"></i> Pause</button>');
+  } else if (s.status === 'paused' || s.status === 'failed') {
+    b.push('<button class="btn" onclick="dsResume(\'' + U.escArg(s.id) + '\')"><i class="ic ic-play"></i> Resume</button>');
+  }
+  b.push('<button class="btn" onclick="dsResync(\'' + U.escArg(s.id) + '\')"><i class="ic ic-sync"></i> Resync</button>');
+  b.push('<button class="btn" onclick="dsOpenReplay(\'' + U.escArg(s.id) + '\')"><i class="ic ic-undo"></i> Replay</button>');
+  b.push('<button class="btn" onclick="dsEdit(\'' + U.escArg(s.id) + '\')"><i class="ic ic-edit"></i> Edit</button>');
+  return '<div class="ds-insp-actions">' + b.join('') + '</div>';
+}
+
+function kv(k, v) { return '<div class="ds-kv"><b>' + k + '</b><span>' + v + '</span></div>'; }
+
+function inspSummary(s, st) {
+  const started = s.startedAt ? new Date(s.startedAt) : null;
+  const uptime = started ? DS.relativeTime(s.startedAt, st.clockNow).replace(' ago', '') : '—';
+  return U.flowDiagram(s)
+    + '<div style="height:0.7rem"></div>'
+    + kv('Reads from', U.sideBadge(s.capture.side) + ' ' + U.esc(s.capture.connectionLabel))
+    + kv('Capture', U.esc(s.capture.methodLabel))
+    + kv('Starting point', U.esc(s.capture.snapshot))
+    + kv('Position', U.monoCopy(s.capture.position.lsn, { max: 20 }))
+    + kv('Feeds', U.esc(s.destination.label))
+    + kv('Write mode', U.esc(s.destination.writeMode) + ' — ' + U.esc(DS.WRITE_MODE_BLURB[s.destination.writeMode] || ''))
+    + kv('Ordering', U.esc(s.delivery.ordering))
+    + kv('On schema drift', U.esc(s.delivery.onSchemaDrift))
+    + kv('Guardrail', s.delivery.guardrail === 'confirm_all' ? 'Confirm every change' : 'Confirm destructive only')
+    + '<div style="height:0.6rem"></div>'
+    + kv('Uptime', started ? uptime : 'not started')
+    + kv('Delivered today', s.metrics.deliveredToday.toLocaleString())
+    + kv('In the Stream Store', s.metrics.pendingInStore.toLocaleString() + ' pending')
+    + kv('Peak lag (24h)', DS.formatLag(s.metrics.lagPeak24h));
+}
+
+function inspObjects(s) {
+  if (!(s.objects || []).length) return '<div class="ds-dim">No objects on this stream.</div>';
+  return s.objects.map(o => {
+    const total = o.rowsEstimate || 0;
+    const pct = o.state === 'snapshotting' && total
+      ? Math.min(99, Math.round(((o.snapshotDone || 0) / total) * 100)) : null;
+    return '<div class="ds-objrow">'
+      + '<div class="ds-objrow-head"><span class="ds-objrow-name">' + U.esc(o.table) + '</span>'
+        + '<span class="ds-tag" style="margin-left:auto">' + U.esc(o.state) + '</span></div>'
+      + '<div class="ds-kv"><b>Keys</b><span>' + U.esc((o.keys || []).join(', ') || 'none') + '</span></div>'
+      + '<div class="ds-kv"><b>Operations</b><span>' + (o.ops || []).map(U.opBadge).join(' ') + '</span></div>'
+      + '<div class="ds-kv"><b>Rows</b><span>' + total.toLocaleString() + '</span></div>'
+      + '<div class="ds-kv"><b>Events today</b><span>' + (o.eventsToday || 0).toLocaleString() + '</span></div>'
+      + (o.filter ? '<div class="ds-kv"><b>Filter</b><span><code>' + U.esc(o.filter) + '</code></span></div>' : '')
+      + ((o.masked || []).length ? '<div class="ds-kv"><b>Masked</b><span>'
+          + U.esc(o.masked.join(', ')) + '</span></div>' : '')
+      + (pct === null ? '' : '<div class="ds-progress"><i style="width:' + pct + '%"></i></div>')
+      + '<div style="margin-top:0.4rem"><button class="btn" onclick="dsResyncObject(\''
+        + U.escArg(s.id) + '\',\'' + U.escArg(o.table) + '\')">Resync this table</button></div>'
+      + '</div>';
+  }).join('');
+}
+
+function inspLag(s, st) {
+  const series = (st.points || []).filter(p => p.streamId === s.id).slice(-60).map(p => p.lagSeconds);
+  const thr = (s.delivery && s.delivery.lagThresholdSeconds) || 30;
+  return '<div class="ds-kv"><b>Lag now</b><span>' + DS.formatLag(s.metrics.lagSeconds) + '</span></div>'
+    + '<div class="ds-kv"><b>Threshold</b><span>' + thr + 's</span></div>'
+    + '<div class="ds-kv"><b>Peak (24h)</b><span>' + DS.formatLag(s.metrics.lagPeak24h) + '</span></div>'
+    + '<div style="height:0.5rem"></div>'
+    + U.lineChart(series, { threshold: thr, label: 'Lag in seconds over the last 60 ticks' })
+    + '<div class="ds-legend"><span>Dashed rule: this stream’s ' + thr + 's threshold</span></div>';
+}
+
+function inspRecent(s, st) {
+  const evts = (st.events || []).filter(e => e.streamId === s.id).slice(0, 15);
+  if (!evts.length) return '<div class="ds-dim">No changes captured yet.</div>';
+  return '<div class="ds-tablewrap"><table class="ds-table"><tbody>'
+    + evts.map(e => '<tr><td style="width:34px">' + U.opBadge(e.op) + '</td>'
+      + '<td><div class="ds-num">' + U.esc(e.table) + '</div>'
+      + '<div class="ds-cell-sub">' + U.esc(JSON.stringify(e.key)) + '</div></td>'
+      + '<td class="ds-right">' + U.deliveryPill(e.deliveryState) + '</td></tr>').join('')
+    + '</tbody></table></div>'
+    + '<div style="margin-top:0.6rem"><a class="btn" href="/data_stream_events.html'
+    + DS.buildQuery({ stream: s.id }) + '">View all →</a></div>';
+}
+
+function inspErrors(s) {
+  if (!s.lastError && !s.metrics.dlqDepth && !s.metrics.failedToday) {
+    return '<div class="ds-note ok">Nothing has failed on this stream.</div>';
+  }
+  return (s.lastError ? '<div class="ds-note error">' + U.esc(s.lastError) + '</div><div style="height:0.6rem"></div>' : '')
+    + kv('Failed today', String(s.metrics.failedToday))
+    + kv('Dead-letter depth', String(s.metrics.dlqDepth))
+    + kv('Retries configured', String(s.delivery.retries) + ' · ' + U.esc(s.delivery.backoff))
+    + '<div style="margin-top:0.7rem;display:flex;gap:0.4rem;flex-wrap:wrap">'
+    + '<button class="btn" onclick="dsRequeue(\'' + U.escArg(s.id) + '\')"'
+      + (s.metrics.dlqDepth ? '' : ' disabled') + '>Requeue dead letters</button>'
+    + '<a class="btn" href="/data_stream_events.html'
+      + DS.buildQuery({ stream: s.id, state: 'dead' }) + '">See the dead letters →</a></div>';
+}
+
+/* ── Row menu ───────────────────────────────────────────────────────────── */
+function dsRowMenu(anchor, id) {
+  const s = DS.getStream(P.state, id);
+  if (!s) return;
+  const live = DS.isLive(s.status);
+  const items = [
+    { label: 'Open', icon: 'eye', run: () => dsSelect(id) },
+    { label: 'Edit', icon: 'edit', run: () => dsEdit(id) },
+  ];
+  if (s.status === 'draft' || s.status === 'stopped') items.push({ label: 'Start', icon: 'play', run: () => dsStart(id) });
+  else if (live) items.push({ label: 'Pause', icon: 'pause', run: () => dsPause(id) });
+  else items.push({ label: 'Resume', icon: 'play', run: () => dsResume(id) });
+  if (live) items.push({ label: 'Stop', icon: 'stop', run: () => dsStop(id) });
+  items.push('-');
+  items.push({ label: 'Resync object…', icon: 'sync', run: () => dsResync(id) });
+  items.push({ label: 'Replay from…', icon: 'undo', run: () => dsOpenReplay(id) });
+  items.push({ label: 'Duplicate', icon: 'file', run: () => dsDuplicate(id) });
+  items.push('-');
+  items.push({ label: 'Delete', icon: 'trash', danger: true, run: () => dsDelete(id) });
+  P.openMenu(anchor, items);
+}
+
+/* ── Actions ────────────────────────────────────────────────────────────
+   Every one of these confirms with the blast radius stated, writes an audit
+   entry through the engine, persists, and announces. Starting a stream ALWAYS
+   confirms regardless of guardrail level — it begins reading a production
+   database, and that is not a level-dependent fact. */
+function dsStart(id) {
+  const s = DS.getStream(P.state, id);
+  const est = DS.snapshotEstimate(s);
+  if (!confirm(U.confirmText('start', { name: s.name, connection: s.capture.connectionLabel,
+      destination: s.destination.label, snapshotNote: est.note }))) return;
+  DS.startStream(P.state, id);
+  P.persist(); paint();
+  P.announce(s.name + ' started.');
+}
+function dsPause(id) {
+  const s = DS.getStream(P.state, id);
+  if (!confirmFor(s, 'pause', { name: s.name, pending: s.metrics.pendingInStore })) return;
+  DS.pauseStream(P.state, id);
+  P.persist(); paint();
+  P.announce(s.name + ' paused.');
+}
+function dsResume(id) {
+  DS.resumeStream(P.state, id);
+  P.persist(); paint();
+  P.announce('Resumed.');
+}
+function dsStop(id) {
+  const s = DS.getStream(P.state, id);
+  if (!confirm(U.confirmText('stop', { name: s.name }))) return;
+  DS.stopStream(P.state, id);
+  P.persist(); paint();
+  P.announce(s.name + ' stopped.');
+}
+function dsDelete(id) {
+  const s = DS.getStream(P.state, id);
+  if (!confirm(U.confirmText('delete', { name: s.name }))) return;
+  DS.deleteStream(P.state, id);
+  if (selectedId === id) { selectedId = null; P.setUrl({ stream: null }); }
+  P.persist(); paint();
+  P.announce('Stream deleted.');
+}
+function dsDuplicate(id) {
+  location.href = '/data_stream_designer.html' + DS.buildQuery({ stream: id, clone: '1' });
+}
+function dsEdit(id) {
+  location.href = '/data_stream_designer.html' + DS.buildQuery({ stream: id });
+}
+function dsNewStream() { location.href = '/data_stream_designer.html'; }
+function dsRefresh() {
+  P.boot(); paint();
+  P.announce('Refreshed.');
+}
+function dsClearFilters() {
+  filter = { status: 'all', side: 'any', destKind: 'any', text: '', errorsOnly: false };
+  paint();
+}
+
+function dsResync(id) {
+  const s = DS.getStream(P.state, id);
+  const names = (s.objects || []).map(o => o.table);
+  if (!names.length) { alert('This stream has no objects to resync.'); return; }
+  const which = prompt('Resync which table?\n\n' + names.join('\n'), names[0]);
+  if (!which) return;
+  dsResyncObject(id, which.trim());
+}
+function dsResyncObject(id, table) {
+  const s = DS.getStream(P.state, id);
+  const o = (s.objects || []).filter(x => x.table === table)[0];
+  if (!o) { alert(table + ' is not in this stream.'); return; }
+  if (!confirm(U.confirmText('resync', { table: table, rows: o.rowsEstimate }))) return;
+  DS.resyncObject(P.state, id, table);
+  P.persist(); paint();
+  P.announce('Resyncing ' + table + '.');
+}
+
+function dsRequeue(id) {
+  const s = DS.getStream(P.state, id);
+  if (!s.metrics.dlqDepth) return;
+  if (!confirm(U.confirmText('requeue', { records: s.metrics.dlqDepth, destination: s.destination.label }))) return;
+  DS.requeueDlq(P.state, id);
+  P.persist(); paint();
+  P.announce('Dead letters requeued.');
+}
+
+/* Guardrail: confirm_all confirms everything; confirm_destructive lets an
+   ordinary pause through. Start, replay, requeue and delete confirm at BOTH
+   levels — they change a production system either way. */
+function confirmFor(stream, kind, detail) {
+  const level = (stream.delivery && stream.delivery.guardrail) || 'confirm_destructive';
+  if (level === 'confirm_destructive' && kind === 'pause') return true;
+  return confirm(U.confirmText(kind, detail));
+}
+
+/* ── Replay ─────────────────────────────────────────────────────────────── */
+let replayId = null;
+function dsOpenReplay(id) {
+  replayId = id;
+  const s = DS.getStream(P.state, id);
+  document.getElementById('ds-replay-body').innerHTML =
+      '<p style="margin-bottom:0.7rem">Re-deliver records that are still inside '
+    + U.esc(s.name) + '’s retention window to <b>' + U.esc(s.destination.label) + '</b>.</p>'
+    + '<label class="ds-radio"><input type="radio" name="ds-rp" value="retention" checked onchange="dsReplayPreview()">'
+      + '<span>From the beginning of retention<span class="b">Everything the Stream Store still holds.</span></span></label>'
+    + '<label class="ds-radio"><input type="radio" name="ds-rp" value="time" onchange="dsReplayPreview()">'
+      + '<span>From a point in time<span class="b">'
+      + '<input class="ds-input" id="ds-rp-time" type="datetime-local" onchange="dsReplayPreview()"></span></span></label>'
+    + '<label class="ds-radio"><input type="radio" name="ds-rp" value="position" onchange="dsReplayPreview()">'
+      + '<span>From an LSN / offset<span class="b">'
+      + '<input class="ds-input" id="ds-rp-pos" type="text" placeholder="' + U.esc(s.capture.position.lsn || '')
+      + '" style="font-family:var(--mono);width:100%" onchange="dsReplayPreview()"></span></span></label>'
+    + '<div class="ds-note warn" id="ds-rp-preview" style="margin-top:0.7rem"></div>';
+  document.getElementById('ds-replay').classList.add('open');
+  dsReplayPreview();
+}
+function dsReplayFrom() {
+  const el = document.querySelector('input[name="ds-rp"]:checked');
+  const kind = el ? el.value : 'retention';
+  if (kind === 'time') {
+    const v = (document.getElementById('ds-rp-time') || {}).value;
+    return { kind: 'time', at: v ? new Date(v).toISOString() : null };
+  }
+  if (kind === 'position') {
+    return { kind: 'position', position: (document.getElementById('ds-rp-pos') || {}).value || '' };
+  }
+  return { kind: 'retention' };
+}
+function dsReplayPreview() {
+  const s = DS.getStream(P.state, replayId);
+  const n = DS.replayCount(P.state, replayId, dsReplayFrom());
+  document.getElementById('ds-rp-preview').textContent =
+    'This will re-deliver about ' + n.toLocaleString() + ' record(s) to ' + s.destination.label
+    + '. Records already delivered will be sent again.';
+}
+function dsCloseReplay() { document.getElementById('ds-replay').classList.remove('open'); }
+function dsDoReplay() {
+  const s = DS.getStream(P.state, replayId);
+  const from = dsReplayFrom();
+  const n = DS.replayCount(P.state, replayId, from);
+  if (!confirm(U.confirmText('replay', { records: n, destination: s.destination.label }))) return;
+  DS.replay(P.state, replayId, from);
+  P.persist(); dsCloseReplay(); paint();
+  P.announce('Replaying ' + n.toLocaleString() + ' records.');
+}
+</script>
+<script src="/cygenix-busy.js?v=6b748aa0aa"></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
+<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script>CygenixAssistant.registerPage('data-stream');</script>
+</body>
+</html>

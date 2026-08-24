@@ -1064,6 +1064,54 @@ function clearStepProgress(gi, si){
   // runSingleStep does it explicitly at the end).
 }
 
+// ── Data Stream cross-link ───────────────────────────────────────────────
+// Batches and streams are the two halves of a cutover: the batch moves the
+// bulk from a snapshot, the stream carries everything that changed since.
+// Showing one without the other is how a delta window gets left open.
+//
+// Guarded on the global, so a build without the Data Stream module simply
+// shows no chip rather than throwing inside renderSteps.
+function streamsCovering(table) {
+  if (!table || typeof CygenixDataStream === 'undefined') return [];
+  try {
+    const state = CygenixDataStream.load(localStorage.getItem('cygenix_active_project_id') || 'default');
+    return CygenixDataStream.streamsForTable(state, table)
+      .filter(s => s.status !== 'draft' && s.status !== 'stopped');
+  } catch (e) { return []; }
+}
+function streamSince(streams) {
+  const iso = streams.map(s => s.startedAt || s.createdAt).filter(Boolean).sort()[0];
+  if (!iso) return 'recently';
+  try {
+    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  } catch (e) { return 'recently'; }
+}
+
+/* Cutover assist: pause capture, drain the lag to zero, then stop. The
+   sequence is the point — stopping before the store drains would strand
+   captured changes that were never delivered, which is exactly the data loss
+   a cutover is supposed to avoid. So this begins the drain and watches it,
+   rather than doing all three at once. */
+async function cutoverAssist(streamId) {
+  if (typeof CygenixDataStream === 'undefined') return;
+  const DSm = CygenixDataStream;
+  const pid = localStorage.getItem('cygenix_active_project_id') || 'default';
+  const state = DSm.load(pid);
+  const plan = DSm.cutoverPlan(state, streamId);
+
+  if (!confirm('Close the delta window on "' + plan.streamName + '"?\n\n'
+      + plan.steps.map((s, i) => (i + 1) + '. ' + s).join('\n')
+      + '\n\nCapture stops now. The stream keeps delivering until the Stream Store is empty.')) return;
+
+  DSm.beginCutover(state, streamId);
+  DSm.save(state);
+  alert('Capture paused on "' + plan.streamName + '".\n\n'
+    + plan.pending.toLocaleString() + ' record(s) are still in the Stream Store and will be delivered. '
+    + 'Watch the lag reach zero on the Stream Monitor — the delta window is closed when it does, and '
+    + 'you can stop the stream there.');
+  renderSteps();
+}
+
 function renderSteps() {
   const list  = document.getElementById('steps-list');
   const empty = document.getElementById('steps-empty');
@@ -1200,7 +1248,15 @@ function renderSteps() {
         // paths in renderSteps means the first paint after a status flip
         // shows correct content without needing an extra updateStepProgress
         // call from outside.
-        const meta = step.progress ? buildProgressMeta(step.progress) : (baseMeta + runStatsHtml);
+        // A table this batch loads may also be carried by a data stream. That
+        // matters at cutover: the batch moves the bulk, the stream trickles
+        // everything since, and you cannot reason about either without knowing
+        // the other exists.
+        const streaming = streamsCovering(step.srcTable);
+        const streamHtml = streaming.length
+          ? ` <span style="color:var(--teal)" title="${esc(streaming.map(s => s.name).join(' · ')).replace(/"/g,'&quot;')}">· <i class="ic ic-stream"></i> Also streaming since ${esc(streamSince(streaming))}</span>`
+          : '';
+        const meta = step.progress ? buildProgressMeta(step.progress) : (baseMeta + runStatsHtml + streamHtml);
         const statusCls = 'status-' + (step.status||'pending');
         const statusEmoji = {pending:'<i class="ic-dot" style="color:var(--text3)"></i>',running:'<i class="ic-dot" style="color:var(--amber)"></i>',passed:'<i class="ic-dot" style="color:var(--green)"></i>',failed:'<i class="ic-dot" style="color:var(--red)"></i>',skipped:'<i class="ic-dot" style="color:var(--amber)"></i>'}[step.status||'pending'] || '<i class="ic-dot" style="color:var(--text3)"></i>';
         const runBtnId = `run-step-${gi}-${si}`;
@@ -1229,6 +1285,7 @@ function renderSteps() {
               <span class="step-status ${statusCls}">${step.status||'pending'}</span>
               <button class="btn btn-sm" onclick="runSingleStep(${gi},${si})" id="${runBtnId}"
                 style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.25);padding:3px 8px">▶ Run</button>
+              ${streaming.length ? `<button class="btn btn-ghost btn-sm" onclick="cutoverAssist('${esc(streaming[0].id)}')" title="Close the delta window: pause capture, drain the lag to zero, then stop the stream." style="padding:3px 8px;color:var(--teal);border-color:rgba(23,130,124,0.3)"><i class="ic ic-stream"></i> Cutover assist</button>` : ''}
               ${step.rollbackSupported && (step.rowsInserted || 0) > 0 ? `<button class="btn btn-ghost btn-sm" onclick="rollbackStep(${gi},${si})" title="Roll back the last run for this job — delete the ${(step.rowsInserted||0).toLocaleString()} rows it loaded into the target." style="padding:3px 8px;color:var(--amber);border-color:rgba(245,158,11,0.25)"><i class="ic ic-undo"></i> Rollback</button>` : ''}
               <button class="btn btn-ghost btn-sm" onclick="editStepJob(${gi},${si})" title="${editTitle}" style="padding:3px 8px;color:var(--purple);border-color:rgba(107,78,142,0.25)" ${editDisabled?'disabled':''}><i class="ic ic-edit"></i> Edit</button>
               <button class="btn btn-ghost btn-sm" onclick="deleteStep(${gi},${si})" style="color:var(--red);padding:3px 8px">✕</button>

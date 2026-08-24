@@ -110,6 +110,17 @@
         // where you assemble and run a BATCH of jobs, and it now says so.
         { key:'project-builder', label:'Batches',  href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
       ]},
+      // Data Stream sits between Jobs and Task Manager because that is the
+      // order of the question it answers: batches move the bulk, streams move
+      // the changes, and the Task Manager schedules both. Streams are
+      // run-time objects, so they belong in RUN rather than in a section of
+      // their own.
+      { key:'datastream-group', label:'Data Stream', icon: iconStream(), children: [
+        { key:'data-stream',         label:'Streams',       href:'/data_stream.html',         color:'var(--teal)',   icon: iconStream() },
+        { key:'data-stream-store',   label:'Stream Store',  href:'/data_stream_store.html',   color:'var(--accent)', icon: iconStore() },
+        { key:'data-stream-events',  label:'Change Events', href:'/data_stream_events.html',  color:'var(--green)',  icon: iconBolt() },
+        { key:'data-stream-monitor', label:'Stream Monitor',href:'/data_stream_monitor.html', color:'var(--purple)', icon: iconChart() },
+      ]},
       // Project Planner was removed along with its page. With one child left
       // the "Planner & Schedules" expander earned nothing, so this is a plain
       // top-level item. The key stays `task-agent` — pages set
@@ -184,6 +195,16 @@
   function iconServerMigration(){ return svg('<rect x="2" y="2" width="12" height="4" rx="0.5" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="4" r="0.6" fill="currentColor"/><rect x="2" y="10" width="12" height="4" rx="0.5" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="12" r="0.6" fill="currentColor"/><path d="M8 6.5v3M6.5 8.5L8 10l1.5-1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconDownload(){     return svg('<path d="M8 2v8m0 0L5 7m3 3l3-3M3 13h10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconChart(){        return svg('<path d="M2 13l4-4 3 3 5-6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
+  // Data Stream. Three lanes flowing right with an arrowhead on two of them —
+  // continuous and directional, the two things that separate a stream from a
+  // batch. Distinct from iconArrows (Object Mapping, one arrow each way) and
+  // iconServerMigration (two racks) at rail size.
+  function iconStream(){       return svg('<path d="M2 4.2h7.5M2 8h11M2 11.8h7.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M11.4 5.9 13.4 4.2l-2-1.7M11.4 13.5l2-1.7-2-1.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
+  // Stream Store — a database cylinder, because that is what it is: a
+  // retained, queryable buffer, not a folder.
+  function iconStore(){        return svg('<ellipse cx="8" cy="4" rx="5" ry="2" stroke="currentColor" stroke-width="1.2"/><path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4" stroke="currentColor" stroke-width="1.2"/><path d="M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" stroke="currentColor" stroke-width="1.2"/>'); }
+  // Change Events — a bolt, for the live tail.
+  function iconBolt(){         return svg('<path d="M9 1.8 4 9h3.4l-.4 5.2L12 7H8.6z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconParams(){       return svg('<circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.5 3.5l1.5 1.5M11 11l1.5 1.5M3.5 12.5l1.5-1.5M11 5l1.5-1.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'); }
   function iconShield(){       return svg('<path d="M8 2 L3 4 V8 C3 11 5 13 8 14 C11 13 13 11 13 8 V4 Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6 8l1.5 1.5L10.5 7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconIntegrations(){ return svg('<circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 4h4M6 12h4M4 6v4M12 6v4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'); }

@@ -107,6 +107,10 @@ var PAGES = [
   { key: 'agentive-migration', label: 'AI Assist',          href: '/agentive_migration.html' },
   { key: 'jobs',               label: 'All Jobs',           view: 'jobs' },
   { key: 'project-builder',    label: 'Execute',            href: '/project-builder.html' },
+  { key: 'data-stream',        label: 'Data Stream',        href: '/data_stream.html' },
+  { key: 'data-stream-store',  label: 'Stream Store',       href: '/data_stream_store.html' },
+  { key: 'data-stream-events', label: 'Change Events',      href: '/data_stream_events.html' },
+  { key: 'data-stream-monitor',label: 'Stream Monitor',     href: '/data_stream_monitor.html' },
   { key: 'task-agent',         label: 'Task Manager',       view: 'task-agent' },
   { key: 'server-migration',   label: 'Server Migration',   view: 'server-migration' },
   { key: 'assurance',          label: 'Assurance',          href: '/assurance.html' },
@@ -440,6 +444,187 @@ A.registerActions([
 ]);
 
 /* ================================================================ *
+ * Data Stream — read and DRAFT only.
+ *
+ * The assistant may list a stream, explain why one is lagging, and put a
+ * draft in front of the user in the Designer. It may NOT start, pause,
+ * replay or delete one. Those are changes to a live production database:
+ * starting begins reading it, replaying re-delivers records that were
+ * already delivered, deleting throws away a capture position. Each is
+ * destructive at BOTH guardrail levels, so none of them is an action here
+ * at all — the panel takes the user to the screen where the confirmation
+ * with the record count lives, and a human presses the button.
+ * ================================================================ */
+
+function dsState() {
+  var DS = root.CygenixDataStream;
+  if (!DS) {
+    throw new Error('The Data Stream module is not loaded on this page. ' +
+      'Use app_navigate to open data-stream first.');
+  }
+  return { DS: DS, state: DS.load(activeProject()) };
+}
+function dsSummary(s) {
+  return {
+    id: s.id, name: s.name, status: s.status,
+    readsFrom: s.capture.side, connection: s.capture.connectionLabel,
+    capture: s.capture.methodLabel,
+    destination: s.destination.label, destinationKind: s.destination.kind,
+    writeMode: s.destination.writeMode,
+    tables: (s.objects || []).map(function (o) { return o.table; }),
+    eventsPerMin: s.metrics.eventsPerMin,
+    lagSeconds: s.metrics.lagSeconds,
+    pendingInStore: s.metrics.pendingInStore,
+    dlqDepth: s.metrics.dlqDepth,
+    lastError: s.lastError,
+    lastEventAt: s.lastEventAt,
+  };
+}
+
+A.registerActions([
+  {
+    name: 'stream_list',
+    title: 'List data streams',
+    effect: 'read',
+    description: 'List this project\'s data streams with their status, which side they read from, ' +
+      'where they deliver, and how far behind they are. A stream is the always-on shape: ' +
+      'capture, a retained Stream Store, then delivery.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Filter, e.g. running, lagging, paused, failed, draft.' },
+        side: { type: 'string', enum: ['source', 'target'], description: 'Which side it reads from.' }
+      }
+    },
+    handler: async function (i) {
+      var ctx = dsState();
+      var list = ctx.state.streams || [];
+      if (i.status) list = list.filter(function (s) { return s.status === i.status; });
+      if (i.side) list = list.filter(function (s) { return s.capture.side === i.side; });
+      return trim({ count: list.length, streams: list.map(dsSummary) });
+    }
+  },
+  {
+    name: 'stream_describe',
+    title: 'Describe a stream',
+    effect: 'read',
+    description: 'Full configuration and current numbers for one stream, by id or by name.',
+    input_schema: {
+      type: 'object',
+      properties: { stream: { type: 'string', description: 'Stream id or name.' } },
+      required: ['stream']
+    },
+    summary: function (i) { return i.stream; },
+    handler: async function (i) {
+      var ctx = dsState();
+      var q = String(i.stream).toLowerCase();
+      var s = (ctx.state.streams || []).filter(function (x) {
+        return x.id === i.stream || String(x.name).toLowerCase() === q; })[0];
+      if (!s) throw new Error('No stream called "' + i.stream + '" in this project.');
+      return trim(Object.assign(dsSummary(s), {
+        snapshot: s.capture.snapshot,
+        position: s.capture.position,
+        delivery: s.delivery,
+        retentionHours: (s.profile || {}).retentionHours || null,
+        objects: (s.objects || []).map(function (o) {
+          return { table: o.table, keys: o.keys, ops: o.ops, filter: o.filter || null,
+                   masked: o.masked || [], rowsEstimate: o.rowsEstimate, state: o.state }; }),
+      }));
+    }
+  },
+  {
+    name: 'stream_explain_lag',
+    title: 'Explain a stream’s lag',
+    effect: 'read',
+    description: 'Work out WHY a stream is behind, from its own numbers: whether capture is outpacing ' +
+      'delivery, whether the destination is failing, or whether it is still snapshotting. Report the ' +
+      'evidence rather than guessing.',
+    input_schema: {
+      type: 'object',
+      properties: { stream: { type: 'string', description: 'Stream id or name.' } },
+      required: ['stream']
+    },
+    summary: function (i) { return i.stream; },
+    handler: async function (i) {
+      var ctx = dsState();
+      var q = String(i.stream).toLowerCase();
+      var s = (ctx.state.streams || []).filter(function (x) {
+        return x.id === i.stream || String(x.name).toLowerCase() === q; })[0];
+      if (!s) throw new Error('No stream called "' + i.stream + '" in this project.');
+      var flow = ctx.DS.flowOf(s);
+      var pts = (ctx.state.points || []).filter(function (p) { return p.streamId === s.id; }).slice(-30);
+      return trim({
+        stream: s.name,
+        status: s.status,
+        lagSeconds: s.metrics.lagSeconds,
+        threshold: (s.delivery || {}).lagThresholdSeconds || 30,
+        captureRatePerMin: flow.capture.rate,
+        deliveryRatePerMin: flow.destination.rate,
+        pendingInStore: s.metrics.pendingInStore,
+        bottleneck: flow.bottleneck,
+        dlqDepth: s.metrics.dlqDepth,
+        lastError: s.lastError,
+        recentLag: pts.map(function (p) { return p.lagSeconds; }),
+        recentIn: pts.map(function (p) { return p.in; }),
+        recentOut: pts.map(function (p) { return p.out; }),
+        note: 'Lag is how long the oldest undelivered record has been waiting. It grows whenever ' +
+          'capture outruns delivery and shrinks when delivery catches up.',
+      });
+    }
+  },
+  {
+    name: 'stream_draft',
+    title: 'Draft a data stream',
+    effect: 'write',
+    description: 'Put a proposed stream in front of the user in the Stream Designer, filled in and ' +
+      'ready to review. This creates NOTHING and starts NOTHING — the user still walks the five steps ' +
+      'and presses Create & start themselves. Use this when they describe a stream they want.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        side: { type: 'string', enum: ['source', 'target'], description: 'Which side to read from.' },
+        tables: { type: 'array', items: { type: 'string' },
+                  description: 'Tables to carry, as schema.table.' },
+        destinationKind: { type: 'string',
+          enum: ['database', 'broker', 'webhook', 'file', 'cygenix-target'] },
+        destinationLabel: { type: 'string', description: 'Where it delivers, in words.' },
+        writeMode: { type: 'string', enum: ['upsert', 'append', 'merge', 'audit-table'] },
+        captureMethod: { type: 'string', enum: ['log', 'poll', 'trigger', 'feed'] }
+      },
+      required: ['name']
+    },
+    summary: function (i) { return i.name; },
+    preview: function (i) {
+      return 'Open the Stream Designer with a draft:\n\n'
+        + 'Name: ' + i.name + '\n'
+        + 'Reads from: ' + (i.side || 'source') + '\n'
+        + 'Tables: ' + ((i.tables || []).join(', ') || 'none yet') + '\n'
+        + 'Delivers to: ' + (i.destinationLabel || '(not set)')
+        + '\n\nNothing is created or started — this only fills in the form.';
+    },
+    handler: async function (i) {
+      var ctx = dsState();
+      var draft = ctx.DS.blankDraft(activeProject());
+      draft.name = i.name;
+      draft.capture.side = i.side || 'source';
+      if (i.captureMethod) draft.capture.method = i.captureMethod;
+      if (i.destinationKind) draft.destination.kind = i.destinationKind;
+      if (i.destinationLabel) draft.destination.label = i.destinationLabel;
+      if (i.writeMode) draft.destination.writeMode = i.writeMode;
+      (i.tables || []).forEach(function (t) {
+        draft.objects.push({ table: t, keys: [], ops: ['I', 'U', 'D'], filter: '',
+          columnPolicy: 'all', excludedColumns: [], masked: [], rowsEstimate: 0, state: 'paused' });
+      });
+      ctx.DS.wipSave(activeProject(), draft);
+      return { __navigate: '/data_stream_designer.html',
+               __result: 'Opened the Stream Designer with a draft of "' + i.name + '". '
+                 + 'Nothing is created or started until the user confirms.' };
+    }
+  }
+]);
+
+/* ================================================================ *
  * Context + starter prompts
  * ================================================================ */
 
@@ -447,7 +632,12 @@ A.registerContext(function () {
   return {
     activeProject: activeProject(),
     connectionCount: connectionSummaries().length,
-    jobCount: (ls('cygenix_jobs', []) || []).length
+    jobCount: (ls('cygenix_jobs', []) || []).length,
+    // Counts only. A stream's connection label, position and payloads stay
+    // on the screen — the context block goes to the model every turn.
+    streamCount: (function () {
+      try { return (dsState().state.streams || []).length; } catch (e) { return 0; }
+    })()
   };
 });
 
@@ -455,6 +645,7 @@ A.suggestions = [
   'What am I looking at?',
   'Show me failed jobs',
   'Find a table and draft a query for it',
+  'Why is that stream lagging?',
   'What can you do on this screen?'
 ];
 
