@@ -84,6 +84,17 @@ for (const f of [...pages, ...scripts]) {
 }
 check('no icon markup hides in a tooltip, a native dialog or a textContent write',
   misplaced.length === 0, misplaced.slice(0, 5).join(' | '));
+// A `label:` is text by convention here — the map picker writes its labels
+// with textContent into <option>, and the rule editor escapes its own — so
+// icon markup in one renders as the literal tag the operator sees.
+const labelled = [];
+for (const f of [...pages, ...scripts]) {
+  pub(f).split('\n').forEach((ln, i) => {
+    if (/\blabel:\s*(['"`])[^'"`]*<i class=/.test(ln)) labelled.push(f + ':' + (i + 1));
+  });
+}
+check('no icon markup sits in a label, which is rendered as text',
+  labelled.length === 0, labelled.join(', '));
 
 // ── 5. Every icon referenced exists in the stylesheet ───────────────────────
 const defined = new Set([...css.matchAll(/^\.ic-([a-z-]+)\{/gm)].map(m => m[1]));
