@@ -409,15 +409,14 @@ async function ddlRun() {
   if (!sql) { ddlShowResult('DDL is empty','err'); return; }
 
   const btn = document.getElementById('ddl-run-btn');
-  btn.disabled = true;
-  btn.textContent = 'Running…';
+  const ddlBusy = window.CygenixBusy && CygenixBusy.start('Creating the table', { button: btn, label: 'Running' });
+  if (!ddlBusy) { btn.disabled = true; btn.textContent = 'Running…'; }
   ddlShowResult('Executing against ' + _ddlCtx.createSide + ' (' + _ddlCtx.createDialect + ')…', 'info');
 
   try {
     const res = await dbCall(_ddlCtx.conn, { action:'execute', sql });
     if (res && res.error) {
       ddlShowResult('' + res.error, 'err');
-      btn.disabled = false; btn.textContent = '▶ Run';
       return;
     }
     ddlShowResult('✓ Created. Refreshing schema…', 'ok');
@@ -435,7 +434,10 @@ async function ddlRun() {
     setTimeout(ddlCloseModal, 1200);
   } catch (e) {
     ddlShowResult('Error: ' + (e.message || String(e)), 'err');
-    btn.disabled = false; btn.textContent = '▶ Run';
+  } finally {
+    // Every path, including the success one — which previously left the button
+    // reading "Running…" until the modal closed itself a second later.
+    if (ddlBusy) ddlBusy.done(); else { btn.disabled = false; btn.textContent = '▶ Run'; }
   }
 }
 
@@ -583,6 +585,7 @@ async function connectSrc(){
   srcConn = c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl+'?code='+encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
   if(!srcConn){ setBanner('src','err','Source: not configured — set in Dashboard → Connections'); return; }
   setBanner('src','connecting','Source: connecting…');
+  const connBusy = window.CygenixBusy && CygenixBusy.start('Reading the source schema');
   try {
     const { res, paginated } = await _fetchSchemaSmart(srcConn);
     srcSchema = res;
@@ -615,6 +618,8 @@ async function connectSrc(){
     renderObjTypeToggle();
   } catch(e){
     setBanner('src','err','Source: '+e.message);
+  } finally {
+    if (connBusy) connBusy.done();
   }
 }
 
@@ -623,6 +628,7 @@ async function connectTgt(){
   tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
   if(!tgtConn){ setBanner('tgt','err','Target: not configured — set in Dashboard → Connections'); return; }
   setBanner('tgt','connecting','Target: connecting…');
+  const connBusy = window.CygenixBusy && CygenixBusy.start('Reading the target schema');
   try {
     const { res, paginated } = await _fetchSchemaSmart(tgtConn);
     tgtSchema = res;
@@ -646,6 +652,8 @@ async function connectTgt(){
     setBanner('tgt','ok','Target: '+(res.database||parseDbName(tgtConn)||'connected')+' · '+tgtAllTables.length+' tables');
   } catch(e){
     setBanner('tgt','err','Target: '+e.message);
+  } finally {
+    if (connBusy) connBusy.done();
   }
 }
 
@@ -1103,6 +1111,9 @@ async function countSourceRows(){
   const el = $('src-rowcount');
   if (el) el.textContent = 'counting…';
   const where = ($('src-where')?.value || '').trim();
+  // COUNT(*) over a wide view scans it — this is exactly the wait that reads
+  // as a hang without a signal.
+  const countBusy = window.CygenixBusy && CygenixBusy.start('Counting rows in ' + srcTable.fullName);
   try {
     const res = await dbCall(srcConn, {
       action: 'execute',
@@ -1119,6 +1130,8 @@ async function countSourceRows(){
     if (el) el.textContent = 'could not read';
     showStatus('Could not read ' + srcTable.fullName + ': ' + e.message
       + (srcTable.objType === 'view' ? ' — the view may reference a base object that no longer exists.' : ''), 'err');
+  } finally {
+    if (countBusy) countBusy.done();
   }
 }
 
@@ -1384,6 +1397,7 @@ async function selectTable(which, value){
                 : 'otm-tgt-input';
   const inputEl = $(inputId);
   const priorPlaceholder = inputEl?.placeholder;
+  const colBusy = window.CygenixBusy && CygenixBusy.start('Loading columns for ' + t.fullName);
   try {
     if (inputEl) inputEl.placeholder = 'Loading columns…';
     await ensureColumns(which === 'otm-tgt' ? 'tgt' : which, t);
@@ -1391,6 +1405,8 @@ async function selectTable(which, value){
     showStatus('Could not load columns for ' + t.fullName + ': ' + e.message, 'err');
     if (inputEl) inputEl.placeholder = priorPlaceholder || '';
     return;
+  } finally {
+    if (colBusy) colBusy.done();
   }
   if (inputEl) inputEl.placeholder = priorPlaceholder || '';
 
@@ -1555,11 +1571,19 @@ async function buildMappingIfReady(){
   if(apiKey) localStorage.setItem('cygenix_api_key',apiKey);
 
   showStatus('Building column mapping…','info');
-  if(apiKey){
-    try { columnMapping = await askClaudeForMapping(srcTable, tgtTable, apiKey); }
-    catch(e) { columnMapping = autoMap(srcTable, tgtTable); }
-  } else {
-    columnMapping = autoMap(srcTable, tgtTable);
+  // No button of its own — this runs from selecting a target — so the page-top
+  // bar is the only thing telling the user the pause is work, not a freeze.
+  const buildBusy = window.CygenixBusy
+    && CygenixBusy.start(apiKey ? 'Mapping columns with Claude' : 'Matching columns');
+  try {
+    if(apiKey){
+      try { columnMapping = await askClaudeForMapping(srcTable, tgtTable, apiKey); }
+      catch(e) { columnMapping = autoMap(srcTable, tgtTable); }
+    } else {
+      columnMapping = autoMap(srcTable, tgtTable);
+    }
+  } finally {
+    if (buildBusy) buildBusy.done();
   }
   columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
   renderMappingTable();
@@ -1579,12 +1603,15 @@ async function remapWithClaude(){
   if(!srcTable){ alert('Select a source table first.'); return; }
   if(!tgtTable){ alert('Select a target table first.'); return; }
   showStatus('Claude is re-mapping columns…','info');
+  const remapBusy = window.CygenixBusy && CygenixBusy.start('Re-mapping with Claude',
+    { button: $('remap-btn') || null });
   try {
     columnMapping = await askClaudeForMapping(srcTable, tgtTable, apiKey);
     columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
     renderMappingTable();
     renderSrcColList();
   } catch(e) { showStatus('Remap error: '+e.message,'err'); }
+  finally { if (remapBusy) remapBusy.done(); }
 }
 
 async function askClaudeForMapping(src, tgt, apiKey){
@@ -2339,7 +2366,9 @@ async function runEvidenceMap(){
   if (hasEdits && !confirm('Replace the current mapping with evidence-based proposals? Fixed values and manual picks will be overwritten.')) return;
 
   const btn = $('evidence-map-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Sampling…'; }
+  const busy = window.CygenixBusy && CygenixBusy.start('Evidence map',
+    { button: btn, label: 'Sampling' });
+  if (btn && !busy) { btn.disabled = true; btn.textContent = 'Sampling…'; }
   showStatus('Evidence map: sampling both tables…', 'info');
   try {
     const res = await CygenixEvidenceMap.emRun(srcTable, tgtTable, {
@@ -2360,8 +2389,10 @@ async function runEvidenceMap(){
       + '. Hover a score in the Match column for the reasoning.', 'success');
   } catch (e) {
     showStatus('Evidence map failed: ' + e.message, 'error');
+  } finally {
+    if (busy) busy.done();
+    else if (btn) { btn.disabled = false; btn.textContent = 'Evidence map'; }
   }
-  if (btn) { btn.disabled = false; btn.textContent = 'Evidence map'; }
 }
 
 function autoMap(src, tgt){
@@ -3701,8 +3732,12 @@ async function aiMapOTM(ti){
   if(!apiKey){ alert('Enter your Anthropic API key in the Options panel.'); return; }
   if(!srcTable){ alert('Select a source table first.'); return; }
 
+  // The icon sweep replaced this button's glyph with an empty string, so it
+  // sat blank and disabled for the whole 10-30s call. It now spins, keeps its
+  // name and shows how long it has been going.
   const btn=$('ai-map-btn-'+ti);
-  if(btn){ btn.textContent=''; btn.disabled=true; }
+  const _busy = window.CygenixBusy && CygenixBusy.start('AI map', { button: btn, label: 'AI map' });
+  if(btn && !_busy){ btn.textContent='AI map…'; btn.disabled=true; }
 
   const joinCols=(typeof getJoinColumns==='function')?getJoinColumns():[];
   const srcCols=[...(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name), ...joinCols.map(c=>c.name)];
@@ -3759,8 +3794,13 @@ async function aiMapOTM(ti){
     }
   } catch(e){
     showStatus('AI map error: '+e.message,'err');
+  } finally {
+    // renderOTMCards() above rebuilds this card, so `btn` may already be
+    // detached by now; done() restores it harmlessly either way and the fresh
+    // button is drawn in its normal state.
+    if(_busy) _busy.done();
+    else if(btn){ btn.textContent='AI map'; btn.disabled=false; }
   }
-  if(btn){ btn.textContent='AI map'; btn.disabled=false; }
 }
 
 // ── OTM SQL generation ────────────────────────────────────────────────────────

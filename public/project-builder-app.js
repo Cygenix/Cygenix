@@ -3094,7 +3094,9 @@ async function runSingleStep(gi, si) {
   if (!step) return;
   const btnId = 'run-step-'+gi+'-'+si;
   const btn = document.getElementById(btnId);
-  if (btn) { btn.disabled=true; btn.textContent=''; }
+  // Was blanked by the icon sweep — a step can run for minutes.
+  const _stepBusy = window.CygenixBusy && CygenixBusy.start('Running step', { button: btn, label: 'Running' });
+  if (btn && !_stepBusy) { btn.disabled=true; btn.textContent='Running…'; }
 
   // Use the same hardened resolvers as the "Run selected" path (effectiveSrcConn
   // and effectiveTgtConn) — those check project.srcConn first, then fall back
@@ -3162,6 +3164,9 @@ async function runSingleStep(gi, si) {
   // status — passed/failed — and the progress bar should disappear.
   clearStepProgress(gi, si);
   renderSteps();
+  // renderSteps() has rebuilt the card, so the original button is detached;
+  // the token is released for the page-top bar's sake and btn2 is the live one.
+  if (_stepBusy) _stepBusy.done();
   const btn2 = document.getElementById(btnId);
   if (btn2) { btn2.disabled=false; btn2.textContent='▶ Run'; }
 }

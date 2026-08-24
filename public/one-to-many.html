@@ -420,7 +420,10 @@ async function connectSrc(){
   const lbl=document.getElementById('banner-src-label');
   if (!conn){ alert('No source connection configured. Go to Dashboard → Configure → Connections.'); return; }
   if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
-  if(btn) { btn.disabled=true; btn.textContent=''; }
+  // Was blanked by the icon sweep — reading a wide schema is the slowest
+  // thing this page does, and it showed an empty button while it happened.
+  const _connBusy = window.CygenixBusy && CygenixBusy.start('Reading the schema', { button: btn, label: 'Connecting' });
+  if(btn && !_connBusy) { btn.disabled=true; btn.textContent='Connecting…'; }
   try{
     const { res, paginated } = await _fetchSchemaSmart(conn);
     // Parse database name from connection string since schema response doesn't include it
@@ -434,6 +437,7 @@ async function connectSrc(){
     if(st) { st.textContent= srcDbName+' · '+srcAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
     if(lbl) lbl.textContent='Source: '+srcDbName;
+    if(_connBusy) _connBusy.done();
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderSrcDrop('');
     // If in edit mode, restore source table with real columns from schema
@@ -454,6 +458,7 @@ async function connectSrc(){
   }catch(e){
     if(st) { st.textContent= e.message; st.style.color='var(--red)'; }
     if(dot) dot.style.background='var(--red)';
+    if(_connBusy) _connBusy.done();
     if(btn) { btn.disabled=false; btn.textContent='Retry'; }
   }
 }
@@ -507,7 +512,10 @@ async function connectTgt(){
   const lbl=document.getElementById('banner-tgt-label');
   if (!conn){ alert('No target connection configured. Go to Dashboard → Configure → Connections.'); return; }
   if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
-  if(btn) { btn.disabled=true; btn.textContent=''; }
+  // Was blanked by the icon sweep — reading a wide schema is the slowest
+  // thing this page does, and it showed an empty button while it happened.
+  const _connBusy = window.CygenixBusy && CygenixBusy.start('Reading the schema', { button: btn, label: 'Connecting' });
+  if(btn && !_connBusy) { btn.disabled=true; btn.textContent='Connecting…'; }
   try{
     const { res, paginated } = await _fetchSchemaSmart(conn);
     // Parse database name from connection string since schema response doesn't include it
@@ -521,6 +529,7 @@ async function connectTgt(){
     if(st) { st.textContent= tgtDbName+' · '+tgtAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
     if(lbl) lbl.textContent='Target: '+tgtDbName;
+    if(_connBusy) _connBusy.done();
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderTgtDrop('');
     // If in edit mode, enrich target table cards with real columns + restore saved mappings
@@ -548,6 +557,7 @@ async function connectTgt(){
   }catch(e){
     if(st) { st.textContent= e.message; st.style.color='var(--red)'; }
     if(dot) dot.style.background='var(--red)';
+    if(_connBusy) _connBusy.done();
     if(btn) { btn.disabled=false; btn.textContent='Retry'; }
   }
 }
@@ -1913,5 +1923,6 @@ document.addEventListener('click',e=>{
     document.getElementById('tgt-table-drop').style.display='none';
 });
 </script>
+<script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 </body>
 </html>

@@ -493,8 +493,16 @@ function render() {
   }
 
   if (state.status === 'thinking' || state.status === 'acting') {
+    // An AI turn routinely runs 10-30s. Dots alone stop reading as progress
+    // after about five, so the row carries an elapsed counter and names the
+    // action actually running rather than a generic "Working".
+    var since = _busySince ? (Date.now() - _busySince) : 0;
+    var elapsed = (since >= 2500 && root.CygenixBusy)
+      ? ' · ' + root.CygenixBusy.__core.formatElapsed(since) : '';
+    var what = state.status === 'thinking' ? 'Thinking…'
+      : (_busyAction ? _busyAction + '…' : 'Working…');
     html += '<div class="cyga-step"><span class="cyga-dots"><span></span><span></span><span></span></span>' +
-      '<span>' + (state.status === 'thinking' ? 'Thinking…' : 'Working…') + '</span></div>';
+      '<span>' + esc(what) + esc(elapsed) + '</span></div>';
   }
   if (state.status === 'error' && state.error) {
     html += '<div class="cyga-step err"><span class="st-ic">✕</span><span>' + esc(state.error) + '</span></div>';
@@ -529,7 +537,7 @@ function wireEvents() {
   el.close.addEventListener('click', function () { setOpen(false); });
   el.clear.addEventListener('click', function () {
     state.messages = []; state.trail = []; state.pending = null; state.resume = null;
-    state.status = 'idle'; state.error = null; saveState(); render();
+    state.status = 'idle'; state.error = null; endBusy(); saveState(); render();
   });
   el.send.addEventListener('click', submit);
   el.input.addEventListener('keydown', function (e) {
@@ -542,6 +550,7 @@ function wireEvents() {
   el.policy.addEventListener('change', function () { setPolicy(this.value); });
   el.stop.addEventListener('click', function () {
     state.status = 'stopped'; state.pending = null; state.resume = null;
+    endBusy();
     pushTrail({ name: 'stopped', title: 'Stopped by user', error: true });
     saveState(); render();
   });
@@ -589,6 +598,36 @@ function submit() {
 var seq = 0;
 function nextSeq() { return ++seq; }
 
+/* When the current turn started, and what it is doing — so the transcript row
+   can show an elapsed counter and name the action rather than saying
+   "Working…" for thirty seconds. */
+var _busySince = 0;
+var _busyAction = '';
+var _busyToken = null;
+var _busyPaint = null;
+
+function beginBusy(what) {
+  _busySince = _busySince || Date.now();
+  _busyAction = what || '';
+  if (!_busyToken && root && root.CygenixBusy) {
+    // The panel can be closed while a turn runs, and the page-level bar is the
+    // only signal left in that case.
+    _busyToken = root.CygenixBusy.start('Assistant');
+  }
+  // Repaint on a timer so the elapsed counter advances without a new turn.
+  if (!_busyPaint && typeof setInterval !== 'undefined') {
+    _busyPaint = setInterval(function () {
+      if (state && (state.status === 'thinking' || state.status === 'acting')) render();
+      else endBusy();
+    }, 1000);
+  }
+}
+function endBusy() {
+  _busySince = 0; _busyAction = '';
+  if (_busyToken) { _busyToken.done(); _busyToken = null; }
+  if (_busyPaint) { clearInterval(_busyPaint); _busyPaint = null; }
+}
+
 function pushTrail(entry) {
   entry.seq = nextSeq();
   state.trail.push(entry);
@@ -610,6 +649,7 @@ var saidDegraded = false;
 
 async function runTurn() {
   state.status = 'thinking';
+  beginBusy('Thinking');
   state.error = null;
   saveState(); render();
 
@@ -646,6 +686,7 @@ async function runTurn() {
     var toolUses = (data.content || []).filter(function (b) { return b.type === 'tool_use'; });
     if (!toolUses.length) {
       state.status = 'idle';
+      endBusy();
       saveState(); render();
       return;
     }
@@ -655,6 +696,7 @@ async function runTurn() {
 
   } catch (err) {
     state.status = 'error';
+    endBusy();
     // This console's user IS its operator, so the mapped admin hint (which
     // names the actual cause and where to fix it) belongs on screen, not
     // hidden behind a generic sentence.
@@ -685,6 +727,7 @@ async function executeAll(toolUses, results) {
     if (needsConfirmation(action)) {
       // Park the remaining tools; the approval handler resumes from here.
       state.pending = { toolUseId: tu.id, name: tu.name, input: tu.input, queue: toolUses.slice(i + 1), done: results };
+      endBusy();
       state.status = 'confirm';
       saveState(); render();
       return;
@@ -701,6 +744,9 @@ async function execute(tu, action) {
     name: tu.name, title: action.title || tu.name, effect: action.effect,
     detail: action.summary ? safe(action.summary, tu.input) : null
   });
+  // Name the running action in the busy row: "Running a SQL query · 6s" tells
+  // you what is slow, where "Working…" only tells you that something is.
+  beginBusy(action.title || tu.name);
   saveState(); render();
 
   var startedAt = Date.now();
