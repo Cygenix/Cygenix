@@ -94,6 +94,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 <script src="/nav.js?v=cba1c59a84" defer></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
 </head>
 <body>
 
@@ -558,7 +559,7 @@ Respond ONLY with a valid JSON array — no markdown, no explanation:
     const res = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:CygenixModel.primary(),max_tokens:4096,messages:[{role:'user',content:prompt}]})
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();

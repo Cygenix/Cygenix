@@ -300,7 +300,7 @@ function showView(v) {
   if (v === 'reports')           renderReportsList();
   if (v === 'inventory')         renderInventory();
   if (v === 'connections')       initConnectionsView();
-  if (v === 'project-settings')  { initProjectSettingsView(); initBackupView(); }
+  if (v === 'project-settings')  { initProjectSettingsView(); initBackupView(); cygmmRender(); }
   if (v === 'backup')             { showView('project-settings'); return; }
   if (v === 'privacy-security')  initPrivacySecurityView();
   if (v === 'integrations')      initIntegrationsView();
@@ -905,7 +905,7 @@ ${wasisPromptSection}`;
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: CygenixModel.primary(),
       max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }]
     })
@@ -5465,7 +5465,7 @@ function renderProjectStatus(){
         </div>
       </div>
       <div id="ps-ai-body" class="ps-ai-body${cached ? '' : ' empty'}">${cached ? escP(cached.text) : 'Click "Generate summary" for an AI-written narrative of the current state of this project.'}</div>
-      ${cached ? `<div class="ps-ai-meta">Generated ${new Date(cached.ts).toLocaleString('en-GB')} · model ${escP(cached.model || 'claude-sonnet-4')}</div>` : ''}
+      ${cached ? `<div class="ps-ai-meta">Generated ${new Date(cached.ts).toLocaleString('en-GB')} · model ${escP(cached.model || CygenixModel.primary())}</div>` : ''}
     </div>`;
 
   host.innerHTML = `
@@ -5770,7 +5770,7 @@ ${JSON.stringify(snapshot, null, 2)}`;
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: CygenixModel.primary(),
         max_tokens: 600,
         messages: [{ role: 'user', content: prompt }]
       })
@@ -5784,7 +5784,7 @@ ${JSON.stringify(snapshot, null, 2)}`;
     if (!text) throw new Error('Claude returned an empty response.');
 
     // Cache and render
-    const payload = { text, ts: Date.now(), model: 'claude-sonnet-4' };
+    const payload = { text, ts: Date.now(), model: CygenixModel.primary() };
     try { localStorage.setItem(`cygenix_ps_ai_${project.id}`, JSON.stringify(payload)); } catch {}
 
     bodyEl.textContent = text;
@@ -9194,7 +9194,7 @@ async function refreshCreditGauge() {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
+          model: CygenixModel.primary(),
           max_tokens: 1,
           messages: [{ role: 'user', content: 'hi' }]
         })
@@ -18579,3 +18579,205 @@ function ta_closeRunModal() {
   document.getElementById('ta-run-modal').classList.remove('open');
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Settings → Co-Worker model
+   ──────────────────────────────────────────────────────────────────────────
+   Every decision lives in cygenix-model.js; this only draws the panel and
+   calls it. The list of models comes from the operator's own key, live —
+   a hardcoded catalogue would be the same mistake as a hardcoded model.
+   ═══════════════════════════════════════════════════════════════════════ */
+let _cygmmAvailable = null;      // ids from the live list, or null if unread
+let _cygmmDraft = null;          // { primary, fallbacks } being edited
+let _cygmmCheckedAt = null;
+
+function cygmmModel() { return window.CygenixModel; }
+function cygmmKey() {
+  return localStorage.getItem('cygenix_api_key') || sessionStorage.getItem('cygenix_api_key') || '';
+}
+function cygmmDirty() {
+  const s = cygmmModel().mdSettings();
+  return !!_cygmmDraft && (_cygmmDraft.primary !== s.primary
+    || _cygmmDraft.fallbacks.join(',') !== s.fallbacks.join(','));
+}
+function cygmmSetStatus(tone, title, detail, warnings) {
+  const colour = { ok: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)', neutral: 'var(--text3)' }[tone];
+  const bg = { ok: 'var(--green-bg)', warn: 'var(--amber-bg)', bad: 'var(--red-bg)', neutral: 'var(--bg3)' }[tone];
+  const el = document.getElementById('cygmm-status');
+  if (!el) return;
+  el.style.background = bg;
+  el.style.borderColor = tone === 'neutral' ? 'var(--border2)' : colour;
+  el.innerHTML = '<i class="ic-dot" style="color:' + colour + ';margin-top:5px"></i><div><b>' + escP(title) + '</b>'
+    + '<div style="color:var(--text2)">' + detail + '</div>'
+    + ((warnings && warnings.length)
+      ? '<ul style="margin:5px 0 0;padding-left:16px">' + warnings.map(w => '<li>' + escP(w) + '</li>').join('') + '</ul>'
+      : '') + '</div>';
+}
+function cygmmMessage(tone, html) {
+  const el = document.getElementById('cygmm-msg');
+  if (!el) return;
+  if (!tone) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const colour = { ok: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)', neutral: 'var(--text3)' }[tone];
+  const bg = { ok: 'var(--green-bg)', warn: 'var(--amber-bg)', bad: 'var(--red-bg)', neutral: 'var(--bg3)' }[tone];
+  el.style.display = '';
+  el.style.background = bg;
+  el.style.border = '0.5px solid ' + colour;
+  el.innerHTML = html;
+}
+
+function cygmmRender() {
+  const M = cygmmModel();
+  if (!M || !document.getElementById('cygmm')) return;
+  if (!_cygmmDraft) {
+    const s = M.mdSettings();
+    _cygmmDraft = { primary: s.primary, fallbacks: s.fallbacks.slice() };
+  }
+  const live = (id) => !_cygmmAvailable || _cygmmAvailable.indexOf(id) > -1;
+  const known = (_cygmmAvailable || M.KNOWN.map(m => m.id));
+  const labelOf = (id) => (M.KNOWN.find(k => k.id === id) || {}).label || id;
+
+  /* status, from the engine's own resolution */
+  const r = M.mdResolve(_cygmmAvailable);
+  if (!cygmmKey()) {
+    cygmmSetStatus('bad', 'No API key set',
+      'Add an Anthropic API key above — without one nothing can be checked or called.');
+  } else if (r.source === 'unverified') {
+    cygmmSetStatus('neutral', 'Not verified',
+      'Using <code>' + escP(r.model) + '</code> without confirming it exists. Press <b>Check now</b>.', r.warnings);
+  } else if (r.source === 'primary') {
+    cygmmSetStatus('ok', 'Healthy',
+      'Using <code>' + escP(r.model) + '</code>, which is available on this key.', r.warnings);
+  } else if (r.source === 'fallback') {
+    cygmmSetStatus('warn', 'Running on a fallback',
+      'The primary is unavailable, so calls have degraded to <code>' + escP(r.model)
+      + '</code>. Cost and behaviour differ — set a current primary below.', r.warnings);
+  } else {
+    cygmmSetStatus('bad', 'No usable model',
+      'None of the configured models are available. Every Claude call will fail until a current model is picked below.', r.warnings);
+  }
+
+  /* primary */
+  const sel = document.getElementById('cygmm-primary');
+  const opts = known.filter(id => _cygmmDraft.fallbacks.indexOf(id) === -1)
+    .map(id => '<option value="' + escP(id) + '"' + (id === _cygmmDraft.primary ? ' selected' : '') + '>'
+      + escP(labelOf(id)) + ' — ' + escP(id) + '</option>');
+  // a configured-but-retired model stays visible rather than vanishing
+  if (_cygmmDraft.primary && known.indexOf(_cygmmDraft.primary) === -1) {
+    opts.unshift('<option value="' + escP(_cygmmDraft.primary) + '" selected>'
+      + escP(_cygmmDraft.primary) + ' — unavailable</option>');
+  }
+  sel.innerHTML = opts.join('') || '<option value="">No models available</option>';
+  document.getElementById('cygmm-primary-hint').innerHTML = live(_cygmmDraft.primary)
+    ? 'Used for every Claude call the console makes.'
+    : '<b style="color:var(--red)">Not available — most likely retired. Pick a current one.</b>';
+
+  /* fallback chain */
+  const chain = document.getElementById('cygmm-chain');
+  chain.innerHTML = _cygmmDraft.fallbacks.length ? _cygmmDraft.fallbacks.map((id, i) =>
+    '<li style="display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);font-size:12px">'
+    + '<span style="font-family:var(--mono);font-size:10.5px;color:var(--text3)">' + (i + 1) + '</span>'
+    + '<span style="flex:1;font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escP(id) + '</span>'
+    + '<span class="badge" style="font-size:9.5px;padding:1px 6px;border-radius:99px;background:'
+      + (live(id) ? 'var(--green-bg);color:var(--green)">available' : 'var(--red-bg);color:var(--red)">unavailable') + '</span>'
+    + '<button class="btn btn-sm" style="padding:1px 6px" onclick="cygmmMove(' + i + ',-1)"' + (i === 0 ? ' disabled' : '') + '>↑</button>'
+    + '<button class="btn btn-sm" style="padding:1px 6px" onclick="cygmmMove(' + i + ',1)"' + (i === _cygmmDraft.fallbacks.length - 1 ? ' disabled' : '') + '>↓</button>'
+    + '<button class="btn btn-sm" style="padding:1px 6px" onclick="cygmmRemove(' + i + ')">✕</button></li>').join('')
+    : '<li style="font-size:11.5px;color:var(--text3);font-style:italic;padding:6px 0">No fallbacks — a retirement takes the assistant offline.</li>';
+
+  const used = [_cygmmDraft.primary].concat(_cygmmDraft.fallbacks);
+  const addable = known.filter(id => used.indexOf(id) === -1);
+  const add = document.getElementById('cygmm-add');
+  add.innerHTML = addable.map(id => '<option value="' + escP(id) + '">' + escP(id) + '</option>').join('')
+    || '<option value="">Nothing left to add</option>';
+
+  /* facts */
+  const s = M.mdSettings();
+  document.getElementById('cygmm-serving').textContent = r.model || 'none';
+  document.getElementById('cygmm-changed').textContent = s.updatedAt
+    ? new Date(s.updatedAt).toLocaleString('en-GB') + (s.updatedBy ? ' · ' + s.updatedBy : '')
+    : 'never — using the built-in default';
+  document.getElementById('cygmm-checked').textContent = _cygmmCheckedAt
+    ? new Date(_cygmmCheckedAt).toLocaleString('en-GB') : 'never';
+
+  document.getElementById('cygmm-save').disabled = !cygmmDirty();
+  document.getElementById('cygmm-revert').disabled = !cygmmDirty();
+}
+
+function cygmmPick(v) { _cygmmDraft.primary = v;
+  _cygmmDraft.fallbacks = _cygmmDraft.fallbacks.filter(m => m !== v); cygmmMessage(null); cygmmRender(); }
+function cygmmAddFallback() {
+  const v = document.getElementById('cygmm-add').value;
+  if (v && _cygmmDraft.fallbacks.indexOf(v) === -1 && v !== _cygmmDraft.primary) {
+    _cygmmDraft.fallbacks.push(v); cygmmMessage(null); cygmmRender();
+  }
+}
+function cygmmMove(i, d) {
+  const f = _cygmmDraft.fallbacks;
+  f.splice(i + d, 0, f.splice(i, 1)[0]); cygmmRender();
+}
+function cygmmRemove(i) { _cygmmDraft.fallbacks.splice(i, 1); cygmmRender(); }
+function cygmmRevert() { _cygmmDraft = null; cygmmMessage(null); cygmmRender(); }
+
+function cygmmSave() {
+  const M = cygmmModel();
+  const unknown = [_cygmmDraft.primary].concat(_cygmmDraft.fallbacks)
+    .filter(m => m && _cygmmAvailable && _cygmmAvailable.indexOf(m) === -1);
+  if (unknown.length) {
+    cygmmMessage('warn', 'Not available on this key: <span class="mono">' + escP(unknown.join(', '))
+      + '</span>. Saving one anyway will fail at call time.'
+      + ' <button class="btn btn-sm" style="margin-left:6px" onclick="cygmmSaveForce()">Save anyway</button>');
+    return;
+  }
+  cygmmSaveForce();
+}
+function cygmmSaveForce() {
+  const M = cygmmModel();
+  const who = (JSON.parse(localStorage.getItem('cygenix_user') || '{}').email) || null;
+  M.mdSaveSettings(_cygmmDraft, who, Date.now());
+  _cygmmDraft = null;
+  cygmmMessage('ok', 'Saved. Every Claude call from the next request uses <span class="mono">'
+    + escP(M.mdPrimary()) + '</span>.');
+  cygmmRender();
+}
+
+async function cygmmRefresh() {
+  const M = cygmmModel();
+  const btn = document.getElementById('cygmm-refresh');
+  const key = cygmmKey();
+  if (!key) { cygmmRender(); return; }
+  btn.disabled = true;
+  cygmmMessage('neutral', 'Reading the model list from your API key…');
+  try {
+    const models = await M.mdListModels(key);
+    _cygmmAvailable = models.map(m => m.id);
+    // the live list is the authority — show anything the key can actually use
+    M.KNOWN.length = 0;
+    models.forEach(m => M.KNOWN.push({ id: m.id, label: m.label }));
+    _cygmmCheckedAt = Date.now();
+    cygmmMessage(null);
+  } catch (e) {
+    const hint = (e && e.mapped && e.mapped.adminHint) || e.message;
+    cygmmMessage('bad', escP(hint));
+  }
+  btn.disabled = false;
+  cygmmRender();
+}
+
+async function cygmmTest() {
+  const M = cygmmModel();
+  const model = _cygmmDraft.primary;
+  const key = cygmmKey();
+  if (!model || !key) { cygmmMessage('bad', 'A model and an API key are both needed to test.'); return; }
+  const btn = document.getElementById('cygmm-test');
+  btn.disabled = true;
+  cygmmMessage('neutral', 'Sending a one-token request to <span class="mono">' + escP(model) + '</span>…');
+  try {
+    const res = await M.mdTestModel(model, key);
+    cygmmMessage(res.ok ? 'ok' : 'bad', res.ok
+      ? '<span class="mono">' + escP(model) + '</span> answered in ' + res.ms + ' ms.'
+      : '<span class="mono">' + escP(model) + '</span> failed (' + escP(res.code) + '). ' + escP(res.detail || ''));
+  } catch (e) {
+    cygmmMessage('bad', 'Test failed: ' + escP(e.message));
+  }
+  btn.disabled = false;
+}

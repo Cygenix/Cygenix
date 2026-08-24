@@ -8,6 +8,7 @@
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
@@ -712,7 +713,7 @@ async function askSchemaQuestion() {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: CygenixModel.primary(),
         max_tokens: 1500,
         system: systemPrompt,
         messages: [{ role: 'user', content: question }]
@@ -1110,7 +1111,7 @@ Respond with ONLY a valid JSON object in exactly this structure — no markdown,
         'anthropic-dangerous-direct-browser-access':'true'
       },
       body: JSON.stringify({
-        model:'claude-sonnet-4-20250514',
+        model:CygenixModel.primary(),
         max_tokens:4096,
         messages:[{role:'user', content:prompt}]
       })
@@ -1354,7 +1355,7 @@ Analyse and respond with ONLY a valid JSON object — no markdown fences, no exp
         'anthropic-dangerous-direct-browser-access':'true'
       },
       body: JSON.stringify({
-        model:'claude-sonnet-4-20250514',
+        model:CygenixModel.primary(),
         max_tokens:8096,
         messages:[{role:'user', content:prompt}]
       })
@@ -2914,7 +2915,7 @@ For inferredFKs: only include relationships you're at least medium-confident abo
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
-    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens: 2000, messages:[{role:'user',content:prompt}] })
+    body: JSON.stringify({ model:CygenixModel.primary(), max_tokens: 2000, messages:[{role:'user',content:prompt}] })
   });
   if (!res.ok) throw new Error('Claude API: ' + (await res.text()).slice(0,200));
   const data = await res.json();
@@ -2956,7 +2957,7 @@ ${list}`;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
-    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens: 4000, messages:[{role:'user',content:prompt}] })
+    body: JSON.stringify({ model:CygenixModel.primary(), max_tokens: 4000, messages:[{role:'user',content:prompt}] })
   });
   if (!res.ok) throw new Error('Claude API: ' + (await res.text()).slice(0,200));
   const data = await res.json();
@@ -2997,7 +2998,7 @@ Respond with ONLY a JSON object — no markdown:
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
-    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens: 1500, messages:[{role:'user',content:prompt}] })
+    body: JSON.stringify({ model:CygenixModel.primary(), max_tokens: 1500, messages:[{role:'user',content:prompt}] })
   });
   if (!res.ok) throw new Error('Claude API: ' + (await res.text()).slice(0,200));
   const data = await res.json();

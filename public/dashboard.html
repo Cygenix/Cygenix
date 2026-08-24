@@ -11,6 +11,7 @@
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
+<script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-history.css">
 <meta name="theme-color" content="#FFFFFF">
@@ -1330,7 +1331,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-preflight.js?v=8eabbcd143" defer></script>
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
-  <script src="/dashboard-app.js?v=1fc2f7044c" defer></script>
+  <script src="/dashboard-app.js?v=0128555aa1" defer></script>
 
 
   <!-- MAIN -->
@@ -1876,6 +1877,63 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             </div>
             <a href="https://console.anthropic.com/settings/billing" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:0.65rem">View billing on Anthropic →</a>
           </div>
+        </div>
+      </div>
+
+      <!-- ─── CO-WORKER MODEL ───
+           Claude model ids are pinned snapshots and are retired on notice.
+           When claude-sonnet-4-20250514 went, every AI feature 404'd and the
+           error blamed the API key. This panel makes the current model
+           visible, checkable and changeable without a redeploy. -->
+      <div class="panel" style="margin-bottom:1.25rem" id="cygmm">
+        <div class="panel-header" style="margin-bottom:0.85rem">
+          <div>
+            <div class="panel-title" style="font-size:13px"><i class="ic ic-robot"></i> Co-Worker model</div>
+            <div class="panel-sub">Claude models are pinned snapshots, not evergreen names — each is retired eventually.
+              This shows whether the model the console is set to use still exists on your key, and lets you change it here.</div>
+          </div>
+          <button class="btn btn-sm" onclick="cygmmRefresh()" id="cygmm-refresh"><i class="ic ic-sync"></i> Check now</button>
+        </div>
+
+        <div id="cygmm-status" style="display:flex;gap:10px;align-items:flex-start;padding:0.7rem 0.85rem;border-radius:var(--r);font-size:12.5px;line-height:1.5;margin-bottom:1rem;border:0.5px solid var(--border2);background:var(--bg3)">
+          <i class="ic-dot" style="color:var(--text3);margin-top:5px"></i>
+          <div><b>Not checked yet</b><div style="color:var(--text2)">Press <b>Check now</b> to read the live model list from your API key.</div></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+          <div>
+            <label class="form-label" for="cygmm-primary">Primary model</label>
+            <select class="form-input" id="cygmm-primary" style="width:100%" onchange="cygmmPick(this.value)"></select>
+            <div id="cygmm-primary-hint" style="font-size:11px;color:var(--text3);margin-top:5px">Used for every Claude call the console makes.</div>
+            <dl style="display:grid;grid-template-columns:auto 1fr;gap:5px 12px;margin:0.9rem 0 0;padding-top:0.75rem;border-top:0.5px solid var(--border);font-size:11.5px">
+              <dt style="color:var(--text3)">Serving now</dt><dd style="margin:0;font-family:var(--mono);font-size:11px" id="cygmm-serving">—</dd>
+              <dt style="color:var(--text3)">Last changed</dt><dd style="margin:0;font-family:var(--mono);font-size:11px" id="cygmm-changed">—</dd>
+              <dt style="color:var(--text3)">Checked</dt><dd style="margin:0;font-family:var(--mono);font-size:11px" id="cygmm-checked">never</dd>
+            </dl>
+          </div>
+          <div>
+            <label class="form-label">Fallback chain</label>
+            <ul id="cygmm-chain" style="list-style:none;margin:0 0 0.6rem;padding:0;display:flex;flex-direction:column;gap:5px"></ul>
+            <div style="display:flex;gap:6px">
+              <select class="form-input" id="cygmm-add" style="flex:1"></select>
+              <button class="btn btn-sm" onclick="cygmmAddFallback()">Add</button>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:6px">Tried in order if the primary has been retired, so a retirement degrades
+              instead of breaking. Cost and behaviour differ on a fallback — fix the primary when this happens.</div>
+          </div>
+        </div>
+
+        <div id="cygmm-msg" style="display:none;font-size:12px;line-height:1.5;margin-top:0.85rem;padding:0.6rem 0.75rem;border-radius:var(--r)"></div>
+
+        <div style="display:flex;gap:0.5rem;align-items:center;margin-top:1rem;padding-top:0.85rem;border-top:0.5px solid var(--border)">
+          <button class="btn btn-primary btn-sm" id="cygmm-save" onclick="cygmmSave()" disabled><i class="ic ic-save"></i> Save model</button>
+          <button class="btn btn-sm" id="cygmm-revert" onclick="cygmmRevert()" disabled>Revert</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-sm" onclick="cygmmTest()" id="cygmm-test"><i class="ic ic-bolt"></i> Test selected</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:0.75rem;line-height:1.6">
+          Retirement dates are published at <a href="https://platform.claude.com/docs/en/about-claude/model-deprecations" target="_blank" rel="noopener" style="color:var(--accent)">platform.claude.com/docs/en/about-claude/model-deprecations</a>.
+          Server-side calls (Netlify edge functions, the Azure Function) read <span class="mono">ANTHROPIC_MODEL</span> from their own environment.
         </div>
       </div>
 
