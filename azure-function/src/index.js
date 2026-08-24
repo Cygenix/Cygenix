@@ -336,6 +336,81 @@ app.http('db', {
           };
           break;
         }
+        // ── schema-tables ─────────────────────────────────────────────────
+        // The light table list the Schema Explorer, Object Mapping, Reports
+        // and the SQL Editor all start from. It existed only in the Netlify
+        // db-connect function, so an azure-mode connection answered
+        // "Unknown action: schema-tables" and every graphical map came up
+        // empty while the same database drew fine over a direct connection.
+        //
+        // The SQL is byte-for-byte the query db-connect runs. Two backends
+        // answering the same action MUST answer it the same way — divergent
+        // SQL here is exactly how this class of bug appears again.
+        case 'schema-tables': {
+          const [tablesR, dbR] = await Promise.all([
+            pool.request().query(`
+              SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
+                CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind,
+                CASE WHEN t.TABLE_TYPE='VIEW' THEN 0 ELSE COALESCE(p.rows,0) END AS row_count
+              FROM INFORMATION_SCHEMA.TABLES t
+              LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
+              LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
+              WHERE t.TABLE_TYPE IN ('BASE TABLE','VIEW')
+                AND t.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
+              ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`),
+            pool.request().query('SELECT DB_NAME() AS dbname')
+          ]);
+          // Row counts are the approximate ones from sys.partitions — the same
+          // figures SSMS shows. COUNT(*) per table would be accurate and far
+          // too slow to draw a map from.
+          const allTables = tablesR.recordset.map(t => ({
+            schema:   t.TABLE_SCHEMA,
+            name:     t.TABLE_NAME,
+            kind:     t.kind,
+            // BIGINT can arrive as a string depending on driver settings; the
+            // client wants a number and silently zeroes anything else.
+            rowCount: parseInt(t.row_count) || 0,
+          }));
+          result = {
+            success:  true,
+            database: (dbR.recordset[0] && dbR.recordset[0].dbname) || null,
+            tables:   allTables,
+            views:    allTables.filter(t => t.kind === 'view'),
+          };
+          break;
+        }
+
+        // ── schema-fks ────────────────────────────────────────────────────
+        // Every declared FK edge in the database in one round trip, with no
+        // column or row payload. This is what turns the table list into a
+        // graph; without it the Explorer drew nodes and no relationships.
+        // Multi-column FKs come back as one row per column pair, which is
+        // what the client's edge list expects.
+        case 'schema-fks': {
+          const fkR = await pool.request().query(`
+            SELECT OBJECT_SCHEMA_NAME(fk.parent_object_id) AS fk_schema,
+              OBJECT_NAME(fk.parent_object_id) AS fk_table,
+              COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS fk_column,
+              OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ref_schema,
+              OBJECT_NAME(fk.referenced_object_id) AS ref_table,
+              COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ref_column,
+              fk.name AS fk_name
+            FROM sys.foreign_keys fk
+            JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id`);
+          result = {
+            success: true,
+            foreignKeys: fkR.recordset.map(r => ({
+              fromSchema: r.fk_schema,
+              fromTable:  r.fk_table,
+              fromColumn: r.fk_column,
+              toSchema:   r.ref_schema,
+              toTable:    r.ref_table,
+              toColumn:   r.ref_column,
+              name:       r.fk_name
+            }))
+          };
+          break;
+        }
         case 'schema-columns': {
           // Targeted column introspection for a SINGLE table. Lazy-load
           // alternative to the full `schema` action, which can exceed

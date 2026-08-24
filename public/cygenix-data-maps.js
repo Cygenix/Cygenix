@@ -182,7 +182,9 @@ var TABS = [
         + ' tables. Flow: how the estate splits by volume band and move plan.';
     },
     note:'Ribbon width is the number of FK references, not rows. Self-referencing ribbons stay inside their own arc — a domain that mostly points at itself is a domain you can lift in one piece.' },
-  { id:'burst',   label:'<i class="ic ic-sparkle"></i> Radial burst',
+  // A geometric text mark, like every sibling here: these labels are written
+  // with textContent into a <select><option>, where markup renders literally.
+  { id:'burst',   label:'✱ Radial burst',
     title:'Radial burst — one spoke per table family',
     sub:'Spoke length is log-scaled, so four orders of magnitude fit in one ring. Sectors are domains, ordered clockwise.',
     note:'The long tail is the point: most spokes are short. A log scale is used because a linear one would render everything except the top ten as a flat rim.' },
