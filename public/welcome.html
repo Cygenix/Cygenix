@@ -5,7 +5,7 @@
 <!-- TIER_EXEMPT: signed-in users land here from Stripe even before their
      tier is written to Cosmos. We poll checkout-status which writes the
      tier server-side, then send them on. -->
-<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/auth-gate.js?v=231597c347"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>Cygenix – Setting up your account</title>
@@ -103,8 +103,46 @@ h1{font-family:var(--serif);font-size:1.6rem;font-weight:500;letter-spacing:-0.0
 </div>
 
 <script>
-const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+// Calls go through the authenticated proxy. The Function App host key used
+// to be a literal here, in a page anyone can view-source, and identity was a
+// self-asserted `x-user-id` header — together, anyone could read anyone's
+// checkout session and subscription record. The proxy verifies the Entra
+// token and derives the identity from it; this page holds no credential.
+const DATA_PROXY = '/.netlify/functions/data-proxy';
+
+// The Entra ID token, for the Authorization header the proxy verifies.
+// Read inline rather than via cygenix-auth-token.js: this page is the
+// post-checkout landing and loads no app scripts, and adding one to it
+// would put a second thing between a paying customer and their receipt.
+function readIdToken() {
+  let best = '', bestExp = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (!k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
+      const raw = localStorage.getItem(k);
+      if (!raw || raw[0] !== '{') continue;
+      let obj; try { obj = JSON.parse(raw); } catch { continue; }
+      if (!obj || obj.credentialType !== 'IdToken' || !obj.secret) continue;
+      const parts = String(obj.secret).split('.');
+      if (parts.length !== 3) continue;
+      let exp = 0;
+      try {
+        const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        exp = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))).exp || 0;
+      } catch { continue; }
+      if (exp * 1000 <= Date.now()) continue;
+      if (exp > bestExp) { bestExp = exp; best = obj.secret; }
+    }
+  } catch {}
+  return best;
+}
+function authHeaders() {
+  const t = readIdToken();
+  return t ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t }
+           : { 'Content-Type': 'application/json' };
+}
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS  = 60000;   // 60s ceiling — webhooks usually settle in a few seconds
@@ -189,8 +227,8 @@ function setSuccess(tier, trialEndIso) {
     let data = null;
     try {
       const r = await fetch(
-        `${API_BASE}/checkout-status?session_id=${encodeURIComponent(sessionId)}&code=${FUNC_CODE}`,
-        { headers: { 'x-user-id': userId } }
+        `${DATA_PROXY}?action=checkout-status&session_id=${encodeURIComponent(sessionId)}`,
+        { headers: authHeaders() }
       );
       if (r.ok) data = await r.json();
       else if (r.status === 403) {
@@ -206,7 +244,7 @@ function setSuccess(tier, trialEndIso) {
       // Pull trial end from a fresh whoami call so we can show a date.
       let trialEnd = null;
       try {
-        const w = await fetch(`${API_BASE}/whoami?code=${FUNC_CODE}`, { headers: { 'x-user-id': userId } });
+        const w = await fetch(`${DATA_PROXY}?action=whoami`, { headers: authHeaders() });
         if (w.ok) {
           const wd = await w.json();
           trialEnd = wd.trial_ends_at || wd.current_period_end || null;

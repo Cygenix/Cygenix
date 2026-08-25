@@ -1,0 +1,50 @@
+# Run the test suite on every push and pull request.
+#
+# Until now the only workflow in this repository deployed the Azure Function.
+# The ~3,200-check suite ran when somebody remembered to type `npm test`, which
+# means it caught nothing that reached main between one person's local run and
+# the next. A suite that does not run is documentation.
+#
+# It also gates the secret-exposure test, which is the one that must never be
+# skipped: it is what stops a Function App key or a self-asserted `x-user-id`
+# header being reintroduced into the client.
+name: Tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # Generated artefacts are committed, so a stale one is a real failure.
+      # The suite checks both, but running them first makes the diagnosis
+      # obvious when it is a missing regeneration rather than a broken test.
+      - name: Icons stylesheet is in step with its source table
+        run: |
+          node scripts/build-icons.js
+          git diff --exit-code public/cygenix-icons.css \
+            || (echo "::error::public/cygenix-icons.css is stale — run node scripts/build-icons.js and commit" && exit 1)
+
+      - name: Asset stamps are current
+        run: |
+          node scripts/stamp-assets.js
+          git diff --exit-code -- public \
+            || (echo "::error::asset stamps are stale — run node scripts/stamp-assets.js and commit" && exit 1)
+
+      - name: Run the suite
+        run: npm test

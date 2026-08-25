@@ -1393,8 +1393,9 @@ function renderReconSection(entries) {
 // `aiNarrative` and re-persisted to localStorage so it survives reloads and
 // matches whatever ends up in the saved Cosmos record.
 
-const NARRATIVE_API_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net';
-const NARRATIVE_FUNCTION_KEY = 'jATDgtsp1xeRT47ze_p4IUe_bAuq6yfbvo09cqnhKwYgAzFuroyRhA==';
+// A third Function App key used to sit here, in a page served to every
+// visitor. The narrative call goes through the authenticated proxy now.
+const NARRATIVE_URL = '/.netlify/functions/data-proxy?path=%2Fnarrative';
 
 function loadNarrative(d, forceRegenerate) {
   const body = document.getElementById('narrative-body');
@@ -1430,7 +1431,7 @@ function loadNarrative(d, forceRegenerate) {
   // is NOT persisted (that would bloat the report record).
   d.artifactRefs = artifactResult.refs;
 
-  fetch(NARRATIVE_API_BASE + '/api/narrative?code=' + encodeURIComponent(NARRATIVE_FUNCTION_KEY), {
+  fetch(NARRATIVE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ report: payload, migrationId: d.id || null })

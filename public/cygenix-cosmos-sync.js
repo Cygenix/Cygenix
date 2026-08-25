@@ -5,8 +5,18 @@
  */
 const CygenixSync = (() => {
 
+  // The Function App host key used to live here, as a literal, in a file
+  // served to every visitor. Combined with the Function App reading identity
+  // straight off an `x-user-id` request header, that made every user's data
+  // readable and writable by anyone who viewed source.
+  //
+  // Calls now go through /.netlify/functions/data-proxy, which verifies the
+  // caller's Entra token and derives the identity from the verified claims.
+  // The key lives in Netlify's environment and never reaches the browser.
+  //
+  // API_BASE stays only because other modules read it to build display URLs;
+  // nothing authenticates with it any more.
   const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-  const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
 
   // Capture the unmonkey-patched setItem early. We override localStorage.setItem
   // below to trigger auto-save, and several internal codepaths need to write
@@ -243,26 +253,17 @@ const CygenixSync = (() => {
   }
 
   async function callApiRaw(action, method, body) {
-    const userId = getUserId();
-    if (!userId) return null;
-    try {
-      const res = await fetch(`${API_BASE}/${action}?code=${FUNC_CODE}`, {
-        method: method || 'GET',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
-        body: body ? JSON.stringify(body) : undefined
-      });
-      if (!res.ok) {
-        // Capture the response body — without Application Insights or Live
-        // Log Stream available on this Azure plan, the browser console is
-        // the only diagnostic surface for server errors. The Azure Function
-        // is wrapped to return err.message + err.stack in 500 bodies.
-        let detail = '';
-        try { detail = (await res.text()).slice(0, 500); } catch {}
-        console.warn('[CygenixSync]', action, res.status, detail);
-        return null;
-      }
-      return await res.json();
-    } catch (e) { console.warn('[CygenixSync] error:', e.message); return null; }
+    // No userId and no key are sent. The proxy establishes both from the
+    // verified token — anything this file asserted about identity would be
+    // exactly the header the Function App used to trust.
+    if (!window.CygenixDataApi) {
+      console.warn('[CygenixSync] cygenix-data-api.js is not loaded; sync is disabled on this page.');
+      return null;
+    }
+    // callOrNull keeps the previous contract: every caller here treats null
+    // as "sync unavailable" and carries on against local state, so a failed
+    // save must not throw into them.
+    return window.CygenixDataApi.callOrNull(action, { method: method || 'GET', body: body });
   }
 
   // Build the payload to push to Cosmos. CRITICAL: this used to read
@@ -962,13 +963,11 @@ const CygenixSync = (() => {
     exportBackup, importBackup,
     // v1.3 recovery helpers — see definitions above.
     resetToCloud, nuke,
-    // Exposed for other modules (e.g. cygenix-project-summary.js) that need to
-    // call the Function with the same auth as the rest of the dashboard.
-    // Keep this the SINGLE source of truth — never duplicate the function key
-    // into another file or into localStorage. If it ever needs rotating, the
-    // change happens here and propagates to every consumer automatically.
+    // The Function host, for modules that build a display URL. There is no
+    // longer a `funcCode` to expose: the key is held by the Netlify proxy,
+    // and any module that needs to CALL the API uses CygenixDataApi rather
+    // than assembling a URL with a key in it.
     apiBase:  API_BASE,
-    funcCode: FUNC_CODE,
   };
 })();
 

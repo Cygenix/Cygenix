@@ -389,18 +389,13 @@
       let synced = false;
       try {
         if (window.CygenixSync && typeof window.CygenixSync.getUserId === 'function') {
-          const userId = window.CygenixSync.getUserId();
-          const apiBase = (window.CygenixSync.apiBase || '').replace(/\/$/, '');
-          const fnKey = window.CygenixSync.funcCode || '';
-          if (userId && apiBase) {
-            const params = new URLSearchParams();
-            if (fnKey) params.set('code', fnKey);
-            const url = apiBase + '/save' + (params.toString() ? '?' + params.toString() : '');
-            const r = await fetch(url, {
+          // Through the authenticated proxy — no key, no self-asserted id.
+          if (window.CygenixDataApi) {
+            const r = await fetch(window.CygenixDataApi.ENDPOINT + '?action=save', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'x-user-id': userId
+                Authorization: 'Bearer ' + ((typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '')
               },
               body: JSON.stringify({ jobs: remaining })
             });
@@ -545,16 +540,16 @@
     const base = getFunctionBase();
     const fnKey = getFunctionKey();
 
-    // Build URL with optional ?code= for function key
-    const params = new URLSearchParams({ jobId });
-    if (fnKey) params.set('code', fnKey);
-    const url = `${base}${ENDPOINT}?${params.toString()}`;
+    // Through the authenticated proxy. ENDPOINT is '/api/data/project-
+    // summary-document', so the action is its last segment.
+    const url = '/.netlify/functions/data-proxy?action=project-summary-document'
+              + '&jobId=' + encodeURIComponent(jobId);
 
     try {
       const resp = await fetch(url, {
         method: 'GET',
         headers: {
-          'x-user-id': userId,
+          Authorization: 'Bearer ' + ((typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : ''),
           'Accept': 'text/html, application/json',
         },
       });

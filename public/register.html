@@ -225,7 +225,11 @@ select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns=
 // we depend on the honeypot + server-side validation to keep the container
 // clean. If spam becomes a problem, swap to Cloudflare Turnstile.
 const API  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-const CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+// The waitlist is the one genuinely anonymous action — a visitor with no
+// account submits it — so it cannot go through a proxy that demands a token.
+// It goes through a Netlify function that holds the key server-side instead,
+// which is why no key appears here.
+
 
 const form     = document.getElementById('waitlist-form');
 const btn      = document.getElementById('submit-btn');
@@ -274,7 +278,7 @@ form.addEventListener('submit', async (e) => {
   btnLabel.innerHTML = '<span class="spinner"></span> Submitting…';
 
   try {
-    const res = await fetch(`${API}/waitlist?code=${CODE}`, {
+    const res = await fetch('/.netlify/functions/waitlist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
