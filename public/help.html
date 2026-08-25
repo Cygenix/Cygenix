@@ -104,6 +104,7 @@ section{margin-bottom:0.5rem}
     <a class="toc-item sub" href="#supported-limits">Plan limits</a>
     <a class="toc-item" href="#server-migration">Server migration</a>
     <a class="toc-item" href="#connections">Connection strings</a>
+    <a class="toc-item" href="#members">Members, roles and guardrails</a>
 
     <div class="toc-section">Configure</div>
     <a class="toc-item" href="#configure">Configure (live DB migration)</a>
@@ -466,11 +467,69 @@ section{margin-bottom:0.5rem}
       <p>Store project documents, schema files, data dictionaries, mapping documents and Was/Is tables. Files can be uploaded, previewed (CSV, images) and downloaded. Client uploads appear in a separate <strong><i class="ic ic-user"></i> Client submissions</strong> section.</p>
     </section>
 
+    <section id="members">
+      <h2>Members, roles and guardrails</h2>
+      <p>Everything about who reaches your work, and what they may do with it, lives on one page:
+        <strong>Connect &rarr; Settings &rarr; Users &amp; Roles</strong>. There is no step in any of it that happens
+        in an identity provider's admin console.</p>
+
+      <h3>Your workspace</h3>
+      <p>Your projects belong to a <strong>workspace</strong>, not to you personally. Colleagues in the same
+        workspace can open the same project; anyone outside it cannot see that the project exists — a request for
+        one of its records answers <em>not found</em>, the same answer an address that has never existed would get.
+        The attempt is recorded on our side at high severity.</p>
+      <p>Signing in does not put anybody in your workspace. A person who signs in without an invitation gets their
+        own, empty, and sees nothing of yours. There is no domain matching: sharing an email domain admits nobody,
+        because plenty of people share <code>gmail.com</code>.</p>
+
+      <h3>Inviting somebody</h3>
+      <div class="steps">
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Enter their address and choose their roles</strong><p>On <strong>Members</strong>. The invitation names the roles the person will hold, so admitting them and deciding what they may do is one act rather than two that can drift apart.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>They sign in with that address</strong><p>That is the whole redemption. There is no link to click, no token to lose and no password for Cygenix to hold — they authenticate with Microsoft Entra as everyone else does. The invitation expires after fourteen days and can be revoked before it is used.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>They appear under Users, already holding their roles</strong><p>Change or revoke those roles at any time. A revocation takes effect on their next request, not their next sign-in.</p></div></div>
+      </div>
+      <p>Removing a member ends their membership and revokes every role they hold. It does not delete their work:
+        their projects stay in the workspace, because a departing colleague's drafts are the customer's records.</p>
+
+      <h3>What is shared and what is not</h3>
+      <table class="help-table">
+        <thead><tr><th>Object</th><th>Who sees it</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Projects you create</strong></td><td>Everyone in the workspace, by default. Set a project to <em>private</em> and only you can open it.</td></tr>
+          <tr><td><strong>Projects that predate this</strong></td><td>Private to whoever created them. Sharing a workspace does not publish work written before it existed — the owner shares it deliberately.</td></tr>
+          <tr><td><strong>Deleting a shared project</strong></td><td>The owner only. A colleague who can open it cannot destroy it.</td></tr>
+          <tr><td><strong>Your Drive</strong></td><td>You alone. The Drive is personal working documents, and a shared workspace does not imply shared files.</td></tr>
+          <tr><td><strong>Jobs, schedules and saved scripts</strong></td><td>Still personal, not yet shared within a workspace. This is the one part of the boundary that is not finished.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Change guardrails</h3>
+      <p>A guardrail decides what must happen before a write runs against a classified target. It is set once for
+        the workspace and <strong>enforced by the server</strong>: a request that skips the dialog gets the same
+        answer the dialog would have insisted on.</p>
+      <table class="help-table">
+        <thead><tr><th>Setting</th><th>What it means</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Off</strong></td><td>Nothing is gated. Writes run as soon as your roles allow them.</td></tr>
+          <tr><td><strong>Confirm destructive only</strong></td><td>A DELETE, TRUNCATE, DROP or an UPDATE with no WHERE clause must be confirmed. Ordinary writes run.</td></tr>
+          <tr><td><strong>Confirm every change</strong></td><td>Every write must be confirmed.</td></tr>
+          <tr><td><strong>Two-person rule</strong></td><td>Escalates the above: a gated change is queued and does not run until somebody <em>other than the requester</em> approves it. An Approver, Migration Lead or Platform Administrator can. Nobody approves their own request, and the sole approver of a change cannot be the one to execute it.</td></tr>
+        </tbody>
+      </table>
+      <p>Guardrails apply to <strong>PROD</strong> and <strong>STAGING</strong> targets. An unclassified connection
+        counts as PROD, so it is covered without anyone having to decide it should be.</p>
+      <p>A confirmation is issued by the server against the exact statement you are about to run. Editing the
+        statement means confirming again; an approval cannot be spent twice, cannot be moved to a different target,
+        and expires after fifteen minutes. Both the request and the approval land in the audit trail.</p>
+      <p>A workspace that existed before guardrails did starts with them <strong>off</strong>, so nothing changed
+        underneath anyone. Turn them on from the same page.</p>
+    </section>
+
     <section id="client-portal">
       <h2>Client Portal</h2>
       <p>Give clients a separate login that takes them to a simplified portal (<code>/client.html</code>) for uploading source data and notes.</p>
       <div class="steps">
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Invite the client</strong><p>Netlify dashboard → Identity → Invite users → enter the client's email.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Invite the client</strong><p><strong>Connect &rarr; Settings &rarr; Users &amp; Roles &rarr; Members</strong>: enter their email address and give them the <strong>Member</strong> role. They join the first time they sign in with that address. Nothing happens outside Cygenix.</p></div></div>
         <div class="step"><div class="step-num"></div><div class="step-body"><strong>Assign their role</strong><p>Roles are assigned inside Cygenix, in <strong>Connect &rarr; Settings &rarr; Users &amp; Roles</strong>. There is no step outside the product and nothing to edit in an identity provider's admin console.</p><p>Ten roles are available, each with a fixed set of permissions enforced on the server: Organisation Owner, Platform Administrator, Migration Lead, Migration Engineer, Approver, Data Owner, Validator, Auditor, Member and Automation Principal. A user may hold more than one; where that collapses a separation of duties, Cygenix says so rather than hiding it.</p></div></div>
         <div class="step"><div class="step-num"></div><div class="step-body"><strong>Client logs in</strong><p>Cygenix automatically routes them to the client portal, not the analyst dashboard.</p></div></div>
       </div>

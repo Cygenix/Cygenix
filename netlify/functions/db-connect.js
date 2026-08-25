@@ -42,7 +42,8 @@ const { verifyAuthHeader } = require('./lib/entra-auth');
 const { applyEntraAuth, resolveSqlConfig, connectWithRetry } = require('./lib/sql-entra');
 const { shouldRelay, createRelayPool } = require('./lib/azure-sql-relay');
 const { can, connKey, detectDestructive, isReadOnlySql } = require('./lib/rbac');
-const { orgStore, resolveActor, classificationFor, appendAudit } = require('./lib/org-store');
+const { orgStore, resolveActor, classificationFor, appendAudit, loadAll } = require('./lib/org-store');
+const tenancy = require('./lib/tenancy');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type-formatting helpers (shared across MSSQL + Postgres schema endpoints)
@@ -238,10 +239,73 @@ async function rbacGate(authed, action, dialect, connectionString, database, bod
   let guardrail = null;
   if (mutating) {
     const destructive = detectDestructive(sqlText);
+
+    // ── The guardrail, as a control rather than a dialog ──────────────────
+    //
+    // The dashboard has offered "confirm every change" and "confirm
+    // destructive only" for a while, and both were client-side prompts: a
+    // caller who skipped the interface skipped the guardrail with it. The
+    // setting is now the tenant's, held server-side, and enforced here.
+    //
+    // A covered act needs an approval record that this server issued
+    // against this exact statement. Answering 428 rather than 403 says
+    // what it says: not refused, unfinished — here is what is missing.
+    const { tenant } = await tenancy.resolveTenant(store, actor, (await loadAll(store)).users);
+    const act = { policyAction, resourceId: connKey(server, db), environment, sql: sqlText, mutating: true, destructive };
+    const requirement = tenancy.requirementFor(tenant.guardrails, act);
+
+    if (requirement) {
+      const hash = tenancy.actHash(act);
+      const supplied = body.approvalId ? String(body.approvalId) : null;
+      const spent = supplied
+        ? await tenancy.consumeApproval(store, { tenantId: tenant.id, approvalId: supplied, actHash: hash, actorOid: actor.oid })
+        : { ok: false, reason: requirement === 'second-person' ? 'awaiting approval' : 'the act has not been confirmed' };
+
+      if (!spent.ok) {
+        // Issue the request the caller is missing, so the round trip is one
+        // call and not three. An existing live request for the same act is
+        // reused rather than duplicated — a client retrying must not fill
+        // the approver's queue with copies of one question.
+        const open = (await tenancy.listApprovals(store, { tenantId: tenant.id }))
+          .find(a => a.actHash === hash && a.requestedBy === actor.oid);
+        const pending = open || await tenancy.requestApproval(store, {
+          tenantId: tenant.id, act, requirement,
+          requestedBy: actor.oid, requestedByEmail: actor.email,
+        });
+        await appendAudit(store, { ...base, action: policyAction, outcome: 'denied',
+          severity: environment === 'PROD' ? 'high' : 'notice',
+          detail: { ...base.detail, reason: spent.reason, requirement,
+                    approvalId: pending.id, tenantId: tenant.id,
+                    destructive: destructive.length ? destructive : undefined } });
+        return { denied: {
+          statusCode: 428,
+          headers: CORS,
+          body: JSON.stringify({
+            error: requirement === 'second-person'
+              ? 'This change needs a second person to approve it before it runs.'
+              : 'This change needs confirming before it runs.',
+            hint: requirement === 'second-person'
+              ? 'An Approver, Migration Lead or Platform Administrator approves it on the Users & Roles page. You cannot approve your own request.'
+              : 'Confirm it and the same request is sent again with the confirmation attached.',
+            guardrailRequired: requirement,
+            approvalId: pending.id,
+            approvalExpiresAt: pending.expiresAt,
+            environment,
+            destructive,
+          }),
+        } };
+      }
+      guardrail = { environment, destructive, approvalId: supplied, requirement, approved: true };
+    }
+
     await appendAudit(store, { ...base, action: policyAction, outcome: 'allowed',
       severity: decision.severity,
-      detail: { ...base.detail, destructive: destructive.length ? destructive : undefined } });
-    if (environment === 'PROD' || environment === 'STAGING') {
+      detail: { ...base.detail, tenantId: tenant.id,
+                approvalId: guardrail && guardrail.approvalId || undefined,
+                destructive: destructive.length ? destructive : undefined } });
+    if (!guardrail && (environment === 'PROD' || environment === 'STAGING')) {
+      // Nothing to enforce for this tenant, but the analysis is still worth
+      // showing beside the result.
       guardrail = { environment, destructive };
     }
   }

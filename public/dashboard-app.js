@@ -14054,11 +14054,19 @@ function impGetConn(which){
 }
 
 // Dispatch a DB call — direct URL (Azure Function) or connection-string via netlify proxy.
+// Server-enforced guardrails: a write covered by the tenant's policy comes
+// back 428 with what is missing. cygenix-guardrail.js turns that into the
+// confirmation (or the approval queue) and re-sends. Without it loaded, this
+// is exactly the fetch it always was.
+function gfetch(url, init) {
+  return (window.CygenixGuardrail ? window.CygenixGuardrail.fetch(url, init) : fetch(url, init));
+}
+
 async function impDbCall(conn, body){
   const isFn = conn.startsWith('https://') || conn.startsWith('http://');
   const res = isFn
-    ? await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(60000) })
-    : await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body, connectionString: conn}), signal:AbortSignal.timeout(60000) });
+    ? await gfetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(60000) })
+    : await gfetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body, connectionString: conn}), signal:AbortSignal.timeout(60000) });
   const data = await res.json().catch(() => ({ error:'Non-JSON response' }));
   // Netlify wraps function errors as { errorType, errorMessage } — the
   // original error-extraction only checked `error`, which left users

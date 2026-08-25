@@ -828,12 +828,20 @@ function updateConnLabel() {
 
 function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
 
+// Server-enforced guardrails: a write covered by the tenant's policy comes
+// back 428 with what is missing. cygenix-guardrail.js turns that into the
+// confirmation (or the approval queue) and re-sends. Without it loaded, this
+// is exactly the fetch it always was.
+function gfetch(url, init) {
+  return (window.CygenixGuardrail ? window.CygenixGuardrail.fetch(url, init) : fetch(url, init));
+}
+
 async function dbCall(sql) {
   const conn = getConn();
   if (!conn) throw new Error('No connection configured — set in Dashboard → Configure → Connections');
   const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
   const body = isFn(conn) ? {action:'execute',sql} : {action:'execute',sql,connectionString:conn};
-  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
+  const res = await gfetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
   const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
   if (!res.ok) throw new Error(data.error||res.statusText);
   return data;

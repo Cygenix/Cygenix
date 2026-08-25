@@ -88,12 +88,19 @@
   async function dbCall(conn, body) {
     const url     = isFn(conn) ? conn : '/.netlify/functions/db-connect';
     const payload = isFn(conn) ? body : { ...body, connectionString: conn };
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60000),
-    });
+    const res = await (window.CygenixGuardrail
+      ? window.CygenixGuardrail.fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(60000),
+        })
+      : fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(60000),
+        }));
     const data = await res.json().catch(() => ({ error: 'Non-JSON response (' + res.status + ')' }));
     if (!res.ok) throw new Error(data.error || res.statusText);
     // The Azure /api/db route answers HTTP 200 with { success:false, error }

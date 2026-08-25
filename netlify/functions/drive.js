@@ -22,11 +22,17 @@
 //   get-content  { id }                          → { contentB64, mime }
 //   delete       { ids: [id, ...] }              → { ok, deleted }
 //
-// Auth: verified Entra ID token (shared lib). The store is keyed by the
-// token's `sub`, so one user can never address another user's Drive.
+// Auth: verified Entra ID token, through lib/authz. The store is keyed by
+// the token's `sub`, so one user can never address another user's Drive.
+//
+// The Drive is deliberately NOT tenant-keyed. Projects became shared because
+// colleagues need to work on the same migration; a person's Drive is their
+// own working documents, and "your colleague can now read your files" is not
+// something tenancy implies or anybody asked for. If shared team folders are
+// wanted later they are a feature, not a re-keying.
 
 const { getStore } = require('@netlify/blobs');
-const { verifyAuthHeader } = require('./lib/entra-auth');
+const authz = require('./lib/authz');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -111,13 +117,19 @@ exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST')    return fail('Method not allowed', 405);
 
-  let userId;
+  // The Drive stays keyed on the individual, not the tenant — see the note
+  // in the header. It still goes through the one door, so that a signer with
+  // no role assignment reaches nothing here either, and so that the
+  // route-coverage test can prove it from the outside.
+  let userId, ctx;
   try {
-    const authed = await verifyAuthHeader(event);
-    userId = authed.sub;
-    if (!userId) throw new Error('No user ID in token');
+    ctx = await authz.authorize(event, {
+      route: 'drive', action: 'project.read', mutating: false,
+    });
+    userId = ctx.authed.sub || ctx.actor.oid;
+    if (!userId) throw new authz.AuthzError('No user ID in token', 401);
   } catch (e) {
-    return fail('Auth error: ' + e.message, 401);
+    return authz.errorResponse(e, CORS);
   }
 
   let body = {};

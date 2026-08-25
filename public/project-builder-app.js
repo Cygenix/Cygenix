@@ -1866,9 +1866,17 @@ function rptResolveFriendlyName(desc) {
   return exactName || serverOnlyName || '';
 }
 
+// Server-enforced guardrails: a write covered by the tenant's policy comes
+// back 428 with what is missing. cygenix-guardrail.js turns that into the
+// confirmation (or the approval queue) and re-sends. Without it loaded, this
+// is exactly the fetch it always was.
+function gfetch(url, init) {
+  return (window.CygenixGuardrail ? window.CygenixGuardrail.fetch(url, init) : fetch(url, init));
+}
+
 async function dbCall(conn, body) {
   if (isFnUrl(conn)) {
-    const res  = await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(120000) });
+    const res  = await gfetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(120000) });
     const data = await res.json().catch(()=>({ error:'Non-JSON (HTTP '+res.status+')' }));
     if (!res.ok) throw new Error(data.error||res.statusText);
     // Some backends return HTTP 200 with an `error` field in the body when
@@ -1877,7 +1885,7 @@ async function dbCall(conn, body) {
     if (data && data.error) throw new Error(data.error);
     return data;
   } else {
-    const res  = await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body,connectionString:conn}), signal:AbortSignal.timeout(120000) });
+    const res  = await gfetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body,connectionString:conn}), signal:AbortSignal.timeout(120000) });
     const data = await res.json().catch(()=>({ error:'Non-JSON (HTTP '+res.status+')' }));
     if (!res.ok) throw new Error(data.error||res.statusText);
     if (data && data.error) throw new Error(data.error);
