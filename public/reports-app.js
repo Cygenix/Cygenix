@@ -167,11 +167,16 @@ async function _cosmosCall(action, opts){
   const userId = _cosmosUserId();
   if (!userId) throw new Error('No user id available for Cosmos call');
 
-  const qs = new URLSearchParams({ action: action, code: cfg.code });
+  // Through the authenticated proxy. This used to build a URL with a
+  // configured function key and assert its own `x-user-id`; the proxy
+  // verifies the caller's token and tells the API who they are.
+  const qs = new URLSearchParams({ action: action });
   if (opts && opts.qs) Object.keys(opts.qs).forEach(k => qs.append(k, opts.qs[k]));
-  const url = cfg.url + '?' + qs.toString();
+  const url = '/.netlify/functions/data-proxy?' + qs.toString();
   const method = opts && opts.body ? 'POST' : 'GET';
-  const headers = { 'Content-Type': 'application/json', 'x-user-id': userId };
+  const _tok = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '';
+  if (!_tok) throw new Error('Not signed in');
+  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tok };
   const fetchOpts = { method, headers, signal: AbortSignal.timeout(30000) };
   if (method === 'POST') fetchOpts.body = JSON.stringify(opts.body || {});
 

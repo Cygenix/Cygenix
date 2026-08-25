@@ -36,8 +36,11 @@
 
   // ── Cygenix backend endpoint (matches cygenix-cosmos-sync.js) ─────────────
   // Hardcoded by design — see header comment.
-  const CYGENIX_API_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api';
-  const CYGENIX_API_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+  // The Function App base and its host key used to be literals here, in a
+  // file served to every visitor. Calls now go through the Netlify proxy,
+  // which verifies the caller's Entra token and derives the identity from
+  // the verified claims.
+  const CYGENIX_PROXY = '/.netlify/functions/data-proxy';
 
   // ── Identity ──────────────────────────────────────────────────────────────
   // Mirrors currentCygenixEmail() in dashboard.html. Reads the Entra account
@@ -94,14 +97,21 @@
     // otherwise use ? to introduce the query string. Without this guard a
     // GET with query params builds a malformed URL like '?jobId=X?code=Y'
     // and Azure rejects it 401 because the function key never gets parsed.
-    const sep = path.includes('?') ? '&' : '?';
-    const url = `${base}/${path}${sep}code=${encodeURIComponent(key)}`;
+    // `path` arrives as 'data/<action>' or 'data/<action>?a=b'. The proxy
+    // takes the action and any extra parameters separately.
+    const bare  = String(path).replace(/^data\//, '');
+    const qIdx  = bare.indexOf('?');
+    const action = qIdx === -1 ? bare : bare.slice(0, qIdx);
+    const extra  = qIdx === -1 ? ''   : '&' + bare.slice(qIdx + 1);
+    const url = `${CYGENIX_PROXY}?action=${encodeURIComponent(action)}${extra}`;
 
+    const token = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '';
+    if (!token) throw new Error('Please sign in first.');
     const opts = {
       method: method || 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id':    email,
+        Authorization: 'Bearer ' + token,
       },
     };
     if (body && opts.method !== 'GET') opts.body = JSON.stringify(body);

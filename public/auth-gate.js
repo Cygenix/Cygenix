@@ -161,12 +161,54 @@
     } catch {}
   }
 
-  const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-  const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+  // The Entra ID token, read inline. cygenix-auth-token.js does this properly
+  // and every other caller uses it, but this file is loaded first and blocking
+  // in <head> precisely so the gate runs before paint — so it keeps its own
+  // dependency-free reader, the same way readUserIdFromMsal above does.
+  function readIdTokenFromMsal() {
+    let best = '', bestExp = 0;
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (!k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || raw[0] !== '{') continue;
+        let obj; try { obj = JSON.parse(raw); } catch { continue; }
+        if (!obj || obj.credentialType !== 'IdToken' || !obj.secret) continue;
+        const parts = String(obj.secret).split('.');
+        if (parts.length !== 3) continue;
+        let exp = 0;
+        try {
+          const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+          exp = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))).exp || 0;
+        } catch { continue; }
+        if (exp * 1000 <= Date.now()) continue;
+        if (exp > bestExp) { bestExp = exp; best = obj.secret; }
+      }
+    } catch {}
+    return best;
+  }
 
-  fetch(`${API_BASE}/whoami?code=${FUNC_CODE}`, {
+  // The tier gate asks the API who the caller is. It used to do that with a
+  // hard-coded Function App key and a self-asserted `x-user-id` — the two
+  // halves of the bypass that let anyone read anyone's subscription record.
+  // It now sends the token and nothing else; the proxy establishes identity
+  // from the verified claims. `userId` above remains the local cache key
+  // only — it is no longer what the server believes.
+  const idToken = readIdTokenFromMsal();
+  if (!idToken) {
+    // No token to present. Fail open, as this gate always has — a tier check
+    // that cannot run must not lock a signed-in user out of the product.
+    clearTimeout(failsafeTimer);
+    const s0 = document.getElementById('cygenix-tier-gate-style');
+    if (s0) s0.remove();
+    return;
+  }
+
+  fetch('/.netlify/functions/data-proxy?action=whoami', {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken }
   })
     .then(r => r.ok ? r.json() : null)
     .then(data => {

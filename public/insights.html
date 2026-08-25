@@ -288,6 +288,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 </style>
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 </head>
 <body>
 
@@ -2136,12 +2137,17 @@ async function dpApi(method, action, body) {
   // If it does, we glue the function-app code with & instead of ? — otherwise we'd
   // end up with two ?'s in the URL and Azure routes it incorrectly (returns an
   // HTML error page, which we then surface as "Non-JSON response").
-  const sep = action.includes('?') ? '&' : '?';
-  const url = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data/' + action +
-              sep + 'code=WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+  // Through the authenticated proxy. `action` may carry its own query string
+  // (e.g. "profile-load?fingerprint=…"); split it so the proxy sees the
+  // action name and the parameters separately.
+  const qIdx   = action.indexOf('?');
+  const name   = qIdx === -1 ? action : action.slice(0, qIdx);
+  const extra  = qIdx === -1 ? ''     : '&' + action.slice(qIdx + 1);
+  const url = '/.netlify/functions/data-proxy?action=' + encodeURIComponent(name) + extra;
+  const _tok = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '';
   const opts = {
     method,
-    headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tok }
   };
   if (body && method !== 'GET') opts.body = JSON.stringify(body);
 
@@ -2697,8 +2703,7 @@ async function dpCreateTask(role) {
   //    pinned jobVersionId — by creating the version automatically here,
   //    we keep the user's path from Insights → Task Agent → schedule
   //    consistent with the project-builder flow.
-  const FN_KEY = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
-  const VERSION_URL = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data/version-create?code=' + FN_KEY;
+  const VERSION_URL = '/.netlify/functions/data-proxy?action=version-create';
   const snapshot = {
     // Mirror the job record but include the payload at the top level too,
     // matching how the Task Agent's run-migration consumer would expect
@@ -2714,7 +2719,8 @@ async function dpCreateTask(role) {
   try {
     const r = await fetch(VERSION_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      headers: { 'Content-Type': 'application/json',
+                 Authorization: 'Bearer ' + ((typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '') },
       body:    JSON.stringify({ jobId, snapshot, label: 'auto', note: 'Created from Insights' })
     });
     const vd = await r.json().catch(() => ({}));

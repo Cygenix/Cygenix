@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <script src="/auth-gate.js?v=66954e4b99"></script>
+  <script src="/auth-gate.js?v=231597c347"></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -2418,8 +2418,10 @@
   // The relative-URL approach (/api/data/...) doesn't work because there's
   // no Netlify rewrite forwarding /api/data/* to Azure.
   // ─────────────────────────────────────────────────────────────────────────
-  const DATA_API_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-  const DATA_API_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+  // Through the authenticated Netlify proxy. The Function App key used to be
+  // a literal here and identity was a self-asserted header; together they let
+  // anyone read anyone's quality reports.
+  const DATA_PROXY = '/.netlify/functions/data-proxy';
 
   async function apiData(action, body, method = 'POST') {
     const userId = getUserId();
@@ -2433,12 +2435,14 @@
         if (v !== undefined && v !== null) params.set(k, String(v));
       }
     }
-    params.set('code', DATA_API_CODE);
+    params.set('action', action);
 
-    const url  = DATA_API_BASE + '/' + action + '?' + params.toString();
+    const token = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '';
+    if (!token) throw new Error('Not signed in.');
+    const url  = DATA_PROXY + '?' + params.toString();
     const opts = {
       method,
-      headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
     };
     if (method !== 'GET' && body) opts.body = JSON.stringify(body);
 

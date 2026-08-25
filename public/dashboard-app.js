@@ -4312,7 +4312,8 @@ async function _doAutoVersion(jobId, note){
     if (!job) return;
     const hash = await _hashJob(job);
     if (_autoVersionLastHash.get(jobId) === hash) return;  // no-op — content unchanged
-    const url = CygenixSync.apiBase + '/version-create' + (CygenixSync.funcCode ? '?code='+CygenixSync.funcCode : '');
+    // Through the proxy: no key in the URL, and the server decides whose
+    // job this version belongs to.
     const body = {
       jobId,
       userId,
@@ -4321,13 +4322,10 @@ async function _doAutoVersion(jobId, note){
       hash,
       payload: job
     };
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
-      body: JSON.stringify(body)
-    });
-    if (!r.ok) return;
-    const result = await r.json().catch(() => null);
+    if (!window.CygenixDataApi) return;
+    const result = await window.CygenixDataApi.callOrNull('version-create',
+      { method: 'POST', body });
+    if (!result) return;
     _autoVersionLastHash.set(jobId, hash);
     // Update the in-job version + lastModified fields locally so the badge
     // renders correctly without needing a re-fetch.
@@ -6238,9 +6236,9 @@ function toggleUserMenu() {
 // best-effort — if it fails, the pill stays in its default state (admin link
 // hidden, no tier badge), which is the safe failure mode.
 (function enhanceUserPill() {
-  const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-  const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
-
+  // The Function App key used to be a literal here. It is now held by the
+  // Netlify proxy, which verifies the caller's token and derives identity
+  // from the verified claims rather than from an `x-user-id` header.
   function getUserIdFromMsal() {
     try {
       for (let i = 0; i < localStorage.length; i++) {
@@ -6280,11 +6278,9 @@ function toggleUserMenu() {
     if (!userId) return;
 
     try {
-      const r = await fetch(`${API_BASE}/whoami?code=${FUNC_CODE}`, {
-        headers: { 'x-user-id': userId }
-      });
-      if (!r.ok) return;
-      const data = await r.json();
+      const data = await (window.CygenixDataApi
+        ? window.CygenixDataApi.callOrNull('whoami') : Promise.resolve(null));
+      if (!data) return;
 
       // Stash for other readers
       window.__cygenixTier = {
@@ -6346,9 +6342,6 @@ async function openBillingPortal(linkEl) {
   if (linkEl) linkEl.querySelector('span').textContent = 'Opening…';
 
   try {
-    const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-    const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
-
     const userId = (function() {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -6369,21 +6362,20 @@ async function openBillingPortal(linkEl) {
       return;
     }
 
-    const r = await fetch(`${API_BASE}/billing-portal?code=${FUNC_CODE}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
-      body: JSON.stringify({
-        return_url: window.location.href
-      })
-    });
-    const data = await r.json().catch(() => null);
+    if (!window.CygenixDataApi) {
+      alert('Billing is unavailable on this page. Please reload and try again.');
+      if (linkEl && original) linkEl.querySelector('span').textContent = original;
+      return;
+    }
+    const data = await window.CygenixDataApi.callOrNull('billing-portal',
+      { method: 'POST', body: { return_url: window.location.href } });
 
-    if (r.ok && data?.url) {
+    if (data && data.url) {
       window.location.href = data.url;
       return;
     }
 
-    alert('Could not open billing portal: ' + (data?.error || `HTTP ${r.status}`));
+    alert('Could not open billing portal: ' + ((data && data.error) || 'the request was refused'));
     if (linkEl && original) linkEl.querySelector('span').textContent = original;
   } catch (e) {
     alert('Network error opening billing portal: ' + (e.message || 'unknown'));
@@ -16943,7 +16935,6 @@ async function ta_apiCall(action, body) {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + idToken,
-      'x-user-id':    email,
     },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(60000),

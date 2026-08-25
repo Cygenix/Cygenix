@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=66954e4b99"></script>
+<script src="/auth-gate.js?v=231597c347"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -52,7 +52,9 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/nav.js?v=ba9168b06c" defer></script>
-<script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -463,14 +465,17 @@ body.cyg-collapsed .topbar{left:54px}
 (function () {
   'use strict';
 
-  const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api';
-  const FUNC_CODE = 'UfQpm2qJuc0lWIbYwtGUm_k6ys_FDEquCma-KCPl_e8rAzFu5qfwbA==';
+  // The Function App host key used to be a literal here, served to every
+  // visitor, and identity was a self-asserted `x-user-id` header. Calls now
+  // go through the authenticated Netlify proxy, which verifies the Entra
+  // token and derives the identity from the verified claims. This page holds
+  // no credential and asserts no identity.
+  const DATA_PROXY = '/.netlify/functions/data-proxy';
   const POLL_INTERVAL_MS = 1500;
   const STORAGE_KEY = 'cygenix_agentive_migration';
 
   function buildApiUrl(path) {
-    const sep = path.includes('?') ? '&' : '?';
-    return `${API_BASE}${path}${sep}code=${FUNC_CODE}`;
+    return `${DATA_PROXY}?path=${encodeURIComponent(path)}`;
   }
 
   const state = {
@@ -596,7 +601,10 @@ body.cyg-collapsed .topbar{left:54px}
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     };
-    if (userId) headers['x-user-id'] = userId;
+    // No x-user-id: the proxy establishes who the caller is from the token.
+    // Sending one here is exactly what the Function App used to trust.
+    const _t = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '';
+    if (_t) headers.Authorization = 'Bearer ' + _t;
 
     const url = buildApiUrl(path);
 
