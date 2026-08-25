@@ -58,6 +58,8 @@
   // log is what persists.
   const SM = {
     verified: false,             // both sides confirmed sysadmin
+    targetEngine: null,          // { id, label } from the capability manifest
+    targetPlan: null,            // which object classes this target can hold
     sourceDesc: '',              // human-readable label for source server
     targetDesc: '',              // human-readable label for target server
 
@@ -283,7 +285,98 @@
         banner.style.background  = 'rgba(34,197,94,0.06)';
       }
       if (proceedBtn) proceedBtn.disabled = false;
+      // Sysadmin on both sides is necessary and not sufficient. What the
+      // target can HOLD is a separate question, and it is the one this module
+      // used never to ask.
+      await assessTarget(tgtConn);
     }
+  }
+
+  /* ── Target capability ──────────────────────────────────────────────────
+     Server-level objects do not exist on every platform. Azure SQL Database
+     has no server principals, no SQL Agent, no SSISDB and no linked servers —
+     so a run against it could only ever have discovered objects it was going
+     to fail to apply, one at a time, partway through.
+
+     The verdict comes from the shared capability manifest rather than from a
+     table kept here, so the answer this screen gives and the answer the help
+     page publishes are the same answer. */
+  async function assessTarget(tgtConn) {
+    const box = $('sm-target-capability');
+    if (!box) return;
+    const CAP = window.CygenixCapabilities;
+    if (!CAP) return;                     // manifest absent: behave as before
+
+    let engineEdition = null, editionName = '';
+    try {
+      const r = await dbCall(tgtConn, { action: 'execute', sql: CAP.ENGINE_PROBE_SQL });
+      const row = (r && r.recordset && r.recordset[0]) || {};
+      engineEdition = row.engine_edition;
+      editionName = row.edition || '';
+    } catch (e) {
+      box.style.display = 'block';
+      box.innerHTML = note('warn',
+        'Could not read the target’s engine edition (' + escHtml(e.message) + '), so Cygenix cannot say '
+        + 'in advance which server-level objects it will accept. Discovery still works; apply may fail '
+        + 'per object.');
+      return;
+    }
+
+    const engine = CAP.classifyEngine(engineEdition);
+    SM.targetEngine = engine;
+    const plan = CAP.serverObjectPlan(engine.id);
+    SM.targetPlan = plan;
+
+    const rows = plan.rows.map(function (r) {
+      const ok = r.verdict === 'supported' || r.verdict === 'supported_with_changes';
+      const colour = r.verdict === 'supported' ? 'var(--green)'
+                   : r.verdict === 'supported_with_changes' ? 'var(--accent)'
+                   : r.verdict === 'requires_equivalent' ? 'var(--amber)' : 'var(--red)';
+      const label = r.verdict === 'supported' ? 'Moves as-is'
+                  : r.verdict === 'supported_with_changes' ? 'Moves, with changes'
+                  : r.verdict === 'requires_equivalent' ? 'Needs an equivalent' : 'Not possible';
+      return '<tr>'
+        + '<td style="padding:3px 8px 3px 0;font-size:12px">' + escHtml(r.label) + '</td>'
+        + '<td style="padding:3px 8px;font-size:11.5px;color:' + colour + ';white-space:nowrap">'
+          + escHtml(label) + '</td>'
+        + '<td style="padding:3px 0;font-size:11px;color:var(--text3);line-height:1.5">'
+          + escHtml(r.reason || '') + (r.equivalent ? ' <em>' + escHtml(r.equivalent) + '</em>' : '')
+        + '</td></tr>';
+    }).join('');
+
+    const head = plan.verdict === 'all'
+      ? note('ok', '<strong>' + escHtml(engine.label) + '</strong> accepts every class of server-level '
+          + 'object Cygenix migrates.')
+      : plan.verdict === 'none'
+      ? note('error', '<strong>' + escHtml(engine.label) + '</strong> holds no server-level objects at all. '
+          + 'Nothing in this module can move to it. The equivalents are listed below — they are Azure '
+          + 'constructs you create yourself, not something Cygenix can script from your source.')
+      : note('warn', '<strong>' + escHtml(engine.label) + '</strong> accepts ' + plan.movableCount
+          + ' of ' + plan.rows.length + ' object classes. The rest need an equivalent, listed below. '
+          + 'Cygenix will discover them so you can see what exists, and will not attempt to apply them.');
+
+    box.style.display = 'block';
+    box.innerHTML = head
+      + '<div style="font-size:10.5px;color:var(--text3);margin:0.5rem 0 0.35rem">'
+      + 'Target reports: ' + escHtml(editionName || ('EngineEdition ' + engineEdition)) + '</div>'
+      + '<table style="width:100%;border-collapse:collapse">' + rows + '</table>';
+
+    // Nothing to move is not a warning, it is a stop. Discovery would only
+    // build a list of things that cannot be applied.
+    const proceedBtn = $('sm-proceed-btn');
+    if (proceedBtn && plan.verdict === 'none') {
+      proceedBtn.disabled = true;
+      proceedBtn.title = engine.label + ' cannot hold server-level objects.';
+    }
+  }
+
+  function note(kind, html) {
+    const c = kind === 'ok'    ? ['var(--green)',  'rgba(34,201,122,0.10)', 'rgba(34,201,122,0.35)']
+            : kind === 'warn'  ? ['var(--amber)',  'rgba(245,158,11,0.10)', 'rgba(245,158,11,0.35)']
+            : kind === 'error' ? ['var(--red)',    'rgba(240,70,70,0.10)',  'rgba(240,70,70,0.40)']
+            :                    ['var(--accent)', 'rgba(74,91,214,0.10)',  'rgba(74,91,214,0.35)'];
+    return '<div style="font-size:11.5px;line-height:1.6;padding:0.55rem 0.75rem;border-radius:8px;'
+      + 'color:' + c[0] + ';background:' + c[1] + ';border:0.5px solid ' + c[2] + '">' + html + '</div>';
   }
 
   function updateDot(side, result) {
