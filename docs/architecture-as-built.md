@@ -99,19 +99,42 @@ is document stores:
 | **Azure Cosmos DB** | jobs, settings, connections metadata, scripts, profiles, quality reports, subscriptions, job versions | `userId` (an email) |
 | **Azure Blob Storage** | uploaded source files | the customer's own container, via a SAS they supply |
 
-**Tenancy does not exist.** Both project stores key on the *individual user*
+**Tenancy did not exist.** Both project stores keyed on the *individual user*
 (`safeStoreName(userId)` in `projects.js`, `userId` as the Cosmos partition key). Two colleagues at
-the same customer cannot see the same project. WI-6's tenant model is therefore genuinely unbuilt,
-and it is a larger change than the brief implies because it is a re-keying of two document stores,
-not an added column.
+the same customer could not see the same project.
+
+**Built since (WI-6).** `netlify/functions/lib/tenancy.js` adds the tenant, its members, its
+invitations and its guardrail policy, all in the `cygenix-org` blob store beside the RBAC state.
+The Netlify project store is re-keyed to `projt-<tenantId>`, with a lazy non-destructive
+forward-migration out of `proj-<sub>`; migrated projects are marked *private* to their original
+owner, because tenancy is what lets colleagues share and not licence to disclose what was written
+before they were colleagues.
+
+**The Cosmos side is NOT re-keyed, deliberately.** `userId` is the partition key on a dozen
+containers, and a partition key cannot be changed in place — it needs new containers and a copy of
+every document. The boundary is enforced at the proxy instead: `data-proxy.js` derives `userId`
+from the verified token and strips any the caller supplied, so cross-user reads were already
+impossible there. What Cosmos still cannot do is *share* — a job or a saved script belongs to the
+person who made it, not the tenant. That is the remaining half of this work item and it is a data
+migration, not a code change.
 
 ---
 
 ## 3. Identity
 
-**One provider: Entra External ID (CIAM).** The brief's `ASSUMPTION:` of a split with Netlify
-Identity is **wrong for the code** — `grep -rl netlifyIdentity public/ netlify/` returns nothing. One
-residual string, `NETLIFY_ID`, survives in `admin.html` and is unused.
+**One provider: Entra External ID (CIAM)** — now genuinely, though this document's first pass
+overstated it.
+
+> **Correction.** The original claim here was that the brief's `ASSUMPTION:` of a split with Netlify
+> Identity was wrong for the code, on the evidence of `grep -rl netlifyIdentity public/ netlify/`
+> returning nothing. That grep was too narrow. Netlify Identity's API is **GoTrue**, and searching
+> for that name found a live path: `admin.html` → `/api/data?action=invite` → the Azure Function's
+> `invite` case → `POST https://<site>/.netlify/identity/admin/users` with a `NETLIFY_TOKEN`. The
+> brief was right and this document was wrong. Inviting a teammate really did create them a second
+> account in a second directory, and the Function App really did hold a long-lived site token to do
+> it. That path is removed as part of WI-6, `invite` is out of the proxy's allow-list, and
+> `tests/route-authz.test.js` fails the build if `gotrue`, `netlifyIdentity` or `/.netlify/identity`
+> reappears in `netlify/`, `public/` or `azure-function/src` outside a comment.
 
 - Tenant `fc8dfc7a-…`, authority `cygenix.ciamlogin.com`, MSAL browser 3.27.0 from cdnjs.
 - `public/cygenix-auth-token.js` reads MSAL's `IdToken` record out of `localStorage`, memoised until
@@ -120,8 +143,9 @@ residual string, `NETLIFY_ID`, survives in `admin.html` and is unused.
   `projects.js`, `rbac-admin.js`, `reports.js`, `scheduler.js`, `drive.js` and now `data-proxy.js`.
 - Azure side: `src/entra-auth.js`, same libraries, **enforcement off by default** (§1).
 
-So WI-6's "exactly one identity provider remains in the codebase" is already satisfied. Its
-consolidation work is not needed; its tenancy work is.
+So WI-6's "exactly one identity provider remains in the codebase" is satisfied **now**, and was not
+before — the consolidation work was real, just smaller than the brief imagined, because only one
+flow used the second provider.
 
 ---
 
@@ -213,7 +237,7 @@ generated assets.
 |---|---|---|
 | A backend database exists and is the system of record | Two **document** stores (Netlify Blobs + Cosmos). No relational DB, no ORM, no migration tool | WI-1's table shapes and WI-2's DDL need re-expressing as documents. "Every migration has a down migration" does not apply |
 | Some state lives only in `localStorage` | Class A keys **are** synced to Cosmos via a declared key list, with a 3s write-behind window | WI-1 shrinks to: close the window, cover the unsynced keys, add server-side retention |
-| Identity is Entra with residual Netlify Identity | Entra only. No Netlify Identity in the codebase | WI-6's consolidation is **already done**. Its tenancy work is not |
+| Identity is Entra with residual Netlify Identity | **The brief was right.** Entra for sign-in, but the invite flow still wrote to Netlify Identity's GoTrue admin API with a site token | WI-6's consolidation was real. Removed: one Azure Function action, one proxy allow-list entry, the admin page's invite flow |
 | RBAC is two roles set by hand in an IdP console | Ten roles, a permission matrix, SoD, environment gating, all server-side | WI-6 is largely built. What is missing is **tenancy** and per-route coverage tests |
 | Audit trail is claimed but absent | Hash-chained, append-only, with a verification endpoint | WI-2's mechanism exists. Missing: AI provenance, a redactor, PDF export, event coverage |
 | AI mapping is Haiku, one-shot, retry-on-overload | Runtime model resolution with a configurable chain; still one-shot, still no verification | WI-5 stands, minus the model-routing item |
@@ -221,7 +245,8 @@ generated assets.
 | Insert batch capped at 1,000 rows | Staging load is batched `INSERT … VALUES`; staging→target is already set-based | WI-7 stands, but the target is the browser→staging hop |
 | — *(not in the brief)* | **Host keys published in the client; identity from a request header** | Outranked everything. Fixed in code; **needs key rotation and one app setting** |
 | — *(not in the brief)* | **The test suite never ran in CI** | Fixed |
-| — *(not in the brief)* | **Project stores are keyed per user, not per tenant** | WI-6 is bigger than scoped: a re-keying, not a new column |
+| — *(not in the brief)* | **Project stores are keyed per user, not per tenant** | WI-6 is bigger than scoped: a re-keying, not a new column. Done for Netlify Blobs; Cosmos needs a container rebuild |
+| — *(not in the brief)* | **The console's own project record was ungated** — any signed-in caller could read and write it | Fixed: `project.read` / `project.write` rows added to the matrix |
 
 ---
 
@@ -231,10 +256,13 @@ The brief's Phase 1 is WI-1 → WI-2 → WI-9. Given the above:
 
 0. **Rotate the keys, set `REQUIRE_TOKEN_AUTH=true`.** Not engineering work. Nothing else matters
    until it is done.
-1. **WI-9 (capability manifest)** — unchanged, still size S, still no dependencies, and it is the
-   cheapest credibility win available.
-2. **WI-6 tenancy only** — promoted, because it is a re-keying of both document stores and every
-   later item inherits the key. Doing it after WI-1 means doing WI-1 twice. Its *role* half is done.
+1. ~~**WI-9 (capability manifest)**~~ — **done.** The manifest, the generated support matrix, four
+   sales/code contradictions closed, and target-edition gating in Server Migration.
+2. ~~**WI-6 tenancy**~~ — **done for the Netlify layer.** Tenant, membership, invitations,
+   server-enforced guardrails, the two-person rule, cross-tenant 404 with an audit entry, and route
+   coverage tests. Two pieces remain and are called out above: the Cosmos containers are still
+   partitioned on `userId` so jobs and scripts are not yet shareable within a tenant, and
+   `admitJob()` from WI-9's manifest is still not called by any server endpoint.
 3. **WI-1 narrowed** — close the write-behind window, cover the unsynced Class A keys, add
    server-side retention. Not a from-scratch build.
 4. **WI-2 coverage** — the chain exists; add AI provenance, the redactor and the missing events.

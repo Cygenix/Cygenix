@@ -135,10 +135,58 @@ select:focus,input[type=text]:focus{border-color:var(--accent)}
     </div>
     <div id="users-wrap" class="loading">Loading users…</div>
     <div class="note-strip" id="users-note" style="display:none">
-      <span><i class="ic ic-info"></i> </span><span>New teammates appear here automatically the first time they sign in. Invite them by
-      granting access in your Microsoft Entra tenant (the application requires assignment), then assign roles here
-      once they show up. Read-only view — role changes need the Organisation Owner or a Platform Administrator.</span>
+      <span><i class="ic ic-info"></i> </span><span>Read-only view — role changes need the Organisation Owner or a
+      Platform Administrator. Invite a new teammate from <b>Members</b> below; they appear here the first time they
+      sign in, already holding the roles the invitation named.</span>
     </div>
+  </div>
+
+  <!-- Members and invitations -->
+  <div class="panel" id="tenant-panel">
+    <div class="panel-head">
+      <div>
+        <div class="panel-title">Members</div>
+        <div class="panel-sub" id="tenant-sub">Who is inside this workspace. Invitations are the only way in: a
+          person who signs in without one gets their own empty workspace and sees nothing of yours. Removing a
+          member ends their membership and revokes every role they hold, on their next request.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadTenant()">↻ Refresh</button>
+    </div>
+    <div id="members-wrap" class="loading">Loading members…</div>
+
+    <div id="invite-add" style="display:none;margin-top:0.9rem;padding-top:0.9rem;border-top:0.5px solid var(--border)">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input type="email" id="inv-email" placeholder="name@company.com" style="flex:2;min-width:190px">
+        <select id="inv-role"></select>
+        <button class="btn btn-primary btn-sm" onclick="invite()">Send invitation</button>
+      </div>
+      <div class="panel-sub" style="margin-top:0.5rem">There is no link to click and no token to lose. The
+        invitation is redeemed by signing in with that address; it expires after fourteen days.</div>
+    </div>
+    <div id="invites-wrap"></div>
+  </div>
+
+  <!-- Guardrails -->
+  <div class="panel" id="guardrail-panel">
+    <div class="panel-title">Change guardrails</div>
+    <div class="panel-sub">What must happen before a write runs against a classified target. This is enforced by the
+      server, not by the interface: a request that skips the dialog is refused with the same answer. Environments
+      below <b>STAGING</b> are never gated.</div>
+    <div id="guardrail-wrap" class="loading">Loading policy…</div>
+  </div>
+
+  <!-- Approvals -->
+  <div class="panel" id="approvals-panel">
+    <div class="panel-head">
+      <div>
+        <div class="panel-title" id="approvals-anchor">Awaiting approval</div>
+        <div class="panel-sub">Changes queued by the two-person rule. An Approver, Migration Lead or Platform
+          Administrator authorises them; nobody authorises their own. An approval is spent by the one statement it
+          was issued for and expires after fifteen minutes.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadApprovals()">↻ Refresh</button>
+    </div>
+    <div id="approvals-wrap" class="loading">Loading queue…</div>
   </div>
 
   <div class="grid-2">
@@ -224,6 +272,177 @@ async function loadMe(){
   } catch (e) {
     document.getElementById('me-sub').textContent = 'Could not resolve your roles: ' + e.message;
   }
+}
+
+// ── Members, invitations, guardrails, approvals ───────────────────────────
+//
+// Everything a person needs to join this workspace and be given what they
+// may do happens on this page. No step of it happens in an identity
+// provider's admin console.
+
+let TENANT = null;
+
+async function loadTenant(){
+  const mw = document.getElementById('members-wrap');
+  try {
+    TENANT = await api('?what=tenant');
+  } catch (e) {
+    mw.className = ''; mw.innerHTML = '<div class="muted small">Could not load members: '+esc(e.message)+'</div>';
+    return;
+  }
+  document.getElementById('tenant-sub').insertAdjacentHTML('beforeend',
+    ' <span class="muted small">Workspace <b>'+esc(TENANT.tenant.name)+'</b>'
+    + (TENANT.tenant.migratedFrom ? ' — created from this deployment’s existing organisation, so everyone who had already signed in is a member.' : '')
+    + '</span>');
+
+  const rows = (TENANT.members||[]).map(m =>
+    '<tr>'
+    + '<td>'+esc(m.email||m.oid)+(m.oid===(ME&&ME.oid)?' <span class="muted small">(you)</span>':'')+'</td>'
+    + '<td>'+((m.roles||[]).map(r=>'<span class="role-chip rc-'+r+'">'+r+'</span>').join(' ')||'<span class="muted small">none</span>')+'</td>'
+    + '<td class="muted small">'+esc((m.joinedAt||'').slice(0,10))+(m.invitedBy==='migration'?' · pre-existing':'')+'</td>'
+    + '<td>'+(m.isActive?'':'<span class="muted small">deactivated</span>')+'</td>'
+    + '<td style="text-align:right">'+(TENANT.canManageMembers && m.oid!==(ME&&ME.oid)
+        ? '<button class="btn btn-ghost btn-sm" onclick="removeMember(\''+esc(m.oid)+'\')">Remove</button>' : '')+'</td>'
+    + '</tr>').join('');
+  mw.className = '';
+  mw.innerHTML = rows
+    ? '<table class="qr"><thead><tr><th>Member</th><th>Roles</th><th>Joined</th><th></th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'
+    : '<div class="muted small">No members yet.</div>';
+
+  // Invitations
+  const iw = document.getElementById('invites-wrap');
+  const inv = TENANT.invites || [];
+  iw.innerHTML = inv.length
+    ? '<div style="margin-top:0.9rem"><div class="panel-sub"><b>Open invitations</b></div>'
+      + '<table class="qr"><tbody>' + inv.map(i =>
+          '<tr><td>'+esc(i.email)+'</td>'
+          + '<td>'+(i.roles||[]).map(r=>'<span class="role-chip rc-'+r+'">'+r+'</span>').join(' ')+'</td>'
+          + '<td class="muted small">expires '+esc((i.expiresAt||'').slice(0,10))+'</td>'
+          + '<td style="text-align:right">'+(TENANT.canManageMembers
+              ? '<button class="btn btn-ghost btn-sm" onclick="revokeInvite(\''+esc(i.id)+'\')">Revoke</button>' : '')+'</td></tr>'
+        ).join('') + '</tbody></table></div>'
+    : '';
+
+  if (TENANT.canManageMembers) {
+    document.getElementById('invite-add').style.display = '';
+    const sel = document.getElementById('inv-role');
+    if (!sel.options.length) {
+      sel.innerHTML = ASSIGNABLE.map(r =>
+        '<option value="'+r+'"'+(r==='EN'?' selected':'')+'>'+r+' · '+esc((TENANT.roles[r]||{}).name||r)+'</option>').join('');
+    }
+  }
+  renderGuardrails();
+}
+
+async function invite(){
+  const email = document.getElementById('inv-email').value.trim();
+  const role  = document.getElementById('inv-role').value;
+  if (!email) { toast('An email address is required'); return; }
+  try {
+    await api('', { op:'invite', email, roles:[role] });
+    document.getElementById('inv-email').value = '';
+    toast('Invitation created for ' + email);
+    await loadTenant(); await loadAudit();
+  } catch (e) { toast(e.message); }
+}
+
+async function revokeInvite(inviteId){
+  try { await api('', { op:'revoke-invite', inviteId }); toast('Invitation revoked'); await loadTenant(); await loadAudit(); }
+  catch (e) { toast(e.message); }
+}
+
+async function removeMember(oid){
+  const m = (TENANT.members||[]).find(x=>x.oid===oid) || {};
+  if (!confirm('Remove ' + (m.email||oid) + ' from this workspace?\n\nEvery role they hold is revoked on their next request. Their projects stay where they are.')) return;
+  try { await api('', { op:'remove-member', oid }); toast('Member removed'); await loadTenant(); await loadUsers(); await loadAudit(); }
+  catch (e) { toast(e.message); }
+}
+
+// ── Guardrails ────────────────────────────────────────────────────────────
+const MODE_TEXT = {
+  'off':                 'Nothing is gated. Writes run as soon as your roles allow them.',
+  'confirm-destructive': 'A DELETE, TRUNCATE, DROP or unbounded UPDATE must be confirmed. Ordinary writes run.',
+  'confirm-all':         'Every write must be confirmed.',
+};
+
+function renderGuardrails(){
+  const w = document.getElementById('guardrail-wrap');
+  if (!TENANT) return;
+  const g = TENANT.guardrails || {};
+  const editable = TENANT.canSetGuardrails;
+  w.className = '';
+  w.innerHTML =
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:0.6rem">'
+    + '<select id="gr-mode"'+(editable?'':' disabled')+'>'
+    + (TENANT.guardrailModes||[]).map(m=>'<option value="'+m+'"'+(m===g.mode?' selected':'')+'>'+esc(m)+'</option>').join('')
+    + '</select>'
+    + '<label class="small" style="display:flex;align-items:center;gap:6px">'
+    + '<input type="checkbox" id="gr-two"'+(g.twoPersonRule?' checked':'')+(editable?'':' disabled')+'> Two-person rule'
+    + '</label>'
+    + (editable ? '<button class="btn btn-primary btn-sm" onclick="saveGuardrails()">Save policy</button>' : '')
+    + '</div>'
+    + '<div class="panel-sub">'+esc(MODE_TEXT[g.mode]||'')+'</div>'
+    + (g.twoPersonRule
+        ? '<div class="warn-strip"><span><i class="ic ic-warning"></i> </span><span>Two-person rule is <b>on</b>: a gated change is queued until somebody other than the requester approves it. Make sure at least one other person holds Approver, Migration Lead or Platform Administrator, or nothing will run.</span></div>'
+        : '')
+    + '<div class="panel-sub" style="margin-top:0.5rem">Applies to: <b>'+esc((g.environments||[]).join(', ')||'—')+'</b>. An unclassified connection counts as PROD, so it is covered without anyone deciding it should be.</div>'
+    + (!editable ? '<div class="muted small" style="margin-top:0.5rem">Read-only — changing this needs the Organisation Owner or a Platform Administrator.</div>' : '');
+}
+
+async function saveGuardrails(){
+  try {
+    const d = await api('', {
+      op: 'guardrails',
+      mode: document.getElementById('gr-mode').value,
+      twoPersonRule: document.getElementById('gr-two').checked,
+    });
+    TENANT.guardrails = d.guardrails;
+    renderGuardrails();
+    toast('Guardrail policy saved');
+    await loadAudit();
+  } catch (e) { toast(e.message); }
+}
+
+// ── Approvals ─────────────────────────────────────────────────────────────
+async function loadApprovals(){
+  const w = document.getElementById('approvals-wrap');
+  try {
+    const d = await api('?what=approvals');
+    w.className = '';
+    if (!d.approvals.length) { w.innerHTML = '<div class="muted small">Nothing waiting.</div>'; return; }
+    w.innerHTML = '<table class="qr"><thead><tr><th>Requested</th><th>Target</th><th>Statement</th><th></th></tr></thead><tbody>'
+      + d.approvals.map(a => {
+          const approved = (a.approvedBy||[]).length > 0;
+          const canAct = d.canApprove && !a.mine && !approved;
+          return '<tr>'
+            + '<td>'+esc(a.requestedByEmail||a.requestedBy)+(a.mine?' <span class="muted small">(you)</span>':'')
+              + '<div class="muted small">'+esc(new Date(a.requestedAt).toLocaleTimeString())+'</div></td>'
+            + '<td class="mono small">'+esc((a.act||{}).resourceId||'')
+              + '<div class="muted small">'+esc((a.act||{}).environment||'')+'</div></td>'
+            + '<td class="mono small">'+esc((a.act||{}).preview||'')
+              + ((a.act||{}).destructive||[]).map(x =>
+                  '<div class="muted small">'+esc(x.type)+' '+esc(x.table)+(x.bounded?'':' — no WHERE clause')+'</div>').join('')
+              + '</td>'
+            + '<td style="text-align:right">'
+              + (approved ? '<span class="muted small">approved</span>'
+                 : canAct ? '<button class="btn btn-primary btn-sm" onclick="approve(\''+esc(a.id)+'\')">Approve</button>'
+                 : a.mine ? '<button class="btn btn-ghost btn-sm" onclick="withdraw(\''+esc(a.id)+'\')">Withdraw</button>'
+                 : '<span class="muted small">waiting</span>')
+              + '</td></tr>';
+        }).join('')
+      + '</tbody></table>';
+  } catch (e) {
+    w.className = ''; w.innerHTML = '<div class="muted small">Could not load the queue: '+esc(e.message)+'</div>';
+  }
+}
+
+async function approve(approvalId){
+  try { await api('', { op:'approve', approvalId }); toast('Approved'); await loadApprovals(); await loadAudit(); }
+  catch (e) { toast(e.message); }
+}
+async function withdraw(approvalId){
+  try { await api('', { op:'withdraw-approval', approvalId }); toast('Withdrawn'); await loadApprovals(); }
+  catch (e) { toast(e.message); }
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────
@@ -366,8 +585,13 @@ async function exportAudit(){
 document.addEventListener('DOMContentLoaded', async () => {
   await loadMe();          // also delivers the role reference (roleRef)
   renderQuickRef();
-  loadUsers(); loadClassifications(); loadAudit();
+  loadUsers(); loadTenant(); loadApprovals(); loadClassifications(); loadAudit();
   if (window.CygenixRBAC) CygenixRBAC.applyGates();
+  // The guardrail dialog links here with #approvals when a change is queued.
+  if (location.hash === '#approvals') {
+    const p = document.getElementById('approvals-panel');
+    if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 });
 </script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>

@@ -107,6 +107,12 @@ const MATRIX = {
   // whole databases — Lead only, and PROD-conditioned like any write.
   'restore.inspect':       { ML: 'F', EN: 'F' },
   'restore.execute':       { ML: 'F' },
+  // Authorising somebody else's act. The 'A' grant finally has a row: the
+  // Phase 2 note below said the approval hooks existed with nothing to
+  // supply them, and lib/tenancy.js is what supplies them. An 'A' grant
+  // cannot PERFORM the action (can() refuses it), which is the whole point —
+  // the Approver authorises and builds nothing.
+  'run.approve':           { AP: 'A', PA: 'A', ML: 'A', AU: 'R' },
   'run.cancel':            { PA: 'F', ML: 'F', EN: 'L' },               // SoD-3 carve-out: PA cancel is incident response, audited notice
   'run.rollback':          { ML: 'F', EN: 'L' },
   'schedule.create':       { ML: 'F', EN: 'L' },                        // EN may author, never enable
@@ -121,6 +127,19 @@ const MATRIX = {
   'role.assign':           { OW: 'F', PA: 'F', AU: 'R' },
   'role.assign-admin':     { OW: 'F' },                                 // appointing PA (or OW) is Owner-only
   'project.create':        { OW: 'F', PA: 'F', ML: 'F' },
+  // The console's own working state. The matrix had a row for creating an
+  // engagement and none for the project record the pages read and write all
+  // day, so that record was ungated — every signed-in caller could write it.
+  // Reading is the baseline a Member holds; writing is delivery work, which
+  // is the Lead's and the Engineer's. A signer with no role assignment
+  // reaches neither (A-01).
+  'project.read':          { OW: 'R', PA: 'R', ML: 'F', EN: 'F', AP: 'R', DO: 'R', VA: 'R', AU: 'R', MB: 'R' },
+  'project.write':         { ML: 'F', EN: 'F' },
+  // Tenant policy: who may change the guardrails the server enforces. This
+  // is a control-plane act — it grants nobody data access, and an Auditor
+  // reads it because a control they cannot see is a control they cannot
+  // report on.
+  'tenant.guardrails':     { OW: 'F', PA: 'F', AU: 'R' },
 };
 
 const GRANT_RANK = { F: 4, A: 3, L: 2, R: 1 };

@@ -248,7 +248,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
     <div class="nav-label">Platform</div>
     <div class="nav-item" onclick="window.open('https://app.netlify.com','_blank')">
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1L13 4v7l-5.5 3L2 11V4z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Netlify Console ↗
+      Hosting Console ↗
     </div>
     <div class="nav-item" onclick="window.open('https://portal.azure.com','_blank')">
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="2" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
@@ -301,8 +301,9 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       </div>
 
       <div class="netlify-note">
-        <i class="ic ic-info"></i> <strong>Auth is managed by Netlify Identity.</strong> Use this panel to view user data and manage access. To invite users or change passwords, also use the
-        <a href="https://app.netlify.com" target="_blank">Netlify Console → Identity tab</a>.
+        <i class="ic ic-info"></i> <strong>Sign-in is Entra External ID, and it is the only directory.</strong>
+        This panel views billing and account data. Admitting somebody to a workspace and deciding what they may do
+        both happen on <a href="/user_roles.html">Users &amp; Roles</a>.
         User records here come from Cosmos DB and are created on first login.
       </div>
 
@@ -342,68 +343,52 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       <div class="page-header">
         <div>
           <div class="page-title">Invite Users</div>
-          <div class="page-sub">Send access invitations to testers and clients</div>
+          <div class="page-sub">Invitations are issued by the product, on the Users &amp; Roles page</div>
         </div>
-        <button class="btn btn-primary" onclick="window.open('https://app.netlify.com/sites/cygenix/identity','_blank')">Open Netlify Identity ↗</button>
+        <a class="btn btn-primary" href="/user_roles.html">Open Users &amp; Roles</a>
       </div>
 
       <div class="netlify-note">
-        <i class="ic ic-info"></i> <strong>Invitations are sent directly from Netlify Identity.</strong>
-        Click the button above to open the Netlify Identity panel, then click <strong>Invite users</strong> and enter the email address.
-        The user receives an email with a link to set their password and access <strong>cygenix.co.uk</strong>.
+        <i class="ic ic-info"></i> <strong>This panel no longer invites anyone.</strong>
+        Inviting a teammate used to mean opening an identity provider's admin console and creating
+        a second account for them there. It is now one act inside Cygenix: on
+        <strong>Users &amp; Roles</strong> you enter the address and choose the roles the person will
+        hold, and they are admitted — already holding those roles — the first time they sign in with it.
       </div>
 
       <div class="panel" style="max-width:600px">
-        <div class="panel-header"><div class="panel-title">How to invite a user — 3 steps</div></div>
+        <div class="panel-header"><div class="panel-title">What changed</div></div>
         <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem">
           <div style="display:flex;gap:12px;align-items:flex-start">
             <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">1</div>
             <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Open Netlify Identity</div>
-              <div style="font-size:12px;color:var(--text2)">Click <strong>Open Netlify Identity ↗</strong> above, or go to app.netlify.com → your site → Identity tab</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">One directory, not two</div>
+              <div style="font-size:12px;color:var(--text2)">Everyone signs in through Entra External ID. There is no second account to create, and no site token held anywhere to bridge the two.</div>
             </div>
           </div>
           <div style="display:flex;gap:12px;align-items:flex-start">
             <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">2</div>
             <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Click "Invite users"</div>
-              <div style="font-size:12px;color:var(--text2)">Enter the user's email address. You can invite multiple at once by entering one per line.</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Nothing to leak</div>
+              <div style="font-size:12px;color:var(--text2)">There is no invitation link and no token. The invitation is redeemed by signing in with the address it names, and it expires after fourteen days.</div>
             </div>
           </div>
           <div style="display:flex;gap:12px;align-items:flex-start">
             <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">3</div>
             <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">User receives invite email</div>
-              <div style="font-size:12px;color:var(--text2)">They get an email from Netlify with a link to set their password. Once done, they can log in at <strong>cygenix.co.uk/login.html</strong>. Their record will appear in the Users tab here after first login.</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Admission and entitlement are one act</div>
+              <div style="font-size:12px;color:var(--text2)">The invitation names the roles. Letting somebody in and deciding what they may do can no longer drift apart, and both land in the audit trail as one entry.</div>
             </div>
           </div>
         </div>
       </div>
 
       <div class="panel" style="max-width:600px;margin-top:1rem">
-        <div class="panel-header"><div class="panel-title">Registration mode</div></div>
+        <div class="panel-header"><div class="panel-title">Who can sign up</div></div>
         <div style="padding:1.5rem">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-            <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Current mode: <span id="reg-mode-label" style="color:var(--accent)">checking…</span></div>
-              <div style="font-size:12px;color:var(--text2)">Controls whether anyone can sign up or only invited users</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
-            <div style="padding:12px 16px;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--bg3);flex:1;min-width:200px">
-              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px"><i class="ic ic-lock"></i> Open registration</div>
-              <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Anyone can create a free account. Good for public beta.</div>
-              <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">Netlify → Identity → Registration → Open</div>
-            </div>
-            <div style="padding:12px 16px;border-radius:var(--r);border:0.5px solid rgba(74,91,214,0.3);background:var(--accent-glow);flex:1;min-width:200px">
-              <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px"><i class="ic ic-lock"></i> Invite only</div>
-              <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Only invited users can register. Best for controlled testing.</div>
-              <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">Netlify → Identity → Registration → Invite only</div>
-            </div>
-          </div>
-          <div style="margin-top:1rem">
-            <button class="btn btn-ghost" onclick="window.open('https://app.netlify.com/sites/cygenix/settings/identity','_blank')">Change registration mode ↗</button>
-          </div>
+          <div style="font-size:12px;color:var(--text2)">Signing in does not admit anybody to your workspace. A person who signs in without an
+          invitation gets their own empty workspace and can see nothing of yours, so registration mode is no longer
+          the control that decides who reaches your data — the invitation list is.</div>
         </div>
       </div>
     </div>
@@ -478,14 +463,11 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
 <div class="modal-overlay" id="invite-modal">
   <div class="modal">
     <div class="modal-title">Invite user</div>
-    <div class="modal-sub">They'll receive an email to set their password and access Cygenix.</div>
-    <div class="form-row">
-      <label class="form-label">Email</label>
-      <input class="form-input" id="modal-invite-email" type="email" placeholder="user@company.com"/>
-    </div>
+    <div class="modal-sub">Invitations are issued on Users &amp; Roles, where you also choose the roles the
+      person will hold. There is no password to set — they sign in with the address you name.</div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeInviteModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="sendModalInvite()">Send invitation</button>
+      <a class="btn btn-primary" href="/user_roles.html">Open Users &amp; Roles</a>
     </div>
   </div>
 </div>
@@ -541,7 +523,6 @@ function adminAuthHeaders(extra) {
 function adminUrl(action, qs) {
   return API_PROXY + '?action=' + encodeURIComponent(action) + (qs ? '&' + qs : '');
 }
-const NETLIFY_ID = window.location.origin + '/.netlify/identity';
 
 let _users = [];
 let _selectedUser = null;
@@ -666,19 +647,9 @@ async function cosmosApi(action, method, body, userId) {
   return r.ok ? r.json() : null;
 }
 
-// ── Netlify Identity API ──────────────────────────────────────────────────────
-async function netlifyApi(path, method, body) {
-  const token = sessionStorage.getItem('cygenix_token');
-  if (!token) return null;
-  try {
-    const r = await fetch(NETLIFY_ID + path, {
-      method: method || 'GET',
-      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
-      body: body ? JSON.stringify(body) : undefined
-    });
-    return r.ok ? r.json() : { error: await r.text(), status: r.status };
-  } catch(e) { return { error: e.message }; }
-}
+// The GoTrue client helper that used to live here has gone with the identity
+// provider it spoke to. Entra External ID is the only directory, and nothing
+// on this page needs to write to a second one.
 
 // ── Load users from Cosmos DB ─────────────────────────────────────────────────
 async function loadUsers() {
@@ -699,7 +670,7 @@ async function loadUsers() {
         <div class="empty">
           <div class="empty-icon"><i class="ic ic-tools"></i> </div>
           <div class="empty-text">The admin-users endpoint needs to be added to the Azure Function.<br>
-          For now, use <a href="https://app.netlify.com" target="_blank" style="color:var(--accent)">Netlify → Identity</a> to manage users.</div>
+          Members and roles are managed on <a href="/user_roles.html" style="color:var(--accent)">Users &amp; Roles</a> in the meantime.</div>
         </div>
       </td></tr>`;
       return;
@@ -972,67 +943,20 @@ async function updateUserStatus(email, status) {
   }
 }
 
-// ── Invite via Netlify Identity ───────────────────────────────────────────────
+// ── Inviting people ──────────────────────────────────────────────────────────
+//
+// This used to POST to an Azure Function action that called Netlify Identity's
+// GoTrue admin endpoint, creating the person a second account in a second
+// directory. Both are gone. An invitation is now a record in the tenant model,
+// naming the roles the invitee will hold, redeemed by signing in with that
+// address through Entra.
+
 function openInviteModal() {
-  document.getElementById('invite-modal').classList.add('open');
+  location.href = '/user_roles.html';
 }
 function closeInviteModal() {
-  document.getElementById('invite-modal').classList.remove('open');
-}
-
-async function sendModalInvite() {
-  const email = document.getElementById('modal-invite-email').value.trim();
-  if (!email) return;
-  await doInvite(email);
-  closeInviteModal();
-  document.getElementById('modal-invite-email').value = '';
-}
-
-async function sendInvite() {
-  const email = document.getElementById('invite-email').value.trim();
-  const name  = document.getElementById('invite-name').value.trim();
-  if (!email) { showAlert('error', 'Please enter an email address.'); return; }
-  await doInvite(email, name);
-}
-
-async function sendBulkInvites() {
-  const raw = document.getElementById('bulk-emails').value.trim();
-  const emails = raw.split('\n').map(e => e.trim()).filter(Boolean);
-  if (!emails.length) { showAlert('error', 'Please enter at least one email address.'); return; }
-
-  let sent = 0, failed = 0;
-  for (const email of emails) {
-    const ok = await doInvite(email, '', false);
-    ok ? sent++ : failed++;
-  }
-  showAlert('success', `Sent ${sent} invitation${sent !== 1 ? 's' : ''}${failed ? ` (${failed} failed)` : ''}.`);
-  if (!failed) document.getElementById('bulk-emails').value = '';
-}
-
-async function doInvite(email, name, showMsg = true) {
-  try {
-    // Call Azure Function which handles Netlify admin API server-side
-    const userId = CygenixSync?.getUserId?.() || 'admin';
-    const res = await fetch(adminUrl('invite'), {
-      method: 'POST',
-      headers: adminAuthHeaders(),
-      body: JSON.stringify({ email, name: name || email.split('@')[0] })
-    });
-
-    const result = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      if (showMsg) showAlert('error', `Failed to invite ${email}: ${JSON.stringify(result)}`);
-      return false;
-    }
-
-    if (showMsg) showAlert('success', `Invitation sent to ${email}`);
-    await loadUsers();
-    return true;
-  } catch(e) {
-    if (showMsg) showAlert('error', `Error inviting ${email}: ${e.message}`);
-    return false;
-  }
+  const m = document.getElementById('invite-modal');
+  if (m) m.classList.remove('open');
 }
 
 function clearInviteForm() {

@@ -26,6 +26,22 @@ let ACTOR_ROLES = ['EN'];
 const CLASSIFICATIONS = { 'prodhost|livedb': 'PROD', 'devhost|scratch': 'DEV' };
 const AUDITED = [];
 
+// In-memory stand-in for Netlify Blobs, shared by the org store and the
+// tenancy module. Tenancy is NOT mocked: the point of these cases is that
+// the real guardrail policy sits on this path, and a tenant created here
+// starts with enforcement off (the migrated default), so the pre-existing
+// expectations below are the right ones.
+const FAKE_BLOBS = (() => {
+  const mem = new Map();
+  return {
+    get: async (k) => (mem.has(k) ? JSON.parse(mem.get(k)) : null),
+    setJSON: async (k, v) => { mem.set(k, JSON.stringify(v)); },
+    delete: async (k) => { mem.delete(k); },
+    list: async () => ({ blobs: [...mem.keys()].map(key => ({ key })) }),
+    _mem: mem,
+  };
+})();
+
 const realRequire = Module.prototype.require;
 Module.prototype.require = function (id) {
   if (id === 'mssql') return { ConnectionPool: function () {} };
@@ -34,7 +50,11 @@ Module.prototype.require = function (id) {
   if (id === './lib/sql-entra') return { applyEntraAuth: c => c, resolveSqlConfig: c => c, connectWithRetry: async () => { throw new Error('no real DB in tests'); } };
   if (id === './lib/azure-sql-relay') return { shouldRelay: () => false, createRelayPool: () => null };
   if (id === './lib/org-store') return {
-    orgStore: () => ({}),
+    // A real-enough blob store, so lib/tenancy runs its own logic here
+    // rather than being mocked into agreement with the code under test.
+    orgStore: () => FAKE_BLOBS,
+    loadAll: async () => ({ users: { [CURRENT_USER.oid]: { email: CURRENT_USER.email, isActive: true } },
+                            assignments: [], classifications: {} }),
     resolveActor: async () => ({ oid: CURRENT_USER.oid, email: CURRENT_USER.email, roles: ACTOR_ROLES, isActive: true }),
     classificationFor: async (_s, server, db) =>
       CLASSIFICATIONS[String(server).toLowerCase() + '|' + String(db).toLowerCase()] || 'PROD',

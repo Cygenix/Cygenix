@@ -1330,68 +1330,23 @@ app.http('data', {
           }
         }
 
-        // ── INVITE user via Netlify Identity ────────────────────────────────────
-        // POST /api/data/invite
-        // Body: { email, name }
-        case 'invite': {
-          const gate = await requireAdmin(userId);
-          if (!gate.ok) return err(gate.code, gate.msg);
-
-          const body = await req.json().catch(() => ({}));
-          const email = body.email;
-          if (!email) return err(400, 'email is required');
-
-          const netlifyToken = process.env.NETLIFY_TOKEN;
-          const netlifySiteId = process.env.NETLIFY_SITE_ID || 'cygenix.netlify.app';
-          if (!netlifyToken) return err(500, 'NETLIFY_TOKEN not configured');
-
-          // GoTrue invite endpoint — runs on the site itself
-          // Must use the site's own identity URL, not the Netlify API
-          const identityUrl = `https://${netlifySiteId}/.netlify/identity`;
-
-          const inviteRes = await fetch(`${identityUrl}/admin/users`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${netlifyToken}`
-            },
-            body: JSON.stringify({
-              email,
-              data: { full_name: body.name || email.split('@')[0] },
-              send_email: true
-            })
-          });
-
-          const inviteData = await inviteRes.json().catch(() => ({}));
-          ctx.log('Netlify invite response:', inviteRes.status, JSON.stringify(inviteData));
-
-          if (!inviteRes.ok) {
-            return err(inviteRes.status, `Netlify invite failed: ${JSON.stringify(inviteData)}`);
-          }
-
-          // Pre-create user record in Cosmos DB
-          try {
-            const container = getCosmosContainer('users');
-            const existCheck = await container.item(email, email).read().catch(() => ({ resource: null }));
-            if (!existCheck.resource) {
-              await container.items.create({
-                id:          email,
-                userId:      email,
-                email,
-                name:        body.name || email.split('@')[0],
-                plan:        'trial',
-                status:      'invited',
-                createdAt:   new Date().toISOString(),
-                trialEndsAt: new Date(Date.now() + 14 * 86400000).toISOString(),
-                stripeId:    null
-              });
-            }
-          } catch(e) {
-            ctx.log('Cosmos pre-create warning (non-fatal):', e.message);
-          }
-
-          return ok({ invited: true, email, netlifyResponse: inviteData });
-        }
+        // ── INVITE user — REMOVED ───────────────────────────────────────────
+        // This action called Netlify Identity's GoTrue admin endpoint with a
+        // NETLIFY_TOKEN, which made Netlify Identity a second identity
+        // provider alongside Entra External ID: two directories, two places a
+        // person could exist, and a long-lived site token held in the Function
+        // App to bridge them.
+        //
+        // Invitations are now issued by the product itself, on the Users &
+        // Roles page, against the tenant model in netlify/functions/lib/
+        // tenancy.js. An invitation names the roles the invitee will hold and
+        // is redeemed by signing in with that address through Entra — there is
+        // no second directory to write into, no link to leak, and no token to
+        // rotate. tests/route-authz.test.js fails the build if GoTrue comes
+        // back.
+        //
+        // The action is left out of the switch entirely rather than stubbed,
+        // so the default case answers it as the unknown action it now is.
 
         // ── LIST all users from Cosmos DB ────────────────────────────────────
         // GET /api/data/admin-users
