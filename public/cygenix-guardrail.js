@@ -166,7 +166,7 @@
           (info.approvalExpiresAt ? ', expires ' + esc(new Date(info.approvalExpiresAt).toLocaleTimeString()) : '') +
           '. It is waiting on the Users &amp; Roles page' + (waiting ? '' : '') + '.</p>' +
           '<div class="cg-actions">' +
-            '<a class="cg-btn" href="/user_roles.html#approvals">Open Users &amp; Roles</a>' +
+            '<a class="cg-btn" href="/user_roles#approvals">Open Users &amp; Roles</a>' +
             '<button type="button" class="cg-btn primary" data-cg="ok">Close</button>' +
           '</div>' +
         '</div>';

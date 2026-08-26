@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -39,7 +39,7 @@
 <meta name="description" content="Configure migration performance, batch sizes and timeouts.">
 <meta property="og:title" content="Cygenix – Performance Settings">
 <meta property="og:description" content="Configure migration performance, batch sizes and timeouts.">
-<meta property="og:url" content="https://cygenix.co.uk/performance.html">
+<meta property="og:url" content="https://cygenix.co.uk/performance">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cygenix.co.uk/og-image.png">
@@ -51,7 +51,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <style>
@@ -119,7 +119,7 @@ select.form-input option{background:var(--bg3)}
 
 <div id="cyg-sidebar-mount" data-active="performance"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 
 <div class="page">
   <div style="margin-bottom:1.5rem">
@@ -420,7 +420,7 @@ select.form-input option{background:var(--bg3)}
 </div>
 
 <script>
-if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
+if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login';
 
 const PERF_KEY = 'cygenix_performance';
 
@@ -591,13 +591,13 @@ const cfg=loadSettings();
 applyToUI(cfg);
 renderSummary(cfg);
 </script>
-<script src="/cookie-consent.js?v=14f483464b" defer></script>
+<script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('performance');</script>
 </body>
 </html>

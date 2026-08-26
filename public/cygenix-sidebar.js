@@ -13,7 +13,7 @@
  * Cross-page navigation:
  *   - If the target is a page (href starts with `/`), navigates there.
  *   - If the target is a dashboard "view" (key), stashes cyg_goto in
- *     sessionStorage and navigates to /dashboard.html. Dashboard already
+ *     sessionStorage and navigates to /dashboard. Dashboard already
  *     picks this up and calls showView(name) on load.
  *   - If we're ON dashboard.html and the target is a view, calls
  *     window.showView(name) directly (no reload).
@@ -72,19 +72,19 @@
         // Renamed 'Configurator' on request (21-Aug-2026); the key and page
         // filename stay effort-estimator / effort_estimator.html so every
         // data-active mount and bookmark keeps working.
-        { key:'effort-estimator',  label:'Configurator',     href:'/effort_estimator.html', color:'var(--teal)',  icon: iconEstimator() },
-        { key:'project-plan-grid', label:'Project Plan',     href:'/project_plan.html',     color:'var(--green)', icon: iconPlanGrid() },
+        { key:'effort-estimator',  label:'Configurator',     href:'/effort_estimator', color:'var(--teal)',  icon: iconEstimator() },
+        { key:'project-plan-grid', label:'Project Plan',     href:'/project_plan',     color:'var(--green)', icon: iconPlanGrid() },
       ]},
     ]},
     { section: 'Connect', group:'connect', items: [
       { key:'connections',  label:'Connections',  view:'connections',  color:'var(--green)', icon: iconPlug() },
-      { key:'profiles',     label:'Profiles',     href:'/profiles.html', color:'var(--amber, #f59e0b)', icon: iconShield() },
+      { key:'profiles',     label:'Profiles',     href:'/profiles', color:'var(--amber, #f59e0b)', icon: iconShield() },
       { key:'integrations', label:'Integrations', view:'integrations', color:'var(--teal)',  icon: iconIntegrations() },
       { key:'settings-group', label:'Settings', icon: iconSettings(), children: [
         { key:'project-settings',  label:'General',           view:'project-settings',  color:'var(--amber)',  icon: iconSettings() },
         { key:'notifications',     label:'Notifications',     view:'notifications',     color:'var(--teal)',   icon: iconBell() },
         { key:'system-parameters', label:'System Parameters', view:'system-parameters', color:'var(--accent)', icon: iconParams() },
-        { key:'user-roles',        label:'Users & Roles',     href:'/user_roles.html',  color:'var(--accent)', icon: iconUsers() },
+        { key:'user-roles',        label:'Users & Roles',     href:'/user_roles',  color:'var(--accent)', icon: iconUsers() },
       ]},
     ]},
     { section: 'Map & Build', group:'build', items: [
@@ -93,14 +93,14 @@
       // so moving it to the expander would break the active highlight and
       // every existing link.
       { key:'objmap-group', label:'Object Mapping', icon: iconArrows(), children: [
-        { key:'object-mapping',  label:'Mapping',         href:'/object_mapping.html',  color:'var(--teal)',   icon: iconArrows() },
-        { key:'schema-explorer', label:'Schema Explorer', href:'/schema_explorer.html', color:'var(--purple)', icon: iconGraph() },
+        { key:'object-mapping',  label:'Mapping',         href:'/object_mapping',  color:'var(--teal)',   icon: iconArrows() },
+        { key:'schema-explorer', label:'Schema Explorer', href:'/schema_explorer', color:'var(--purple)', icon: iconGraph() },
       ]},
-      { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor.html',         color:'var(--teal)',   icon: iconCode() },
-      { key:'agentive-migration', label:'AI Assist',      href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
+      { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor',         color:'var(--teal)',   icon: iconCode() },
+      { key:'agentive-migration', label:'AI Assist',      href:'/agentive_migration', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
       // AI Workspace (coworker.html) was replaced by the docked Assistant
       // panel, which is present on every app screen (Ctrl+/ or the launcher).
-      // /coworker.html redirects there and migrates its saved artifacts.
+      // /coworker redirects there and migrates its saved artifacts.
     ]},
     { section: 'Run', group:'run', items: [
       { key:'jobs-group', label:'Jobs', icon: iconPlay(), children: [
@@ -108,7 +108,7 @@
         // The key stays 'project-builder' — pages set data-active on it and the
         // dashboard routes from it. Only the visible name changed: the screen is
         // where you assemble and run a BATCH of jobs, and it now says so.
-        { key:'project-builder', label:'Batches',  href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
+        { key:'project-builder', label:'Batches',  href:'/project-builder', color:'var(--purple)', icon: iconPlay() },
       ]},
       // Data Stream sits between Jobs and Task Manager because that is the
       // order of the question it answers: batches move the bulk, streams move
@@ -116,10 +116,10 @@
       // run-time objects, so they belong in RUN rather than in a section of
       // their own.
       { key:'datastream-group', label:'Data Stream', icon: iconStream(), children: [
-        { key:'data-stream',         label:'Streams',       href:'/data_stream.html',         color:'var(--teal)',   icon: iconStream() },
-        { key:'data-stream-store',   label:'Stream Store',  href:'/data_stream_store.html',   color:'var(--accent)', icon: iconStore() },
-        { key:'data-stream-events',  label:'Change Events', href:'/data_stream_events.html',  color:'var(--green)',  icon: iconBolt() },
-        { key:'data-stream-monitor', label:'Stream Monitor',href:'/data_stream_monitor.html', color:'var(--purple)', icon: iconChart() },
+        { key:'data-stream',         label:'Streams',       href:'/data_stream',         color:'var(--teal)',   icon: iconStream() },
+        { key:'data-stream-store',   label:'Stream Store',  href:'/data_stream_store',   color:'var(--accent)', icon: iconStore() },
+        { key:'data-stream-events',  label:'Change Events', href:'/data_stream_events',  color:'var(--green)',  icon: iconBolt() },
+        { key:'data-stream-monitor', label:'Stream Monitor',href:'/data_stream_monitor', color:'var(--purple)', icon: iconChart() },
       ]},
       // Project Planner was removed along with its page. With one child left
       // the "Planner & Schedules" expander earned nothing, so this is a plain
@@ -133,23 +133,23 @@
         // Assurance leads: it is the continuous layer the three one-off
         // pages feed — validation rules promote INTO it, breaches hand off
         // to Cleansing, and Quality Review stays the pre-flight pass.
-        { key:'assurance',      label:'Assurance',      href:'/assurance.html',      color:'var(--accent)', icon: iconCheck() },
-        { key:'data-quality',   label:'Quality Review', href:'/data-quality.html',   color:'var(--green)', icon: iconQuality() },
-        { key:'data-cleansing', label:'Cleansing',      href:'/data-cleansing.html', color:'var(--teal)',  icon: iconClean() },
+        { key:'assurance',      label:'Assurance',      href:'/assurance',      color:'var(--accent)', icon: iconCheck() },
+        { key:'data-quality',   label:'Quality Review', href:'/data-quality',   color:'var(--green)', icon: iconQuality() },
+        { key:'data-cleansing', label:'Cleansing',      href:'/data-cleansing', color:'var(--teal)',  icon: iconClean() },
         // After Cleansing, before Validation — the operator sequence is
         // de-duplicate → enrich → validate: don't enrich three copies of the
         // same person, and have the enriched values in place before the
         // validation report is generated.
-        { key:'data-enrichment', label:'Data Enrichment', href:'/data-enrichment.html', color:'var(--purple, #a888d0)', icon: iconEnrich() },
-        { key:'validation',     label:'Validation',     href:'/validation.html',     color:'var(--amber)', icon: iconCheck() },
+        { key:'data-enrichment', label:'Data Enrichment', href:'/data-enrichment', color:'var(--purple, #a888d0)', icon: iconEnrich() },
+        { key:'validation',     label:'Validation',     href:'/validation',     color:'var(--amber)', icon: iconCheck() },
       ]},
       // 'Data Insights' was removed on request (16-Aug-2026): the Schema
       // Explorer's Data map now covers schema discovery. The page itself
-      // still answers at /insights.html for old bookmarks.
+      // still answers at /insights for old bookmarks.
     ]},
     { section: 'Report & Govern', group:'govern', items: [
       { key:'reports-group', label:'Reports', icon: iconReport(), children: [
-        { key:'report-builder',           label:'Report Builder',    href:'/reports.html',            color:'var(--amber)',  icon: iconReportBuilder() },
+        { key:'report-builder',           label:'Report Builder',    href:'/reports',            color:'var(--amber)',  icon: iconReportBuilder() },
         { key:'reports',                  label:'Conversion Report', view:'reports',                  color:'var(--purple)', icon: iconReport() },
         // The Effort Estimator and Project Plan moved to the top-level
         // Project group below Home (21-Aug-2026). Their keys are unchanged
@@ -163,7 +163,7 @@
       { key:'privacy-security', label:'Governance',        view:'privacy-security', color:'var(--red)',   icon: iconShield() },
       { key:'audit',            label:'Audit Log',         view:'audit',            color:'var(--text2)', icon: iconAuditLog() },
       { key:'monitoring-group', label:'Monitoring', icon: iconChart(), children: [
-        { key:'performance', label:'Performance', href:'/performance.html', color:'var(--teal)',  icon: iconChart() },
+        { key:'performance', label:'Performance', href:'/performance', color:'var(--teal)',  icon: iconChart() },
         { key:'diagnostics', label:'Diagnostics', view:'diagnostics',       color:'var(--text2)', icon: iconPulse() },
       ]},
     ]},
@@ -633,7 +633,7 @@
   // and read as a branded term; this is literally where your files live.
   function buildDriveButton(){
     return `<div class="cyg-drive-area">
-      <a class="cyg-drive-btn" id="cyg-drive-btn" href="/dashboard.html#drive" title="Your files — the shared Drive, available on every machine you sign in on">
+      <a class="cyg-drive-btn" id="cyg-drive-btn" href="/dashboard#drive" title="Your files — the shared Drive, available on every machine you sign in on">
         ${iconDrive()}<span class="cyg-nav-item-label">Files</span>
       </a>
     </div>`;
@@ -687,7 +687,7 @@
             ).join('')
           : '<div class="cyg-user-menu-email">No projects yet</div>') +
         '<div class="cyg-user-menu-sep"></div>' +
-        '<a class="cyg-user-menu-item" href="/projects.html">All projects…</a>';
+        '<a class="cyg-user-menu-item" href="/projects">All projects…</a>';
       const r = btn.getBoundingClientRect();
       menu.style.left = Math.max(8, r.left) + 'px';
       menu.style.top = (r.bottom + 6) + 'px';
@@ -711,7 +711,7 @@
   // ── HTML build ──────────────────────────────────────────────────────────
   function buildHTML(activeKey){
     const head = `<div class="cyg-sidebar-head">
-      <a class="cyg-brand" href="/dashboard.html" aria-label="Cygenix — Migration Console">
+      <a class="cyg-brand" href="/dashboard" aria-label="Cygenix — Migration Console">
         <span class="cyg-brand-mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span>
         <span class="cyg-brand-word"><b>Cygenix</b><span>Migration Console</span></span>
       </a>
@@ -766,7 +766,7 @@
     menu.innerHTML =
       '<div class="cyg-user-menu-email" id="cyg-user-menu-email"></div>' +
       '<div class="cyg-user-menu-sep"></div>' +
-      '<a class="cyg-user-menu-item" role="menuitem" href="/projects.html">My projects</a>' +
+      '<a class="cyg-user-menu-item" role="menuitem" href="/projects">My projects</a>' +
       '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-sub">Subscription</button>' +
       '<div class="cyg-user-menu-sep"></div>' +
       // Help / Accessibility, moved out of the rail. Rendered from
@@ -798,7 +798,7 @@
     menu.querySelector('#cyg-user-menu-sub').addEventListener('click', (e) => {
       e.preventDefault(); closeUserMenu();
       if (typeof window.openBillingPortal === 'function') { try { window.openBillingPortal(e.currentTarget); return; } catch(_){} }
-      window.location.href = '/pick-plan.html';
+      window.location.href = '/pick-plan';
     });
     menu.querySelector('#cyg-user-menu-signout').addEventListener('click', (e) => {
       e.preventDefault(); closeUserMenu(); sidebarSignOut();
@@ -872,7 +872,7 @@
     } catch(_){}
     window.location.href =
       'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
-      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login');
   }
 
   // Hide the legacy top-right user pill on pages where the sidebar renders —
@@ -906,7 +906,7 @@
       e.preventDefault();
       ensureDriveModal(() => {
         if (window.CygenixDriveModal) window.CygenixDriveModal.open();
-        else window.location.href = '/dashboard.html#drive';
+        else window.location.href = '/dashboard#drive';
       });
     });
     // #drive in the URL opens the overlay on arrival — this is where the old
@@ -1082,7 +1082,7 @@
       return;
     }
     if (item.action === 'open-help'){
-      window.open('/help.html', '_blank');
+      window.open('/help', '_blank');
       return;
     }
     if (item.action === 'accessibility'){
@@ -1101,7 +1101,7 @@
         // sessionStorage can be wiped by auth-gate redirects; the hash survives
         // as long as the redirect preserves it. Dashboard reads either.
         try { sessionStorage.setItem('cyg_goto', item.view); } catch {}
-        window.location.href = '/dashboard.html#goto=' + encodeURIComponent(item.view);
+        window.location.href = '/dashboard#goto=' + encodeURIComponent(item.view);
       }
       return;
     }
@@ -1220,7 +1220,7 @@
       if (!bar){
         bar = document.createElement('a');
         bar.id = 'cyg-envbar';
-        bar.href = '/profiles.html';
+        bar.href = '/profiles';
         bar.title = 'The connection profile governing this session. Click to manage profiles.';
         document.body.appendChild(bar);
         var css = document.createElement('style');

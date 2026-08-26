@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -42,7 +42,7 @@
 <meta name="description" content="AI column mapping for SQL database migrations.">
 <meta property="og:title" content="Cygenix – Object Mapping">
 <meta property="og:description" content="AI column mapping for SQL database migrations.">
-<meta property="og:url" content="https://cygenix.co.uk/object_mapping.html">
+<meta property="og:url" content="https://cygenix.co.uk/object_mapping">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cygenix.co.uk/og-image.png">
@@ -423,8 +423,8 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
 <script src="/cygenix-lineage.js?v=7485fa3d28" defer></script>
 <script src="/cygenix-evidence-map.js?v=1ac6eb9b14" defer></script>
-  <script src="/cygenix-guardrail.js?v=7ecbe09b3d" defer></script>
-<script src="/object-mapping-app.js?v=72fbdd0504" defer></script>
+  <script src="/cygenix-guardrail.js?v=be89fbd865" defer></script>
+<script src="/object-mapping-app.js?v=dbf7f5da95" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <script>
@@ -459,7 +459,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
 <div id="cyg-sidebar-mount" data-active="object-mapping"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 
 <div class="page">
   <!-- Page header -->
@@ -503,7 +503,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not configured</span>
-    <a href="/dashboard.html#connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none"><i class="ic ic-cog"></i> Manage connections</a>
+    <a href="/dashboard#connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none"><i class="ic ic-cog"></i> Manage connections</a>
   </div>
 
   <!-- Status -->
@@ -684,7 +684,7 @@ document.addEventListener('DOMContentLoaded', function(){
                 <span style="color:var(--amber);font-weight:600"><i class="ic ic-sync"></i> Was/Is:</span>
                 <span id="wasis-status-text">No rules loaded</span>
                 <span style="opacity:0.7"> — manage in</span>
-                <a href="dashboard.html#system-parameters" style="color:var(--accent);text-decoration:none">System parameters → Was/Is value mapping</a>
+                <a href="/dashboard#system-parameters" style="color:var(--accent);text-decoration:none">System parameters → Was/Is value mapping</a>
               </span>
               <button class="btn btn-ghost btn-sm" onclick="reloadWasisFromStorage()" title="Reload rules from System Parameters">↻ Reload</button>
             </div>
@@ -1023,12 +1023,12 @@ document.addEventListener('DOMContentLoaded', function(){
   <div id="lineage-body" style="padding:1rem 1.1rem"></div>
 </div>
 
-<script src="/cookie-consent.js?v=14f483464b" defer></script>
+<script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('object-mapping');</script>
 </body>
 </html>

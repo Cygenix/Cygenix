@@ -35,12 +35,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=7e0395ba10" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
-<script src="/project-manager.js?v=72c7519c06" defer></script>
+<script src="/project-manager.js?v=4f3f390725" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -170,7 +170,7 @@ code,.mono{font-family:var(--mono)}
 <!-- Topbar — same visual pattern as dashboard.html so the page feels like
      it's part of the app rather than a detached HTML file. -->
 <div class="topbar">
-  <a href="/dashboard.html" class="logo">Cyge<span>nix</span><span class="logo-console">Data Generator</span></a>
+  <a href="/dashboard" class="logo">Cyge<span>nix</span><span class="logo-console">Data Generator</span></a>
 </div>
 
 <!-- SIDEBAR — rendered by /cygenix-sidebar.js. data-active doesn't match a
@@ -179,7 +179,7 @@ code,.mono{font-family:var(--mono)}
      via the "Data Generator" tab on Dashboard → Connections. -->
 <div id="cyg-sidebar-mount" data-active="connections"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 
 <div id="dg-main">
 
@@ -1621,8 +1621,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('data-generator');</script>
 </body>
 </html>

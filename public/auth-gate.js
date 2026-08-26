@@ -5,10 +5,10 @@
  * Two-layer gate:
  *   Layer 1 (sync): MSAL session check — reads localStorage cache directly so
  *                   it works before msal-browser.min.js has loaded. If no
- *                   session, redirect to /login.html immediately.
+ *                   session, redirect to /login immediately.
  *   Layer 2 (async): tier check — for signed-in users, fetch /api/data/whoami
  *                    and decide whether they should be on this page or
- *                    redirected to /pick-plan.html.
+ *                    redirected to /pick-plan.
  *
  * Layer 2 only runs once the page DOM is parsing, so the visible flash is
  * minimal but non-zero. We hide the body until layer 2 resolves; if layer 2
@@ -22,20 +22,26 @@
   // TIER_EXEMPT: signed-in users only, but not redirected to pick-plan even
   //              if they have no tier. Pick-plan itself, welcome (post-checkout
   //              landing), and login pages must be in here or we'd loop.
-  const PUBLIC = ['/', '/index.html', '/login.html', '/demo.html',
-                  '/about.html', '/help.html', '/terms.html', '/privacy.html',
-                  '/pricing', '/pricing.html', '/register.html'];
-  const TIER_EXEMPT = ['/pick-plan.html', '/welcome.html'];
+  // Addresses are extensionless — /dashboard, not /dashboard.html. Netlify
+  // permanently redirects the old form, but a path is normalised here anyway:
+  // this file runs before anything else on a protected page, and a gate that
+  // failed to recognise its own public list because of a trailing .html would
+  // bounce a signed-out visitor off a page that was never protected.
+  const PUBLIC = ['/', '/home', '/login', '/demo',
+                  '/about', '/help', '/terms', '/privacy',
+                  '/pricing', '/register'];
+  const TIER_EXEMPT = ['/pick-plan', '/welcome'];
 
-  const path = window.location.pathname;
-  const matches = list => list.some(p => path === p || path.endsWith(p));
+  const path = (window.location.pathname.replace(/\.html$/, '').replace(/\/+$/, '') || '/');
+  // Exact match, not endsWith: a suffix test would let /anything/login pass.
+  const matches = list => list.indexOf(path) !== -1;
 
   if (matches(PUBLIC)) return;
 
   // Don't redirect-loop a user who just signed out
   if (sessionStorage.getItem('cygenix_just_signed_out') === '1') {
     sessionStorage.setItem('cygenix_redirect_after_login', window.location.href);
-    window.location.replace('/login.html?reason=protected');
+    window.location.replace('/login?reason=protected');
     return;
   }
 
@@ -75,7 +81,7 @@
 
   if (!hasMsalSession()) {
     sessionStorage.setItem('cygenix_redirect_after_login', window.location.href);
-    window.location.replace('/login.html?reason=protected');
+    window.location.replace('/login?reason=protected');
     return;
   }
 
@@ -242,7 +248,7 @@
       // bounce them back after checkout. Currently welcome.html handles
       // post-checkout routing, so this is forward-compat.
       sessionStorage.setItem('cygenix_redirect_after_plan', window.location.href);
-      window.location.replace('/pick-plan.html?reason=' +
+      window.location.replace('/pick-plan?reason=' +
         encodeURIComponent(data.tier_status || 'no-tier'));
     })
     .catch(err => {

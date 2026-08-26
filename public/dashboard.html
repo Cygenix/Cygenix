@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -43,7 +43,7 @@
 <meta name="description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
 <meta property="og:title" content="Cygenix – Migration Dashboard">
 <meta property="og:description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
-<meta property="og:url" content="https://cygenix.co.uk/dashboard.html">
+<meta property="og:url" content="https://cygenix.co.uk/dashboard">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cygenix.co.uk/og-image.png">
@@ -1256,7 +1256,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .rc-chips-menu-empty{padding:10px;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
 </style>
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=7e0395ba10" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
@@ -1299,7 +1299,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <!-- TOPBAR -->
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:1.25rem">
-      <a href="/projects.html" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
+      <a href="/projects" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
     </div>
     <div class="topbar-right">
       <div class="conn-badge checking" id="conn-badge">Checking…</div>
@@ -1311,12 +1311,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div id="user-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:0.5rem;min-width:180px;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.4)">
           <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem 0.25rem" id="user-email-menu"></div>
           <div style="height:0.5px;background:var(--border);margin:0.4rem 0"></div>
-          <a href="/projects.html" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">My projects</a>
+          <a href="/projects" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">My projects</a>
           <a href="#" id="user-menu-subscription" style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'" onclick="event.preventDefault(); openBillingPortal(this);">
             <span>Subscription</span>
             <span id="user-menu-tier-badge" style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3);padding:2px 7px;border-radius:100px"></span>
           </a>
-          <a href="/admin.html" id="user-menu-admin-link" style="display:none;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'"><i class="ic ic-cog"></i> Admin panel</a>
+          <a href="/admin" id="user-menu-admin-link" style="display:none;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'"><i class="ic ic-cog"></i> Admin panel</a>
           <div onclick="signOut()" style="padding:0.5rem;font-size:13px;color:var(--red);cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">Sign out</div>
         </div>
       </div>
@@ -1329,12 +1329,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-preflight.js?v=b84fe6bfb2" defer></script>
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
-  <script src="/cygenix-guardrail.js?v=7ecbe09b3d" defer></script>
-  <script src="/dashboard-app.js?v=2cbf8d46e1" defer></script>
+  <script src="/cygenix-guardrail.js?v=be89fbd865" defer></script>
+  <script src="/dashboard-app.js?v=9189c391c0" defer></script>
 
 
   <!-- MAIN -->
@@ -1364,7 +1364,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
       <!-- ACTIVE PROJECT SUMMARY — read-only snapshot of the currently
            active project so the user always knows which one they're working
-           on. Click "Edit details" to jump to /projects.html. Hidden when no
+           on. Click "Edit details" to jump to /projects. Hidden when no
            project is active. Rendered by renderActiveProjectSummary(). -->
       <div class="panel" id="dashboard-active-summary" style="display:none;margin-bottom:1.75rem;border-color:rgba(74,91,214,0.4)">
         <div class="panel-header" style="margin-bottom:0.85rem">
@@ -1376,15 +1376,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             </div>
           </div>
           <div style="display:flex;gap:0.5rem">
-            <a href="/projects.html" class="btn btn-ghost btn-sm" id="das-edit-btn">Edit details →</a>
+            <a href="/projects" class="btn btn-ghost btn-sm" id="das-edit-btn">Edit details →</a>
           </div>
         </div>
         <div id="das-meta-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem"></div>
       </div>
 
       <!-- PROJECTS CARD — overview of every project ("conversion") with
-           status, jobs, artifacts and dates. Cards link to /projects.html for
-           CRUD; the "+ New Project" button deep-links to /projects.html?new=1
+           status, jobs, artifacts and dates. Cards link to /projects for
+           CRUD; the "+ New Project" button deep-links to /projects?new=1
            which opens the new-project modal on arrival. -->
       <div class="panel" id="dashboard-projects-panel" style="margin-bottom:1.75rem">
         <div class="panel-header" style="margin-bottom:0.85rem">
@@ -1393,8 +1393,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div class="panel-sub" id="dashboard-projects-sub">Loading…</div>
           </div>
           <div style="display:flex;gap:0.5rem">
-            <a href="/projects.html?new=1" class="btn btn-primary btn-sm">+ New Project</a>
-            <a href="/projects.html" class="btn btn-ghost btn-sm">Manage projects →</a>
+            <a href="/projects?new=1" class="btn btn-primary btn-sm">+ New Project</a>
+            <a href="/projects" class="btn btn-ghost btn-sm">Manage projects →</a>
           </div>
         </div>
         <div id="dashboard-projects-list">
@@ -1832,7 +1832,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
     <!-- SETTINGS VIEW (app-level: backups, API key, preferences) -->
     <!-- This view used to also hold project metadata (name, client, dates, etc.)
-         but those moved to /projects.html so the term "Settings" stops doing
+         but those moved to /projects so the term "Settings" stops doing
          double duty. Project metadata is now per-project. The id stays
          `view-project-settings` because the sidebar key and any deep links
          still use it; only the contents and the user-facing label changed. -->
@@ -1840,7 +1840,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="panel-header">
         <div>
           <div class="panel-title"><i class="ic ic-cog"></i> Settings</div>
-          <div class="panel-sub">App-level configuration — API credentials, backups, and general preferences. For project metadata (name, client, dates, source/target), open <a href="/projects.html" style="color:var(--accent)">Projects</a>.</div>
+          <div class="panel-sub">App-level configuration — API credentials, backups, and general preferences. For project metadata (name, client, dates, source/target), open <a href="/projects" style="color:var(--accent)">Projects</a>.</div>
         </div>
         <button class="btn btn-primary btn-sm" onclick="saveAppPreferences()"><i class="ic ic-save"></i> Save preferences</button>
       </div>
@@ -1964,7 +1964,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <select id="pref-landing" class="form-input" style="margin-top:5px">
               <option value="dashboard">Dashboard</option>
               <option value="jobs">All Jobs</option>
-              <option value="projects">Projects (/projects.html)</option>
+              <option value="projects">Projects (/projects)</option>
             </select>
             <div style="font-size:11px;color:var(--text3);margin-top:5px">Where Cygenix sends you when you sign in or hit the bare domain.</div>
           </div>
@@ -2513,7 +2513,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <button class="cx-tab" data-tab="blob" onclick="switchConnTab('blob')">
           Azure Blob Source
         </button>
-        <a class="cx-tab" href="/data-generator.html" style="text-decoration:none" title="Populate a source database with realistic demo data for migration demonstrations">
+        <a class="cx-tab" href="/data-generator" style="text-decoration:none" title="Populate a source database with realistic demo data for migration demonstrations">
           Data Generator
         </a>
       </div>
@@ -2860,7 +2860,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           The Microsoft MSDASQL ↔ psqlODBC path silently fails on many SQL Server installs (Msg 7303/7399 with no error detail) even when the driver and network work. SQL Server → SQL Server linked servers work fine. For pulling Postgres data into your conversion database, use
           <a href="#" onclick="showView('connections');switchConnTab('import');return false" style="color:var(--accent);text-decoration:none">Data import</a>
           or
-          <a href="#" onclick="window.location.href='/project-builder.html';return false" style="color:var(--accent);text-decoration:none">Batches</a>
+          <a href="#" onclick="window.location.href='/project-builder';return false" style="color:var(--accent);text-decoration:none">Batches</a>
           — both reach Postgres directly via Cygenix's proxy, no MSDASQL.
         </div>
 
@@ -4131,16 +4131,16 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 </div>
 <!-- end .app -->
 
-<script src="/cookie-consent.js?v=14f483464b" defer></script>
+<script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('dashboard');</script>
 </body>
 </html>
 
 
 
-<script src="/cygenix-project-summary.js?v=f35ffe5b82" defer></script>
+<script src="/cygenix-project-summary.js?v=1cf1e66e74" defer></script>

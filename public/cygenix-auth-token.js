@@ -177,7 +177,7 @@
       clientId:  'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
       authority: 'https://cygenix.ciamlogin.com/',
       knownAuthorities: ['cygenix.ciamlogin.com'],
-      redirectUri: window.location.origin + '/login.html',
+      redirectUri: window.location.origin + '/login',
       navigateToLoginRequestUrl: false,
     },
     cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },

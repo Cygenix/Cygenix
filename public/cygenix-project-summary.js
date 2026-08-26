@@ -259,7 +259,7 @@
             Once you've run a migration job, it'll appear here and you can generate a Project Summary Document.
           </p>
           <p style="margin-top:1rem">
-            <a href="/project-builder.html" style="color:var(--accent);text-decoration:none;font-weight:600">Go to Execute →</a>
+            <a href="/project-builder" style="color:var(--accent);text-decoration:none;font-weight:600">Go to Execute →</a>
           </p>
         </div>`;
     }

@@ -73,8 +73,12 @@ console.log('Asset stamping — cache-busting for deployed fixes\n');
 // ── Wiring ──────────────────────────────────────────────────────────────────
 {
   const toml = fs.readFileSync(path.join(__dirname, '..', 'netlify.toml'), 'utf8');
+  // The build command grew a second generator (build-routes). Assert that
+  // stamping is IN it rather than that it is the whole of it, so adding a
+  // third step does not fail a test about the first.
   check('the build stamps, so a deploy cannot ship mismatched URLs',
-    /command = "npm install && node scripts\/stamp-assets\.js"/.test(toml));
+    /command = "[^"]*node scripts\/stamp-assets\.js/.test(toml),
+    (toml.match(/command = "[^"]*"/) || [''])[0]);
   // Runtime-injected scripts have no tag to stamp and rely on the header
   // alone, so the stale window must stay short.
   check('the stale-while-revalidate window is bounded for unstampable scripts',

@@ -53,7 +53,7 @@
   var SESSION_KEY = 'cygenix_coworker_session_v1';
 
   function go() {
-    var dest = /#drive\b/.test(location.hash || '') ? '/dashboard.html#drive' : '/dashboard.html#assistant';
+    var dest = /#drive\b/.test(location.hash || '') ? '/dashboard#drive' : '/dashboard#assistant';
     location.replace(dest);
   }
 
