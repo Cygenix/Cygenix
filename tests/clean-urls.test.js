@@ -79,6 +79,7 @@ for (const f of pages) {
   const clean = '/' + f.replace(/\.html$/, '');
   const serve = ruleFor(clean);
   if (!serve || serve.to !== '/' + f || serve.status !== '200') missingClean.push(clean);
+  if (f === routes.CALLBACK_PAGE) continue;            // see below
   const heal = ruleFor('/' + f);
   if (!heal || heal.to !== clean || heal.status !== '301!') missingHeal.push('/' + f);
 }
@@ -87,24 +88,48 @@ check('every page is served at its extensionless address (' + (pages.length - 1)
 check('every .html address permanently redirects to it',
   missingHeal.length === 0, missingHeal.slice(0, 5).join(', '));
 check('the redirect is forced, so an existing file does not win over the rule',
-  rules.filter(r => r.from.endsWith('.html')).every(r => r.status === '301!'),
+  rules.filter(r => r.from.endsWith('.html') && r.from !== '/' + routes.CALLBACK_PAGE)
+       .every(r => r.status === '301!'),
   'without ! Netlify serves the file and the old URL stays alive');
+
+// The one exemption, and the reason it exists. Entra returns the code in the
+// URL fragment; a 301 on the callback address puts MSAL on a URL that no
+// longer matches the redirect_uri it asked for, and sign-in fails. This is a
+// deliberate hole and the test names it so nobody closes it by tidying.
+check('the sign-in callback address is SERVED, not redirected',
+  (ruleFor('/' + routes.CALLBACK_PAGE) || {}).status === '200'
+  && (ruleFor('/' + routes.CALLBACK_PAGE) || {}).to === '/' + routes.CALLBACK_PAGE,
+  'a 301 here breaks sign-in — the auth fragment does not survive it');
 
 // ── 4. Nothing in the product still points at a .html address ───────────────
 section('4. No link, script or redirect hands a visitor a .html address');
 const offenders = [];
+const callbackRefs = [];
 const REF = /["'`]((?:\/)?[a-z0-9_-]+)\.html(?=[#?"'`])/g;
+// An OAuth callback is not a link. It is a value handed to Entra, which will
+// only accept one it has registered, so it is exempt from the clean-address
+// rule — and collected separately rather than ignored, so the count below can
+// assert it is the ONLY thing exempt.
+const OAUTH = /redirectUri:|postLogoutRedirectUri:|post_logout_redirect_uri=/;
 for (const f of fs.readdirSync(PUB)) {
   if (!/\.(html|js)$/.test(f)) continue;
   const src = fs.readFileSync(path.join(PUB, f), 'utf8');
-  let m;
-  while ((m = REF.exec(src))) {
-    const stem = m[1].replace(/^\//, '');
-    if (stems.has(stem)) offenders.push(f + ' → ' + m[0].slice(1));
+  for (const line of src.split('\n')) {
+    let m;
+    REF.lastIndex = 0;
+    while ((m = REF.exec(line))) {
+      const stem = m[1].replace(/^\//, '');
+      if (!stems.has(stem)) continue;
+      if (OAUTH.test(line)) callbackRefs.push(f + ' → ' + m[0].slice(1));
+      else offenders.push(f + ' → ' + m[0].slice(1));
+    }
   }
 }
-check('no page or script links to a .html address', offenders.length === 0,
+check('no page or script LINKS to a .html address', offenders.length === 0,
   offenders.slice(0, 6).join(' | '));
+check('the only .html left in the product is the OAuth callback',
+  callbackRefs.length > 0 && callbackRefs.every(r => r.endsWith('/' + routes.CALLBACK_PAGE)),
+  callbackRefs.filter(r => !r.endsWith('/' + routes.CALLBACK_PAGE)).join(' | '));
 
 // A reference in prose is just as visible as one in an href.
 const prose = [];
@@ -167,11 +192,18 @@ for (const f of fs.readdirSync(PUB)) {
 }
 check('every sign-in and sign-out callback names the same address',
   callbacks.size === 1, [...callbacks].join(', ') || 'none found');
-check('and it is /login — the value docs/DEPLOY-clean-urls.md says to register',
-  callbacks.has('/login'), [...callbacks].join(', '));
-check('the deploy note spells out the Entra prerequisite',
+check('and it is the address registered in Entra, not the clean one',
+  callbacks.has('/' + routes.CALLBACK_PAGE), [...callbacks].join(', '));
+check('the deploy note explains why the callback keeps its extension',
   /AADSTS50011/.test(fs.readFileSync(path.join(ROOT, 'docs', 'DEPLOY-clean-urls.md'), 'utf8')),
-  'sign-in breaks without it, so it must be written down');
+  'sign-in breaks if this is changed without registering the new URI first');
+
+// Ordinary navigation to the sign-in screen is a link, not a registered URI,
+// and stays clean. Mixing the two up is what broke sign-in the first time.
+const gateSrc = fs.readFileSync(path.join(PUB, 'auth-gate.js'), 'utf8');
+check('but ordinary navigation to sign-in still uses the clean address',
+  /location\.replace\('\/login\?reason=protected'\)/.test(gateSrc),
+  'only the OAuth callback needs the registered form');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

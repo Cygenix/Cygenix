@@ -77,7 +77,7 @@ async function signOut(){
         clientId:    'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
         authority:   'https://cygenix.ciamlogin.com/',
         knownAuthorities: ['cygenix.ciamlogin.com'],
-        redirectUri: window.location.origin + '/login',
+        redirectUri: window.location.origin + '/login.html',
       },
       cache: { cacheLocation: 'localStorage' },
     });
@@ -85,7 +85,7 @@ async function signOut(){
     const account = msalInstance.getAllAccounts()[0];
     await msalInstance.logoutRedirect({
       account,
-      postLogoutRedirectUri: window.location.origin + '/login',
+      postLogoutRedirectUri: window.location.origin + '/login.html',
     });
   } catch (e) {
     console.warn('[signOut] MSAL logout failed, falling back:', e);
@@ -94,7 +94,7 @@ async function signOut(){
       if (k.includes('msal') || k.includes(CLIENT_ID) || k.startsWith('{')) localStorage.removeItem(k);
     });
     window.location.href = 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
-      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login');
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
   }
 }
 

@@ -872,7 +872,7 @@
     } catch(_){}
     window.location.href =
       'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
-      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login');
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
   }
 
   // Hide the legacy top-right user pill on pages where the sidebar renders —

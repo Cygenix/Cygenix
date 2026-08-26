@@ -13,6 +13,11 @@
 /project-plan         /dashboard            301!
 /home                 /                     301!
 
+# The sign-in callback. Entra sends the browser back to this exact
+# address with the code in the fragment, so it is served rather than
+# redirected — a 301 here breaks sign-in. See scripts/build-routes.js.
+/login.html           /login.html           200
+
 # Old .html addresses heal themselves. 301! forces the redirect even
 # though the file exists at that path, which is the whole point.
 /about.html           /about                301!
@@ -38,7 +43,6 @@
 /help.html            /help                 301!
 /insights.html        /insights             301!
 /job-editor.html      /job-editor           301!
-/login.html           /login                301!
 /mapper.html          /mapper               301!
 /object_mapping.html  /object_mapping       301!
 /one-to-many.html     /one-to-many          301!
