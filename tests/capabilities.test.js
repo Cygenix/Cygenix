@@ -119,9 +119,17 @@ console.log('Capabilities — one manifest, and pages that cannot contradict it\
     && /demo data/i.test(CAP.feature('data_stream').detail || ''));
   check('row-level reconciliation is marked planned, because it is not built',
     CAP.feature('reconciliation_row_level').status === 'planned');
-  check('shared workspaces are marked planned, because stores key per user',
-    CAP.feature('tenancy').status === 'planned'
-    && /projects\.js/.test(CAP.feature('tenancy').evidence || ''));
+  // Shared workspaces shipped, but only half of them: projects moved to the
+  // tenant, and the Cosmos-backed objects did not. `beta` with the limitation
+  // named is the honest status — `ga` would be the drift this file exists to
+  // catch, and `planned` would now be false.
+  check('shared workspaces are beta, and the detail names what is still personal',
+    CAP.feature('tenancy').status === 'beta'
+    && /Jobs, schedules and saved scripts are still personal/.test(CAP.feature('tenancy').detail || '')
+    && /tenancy\.js/.test(CAP.feature('tenancy').evidence || ''));
+  check('the guardrails are beta and say they are enforced server-side',
+    CAP.feature('guardrails').status === 'beta'
+    && /server-side/.test(CAP.feature('guardrails').detail || ''));
 }
 
 /* ══ 3. The generated documentation is current ══════════════════════════ */

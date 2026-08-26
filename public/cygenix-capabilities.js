@@ -253,10 +253,19 @@ var FEATURES = [
     claims: ['cutover planner', 'delta re-sync', 'downtime estimate'],
     evidence: 'none' },
 
-  { id: 'tenancy', label: 'Shared team workspaces', status: 'planned', minTier: 'business',
-    detail: 'Project stores are keyed per user today, so two colleagues cannot see the same project.',
+  { id: 'tenancy', label: 'Shared team workspaces', status: 'beta', minTier: 'business',
+    detail: 'Projects belong to a workspace and colleagues join by invitation. Jobs, schedules and '
+      + 'saved scripts are still personal — those live in Cosmos, partitioned per user, and moving '
+      + 'them needs a container rebuild.',
     claims: ['shared workspace', 'team workspace'],
-    evidence: 'none — netlify/functions/projects.js keys on the individual user' },
+    evidence: 'netlify/functions/lib/tenancy.js, lib/authz.js, projects.js keyed on the tenant' },
+
+  { id: 'guardrails', label: 'Change guardrails and the two-person rule', status: 'beta',
+    minTier: 'business',
+    detail: 'Enforced server-side against a hash of the exact statement, so skipping the interface '
+      + 'does not skip the guardrail. Covers writes to PROD and STAGING targets through the console.',
+    claims: ['two-person rule', 'change guardrails'],
+    evidence: 'netlify/functions/lib/tenancy.js — requirementFor/consumeApproval; db-connect.js' },
 ];
 
 /* ══ Tiers ════════════════════════════════════════════════════════════════
