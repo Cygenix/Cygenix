@@ -5,7 +5,7 @@
 <!-- TIER_EXEMPT: signed-in users land here from Stripe even before their
      tier is written to Cosmos. We poll checkout-status which writes the
      tier server-side, then send them on. -->
-<script src="/auth-gate.js?v=231597c347"></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>Cygenix – Setting up your account</title>
@@ -82,7 +82,7 @@ h1{font-family:var(--serif);font-size:1.6rem;font-weight:500;letter-spacing:-0.0
     <div class="tier-badge success" id="success-tier">PLAN</div>
     <h1>You're all set</h1>
     <p class="lead">Your <em><span id="success-tier-text">plan</span></em> trial has started. You won't be charged until <em><span id="success-trial-end">day 15</span></em>.</p>
-    <a href="/dashboard.html" class="btn">Go to dashboard</a>
+    <a href="/dashboard" class="btn">Go to dashboard</a>
   </div>
 
   <!-- ERROR — something went wrong -->
@@ -96,7 +96,7 @@ h1{font-family:var(--serif);font-size:1.6rem;font-weight:500;letter-spacing:-0.0
     </div>
     <h1 id="error-title">Something went wrong</h1>
     <p class="lead" id="error-msg">We couldn't confirm your subscription. If you completed payment, your account will activate shortly — try refreshing in a minute. Otherwise, please pick a plan again.</p>
-    <a href="/pick-plan.html" class="btn">Back to plans</a>
+    <a href="/pick-plan" class="btn">Back to plans</a>
     <a href="mailto:support@cygenix.co.uk?subject=Trial%20setup%20issue" class="btn btn-ghost">Email support</a>
   </div>
 

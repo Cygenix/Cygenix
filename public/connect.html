@@ -180,14 +180,14 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 @media(max-width:768px){.two-col,.three-col{grid-template-columns:1fr}}
 </style>
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/nav.js?v=ba9168b06c" defer></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/nav.js?v=28222624e6" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 </head>
 <body>
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:1.25rem">
-    <a href="/dashboard.html" class="back-link">
+    <a href="/dashboard" class="back-link">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Dashboard
     </a>
@@ -203,7 +203,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
       <div id="user-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:12px;padding:0.5rem;min-width:180px;z-index:200">
         <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem" id="user-email-menu"></div>
         <div style="height:0.5px;background:var(--border);margin:0.4rem 0"></div>
-        <a href="/projects.html" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px">My projects</a>
+        <a href="/projects" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px">My projects</a>
         <div onclick="signOut()" style="padding:0.5rem;font-size:13px;color:var(--red);cursor:pointer;border-radius:6px">Sign out</div>
       </div>
     </div>
@@ -255,7 +255,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
       <span id="csb-tgt-label" style="font-family:var(--mono);color:var(--text3)">Target: —</span>
       <button id="csb-tgt-btn" onclick="doConnectTgt()" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--text3);cursor:pointer;font-family:var(--serif)">&#128268; Connect</button>
     </span>
-    <a href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)"><i class="ic ic-cog"></i> Change connections →</a>
+    <a href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)"><i class="ic ic-cog"></i> Change connections →</a>
   </div>
 
   <!-- Steps 1 & 2 hidden — connections come from Dashboard settings -->
@@ -271,7 +271,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
     <span id="banner-tgt-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
     <span id="banner-tgt-label">Target: not configured</span>
   </span>
-  <a href="/dashboard.html" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)"><i class="ic ic-cog"></i> Edit connections →</a>
+  <a href="/dashboard" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)"><i class="ic ic-cog"></i> Edit connections →</a>
 </div>
 <script>
 // DCL, not immediate: connections.js is deferred, so at parse time the
@@ -2343,9 +2343,9 @@ function saveJobAndFinish(action) {
   }
 
   if (action === 'dashboard') {
-    setTimeout(() => window.location.href = '/dashboard.html', 800);
+    setTimeout(() => window.location.href = '/dashboard', 800);
   } else if (action === 'project') {
-    setTimeout(() => window.location.href = '/project-builder.html', 800);
+    setTimeout(() => window.location.href = '/project-builder', 800);
   } else if (action === 'another') {
     // Reset to step 3 for a new mapping on a different table
     setTimeout(() => {
@@ -2363,7 +2363,7 @@ function saveJobAndFinish(action) {
 
 function openMigrationReport() {
   // Report data already saved to sessionStorage in executeNow
-  window.open('/report.html', '_blank');
+  window.open('/report', '_blank');
 }
 
 // Wrap an INSERT statement to also log the inserted PK into the tracking table
@@ -2853,7 +2853,7 @@ document.addEventListener('click', function(e) {
 });
 function signOut() {
   ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k => sessionStorage.removeItem(k));
-  window.location.href = '/login.html';
+  window.location.href = '/login';
 }
 // ── Searchable table combobox ──────────────────────────────────────────────────
 // (tableSearchData and kbIndex declared at top of script to avoid TDZ)

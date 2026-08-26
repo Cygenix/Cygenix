@@ -1,7 +1,7 @@
 /**
  * cygenix-region.js — currency/region selector
  *
- * Loaded by /pricing.html and /pick-plan.html (any page that shows prices
+ * Loaded by /pricing and /pick-plan (any page that shows prices
  * or needs to know the user's chosen currency). Provides:
  *
  *   window.CygenixRegion.get()                  → { currency, flag, symbol, code, label }

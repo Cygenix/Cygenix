@@ -36,7 +36,7 @@
   if (!getToken() || isExpired()) {
     clearSession();
     if (!window.location.pathname.includes('login')) {
-      window.location.href = '/login.html';
+      window.location.href = '/login';
     }
   }
 
@@ -61,7 +61,7 @@
 
     logout() {
       clearSession();
-      window.location.href = '/login.html';
+      window.location.href = '/login';
     },
 
     async saveProject(projectData, projectName) {

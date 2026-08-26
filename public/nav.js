@@ -54,7 +54,7 @@
   `;
 
   // Detect current page for active state
-  const page = window.location.pathname.split('/').pop() || 'index.html';
+  const page = window.location.pathname.split('/').pop() || '/home';
 
   function isActive(href) {
     return page === href ? 'cyg-nav-item active' : 'cyg-nav-item';
@@ -89,24 +89,24 @@
     // Both sub-menus always pinned open
     const configOpen = 'open';
     const configCollapsed = '';
-    const moreOpen = ['demo.html','help.html'].includes(page) ? 'open' : 'open';
+    const moreOpen = ['demo.html','/help'].includes(page) ? 'open' : 'open';
     const moreCollapsed = '';
     const mappingOpen = 'open';
     const mappingCollapsed = '';
-    const analysisOpen = ['validation.html'].includes(page) ? 'open' : 'open';
+    const analysisOpen = ['/validation'].includes(page) ? 'open' : 'open';
     const analysisCollapsed = '';
     const reportsOpen = ['issues.html'].includes(page) ? 'open' : 'open';
     const reportsCollapsed = '';
 
     return `
 <div class="cyg-nav-logo">
-  <a href="/dashboard.html">Cyge<span>nix</span></a>
+  <a href="/dashboard">Cyge<span>nix</span></a>
 </div>
 <div class="cyg-sidebar-inner">
 
 <div class="cyg-nav-section">
   <span class="cyg-nav-label">Workspace</span>
-  <a class="${isActive('dashboard.html')}" href="/dashboard.html">
+  <a class="${isActive('/dashboard')}" href="/dashboard">
     <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
     Dashboard
   </a>
@@ -118,19 +118,19 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${configCollapsed}" id="cyg-sub-configure" style="max-height:${configOpen?'200px':'0'}">
-    <a class="${isActive('dashboard.html#project-settings')||page==='dashboard.html'?'cyg-nav-item':'cyg-nav-item'}" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','project-settings')">
+    <a class="${isActive('/dashboard#project-settings')||page==='/dashboard'?'cyg-nav-item':'cyg-nav-item'}" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','project-settings')">
       <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Project Settings
     </a>
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')">
+    <a class="cyg-nav-item" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','connections')">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 8h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Connections ${connDot}
     </a>
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','backup')">
+    <a class="cyg-nav-item" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','backup')">
       <svg viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="11" width="12" height="3" rx="1" stroke="currentColor" stroke-width="1.1"/></svg>
       Backup &amp; Restore
     </a>
-    <a class="${isActive('performance.html')}" href="/performance.html">
+    <a class="${isActive('/performance')}" href="/performance">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 12 L5 7 L8 9 L11 4 L14 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14" cy="6" r="1.5" fill="currentColor"/></svg>
       Performance
     </a>
@@ -143,11 +143,11 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${mappingCollapsed}" id="cyg-sub-mapping" style="max-height:${mappingOpen?'200px':'0'}">
-    <a class="${isActive('object_mapping.html')}" href="/object_mapping.html">
+    <a class="${isActive('/object_mapping')}" href="/object_mapping">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 4h5M2 8h5M2 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M9 4h5M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M7 4l2 4-2 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Object Mapping
     </a>
-    <a class="${isActive('sql-editor.html')}" href="/sql-editor.html">
+    <a class="${isActive('/sql-editor')}" href="/sql-editor">
       <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6l3 2-3 2M9 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       SQL Editor
     </a>
@@ -160,22 +160,22 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${analysisCollapsed}" id="cyg-sub-analysis" style="max-height:${analysisOpen?'160px':'0'}">
-    <a class="${isActive('validation.html')}" href="/validation.html">
+    <a class="${isActive('/validation')}" href="/validation">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5L10 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Validation
     </a>
   </div>
 
-  <a class="${isActive('project-builder.html')}" href="/project-builder.html">
+  <a class="${isActive('/project-builder')}" href="/project-builder">
     <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="var(--bg2)" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
     Execute Jobs
   </a>
-  <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','jobs')">
+  <a class="cyg-nav-item" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','jobs')">
     <svg viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
     All Jobs
     ${jobs ? `<span class="cyg-nav-count">${jobs}</span>` : ''}
   </a>
-  <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','inventory')">
+  <a class="cyg-nav-item" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','inventory')">
     <svg viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h8v2H2z" stroke="currentColor" stroke-width="1.1" fill="none"/></svg>
     Inventory
   </a>
@@ -191,7 +191,7 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${reportsCollapsed}" id="cyg-sub-reports" style="max-height:${reportsOpen?'160px':'0'}">
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','reports')">
+    <a class="cyg-nav-item" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','reports')">
       <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Conversion Report
     </a>
@@ -214,15 +214,15 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${moreCollapsed}" id="cyg-sub-more" style="max-height:${moreOpen?'240px':'0'}">
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','audit')">
+    <a class="cyg-nav-item" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','audit')">
       <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Audit Log
     </a>
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','diagnostics')">
+    <a class="cyg-nav-item" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','diagnostics')">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Diagnostics
     </a>
-    <a class="${isActive('help.html')}" href="/help.html" target="_blank">
+    <a class="${isActive('/help')}" href="/help" target="_blank">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/></svg>
       Help &amp; Guide
     </a>
@@ -266,7 +266,7 @@
     // Skip login, index, dashboard and project-builder (these have their own
     // built-in sidebars), and agentive_migration (it loads cygenix-sidebar.js
     // — injecting here produced two overlapping sidebars).
-    const skipPages = ['login.html','index.html','','dashboard.html','project-builder.html','dashboard','agentive_migration.html'];
+    const skipPages = ['/login','/home','','/dashboard','/project-builder','dashboard','/agentive_migration'];
     if (skipPages.includes(page) || page === '' || document.getElementById('cyg-sidebar')) return;
 
     // Inject CSS
@@ -301,7 +301,7 @@
 
     // Handle cyg_goto — navigate to dashboard sub-view
     const goto = sessionStorage.getItem('cyg_goto');
-    if (goto && page === 'dashboard.html' && typeof showView === 'function') {
+    if (goto && page === '/dashboard' && typeof showView === 'function') {
       sessionStorage.removeItem('cyg_goto');
       setTimeout(() => showView(goto), 100);
     }

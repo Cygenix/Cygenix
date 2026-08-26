@@ -437,7 +437,7 @@ function renderEmpty() {
   if (!apiKey()) {
     return '<div class="cyga-empty"><b>No API key set.</b><br>' +
       'The assistant runs on your own Anthropic API key, the same one every other ' +
-      'AI feature here uses. Add it in <a href="/dashboard.html#goto=project-settings" ' +
+      'AI feature here uses. Add it in <a href="/dashboard#goto=project-settings" ' +
       'style="color:var(--accent)">Settings → General</a>, then come back.</div>';
   }
   var suggestions = (api.suggestions || []).slice(0, 4);

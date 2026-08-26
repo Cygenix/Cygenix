@@ -11,7 +11,7 @@ const CYGENIX_AUTH = {
   get authority() {
     return `https://${this.tenantName}.ciamlogin.com/${this.tenantId}`;
   },
-  redirectUri:  'https://cygenix.co.uk/login.html',
-  postLogoutRedirectUri: 'https://cygenix.co.uk/login.html',
+  redirectUri:  'https://cygenix.co.uk/login',
+  postLogoutRedirectUri: 'https://cygenix.co.uk/login',
   scopes: ['openid', 'profile', 'email'],
 };

@@ -287,14 +287,14 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 
 </style>
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 </head>
 <body>
 
 <div id="cyg-sidebar-mount" data-active="insights"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
@@ -330,7 +330,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 </script>
 
 <div class="topbar">
-  <a href="/dashboard.html" class="logo" style="text-decoration:none">Cyge<span>nix</span>
+  <a href="/dashboard" class="logo" style="text-decoration:none">Cyge<span>nix</span>
     <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono);margin-left:8px">Data Insights</span>
   </a>
   <div class="topbar-right">
@@ -578,7 +578,7 @@ let _paginatedSchemaSupported = null;   // null=unknown, true/false=detected
 // DCL, not immediate: connections.js is deferred, so the schema auto-load at
 // the end of this block needs its global to exist — guaranteed by DCL.
 document.addEventListener('DOMContentLoaded', function(){
-  if (!sessionStorage.getItem('cygenix_token')) { window.location.href='/login.html'; return; }
+  if (!sessionStorage.getItem('cygenix_token')) { window.location.href='/login'; return; }
   try {
     const u = JSON.parse(sessionStorage.getItem('cygenix_user')||'{}');
     const n = u.user_metadata?.full_name || u.email?.split('@')[0] || '?';
@@ -602,7 +602,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
 function signOut(){
   ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k=>sessionStorage.removeItem(k));
-  window.location.href='/login.html';
+  window.location.href='/login';
 }
 function toggleApiKey(){
   const el = document.getElementById('api-key');
@@ -1889,7 +1889,7 @@ function saveJobFromMapping(mi){
     // Add edit link to toast
     setTimeout(()=>{
       const editLink = document.getElementById('toast-edit-link');
-      if (editLink) editLink.innerHTML = '<a href="/job-editor.html?id='+job.id+'" style="font-size:11px;color:var(--purple);text-decoration:none"><i class="ic ic-edit"></i> Edit mapping →</a>';
+      if (editLink) editLink.innerHTML = '<a href="/job-editor?id='+job.id+'" style="font-size:11px;color:var(--purple);text-decoration:none"><i class="ic ic-edit"></i> Edit mapping →</a>';
     }, 50);
   } catch(e) {
     alert('Could not save job: ' + e.message);
@@ -1905,7 +1905,7 @@ function showSaveToast(msg){
     document.body.appendChild(toast);
   }
   toast.innerHTML = '✓ ' + msg +
-    '<a href="/dashboard.html" style="margin-left:0.75rem;font-size:11px;color:var(--accent);text-decoration:none">Dashboard →</a>' +
+    '<a href="/dashboard" style="margin-left:0.75rem;font-size:11px;color:var(--accent);text-decoration:none">Dashboard →</a>' +
     '<span id="toast-edit-link" style="margin-left:0.5rem"></span>';
   toast.style.opacity = '1';
   clearTimeout(toast._timer);
@@ -3510,8 +3510,8 @@ function escapeHtmlAttr(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&'
 </script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('insights');</script>
 </body>
 </html>

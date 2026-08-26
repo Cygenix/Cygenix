@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -41,7 +41,7 @@
 <meta name="description" content="Financial reconciliation and balance metrics for SQL database migrations.">
 <meta property="og:title" content="Cygenix – Balancing & Metrics">
 <meta property="og:description" content="Financial reconciliation and balance metrics for SQL database migrations.">
-<meta property="og:url" content="https://cygenix.co.uk/balancing.html">
+<meta property="og:url" content="https://cygenix.co.uk/balancing">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cygenix.co.uk/og-image.png">
@@ -337,7 +337,7 @@ body.cyg-collapsed{padding-left:54px}
      /cygenix-sidebar.js so this item gets highlighted. -->
 <div id="cyg-sidebar-mount" data-active="balancing"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 
 <div class="page">
 
@@ -370,7 +370,7 @@ body.cyg-collapsed{padding-left:54px}
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not configured</span>
     <button class="conn-btn" id="reload-schema-btn" onclick="balReloadSchemas()" style="margin-left:auto">↻ Reload schema</button>
-    <a href="/dashboard.html#connections" class="conn-btn"><i class="ic ic-cog"></i> Manage connections</a>
+    <a href="/dashboard#connections" class="conn-btn"><i class="ic ic-cog"></i> Manage connections</a>
   </div>
 
   <!-- Status bar -->
@@ -2897,7 +2897,7 @@ function cbRenderAiSection(r, idx){
   // if it's genuinely missing.
   const keyHint = hasKey
     ? '<div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Using your Anthropic API key from Settings.</div>'
-    : '<div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">If AI Assist doesn\'t respond, set your Anthropic API key in <a href="/dashboard.html#project-settings" style="color:var(--accent);text-decoration:none">Dashboard → Settings</a>.</div>';
+    : '<div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">If AI Assist doesn\'t respond, set your Anthropic API key in <a href="/dashboard#project-settings" style="color:var(--accent);text-decoration:none">Dashboard → Settings</a>.</div>';
 
   const messages = history.length
     ? history.map(m => cbRenderAiMessage(m, idx)).join('')
@@ -3197,8 +3197,8 @@ function cbAiApplySql(idx, mid){
 </script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('balancing');</script>
 </body>
 </html>

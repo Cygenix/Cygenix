@@ -7,7 +7,7 @@
   const h = window.location.hash;
   if (h && (h.includes('invite_token') || h.includes('recovery_token') || h.includes('confirmation_token'))) {
     sessionStorage.setItem('cygenix_pending_token', h);
-    window.location.href = '/login.html' + h;
+    window.location.href = '/login' + h;
   }
 })();
 </script>
@@ -18,7 +18,7 @@
 <meta name="description" content="Cygenix migrates SQL Server, Azure SQL and Postgres — AI column mapping, preflight forecasting, server-level objects, and governance that is enforced on the server rather than in the browser.">
 <meta property="og:title" content="Cygenix – AI-Powered SQL Database Migration Platform">
 <meta property="og:description" content="AI column mapping, preflight forecasting, server-level object migration, and governance enforced server-side.">
-<meta property="og:url" content="https://cygenix.co.uk/">
+<meta property="og:url" content="https://cygenix.co.uk/home">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cygenix.co.uk/og-image.png">
@@ -347,7 +347,7 @@ footer a:hover{text-decoration:underline}
 <div class="brand-grid" aria-hidden="true"></div>
 
 <nav>
-  <a class="nav-logo" href="/" aria-label="Cygenix home"><span class="mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span><b>Cygenix</b></a>
+  <a class="nav-logo" href="/home" aria-label="Cygenix home"><span class="mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span><b>Cygenix</b></a>
   <div class="nav-links">
     <a href="#platform">Platform</a>
     <a href="#mapping">Mapping</a>
@@ -356,10 +356,10 @@ footer a:hover{text-decoration:underline}
     <a href="#governance">Governance</a>
     <a href="#planning">Planning</a>
     <a href="#supports">What it supports</a>
-    <a href="/pricing.html">Pricing</a>
+    <a href="/pricing">Pricing</a>
     <a href="#" onclick="openContact();return false">Contact</a>
   </div>
-  <a href="/login.html" class="nav-cta">Log in →</a>
+  <a href="/login" class="nav-cta">Log in →</a>
 </nav>
 
 <!-- ══ HERO ══════════════════════════════════════════════════════════════ -->
@@ -373,11 +373,11 @@ footer a:hover{text-decoration:underline}
     moves the server-level objects most tools leave behind, and records every gated action in a
     hash-chained audit trail. It runs in the browser and connects to your databases directly.</p>
   <div class="hero-btns">
-    <a href="/pricing.html" class="btn-hero btn-primary">Start free trial →</a>
+    <a href="/pricing" class="btn-hero btn-primary">Start free trial →</a>
     <a href="#supports" class="btn-hero btn-secondary">See exactly what it supports</a>
   </div>
   <div class="hero-note">Every capability on this page is checked against the product's own
-    <a href="/help.html#supported">support matrix</a> at build time, so what you read here is what ships.</div>
+    <a href="/help#supported">support matrix</a> at build time, so what you read here is what ships.</div>
 </section>
 
 <!-- ══ TICKER ════════════════════════════════════════════════════════════
@@ -1262,7 +1262,7 @@ footer a:hover{text-decoration:underline}
       <p class="section-sub">Cygenix keeps one capability manifest that the product and this page both
         answer to, so every engine named here is one the code connects to today. The full matrix —
         every source, target, combination and server-object class — lives in the
-        <a href="/help.html#supported" style="color:var(--accent-ink);text-decoration:none">documentation</a>.</p>
+        <a href="/help#supported" style="color:var(--accent-ink);text-decoration:none">documentation</a>.</p>
     </div>
     <div class="scroll-x">
       <table class="matrix reveal">
@@ -1290,16 +1290,16 @@ footer a:hover{text-decoration:underline}
     while they are cheap, server-level objects that actually travel, and a record of every gated
     action that stands up to being read back.</div>
   <div class="cta-btns">
-    <a href="/pricing.html" class="btn-hero btn-primary">Start free trial →</a>
-    <a href="/help.html" class="btn-hero btn-secondary">Read the documentation</a>
+    <a href="/pricing" class="btn-hero btn-primary">Start free trial →</a>
+    <a href="/help" class="btn-hero btn-secondary">Read the documentation</a>
   </div>
 </section>
 
 <footer>
   Cygenix — SQL migration platform ·
-  <a href="/dashboard.html">Console</a> ·
-  <a href="/help.html">Documentation</a> ·
-  <a href="/pricing.html">Pricing</a> ·
+  <a href="/dashboard">Console</a> ·
+  <a href="/help">Documentation</a> ·
+  <a href="/pricing">Pricing</a> ·
   <button type="button" class="footer-link" onclick="openAbout()">About</button> ·
   <button type="button" class="footer-link a11y-trigger" aria-label="Accessibility options" aria-expanded="false" onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">Accessibility</button>
 </footer>
@@ -1323,12 +1323,12 @@ footer a:hover{text-decoration:underline}
       <i class="ic ic-chat"></i>
       <span><span class="lbl">Phone</span><br><span class="val">+44 7809 873223</span></span>
     </a>
-    <a class="contact-row" href="/register.html">
+    <a class="contact-row" href="/register">
       <i class="ic ic-clipboard"></i>
       <span><span class="lbl">Waitlist</span><br><span class="val">Get early access updates</span></span>
     </a>
     <p style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);margin-bottom:0">
-      Starter and Pro plans are <a href="/pricing.html" style="color:var(--accent-ink);text-decoration:none">published
+      Starter and Pro plans are <a href="/pricing" style="color:var(--accent-ink);text-decoration:none">published
       on the pricing page</a>. Business and Enterprise are scoped to the migration — get in touch for a quote.</p>
   </div>
 </div>
@@ -1411,7 +1411,7 @@ document.addEventListener('keydown', function(e){
   closeContact(); closeAbout();
 });
 </script>
-<script src="/cookie-consent.js?v=14f483464b" defer></script>
+<script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
 </body>

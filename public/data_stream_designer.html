@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
@@ -102,11 +102,11 @@ select.ds-input{cursor:pointer}
 <div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 <script src="/connections.js?v=d199ff3358"></script>
 <script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
 <script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
-<script src="/cygenix-datastream-page.js?v=611f28656e"></script>
+<script src="/cygenix-datastream-page.js?v=b437da85e3"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -196,7 +196,7 @@ function showNotFound(id) {
   el.innerHTML = '<div class="panel">' + U.emptyState({
     icon: 'blocked', title: 'That stream no longer exists',
     body: 'The link points at ' + id + ', which has been deleted or belongs to another project.',
-    actionHtml: '<a class="btn btn-primary" href="/data_stream.html">Back to Streams</a>',
+    actionHtml: '<a class="btn btn-primary" href="/data_stream">Back to Streams</a>',
   }) + '</div>';
   document.getElementById('ds-create').disabled = true;
 }
@@ -388,7 +388,7 @@ function step1() {
           + (draft.capture.connectionId === c.id ? ' selected' : '') + '>'
           + U.esc(connLabel(c)) + (c.project ? '' : ' (saved)') + '</option>').join('')
       + '</select><div class="hint">Connections come from '
-      + '<a href="/dashboard.html#goto=connections" style="color:var(--accent)">Connect → Connections</a>. '
+      + '<a href="/dashboard#goto=connections" style="color:var(--accent)">Connect → Connections</a>. '
       + 'A stream stores the connection’s id, never its credentials.</div></div>'
 
     + '<div class="ds-field"><label class="lbl">Capture method</label>' + methods + '</div>'
@@ -479,7 +479,7 @@ function sendCdcSqlToEditor() {
   const engine = /postgres/i.test(connLabel(c)) ? 'postgres' : /mysql/i.test(connLabel(c)) ? 'mysql' : 'mssql';
   try { localStorage.setItem('cygenix_sql_editor_draft', DS.enableCdcSql(engine)); } catch (e) { /* storage full */ }
   DS.wipSave(P.projectId, draft);
-  location.href = '/sql-editor.html';
+  location.href = '/sql-editor';
 }
 
 /* ── Step 2 — objects ───────────────────────────────────────────────────── */
@@ -501,7 +501,7 @@ function step2() {
     + '<p class="lead">Which tables this stream carries, and what it does to each one on the way past.</p>'
     + (live ? '' : '<div class="ds-note warn" style="margin-bottom:0.7rem">No schema is cached for this project yet, '
         + 'so this list is the module’s demo objects. Open the '
-        + '<a href="/schema_explorer.html" style="color:inherit;text-decoration:underline">Schema Explorer</a> '
+        + '<a href="/schema_explorer" style="color:inherit;text-decoration:underline">Schema Explorer</a> '
         + 'once to read the real one.</div>')
     + '<div class="ds-picker"><div>'
       + '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.5rem">'
@@ -706,7 +706,7 @@ function destPicker() {
           + (draft.destination.connectionId === c.id ? ' selected' : '') + '>'
           + U.esc(connLabel(c)) + '</option>').join('')
       + '</select>'
-      + '<div style="margin-top:0.4rem"><a class="btn" href="/dashboard.html#goto=connections">'
+      + '<div style="margin-top:0.4rem"><a class="btn" href="/dashboard#goto=connections">'
       + '<i class="ic ic-plus"></i> New connection</a></div>'
       + (conns.length ? '' : '<div class="ds-note warn" style="margin-top:0.4rem">No saved connections. '
           + 'Add one in Connect → Connections, or name the destination by hand below.</div>')
@@ -901,7 +901,7 @@ function dsSaveDraft() {
   DS.wipClear(P.projectId);
   dirty = false;
   P.announce('Saved as a draft.');
-  location.href = '/data_stream.html' + DS.buildQuery({ stream: editingId });
+  location.href = '/data_stream' + DS.buildQuery({ stream: editingId });
 }
 
 /* Create & start ALWAYS confirms: it begins reading a production database,
@@ -919,7 +919,7 @@ function dsCreate() {
     P.persist();
     DS.wipClear(P.projectId);
     dirty = false;
-    location.href = '/data_stream.html' + DS.buildQuery({ stream: editingId });
+    location.href = '/data_stream' + DS.buildQuery({ stream: editingId });
     return;
   }
   if (!confirm(U.confirmText('start', {
@@ -929,7 +929,7 @@ function dsCreate() {
   P.persist();
   DS.wipClear(P.projectId);
   dirty = false;
-  location.href = '/data_stream.html' + DS.buildQuery({ stream: created.id });
+  location.href = '/data_stream' + DS.buildQuery({ stream: created.id });
 }
 
 function dsCancel() {
@@ -938,14 +938,14 @@ function dsCancel() {
   if (dirty) DS.wipSave(P.projectId, draft);
   dirty = false;
   const ref = document.referrer;
-  location.href = (ref && ref.indexOf('/data_stream') !== -1) ? ref : '/data_stream.html';
+  location.href = (ref && ref.indexOf('/data_stream') !== -1) ? ref : '/data_stream';
 }
 </script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('data-stream');</script>
 </body>
 </html>

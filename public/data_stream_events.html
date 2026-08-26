@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
@@ -142,10 +142,10 @@ body.cyg-collapsed{padding-left:54px}
 <div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 <script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
 <script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
-<script src="/cygenix-datastream-page.js?v=611f28656e"></script>
+<script src="/cygenix-datastream-page.js?v=b437da85e3"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -220,7 +220,7 @@ function paint(state) {
       body: (s.streams || []).some(x => DS.isLive(x.status))
         ? 'Streams are running, but nothing here matches those filters yet.'
         : 'No stream is running, so nothing is being captured. Start one on the Streams screen.',
-      actionHtml: '<a class="btn" href="/data_stream.html">Go to Streams</a>' });
+      actionHtml: '<a class="btn" href="/data_stream">Go to Streams</a>' });
     return;
   }
 
@@ -547,8 +547,8 @@ function dsExport() {
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('data-stream-events');</script>
 </body>
 </html>

@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
@@ -498,14 +498,14 @@ select.inp{cursor:pointer}
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <script src="/cygenix-api.js?v=f33c20a068" defer></script>
-  <script src="/cygenix-guardrail.js?v=7ecbe09b3d" defer></script>
+  <script src="/cygenix-guardrail.js?v=be89fbd865" defer></script>
 <script src="/cygenix-schema-graph.js?v=545d83f459" defer></script>
 <script src="/cygenix-subject-harvest.js?v=223a1d8144" defer></script>
 <script src="/cygenix-integrations.js?v=b0fa905cf6" defer></script>
 <script src="/cygenix-map-context.js?v=f006e965b8" defer></script>
 <script src="/cygenix-assurance.js?v=d1a71328e3" defer></script>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 
 <script>
 'use strict';
@@ -1074,7 +1074,7 @@ function asCleanse(breachId){
   } catch {}
   A.asEvent(store, { type: 'breach.cleanse_handoff', breachId, by: userName() }, nowMs());
   saveStore();
-  window.location.href = '/data-cleansing.html';
+  window.location.href = '/data-cleansing';
 }
 function asExportRows(breachId){
   const b = store.breaches.find(x => x.id === breachId);
@@ -1196,7 +1196,7 @@ function renderMismatch(){
       + (gone.length > 3 ? '…' : '') : '') + '. '
     + 'Derived checks refuse to run against a database the migration never touched — their results would '
     + 'describe the wrong estate. Reselect the mapped connections, or '
-    + '<a href="/object_mapping.html" style="color:var(--accent)">review the scope</a> if the map is out of date.';
+    + '<a href="/object_mapping" style="color:var(--accent)">review the scope</a> if the map is out of date.';
 }
 
 /* Coverage re-based on the map: the denominator is the number of mapped
@@ -1253,7 +1253,7 @@ function renderCoverageMapped(host, hint){
     + (outside != null
       ? '<div class="muted" style="font-size:11px;margin-top:8px">' + outside.toLocaleString('en-GB')
         + ' tables in ' + esc(catalogMeta.tgtDb || 'the target') + ' are outside this migration — '
-        + '<a href="/object_mapping.html" style="color:var(--accent)">review scope</a> if that looks wrong.</div>'
+        + '<a href="/object_mapping" style="color:var(--accent)">review scope</a> if that looks wrong.</div>'
       : '<div class="muted" style="font-size:11px;margin-top:8px">— The connection catalogue has not loaded, '
         + 'so the outside-this-migration count cannot be shown yet.</div>');
 }
@@ -1317,7 +1317,7 @@ function renderBundles(){
         + (t.predicate ? ' — the source is counted under its own filter (<span class="mono">'
           + esc(t.predicate) + '</span>)' : '') + '.</p>'
         + '<div class="meta">' + esc(jid) + ' · runs on job completion · no writes</div></div>'
-        + '<div class="acts"><a class="btn" href="/object_mapping.html?edit=' + esc(jid) + '">View map</a></div></div>';
+        + '<div class="acts"><a class="btn" href="/object_mapping?edit=' + esc(jid) + '">View map</a></div></div>';
     }).join('') || '<div class="empty">No derived checks yet — add a table mapping and its checks appear here.</div>';
     $('as-sugs').innerHTML = '';
     return;
@@ -1483,7 +1483,7 @@ function asRenderRules(){
     /* the rule names its own origin: MAP-step id, job name, and a way back */
     const prov = r.provenance && r.provenance.source === 'derived'
       ? ' · <b>derived from ' + esc(r.provenance.jobName || r.provenance.jobId) + '</b>'
-        + (r.provenance.jobId ? ' · <a href="/object_mapping.html?edit=' + esc(r.provenance.jobId)
+        + (r.provenance.jobId ? ' · <a href="/object_mapping?edit=' + esc(r.provenance.jobId)
           + '" style="color:var(--accent)">view map</a>' : '')
       : (r.provenance && r.provenance.source === 'migration'
         ? ' · from ' + esc(r.provenance.projectId || 'migration') : '');
@@ -2115,13 +2115,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 </script>
-<script src="/cookie-consent.js?v=14f483464b" defer></script>
+<script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('assurance');</script>
 </body>
 </html>

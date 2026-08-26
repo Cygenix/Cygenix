@@ -14,7 +14,7 @@
 (function initUser(){
   // Auth gate — redirect to login if no token
   if (!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) {
-    window.location.href='/login.html'; return;
+    window.location.href='/login'; return;
   }
   try {
     let email = '', name = '';
@@ -77,7 +77,7 @@ async function signOut(){
         clientId:    'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
         authority:   'https://cygenix.ciamlogin.com/',
         knownAuthorities: ['cygenix.ciamlogin.com'],
-        redirectUri: window.location.origin + '/login.html',
+        redirectUri: window.location.origin + '/login',
       },
       cache: { cacheLocation: 'localStorage' },
     });
@@ -85,7 +85,7 @@ async function signOut(){
     const account = msalInstance.getAllAccounts()[0];
     await msalInstance.logoutRedirect({
       account,
-      postLogoutRedirectUri: window.location.origin + '/login.html',
+      postLogoutRedirectUri: window.location.origin + '/login',
     });
   } catch (e) {
     console.warn('[signOut] MSAL logout failed, falling back:', e);
@@ -94,7 +94,7 @@ async function signOut(){
       if (k.includes('msal') || k.includes(CLIENT_ID) || k.startsWith('{')) localStorage.removeItem(k);
     });
     window.location.href = 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
-      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login');
   }
 }
 
@@ -1508,8 +1508,8 @@ function toggleLog(gi, si) {
 // Edit the source job behind a step. Routes to the correct editor based on
 // the step's jobType — same routing as dashboard.html's editJob() so the
 // behaviour is consistent across the app.
-//   sql / sql-script  → /sql-editor.html?edit=<jobId>
-//   everything else   → /object_mapping.html?edit=<jobId>
+//   sql / sql-script  → /sql-editor?edit=<jobId>
+//   everything else   → /object_mapping?edit=<jobId>
 // We warn about unsaved project changes before navigating, since the edit
 // happens in a different page and any dirty in-memory project state would
 // be lost on navigation.
@@ -1525,7 +1525,7 @@ function editStepJob(gi, si) {
     saveProject();
   }
   const isSql = step.jobType === 'sql' || step.jobType === 'sql-script' || step.type === 'sql';
-  const url = (isSql ? '/sql-editor.html?edit=' : '/object_mapping.html?edit=') + encodeURIComponent(step.jobId);
+  const url = (isSql ? '/sql-editor?edit=' : '/object_mapping?edit=') + encodeURIComponent(step.jobId);
   window.location.href = url;
 }
 
@@ -3597,7 +3597,7 @@ async function runProject() {
   // Show report button + Save-to-Cosmos button. Save is user-requested (not
   // auto) — see saveReportToCloud() below for the POST to reports.js.
   document.getElementById('exec-btns').innerHTML =
-    `<button class="btn btn-primary btn-sm" onclick="window.open('/report.html','_blank')" style="background:var(--purple);border-color:rgba(107,78,142,0.3)"><i class="ic ic-doc"></i> View Conversion Report</button>
+    `<button class="btn btn-primary btn-sm" onclick="window.open('/report','_blank')" style="background:var(--purple);border-color:rgba(107,78,142,0.3)"><i class="ic ic-doc"></i> View Conversion Report</button>
      <button class="btn btn-sm" id="save-report-btn" onclick="saveReportToCloud()" style="background:transparent;border:0.5px solid var(--border2);color:var(--text);margin-left:0.5rem"><i class="ic ic-save"></i> Save Report</button>`;
 }
 

@@ -154,18 +154,27 @@ const t = (label, promise, verdict) => results.push(
 
 t('navigating to an href page returns a browser navigation',
   acts['app_navigate'].handler({ page: 'sql-editor' }),
-  (err, v) => !err && v.__navigate === '/sql-editor.html');
+  (err, v) => !err && v.__navigate === '/sql-editor');
 t('navigating to a dashboard view goes through the shell route',
   acts['app_navigate'].handler({ page: 'jobs' }),
-  (err, v) => !err && v.__navigate === '/dashboard.html#goto=jobs');
+  (err, v) => !err && v.__navigate === '/dashboard#goto=jobs');
 t('navigating to an unknown page fails loudly',
   acts['app_navigate'].handler({ page: 'nope' }),
   (err) => !!err && /Unknown page/.test(err.message));
 
-/* every href in the app map is a page that actually exists */
+/* every href in the app map is a page that actually exists. Addresses are
+   extensionless — /projects, not /projects.html — so the file behind one is
+   its name plus .html, except /home, which is index.html. */
+const fileFor = (href) => {
+  const name = href.replace(/^\//, '').replace(/[#?].*$/, '');
+  return P('public', (name === 'home' ? 'index' : name) + '.html');
+};
 check('every app-map href points at a real page',
-  reg.PAGES.filter((p) => p.href).every((p) => fs.existsSync(P('public', p.href.replace(/^\//, '')))),
-  reg.PAGES.filter((p) => p.href && !fs.existsSync(P('public', p.href.replace(/^\//, '')))).map((p) => p.href).join(', '));
+  reg.PAGES.filter((p) => p.href).every((p) => fs.existsSync(fileFor(p.href))),
+  reg.PAGES.filter((p) => p.href && !fs.existsSync(fileFor(p.href))).map((p) => p.href).join(', '));
+check('and no app-map href carries a .html extension',
+  reg.PAGES.filter((p) => p.href).every((p) => !/\.html/.test(p.href)),
+  reg.PAGES.filter((p) => p.href && /\.html/.test(p.href)).map((p) => p.href).join(', '));
 check('the app map no longer offers AI Workspace', !reg.PAGES.some((p) => p.key === 'coworker'));
 
 /* every app-map view key is a nav view the sidebar really has */
@@ -279,9 +288,9 @@ for (const f of ['login.html', 'index.html', 'register.html', 'pricing.html']) {
 
 const coworker = read('public', 'coworker.html');
 check('coworker.html redirects into the dashboard',
-  /location\.replace\('\/dashboard\.html#assistant'\)/.test(coworker.replace(/\s+/g, ' '))
-  || /dashboard\.html#assistant/.test(coworker));
-check('coworker.html preserves #drive deep links', /dashboard\.html#drive/.test(coworker));
+  /location\.replace\('\/dashboard#assistant'\)/.test(coworker.replace(/\s+/g, ' '))
+  || /\/dashboard#assistant/.test(coworker));
+check('coworker.html preserves #drive deep links', /\/dashboard#drive/.test(coworker));
 check('coworker.html migrates saved scripts into the SQL Editor library',
   /upsertScript/.test(coworker) && /cygenix_coworker_artifacts_v1/.test(coworker));
 check('coworker.html migrates documents into the Drive',

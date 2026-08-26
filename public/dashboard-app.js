@@ -1317,7 +1317,7 @@ function updateStats() {
 
 // ── Dashboard projects card ───────────────────────────────────────────────────
 // Lists every project ("conversion") with status, jobs, artifacts and dates.
-// Cards link to /projects.html for full CRUD; clicking a card sets it active
+// Cards link to /projects for full CRUD; clicking a card sets it active
 // and jumps to All Jobs filtered to that project.
 //
 // Status is derived from the project's jobs (no jobs → draft, all complete →
@@ -1403,7 +1403,7 @@ function renderDashboardProjects(){
 
 // Read-only snapshot of the currently active project, shown directly above
 // the Projects card on the dashboard. Hidden when no active project. All
-// editing happens on /projects.html — there's an "Edit details" link in the
+// editing happens on /projects — there's an "Edit details" link in the
 // header that takes the user there.
 function renderActiveProjectSummary(projects, activeId, allJobs, inv){
   const wrap = document.getElementById('dashboard-active-summary');
@@ -1827,7 +1827,7 @@ window.runExportScripts        = runExportScripts;
 // ── Bulk Generate SQL (hidden-iframe runner) ──────────────────────────────
 // Strictly sequential — one iframe at a time, destroyed between jobs — to
 // avoid Cosmos sync races on the shared cygenix_jobs key.
-// Each iframe loads /object_mapping.html?edit=<id>&autosave=1, which on
+// Each iframe loads /object_mapping?edit=<id>&autosave=1, which on
 // page load runs its normal hydration path (connect → load schema → restore
 // mapping → tryAutoGenSQL/generateOTMSQL) and then calls saveAsJob() silently.
 // The iframe sends a postMessage back when done or errored.
@@ -2094,7 +2094,7 @@ function _bulkGenRunOne(job){
   return new Promise(resolve => {
     const host = document.getElementById('bulk-gen-iframe-host');
     const iframe = document.createElement('iframe');
-    iframe.src = `/object_mapping.html?edit=${encodeURIComponent(job.id)}&autosave=1`;
+    iframe.src = `/object_mapping?edit=${encodeURIComponent(job.id)}&autosave=1`;
     // Small dimensions to minimise layout/paint cost. The autosave block
     // doesn't depend on visibility — schema fetches, mapping restoration,
     // and saveAsJob all run regardless of iframe size. Keeping this small
@@ -3898,7 +3898,7 @@ function jobsTableHTML(jobs) {
         ` : `
           <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(107,78,142,0.25)" title="Edit"><i class="ic ic-edit"></i> </button>
           <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history"><i class="ic ic-clock"></i> </button>
-          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(23,130,124,0.25)" title="Open SQL in editor"><i class="ic ic-edit"></i> </button>` : ''}
+          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor?job=${j.id}'" style="color:var(--teal);border-color:rgba(23,130,124,0.25)" title="Open SQL in editor"><i class="ic ic-edit"></i> </button>` : ''}
           <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
           <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename"><i class="ic ic-edit"></i> </button>
           <button class="btn btn-ghost" onclick="startEditSource('${j.id}')" title="Edit source table"><i class="ic ic-database"></i> </button>
@@ -4025,11 +4025,11 @@ function editJob(jobId) {
   // Route to the correct editor based on jobType
   switch (job.jobType) {
     case 'sql':
-      window.location.href = '/sql-editor.html?edit=' + encodeURIComponent(jobId);
+      window.location.href = '/sql-editor?edit=' + encodeURIComponent(jobId);
       break;
     default:
       // All mapping jobs (single-map, one-to-many, migration) → object_mapping.html
-      window.location.href = '/object_mapping.html?edit=' + encodeURIComponent(jobId);
+      window.location.href = '/object_mapping?edit=' + encodeURIComponent(jobId);
   }
 }
 
@@ -4676,35 +4676,35 @@ function renderPipeline(){
       metric: mappedJobs, unit: mappedJobs === 1 ? 'job' : 'jobs',
       status: mappedJobs > 0 ? 'ok' : 'idle',
       icon: svgMap(),
-      onClick: () => { window.location.href = '/object_mapping.html'; }
+      onClick: () => { window.location.href = '/object_mapping'; }
     },
     {
       key:'sql', label:'SQL Editor', sub:'custom scripts',
       metric: sqlJobs, unit: sqlJobs === 1 ? 'script' : 'scripts',
       status: sqlJobs > 0 ? 'ok' : 'idle',
       icon: svgCode(),
-      onClick: () => { window.location.href = '/sql-editor.html'; }
+      onClick: () => { window.location.href = '/sql-editor'; }
     },
     {
       key:'cleansing', label:'Cleansing', sub:'Was/Is rules',
       metric: wasis.length, unit: wasis.length === 1 ? 'rule' : 'rules',
       status: wasis.length > 0 ? 'ok' : 'idle',
       icon: svgSparkles(),
-      onClick: () => { window.location.href = '/data-cleansing.html'; }
+      onClick: () => { window.location.href = '/data-cleansing'; }
     },
     {
       key:'execution', label:'Execution', sub:'last 7 days',
       metric: recentRuns, unit: recentRuns === 1 ? 'run' : 'runs',
       status: recentRuns > 0 ? 'ok' : 'idle',
       icon: svgPlay(),
-      onClick: () => { window.location.href = '/project-builder.html'; }
+      onClick: () => { window.location.href = '/project-builder'; }
     },
     {
       key:'validation', label:'Validation', sub:'verify SQL set',
       metric: validated, unit: validated === 1 ? 'check' : 'checks',
       status: validated > 0 ? 'ok' : 'idle',
       icon: svgCheckCircle(),
-      onClick: () => { window.location.href = '/validation.html'; }
+      onClick: () => { window.location.href = '/validation'; }
     },
   ];
 
@@ -5214,7 +5214,7 @@ function renderProjectStatus(){
     host.innerHTML = `
       <div class="ps-inner">
         <div class="ps-empty">
-          No active project. <a href="/projects.html">Go to Projects</a> to create or activate one,
+          No active project. <a href="/projects">Go to Projects</a> to create or activate one,
           and the status panel will populate automatically.
         </div>
       </div>`;
@@ -5484,10 +5484,10 @@ function renderProjectStatus(){
   // the markup and lets us update navigation targets in one place.
   const actions = {
     'all-jobs':   () => showView('all-jobs'),
-    'mapping':    () => { window.location.href = '/object_mapping.html'; },
+    'mapping':    () => { window.location.href = '/object_mapping'; },
     'reports':    () => showView('reports'),
-    'cleansing':  () => { window.location.href = '/data-cleansing.html'; },
-    'validation': () => { window.location.href = '/validation.html'; },
+    'cleansing':  () => { window.location.href = '/data-cleansing'; },
+    'validation': () => { window.location.href = '/validation'; },
   };
   // Match every card with a data-action attribute — covers both the
   // generic .is-clickable cards built by the card() helper and the
@@ -5920,7 +5920,7 @@ function renderAuditLog() {
   $('audit-log-wrap').innerHTML =
     '<div class="panel" style="margin-bottom:1rem"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
     + '<div style="font-size:12px;font-weight:600">Organisation audit trail <span style="font-weight:400;color:var(--text3)">server-side · append-only · hash-chained</span></div>'
-    + '<a class="btn btn-ghost btn-sm" href="/user_roles.html">Users &amp; Roles →</a></div>'
+    + '<a class="btn btn-ghost btn-sm" href="/user_roles">Users &amp; Roles →</a></div>'
     + '<div id="server-audit-body" style="font-size:12px;color:var(--text2)">Loading…</div></div>'
     + (localHtml || '<div class="empty-state"><h3>No browser-local entries</h3><p>Server-side events appear in the organisation trail above.</p></div>');
   fetchServerAudit();
@@ -6189,7 +6189,7 @@ function initUserAndProject() {
   // of the app populate when the user "sets active". It can drift out of
   // sync with the canonical source — `cygenix_projects` array indexed by
   // `cygenix_active_project_id` — when:
-  //   • the user renames the active project on /projects.html (the array
+  //   • the user renames the active project on /projects (the array
   //     gets the new name; sessionStorage may not, if setActive wasn't called)
   //   • the user signs in fresh and gets a migrated project, then renames
   //     it later (sessionStorage was never written by the migration)
@@ -6321,7 +6321,7 @@ function toggleUserMenu() {
 // ── Open Stripe-hosted billing portal ─────────────────────────────────────
 // Called from the "Subscription" entry in the user pill. Hits
 // /api/data/billing-portal which returns a short-lived Stripe portal URL,
-// then redirects there. Falls back to /pick-plan.html for users who don't
+// then redirects there. Falls back to /pick-plan for users who don't
 // have a subscription yet (no Stripe customer to manage).
 async function openBillingPortal(linkEl) {
   // Admin/demo users have no real subscription — there's nothing for them
@@ -6333,7 +6333,7 @@ async function openBillingPortal(linkEl) {
     return;
   }
   if (!ctx.tier) {
-    window.location.href = '/pick-plan.html';
+    window.location.href = '/pick-plan';
     return;
   }
 
@@ -6411,7 +6411,7 @@ async function signOut() {
         clientId:    'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
         authority:   'https://cygenix.ciamlogin.com/',
         knownAuthorities: ['cygenix.ciamlogin.com'],
-        redirectUri: window.location.origin + '/login.html',
+        redirectUri: window.location.origin + '/login',
       },
       cache: { cacheLocation: 'localStorage' },
     });
@@ -6420,7 +6420,7 @@ async function signOut() {
     const account = msalInstance.getAllAccounts()[0];
     await msalInstance.logoutRedirect({
       account,
-      postLogoutRedirectUri: window.location.origin + '/login.html',
+      postLogoutRedirectUri: window.location.origin + '/login',
     });
   } catch (e) {
     console.warn('[signOut] MSAL logout failed, falling back:', e);
@@ -6432,7 +6432,7 @@ async function signOut() {
       }
     });
     window.location.href = 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
-      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login');
   }
 }
 
@@ -6544,7 +6544,7 @@ function openReport(jobId) {
   };
 
   sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); localStorage.setItem('cygenix_report', JSON.stringify(reportData));
-  window.open('/report.html', '_blank');
+  window.open('/report', '_blank');
 }
 
 
@@ -6724,7 +6724,7 @@ async function openSavedReport(id) {
     // Same storage keys report.html reads
     sessionStorage.setItem('cygenix_report', JSON.stringify(data.report));
     try { localStorage.setItem('cygenix_report', JSON.stringify(data.report)); } catch {}
-    window.open('/report.html', '_blank');
+    window.open('/report', '_blank');
   } catch (e) {
     alert('Could not open report: ' + e.message);
   }
@@ -7200,7 +7200,7 @@ function _openProjectFromSearch(projectId) {
   if (projectId) {
     try { localStorage.setItem('cygenix_active_project_id', projectId); } catch {}
   }
-  window.location.href = '/project-builder.html';
+  window.location.href = '/project-builder';
 }
 
 function _openInventoryFromSearch(_docId) {
@@ -8300,8 +8300,8 @@ function dismissOnboarding(){
 }
 function onboardGoTo(view){
   dismissOnboarding();
-  if(view === 'mapper') { window.location.href='/object_mapping.html'; return; }
-  if(view === 'help') { window.open('/help.html','_blank'); return; }
+  if(view === 'mapper') { window.location.href='/object_mapping'; return; }
+  if(view === 'help') { window.open('/help','_blank'); return; }
   showView(view);
 }
 
@@ -8957,7 +8957,7 @@ const DEFAULT_APP_PREFS = {
 
 // initProjectSettingsView — runs when the user navigates to the Settings
 // view. Project metadata used to live here (name, client, dates, etc.) but
-// has moved to /projects.html. This view now holds app-level config only:
+// has moved to /projects. This view now holds app-level config only:
 // API key, credit gauge link, and general preferences.
 function initProjectSettingsView() {
   // Populate API key field with the saved key (if any). The legacy field id
@@ -9291,7 +9291,7 @@ function key_preview() {
 // LEGACY saveProjectSettings DELETED — the new proxy version is defined
 // earlier (alongside saveAppPreferences). The old version captured project
 // metadata fields (name, client, analyst, etc.) from a form that no longer
-// exists on this page (those moved to /projects.html), so calling it would
+// exists on this page (those moved to /projects), so calling it would
 // silently no-op anyway. Removed to avoid the JS hoisting double-define
 // where the second definition wins and shadows the proxy.
 
@@ -14284,7 +14284,7 @@ function impBatchView(unitId){
   // a reasonable preview without saturating the results panel.
   const sql = `SELECT TOP 1000 * FROM ${unit.tableName};`;
   const params = new URLSearchParams({ sql: sql, conn: conn, run: '1' });
-  const url = '/sql-editor.html?' + params.toString();
+  const url = '/sql-editor?' + params.toString();
 
   if (impBatch.running){
     // Don't tear down the running import. Open in a new tab so the user can

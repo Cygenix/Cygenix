@@ -66,7 +66,7 @@
 /* ═══ block 2 — extracted from an inline <script> in sql-editor.html ═══ */
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
-if (!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
+if (!sessionStorage.getItem('cygenix_token')) window.location.href='/login';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Monaco Editor bootstrap + textarea proxy shim
@@ -1954,7 +1954,7 @@ function renderLinkedServersMenu(){
         <strong style="color:var(--text2);display:block;margin-bottom:0.35rem">No linked servers available</strong>
         Configure one in <em>Connections → Linked servers</em>, then run setup on the target.
         <br><br>
-        <a href="/dashboard.html#connections" style="color:var(--accent);text-decoration:none">Go to Connections →</a>
+        <a href="/dashboard#connections" style="color:var(--accent);text-decoration:none">Go to Connections →</a>
       </div>`;
     return;
   }

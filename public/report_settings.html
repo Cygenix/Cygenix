@@ -164,14 +164,14 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
   .btn{justify-content:center}
 }
 </style>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 </head>
 <body>
 <div class="toolbar">
   <div class="toolbar-logo">Cyge<span>nix</span> <span style="font-size:11px;color:#555a6a;margin-left:4px;font-family:var(--mono)">Report settings</span></div>
   <div class="toolbar-actions">
     <span class="save-status" id="save-status"></span>
-    <a href="/dashboard.html" class="btn btn-ghost">← Dashboard</a>
+    <a href="/dashboard" class="btn btn-ghost">← Dashboard</a>
     <button class="btn btn-ghost" onclick="resetConfig()" id="reset-btn">↺ Reset</button>
     <button class="btn btn-primary" onclick="saveAndPreview()" id="save-preview-btn"><i class="ic ic-save"></i> Save &amp; preview</button>
   </div>
@@ -880,7 +880,7 @@ async function saveAndPreview() {
     await saveConfig(true);
     setStatus('✓ Saved — opening preview', 'saved');
     // Open the printable report in a new tab
-    window.open('report.html', '_blank');
+    window.open('/report', '_blank');
   } catch (e) {
     setStatus('Save failed: ' + e.message, 'error');
   } finally {

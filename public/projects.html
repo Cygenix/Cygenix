@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -39,7 +39,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <style>
@@ -155,9 +155,9 @@ body.cyg-collapsed{padding-left:54px}
 <body>
 <div class="app">
   <div class="topbar">
-    <a href="/projects.html" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
+    <a href="/projects" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
     <div style="display:flex;align-items:center;gap:0.75rem">
-      <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
+      <a href="/dashboard" class="btn btn-ghost btn-sm">← Dashboard</a>
       <div class="avatar" id="user-avatar">?</div>
     </div>
   </div>
@@ -333,7 +333,7 @@ body.cyg-collapsed{padding-left:54px}
 <div class="toast" id="toast"></div>
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 <script>
 // ── Config & state ────────────────────────────────────────────────────────────
 const PROJECTS_KEY    = 'cygenix_projects';
@@ -611,7 +611,7 @@ function openProject(id){
   setActive(id, /*silent*/ true);
   // Send the user to the dashboard, where the active project is now this one
   // and the project filter on All Jobs will be set accordingly.
-  location.href = '/dashboard.html';
+  location.href = '/dashboard';
 }
 
 function setActive(id, silent){
@@ -887,8 +887,8 @@ document.addEventListener('keydown', e => {
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('projects');</script>
 </body>
 </html>

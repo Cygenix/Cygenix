@@ -140,14 +140,14 @@ select.map-select:focus{border-color:var(--accent)}
 .badge-purple{background:var(--purple-bg);color:var(--purple)}
 </style>
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/nav.js?v=ba9168b06c" defer></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/nav.js?v=28222624e6" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 </head>
 <body>
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
-    <a href="/dashboard.html" class="logo" style="text-decoration:none;flex-shrink:0">Cyge<span>nix</span></a>
+    <a href="/dashboard" class="logo" style="text-decoration:none;flex-shrink:0">Cyge<span>nix</span></a>
     <span style="color:var(--text3);font-size:13px;flex-shrink:0">/</span>
     <input id="mapping-name" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;width:280px;min-width:0" placeholder="Mapping name… e.g. Address to Site + Phone" oninput="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'">
   </div>
@@ -156,7 +156,7 @@ select.map-select:focus{border-color:var(--accent)}
     <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="save-btn" disabled>&#x1F4BE; Save as job</button>
     <div style="width:0.5px;background:var(--border2);height:20px"></div>
     <input type="password" id="otm-api-key" style="width:150px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:4px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none" placeholder="Anthropic key for AI">
-    <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
+    <a href="/dashboard" class="btn btn-ghost btn-sm">← Dashboard</a>
   </div>
 </div>
 
@@ -181,7 +181,7 @@ select.map-select:focus{border-color:var(--accent)}
     <span id="tgt-conn-status" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
   </div>
 
-  <a href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)"><i class="ic ic-cog"></i> Edit →</a>
+  <a href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)"><i class="ic ic-cog"></i> Edit →</a>
 </div>
 <script>
 // DCL, not immediate: connections.js is deferred, so at parse time the
@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
 
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
-if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login.html';
+if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let srcSchema    = null;

@@ -64,7 +64,7 @@
 /* ═══ block 2 — extracted from an inline <script> in object_mapping.html ═══ */
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login.html';
+if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const WASIS_KEY = 'cygenix_wasis_rules';

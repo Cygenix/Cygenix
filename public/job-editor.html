@@ -91,7 +91,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 .tx-select:focus{border-color:var(--accent)}
 </style>
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/nav.js?v=ba9168b06c" defer></script>
+<script src="/nav.js?v=28222624e6" defer></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
@@ -100,14 +100,14 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:1rem">
-    <a href="/dashboard.html" class="logo" style="text-decoration:none">Cyge<span>nix</span></a>
+    <a href="/dashboard" class="logo" style="text-decoration:none">Cyge<span>nix</span></a>
     <span style="color:var(--text3);font-size:13px">/ Edit Job:</span>
     <input id="job-name-input" class="form-input" style="width:280px;font-family:var(--serif);font-size:13px" placeholder="Job name…">
   </div>
   <div class="topbar-right">
     <button class="btn btn-purple btn-sm" onclick="remapWithClaude()" id="ai-remap-btn"><i class="ic ic-robot"></i> AI re-map</button>
     <button class="btn btn-green btn-sm" onclick="saveJob()"><i class="ic ic-save"></i> Save job</button>
-    <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
+    <a href="/dashboard" class="btn btn-ghost btn-sm">← Dashboard</a>
   </div>
 </div>
 
@@ -246,7 +246,7 @@ let wasisRules = [];
 const WASIS_KEY = 'cygenix_wasis_rules';
 
 (function init(){
-  if (!sessionStorage.getItem('cygenix_token')){ window.location.href='/login.html'; return; }
+  if (!sessionStorage.getItem('cygenix_token')){ window.location.href='/login'; return; }
   const params = new URLSearchParams(location.search);
   const jobId  = params.get('id');
   if (!jobId){ alert('No job ID specified.'); history.back(); return; }

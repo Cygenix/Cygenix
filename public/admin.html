@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -39,7 +39,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <style>
@@ -203,7 +203,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
     <h1 id="role-gate-title">Verifying access…</h1>
     <p id="role-gate-msg">Checking your administrator permissions.</p>
     <div id="role-gate-actions" style="display:none">
-      <a href="/dashboard.html" class="btn">Back to dashboard</a>
+      <a href="/dashboard" class="btn">Back to dashboard</a>
       <a href="/login" class="btn btn-ghost">Sign in as different user</a>
     </div>
   </div>
@@ -214,7 +214,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
   <!-- TOPBAR -->
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:1.25rem">
-      <a href="/dashboard.html" class="back-link">
+      <a href="/dashboard" class="back-link">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Dashboard
       </a>
@@ -303,7 +303,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       <div class="netlify-note">
         <i class="ic ic-info"></i> <strong>Sign-in is Entra External ID, and it is the only directory.</strong>
         This panel views billing and account data. Admitting somebody to a workspace and deciding what they may do
-        both happen on <a href="/user_roles.html">Users &amp; Roles</a>.
+        both happen on <a href="/user_roles">Users &amp; Roles</a>.
         User records here come from Cosmos DB and are created on first login.
       </div>
 
@@ -345,7 +345,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
           <div class="page-title">Invite Users</div>
           <div class="page-sub">Invitations are issued by the product, on the Users &amp; Roles page</div>
         </div>
-        <a class="btn btn-primary" href="/user_roles.html">Open Users &amp; Roles</a>
+        <a class="btn btn-primary" href="/user_roles">Open Users &amp; Roles</a>
       </div>
 
       <div class="netlify-note">
@@ -427,7 +427,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       <div class="page-header">
         <div>
           <div class="page-title">Waitlist</div>
-          <div class="page-sub">People who've registered interest via /register.html</div>
+          <div class="page-sub">People who've registered interest via /register</div>
         </div>
         <button class="btn btn-ghost" onclick="loadWaitlist()">↻ Refresh</button>
       </div>
@@ -467,7 +467,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       person will hold. There is no password to set — they sign in with the address you name.</div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeInviteModal()">Cancel</button>
-      <a class="btn btn-primary" href="/user_roles.html">Open Users &amp; Roles</a>
+      <a class="btn btn-primary" href="/user_roles">Open Users &amp; Roles</a>
     </div>
   </div>
 </div>
@@ -670,7 +670,7 @@ async function loadUsers() {
         <div class="empty">
           <div class="empty-icon"><i class="ic ic-tools"></i> </div>
           <div class="empty-text">The admin-users endpoint needs to be added to the Azure Function.<br>
-          Members and roles are managed on <a href="/user_roles.html" style="color:var(--accent)">Users &amp; Roles</a> in the meantime.</div>
+          Members and roles are managed on <a href="/user_roles" style="color:var(--accent)">Users &amp; Roles</a> in the meantime.</div>
         </div>
       </td></tr>`;
       return;
@@ -952,7 +952,7 @@ async function updateUserStatus(email, status) {
 // address through Entra.
 
 function openInviteModal() {
-  location.href = '/user_roles.html';
+  location.href = '/user_roles';
 }
 function closeInviteModal() {
   const m = document.getElementById('invite-modal');
@@ -1018,7 +1018,7 @@ async function loadWaitlist() {
     const entries = data.entries || [];
 
     if (!entries.length) {
-      tbody.innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-icon"><i class="ic ic-clipboard"></i> </div><div class="empty-text">No waitlist submissions yet.<br>Submissions from <a href="/register.html" style="color:var(--accent)">/register.html</a> will appear here.</div></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-icon"><i class="ic ic-clipboard"></i> </div><div class="empty-text">No waitlist submissions yet.<br>Submissions from <a href="/register" style="color:var(--accent)">/register</a> will appear here.</div></div></td></tr>`;
       return;
     }
 

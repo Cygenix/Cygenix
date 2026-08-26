@@ -181,7 +181,7 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
 
   const mapping = SB.__findItem('object-mapping');
   check('the object-mapping key still resolves, so no page loses its highlight',
-    !!mapping && mapping.href === '/object_mapping.html', mapping && mapping.href);
+    !!mapping && mapping.href === '/object_mapping', mapping && mapping.href);
   check('and it is the child, not the expander — the expander has no destination',
     !!group && !group.href && !group.view);
   check('Mapping is relabelled now that it sits under a group named for it',
@@ -189,8 +189,8 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
 
   const se = SB.__findItem('schema-explorer');
   check('Schema Explorer resolves', !!se);
-  check('it points at schema_explorer.html, matching its neighbour\'s naming',
-    se && se.href === '/schema_explorer.html', se && se.href);
+  check('it points at the Schema Explorer, matching its neighbour\'s naming',
+    se && se.href === '/schema_explorer', se && se.href);
   check('it has its own icon rather than reusing the mapping arrows',
     se && mapping && se.icon !== mapping.icon);
 

@@ -70,7 +70,7 @@
           <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px"><i class="ic ic-info"></i> Cookie preferences</div>
           <div style="font-size:12px;color:var(--text2);line-height:1.55">
             We use essential cookies to keep you logged in and save your work. We also use functional cookies to sync your data across devices.
-            <a href="/privacy.html#cookies" style="color:var(--accent);text-decoration:none"> Learn more</a>
+            <a href="/privacy#cookies" style="color:var(--accent);text-decoration:none"> Learn more</a>
           </div>
         </div>
         <div style="display:flex;gap:0.625rem;flex-shrink:0;flex-wrap:wrap">
@@ -149,7 +149,7 @@
 
           <div style="font-size:11px;color:var(--text3);margin-bottom:1.25rem;line-height:1.5">
             We do not use advertising or tracking cookies. See our
-            <a href="/privacy.html#cookies" style="color:var(--accent);text-decoration:none">Privacy Policy</a> for full details.
+            <a href="/privacy#cookies" style="color:var(--accent);text-decoration:none">Privacy Policy</a> for full details.
           </div>
 
           <div style="display:flex;gap:0.75rem;justify-content:flex-end">

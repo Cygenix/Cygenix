@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!-- Auth gate: requires signed-in MSAL session, but pick-plan is in
      TIER_EXEMPT inside auth-gate.js so we don't redirect-loop. -->
-<script src="/auth-gate.js?v=231597c347"></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#FFFFFF">
@@ -128,7 +128,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
   .pricing-hero h1{font-size:1.75rem}
 }
 </style>
-<script src="/cygenix-region.js?v=ce06522924" defer></script>
+<script src="/cygenix-region.js?v=f9955e4f0f" defer></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
 </head>
@@ -516,14 +516,14 @@ document.getElementById('signout-link').addEventListener('click', () => {
         },
         cache: { cacheLocation: 'localStorage' }
       });
-      msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin + '/login.html' });
+      msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin + '/login' });
       return;
     }
   } catch {}
   Object.keys(localStorage).forEach(k => {
     if (k.includes('login.windows.net') || k.includes('ciamlogin.com')) localStorage.removeItem(k);
   });
-  window.location.replace('/login.html');
+  window.location.replace('/login');
 });
 </script>
 

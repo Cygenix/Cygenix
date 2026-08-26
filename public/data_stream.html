@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/cygenix-theme.css">
@@ -158,10 +158,10 @@ body.cyg-collapsed{padding-left:54px}
 <div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 <script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
 <script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
-<script src="/cygenix-datastream-page.js?v=611f28656e"></script>
+<script src="/cygenix-datastream-page.js?v=b437da85e3"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -379,7 +379,7 @@ function emptyForNoStreams() {
   if (!conns) {
     return U.emptyState({ icon: 'plug', title: 'Add a connection first',
       bodyHtml: 'A stream reads from a connection this project already holds. '
-        + 'Set one up in <a href="/dashboard.html#goto=connections">Connect → Connections</a>, '
+        + 'Set one up in <a href="/dashboard#goto=connections">Connect → Connections</a>, '
         + 'then come back and point a stream at it.' });
   }
   return U.emptyState({ icon: 'stream', title: 'No data streams yet',
@@ -434,7 +434,7 @@ function paintStoreView(rows, s) {
       + '<td><span class="ds-num">' + ((r.profile || {}).retentionHours || 72) + 'h</span></td>'
       + '<td>' + U.monoCopy(r.capture.position.lsn, { max: 18 }) + '</td></tr>').join('')
     + '</tbody></table></div>'
-    + '<div style="padding:0.7rem 0.9rem"><a class="btn" href="/data_stream_store.html">'
+    + '<div style="padding:0.7rem 0.9rem"><a class="btn" href="/data_stream_store">'
     + 'Open the Stream Store →</a></div>';
 }
 
@@ -560,7 +560,7 @@ function inspRecent(s, st) {
       + '<div class="ds-cell-sub">' + U.esc(JSON.stringify(e.key)) + '</div></td>'
       + '<td class="ds-right">' + U.deliveryPill(e.deliveryState) + '</td></tr>').join('')
     + '</tbody></table></div>'
-    + '<div style="margin-top:0.6rem"><a class="btn" href="/data_stream_events.html'
+    + '<div style="margin-top:0.6rem"><a class="btn" href="/data_stream_events'
     + DS.buildQuery({ stream: s.id }) + '">View all →</a></div>';
 }
 
@@ -575,7 +575,7 @@ function inspErrors(s) {
     + '<div style="margin-top:0.7rem;display:flex;gap:0.4rem;flex-wrap:wrap">'
     + '<button class="btn" onclick="dsRequeue(\'' + U.escArg(s.id) + '\')"'
       + (s.metrics.dlqDepth ? '' : ' disabled') + '>Requeue dead letters</button>'
-    + '<a class="btn" href="/data_stream_events.html'
+    + '<a class="btn" href="/data_stream_events'
       + DS.buildQuery({ stream: s.id, state: 'dead' }) + '">See the dead letters →</a></div>';
 }
 
@@ -643,12 +643,12 @@ function dsDelete(id) {
   P.announce('Stream deleted.');
 }
 function dsDuplicate(id) {
-  location.href = '/data_stream_designer.html' + DS.buildQuery({ stream: id, clone: '1' });
+  location.href = '/data_stream_designer' + DS.buildQuery({ stream: id, clone: '1' });
 }
 function dsEdit(id) {
-  location.href = '/data_stream_designer.html' + DS.buildQuery({ stream: id });
+  location.href = '/data_stream_designer' + DS.buildQuery({ stream: id });
 }
-function dsNewStream() { location.href = '/data_stream_designer.html'; }
+function dsNewStream() { location.href = '/data_stream_designer'; }
 function dsRefresh() {
   P.boot(); paint();
   P.announce('Refreshed.');
@@ -748,8 +748,8 @@ function dsDoReplay() {
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('data-stream');</script>
 </body>
 </html>

@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script src="/auth-gate.js?v=231597c347"></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/auth-gate.js?v=4747a020e3"></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -41,7 +41,7 @@
 <meta name="description" content="Explore the target schema and see what your saved maps actually cover.">
 <meta property="og:title" content="Cygenix – Schema Explorer">
 <meta property="og:description" content="Explore the target schema and see what your saved maps actually cover.">
-<meta property="og:url" content="https://cygenix.co.uk/schema_explorer.html">
+<meta property="og:url" content="https://cygenix.co.uk/schema_explorer">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cygenix.co.uk/og-image.png">
@@ -593,7 +593,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <script src="/cygenix-api.js?v=f33c20a068" defer></script>
-  <script src="/cygenix-guardrail.js?v=7ecbe09b3d" defer></script>
+  <script src="/cygenix-guardrail.js?v=be89fbd865" defer></script>
 <script src="/cygenix-schema-graph.js?v=545d83f459" defer></script>
 <script src="/cygenix-subject-map.js?v=dbc44c8eb3" defer></script>
 <script src="/cygenix-subject-harvest.js?v=223a1d8144" defer></script>
@@ -610,7 +610,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 
 <div class="page">
   <div class="se-head">
@@ -1696,7 +1696,7 @@ function smRenderCanvas(){
       + (noConn ? 'No schema to explore yet'
         : filteredOut ? 'Everything is filtered out' : 'This database has no tables') + '</div>'
       + '<div class="se-empty-body">' + why
-      + (noConn ? '<br><a href="/dashboard.html#goto=connections">Configure a connection</a> and come back.' : '')
+      + (noConn ? '<br><a href="/dashboard#goto=connections">Configure a connection</a> and come back.' : '')
       + (filteredOut ? '<br><button class="btn" style="margin-top:0.6rem" onclick="smFiltersClear()">Show all tables</button>' : '')
       + '</div>';
     smUpdateFilterBadge();
@@ -2233,7 +2233,7 @@ function smAddToStream(){
   const params = new URLSearchParams();
   params.set('connection', SM.side === 'tgt' ? 'conn_tgt_01' : 'conn_src_01');
   params.set('tables', table);
-  location.href = '/data_stream_designer.html?' + params.toString();
+  location.href = '/data_stream_designer?' + params.toString();
 }
 
 // ── Inspector ─────────────────────────────────────────────────────────────
@@ -3677,7 +3677,7 @@ function daRefresh(structural){
     empty.innerHTML = '<div class="se-empty-icon">▦</div>'
       + '<div class="se-empty-title">' + (noConn ? 'No ' + (DA.side === 'src' ? 'source' : 'target') + ' schema to map yet' : 'This database has no tables') + '</div>'
       + '<div class="se-empty-body">' + esc(DA.reason || '')
-      + (noConn ? '<br><a href="/dashboard.html#goto=connections">Configure a connection</a> and come back.' : '') + '</div>';
+      + (noConn ? '<br><a href="/dashboard#goto=connections">Configure a connection</a> and come back.' : '') + '</div>';
     $('da-tiles').innerHTML = ''; $('da-legend').innerHTML = ''; $('da-crumb').innerHTML = '';
     $('da-map-meta').textContent = ''; $('da-rail').innerHTML = '<div class="muted">Nothing loaded.</div>';
     $('da-src-label').textContent = '';
@@ -4990,7 +4990,7 @@ function amOpenMapping(encSrc){
       generatedSQL: { insert: '', schema: '', verify: '' },
     }));
   } catch {}
-  window.location.href = '/object_mapping.html';
+  window.location.href = '/object_mapping';
 }
 
 // Keyboard: j/k move, a accept the top candidate, r reject, Enter expand.
@@ -5173,7 +5173,7 @@ function cvRenderRibbons(){
     host.innerHTML = '<div class="se-empty"><div class="se-empty-icon">⊞</div>'
       + '<div class="se-empty-title">No saved maps in this project yet</div>'
       + '<div class="se-empty-body">Build one in '
-      + '<a href="/object_mapping.html">Object Mapping</a> and it will appear here with everything it writes.</div></div>';
+      + '<a href="/object_mapping">Object Mapping</a> and it will appear here with everything it writes.</div></div>';
     return;
   }
 
@@ -5426,7 +5426,7 @@ function cvRawJob(id){
 // History and Load-map buttons use.
 function cvOpenInMapping(){
   if (!CV.openMapId) return;
-  window.location.href = '/object_mapping.html?edit=' + encodeURIComponent(CV.openMapId);
+  window.location.href = '/object_mapping?edit=' + encodeURIComponent(CV.openMapId);
 }
 
 // ── Composite job ─────────────────────────────────────────────────────────
@@ -5570,13 +5570,13 @@ document.addEventListener('DOMContentLoaded', () => {
   smUpdateSideButtons();
 });
 </script>
-<script src="/cookie-consent.js?v=14f483464b" defer></script>
+<script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>
 CygenixAssistant.registerPage('schema-explorer');
 /* Assistant adapters — schema reads answered by the same graph engine the

@@ -91,39 +91,39 @@ function connectionSummaries() {
 var PAGES = [
   { key: 'dashboard',          label: 'Home',               view: 'dashboard' },
   { key: 'search',             label: 'Search',             view: 'search' },
-  { key: 'projects',           label: 'My Projects',        href: '/projects.html' },
-  { key: 'effort-estimator',   label: 'Configurator',       href: '/effort_estimator.html' },
-  { key: 'project-plan-grid',  label: 'Project Plan',       href: '/project_plan.html' },
+  { key: 'projects',           label: 'My Projects',        href: '/projects' },
+  { key: 'effort-estimator',   label: 'Configurator',       href: '/effort_estimator' },
+  { key: 'project-plan-grid',  label: 'Project Plan',       href: '/project_plan' },
   { key: 'connections',        label: 'Connections',        view: 'connections' },
-  { key: 'profiles',           label: 'Profiles',           href: '/profiles.html' },
+  { key: 'profiles',           label: 'Profiles',           href: '/profiles' },
   { key: 'integrations',       label: 'Integrations',       view: 'integrations' },
   { key: 'project-settings',   label: 'Settings — General', view: 'project-settings' },
   { key: 'notifications',      label: 'Notifications',      view: 'notifications' },
   { key: 'system-parameters',  label: 'System Parameters',  view: 'system-parameters' },
-  { key: 'user-roles',         label: 'Users & Roles',      href: '/user_roles.html' },
-  { key: 'object-mapping',     label: 'Object Mapping',     href: '/object_mapping.html' },
-  { key: 'schema-explorer',    label: 'Schema Explorer',    href: '/schema_explorer.html' },
-  { key: 'sql-editor',         label: 'SQL Editor',         href: '/sql-editor.html' },
-  { key: 'agentive-migration', label: 'AI Assist',          href: '/agentive_migration.html' },
+  { key: 'user-roles',         label: 'Users & Roles',      href: '/user_roles' },
+  { key: 'object-mapping',     label: 'Object Mapping',     href: '/object_mapping' },
+  { key: 'schema-explorer',    label: 'Schema Explorer',    href: '/schema_explorer' },
+  { key: 'sql-editor',         label: 'SQL Editor',         href: '/sql-editor' },
+  { key: 'agentive-migration', label: 'AI Assist',          href: '/agentive_migration' },
   { key: 'jobs',               label: 'All Jobs',           view: 'jobs' },
-  { key: 'project-builder',    label: 'Execute',            href: '/project-builder.html' },
-  { key: 'data-stream',        label: 'Data Stream',        href: '/data_stream.html' },
-  { key: 'data-stream-store',  label: 'Stream Store',       href: '/data_stream_store.html' },
-  { key: 'data-stream-events', label: 'Change Events',      href: '/data_stream_events.html' },
-  { key: 'data-stream-monitor',label: 'Stream Monitor',     href: '/data_stream_monitor.html' },
+  { key: 'project-builder',    label: 'Execute',            href: '/project-builder' },
+  { key: 'data-stream',        label: 'Data Stream',        href: '/data_stream' },
+  { key: 'data-stream-store',  label: 'Stream Store',       href: '/data_stream_store' },
+  { key: 'data-stream-events', label: 'Change Events',      href: '/data_stream_events' },
+  { key: 'data-stream-monitor',label: 'Stream Monitor',     href: '/data_stream_monitor' },
   { key: 'task-agent',         label: 'Task Manager',       view: 'task-agent' },
   { key: 'server-migration',   label: 'Server Migration',   view: 'server-migration' },
-  { key: 'assurance',          label: 'Assurance',          href: '/assurance.html' },
-  { key: 'data-quality',       label: 'Quality Review',     href: '/data-quality.html' },
-  { key: 'data-cleansing',     label: 'Cleansing',          href: '/data-cleansing.html' },
-  { key: 'data-enrichment',    label: 'Data Enrichment',    href: '/data-enrichment.html' },
-  { key: 'validation',         label: 'Validation',         href: '/validation.html' },
-  { key: 'report-builder',     label: 'Report Builder',     href: '/reports.html' },
+  { key: 'assurance',          label: 'Assurance',          href: '/assurance' },
+  { key: 'data-quality',       label: 'Quality Review',     href: '/data-quality' },
+  { key: 'data-cleansing',     label: 'Cleansing',          href: '/data-cleansing' },
+  { key: 'data-enrichment',    label: 'Data Enrichment',    href: '/data-enrichment' },
+  { key: 'validation',         label: 'Validation',         href: '/validation' },
+  { key: 'report-builder',     label: 'Report Builder',     href: '/reports' },
   { key: 'reports',            label: 'Conversion Report',  view: 'reports' },
   { key: 'inventory',          label: 'Project Artifacts',  view: 'inventory' },
   { key: 'privacy-security',   label: 'Governance',         view: 'privacy-security' },
   { key: 'audit',              label: 'Audit Log',          view: 'audit' },
-  { key: 'performance',        label: 'Performance',        href: '/performance.html' }
+  { key: 'performance',        label: 'Performance',        href: '/performance' }
 ];
 A.appMap = PAGES.map(function (p) { return { key: p.key, label: p.label }; });
 
@@ -167,7 +167,7 @@ A.registerActions([
         await adapters.navigateToView(p.view);
         return { ok: true, page: p.key, note: 'Switched to the ' + p.label + ' view.' };
       }
-      return { __navigate: '/dashboard.html#goto=' + encodeURIComponent(p.view),
+      return { __navigate: '/dashboard#goto=' + encodeURIComponent(p.view),
                __result: 'Opened ' + p.label + '.' };
     }
   },
@@ -617,7 +617,7 @@ A.registerActions([
           columnPolicy: 'all', excludedColumns: [], masked: [], rowsEstimate: 0, state: 'paused' });
       });
       ctx.DS.wipSave(activeProject(), draft);
-      return { __navigate: '/data_stream_designer.html',
+      return { __navigate: '/data_stream_designer',
                __result: 'Opened the Stream Designer with a draft of "' + i.name + '". '
                  + 'Nothing is created or started until the user confirms.' };
     }

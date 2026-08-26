@@ -40,7 +40,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
-<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-auth-token.js?v=e21b9f4e3b" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=7e0395ba10" defer></script>
 <!-- Cosmos sync — the monkey-patch on localStorage.setItem schedules a save
      to Cosmos 3 seconds after any cygenix_* key is written. Must be loaded
@@ -55,7 +55,7 @@
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
-<script src="/project-manager.js?v=72c7519c06" defer></script>
+<script src="/project-manager.js?v=4f3f390725" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -282,10 +282,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 
 <div id="cyg-sidebar-mount" data-active="project-builder"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=c7bf706e83" defer></script>
+<script src="/cygenix-sidebar.js?v=652e714b7d" defer></script>
 
 <div class="topbar">
-  <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Batches</span></a>
+  <a href="/dashboard" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Batches</span></a>
   <div class="topbar-right">
     <div class="user-pill" onclick="signOut()">
       <div class="avatar" id="user-avatar">?</div>
@@ -426,7 +426,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <div class="conn-panel">
           <div class="conn-label" style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
             <span>Source connection</span>
-            <a href="/dashboard.html#connections" style="font-size:10px;color:var(--accent);text-decoration:none">Set on Connections page →</a>
+            <a href="/dashboard#connections" style="font-size:10px;color:var(--accent);text-decoration:none">Set on Connections page →</a>
           </div>
           <div style="display:flex;gap:0.5rem">
             <input class="conn-input" id="proj-src-conn" placeholder="(not configured — open Connections page)" readonly style="cursor:default;opacity:0.85">
@@ -437,7 +437,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <div class="conn-panel">
           <div class="conn-label" style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
             <span>Target connection</span>
-            <a href="/dashboard.html#connections" style="font-size:10px;color:var(--accent);text-decoration:none">Set on Connections page →</a>
+            <a href="/dashboard#connections" style="font-size:10px;color:var(--accent);text-decoration:none">Set on Connections page →</a>
           </div>
           <div style="display:flex;gap:0.5rem">
             <input class="conn-input" id="proj-tgt-conn" placeholder="(not configured — open Connections page)" readonly style="cursor:default;opacity:0.85">
@@ -650,13 +650,13 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <!-- Read-only here: the Batches screen shows which tables are ALSO carried by
      a data stream, and can begin a cutover drain. It never ticks the world. -->
 <script src="/cygenix-datastream.js?v=22ebb91fd3" defer></script>
-  <script src="/cygenix-guardrail.js?v=7ecbe09b3d" defer></script>
-<script src="/project-builder-app.js?v=a69088646f" defer></script>
+  <script src="/cygenix-guardrail.js?v=be89fbd865" defer></script>
+<script src="/project-builder-app.js?v=84dfd15647" defer></script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
-<script src="/cygenix-assistant.js?v=0e8b8539bc"></script>
-<script src="/cygenix-assistant-actions.js?v=2b5c600fb6"></script>
+<script src="/cygenix-assistant.js?v=7f8793bddb"></script>
+<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
 <script>CygenixAssistant.registerPage('project-builder');</script>
 </body>
 </html>

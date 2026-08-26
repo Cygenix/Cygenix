@@ -781,7 +781,7 @@ check('the rule builder is a drawer with a dry-run gate before save',
 check('the generated SQL is logged with the run so a DBA can reproduce it',
   /countSql/.test(PAGE) && /generatedSql/.test(PAGE));
 check('breach hand-off goes to the existing Cleansing module',
-  /data-cleansing\.html/.test(PAGE));
+  /\/data-cleansing\b/.test(PAGE));
 check('the import still reads the Validation module read-only',
   /cygenix_validation_sources/.test(PAGE));
 check('suppression in the page asks for reason and expiry',
@@ -813,7 +813,7 @@ check('derived rules run on job completion, not on a wall clock',
   && /asJobRuleDue/.test(PAGE));
 check('the five states render as pills and derived rules name their map',
   /Derived<\/span>/.test(PAGE) && /Armed<\/span>/.test(PAGE) && /Proven<\/span>/.test(PAGE)
-  && /Dormant<\/span>/.test(PAGE) && /object_mapping\.html\?edit=/.test(PAGE));
+  && /Dormant<\/span>/.test(PAGE) && /object_mapping\?edit=/.test(PAGE));
 check('a connection mismatch refuses derived checks and says why (§5, decided)',
   /as-mismatch/.test(PAGE) && /refuse to run/.test(PAGE)
   && /never touched/.test(PAGE) && /runnable\(/.test(PAGE));
