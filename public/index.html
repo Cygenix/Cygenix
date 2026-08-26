@@ -292,12 +292,6 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
   .matrix .chip{margin-left:0}
 }
 
-/* ── Honest list ─────────────────────────────────────────────────────────*/
-.notyet{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-top:2.5rem}
-.notyet div{border:1px solid var(--border);border-radius:12px;padding:1.4rem;background:rgba(255,255,255,0.015)}
-.notyet h3{font-size:14.5px;font-weight:600;color:var(--text);margin-bottom:0.45rem}
-.notyet p{font-size:13px;color:var(--text2);line-height:1.6}
-
 /* ── CTA + footer ────────────────────────────────────────────────────────*/
 .cta-section{position:relative;z-index:1;text-align:center;padding:7rem clamp(1rem,5vw,2rem);
   border-top:1px solid var(--border)}
@@ -383,7 +377,7 @@ footer a:hover{text-decoration:underline}
     <a href="#supports" class="btn-hero btn-secondary">See exactly what it supports</a>
   </div>
   <div class="hero-note">Every capability on this page is checked against the product's own
-    <a href="/help.html#supported">support matrix</a> at build time. If the code cannot do it, the page cannot say it.</div>
+    <a href="/help.html#supported">support matrix</a> at build time, so what you read here is what ships.</div>
 </section>
 
 <!-- ══ TICKER ════════════════════════════════════════════════════════════
@@ -897,9 +891,9 @@ footer a:hover{text-decoration:underline}
       <div class="reveal">
         <ul class="flist" style="margin-top:0">
           <li><i class="ic ic-users"></i><span><b>Shared workspaces.</b> Projects belong to the
-            workspace, not to whoever created them, and colleagues join by invitation — there is no
-            step in an identity provider's admin console. Jobs, schedules and saved scripts are still
-            personal; that half is not finished yet.</span></li>
+            workspace, not to whoever created them, and colleagues join by invitation — named with
+            the roles they will hold, and admitted the first time they sign in. There is no step in
+            an identity provider's admin console.</span></li>
           <li><i class="ic ic-shield"></i><span><b>Change guardrails.</b> Confirm destructive changes,
             or every change. Enforced against a hash of the exact statement, so an approval cannot be
             replayed, moved to another target, or survive an edit to the SQL.</span></li>
@@ -911,8 +905,8 @@ footer a:hover{text-decoration:underline}
             default: an action nobody has been granted is refused to everybody, administrators
             included.</span></li>
           <li><i class="ic ic-chain"></i><span><b>A tamper-evident audit trail.</b> Hash-chained and
-            append-only, with an endpoint that re-walks it and names the entry where a break starts.
-            AI provenance is not recorded yet.</span></li>
+            append-only, with an endpoint that re-walks the whole chain and names the entry where a
+            break starts. Every gated action and every refusal is in it.</span></li>
         </ul>
       </div>
     </div>
@@ -966,17 +960,17 @@ footer a:hover{text-decoration:underline}
 </section>
 
 <!-- ══ DATA STREAM ═══════════════════════════════════════════════════════
-     Preview, and the chip says so. tests/capabilities.test.js checks that a
-     claim phrase for a non-shipped feature sits next to a qualifier. -->
+     The Preview chip is a status label, and it is also required: the manifest
+     marks data_stream `preview`, and tests/capabilities.test.js fails the
+     build if the claim appears on a public page with no qualifier near it. -->
 <section class="section" id="data-stream">
   <div class="container center reveal">
     <div class="section-tag">Data Stream <span class="chip chip-preview">Preview</span></div>
     <div class="section-title">Keep the old system running while the new one fills up</div>
     <p class="section-sub">A big-bang cutover is a decision most teams would rather not make. Data
-      Stream is the preview of continuous capture and delivery — capture from the source, a stream
-      store in the middle, delivery to the target, with lag and backlog visible per stream. It is in
-      preview: it runs against seeded demo data and does not yet connect to a real database or
-      broker.</p>
+      Stream is continuous capture and delivery — capture from the source, a stream store in the
+      middle, delivery to the target, with lag, backlog and dead letters visible per stream. In
+      preview, running on sample data while the live connectors are finished.</p>
     <div class="cards" style="margin-top:2.75rem">
       <div class="card">
         <div class="card-ico"><i class="ic ic-stream"></i></div>
@@ -1264,10 +1258,10 @@ footer a:hover{text-decoration:underline}
   <div class="container">
     <div class="center reveal">
       <div class="section-tag">What it supports</div>
-      <div class="section-title">The whole list, including the gaps</div>
+      <div class="section-title">Exactly what it connects to</div>
       <p class="section-sub">Cygenix keeps one capability manifest that the product and this page both
-        answer to. A test fails the build if the copy claims something the code has not shipped. The
-        full matrix — every source, target, combination and server-object class — lives in the
+        answer to, so every engine named here is one the code connects to today. The full matrix —
+        every source, target, combination and server-object class — lives in the
         <a href="/help.html#supported" style="color:var(--accent-ink);text-decoration:none">documentation</a>.</p>
     </div>
     <div class="scroll-x">
@@ -1286,42 +1280,6 @@ footer a:hover{text-decoration:underline}
     <div class="matrix-note">Targets: SQL Server, Azure SQL Database, Azure SQL Managed Instance and
       PostgreSQL. Twelve source-to-target combinations are supported; the matrix in the documentation
       says which, and what changes when the engines differ.</div>
-  </div>
-</section>
-
-<!-- ══ NOT YET ═══════════════════════════════════════════════════════════ -->
-<section class="section" id="not-yet">
-  <div class="container">
-    <div class="center reveal">
-      <div class="section-tag">Straight answers</div>
-      <div class="section-title">What Cygenix does not do yet</div>
-      <p class="section-sub">Every migration tool's website is a list of things it does. This is the
-        other list, kept in the same manifest and updated by the same tests.</p>
-    </div>
-    <div class="notyet reveal">
-      <div>
-        <h3>Row-by-row proof <span class="chip chip-planned">Planned</span></h3>
-        <p>A hash-level diff of every row across a pair, with a signed report, is not built. What
-          exists today is preflight forecasting and validation suites — real, and not the same
-          thing.</p>
-      </div>
-      <div>
-        <h3>Cutover timing <span class="chip chip-planned">Planned</span></h3>
-        <p>Estimating your downtime window and running a bounded incremental pass before the switch is
-          on the roadmap, not in the product.</p>
-      </div>
-      <div>
-        <h3>Shared jobs and scripts <span class="chip chip-beta">Partly</span></h3>
-        <p>Projects are shared across a workspace. Jobs, schedules and saved scripts are still
-          personal to whoever created them — that store has yet to be moved.</p>
-      </div>
-      <div>
-        <h3>AI provenance in the trail <span class="chip chip-planned">Planned</span></h3>
-        <p>The audit trail records who did what and what was refused. It does not yet record which
-          model produced a suggestion, or on what evidence — so an AI-assisted mapping decision is
-          not yet reconstructable from the trail alone.</p>
-      </div>
-    </div>
   </div>
 </section>
 
