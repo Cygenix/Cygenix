@@ -618,14 +618,14 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
   check('Data Stream is a group in the RUN section',
     /key:'datastream-group'/.test(sidebar) && /label:'Data Stream'/.test(sidebar));
   check('with all four children pointing at their pages',
-    ['data_stream', 'data_stream_store', 'data_stream_events', 'data_stream_monitor']
+    ['data-stream', 'data-stream-store', 'data-stream-events', 'data-stream-monitor']
       .every(h => sidebar.indexOf("href:'/" + h + "'") !== -1));
 
   // The Designer is reachable, shareable and refreshable — but not a rail
   // entry, because it is a step inside the Streams workflow.
   check('the Designer is NOT a sidebar entry', sidebar.indexOf('data_stream_designer.html') === -1);
   check('but the Streams screen links to it',
-    /\/data_stream_designer\b/.test(read('public', 'data_stream.html')));
+    /\/data-stream-designer\b/.test(read('public', 'data_stream.html')));
 
   // Placement: between Jobs and Task Manager, per the brief.
   const runSection = sidebar.slice(sidebar.indexOf("section: 'Run'"), sidebar.indexOf("section: 'Validate'"));
@@ -705,7 +705,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
   // Cross-module links, both directions.
   const se = read('public', 'schema_explorer.html');
   check('the Schema Explorer can send a table to a new stream',
-    /Add to data stream/.test(se) && /\/data_stream_designer\b/.test(se));
+    /Add to data stream/.test(se) && /\/data-stream-designer\b/.test(se));
   check('and sends identifiers only — a connection id and a table name',
     /params\.set\('connection'/.test(se) && /params\.set\('tables'/.test(se)
     && !/params\.set\('rows'|params\.set\('sample'/.test(se));

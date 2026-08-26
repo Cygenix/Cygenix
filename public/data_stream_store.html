@@ -78,7 +78,7 @@ body.cyg-collapsed{padding-left:54px}
         passes through between capture and delivery. Query it while the data is still arriving.</div>
     </div>
     <div class="ds-head-actions">
-      <a class="btn" href="/data_stream"><i class="ic ic-stream"></i> Streams</a>
+      <a class="btn" href="/data-stream"><i class="ic ic-stream"></i> Streams</a>
       <button class="btn" onclick="CygenixDataStreamPage.paletteOpen()" title="Search streams and tables">
         <i class="ic ic-search"></i> Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
     </div>
@@ -140,10 +140,10 @@ body.cyg-collapsed{padding-left:54px}
 <div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=f4b2c12701" defer></script>
+<script src="/cygenix-sidebar.js?v=104bb26a8a" defer></script>
 <script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
 <script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
-<script src="/cygenix-datastream-page.js?v=b437da85e3"></script>
+<script src="/cygenix-datastream-page.js?v=5da200b5fe"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -197,7 +197,7 @@ function paintTopics(s) {
     el.innerHTML = U.emptyState({ icon: 'database', title: 'The Stream Store is empty',
       body: 'Every captured change is written here before it is delivered, and kept for the stream’s '
         + 'retention window. Nothing is streaming yet, so there is nothing to hold.',
-      actionHtml: '<a class="btn btn-primary" href="/data_stream">Go to Streams</a>' });
+      actionHtml: '<a class="btn btn-primary" href="/data-stream">Go to Streams</a>' });
     return;
   }
   el.innerHTML = '<div class="ds-tablewrap"><table class="ds-table">'
@@ -235,9 +235,9 @@ function topicRow(t, s) {
         + '<div class="ds-kpi-context">Replay cannot reach further back than this.</div></div>'
     + '</div>'
     + '<div style="margin-top:0.6rem;display:flex;gap:0.4rem;flex-wrap:wrap">'
-      + '<a class="btn" href="/data_stream_events'
+      + '<a class="btn" href="/data-stream-events'
         + DS.buildQuery({ stream: t.streamId, table: t.table }) + '">See these change records →</a>'
-      + '<a class="btn" href="/data_stream' + DS.buildQuery({ stream: t.streamId })
+      + '<a class="btn" href="/data-stream' + DS.buildQuery({ stream: t.streamId })
         + '">Open the stream →</a></div>'
     + '</div></td></tr>';
 }
@@ -339,7 +339,7 @@ function setEviction(id, policy) {
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <script src="/cygenix-assistant.js?v=7f8793bddb"></script>
-<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
+<script src="/cygenix-assistant-actions.js?v=07e7202abc"></script>
 <script>CygenixAssistant.registerPage('data-stream-store');</script>
 </body>
 </html>

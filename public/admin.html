@@ -303,7 +303,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       <div class="netlify-note">
         <i class="ic ic-info"></i> <strong>Sign-in is Entra External ID, and it is the only directory.</strong>
         This panel views billing and account data. Admitting somebody to a workspace and deciding what they may do
-        both happen on <a href="/user_roles">Users &amp; Roles</a>.
+        both happen on <a href="/user-roles">Users &amp; Roles</a>.
         User records here come from Cosmos DB and are created on first login.
       </div>
 
@@ -345,7 +345,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
           <div class="page-title">Invite Users</div>
           <div class="page-sub">Invitations are issued by the product, on the Users &amp; Roles page</div>
         </div>
-        <a class="btn btn-primary" href="/user_roles">Open Users &amp; Roles</a>
+        <a class="btn btn-primary" href="/user-roles">Open Users &amp; Roles</a>
       </div>
 
       <div class="netlify-note">
@@ -467,7 +467,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       person will hold. There is no password to set — they sign in with the address you name.</div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeInviteModal()">Cancel</button>
-      <a class="btn btn-primary" href="/user_roles">Open Users &amp; Roles</a>
+      <a class="btn btn-primary" href="/user-roles">Open Users &amp; Roles</a>
     </div>
   </div>
 </div>
@@ -670,7 +670,7 @@ async function loadUsers() {
         <div class="empty">
           <div class="empty-icon"><i class="ic ic-tools"></i> </div>
           <div class="empty-text">The admin-users endpoint needs to be added to the Azure Function.<br>
-          Members and roles are managed on <a href="/user_roles" style="color:var(--accent)">Users &amp; Roles</a> in the meantime.</div>
+          Members and roles are managed on <a href="/user-roles" style="color:var(--accent)">Users &amp; Roles</a> in the meantime.</div>
         </div>
       </td></tr>`;
       return;
@@ -952,7 +952,7 @@ async function updateUserStatus(email, status) {
 // address through Entra.
 
 function openInviteModal() {
-  location.href = '/user_roles';
+  location.href = '/user-roles';
 }
 function closeInviteModal() {
   const m = document.getElementById('invite-modal');

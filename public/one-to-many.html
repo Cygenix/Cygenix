@@ -140,7 +140,7 @@ select.map-select:focus{border-color:var(--accent)}
 .badge-purple{background:var(--purple-bg);color:var(--purple)}
 </style>
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/nav.js?v=0d0b836e28" defer></script>
+<script src="/nav.js?v=d23693ef97" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 </head>
 <body>
@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', function initBanner(){
 
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
-if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login';
+if (!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) window.location.href = '/login';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let srcSchema    = null;

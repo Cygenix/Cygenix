@@ -294,7 +294,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 
 <div id="cyg-sidebar-mount" data-active="insights"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=f4b2c12701" defer></script>
+<script src="/cygenix-sidebar.js?v=104bb26a8a" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
@@ -578,7 +578,7 @@ let _paginatedSchemaSupported = null;   // null=unknown, true/false=detected
 // DCL, not immediate: connections.js is deferred, so the schema auto-load at
 // the end of this block needs its global to exist — guaranteed by DCL.
 document.addEventListener('DOMContentLoaded', function(){
-  if (!sessionStorage.getItem('cygenix_token')) { window.location.href='/login'; return; }
+  if (!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) { window.location.href='/login'; return; }
   try {
     const u = JSON.parse(sessionStorage.getItem('cygenix_user')||'{}');
     const n = u.user_metadata?.full_name || u.email?.split('@')[0] || '?';
@@ -3511,7 +3511,7 @@ function escapeHtmlAttr(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&'
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-assistant.js?v=7f8793bddb"></script>
-<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
+<script src="/cygenix-assistant-actions.js?v=07e7202abc"></script>
 <script>CygenixAssistant.registerPage('insights');</script>
 </body>
 </html>

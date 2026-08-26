@@ -39,7 +39,7 @@
 <meta name="description" content="Let Cygenix introspect your databases and propose a complete migration mapping with reasoning for every decision.">
 <meta property="og:title" content="Cygenix – AI Assist">
 <meta property="og:description" content="Let Cygenix introspect your databases and propose a complete migration mapping with reasoning for every decision.">
-<meta property="og:url" content="https://cygenix.co.uk/agentive_migration">
+<meta property="og:url" content="https://cygenix.co.uk/agentive-migration">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cygenix.co.uk/og-image.png">
@@ -51,7 +51,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/nav.js?v=0d0b836e28" defer></script>
+<script src="/nav.js?v=d23693ef97" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
@@ -389,7 +389,7 @@ body.cyg-collapsed .topbar{left:54px}
 
 <div id="cyg-sidebar-mount" data-active="agentive-migration"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=f4b2c12701" defer></script>
+<script src="/cygenix-sidebar.js?v=104bb26a8a" defer></script>
 <script>
 // Sidebar width mirror — same pattern as sql-editor.html
 (function mirrorSidebarWidth(){
@@ -2893,7 +2893,7 @@ body.cyg-collapsed .topbar{left:54px}
         <p>${escapeHtml(result.summary || 'The run is finished.')}</p>
         ${costText ? `<p style="font-size:12px;color:var(--text2);margin-top:-0.4rem">Run cost: <strong style="color:var(--text);font-family:var(--mono)">${costText}</strong></p>` : ''}
         <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap">
-          ${firstJobId ? `<a class="btn btn-primary btn-sm" href="/object_mapping?edit=${encodeURIComponent(firstJobId)}">Open first job in Object Mapping</a>` : ''}
+          ${firstJobId ? `<a class="btn btn-primary btn-sm" href="/object-mapping?edit=${encodeURIComponent(firstJobId)}">Open first job in Object Mapping</a>` : ''}
           ${jobCount > 1 ? `<a class="btn btn-sm" href="/dashboard#jobs">View all jobs</a>` : ''}
           <button class="btn btn-sm" id="am-new-btn">Start a new run</button>
         </div>
@@ -3038,7 +3038,7 @@ body.cyg-collapsed .topbar{left:54px}
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <script src="/cygenix-assistant.js?v=7f8793bddb"></script>
-<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
+<script src="/cygenix-assistant-actions.js?v=07e7202abc"></script>
 <script>CygenixAssistant.registerPage('agentive-migration');</script>
 </body>
 </html>

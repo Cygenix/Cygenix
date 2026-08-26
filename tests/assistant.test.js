@@ -162,12 +162,17 @@ t('navigating to an unknown page fails loudly',
   acts['app_navigate'].handler({ page: 'nope' }),
   (err) => !!err && /Unknown page/.test(err.message));
 
-/* every href in the app map is a page that actually exists. Addresses are
-   extensionless — /projects, not /projects.html — so the file behind one is
-   its name plus .html, except /home, which is index.html. */
+/* every href in the app map is a page that actually exists.
+   Addresses are extensionless AND are not always the file name — /configurator
+   is effort_estimator.html, /user-roles is user_roles.html. Ask the route
+   generator rather than guessing, so this test cannot disagree with the
+   routing table about what a page is called. */
+const routes = require(P('scripts', 'build-routes.js'));
+const FILE_FOR_ADDRESS = new Map(routes.pages().map((f) => [routes.addressOf(f), f]));
 const fileFor = (href) => {
-  const name = href.replace(/^\//, '').replace(/[#?].*$/, '');
-  return P('public', (name === 'home' ? 'index' : name) + '.html');
+  const addr = href.replace(/[#?].*$/, '') || '/';
+  const f = FILE_FOR_ADDRESS.get(addr) || (addr === '/' ? routes.LANDING : null);
+  return f ? P('public', f) : P('public', '__no_such_page__');
 };
 check('every app-map href points at a real page',
   reg.PAGES.filter((p) => p.href).every((p) => fs.existsSync(fileFor(p.href))),

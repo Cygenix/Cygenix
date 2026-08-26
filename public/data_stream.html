@@ -158,10 +158,10 @@ body.cyg-collapsed{padding-left:54px}
 <div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=f4b2c12701" defer></script>
+<script src="/cygenix-sidebar.js?v=104bb26a8a" defer></script>
 <script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
 <script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
-<script src="/cygenix-datastream-page.js?v=b437da85e3"></script>
+<script src="/cygenix-datastream-page.js?v=5da200b5fe"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -434,7 +434,7 @@ function paintStoreView(rows, s) {
       + '<td><span class="ds-num">' + ((r.profile || {}).retentionHours || 72) + 'h</span></td>'
       + '<td>' + U.monoCopy(r.capture.position.lsn, { max: 18 }) + '</td></tr>').join('')
     + '</tbody></table></div>'
-    + '<div style="padding:0.7rem 0.9rem"><a class="btn" href="/data_stream_store">'
+    + '<div style="padding:0.7rem 0.9rem"><a class="btn" href="/data-stream-store">'
     + 'Open the Stream Store →</a></div>';
 }
 
@@ -560,7 +560,7 @@ function inspRecent(s, st) {
       + '<div class="ds-cell-sub">' + U.esc(JSON.stringify(e.key)) + '</div></td>'
       + '<td class="ds-right">' + U.deliveryPill(e.deliveryState) + '</td></tr>').join('')
     + '</tbody></table></div>'
-    + '<div style="margin-top:0.6rem"><a class="btn" href="/data_stream_events'
+    + '<div style="margin-top:0.6rem"><a class="btn" href="/data-stream-events'
     + DS.buildQuery({ stream: s.id }) + '">View all →</a></div>';
 }
 
@@ -575,7 +575,7 @@ function inspErrors(s) {
     + '<div style="margin-top:0.7rem;display:flex;gap:0.4rem;flex-wrap:wrap">'
     + '<button class="btn" onclick="dsRequeue(\'' + U.escArg(s.id) + '\')"'
       + (s.metrics.dlqDepth ? '' : ' disabled') + '>Requeue dead letters</button>'
-    + '<a class="btn" href="/data_stream_events'
+    + '<a class="btn" href="/data-stream-events'
       + DS.buildQuery({ stream: s.id, state: 'dead' }) + '">See the dead letters →</a></div>';
 }
 
@@ -643,12 +643,12 @@ function dsDelete(id) {
   P.announce('Stream deleted.');
 }
 function dsDuplicate(id) {
-  location.href = '/data_stream_designer' + DS.buildQuery({ stream: id, clone: '1' });
+  location.href = '/data-stream-designer' + DS.buildQuery({ stream: id, clone: '1' });
 }
 function dsEdit(id) {
-  location.href = '/data_stream_designer' + DS.buildQuery({ stream: id });
+  location.href = '/data-stream-designer' + DS.buildQuery({ stream: id });
 }
-function dsNewStream() { location.href = '/data_stream_designer'; }
+function dsNewStream() { location.href = '/data-stream-designer'; }
 function dsRefresh() {
   P.boot(); paint();
   P.announce('Refreshed.');
@@ -749,7 +749,7 @@ function dsDoReplay() {
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <script src="/cygenix-assistant.js?v=7f8793bddb"></script>
-<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
+<script src="/cygenix-assistant-actions.js?v=07e7202abc"></script>
 <script>CygenixAssistant.registerPage('data-stream');</script>
 </body>
 </html>

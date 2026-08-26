@@ -4,6 +4,13 @@
 `dashboard.html`; `/dashboard.html` permanently redirects to `/dashboard`. The
 landing page is at the root, as it always was.
 
+**Addresses are hyphenated and named for the screen, not the file.**
+`/user-roles`, not `/user_roles`. `/configurator`, not `/effort_estimator` —
+the screen was renamed and the address says so. Files keep their names on
+disk; `ADDRESS` in `scripts/build-routes.js` maps the two where they differ,
+and every address a page has ever answered at still redirects to the current
+one.
+
 > **Note.** One deploy briefly served the sign-in screen at the root and moved
 > the landing page to `/home`. That was reverted. `/home` still redirects to
 > `/` so anything that saw it in that window lands somewhere rather than on a

@@ -323,7 +323,7 @@ check('it follows the estimate\'s own module list, not the defaults',
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
   check('the Configurator (nee Effort Estimator) leads the Project group, key unchanged',
     /key:'project-group',\s*label:'Project'/.test(sidebar)
-    && /key:'effort-estimator',\s*label:'Configurator',\s*href:'\/effort_estimator'/.test(sidebar));
+    && /key:'effort-estimator',\s*label:'Configurator',\s*href:'\/configurator'/.test(sidebar));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

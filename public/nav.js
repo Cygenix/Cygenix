@@ -143,7 +143,7 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${mappingCollapsed}" id="cyg-sub-mapping" style="max-height:${mappingOpen?'200px':'0'}">
-    <a class="${isActive('/object_mapping')}" href="/object_mapping">
+    <a class="${isActive('/object-mapping')}" href="/object-mapping">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 4h5M2 8h5M2 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M9 4h5M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M7 4l2 4-2 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Object Mapping
     </a>
@@ -266,7 +266,7 @@
     // Skip login, index, dashboard and project-builder (these have their own
     // built-in sidebars), and agentive_migration (it loads cygenix-sidebar.js
     // — injecting here produced two overlapping sidebars).
-    const skipPages = ['/login','','/dashboard','/project-builder','dashboard','/agentive_migration'];
+    const skipPages = ['/login','','/dashboard','/project-builder','dashboard','/agentive-migration'];
     if (skipPages.includes(page) || page === '' || document.getElementById('cyg-sidebar')) return;
 
     // Inject CSS

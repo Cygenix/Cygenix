@@ -119,7 +119,7 @@ select.form-input option{background:var(--bg3)}
 
 <div id="cyg-sidebar-mount" data-active="performance"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=f4b2c12701" defer></script>
+<script src="/cygenix-sidebar.js?v=104bb26a8a" defer></script>
 
 <div class="page">
   <div style="margin-bottom:1.5rem">
@@ -420,7 +420,7 @@ select.form-input option{background:var(--bg3)}
 </div>
 
 <script>
-if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login';
+if(!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) window.location.href='/login';
 
 const PERF_KEY = 'cygenix_performance';
 
@@ -597,7 +597,7 @@ renderSummary(cfg);
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <script src="/cygenix-assistant.js?v=7f8793bddb"></script>
-<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
+<script src="/cygenix-assistant-actions.js?v=07e7202abc"></script>
 <script>CygenixAssistant.registerPage('performance');</script>
 </body>
 </html>

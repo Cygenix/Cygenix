@@ -66,7 +66,7 @@
 /* ═══ block 2 — extracted from an inline <script> in sql-editor.html ═══ */
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
-if (!sessionStorage.getItem('cygenix_token')) window.location.href='/login';
+if (!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) window.location.href='/login';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Monaco Editor bootstrap + textarea proxy shim

@@ -194,7 +194,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 </head>
 <body>
 <script src="/connections.js?v=d199ff3358" defer></script>
-<script src="/nav.js?v=0d0b836e28" defer></script>
+<script src="/nav.js?v=d23693ef97" defer></script>
 <script src="/cygenix-data-api.js?v=782d69aa1a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=69e2e7424e" defer></script>
 
@@ -505,7 +505,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
-if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login';
+if (!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) window.location.href = '/login';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const WASIS_KEY = 'cygenix_wasis_rules';
