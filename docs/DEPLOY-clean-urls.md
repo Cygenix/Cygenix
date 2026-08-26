@@ -1,12 +1,13 @@
 # Deploying the clean-URL change
 
-Two things changed about addresses:
+**No page address carries `.html` any more.** `/dashboard` serves
+`dashboard.html`; `/dashboard.html` permanently redirects to `/dashboard`.
+The landing page is at the root, as it always was.
 
-1. **`https://cygenix.co.uk` now serves the sign-in screen.** It is a rewrite,
-   not a redirect, so the address bar reads the bare domain and nothing more.
-   The marketing page moved to `https://cygenix.co.uk/home`.
-2. **No page address carries `.html` any more.** `/dashboard` serves
-   `dashboard.html`; `/dashboard.html` permanently redirects to `/dashboard`.
+> **Note.** One deploy briefly served the sign-in screen at the root and moved
+> the landing page to `/home`. That was reverted. `/home` still redirects to
+> `/` so anything that saw it in that window lands somewhere rather than on a
+> 404, and the redirect can be dropped once nothing is asking for it.
 
 Everything above is in the repository and ships with the deploy. There is
 **one thing the deploy cannot do for itself**, and sign-in breaks until it is
@@ -56,13 +57,12 @@ minute or two and no redeploy is needed.
 
 ## What else to check after it deploys
 
-- `https://cygenix.co.uk` shows the sign-in screen, and the address bar still
-  reads `https://cygenix.co.uk`.
-- `https://cygenix.co.uk/home` shows the marketing page.
+- `https://cygenix.co.uk` shows the landing page.
+- `https://cygenix.co.uk/index.html` and `/home` both bounce to `/`.
 - `https://cygenix.co.uk/dashboard.html` bounces to `/dashboard`.
 - Signing in lands on the dashboard, and the address bar reads
   `https://cygenix.co.uk/dashboard`.
-- Signing out returns to the sign-in screen rather than an error.
+- Signing out returns to the sign-in screen at `/login` rather than an error.
 
 ## Where the routing lives
 
@@ -76,6 +76,6 @@ it automatically.
 
 The old `.html` addresses answer `301`, which is the code that tells a search
 engine to move its index entry rather than keep both. The landing page's
-canonical (`og:url`) now points at `/home`. Nothing needs submitting by hand,
+canonical (`og:url`) points at the bare domain. Nothing needs submitting by hand,
 though a re-crawl can be requested in Search Console if you want it to happen
 sooner than it otherwise would.

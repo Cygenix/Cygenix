@@ -2,11 +2,9 @@
  * ---------------------------------------------------------------------------
  * Two rules the site now keeps, and this file is what enforces them:
  *
- *   1. The root IS the login. Typing cygenix.co.uk lands a visitor on the
- *      sign-in screen with the address bar still reading cygenix.co.uk — a
- *      200 rewrite, not a redirect, so there is no flash of another URL and
- *      nothing to see in the history. The marketing page keeps a home of its
- *      own at /home.
+ *   1. The root is the landing page, as it always was. index.html is served
+ *      at / and has no second address: /index.html and /index both redirect
+ *      there, so the page a visitor lands on has exactly one URL.
  *
  *   2. No .html in any address. /dashboard serves dashboard.html, and
  *      /dashboard.html permanently redirects to /dashboard so old links,
@@ -31,11 +29,10 @@ const path = require('path');
 const PUBLIC = path.join(__dirname, '..', 'public');
 const OUT = path.join(PUBLIC, '_redirects');
 
-// The landing page is the one file whose clean name is not its file name: it
-// is index.html on disk and /home in an address, because / belongs to login.
+// The landing page is the one file whose address is not its name: it is
+// index.html on disk and simply / in an address.
 const LANDING = 'index.html';
-const LANDING_URL = '/home';
-const ROOT_PAGE = 'login.html';
+const LANDING_URL = '/';
 
 // Addresses that no longer have a page behind them. A bookmark or an old link
 // should land somewhere useful rather than on a 404. These live here rather
@@ -43,6 +40,10 @@ const ROOT_PAGE = 'login.html';
 const LEGACY = [
   ['/project-plan.html', '/dashboard'],   // Project Planner was removed
   ['/project-plan',      '/dashboard'],
+  // /home was the landing page's address for one deploy, while the root
+  // briefly belonged to the sign-in screen. Anything that saw it in that
+  // window is sent to the root rather than to a 404.
+  ['/home',              '/'],
 ];
 
 function pages() {
@@ -61,14 +62,10 @@ function build() {
   L.push('# tests/clean-urls.test.js fails the build if this drifts.');
   L.push('# ─────────────────────────────────────────────────────────────────');
   L.push('');
-  L.push('# The root is the sign-in screen. A 200 rewrite, so the address bar');
-  L.push('# keeps reading cygenix.co.uk with nothing after it.');
-  L.push(`/                     /${ROOT_PAGE}          200`);
-  L.push('');
-  L.push('# The marketing page, which used to be the root, keeps a home.');
-  L.push(`${LANDING_URL}                 /${LANDING}          200`);
-  L.push(`/${LANDING}           ${LANDING_URL}                301!`);
-  L.push('/index                ' + LANDING_URL + '                301!');
+  L.push('# The root is the landing page, and it is the only address for it:');
+  L.push('# the file name and the bare /index both redirect here.');
+  L.push(pad('/' + LANDING, 22) + pad(LANDING_URL, 22) + '301!');
+  L.push(pad('/index', 22) + pad(LANDING_URL, 22) + '301!');
   L.push('# Addresses whose page is gone.');
   for (const [from, to] of LEGACY) L.push(pad(from, 22) + pad(to, 22) + '301!');
   L.push('');
@@ -104,4 +101,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { build, pages, LANDING, LANDING_URL, ROOT_PAGE, OUT };
+module.exports = { build, pages, LANDING, LANDING_URL, OUT };

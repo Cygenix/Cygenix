@@ -93,10 +93,8 @@ const MARK = 'M9 10.5 14 16 9 21.5';
 check('the landing page wears the same three-chevron mark as the login',
   index.includes(MARK) && login.includes(MARK)
   && /\.mark\{[^}]*linear-gradient\(140deg,var\(--mark-a\),var\(--mark-b\)\)/.test(index));
-// The root belongs to the sign-in screen now, so the landing page's own home
-// is /home — a logo that dropped a visitor into login would be a trapdoor.
-check('the mark links to the marketing home and is reachable by name',
-  /<a class="nav-logo" href="\/home" aria-label="Cygenix home">/.test(index));
+check('the mark links home and is reachable by name',
+  /<a class="nav-logo" href="\/" aria-label="Cygenix home">/.test(index));
 
 // ── 4. The type scale matches the rest of the site ──────────────────────────
 const h1 = /\.hero h1\{([^}]*)\}/.exec(index);

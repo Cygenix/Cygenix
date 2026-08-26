@@ -4,17 +4,14 @@
 # tests/clean-urls.test.js fails the build if this drifts.
 # ─────────────────────────────────────────────────────────────────
 
-# The root is the sign-in screen. A 200 rewrite, so the address bar
-# keeps reading cygenix.co.uk with nothing after it.
-/                     /login.html          200
-
-# The marketing page, which used to be the root, keeps a home.
-/home                 /index.html          200
-/index.html           /home                301!
-/index                /home                301!
+# The root is the landing page, and it is the only address for it:
+# the file name and the bare /index both redirect here.
+/index.html           /                     301!
+/index                /                     301!
 # Addresses whose page is gone.
 /project-plan.html    /dashboard            301!
 /project-plan         /dashboard            301!
+/home                 /                     301!
 
 # Old .html addresses heal themselves. 301! forces the redirect even
 # though the file exists at that path, which is the whole point.

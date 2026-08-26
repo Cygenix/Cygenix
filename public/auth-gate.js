@@ -27,7 +27,7 @@
   // this file runs before anything else on a protected page, and a gate that
   // failed to recognise its own public list because of a trailing .html would
   // bounce a signed-out visitor off a page that was never protected.
-  const PUBLIC = ['/', '/home', '/login', '/demo',
+  const PUBLIC = ['/', '/login', '/demo',
                   '/about', '/help', '/terms', '/privacy',
                   '/pricing', '/register'];
   const TIER_EXEMPT = ['/pick-plan', '/welcome'];
