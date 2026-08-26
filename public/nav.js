@@ -54,7 +54,7 @@
   `;
 
   // Detect current page for active state
-  const page = window.location.pathname.split('/').pop() || '/home';
+  const page = window.location.pathname.split('/').pop() || '';
 
   function isActive(href) {
     return page === href ? 'cyg-nav-item active' : 'cyg-nav-item';
@@ -266,7 +266,7 @@
     // Skip login, index, dashboard and project-builder (these have their own
     // built-in sidebars), and agentive_migration (it loads cygenix-sidebar.js
     // — injecting here produced two overlapping sidebars).
-    const skipPages = ['/login','/home','','/dashboard','/project-builder','dashboard','/agentive_migration'];
+    const skipPages = ['/login','','/dashboard','/project-builder','dashboard','/agentive_migration'];
     if (skipPages.includes(page) || page === '' || document.getElementById('cyg-sidebar')) return;
 
     // Inject CSS

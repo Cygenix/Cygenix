@@ -2,8 +2,9 @@
 //
 // Two rules, and this file is what stops either of them rotting:
 //
-//   1. The root is the sign-in screen, served as a rewrite so the address bar
-//      reads cygenix.co.uk and nothing more. The marketing page lives at /home.
+//   1. The landing page is the root, and the root is its only address —
+//      /index.html and /index both redirect there rather than serving a
+//      second copy of the same page at a second URL.
 //   2. No .html in any address a person can see. Every page answers at its
 //      extensionless name, and the old .html address permanently redirects to
 //      it so bookmarks and indexed links heal rather than serving a second
@@ -57,16 +58,18 @@ check('page routing lives in one file — netlify.toml declares only API proxies
   'a page redirect in netlify.toml would compete with _redirects');
 
 // ── 2. The root ─────────────────────────────────────────────────────────────
-section('2. Typing the bare domain lands on the sign-in screen');
-const root = ruleFor('/');
-check('/ resolves to the login page', !!root && root.to === '/login.html', JSON.stringify(root));
-check('…as a rewrite, not a redirect, so the address bar keeps reading just the domain',
-  !!root && root.status === '200',
-  'a 301 would put /login in the bar, which is the thing being avoided');
-check('the marketing page keeps an address of its own',
-  (ruleFor('/home') || {}).to === '/index.html' && (ruleFor('/home') || {}).status === '200');
-check('and the address it used to have redirects there',
-  (ruleFor('/index.html') || {}).to === '/home' && (ruleFor('/index') || {}).to === '/home');
+section('2. The landing page is the root, and the root is its only address');
+check('the root is left alone — the server serves index.html there by default',
+  !ruleFor('/'),
+  'a rule on / would mean something other than the landing page answers it');
+check('the file name redirects to the root rather than serving a second copy',
+  (ruleFor('/index.html') || {}).to === '/' && (ruleFor('/index.html') || {}).status === '301!');
+check('and so does the bare /index',
+  (ruleFor('/index') || {}).to === '/' && (ruleFor('/index') || {}).status === '301!');
+// /home existed for exactly one deploy, while the root belonged to the login
+// screen. Anything that saw it then should land somewhere, not on a 404.
+check('/home, which the landing page briefly answered to, redirects to the root',
+  (ruleFor('/home') || {}).to === '/' && (ruleFor('/home') || {}).status === '301!');
 
 // ── 3. Every page, both ways ────────────────────────────────────────────────
 section('3. Every page answers clean, and its .html address heals');
@@ -128,20 +131,22 @@ check('its public list is extensionless',
 check('it matches exactly rather than by suffix',
   /indexOf\(path\) !== -1/.test(gate),
   'endsWith would let /anything/login through the gate');
-check('the root is public, because the root is now the login page',
+check('the root is public, because the root is the landing page',
   /PUBLIC = \[\s*'\/'/.test(gate));
 
-// ── 6. The two pages that changed hands ─────────────────────────────────────
+// ── 6. The logos ────────────────────────────────────────────────────────────
 section('6. The logos point somewhere useful');
 const index = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
 const login = fs.readFileSync(path.join(PUB, 'login.html'), 'utf8');
-check('the marketing page\'s logo goes to the marketing page, not to sign-in',
-  /<a class="nav-logo" href="\/home"/.test(index),
-  'href="/" would now be a trapdoor into the login screen');
-check('its canonical address is /home',
-  /og:url" content="https:\/\/cygenix\.co\.uk\/home"/.test(index));
+check('the landing page\'s logo goes to the root, which is the landing page',
+  /<a class="nav-logo" href="\/" aria-label="Cygenix home">/.test(index));
+check('its canonical address is the bare domain',
+  /og:url" content="https:\/\/cygenix\.co\.uk\/"/.test(index));
 check('the login page offers a way back out to the site',
-  /href="\/home"/.test(login));
+  /class="brand-logo" href="\/"/.test(login));
+check('no page still points at /home, which no longer serves anything',
+  !fs.readdirSync(PUB).filter(f => /\.(html|js)$/.test(f))
+    .some(f => /["'`]\/home["'`]/.test(fs.readFileSync(path.join(PUB, f), 'utf8'))));
 
 // ── 7. The sign-in callback ─────────────────────────────────────────────────
 // MSAL hands Entra a redirect_uri and Entra refuses anything not registered
