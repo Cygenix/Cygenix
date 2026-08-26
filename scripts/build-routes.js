@@ -34,6 +34,24 @@ const OUT = path.join(PUBLIC, '_redirects');
 const LANDING = 'index.html';
 const LANDING_URL = '/';
 
+// The one page whose .html address must stay alive.
+//
+// MSAL hands Entra a redirect_uri and Entra will only send the browser back to
+// a URI registered against the app. That registration is
+// https://cygenix.co.uk/login.html, so the callback lands there — and it must
+// land, not be redirected. Entra returns the authorization code in the URL
+// FRAGMENT (response_mode=fragment); bouncing that through a 301 puts MSAL on
+// a URL that no longer matches the redirect_uri it asked for, and it refuses
+// to complete the sign-in.
+//
+// /login still works as an ordinary address and is what every link uses. This
+// exemption exists only so the callback has somewhere to land.
+//
+// To retire it: register https://cygenix.co.uk/login in Entra (App
+// registrations - Authentication - Redirect URIs), point the callbacks at
+// '/login' again, and delete this constant.
+const CALLBACK_PAGE = 'login.html';
+
 // Addresses that no longer have a page behind them. A bookmark or an old link
 // should land somewhere useful rather than on a 404. These live here rather
 // than in netlify.toml so there is one file that decides where a URL goes.
@@ -69,10 +87,16 @@ function build() {
   L.push('# Addresses whose page is gone.');
   for (const [from, to] of LEGACY) L.push(pad(from, 22) + pad(to, 22) + '301!');
   L.push('');
+  L.push('# The sign-in callback. Entra sends the browser back to this exact');
+  L.push('# address with the code in the fragment, so it is served rather than');
+  L.push('# redirected — a 301 here breaks sign-in. See scripts/build-routes.js.');
+  L.push(pad('/' + CALLBACK_PAGE, 22) + pad('/' + CALLBACK_PAGE, 22) + '200');
+  L.push('');
   L.push('# Old .html addresses heal themselves. 301! forces the redirect even');
   L.push('# though the file exists at that path, which is the whole point.');
   for (const f of list) {
     if (f === LANDING) continue;                       // handled above
+    if (f === CALLBACK_PAGE) continue;                 // must not be redirected
     const clean = '/' + f.replace(/\.html$/, '');
     L.push(pad('/' + f, 22) + pad(clean, 22) + '301!');
   }
@@ -101,4 +125,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { build, pages, LANDING, LANDING_URL, OUT };
+module.exports = { build, pages, LANDING, LANDING_URL, CALLBACK_PAGE, OUT };

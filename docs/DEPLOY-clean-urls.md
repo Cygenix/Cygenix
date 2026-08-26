@@ -1,68 +1,78 @@
-# Deploying the clean-URL change
+# Clean URLs, and the one address that keeps its extension
 
-**No page address carries `.html` any more.** `/dashboard` serves
-`dashboard.html`; `/dashboard.html` permanently redirects to `/dashboard`.
-The landing page is at the root, as it always was.
+**No page address a person navigates to carries `.html`.** `/dashboard` serves
+`dashboard.html`; `/dashboard.html` permanently redirects to `/dashboard`. The
+landing page is at the root, as it always was.
 
 > **Note.** One deploy briefly served the sign-in screen at the root and moved
 > the landing page to `/home`. That was reverted. `/home` still redirects to
 > `/` so anything that saw it in that window lands somewhere rather than on a
-> 404, and the redirect can be dropped once nothing is asking for it.
-
-Everything above is in the repository and ships with the deploy. There is
-**one thing the deploy cannot do for itself**, and sign-in breaks until it is
-done.
+> 404, and that line can be dropped from `scripts/build-routes.js` once nothing
+> is asking for it.
 
 ---
 
-## Before this deploys: add one redirect URI in Entra
+## The exception: `/login.html`
 
-The browser signs in through MSAL, and MSAL hands Entra a `redirect_uri` for
-the callback. That URI has to be registered against the app, exactly, or Entra
-refuses the sign-in with **AADSTS50011: The redirect URI specified in the
-request does not match the redirect URIs configured for the application**.
+`https://cygenix.co.uk/login.html` is still a live address, served directly
+rather than redirected, and it is the only one. It exists for exactly one
+reason: **it is the OAuth callback registered in Entra.**
 
-The callback moved from `https://cygenix.co.uk/login.html` to
-`https://cygenix.co.uk/login`.
+MSAL hands Entra a `redirect_uri`, and Entra will only send the browser back to
+a URI registered against the app. That registration is
+`https://cygenix.co.uk/login.html`. Two things follow:
 
-**Azure Portal → Microsoft Entra ID → App registrations → the Cygenix
-application → Authentication → Redirect URIs (Single-page application)**
+1. **The callback config must name that exact address.** It does — in
+   `auth-config.js`, `login.html`, `cygenix-auth-token.js`, `dashboard-app.js`,
+   `project-builder-app.js` and the handful of pages that build their own MSAL
+   instance. `tests/clean-urls.test.js` asserts every one of them agrees, and
+   that this is the only `.html` left anywhere in the product.
+2. **It must not be redirected.** Entra returns the authorization code in the
+   URL *fragment* (`response_mode=fragment`). Bouncing that through a `301`
+   leaves MSAL on a URL that no longer matches the `redirect_uri` it asked for,
+   and it refuses to complete the sign-in. `scripts/build-routes.js` therefore
+   serves `/login.html` at `200` and skips it when generating the healing
+   redirects.
 
-Add:
+Everything a person clicks still uses `/login`. Only the callback keeps the
+extension, and it is visible for the moment between Entra returning and the
+dashboard loading.
+
+### What went wrong the first time
+
+An earlier deploy moved the callback to `https://cygenix.co.uk/login` without
+that URI being registered in Entra. Entra rejected every sign-in with:
 
 ```
-https://cygenix.co.uk/login
+AADSTS50011: The redirect URI specified in the request does not match the
+redirect URIs configured for the application.
 ```
 
-Also add, under **Front-channel logout URL** or the SPA redirect list if the
-old value is registered there, the same address — sign-out posts back to it.
+Nobody could sign in until the callback was pointed back at the registered
+address. Do not change these values without registering the new one first.
 
-### It is safe to do this now, before the deploy
+### To move the callback to `/login` later
 
-Entra accepts several redirect URIs on one registration. Adding `/login`
-alongside the existing `/login.html` breaks nothing: the old address keeps
-working for the currently-deployed site, the new one starts working the moment
-this deploy lands. There is no window in which neither is valid.
+1. **Azure Portal → Microsoft Entra ID → App registrations → the Cygenix
+   application → Authentication → Redirect URIs (Single-page application)** —
+   add `https://cygenix.co.uk/login`. Leave `/login.html` in place; Entra
+   accepts several, so there is no window where neither works.
+2. Change `CALLBACK_PAGE` in `scripts/build-routes.js` and the callback values
+   to `/login`, and re-run `node scripts/build-routes.js`.
+3. Deploy. Once nothing is landing on `/login.html`, remove it from Entra.
 
-Leave the old `/login.html` entry in place for a few days in case a cached copy
-of the previous site is still running in somebody's tab, then remove it.
-
-### If sign-in is already broken
-
-The symptom is an Entra error page mentioning `AADSTS50011` and quoting
-`https://cygenix.co.uk/login`. Add the URI as above; it takes effect within a
-minute or two and no redeploy is needed.
+Doing step 1 first is the whole trick. Deploying step 2 before step 1 is the
+outage described above.
 
 ---
 
-## What else to check after it deploys
+## What to check after a deploy
 
 - `https://cygenix.co.uk` shows the landing page.
 - `https://cygenix.co.uk/index.html` and `/home` both bounce to `/`.
 - `https://cygenix.co.uk/dashboard.html` bounces to `/dashboard`.
-- Signing in lands on the dashboard, and the address bar reads
-  `https://cygenix.co.uk/dashboard`.
-- Signing out returns to the sign-in screen at `/login` rather than an error.
+- **Signing in works**, and lands on `/dashboard`.
+- Signing out returns to the sign-in screen rather than an error.
 
 ## Where the routing lives
 
@@ -74,8 +84,7 @@ it automatically.
 
 ## Search engines
 
-The old `.html` addresses answer `301`, which is the code that tells a search
-engine to move its index entry rather than keep both. The landing page's
-canonical (`og:url`) points at the bare domain. Nothing needs submitting by hand,
-though a re-crawl can be requested in Search Console if you want it to happen
-sooner than it otherwise would.
+The old `.html` addresses answer `301`, which tells a search engine to move its
+index entry rather than keep both. The landing page's canonical (`og:url`)
+points at the bare domain. Nothing needs submitting by hand, though a re-crawl
+can be requested in Search Console if you want it sooner.

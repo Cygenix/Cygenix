@@ -516,7 +516,7 @@ document.getElementById('signout-link').addEventListener('click', () => {
         },
         cache: { cacheLocation: 'localStorage' }
       });
-      msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin + '/login' });
+      msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin + '/login.html' });
       return;
     }
   } catch {}
