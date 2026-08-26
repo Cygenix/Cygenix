@@ -1827,7 +1827,7 @@ window.runExportScripts        = runExportScripts;
 // ── Bulk Generate SQL (hidden-iframe runner) ──────────────────────────────
 // Strictly sequential — one iframe at a time, destroyed between jobs — to
 // avoid Cosmos sync races on the shared cygenix_jobs key.
-// Each iframe loads /object_mapping?edit=<id>&autosave=1, which on
+// Each iframe loads /object-mapping?edit=<id>&autosave=1, which on
 // page load runs its normal hydration path (connect → load schema → restore
 // mapping → tryAutoGenSQL/generateOTMSQL) and then calls saveAsJob() silently.
 // The iframe sends a postMessage back when done or errored.
@@ -2094,7 +2094,7 @@ function _bulkGenRunOne(job){
   return new Promise(resolve => {
     const host = document.getElementById('bulk-gen-iframe-host');
     const iframe = document.createElement('iframe');
-    iframe.src = `/object_mapping?edit=${encodeURIComponent(job.id)}&autosave=1`;
+    iframe.src = `/object-mapping?edit=${encodeURIComponent(job.id)}&autosave=1`;
     // Small dimensions to minimise layout/paint cost. The autosave block
     // doesn't depend on visibility — schema fetches, mapping restoration,
     // and saveAsJob all run regardless of iframe size. Keeping this small
@@ -4029,7 +4029,7 @@ function editJob(jobId) {
       break;
     default:
       // All mapping jobs (single-map, one-to-many, migration) → object_mapping.html
-      window.location.href = '/object_mapping?edit=' + encodeURIComponent(jobId);
+      window.location.href = '/object-mapping?edit=' + encodeURIComponent(jobId);
   }
 }
 
@@ -4676,7 +4676,7 @@ function renderPipeline(){
       metric: mappedJobs, unit: mappedJobs === 1 ? 'job' : 'jobs',
       status: mappedJobs > 0 ? 'ok' : 'idle',
       icon: svgMap(),
-      onClick: () => { window.location.href = '/object_mapping'; }
+      onClick: () => { window.location.href = '/object-mapping'; }
     },
     {
       key:'sql', label:'SQL Editor', sub:'custom scripts',
@@ -5484,7 +5484,7 @@ function renderProjectStatus(){
   // the markup and lets us update navigation targets in one place.
   const actions = {
     'all-jobs':   () => showView('all-jobs'),
-    'mapping':    () => { window.location.href = '/object_mapping'; },
+    'mapping':    () => { window.location.href = '/object-mapping'; },
     'reports':    () => showView('reports'),
     'cleansing':  () => { window.location.href = '/data-cleansing'; },
     'validation': () => { window.location.href = '/validation'; },
@@ -5920,7 +5920,7 @@ function renderAuditLog() {
   $('audit-log-wrap').innerHTML =
     '<div class="panel" style="margin-bottom:1rem"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
     + '<div style="font-size:12px;font-weight:600">Organisation audit trail <span style="font-weight:400;color:var(--text3)">server-side · append-only · hash-chained</span></div>'
-    + '<a class="btn btn-ghost btn-sm" href="/user_roles">Users &amp; Roles →</a></div>'
+    + '<a class="btn btn-ghost btn-sm" href="/user-roles">Users &amp; Roles →</a></div>'
     + '<div id="server-audit-body" style="font-size:12px;color:var(--text2)">Loading…</div></div>'
     + (localHtml || '<div class="empty-state"><h3>No browser-local entries</h3><p>Server-side events appear in the organisation trail above.</p></div>');
   fetchServerAudit();
@@ -8300,7 +8300,7 @@ function dismissOnboarding(){
 }
 function onboardGoTo(view){
   dismissOnboarding();
-  if(view === 'mapper') { window.location.href='/object_mapping'; return; }
+  if(view === 'mapper') { window.location.href='/object-mapping'; return; }
   if(view === 'help') { window.open('/help','_blank'); return; }
   showView(view);
 }

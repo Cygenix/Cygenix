@@ -175,16 +175,16 @@
     var out = [];
     (state && state.streams || []).forEach(function (s) {
       out.push({ kind: 'stream', label: s.name, sub: s.capture.connectionLabel,
-        href: '/data_stream' + DS.buildQuery({ stream: s.id }) });
+        href: '/data-stream' + DS.buildQuery({ stream: s.id }) });
       (s.objects || []).forEach(function (o) {
         out.push({ kind: 'table', label: o.table, sub: s.name,
-          href: '/data_stream_events' + DS.buildQuery({ stream: s.id, table: o.table }) });
+          href: '/data-stream-events' + DS.buildQuery({ stream: s.id, table: o.table }) });
       });
     });
-    out.push({ kind: 'screen', label: 'Streams', sub: 'the module’s landing screen', href: '/data_stream' });
-    out.push({ kind: 'screen', label: 'Stream Store', sub: 'what the buffer is holding', href: '/data_stream_store' });
-    out.push({ kind: 'screen', label: 'Change Events', sub: 'the live tail', href: '/data_stream_events' });
-    out.push({ kind: 'screen', label: 'Stream Monitor', sub: 'charts and alerts', href: '/data_stream_monitor' });
+    out.push({ kind: 'screen', label: 'Streams', sub: 'the module’s landing screen', href: '/data-stream' });
+    out.push({ kind: 'screen', label: 'Stream Store', sub: 'what the buffer is holding', href: '/data-stream-store' });
+    out.push({ kind: 'screen', label: 'Change Events', sub: 'the live tail', href: '/data-stream-events' });
+    out.push({ kind: 'screen', label: 'Stream Monitor', sub: 'charts and alerts', href: '/data-stream-monitor' });
     return out;
   }
   var palSel = 0, palRows = [];

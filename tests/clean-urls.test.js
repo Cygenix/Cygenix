@@ -6,9 +6,13 @@
 //      /index.html and /index both redirect there rather than serving a
 //      second copy of the same page at a second URL.
 //   2. No .html in any address a person can see. Every page answers at its
-//      extensionless name, and the old .html address permanently redirects to
-//      it so bookmarks and indexed links heal rather than serving a second
+//      extensionless address, and the old .html address permanently redirects
+//      to it so bookmarks and indexed links heal rather than serving a second
 //      copy of the same page at a second URL.
+//   3. Addresses are hyphenated and named for the screen, not the file:
+//      /user-roles, not /user_roles; /configurator, not /effort_estimator.
+//      Every address a page has ever answered at still redirects to the
+//      current one.
 //
 // The routing table is generated from the pages on disk (scripts/build-routes.js)
 // rather than hand-kept, so this file re-runs the generator and fails if what
@@ -76,7 +80,7 @@ section('3. Every page answers clean, and its .html address heals');
 const missingClean = [], missingHeal = [];
 for (const f of pages) {
   if (f === routes.LANDING) continue;
-  const clean = '/' + f.replace(/\.html$/, '');
+  const clean = routes.addressOf(f);
   const serve = ruleFor(clean);
   if (!serve || serve.to !== '/' + f || serve.status !== '200') missingClean.push(clean);
   if (f === routes.CALLBACK_PAGE) continue;            // see below
@@ -87,6 +91,26 @@ check('every page is served at its extensionless address (' + (pages.length - 1)
   missingClean.length === 0, missingClean.slice(0, 5).join(', '));
 check('every .html address permanently redirects to it',
   missingHeal.length === 0, missingHeal.slice(0, 5).join(', '));
+// ── 3b. Addresses read like a product, not like a directory listing ────────
+section('3b. Addresses are hyphenated, and named for the screen');
+const underscored = pages.map(f => routes.addressOf(f)).filter(a => a.includes('_'));
+check('no address contains an underscore', underscored.length === 0, underscored.join(', '));
+check('the Configurator is at /configurator, not the name it used to have',
+  routes.addressOf('effort_estimator.html') === '/configurator');
+// A renamed address is only safe if the one it replaced still goes somewhere.
+const unhealed = [];
+for (const f of pages) {
+  const addr = routes.addressOf(f), was = routes.defaultAddressOf(f);
+  if (addr === was) continue;
+  const r = ruleFor(was);
+  if (!r || r.to !== addr || r.status !== '301!') unhealed.push(was);
+}
+check('every address a page used to answer at redirects to its current one',
+  unhealed.length === 0, unhealed.join(', '));
+check('and /project-plan belongs to the Project Plan screen rather than bouncing to the dashboard',
+  (ruleFor('/project-plan') || {}).to === '/project_plan.html',
+  JSON.stringify(ruleFor('/project-plan')));
+
 check('the redirect is forced, so an existing file does not win over the rule',
   rules.filter(r => r.from.endsWith('.html') && r.from !== '/' + routes.CALLBACK_PAGE)
        .every(r => r.status === '301!'),

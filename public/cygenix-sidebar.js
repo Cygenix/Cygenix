@@ -72,8 +72,8 @@
         // Renamed 'Configurator' on request (21-Aug-2026); the key and page
         // filename stay effort-estimator / effort_estimator.html so every
         // data-active mount and bookmark keeps working.
-        { key:'effort-estimator',  label:'Configurator',     href:'/effort_estimator', color:'var(--teal)',  icon: iconEstimator() },
-        { key:'project-plan-grid', label:'Project Plan',     href:'/project_plan',     color:'var(--green)', icon: iconPlanGrid() },
+        { key:'effort-estimator',  label:'Configurator',     href:'/configurator', color:'var(--teal)',  icon: iconEstimator() },
+        { key:'project-plan-grid', label:'Project Plan',     href:'/project-plan',     color:'var(--green)', icon: iconPlanGrid() },
       ]},
     ]},
     { section: 'Connect', group:'connect', items: [
@@ -84,7 +84,7 @@
         { key:'project-settings',  label:'General',           view:'project-settings',  color:'var(--amber)',  icon: iconSettings() },
         { key:'notifications',     label:'Notifications',     view:'notifications',     color:'var(--teal)',   icon: iconBell() },
         { key:'system-parameters', label:'System Parameters', view:'system-parameters', color:'var(--accent)', icon: iconParams() },
-        { key:'user-roles',        label:'Users & Roles',     href:'/user_roles',  color:'var(--accent)', icon: iconUsers() },
+        { key:'user-roles',        label:'Users & Roles',     href:'/user-roles',  color:'var(--accent)', icon: iconUsers() },
       ]},
     ]},
     { section: 'Map & Build', group:'build', items: [
@@ -93,11 +93,11 @@
       // so moving it to the expander would break the active highlight and
       // every existing link.
       { key:'objmap-group', label:'Object Mapping', icon: iconArrows(), children: [
-        { key:'object-mapping',  label:'Mapping',         href:'/object_mapping',  color:'var(--teal)',   icon: iconArrows() },
-        { key:'schema-explorer', label:'Schema Explorer', href:'/schema_explorer', color:'var(--purple)', icon: iconGraph() },
+        { key:'object-mapping',  label:'Mapping',         href:'/object-mapping',  color:'var(--teal)',   icon: iconArrows() },
+        { key:'schema-explorer', label:'Schema Explorer', href:'/schema-explorer', color:'var(--purple)', icon: iconGraph() },
       ]},
       { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor',         color:'var(--teal)',   icon: iconCode() },
-      { key:'agentive-migration', label:'AI Assist',      href:'/agentive_migration', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
+      { key:'agentive-migration', label:'AI Assist',      href:'/agentive-migration', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
       // AI Workspace (coworker.html) was replaced by the docked Assistant
       // panel, which is present on every app screen (Ctrl+/ or the launcher).
       // /coworker redirects there and migrates its saved artifacts.
@@ -116,10 +116,10 @@
       // run-time objects, so they belong in RUN rather than in a section of
       // their own.
       { key:'datastream-group', label:'Data Stream', icon: iconStream(), children: [
-        { key:'data-stream',         label:'Streams',       href:'/data_stream',         color:'var(--teal)',   icon: iconStream() },
-        { key:'data-stream-store',   label:'Stream Store',  href:'/data_stream_store',   color:'var(--accent)', icon: iconStore() },
-        { key:'data-stream-events',  label:'Change Events', href:'/data_stream_events',  color:'var(--green)',  icon: iconBolt() },
-        { key:'data-stream-monitor', label:'Stream Monitor',href:'/data_stream_monitor', color:'var(--purple)', icon: iconChart() },
+        { key:'data-stream',         label:'Streams',       href:'/data-stream',         color:'var(--teal)',   icon: iconStream() },
+        { key:'data-stream-store',   label:'Stream Store',  href:'/data-stream-store',   color:'var(--accent)', icon: iconStore() },
+        { key:'data-stream-events',  label:'Change Events', href:'/data-stream-events',  color:'var(--green)',  icon: iconBolt() },
+        { key:'data-stream-monitor', label:'Stream Monitor',href:'/data-stream-monitor', color:'var(--purple)', icon: iconChart() },
       ]},
       // Project Planner was removed along with its page. With one child left
       // the "Planner & Schedules" expander earned nothing, so this is a plain

@@ -1509,7 +1509,7 @@ function toggleLog(gi, si) {
 // the step's jobType — same routing as dashboard.html's editJob() so the
 // behaviour is consistent across the app.
 //   sql / sql-script  → /sql-editor?edit=<jobId>
-//   everything else   → /object_mapping?edit=<jobId>
+//   everything else   → /object-mapping?edit=<jobId>
 // We warn about unsaved project changes before navigating, since the edit
 // happens in a different page and any dirty in-memory project state would
 // be lost on navigation.
@@ -1525,7 +1525,7 @@ function editStepJob(gi, si) {
     saveProject();
   }
   const isSql = step.jobType === 'sql' || step.jobType === 'sql-script' || step.type === 'sql';
-  const url = (isSql ? '/sql-editor?edit=' : '/object_mapping?edit=') + encodeURIComponent(step.jobId);
+  const url = (isSql ? '/sql-editor?edit=' : '/object-mapping?edit=') + encodeURIComponent(step.jobId);
   window.location.href = url;
 }
 

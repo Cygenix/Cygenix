@@ -141,7 +141,7 @@ select.form-input option{background:var(--bg3)}
 
 <div id="cyg-sidebar-mount" data-active="validation"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=f4b2c12701" defer></script>
+<script src="/cygenix-sidebar.js?v=104bb26a8a" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
@@ -400,7 +400,7 @@ select.form-input option{background:var(--bg3)}
 </div>
 
 <script>
-if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login';
+if(!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) window.location.href='/login';
 
 // ── State ──────────────────────────────────────────────────────────────────────
 // On disk: [{id, label, conn, connLabel, tableName, sqlCol, nameCol, reportCols, runOn}]
@@ -1356,7 +1356,7 @@ document.addEventListener('DOMContentLoaded', nlRenderChecks);
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=88ed3b7f22"></script>
 <script src="/cygenix-assistant.js?v=7f8793bddb"></script>
-<script src="/cygenix-assistant-actions.js?v=8b26159883"></script>
+<script src="/cygenix-assistant-actions.js?v=07e7202abc"></script>
 <script>CygenixAssistant.registerPage('validation');</script>
 </body>
 </html>

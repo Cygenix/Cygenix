@@ -11,6 +11,12 @@
  *      bookmarks and anything already indexed heal themselves rather than
  *      quietly serving a second copy of the page at a second URL.
  *
+ *   3. Addresses are hyphenated and named for the screen, not the file.
+ *      /user-roles, not /user_roles; /configurator, not /effort_estimator.
+ *      A file keeps its name on disk — renaming 48 files to fix an address
+ *      would be a large diff to change something nobody sees — and ADDRESS
+ *      below maps the two where they differ.
+ *
  * The list is generated rather than hand-kept, because a hand-kept list is one
  * a new page gets forgotten from — and the failure is silent, a 404 nobody
  * notices until a customer finds it. tests/clean-urls.test.js re-runs this
@@ -52,12 +58,50 @@ const LANDING_URL = '/';
 // '/login' again, and delete this constant.
 const CALLBACK_PAGE = 'login.html';
 
+// Where a page's address is not simply its file name.
+//
+// Two reasons appear here. Underscores: file names have carried them since the
+// beginning and an address should not, because /data_stream_store reads like a
+// path on somebody's disk and /data-stream-store reads like a product.
+// Renames: the Effort Estimator became the Configurator, and the address
+// should say what the screen is called rather than what it used to be.
+//
+// Every address a page has ever answered to keeps working — the generator
+// emits a 301 from the file-name form as well as from the previous address.
+const ADDRESS = {
+  'agentive_migration.html':    '/agentive-migration',
+  'data_stream.html':           '/data-stream',
+  'data_stream_designer.html':  '/data-stream-designer',
+  'data_stream_events.html':    '/data-stream-events',
+  'data_stream_monitor.html':   '/data-stream-monitor',
+  'data_stream_store.html':     '/data-stream-store',
+  'effort_estimator.html':      '/configurator',
+  'object_mapping.html':        '/object-mapping',
+  'project_plan.html':          '/project-plan',
+  'report_settings.html':       '/report-settings',
+  'schema_explorer.html':       '/schema-explorer',
+  'user_roles.html':            '/user-roles',
+};
+
+// The address a page answers at, and the one its file name would have given
+// it. They differ only for the entries above.
+function addressOf(file) {
+  return ADDRESS[file] || '/' + file.replace(/\.html$/, '');
+}
+function defaultAddressOf(file) {
+  return '/' + file.replace(/\.html$/, '');
+}
+
 // Addresses that no longer have a page behind them. A bookmark or an old link
 // should land somewhere useful rather than on a 404. These live here rather
 // than in netlify.toml so there is one file that decides where a URL goes.
 const LEGACY = [
-  ['/project-plan.html', '/dashboard'],   // Project Planner was removed
-  ['/project-plan',      '/dashboard'],
+  // /project-plan used to send people to the dashboard, because the page that
+  // answered it had been removed. That address now belongs to the live Project
+  // Plan screen — which is where somebody following an old Project Planner
+  // link wanted to go in the first place — so the rule is gone rather than
+  // competing with it.
+  //
   // /home was the landing page's address for one deploy, while the root
   // briefly belonged to the sign-in screen. Anything that saw it in that
   // window is sent to the root rather than to a 404.
@@ -97,15 +141,21 @@ function build() {
   for (const f of list) {
     if (f === LANDING) continue;                       // handled above
     if (f === CALLBACK_PAGE) continue;                 // must not be redirected
-    const clean = '/' + f.replace(/\.html$/, '');
-    L.push(pad('/' + f, 22) + pad(clean, 22) + '301!');
+    L.push(pad('/' + f, 26) + pad(addressOf(f), 24) + '301!');
   }
   L.push('');
-  L.push('# …and the clean address serves the file.');
+  L.push('# Pages whose address is not their file name send the file-name form');
+  L.push('# here too, so an address a page used to answer at still works.');
+  for (const f of list) {
+    const addr = addressOf(f), fallback = defaultAddressOf(f);
+    if (addr === fallback) continue;
+    L.push(pad(fallback, 26) + pad(addr, 24) + '301!');
+  }
+  L.push('');
+  L.push('# …and the address serves the file.');
   for (const f of list) {
     if (f === LANDING) continue;
-    const clean = '/' + f.replace(/\.html$/, '');
-    L.push(pad(clean, 22) + pad('/' + f, 22) + '200');
+    L.push(pad(addressOf(f), 26) + pad('/' + f, 24) + '200');
   }
   L.push('');
   return L.join('\n');
@@ -125,4 +175,5 @@ if (require.main === module) {
   }
 }
 
-module.exports = { build, pages, LANDING, LANDING_URL, CALLBACK_PAGE, OUT };
+module.exports = { build, pages, LANDING, LANDING_URL, CALLBACK_PAGE, ADDRESS,
+                   addressOf, defaultAddressOf, OUT };

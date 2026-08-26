@@ -813,7 +813,7 @@ check('derived rules run on job completion, not on a wall clock',
   && /asJobRuleDue/.test(PAGE));
 check('the five states render as pills and derived rules name their map',
   /Derived<\/span>/.test(PAGE) && /Armed<\/span>/.test(PAGE) && /Proven<\/span>/.test(PAGE)
-  && /Dormant<\/span>/.test(PAGE) && /object_mapping\?edit=/.test(PAGE));
+  && /Dormant<\/span>/.test(PAGE) && /object-mapping\?edit=/.test(PAGE));
 check('a connection mismatch refuses derived checks and says why (§5, decided)',
   /as-mismatch/.test(PAGE) && /refuse to run/.test(PAGE)
   && /never touched/.test(PAGE) && /runnable\(/.test(PAGE));
