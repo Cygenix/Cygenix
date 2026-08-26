@@ -229,6 +229,37 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
 .p-info{color:var(--accent);background:rgba(74,91,214,0.12)}
 .p-mute{color:var(--text3);background:rgba(22,26,32,0.07)}
 
+/* ── Figures ─────────────────────────────────────────────────────────────
+   A .figure is a DIAGRAM, drawn in the page's own palette. A .mock is a light
+   SCREENSHOT of the console. Keeping them visually distinct matters: a
+   diagram explains a mechanism and is allowed to simplify, a screenshot
+   claims "this is the screen". Mixing the two would make the page lie about
+   which is which. */
+.figure{background:linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.012));
+  border:1px solid var(--border);border-radius:14px;padding:1.1rem;position:relative;overflow:hidden}
+.figure::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(420px 220px at 70% -20%,rgba(109,93,242,0.13),transparent 65%)}
+.figure svg{display:block;width:100%;height:auto;position:relative}
+.fig-cap{position:relative;margin-top:0.85rem;padding-top:0.75rem;border-top:1px solid var(--border);
+  font-family:var(--mono);font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text3);
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.fig-cap b{color:var(--accent-ink);font-weight:500}
+.fig-legend{display:flex;gap:0.9rem;flex-wrap:wrap;margin-top:0.7rem;position:relative;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:0.05em;color:var(--text3)}
+.fig-legend span{display:inline-flex;align-items:center;gap:0.35rem}
+.fig-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+/* Two figures abreast, stacking on a narrow screen. */
+.fig-pair{display:grid;grid-template-columns:1.18fr 1fr;gap:clamp(1.25rem,3vw,2.25rem);
+  margin-top:2.75rem;align-items:start}
+.fig-pair.rev{grid-template-columns:1fr 1.18fr}
+@media (max-width:900px){.fig-pair,.fig-pair.rev{grid-template-columns:1fr}}
+/* A run of view names, used where a module has more than one way to look at
+   the same estate. */
+.views{display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:1.5rem}
+.views span{font-family:var(--mono);font-size:11px;letter-spacing:0.04em;color:var(--text2);
+  border:1px solid var(--border2);border-radius:100px;padding:0.3rem 0.75rem}
+.views span b{color:var(--accent-ink);font-weight:500}
+
 /* ── Matrix ──────────────────────────────────────────────────────────────*/
 .matrix{width:100%;border-collapse:collapse;margin-top:2.5rem;font-size:13.5px}
 .matrix th{text-align:left;font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:0.1em;
@@ -326,9 +357,10 @@ footer a:hover{text-decoration:underline}
   <div class="nav-links">
     <a href="#platform">Platform</a>
     <a href="#mapping">Mapping</a>
+    <a href="#explorer">Explorer</a>
     <a href="#server-migration">Server objects</a>
     <a href="#governance">Governance</a>
-    <a href="#automation">Automation</a>
+    <a href="#planning">Planning</a>
     <a href="#supports">What it supports</a>
     <a href="/pricing.html">Pricing</a>
     <a href="#" onclick="openContact();return false">Contact</a>
@@ -428,10 +460,11 @@ footer a:hover{text-decoration:underline}
   <div class="container split">
     <div class="reveal">
       <div class="section-tag">Intelligent mapping</div>
-      <div class="section-title">Target-driven, and honest about what it changed</div>
-      <p class="section-sub">Every target column is a fixed row. Pick a source, override with a fixed
-        value, or apply a transform — and see the confidence the model actually had, not a number
-        invented to look reassuring.</p>
+      <div class="section-title">Drag a column across. Or let the model draw it.</div>
+      <p class="section-sub">The mapper is a canvas: source columns on the left, target columns on
+        the right, and you join them by dragging one onto the other. The model proposes the joins
+        first and shows the confidence it actually had — not a number invented to look reassuring —
+        so the work is checking suggestions rather than typing four hundred column names.</p>
       <ul class="flist">
         <li><i class="ic ic-check"></i><span><b>One transform engine.</b> A <span style="font-family:var(--mono);font-size:12.5px">CAST</span>
           to a shorter character type truncates in the preview exactly as SQL Server truncates it on
@@ -443,11 +476,98 @@ footer a:hover{text-decoration:underline}
           for a human rather than quietly accepted.</span></li>
         <li><i class="ic ic-check"></i><span><b>Every changed value is counted.</b> A run reports how
           many values a transform altered, next to the row count.</span></li>
+        <li><i class="ic ic-check"></i><span><b>One-to-many, too.</b> Switch the canvas from
+          <b>Single map</b> to <b>One-to-many</b> and the right-hand side becomes one group per target
+          table, so a single source column can feed several of them at once.</span></li>
+        <li><i class="ic ic-check"></i><span><b>Identity columns refuse the drop</b> rather than
+          accepting it and failing later. Override deliberately, from the table view.</span></li>
       </ul>
     </div>
+    <div class="figure reveal">
+      <svg viewBox="0 0 720 300" role="img" aria-label="Source columns joined to target columns by connector lines, one being dragged">
+        <defs>
+          <linearGradient id="lnk" gradientUnits="userSpaceOnUse" x1="212" y1="0" x2="466" y2="0"><stop offset="0" stop-color="#3fb5b0"/><stop offset="1" stop-color="#8ea0ff"/></linearGradient>
+          <linearGradient id="chipS" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(63,181,176,.20)"/><stop offset="1" stop-color="rgba(63,181,176,.07)"/></linearGradient>
+          <linearGradient id="chipT" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(142,160,255,.20)"/><stop offset="1" stop-color="rgba(142,160,255,.07)"/></linearGradient>
+        </defs>
+
+        <!-- column headers -->
+        <text x="24" y="26" font-family="IBM Plex Mono" font-size="11" letter-spacing="1.4" fill="rgba(255,255,255,.40)">SOURCE · dbo.Customer</text>
+        <text x="472" y="26" font-family="IBM Plex Mono" font-size="11" letter-spacing="1.4" fill="rgba(255,255,255,.40)">TARGET · dbo.Customer</text>
+    <!-- the two toggles that sit in the real header -->
+    <g font-family="IBM Plex Mono" font-size="10">
+      <rect x="560" y="272" width="60" height="18" rx="9" fill="rgba(142,160,255,.18)" stroke="rgba(142,160,255,.45)"/>
+      <text x="590" y="284" text-anchor="middle" fill="#a9b6ff">Visual</text>
+      <rect x="624" y="272" width="56" height="18" rx="9" fill="none" stroke="rgba(255,255,255,.16)"/>
+      <text x="652" y="284" text-anchor="middle" fill="rgba(255,255,255,.40)">Table</text>
+    </g>
+
+        <!-- connector lines drawn first so chips sit above them -->
+        <g fill="none" stroke="url(#lnk)" stroke-width="1.6">
+          <path d="M212 62 C 300 62, 384 62, 466 62"/>
+          <path d="M212 104 C 300 104, 384 104, 466 104"/>
+          <path d="M212 146 C 300 146, 384 188, 466 188"/>
+          <path d="M212 188 C 300 188, 384 146, 466 146"/>
+        </g>
+        <!-- confidence dots sitting on the midpoint of each link -->
+        <g>
+          <circle cx="300" cy="62"  r="4.5" fill="#5fd08a"/>
+          <circle cx="300" cy="104" r="4.5" fill="#5fd08a"/>
+          <circle cx="292" cy="152" r="4.5" fill="#e3a33d"/>
+          <circle cx="292" cy="152" r="8"   fill="none" stroke="#e3a33d" stroke-opacity=".35"/>
+          <circle cx="292" cy="182" r="4.5" fill="#5fd08a"/>
+        </g>
+
+        <!-- the one being dragged: dashed, following the cursor to an open slot -->
+        <path d="M212 230 C 300 230, 384 244, 452 244" fill="none" stroke="#a9b6ff" stroke-width="1.6"
+              stroke-dasharray="5 4" opacity=".85"/>
+
+        <!-- source chips -->
+        <g font-family="IBM Plex Mono" font-size="13">
+          <g><rect x="24" y="48" width="188" height="28" rx="7" fill="url(#chipS)" stroke="rgba(63,181,176,.42)"/><text x="38" y="66" fill="#f2f4f8">customer_id</text></g>
+          <g><rect x="24" y="90" width="188" height="28" rx="7" fill="url(#chipS)" stroke="rgba(63,181,176,.42)"/><text x="38" y="108" fill="#f2f4f8">full_name</text></g>
+          <g><rect x="24" y="132" width="188" height="28" rx="7" fill="url(#chipS)" stroke="rgba(63,181,176,.42)"/><text x="38" y="150" fill="#f2f4f8">notes</text></g>
+          <g><rect x="24" y="174" width="188" height="28" rx="7" fill="url(#chipS)" stroke="rgba(63,181,176,.42)"/><text x="38" y="192" fill="#f2f4f8">created_ts</text></g>
+          <!-- dragged chip, lifted -->
+          <g opacity=".95">
+            <rect x="24" y="216" width="188" height="28" rx="7" fill="rgba(169,182,255,.22)" stroke="#a9b6ff" stroke-dasharray="4 3"/>
+            <text x="38" y="234" fill="#f2f4f8">region_code</text>
+          </g>
+        </g>
+
+        <!-- target chips -->
+        <g font-family="IBM Plex Mono" font-size="13">
+          <g><rect x="466" y="48" width="230" height="28" rx="7" fill="url(#chipT)" stroke="rgba(142,160,255,.42)"/><text x="480" y="66" fill="#f2f4f8">CustomerID</text><text x="672" y="66" text-anchor="end" font-size="10" fill="rgba(255,255,255,.40)">INT</text></g>
+          <g><rect x="466" y="90" width="230" height="28" rx="7" fill="url(#chipT)" stroke="rgba(142,160,255,.42)"/><text x="480" y="108" fill="#f2f4f8">DisplayName</text><text x="672" y="108" text-anchor="end" font-size="10" fill="rgba(255,255,255,.40)">NVARCHAR(200)</text></g>
+          <g><rect x="466" y="132" width="230" height="28" rx="7" fill="url(#chipT)" stroke="rgba(142,160,255,.42)"/><text x="480" y="150" fill="#f2f4f8">CreatedOn</text><text x="672" y="150" text-anchor="end" font-size="10" fill="rgba(255,255,255,.40)">DATETIME2(3)</text></g>
+          <g><rect x="466" y="174" width="230" height="28" rx="7" fill="url(#chipT)" stroke="rgba(227,163,61,.28)"/><text x="480" y="192" fill="#f2f4f8">Notes</text><text x="656" y="192" text-anchor="end" font-size="10" fill="#e3a33d">NVARCHAR(100)</text>
+          <path d="M666 186 l6 10 h-12 z" fill="none" stroke="#e3a33d" stroke-width="1.2" stroke-linejoin="round"/>
+          <path d="M666 190.5 v2.5" stroke="#e3a33d" stroke-width="1.2" stroke-linecap="round"/></g>
+          <!-- the open slot the drag is heading for -->
+          <g><rect x="466" y="230" width="230" height="28" rx="7" fill="none" stroke="#a9b6ff" stroke-dasharray="4 3" opacity=".8"/>
+             <text x="480" y="248" fill="rgba(255,255,255,.62)">Territory</text>
+             <text x="672" y="248" text-anchor="end" font-size="10" fill="rgba(255,255,255,.40)">drop to map</text></g>
+        </g>
+
+        <text x="24" y="286" font-family="IBM Plex Mono" font-size="10.5" letter-spacing=".8" fill="rgba(255,255,255,.40)">
+          4 mapped · 1 in flight · truncation flagged before it runs
+        </text>
+      </svg>
+      <div class="fig-legend">
+        <span><i style="background:#5fd08a"></i>high confidence</span>
+        <span><i style="background:#e3a33d"></i>needs a look</span>
+        <span><i style="background:#ef6f62"></i>low — check it</span>
+        <span><i style="background:#a9b6ff"></i>being dragged</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- The same map, in the grid the mapper opens on. Two views of one thing:
+       drag it, or type it. -->
+  <div class="container" style="margin-top:2.75rem">
     <div class="mock reveal">
       <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
-        <span class="mock-title">Object Mapping — dbo.Customer → dbo.Customer</span></div>
+        <span class="mock-title">Object Mapping — dbo.Customer → dbo.Customer · grid view</span></div>
       <div class="mock-body">
         <table>
           <thead><tr><th class="mono">Source</th><th class="mono">Target</th><th class="mono">Transform</th><th class="mono">Confidence</th></tr></thead>
@@ -506,6 +626,177 @@ footer a:hover{text-decoration:underline}
           <span style="color:var(--amber)">FORECAST</span> dbo.Orders.Amount — 1 row fails CAST to DECIMAL(10,2)<br>
           <span style="color:var(--green)">CLEAR</span> &nbsp;&nbsp;&nbsp;dbo.Product — no rejections forecast
         </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SCHEMA EXPLORER ═══════════════════════════════════════════════════ -->
+<section class="section" id="explorer">
+  <div class="container">
+    <div class="center reveal">
+      <div class="section-tag">Schema Explorer</div>
+      <div class="section-title">Nine ways to look at an estate<br>you have never seen before</div>
+      <p class="section-sub">You inherit a database with four hundred tables, no documentation and the
+        person who built it long gone. Schema Explorer is where you find out what you are actually
+        dealing with — the same estate, drawn nine different ways, from one picker.</p>
+      <div class="views" style="justify-content:center">
+        <span><b>Schema map</b> · tables and their keys</span>
+        <span><b>Data map</b> · a treemap by volume</span>
+        <span><b>Coverage map</b> · what your saved maps reach</span>
+        <span><b>Migration map</b> · subject areas</span>
+        <span><b>Estate map</b> · families as circles</span>
+        <span><b>Relationship map</b> · a chord of references</span>
+        <span><b>Radial burst</b></span>
+        <span><b>Constellation</b></span>
+        <span><b>Globe</b></span>
+      </div>
+    </div>
+
+    <div class="fig-pair">
+      <div class="figure reveal">
+        <svg viewBox="0 0 720 320" role="img" aria-label="Tables as nodes joined by foreign keys, one selected with its neighbourhood highlighted">
+          <g stroke="rgba(255,255,255,.16)" stroke-width="1" fill="none">
+            <path d="M360 160 L200 88"/><path d="M360 160 L182 214"/><path d="M360 160 L536 104"/>
+            <path d="M360 160 L548 222"/><path d="M360 160 L344 62"/><path d="M360 160 L370 268"/>
+            <path d="M200 88 L120 150"/><path d="M536 104 L622 62"/><path d="M548 222 L636 176"/>
+            <path d="M182 214 L96 254"/><path d="M370 268 L258 292"/><path d="M344 62 L448 34"/>
+          </g>
+          <!-- the selected node's own edges, lit -->
+          <g stroke="#8ea0ff" stroke-width="1.8" fill="none" opacity=".9">
+            <path d="M360 160 L200 88"/><path d="M360 160 L536 104"/><path d="M360 160 L370 268"/>
+          </g>
+          <g font-family="IBM Plex Mono" font-size="12.5" text-anchor="middle">
+            <!-- satellites -->
+            <g><circle cx="120" cy="150" r="13" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="120" y="180" fill="rgba(255,255,255,.40)">Country</text></g>
+            <g><circle cx="96"  cy="254" r="13" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="96"  y="284" fill="rgba(255,255,255,.40)">Currency</text></g>
+            <g><circle cx="622" cy="62"  r="13" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="622" y="92"  fill="rgba(255,255,255,.40)">Category</text></g>
+            <g><circle cx="636" cy="176" r="13" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="636" y="206" fill="rgba(255,255,255,.40)">TaxRate</text></g>
+            <g><circle cx="258" cy="292" r="13" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="258" y="316" fill="rgba(255,255,255,.40)">Shipment</text></g>
+            <g><circle cx="448" cy="34"  r="13" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="448" y="24"  fill="rgba(255,255,255,.40)">Region</text></g>
+            <!-- one hop out -->
+            <g><circle cx="200" cy="88"  r="20" fill="rgba(63,181,176,.16)" stroke="rgba(63,181,176,.55)"/><text x="200" y="122" fill="#f2f4f8">Address</text></g>
+            <g><circle cx="536" cy="104" r="20" fill="rgba(63,181,176,.16)" stroke="rgba(63,181,176,.55)"/><text x="536" y="138" fill="#f2f4f8">Product</text></g>
+            <g><circle cx="370" cy="268" r="20" fill="rgba(63,181,176,.16)" stroke="rgba(63,181,176,.55)"/><text x="370" y="302" fill="#f2f4f8">OrderLine</text></g>
+            <g><circle cx="182" cy="214" r="16" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="182" y="246" fill="rgba(255,255,255,.40)">Contact</text></g>
+            <g><circle cx="548" cy="222" r="16" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="548" y="254" fill="rgba(255,255,255,.40)">Invoice</text></g>
+            <g><circle cx="344" cy="62"  r="16" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.20)"/><text x="344" y="42"  fill="rgba(255,255,255,.40)">Territory</text></g>
+            <!-- the selected table -->
+            <g>
+              <circle cx="360" cy="160" r="34" fill="#171a22" stroke="#a9b6ff" stroke-width="1.6"/>
+              <circle cx="360" cy="160" r="34" fill="rgba(109,93,242,.42)" stroke="none"/>
+              <circle cx="360" cy="160" r="44" fill="none" stroke="#8ea0ff" stroke-opacity=".28"/>
+              <text x="360" y="157" fill="#ffffff" font-size="14">Orders</text>
+              <text x="360" y="173" fill="rgba(255,255,255,.62)" font-size="10.5">1.2M rows</text>
+            </g>
+          </g>
+        </svg>
+        <div class="fig-cap"><span>Schema map</span><span><b>3 direct dependencies</b> · 6 tables one hop out</span></div>
+      </div>
+      <div class="reveal">
+        <div class="section-title" style="font-size:1.35rem">Follow the keys</div>
+        <p class="section-sub" style="font-size:14.5px">Pick a table and the diagram narrows to it —
+          one hop, two hops, or the whole estate. Ask for the shortest join path between two tables
+          and it draws that instead.</p>
+        <ul class="flist" style="margin-top:1.25rem">
+          <li><i class="ic ic-check"></i><span><b>No foreign keys? It infers them.</b> Plenty of
+            estates declare none. Cygenix rebuilds the missing relationships from naming evidence and
+            sampled values, and shows the evidence that put each one there.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Trace a field</b> across the estate to see
+            everything that references it.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Exclusion rules</b> hide the drafts, the audit
+            copies and the empty tables, so what is left is the thing you have to migrate.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Load order</b> falls out of the keys: the Coverage
+            map computes dependency waves, and a wave becomes a batch.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="fig-pair rev" style="margin-top:1.25rem">
+      <div class="reveal">
+        <div class="section-title" style="font-size:1.35rem">Where the data actually is</div>
+        <p class="section-sub" style="font-size:14.5px">The Globe reads geography out of the database
+          itself — country columns, region columns, postal codes, foreign keys into your own country
+          table — and stands a bar off the sphere for each region it finds. Height is the volume,
+          log-scaled; colour is the business area contributing most of it.</p>
+        <ul class="flist" style="margin-top:1.25rem">
+          <li><i class="ic ic-check"></i><span><b>It reads words, not substrings.</b> Column names
+            are split before they are matched, so <span style="font-family:var(--mono);font-size:12.5px">BillToCountryCode</span>
+            is geography and <span style="font-family:var(--mono);font-size:12.5px">RealEstate</span>
+            is not.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Nothing finer than a region count reaches the
+            screen.</b> Every query behind it is a GROUP BY with a COUNT, so no address, client or
+            case can appear on the globe even if one is in the data.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Drill in.</b> World, then a country, then its
+            regions — and a list of what it could not resolve, rather than a silent gap.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Every guess is yours to correct.</b> Each detected
+            column shows the evidence that classified it and can be overridden. A silently wrong map
+            is worse than an editable one.</span></li>
+        </ul>
+      </div>
+      <div class="figure reveal">
+        <svg viewBox="0 0 720 340" role="img" aria-label="A rotatable globe with extruded bars standing off it, one per region, coloured by business area">
+          <defs>
+            <radialGradient id="sph" cx="35%" cy="30%">
+              <stop offset="0" stop-color="rgba(142,160,255,.20)"/>
+              <stop offset="55%" stop-color="rgba(74,91,214,.10)"/>
+              <stop offset="100%" stop-color="rgba(10,11,15,.95)"/>
+            </radialGradient>
+            <linearGradient id="barA" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="rgba(63,181,176,.25)"/><stop offset="1" stop-color="#3fb5b0"/></linearGradient>
+            <linearGradient id="barB" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="rgba(142,160,255,.25)"/><stop offset="1" stop-color="#8ea0ff"/></linearGradient>
+            <linearGradient id="barC" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="rgba(227,163,61,.25)"/><stop offset="1" stop-color="#e3a33d"/></linearGradient>
+            <linearGradient id="barD" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="rgba(169,143,214,.25)"/><stop offset="1" stop-color="#a98fd6"/></linearGradient>
+          </defs>
+
+          <g transform="translate(230,170)">
+            <circle r="132" fill="url(#sph)" stroke="rgba(142,160,255,.26)"/>
+            <!-- graticule: meridians as ellipses narrowing toward the limb, parallels as chords -->
+            <g fill="none" stroke="rgba(142,160,255,.16)">
+              <ellipse rx="132" ry="132"/><ellipse rx="99" ry="132"/><ellipse rx="58" ry="132"/><ellipse rx="14" ry="132"/>
+              <path d="M-132 0 L132 0"/>
+              <path d="M-124 -44 A 132 132 0 0 1 124 -44"/>
+              <path d="M-124 44 A 132 132 0 0 0 124 44"/>
+              <path d="M-96 -90 A 132 132 0 0 1 96 -90"/>
+              <path d="M-96 90 A 132 132 0 0 0 96 90"/>
+            </g>
+            <!-- extruded bars: a stem from the surface point outward, capped -->
+            <g stroke-linecap="round">
+              <line x1="-58" y1="-58" x2="-79" y2="-79" stroke="url(#barA)" stroke-width="7"/><circle cx="-79" cy="-79" r="4.5" fill="#3fb5b0"/>
+              <line x1="-12" y1="-96" x2="-16" y2="-131" stroke="url(#barB)" stroke-width="7"/><circle cx="-16" cy="-131" r="5.5" fill="#8ea0ff"/>
+              <line x1="42"  y1="-72" x2="60"  y2="-103" stroke="url(#barC)" stroke-width="7"/><circle cx="60" cy="-103" r="4" fill="#e3a33d"/>
+              <line x1="76"  y1="-8"  x2="112" y2="-12" stroke="url(#barB)" stroke-width="7"/><circle cx="112" cy="-12" r="5" fill="#8ea0ff"/>
+              <line x1="20"  y1="52"  x2="28"  y2="74" stroke="url(#barD)" stroke-width="7"/><circle cx="28" cy="74" r="3.5" fill="#a98fd6"/>
+              <line x1="-46" y1="34"  x2="-66" y2="49" stroke="url(#barA)" stroke-width="7"/><circle cx="-66" cy="49" r="4" fill="#3fb5b0"/>
+              <line x1="-88" y1="-6"  x2="-127" y2="-9" stroke="url(#barC)" stroke-width="7"/><circle cx="-127" cy="-9" r="4.5" fill="#e3a33d"/>
+            </g>
+            <!-- the one under the cursor, called out -->
+            <g>
+              <circle cx="-16" cy="-131" r="11" fill="none" stroke="#8ea0ff" stroke-opacity=".5"/>
+            </g>
+          </g>
+
+          <!-- read-out panel -->
+          <g transform="translate(430,60)">
+            <rect x="0" y="0" width="262" height="216" rx="10" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.10)"/>
+            <text x="16" y="26" font-family="IBM Plex Mono" font-size="9.5" letter-spacing="1.2" fill="rgba(255,255,255,.40)">REGION</text>
+            <text x="16" y="48" font-family="IBM Plex Sans" font-size="18" font-weight="600" fill="#f2f4f8">Northern Europe</text>
+            <g font-family="IBM Plex Mono" font-size="12">
+              <g transform="translate(16,74)">
+                <rect width="9" height="9" rx="2" fill="#8ea0ff"/><text x="18" y="9" fill="rgba(255,255,255,.62)">Matters &amp; clients</text><text x="230" y="9" text-anchor="end" fill="#f2f4f8">412,880</text></g>
+              <g transform="translate(16,98)">
+                <rect width="9" height="9" rx="2" fill="#3fb5b0"/><text x="18" y="9" fill="rgba(255,255,255,.62)">Finance &amp; AR</text><text x="230" y="9" text-anchor="end" fill="#f2f4f8">208,140</text></g>
+              <g transform="translate(16,122)">
+                <rect width="9" height="9" rx="2" fill="#e3a33d"/><text x="18" y="9" fill="rgba(255,255,255,.62)">Documents</text><text x="230" y="9" text-anchor="end" fill="#f2f4f8">96,502</text></g>
+              <g transform="translate(16,146)">
+                <rect width="9" height="9" rx="2" fill="#a98fd6"/><text x="18" y="9" fill="rgba(255,255,255,.62)">Reference</text><text x="230" y="9" text-anchor="end" fill="#f2f4f8">11,204</text></g>
+            </g>
+            <line x1="16" y1="170" x2="246" y2="170" stroke="rgba(255,255,255,.10)"/>
+            <text x="16" y="192" font-family="IBM Plex Mono" font-size="10.5" fill="rgba(255,255,255,.40)">region counts only — never a row</text>
+          </g>
+          <text x="24" y="322" font-family="IBM Plex Mono" font-size="9.5" letter-spacing=".8" fill="rgba(255,255,255,.40)">
+            drag to rotate · click a bar to drill into the tables behind it
+          </text>
+        </svg>
       </div>
     </div>
   </div>
@@ -706,6 +997,215 @@ footer a:hover{text-decoration:underline}
   </div>
 </section>
 
+<!-- ══ CONFIGURATOR + PLANNER ════════════════════════════════════════════ -->
+<section class="section" id="planning">
+  <div class="container">
+    <div class="center reveal">
+      <div class="section-tag">Configurator and Project Plan</div>
+      <div class="section-title">Scope it, price it, then plan it —<br>without leaving the tool</div>
+      <p class="section-sub">Two screens that most migration tools leave to a spreadsheet. The
+        Configurator turns scope into days and a delivery date; the Project Plan turns that estimate
+        into a grid you can hand to a client.</p>
+    </div>
+
+    <div class="fig-pair">
+      <div class="figure reveal">
+        <svg viewBox="0 0 720 284" role="img" aria-label="Effort by module as horizontal bars, with complexity weights and the resulting total">
+          <defs>
+            <linearGradient id="effortBar" x1="0" x2="1"><stop offset="0" stop-color="#4a5bd6"/><stop offset="1" stop-color="#8ea0ff"/></linearGradient>
+          </defs>
+          <text x="24" y="26" font-family="IBM Plex Mono" font-size="10" letter-spacing="1.4" fill="rgba(255,255,255,.40)">MODULE</text>
+          <text x="300" y="26" font-family="IBM Plex Mono" font-size="10" letter-spacing="1.4" fill="rgba(255,255,255,.40)">EFFORT (DAYS)</text>
+          <text x="466" y="26" font-family="IBM Plex Mono" font-size="10" letter-spacing="1.4" fill="rgba(255,255,255,.40)">COMPLEXITY</text>
+
+          <g font-family="IBM Plex Mono" font-size="11.5">
+            <!-- rows: label, bar, weight slider -->
+            <g transform="translate(0,44)">
+              <text x="24" y="12" fill="#f2f4f8">Discovery</text>
+              <rect x="180" y="3" width="96" height="12" rx="3" fill="url(#effortBar)"/>
+              <text x="288" y="12" fill="rgba(255,255,255,.62)">8</text>
+              <rect x="466" y="7" width="190" height="3" rx="1.5" fill="rgba(255,255,255,.12)"/>
+              <rect x="466" y="7" width="76" height="3" rx="1.5" fill="#8ea0ff"/>
+              <circle cx="542" cy="8.5" r="5.5" fill="#0a0b0f" stroke="#8ea0ff" stroke-width="1.6"/>
+              <text x="672" y="12" text-anchor="end" fill="rgba(255,255,255,.40)">0.8×</text>
+            </g>
+            <g transform="translate(0,76)">
+              <text x="24" y="12" fill="#f2f4f8">Mapping</text>
+              <rect x="180" y="3" width="188" height="12" rx="3" fill="url(#effortBar)"/>
+              <text x="380" y="12" fill="rgba(255,255,255,.62)">16</text>
+              <rect x="466" y="7" width="190" height="3" rx="1.5" fill="rgba(255,255,255,.12)"/>
+              <rect x="466" y="7" width="142" height="3" rx="1.5" fill="#8ea0ff"/>
+              <circle cx="608" cy="8.5" r="5.5" fill="#0a0b0f" stroke="#8ea0ff" stroke-width="1.6"/>
+              <text x="672" y="12" text-anchor="end" fill="rgba(255,255,255,.40)">1.5×</text>
+            </g>
+            <g transform="translate(0,108)">
+              <text x="24" y="12" fill="#f2f4f8">Validation</text>
+              <rect x="180" y="3" width="140" height="12" rx="3" fill="url(#effortBar)"/>
+              <text x="332" y="12" fill="rgba(255,255,255,.62)">12</text>
+              <rect x="466" y="7" width="190" height="3" rx="1.5" fill="rgba(255,255,255,.12)"/>
+              <rect x="466" y="7" width="95" height="3" rx="1.5" fill="#8ea0ff"/>
+              <circle cx="561" cy="8.5" r="5.5" fill="#0a0b0f" stroke="#8ea0ff" stroke-width="1.6"/>
+              <text x="672" y="12" text-anchor="end" fill="rgba(255,255,255,.40)">1.0×</text>
+            </g>
+            <g transform="translate(0,140)">
+              <text x="24" y="12" fill="#f2f4f8">Server objects</text>
+              <rect x="180" y="3" width="70" height="12" rx="3" fill="url(#effortBar)"/>
+              <text x="262" y="12" fill="rgba(255,255,255,.62)">6</text>
+              <rect x="466" y="7" width="190" height="3" rx="1.5" fill="rgba(255,255,255,.12)"/>
+              <rect x="466" y="7" width="114" height="3" rx="1.5" fill="#8ea0ff"/>
+              <circle cx="580" cy="8.5" r="5.5" fill="#0a0b0f" stroke="#8ea0ff" stroke-width="1.6"/>
+              <text x="672" y="12" text-anchor="end" fill="rgba(255,255,255,.40)">1.2×</text>
+            </g>
+            <g transform="translate(0,172)" opacity=".45">
+              <text x="24" y="12" fill="#f2f4f8">Cutover rehearsal</text>
+              <rect x="180" y="3" width="46" height="12" rx="3" fill="rgba(255,255,255,.14)"/>
+              <text x="238" y="12" fill="rgba(255,255,255,.40)">4</text>
+              <text x="672" y="12" text-anchor="end" fill="rgba(255,255,255,.40)">excluded</text>
+            </g>
+          </g>
+
+          <line x1="24" y1="212" x2="696" y2="212" stroke="rgba(255,255,255,.10)"/>
+          <g font-family="IBM Plex Sans">
+            <text x="24" y="242" font-family="IBM Plex Mono" font-size="9.5" letter-spacing="1.2" fill="rgba(255,255,255,.40)">TOTAL EFFORT</text>
+            <text x="24" y="268" font-size="22" font-weight="600" fill="#f2f4f8">42 days</text>
+            <text x="250" y="242" font-family="IBM Plex Mono" font-size="9.5" letter-spacing="1.2" fill="rgba(255,255,255,.40)">DAY RATE</text>
+            <text x="250" y="268" font-size="22" font-weight="600" fill="#f2f4f8">yours to set</text>
+            <text x="470" y="242" font-family="IBM Plex Mono" font-size="9.5" letter-spacing="1.2" fill="rgba(255,255,255,.40)">HANDS OFF TO</text>
+            <text x="470" y="268" font-size="22" font-weight="600" fill="#8ea0ff">the Planner</text>
+          </g>
+        </svg>
+        <div class="fig-cap"><span>Configurator · effort model</span><span>tick a module in or out · the weights are yours</span></div>
+      </div>
+      <div class="reveal">
+        <div class="section-title" style="font-size:1.35rem">An estimate you can argue with</div>
+        <p class="section-sub" style="font-size:14.5px">Seven standard use cases, your own module
+          list, a complexity weight on each, and project variables on top. Every macro from the
+          spreadsheet this replaces is a formula printed on the page — so when a client asks why the
+          number is what it is, there is an answer.</p>
+        <ul class="flist" style="margin-top:1.25rem">
+          <li><i class="ic ic-check"></i><span><b>Function points to a date.</b> Points become working
+            days, days become calendar months, and the delivery date walks forward over your working
+            week and your holidays.</span></li>
+          <li><i class="ic ic-check"></i><span><b>A verdict, not just a total.</b> It compares the
+            days needed against the days available before the client's due date and says whether it
+            fits.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Weights can be negative.</b> A variable may reduce
+            effort as well as add it — with a floor, because effort can be cut and never
+            erased.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Calibrate to your own quote.</b> Tune the model so a
+            full-scope estimate lands exactly on your standard price, and partial scopes then price
+            proportionally inside it.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Save house defaults</b> so every new estimate starts
+            with your firm's weights, not ours. Export as CSV or JSON.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="fig-pair rev" style="margin-top:1.25rem">
+      <div class="reveal">
+        <div class="section-title" style="font-size:1.35rem">A plan you paint</div>
+        <p class="section-sub" style="font-size:14.5px">Phases down the side, a month-by-week timeline
+          across the top. Choose a tool and drag across the weeks to lay in work or stand up a
+          milestone. It is not a Gantt chart pretending to be a project manager — it is a grid, and
+          the grid is the report.</p>
+        <ul class="flist" style="margin-top:1.25rem">
+          <li><i class="ic ic-check"></i><span><b>Built from the estimate in one click.</b> Each
+            costed use case becomes a phase, its modules become the task's detail, and the work bars
+            paint themselves at the model's own rates. The delivery date and the client's due date
+            land as milestones.</span></li>
+          <li><i class="ic ic-check"></i><span><b>A copy, not a link.</b> The import happens once and
+            the plan is yours to edit — an estimate that silently rewrote your plan would be worse
+            than no import at all.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Portfolio view.</b> Every project on one timeline,
+            by project or by resource — and where somebody is booked on two projects in the same
+            week, that week is hatched.</span></li>
+          <li><i class="ic ic-check"></i><span><b>Out as CSV, Excel or print</b>, with the phase
+            colours, bars and milestones intact.</span></li>
+        </ul>
+      </div>
+      <div class="figure reveal">
+        <svg viewBox="0 0 720 274" role="img" aria-label="A phase grid painted across weeks, with a milestone, a today line, and a portfolio lane showing a double-booked week hatched">
+          <defs>
+            <linearGradient id="ph1" x1="0" x2="1"><stop offset="0" stop-color="#3fb5b0"/><stop offset="1" stop-color="rgba(63,181,176,.55)"/></linearGradient>
+            <linearGradient id="ph2" x1="0" x2="1"><stop offset="0" stop-color="#8ea0ff"/><stop offset="1" stop-color="rgba(142,160,255,.55)"/></linearGradient>
+            <linearGradient id="ph3" x1="0" x2="1"><stop offset="0" stop-color="#a98fd6"/><stop offset="1" stop-color="rgba(169,143,214,.55)"/></linearGradient>
+            <linearGradient id="ph4" x1="0" x2="1"><stop offset="0" stop-color="#e3a33d"/><stop offset="1" stop-color="rgba(227,163,61,.55)"/></linearGradient>
+            <pattern id="clash" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="6" height="6" fill="rgba(239,111,98,.28)"/>
+              <line x1="0" y1="0" x2="0" y2="6" stroke="#ef6f62" stroke-width="2.2"/>
+            </pattern>
+          </defs>
+
+          <!-- week ruler -->
+          <g font-family="IBM Plex Mono" font-size="10.5" fill="rgba(255,255,255,.40)">
+            <text x="180" y="22">W1</text><text x="252" y="22">W2</text><text x="324" y="22">W3</text>
+            <text x="396" y="22">W4</text><text x="468" y="22">W5</text><text x="540" y="22">W6</text>
+            <text x="612" y="22">W7</text><text x="672" y="22">W8</text>
+          </g>
+          <g stroke="rgba(255,255,255,.07)">
+            <line x1="176" y1="30" x2="176" y2="200"/><line x1="248" y1="30" x2="248" y2="200"/>
+            <line x1="320" y1="30" x2="320" y2="200"/><line x1="392" y1="30" x2="392" y2="200"/>
+            <line x1="464" y1="30" x2="464" y2="200"/><line x1="536" y1="30" x2="536" y2="200"/>
+            <line x1="608" y1="30" x2="608" y2="200"/><line x1="680" y1="30" x2="680" y2="200"/>
+          </g>
+
+          <!-- phase bars -->
+          <g font-family="IBM Plex Mono" font-size="12.5">
+            <g transform="translate(0,44)">
+              <text x="24" y="12" fill="#f2f4f8">Discovery</text>
+              <rect x="176" y="2" width="144" height="14" rx="4" fill="url(#ph1)"/>
+              <text x="330" y="12" fill="rgba(255,255,255,.40)" font-size="9">done</text>
+            </g>
+            <g transform="translate(0,76)">
+              <text x="24" y="12" fill="#f2f4f8">Mapping</text>
+              <rect x="248" y="2" width="216" height="14" rx="4" fill="url(#ph2)"/>
+              <rect x="248" y="2" width="150" height="14" rx="4" fill="#8ea0ff" opacity=".55"/>
+              <text x="474" y="12" fill="rgba(255,255,255,.40)" font-size="9">68%</text>
+            </g>
+            <g transform="translate(0,108)">
+              <text x="24" y="12" fill="#f2f4f8">Validation</text>
+              <rect x="392" y="2" width="180" height="14" rx="4" fill="url(#ph3)"/>
+              <text x="582" y="12" fill="rgba(255,255,255,.40)" font-size="9">painted</text>
+            </g>
+            <g transform="translate(0,140)">
+              <text x="24" y="12" fill="#f2f4f8">Server objects</text>
+              <rect x="464" y="2" width="108" height="14" rx="4" fill="url(#ph4)"/>
+            </g>
+            <g transform="translate(0,172)">
+              <text x="24" y="12" fill="#f2f4f8">Cutover</text>
+              <rect x="572" y="2" width="108" height="14" rx="4" fill="url(#ph2)" opacity=".5"/>
+              <!-- milestone diamond -->
+              <path d="M680 9 l7 -7 l7 7 l-7 7 z" fill="#5fd08a"/>
+            </g>
+          </g>
+
+          <!-- portfolio strip: one resource, two projects, one clash -->
+          <g font-family="IBM Plex Mono" font-size="11.5">
+            <line x1="24" y1="196" x2="696" y2="196" stroke="rgba(255,255,255,.10)"/>
+            <text x="24" y="216" fill="rgba(255,255,255,.62)">A. Engineer</text>
+            <rect x="248" y="207" width="180" height="11" rx="3" fill="rgba(142,160,255,.55)"/>
+            <rect x="392" y="207" width="144" height="11" rx="3" fill="rgba(63,181,176,.55)"/>
+            <rect x="392" y="207" width="36" height="11" rx="3" fill="url(#clash)"/>
+            <rect x="392" y="207" width="36" height="11" rx="3" fill="none" stroke="#ef6f62" stroke-width="1"/>
+          </g>
+
+          <!-- today -->
+          <g>
+            <line x1="428" y1="30" x2="428" y2="222" stroke="#a9b6ff" stroke-width="1.4" stroke-dasharray="4 4"/>
+            <rect x="404" y="228" width="50" height="17" rx="4" fill="rgba(169,182,255,.18)" stroke="rgba(169,182,255,.45)"/>
+            <text x="429" y="240" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#a9b6ff">today</text>
+          </g>
+
+          <text x="24" y="266" font-family="IBM Plex Mono" font-size="9.5" letter-spacing=".8" fill="rgba(255,255,255,.40)">
+            portfolio, by resource — a hatched week is somebody booked on two projects at once
+          </text>
+        </svg>
+        <div class="fig-cap"><span>Project Plan · phase grid</span><span>paint · milestone · erase</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ══ REPORTING ═════════════════════════════════════════════════════════ -->
 <section class="section" id="reporting">
   <div class="container split">
@@ -722,8 +1222,8 @@ footer a:hover{text-decoration:underline}
           from the run's own record, exportable to Excel.</span></li>
         <li><i class="ic ic-search"></i><span><b>Plain-English questions</b> — what a table is for,
           what depends on it, what would break if it changed.</span></li>
-        <li><i class="ic ic-calendar"></i><span><b>Project planner and configurator</b> — phases,
-          blockers, effort model and a portfolio view across projects.</span></li>
+        <li><i class="ic ic-calendar"></i><span><b>Scope and plan</b> — the Configurator and the
+          Project Plan, <a href="#planning" style="color:var(--accent-ink);text-decoration:none">above</a>.</span></li>
       </ul>
     </div>
     <div class="mock reveal">

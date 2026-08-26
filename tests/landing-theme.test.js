@@ -62,7 +62,11 @@ const BRAND = ['#4a5bd6', '#3d4ec4', '#12141c', '#6d5df2', '#4a7cf3',
 const REDWOOD = ['#f3f4f5', '#ffffff', '#eceef0', '#e1e4e7', '#1a1d21',
   '#565b63', '#363d49', '#3f7d4e', '#b26a00', '#c0392b', '#0f6e6c', '#6b4e8e'];
 const HOUSE = new Set([...BLACK_GROUND, ...BRAND, ...REDWOOD, '#fff', '#000']);
-const stray = [...new Set((index.match(/#[0-9A-Fa-f]{3,8}\b/g) || []).map(h => h.toLowerCase()))]
+// An SVG fragment reference — url(#someId) — is not a colour, and an id whose
+// letters happen to be hex digits would otherwise fail this as a stray. Blank
+// those out before scanning rather than widening the palette to cover them.
+const scannable = index.replace(/url\(#[^)]*\)/g, 'url()');
+const stray = [...new Set((scannable.match(/#[0-9A-Fa-f]{3,8}\b/g) || []).map(h => h.toLowerCase()))]
   .filter(h => !HOUSE.has(h));
 check('every colour on the page is a house colour', stray.length === 0, stray.join(', '));
 
