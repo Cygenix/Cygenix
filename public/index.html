@@ -6,8 +6,6 @@
 (function(){
   const h = window.location.hash;
   if (h && (h.includes('invite_token') || h.includes('recovery_token') || h.includes('confirmation_token'))) {
-    // Use href not replace — more reliable for preserving hash across browsers
-    // Also store in sessionStorage as backup in case hash is lost
     sessionStorage.setItem('cygenix_pending_token', h);
     window.location.href = '/login.html' + h;
   }
@@ -16,1761 +14,947 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#FFFFFF">
-<meta name="description" content="See what Cygenix can do — AI column mapping, validation, project planning and more.">
+<meta name="theme-color" content="#000000">
+<meta name="description" content="Cygenix migrates SQL Server, Azure SQL and Postgres — AI column mapping, preflight forecasting, server-level objects, and governance that is enforced on the server rather than in the browser.">
 <meta property="og:title" content="Cygenix – AI-Powered SQL Database Migration Platform">
-<meta property="og:description" content="See what Cygenix can do — AI column mapping, validation, project planning and more.">
+<meta property="og:description" content="AI column mapping, preflight forecasting, server-level object migration, and governance enforced server-side.">
 <meta property="og:url" content="https://cygenix.co.uk/">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cygenix.co.uk/og-image.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Cygenix – AI-Powered SQL Database Migration Platform">
-<meta name="twitter:description" content="See what Cygenix can do — AI column mapping, validation, project planning and more.">
+<meta name="twitter:description" content="AI column mapping, preflight forecasting, server-level object migration, and governance enforced server-side.">
 <title>Cygenix – AI-Powered SQL Database Migration Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/cygenix-icons.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
 <style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Cygenix landing page — one surface, black, all the way down.
+
+   The page used to alternate light Redwood bands with dark brand bands. That
+   rhythm worked but it made the page read as two sites stitched together, and
+   it buried the product mockups in a background almost the same colour as they
+   are. Everything now sits on black, and the only light on the page is the
+   product itself: each mockup remaps the tokens back to the console's Redwood
+   palette, so a screenshot looks like a screenshot rather than a diagram.
+
+   Brand continuity with login.html is kept where it counts — the accent, the
+   ink, the mark gradient, the two radial glows and the masked grid are the
+   same values. They are drawn once, page-wide and fixed, instead of per band.
+   ═══════════════════════════════════════════════════════════════════════════ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  /* Oracle Redwood — warm, light, enterprise. See cygenix-theme.css. */
-  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
-  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
-  --text:#1A1D21;--text2:#565B63;--text3:#363D49;
-  --accent:#4A5BD6;--accent2:#3D4EC4;--glow:rgba(74,91,214,0.10);
-  --green:#3F7D4E;--green-g:rgba(63,125,78,0.12);
-  --amber:#B26A00;--amber-g:rgba(178,106,0,0.12);
-  --red:#C0392B;--red-g:rgba(192,57,43,0.12);
-  --teal:#0F6E6C;--purple:#6B4E8E;
-  /* the brand surface, shared with login.html — one dark, one gradient */
+  /* The ground. Black, and everything above it is a step out of black. */
+  --bg:#000000;--bg2:#0a0b0f;--bg3:#101219;--bg4:#171a22;
+  --border:rgba(255,255,255,0.09);--border2:rgba(255,255,255,0.16);
+  --text:#f2f4f8;--text2:rgba(255,255,255,0.62);--text3:rgba(255,255,255,0.40);
+  /* The brand accent, identical to login.html and the console. On black it is
+     too dark to carry type, so --accent-ink is the working accent here and
+     --accent stays as the brand's own value. */
+  --accent:#4a5bd6;--accent2:#3d4ec4;--glow:rgba(74,91,214,0.10);
+  --accent-ink:#8ea0ff;--accent-ink2:#a9b6ff;
+  /* Status colours, lifted for a black ground — the Redwood set is mixed for
+     paper and goes muddy here. The console's own values live inside .mock. */
+  --green:#5fd08a;--green-g:rgba(95,208,138,0.12);
+  --amber:#e3a33d;--amber-g:rgba(227,163,61,0.12);
+  --red:#ef6f62;--red-g:rgba(239,111,98,0.12);
+  --teal:#3fb5b0;--purple:#a98fd6;
   --ink:#12141c;--faint:#9aa0af;
   --mark-a:#6d5df2;--mark-b:#4a7cf3;
-  /* the accent lifted for dark ground: #4A5BD6 has too little
-     contrast on --ink to carry a headline */
-  --accent-ink:#8ea0ff;--accent-ink2:#a9b6ff;
   --r:10px;
   --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --sans:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
 }
-html{scroll-behavior:smooth}
-body{font-family:var(--sans);background:var(--bg);color:var(--text);overflow-x:hidden;-webkit-font-smoothing:antialiased}
-/* Enterprise typography: serif for display headings, sans for everything else. */
+html{scroll-behavior:smooth;background:var(--bg)}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;position:relative}
 h1,h2,h3,.line1,.line2{font-family:var(--serif);font-weight:600;letter-spacing:-0.01em}
-/* Redwood is a clean, calm surface — remove the animated grid + roaming glow
-   that read as an "AI startup" background. */
-body::before,body::after,.grid-glow{display:none!important}
-/* Animated grid background — three layers, each handling different motion.
-   Layered design avoids the CSS limitation that multiple `transform`
-   animations on one element overwrite each other rather than composing.
 
-   Layer 1 (::before):     diagonal drift, no transform.
-   Layer 2 (::after):      transform-based breathing scale + perspective tilt.
-   Layer 3 (.grid-glow):   roaming accent-coloured radial glow that drifts
-                           independently across the viewport.
+/* ── The brand atmosphere ─────────────────────────────────────────────────
+   login.html's two radial glows and its masked grid, drawn once behind the
+   whole page rather than repeated per section. Fixed, so it does not scroll
+   with the content and never tiles visibly. */
+.brand-glow{position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(760px 420px at 20% -10%,rgba(109,93,242,0.22),transparent 62%),
+             radial-gradient(620px 360px at 110% 110%,rgba(74,124,243,0.18),transparent 62%)}
+.brand-grid{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:0.65;
+  background-image:linear-gradient(rgba(255,255,255,0.05) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,0.05) 1px,transparent 1px);
+  background-size:52px 52px;
+  mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 72%);
+  -webkit-mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 72%)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-   Combined effect: the grid drifts and gently warps while a soft blue/teal
-   light wanders across it. Loop periods (53s, 89s, 67s) are coprime so the
-   composite motion never visually repeats in a session. Amplitudes tuned to
-   sit between "subtle" and "obviously animated" — noticeable enough to
-   read as a feature, slow enough to never look tacky.
+/* ── Nav ──────────────────────────────────────────────────────────────────
+   Transparent over the hero, then a black bar with a hairline under it. On a
+   page that is black throughout, a solid bar is only distinguishable by that
+   rule and the blur behind it — which is the point. */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;
+  justify-content:space-between;gap:1rem;padding:0.85rem clamp(1rem,4vw,2.5rem);
+  background:transparent;border-bottom:1px solid transparent;transition:background 0.25s,border-color 0.25s}
+nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px)}
+.nav-logo{display:flex;align-items:center;gap:0.55rem;text-decoration:none;color:var(--text);flex-shrink:0}
+.nav-logo b{font-size:1.05rem;font-weight:600;letter-spacing:-0.02em}
+.mark{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;
+  background:linear-gradient(140deg,var(--mark-a),var(--mark-b));
+  box-shadow:0 6px 18px -8px rgba(109,93,242,0.9)}
+.mark svg{width:20px;height:20px}
+.nav-links{display:flex;gap:1.35rem;align-items:center;font-size:13.5px}
+.nav-links a{color:var(--text2);text-decoration:none;transition:color 0.16s;white-space:nowrap}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{flex-shrink:0;font-size:13.5px;font-weight:500;text-decoration:none;color:var(--text);
+  padding:0.5rem 0.95rem;border:1px solid var(--border2);border-radius:var(--r);transition:all 0.16s}
+.nav-cta:hover{border-color:var(--accent-ink);color:var(--accent-ink)}
+@media (max-width:900px){.nav-links{display:none}}
 
-   Performance: only background-position, transform, and translate animate;
-   all GPU-cheap. Each layer is a single composited surface.
-   prefers-reduced-motion suppresses all motion for accessibility. */
-body::before{
-  content:'';
-  position:fixed;
-  inset:-15%;                 /* extra overflow for larger transform amplitude */
-  background-image:linear-gradient(rgba(74,91,214,0.04) 1px,transparent 1px),
-                   linear-gradient(90deg,rgba(74,91,214,0.04) 1px,transparent 1px);
-  background-size:60px 60px;
-  pointer-events:none;
-  z-index:0;
-  will-change:background-position;
-  animation:gridDrift 53s linear infinite;
-}
-body::after{
-  content:'';
-  position:fixed;
-  inset:-15%;
-  background-image:linear-gradient(rgba(74,91,214,0.025) 1px,transparent 1px),
-                   linear-gradient(90deg,rgba(74,91,214,0.025) 1px,transparent 1px);
-  background-size:60px 60px;
-  pointer-events:none;
-  z-index:0;
-  will-change:transform;
-  animation:gridWarp 89s ease-in-out infinite;
-}
-/* Layer 3: roaming accent glow. A large, soft radial gradient that drifts
-   slowly in a wide figure-of-eight pattern across the viewport. The blur
-   is baked into the gradient itself (no filter:blur — that's a paint hog
-   on a fullscreen element) so this layer also stays GPU-composited.
-   Uses both accent and teal stops so it shifts colour as it moves. */
-.grid-glow{
-  position:fixed;
-  inset:-30%;                 /* large overflow — we translate up to ~25vw in any direction */
-  pointer-events:none;
-  z-index:0;
-  background:radial-gradient(ellipse 50vw 40vh at 50% 50%,
-              rgba(74,91,214,0.18) 0%,
-              rgba(74,91,214,0.10) 25%,
-              rgba(23,130,124,0.06) 45%,
-              transparent 70%);
-  will-change:transform;
-  animation:glowRoam 67s ease-in-out infinite;
-}
-@keyframes gridDrift{
-  /* Walks the grid 60px diagonally — exactly one cell — so the loop is
-     seamless. ~1.1px/sec, deliberate but unobtrusive. */
-  from{background-position:0 0,0 0}
-  to  {background-position:60px 60px,60px 60px}
-}
-@keyframes gridWarp{
-  /* Breathing scale + perspective sway. Amplitudes pushed to ~6% scale and
-     1.5° tilt — at 89s per loop this still reads as slow, but the warp is
-     now visible peripherally. Combined with the drift, the surface looks
-     like it's stretching and turning rather than just sliding. */
-  0%   {transform:perspective(1400px) rotateX(0deg)    rotateY(0deg)    scale(1)}
-  20%  {transform:perspective(1400px) rotateX(1.2deg)  rotateY(-1.4deg) scale(1.04)}
-  40%  {transform:perspective(1400px) rotateX(-0.6deg) rotateY(-1deg)   scale(1.06)}
-  60%  {transform:perspective(1400px) rotateX(-1.2deg) rotateY(1deg)    scale(1.05)}
-  80%  {transform:perspective(1400px) rotateX(0.6deg)  rotateY(1.4deg)  scale(1.03)}
-  100% {transform:perspective(1400px) rotateX(0deg)    rotateY(0deg)    scale(1)}
-}
-@keyframes glowRoam{
-  /* Figure-of-eight drift across the viewport. Each waypoint is offset in
-     both axes so the path traces an organic-looking curve rather than a
-     straight line. Scale on the glow itself adds a "breathing" intensity. */
-  0%   {transform:translate(0vw, 0vh)        scale(1)}
-  15%  {transform:translate(-15vw, -10vh)    scale(1.15)}
-  30%  {transform:translate(-20vw, 8vh)      scale(0.95)}
-  45%  {transform:translate(-5vw, 15vh)      scale(1.1)}
-  55%  {transform:translate(10vw, 12vh)      scale(1.2)}
-  70%  {transform:translate(20vw, -5vh)      scale(0.9)}
-  85%  {transform:translate(8vw, -15vh)      scale(1.05)}
-  100% {transform:translate(0vw, 0vh)        scale(1)}
-}
-@media (prefers-reduced-motion: reduce){
-  body::before,body::after,.grid-glow{animation:none}
-}
-/* Over the hero the bar is part of the brand surface — a white band above
-   the ink would cut the page in two. It solidifies once the hero is past. */
-nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:transparent;border-bottom:1px solid transparent;transition:background 0.25s ease,border-color 0.25s ease}
-nav.solid{background:var(--bg2);border-bottom-color:var(--border)}
-nav .nav-logo{color:#fff}
-nav .nav-links a{color:rgba(255,255,255,0.72)}
-nav .nav-links a:hover{color:#fff}
-nav.solid .nav-logo{color:var(--text)}
-nav.solid .nav-links a{color:var(--text2)}
-nav.solid .nav-links a:hover{color:var(--text)}
-.nav-logo{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--text)}
-.nav-logo b{font-size:18px;font-weight:700;letter-spacing:-0.015em}
-.mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,var(--mark-a),var(--mark-b));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -4px rgba(74,91,214,.6);flex:none}
-.mark svg{width:21px;height:21px;display:block}
-.nav-links{display:flex;gap:2rem;align-items:center}
-.nav-links a{font-size:13px;text-decoration:none;transition:color 0.2s}
-.nav-cta{background:var(--accent);color:#fff;padding:0.5rem 1.1rem;border-radius:var(--r);font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s;box-shadow:0 6px 16px -6px rgba(74,91,214,.6)}.nav-cta:hover{background:var(--accent2);color:#fff}
-.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8rem 2rem 5rem;position:relative;z-index:1;overflow:hidden;background:var(--ink);color:#fff}
-.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(760px 420px at 20% -10%,rgba(74,91,214,0.40),transparent 60%),radial-gradient(620px 360px at 110% 110%,rgba(58,166,182,0.28),transparent 60%)}
-.hero::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:52px 52px;-webkit-mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%);mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%)}
-.hero > *{position:relative;z-index:1}
-.hero-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:600;color:var(--accent-ink2);font-family:var(--sans);letter-spacing:0.05em;margin-bottom:2rem;animation:fadeUp 0.6s ease both}
-.hero-badge::before{content:'◆';font-size:8px}
-.hero h1{font-size:clamp(2.4rem,5.4vw,4.2rem);font-weight:700;letter-spacing:-0.03em;line-height:1.08;margin-bottom:1.5rem;animation:fadeUp 0.6s ease 0.1s both}
-.line1{display:block;color:#fff}
-.line2{display:block;color:var(--accent-ink)}
-.hero-sub{font-size:clamp(1rem,1.5vw,1.1rem);color:rgba(255,255,255,0.62);max-width:640px;line-height:1.6;margin-bottom:2.5rem;font-weight:400;animation:fadeUp 0.6s ease 0.2s both}
-.hero-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp 0.6s ease 0.3s both}
-.btn-hero{display:inline-flex;align-items:center;justify-content:center;height:46px;padding:0 1.6rem;border-radius:var(--r);font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;border:none;transition:all 0.2s}
-.btn-primary{background:var(--accent);color:#fff;box-shadow:0 6px 16px -6px rgba(74,91,214,.6)}.btn-primary:hover{background:var(--accent2);color:#fff}
-/* the secondary button appears on both grounds: on the light closing call to
-   action it is the console's ghost button, on the ink hero it is a lifted
-   translucent panel — the same shape, read correctly against each */
-.btn-secondary{background:var(--bg2);color:var(--text);border:1px solid var(--border2)}
-.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
-.hero .btn-secondary{background:rgba(255,255,255,0.06);color:#fff;border-color:rgba(255,255,255,0.16)}
-.hero .btn-secondary:hover{background:rgba(255,255,255,0.11);color:#fff;border-color:rgba(255,255,255,0.28)}
-.stats-row{display:flex;gap:3rem;justify-content:center;flex-wrap:wrap;padding:1.5rem 2rem;animation:fadeUp 0.6s ease 0.4s both}
-.stat{text-align:center}
-.stat-num{font-size:1.7rem;font-weight:700;letter-spacing:-0.02em;color:#fff;line-height:1}
-.stat-num span{color:var(--accent-ink)}
-.stat-label{font-size:10.5px;color:rgba(255,255,255,0.45);font-family:var(--mono);margin-top:5px;letter-spacing:0.05em}
-.section{padding:6rem 2rem;position:relative;z-index:1}
-/* ── The brand surface, reused ────────────────────────────────────────────
-   The hero establishes the identity; without this it stopped at the fold and
-   the rest of the page read as a different site. Alternating sections carry
-   the same ink, the same glows and the same masked grid.
+/* ── Buttons ─────────────────────────────────────────────────────────────
+   The login's buttons: 46px on the shared radius, and the primary carries the
+   same accent glow the login card uses. */
+.btn-hero{display:inline-flex;align-items:center;justify-content:center;gap:0.4rem;height:46px;
+  padding:0 1.4rem;border-radius:var(--r);font-size:14.5px;font-weight:500;text-decoration:none;
+  transition:transform 0.16s,box-shadow 0.16s,background 0.16s,border-color 0.16s;border:1px solid transparent}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 6px 16px -6px rgba(74,91,214,.6)}
+.btn-primary:hover{background:var(--accent2);transform:translateY(-1px)}
+.btn-secondary{background:transparent;color:var(--text);border-color:var(--border2)}
+.btn-secondary:hover{border-color:var(--accent-ink);color:var(--accent-ink)}
 
-   Re-toning is done by REMAPPING THE TOKENS rather than overriding colours:
-   the sections are full of inline `color:var(--text2)` and the like, and an
-   inline style beats any class rule. Remap the variable and every one of
-   them follows. The product mockups inside then map the tokens BACK, because
-   a screenshot of the console should look like the console. */
-.section--ink{
-  background:var(--ink);color:#fff;position:relative;overflow:hidden;
-  --text:#ffffff;--text2:rgba(255,255,255,0.62);--text3:rgba(255,255,255,0.45);
-  --border:rgba(255,255,255,0.10);--border2:rgba(255,255,255,0.18);
-  --bg2:rgba(255,255,255,0.04);--bg3:rgba(255,255,255,0.06);--bg4:rgba(255,255,255,0.09);
-  --accent:var(--accent-ink);--glow:rgba(142,160,255,0.12);
-}
-.section--ink::before{content:'';position:absolute;inset:0;background:radial-gradient(760px 420px at 20% -10%,rgba(74,91,214,0.40),transparent 60%),radial-gradient(620px 360px at 110% 110%,rgba(58,166,182,0.28),transparent 60%);pointer-events:none}
-.section--ink::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:52px 52px;-webkit-mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%);mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%);pointer-events:none}
-/* mirror the glow on every other dark band so the page does not repeat */
-.section--ink.flip::before{background:radial-gradient(760px 420px at 80% -10%,rgba(74,91,214,0.34),transparent 60%),radial-gradient(620px 360px at -10% 110%,rgba(58,166,182,0.24),transparent 60%)}
-.section--ink.flip::after{-webkit-mask-image:radial-gradient(circle at 70% 45%,#000,transparent 78%);mask-image:radial-gradient(circle at 70% 45%,#000,transparent 78%)}
-.section--ink > *{position:relative;z-index:1}
-/* a product screenshot keeps the product's own light palette */
-.section--ink .mock{
+/* ── Hero ────────────────────────────────────────────────────────────────
+   No band of its own: it is the top of the same black page, so the glow
+   behind it is the only thing that marks it out. */
+.hero{position:relative;z-index:1;text-align:center;padding:9rem clamp(1rem,5vw,2rem) 3.5rem;
+  max-width:1000px;margin:0 auto}
+.hero-badge{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:500;
+  letter-spacing:0.14em;text-transform:uppercase;color:var(--accent-ink);
+  border:1px solid rgba(142,160,255,0.28);border-radius:100px;padding:0.35rem 0.9rem;margin-bottom:1.75rem}
+.hero h1{font-size:clamp(2.4rem,6vw,4rem);font-weight:700;letter-spacing:-0.03em;line-height:1.06;
+  margin-bottom:1.4rem}
+.hero h1 .line1{display:block;color:var(--text)}
+.hero h1 .line2{display:block;background:linear-gradient(100deg,var(--accent-ink),var(--accent-ink2) 55%,var(--mark-a));
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero-sub{font-size:clamp(15px,1.7vw,17.5px);color:var(--text2);line-height:1.65;max-width:720px;
+  margin:0 auto 2.25rem}
+.hero-btns{display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap}
+.hero-note{margin-top:1.5rem;font-size:12.5px;color:var(--text3)}
+.hero-note a{color:var(--accent-ink);text-decoration:none}
+.hero-note a:hover{text-decoration:underline}
+
+/* ── Ticker ──────────────────────────────────────────────────────────────
+   Sample events from a run. Everything in it is synthetic — the schema names
+   below are the neutral Customer/Orders shape, not anybody's data. */
+.ticker-wrap{position:relative;z-index:1;overflow:hidden;border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);background:rgba(255,255,255,0.015);padding:0.7rem 0;margin-top:1rem}
+.ticker{display:flex;gap:2.5rem;width:max-content;animation:tick 62s linear infinite}
+.ticker-item{font-family:var(--mono);font-size:11.5px;color:var(--text3);white-space:nowrap;
+  display:flex;align-items:center;gap:0.4rem}
+.ticker-item span{color:var(--text2)}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.ticker-wrap:hover .ticker{animation-play-state:paused}
+
+/* ── Sections ────────────────────────────────────────────────────────────
+   One ground, separated by space and a hairline instead of a change of
+   colour. */
+.section{position:relative;z-index:1;padding:6rem clamp(1rem,5vw,2rem);border-top:1px solid var(--border)}
+.container{max-width:1160px;margin:0 auto}
+.section-tag{font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:0.14em;
+  text-transform:uppercase;color:var(--accent-ink);margin-bottom:0.85rem}
+.section-title{font-family:var(--serif);font-size:clamp(1.7rem,3.4vw,2.5rem);font-weight:700;
+  letter-spacing:-0.025em;line-height:1.12;margin-bottom:1rem;color:var(--text)}
+.section-sub{font-size:15.5px;color:var(--text2);line-height:1.7;max-width:640px}
+.center{text-align:center}
+.center .section-sub{margin-left:auto;margin-right:auto}
+.split{display:grid;grid-template-columns:1fr 1.15fr;gap:clamp(2rem,5vw,4rem);align-items:center}
+.split.flip>*:first-child{order:2}
+@media (max-width:900px){.split{grid-template-columns:1fr}.split.flip>*:first-child{order:0}}
+
+/* A status chip. `preview` and `planned` are not decoration — the capability
+   manifest decides which one a feature gets, and tests/capabilities.test.js
+   fails the build if this page claims something the manifest has not
+   shipped. */
+.chip{display:inline-block;font-family:var(--mono);font-size:9.5px;font-weight:500;letter-spacing:0.08em;
+  text-transform:uppercase;padding:2px 8px;border-radius:100px;vertical-align:middle;margin-left:0.5rem;
+  border:1px solid currentColor}
+.chip-ga{color:var(--green)}.chip-beta{color:var(--accent-ink)}.chip-preview{color:var(--amber)}
+.chip-planned{color:var(--text3)}
+
+/* ── Cards ───────────────────────────────────────────────────────────────*/
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1px;
+  background:var(--border);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-top:3rem}
+.card{background:var(--bg);padding:1.75rem 1.5rem;transition:background 0.2s}
+.card:hover{background:var(--bg2)}
+.card-ico{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;margin-bottom:1rem;
+  background:rgba(142,160,255,0.10);border:1px solid rgba(142,160,255,0.20);color:var(--accent-ink);font-size:15px}
+.card h3{font-size:15.5px;font-weight:600;margin-bottom:0.5rem;color:var(--text);letter-spacing:-0.01em}
+.card p{font-size:13.5px;color:var(--text2);line-height:1.65}
+
+/* ── Feature list ────────────────────────────────────────────────────────*/
+.flist{list-style:none;margin-top:1.75rem;display:grid;gap:0.9rem}
+.flist li{display:flex;gap:0.7rem;font-size:14px;color:var(--text2);line-height:1.6}
+.flist .ic,.flist .tick{color:var(--accent-ink);flex-shrink:0;margin-top:2px}
+.flist b{color:var(--text);font-weight:600}
+
+/* ── Mockups ─────────────────────────────────────────────────────────────
+   Inside a mock the tokens go back to the console's own Redwood palette, so
+   what the visitor sees is what the product looks like. This is the only
+   light on the page and it is deliberately the product. */
+.mock{
+  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
   --text:#1A1D21;--text2:#565B63;--text3:#363D49;
   --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
-  --bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;--accent:#4A5BD6;--glow:rgba(74,91,214,0.10);
-  border-color:rgba(255,255,255,0.12);box-shadow:0 24px 70px rgba(0,0,0,0.45)
-}
-.section--ink .btn-primary{background:#4A5BD6}
-.section--ink .btn-secondary{background:rgba(255,255,255,0.06);color:#fff;border-color:rgba(255,255,255,0.16)}
-.section--ink .btn-secondary:hover{background:rgba(255,255,255,0.11);color:#fff}
-.section-tag{font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem}
-.section-title{font-size:clamp(1.8rem,3.2vw,2.5rem);font-weight:700;letter-spacing:-0.025em;line-height:1.15;margin-bottom:1rem}
-.section-sub{font-size:15px;color:var(--text2);line-height:1.7;max-width:560px}
-.container{max-width:1200px;margin:0 auto}
-.container-sm{max-width:860px;margin:0 auto}
-.divider{height:0.5px;background:linear-gradient(90deg,transparent,var(--border2),transparent);margin:0 auto;max-width:800px}
-.feature-block{display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center;padding:5rem 0}
-.feature-block.reverse{direction:rtl}.feature-block.reverse > *{direction:ltr}
-.feature-tag{font-size:10px;font-family:var(--mono);color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.75rem}
-.feature-title{font-size:1.65rem;font-weight:700;letter-spacing:-0.025em;line-height:1.2;margin-bottom:1rem}
-.feature-body{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem}
-.feature-points{list-style:none;display:flex;flex-direction:column;gap:0.6rem}
-.feature-points li{font-size:13px;color:var(--text2);display:flex;align-items:flex-start;gap:0.6rem;line-height:1.6}
-.feature-points li::before{content:'→';color:var(--accent);flex-shrink:0;font-family:var(--mono);margin-top:1px}
-.mock{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(22,26,32,0.14);position:relative}
-.mock-topbar{background:var(--bg3);border-bottom:0.5px solid var(--border);padding:0.6rem 1rem;display:flex;align-items:center;gap:0.6rem}
+  --accent:#4A5BD6;--accent2:#3D4EC4;
+  --green:#3F7D4E;--amber:#B26A00;--red:#C0392B;--teal:#0F6E6C;--purple:#6B4E8E;
+  background:var(--bg2);color:var(--text);border:1px solid rgba(255,255,255,0.10);border-radius:12px;
+  overflow:hidden;box-shadow:0 30px 70px -30px rgba(0,0,0,0.9),0 0 0 1px rgba(255,255,255,0.04)}
+.mock-bar{display:flex;align-items:center;gap:0.4rem;padding:0.55rem 0.85rem;background:var(--bg3);
+  border-bottom:1px solid var(--border)}
 .mock-dot{width:8px;height:8px;border-radius:50%;background:var(--border2)}
-.mock-body{padding:1rem;font-size:11px}
-.mapping-row{display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04)}
-.col-pill{background:var(--bg4);border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:10px;color:var(--text2);white-space:nowrap}
-.confidence{font-size:9px;padding:1px 6px;border-radius:100px;font-family:var(--mono);white-space:nowrap}
-.c-high{background:var(--green-g);color:var(--green)}.c-med{background:var(--amber-g);color:var(--amber)}.c-low{background:var(--red-g);color:var(--red)}
-.val-row{display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);font-size:10px}
-.val-name{flex:1;font-family:var(--mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.val-badge{font-size:9px;padding:1px 7px;border-radius:100px;font-family:var(--mono);white-space:nowrap}
-.v-pass{background:var(--green-g);color:var(--green)}.v-fail{background:var(--red-g);color:var(--red)}.v-pending{background:rgba(255,255,255,0.05);color:var(--text3)}.v-error{background:var(--amber-g);color:var(--amber)}
-.proj-step{display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.6rem;border-radius:6px;margin-bottom:0.35rem;background:var(--bg3);border:0.5px solid var(--border)}
-.proj-icon{width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
-.proj-info{flex:1;min-width:0}
-.proj-name{font-size:10px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.proj-meta{font-size:9px;font-family:var(--mono);color:var(--text3)}
-.sql-block{background:var(--bg);border-radius:6px;padding:0.6rem;font-family:var(--mono);font-size:9px;line-height:1.7;overflow:hidden;max-height:160px}
-.sql-kw{color:#569cd6}.sql-str{color:#ce9178}.sql-fn{color:#dcdcaa}.sql-cm{color:#6a9955}.sql-num{color:#b5cea8}
-/* Visual mapper widget */
-.vm-canvas{position:relative;display:grid;grid-template-columns:max-content minmax(80px,1fr) max-content;align-items:start;user-select:none;padding:0.25rem 0.2rem}
-.vm-col{display:flex;flex-direction:column;gap:0.3rem;min-width:125px}
-.vm-col:last-of-type{justify-self:end}
-.vm-lines{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1}
-.vm-lines path{fill:none;stroke-width:2;pointer-events:stroke;cursor:pointer;transition:stroke-width 0.12s;stroke-dasharray:300;stroke-dashoffset:300;animation:vmDraw 0.5s ease-out forwards}
-.vm-lines path:hover{stroke-width:3}
-@keyframes vmDraw{to{stroke-dashoffset:0}}
-.vm-pill{display:flex;align-items:center;justify-content:space-between;gap:0.4rem;padding:0.35rem 0.55rem;background:var(--bg4);border:0.5px solid var(--border2);border-radius:5px;font-family:var(--mono);font-size:9.5px;color:var(--text2);position:relative;z-index:2}
-.vm-pill[data-side="src"]{cursor:grab}
-.vm-pill[data-side="src"]:active{cursor:grabbing}
-.vm-pill[data-side="src"]:hover{border-color:var(--accent);color:var(--text)}
-.vm-pill.dragging{opacity:0.45}
-.vm-pill.drag-over{border-color:var(--accent);background:rgba(74,91,214,0.15);transform:scale(1.03)}
-.vm-pill .vm-type{font-size:8.5px;color:var(--text3);background:var(--bg2);padding:1px 4px;border-radius:3px;flex-shrink:0}
-.vm-pill.match-HIGH{border-color:rgba(34,201,122,0.45);background:rgba(34,201,122,0.07)}
-.vm-pill.match-MED{border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.07)}
-.vm-pill.match-LOW{border-color:rgba(240,70,70,0.35);background:rgba(240,70,70,0.06)}
-.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;margin-top:3rem}
-.feature-card{background:var(--bg2);padding:1.75rem;transition:background 0.2s;cursor:default}.feature-card:hover{background:var(--bg3)}
-.feature-card-icon{font-size:1.5rem;margin-bottom:0.875rem}
-.feature-card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:0.5rem}
-.feature-card-body{font-size:12px;color:var(--text3);line-height:1.7}
-.flow{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:nowrap;margin:3rem 0;overflow-x:auto;padding:1rem 0}
-.flow-step{background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;padding:1.1rem 1.25rem;text-align:center;min-width:130px;flex-shrink:0;transition:all 0.2s;cursor:default}
-.flow-step:hover{border-color:var(--accent);background:var(--bg3);transform:translateY(-2px)}
-.flow-step-num{font-size:9px;font-family:var(--mono);color:var(--accent);margin-bottom:0.4rem;letter-spacing:0.05em}
-.flow-step-icon{font-size:1.4rem;margin-bottom:0.4rem}
-.flow-step-label{font-size:11px;font-weight:600;color:var(--text);line-height:1.3}
-.flow-arrow{color:var(--text3);font-size:1.2rem;flex-shrink:0;padding:0 0.5rem;margin-top:-0.5rem}
-.cta-section{padding:8rem 2rem;text-align:center;position:relative;z-index:1}
-.cta-title{font-size:clamp(2rem,4vw,3rem);font-weight:700;letter-spacing:-0.03em;margin-bottom:1rem}
-.cta-sub{font-size:15px;color:var(--text2);max-width:500px;margin:0 auto 2.5rem;line-height:1.7}
-.cta-btns{display:flex;gap:1rem;justify-content:center}
-@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
-.animate-on-scroll{opacity:0;transform:translateY(30px);transition:opacity 0.7s ease,transform 0.7s ease}
-.animate-on-scroll.visible{opacity:1;transform:translateY(0)}
-.orb{display:none}
-.orb1{width:400px;height:400px;background:rgba(74,91,214,0.15);top:-100px;right:-100px;animation:orbFloat 8s ease-in-out infinite}
-.orb2{width:300px;height:300px;background:rgba(107,78,142,0.1);bottom:100px;left:-80px;animation:orbFloat 10s ease-in-out infinite reverse}
-@keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,30px)}}
-footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-size:12px;color:var(--text3);position:relative;z-index:1}
-.footer-link{color:var(--accent);text-decoration:none;cursor:pointer;background:none;border:none;font:inherit;padding:0}
+.mock-title{margin-left:0.5rem;font-family:var(--mono);font-size:10.5px;color:var(--text3)}
+.mock-body{padding:1rem}
+.mock table{width:100%;border-collapse:collapse;font-size:11.5px}
+.mock th{text-align:left;font-family:var(--mono);font-size:9.5px;font-weight:500;letter-spacing:0.06em;
+  text-transform:uppercase;color:var(--text3);padding:0.35rem 0.5rem;border-bottom:1px solid var(--border)}
+.mock td{padding:0.4rem 0.5rem;border-bottom:1px solid var(--border);color:var(--text2)}
+.mock td.mono,.mock th.mono{font-family:var(--mono);font-size:10.5px}
+.mock .k{color:var(--text);font-weight:500}
+.pill{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:0.05em;
+  padding:1px 7px;border-radius:100px}
+.p-ok{color:var(--green);background:rgba(63,125,78,0.12)}
+.p-warn{color:var(--amber);background:rgba(178,106,0,0.12)}
+.p-bad{color:var(--red);background:rgba(192,57,43,0.12)}
+.p-info{color:var(--accent);background:rgba(74,91,214,0.12)}
+.p-mute{color:var(--text3);background:rgba(22,26,32,0.07)}
+
+/* ── Matrix ──────────────────────────────────────────────────────────────*/
+.matrix{width:100%;border-collapse:collapse;margin-top:2.5rem;font-size:13.5px}
+.matrix th{text-align:left;font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:0.1em;
+  text-transform:uppercase;color:var(--text3);padding:0.7rem 0.85rem;border-bottom:1px solid var(--border2)}
+.matrix td{padding:0.75rem 0.85rem;border-bottom:1px solid var(--border);color:var(--text2);vertical-align:top}
+.matrix td b{color:var(--text);font-weight:600}
+.matrix tr:hover td{background:rgba(255,255,255,0.02)}
+.matrix-note{font-size:12.5px;color:var(--text3);margin-top:1rem;line-height:1.6}
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* On a phone the three columns squash until the notes are unreadable, and a
+   sideways scroll on a marketing page is a scroll nobody performs. Below 640
+   each row becomes its own block with the column name in front of the value. */
+@media (max-width:640px){
+  .matrix thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  /* cygenix-mobile.css turns every table into a sideways-scrolling block with
+     `white-space:nowrap` and `width:max-content` rows. That is right for a
+     console grid and wrong for a paragraph of prose in a marketing table, so
+     this one opts out by name rather than the shared sheet changing for
+     everybody. */
+  .matrix,.matrix tbody,.matrix tr,.matrix td{display:block;width:100%;min-width:0;
+    white-space:normal}
+  .matrix tr{border:1px solid var(--border);border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.75rem;
+    background:rgba(255,255,255,0.015)}
+  .matrix td{border-bottom:none;padding:0.15rem 0}
+  .matrix td[data-label]::before{content:attr(data-label) " ";font-family:var(--mono);font-size:9.5px;
+    letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:2px}
+  .matrix td:first-child{font-size:15px;margin-bottom:0.35rem}
+  .matrix td:first-child::before{display:none}
+  .matrix tr:hover td{background:transparent}
+  .matrix .chip{margin-left:0}
+}
+
+/* ── Honest list ─────────────────────────────────────────────────────────*/
+.notyet{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-top:2.5rem}
+.notyet div{border:1px solid var(--border);border-radius:12px;padding:1.4rem;background:rgba(255,255,255,0.015)}
+.notyet h3{font-size:14.5px;font-weight:600;color:var(--text);margin-bottom:0.45rem}
+.notyet p{font-size:13px;color:var(--text2);line-height:1.6}
+
+/* ── CTA + footer ────────────────────────────────────────────────────────*/
+.cta-section{position:relative;z-index:1;text-align:center;padding:7rem clamp(1rem,5vw,2rem);
+  border-top:1px solid var(--border)}
+.cta-title{font-family:var(--serif);font-size:clamp(1.9rem,4vw,3rem);font-weight:700;
+  letter-spacing:-0.03em;line-height:1.1;margin-bottom:1.1rem;color:var(--text)}
+.cta-sub{font-size:15.5px;color:var(--text2);line-height:1.7;max-width:640px;margin:0 auto 2.25rem}
+.cta-btns{display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap}
+footer{position:relative;z-index:1;text-align:center;padding:2.5rem 1rem 3rem;font-size:12.5px;
+  color:var(--text3);border-top:1px solid var(--border);line-height:2}
+footer a{color:var(--accent-ink);text-decoration:none}
+footer a:hover{text-decoration:underline}
+.footer-link{background:none;border:none;padding:0;font:inherit;color:var(--accent-ink);cursor:pointer}
 .footer-link:hover{text-decoration:underline}
 
-/* About modal — opens from footer link. Same visual language as the rest
-   of the page (border, glow, mono accents). Click outside or Esc closes. */
-.about-modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem;background:rgba(15,20,28,0.42);animation:aboutFade 0.25s ease both}
-.about-modal.open{display:flex}
-.about-card{position:relative;max-width:600px;width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:2.5rem 2.25rem 2rem;box-shadow:0 12px 40px rgba(22,26,32,0.16);max-height:85vh;overflow-y:auto;animation:aboutRise 0.3s ease both}
-.about-card::before{content:'';position:absolute;inset:0;background:none;pointer-events:none;border-radius:14px}
-.about-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:0.05em;color:var(--accent);margin-bottom:0.75rem;text-transform:uppercase;position:relative}
-.about-name{font-size:1.6rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:1.25rem;position:relative}
-.about-name span{color:var(--accent)}
-.about-body{position:relative;color:var(--text2);font-size:14.5px;line-height:1.75;font-weight:400}
-.about-body p{margin-bottom:1.1rem}
-.about-body p:last-child{margin-bottom:0}
-.about-close{position:absolute;top:14px;right:14px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:transparent;border:0.5px solid var(--border);border-radius:8px;color:var(--text2);cursor:pointer;transition:all 0.15s;font-size:18px;line-height:1}
-.about-close:hover{border-color:var(--accent);color:var(--accent)}
-@keyframes aboutFade{from{opacity:0}to{opacity:1}}
-@keyframes aboutRise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-/* sits directly under the hero, so it stays on the ink — a white strip here
-   ended the brand surface with a hard cut */
-.ticker-wrap{overflow:hidden;border-top:0.5px solid rgba(255,255,255,0.10);border-bottom:0.5px solid rgba(255,255,255,0.10);background:var(--ink);padding:0.7rem 0;position:relative;z-index:1}
-.ticker-item{color:rgba(255,255,255,0.45)}
-.ticker-item span{color:var(--accent-ink)}
-.ticker{display:flex;gap:4rem;white-space:nowrap;animation:tick 30s linear infinite}
-.ticker-item{display:flex;align-items:center;gap:0.5rem;font-size:11px;color:var(--text3);font-family:var(--mono)}
-.ticker-item span{color:var(--accent)}
-@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-/* cal mock */
-.cal-mini-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-family:var(--mono);font-size:9px}
-.cal-cell{text-align:center;padding:3px 2px;border-radius:3px;color:var(--text3)}
-.cal-cell.today{background:var(--accent);color:#fff;border-radius:50%}
-.cal-cell.has-ev{position:relative}.cal-cell.has-ev::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--teal)}
-.cal-ev{font-size:9px;padding:1px 5px;border-radius:3px;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:768px){.feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}.features-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap;gap:0.5rem}.flow-arrow{display:none}nav .nav-links{display:none}.dual-mode{grid-template-columns:1fr !important}.kpi-grid{grid-template-columns:repeat(2,1fr) !important}#reporting > .container > div[style*="grid-template-columns"]{grid-template-columns:1fr !important;gap:2rem !important}#task-agent > .container > div[style*="grid-template-columns"]{grid-template-columns:1fr !important;gap:2rem !important}}
-/* Scheduler */
-.sched-row{display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.6rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;margin-bottom:0.35rem}
-.sched-row.next-up{border-color:rgba(74,91,214,0.3);background:rgba(74,91,214,0.04)}
-.sched-time{font-family:var(--mono);font-size:9px;color:var(--text);font-weight:600;background:var(--bg);border-radius:4px;padding:3px 7px;flex-shrink:0;text-align:center;min-width:64px;line-height:1.2}
-.sched-time .d{font-size:8px;color:var(--text3);font-weight:500}
-.sched-body{flex:1;min-width:0}
-.sched-name{font-size:10px;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sched-meta{font-size:9px;font-family:var(--mono);color:var(--text3);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sched-recur{font-size:8px;font-family:var(--mono);padding:2px 6px;border-radius:100px;flex-shrink:0;white-space:nowrap}
-.recur-once{background:var(--bg4);color:var(--text2)}
-.recur-daily{background:rgba(23,130,124,0.12);color:var(--teal)}
-.recur-weekly{background:rgba(107,78,142,0.12);color:var(--purple)}
-.recur-cron{background:rgba(245,166,35,0.12);color:var(--amber)}
-.sched-status{font-size:8px;font-family:var(--mono);padding:2px 6px;border-radius:100px;flex-shrink:0;white-space:nowrap}
-.status-scheduled{background:var(--bg4);color:var(--text2)}
-.status-running{background:var(--glow);color:var(--accent)}
-.status-success{background:var(--green-g);color:var(--green)}
-.status-failed{background:var(--red-g);color:var(--red)}
-/* Reporting tool charts */
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0.5rem;margin-bottom:0.6rem}
-.kpi-tile{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.6rem}
-.kpi-label{font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px}
-.kpi-val{font-size:16px;font-weight:700;letter-spacing:-0.02em;color:var(--text);line-height:1.1}
-.kpi-trend{font-size:9px;font-family:var(--mono);margin-top:2px}
-.kpi-up{color:var(--green)}.kpi-down{color:var(--red)}.kpi-flat{color:var(--text3)}
-.bar-chart{display:flex;align-items:flex-end;gap:4px;height:80px;padding:0.4rem 0.5rem;background:var(--bg3);border-radius:6px;border:0.5px solid var(--border)}
-.bar{flex:1;background:linear-gradient(180deg,var(--accent),var(--accent2));border-radius:3px 3px 0 0;position:relative;min-height:4px;animation:barGrow 0.7s cubic-bezier(0.2,0.8,0.2,1) both}
-.bar.bar-teal{background:linear-gradient(180deg,var(--teal),#3D4EC4)}
-.bar.bar-purple{background:linear-gradient(180deg,var(--purple),#3D4EC4)}
-.bar.bar-green{background:linear-gradient(180deg,var(--green),var(--teal))}
-.bar-label{position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:7px;font-family:var(--mono);color:var(--text3);white-space:nowrap}
-@keyframes barGrow{from{transform:scaleY(0);transform-origin:bottom}to{transform:scaleY(1);transform-origin:bottom}}
-.line-chart-wrap{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.4rem;position:relative}
-.line-chart-wrap svg{width:100%;height:90px;display:block}
-.line-chart-wrap .lc-area{fill:url(#lcGrad);opacity:0.4}
-.line-chart-wrap .lc-line{fill:none;stroke:var(--accent);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:600;stroke-dashoffset:600;animation:lcDraw 1.4s ease-out forwards}
-.line-chart-wrap .lc-line-2{fill:none;stroke:var(--teal);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:600;stroke-dashoffset:600;animation:lcDraw 1.4s ease-out 0.3s forwards}
-@keyframes lcDraw{to{stroke-dashoffset:0}}
-.donut-wrap{display:flex;align-items:center;gap:0.6rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem}
-.donut{width:60px;height:60px;flex-shrink:0;position:relative}
-.donut svg{transform:rotate(-90deg);width:100%;height:100%}
-.donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono)}
-.donut-center .v{font-size:14px;font-weight:700;color:var(--text);line-height:1}
-.donut-center .l{font-size:7px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em}
-.donut-legend{flex:1;display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:9px}
-.donut-legend .li{display:flex;align-items:center;gap:5px;color:var(--text2)}
-.donut-legend .sw{width:8px;height:8px;border-radius:2px;flex-shrink:0}
-/* Agentive dual-mode panels */
-.dual-mode{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem}
-.mode-card{background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;padding:1.1rem;position:relative;transition:all 0.3s}
-.mode-card.driver-assist{border-color:rgba(23,130,124,0.3)}
-.mode-card.autopilot{border-color:rgba(107,78,142,0.3)}
-.mode-card-head{display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem}
-.mode-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.mode-icon-da{background:rgba(23,130,124,0.12);border:0.5px solid rgba(23,130,124,0.3)}
-.mode-icon-ap{background:rgba(107,78,142,0.12);border:0.5px solid rgba(107,78,142,0.3)}
-.mode-name{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-0.01em}
-.mode-tag{font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-top:1px}
-.mode-analogy{font-size:11px;color:var(--text2);font-style:italic;line-height:1.5;padding:0.5rem 0.6rem;background:var(--bg);border-radius:5px;border-left:2px solid;margin-bottom:0.6rem}
-.mode-card.driver-assist .mode-analogy{border-color:var(--teal)}
-.mode-card.autopilot .mode-analogy{border-color:var(--purple)}
-.mode-list{list-style:none;display:flex;flex-direction:column;gap:0.35rem;font-size:11px;color:var(--text2);line-height:1.5}
-.mode-list li{display:flex;align-items:flex-start;gap:0.4rem}
-.mode-list li::before{content:'✓';flex-shrink:0;font-family:var(--mono);font-size:10px}
-.mode-card.driver-assist .mode-list li::before{color:var(--teal)}
-.mode-card.autopilot .mode-list li::before{color:var(--purple)}
-/* Insights cards */
-.insight-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.55rem 0.7rem;margin-bottom:0.4rem;display:flex;align-items:flex-start;gap:0.55rem}
-.insight-icon{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
-.insight-icon.warn{background:var(--amber-g);color:var(--amber)}
-.insight-icon.crit{background:var(--red-g);color:var(--red)}
-.insight-icon.info{background:var(--glow);color:var(--accent)}
-.insight-body{flex:1;min-width:0}
-.insight-title{font-size:10px;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:1px}
-.insight-meta{font-size:8.5px;font-family:var(--mono);color:var(--text3);line-height:1.4}
-.insight-action{font-size:8px;font-family:var(--mono);color:var(--accent);background:var(--glow);padding:1px 6px;border-radius:100px;align-self:center;flex-shrink:0;white-space:nowrap}
-/* Task agent timeline */
-.agent-step{display:flex;align-items:flex-start;gap:0.5rem;padding:0.45rem 0;position:relative}
-.agent-step:not(:last-child)::after{content:'';position:absolute;left:9px;top:24px;bottom:-4px;width:1px;background:var(--border2)}
-.agent-step-dot{width:18px;height:18px;border-radius:50%;background:var(--bg3);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--text3);flex-shrink:0;z-index:1;position:relative}
-.agent-step.done .agent-step-dot{background:var(--green-g);border-color:var(--green);color:var(--green)}
-.agent-step.active .agent-step-dot{background:var(--glow);border-color:var(--accent);color:var(--accent);animation:pulse 2s infinite}
-.agent-step-body{flex:1;min-width:0;padding-top:1px}
-.agent-step-name{font-size:10px;font-weight:600;color:var(--text);margin-bottom:1px}
-.agent-step-meta{font-size:9px;font-family:var(--mono);color:var(--text3);line-height:1.4}
-.agent-step.active .agent-step-name{color:var(--accent)}
-.agent-step.done .agent-step-name{color:var(--text2)}
-.agent-prompt{background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.65rem;margin-bottom:0.5rem;font-family:var(--mono);font-size:10px;color:var(--text);line-height:1.5}
-.agent-prompt::before{content:'→ Goal:';color:var(--accent);font-weight:600;margin-right:6px}
+/* ── Modals ──────────────────────────────────────────────────────────────*/
+.modal-back{position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:200;display:none;
+  align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px)}
+.modal-back.open{display:flex}
+.modal-card{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;
+  width:min(540px,100%);max-height:86vh;overflow-y:auto;padding:2.25rem 2rem;position:relative}
+.modal-close{position:absolute;top:12px;right:14px;background:transparent;border:none;color:var(--text3);
+  font-size:22px;cursor:pointer;line-height:1;padding:4px 8px}
+.modal-close:hover{color:var(--text)}
+.modal-card h2{font-size:1.7rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.75rem;color:var(--text)}
+.modal-card p{font-size:14px;color:var(--text2);line-height:1.7;margin-bottom:1rem}
+.contact-row{display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);
+  border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--text);
+  transition:border-color 0.18s;margin-bottom:0.7rem}
+.contact-row:hover{border-color:var(--accent-ink)}
+.contact-row .lbl{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;
+  letter-spacing:0.08em}
+.contact-row .val{font-family:var(--mono);font-size:13.5px;font-weight:500;color:var(--text)}
+
+/* ── Scroll reveal ───────────────────────────────────────────────────────*/
+.reveal{opacity:0;transform:translateY(16px);transition:opacity 0.6s ease,transform 0.6s ease}
+.reveal.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none}}
+
+@media (max-width:640px){
+  .hero{padding-top:7rem}
+  /* Two buttons of different widths stacked centrally read as a mistake.
+     Full width and they read as a choice. */
+  .hero-btns,.cta-btns{flex-direction:column;align-items:stretch}
+  .hero-btns .btn-hero,.cta-btns .btn-hero{width:100%}
+  .section{padding:4rem 1rem}
+  .cta-section{padding:5rem 1rem}
+}
 </style>
-<link rel="stylesheet" href="/cygenix-mobile.css">
-<link rel="stylesheet" href="/cygenix-icons.css">
 </head>
 <body>
-<div class="grid-glow" aria-hidden="true"></div>
-<div class="orb orb1"></div>
-<div class="orb orb2"></div>
+<div class="brand-glow" aria-hidden="true"></div>
+<div class="brand-grid" aria-hidden="true"></div>
 
 <nav>
   <a class="nav-logo" href="/" aria-label="Cygenix home"><span class="mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span><b>Cygenix</b></a>
   <div class="nav-links">
-    <a href="#features">Features</a>
-    <a href="#mapper">Mapping</a>
-    <a href="#agentive">Agentive</a>
-    <a href="#reporting">Reporting</a>
-    <a href="#insights">Insights</a>
-    <a href="#task-agent">Task Agent</a>
+    <a href="#platform">Platform</a>
+    <a href="#mapping">Mapping</a>
+    <a href="#server-migration">Server objects</a>
+    <a href="#governance">Governance</a>
+    <a href="#automation">Automation</a>
+    <a href="#supports">What it supports</a>
     <a href="/pricing.html">Pricing</a>
-    <a href="#" onclick="openContactModal();return false">Contact us</a>
+    <a href="#" onclick="openContact();return false">Contact</a>
   </div>
   <a href="/login.html" class="nav-cta">Log in →</a>
 </nav>
 
-<!-- Contact & Pricing modal — hidden by default, shown by openContactModal().
-     Kept inside the page (rather than a separate /contact.html) so the whole
-     call-to-action flow stays on the landing page. Closes on backdrop click or
-     the ✕ button. Contact details and pricing intentionally simple — no form
-     submission; we direct users to email/phone so inquiries route straight to
-     a human without needing a form-handler backend. -->
-<div id="contact-modal" style="display:none;position:fixed;inset:0;background:rgba(15,20,28,0.42);z-index:200;align-items:center;justify-content:center;padding:2rem"
-     onclick="if(event.target===this)closeContactModal()">
-  <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;width:min(520px,100%);padding:2.25rem 2rem;position:relative">
-    <button onclick="closeContactModal()" aria-label="Close"
-            style="position:absolute;top:12px;right:14px;background:transparent;border:none;color:var(--text3);font-size:22px;cursor:pointer;line-height:1;padding:4px 8px">✕</button>
-
-    <div style="font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:0.75rem">Get in Touch</div>
-    <h2 style="font-size:1.8rem;font-weight:700;letter-spacing:-0.02em;margin:0 0 0.75rem;color:var(--text)">Let's talk.</h2>
-    <p style="font-size:14px;color:var(--text2);line-height:1.6;margin:0 0 1.75rem">Cygenix is currently in private preview. Reach out to discuss pricing, scope a migration, or request a demo.</p>
-
-    <div style="display:grid;gap:0.75rem;margin-bottom:1.75rem">
-      <a href="mailto:curtis.morris@cygenix.co.uk" style="display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.2s"
-         onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
-        <span style="font-size:18px"><i class="ic ic-mail"></i> </span>
-        <div style="flex:1">
-          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Email</div>
-          <div style="font-size:14px;font-weight:500;color:var(--text);font-family:var(--mono)">curtis.morris@cygenix.co.uk</div>
-        </div>
-      </a>
-      <a href="tel:+447809873223" style="display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.2s"
-         onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
-        <span style="font-size:18px"><i class="ic ic-chat"></i> </span>
-        <div style="flex:1">
-          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Phone</div>
-          <div style="font-size:14px;font-weight:500;color:var(--text);font-family:var(--mono)">+44 7809 873223</div>
-        </div>
-      </a>
-      <a href="/register.html" style="display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.2s"
-         onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
-        <span style="font-size:18px"><i class="ic ic-clipboard"></i> </span>
-        <div style="flex:1">
-          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Waitlist</div>
-          <div style="font-size:14px;font-weight:500;color:var(--text);font-family:var(--mono)">Get early access updates</div>
-        </div>
-      </a>
-    </div>
-
-    <div style="padding-top:1.5rem;border-top:0.5px solid var(--border)">
-      <div style="font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:0.5rem">Pricing</div>
-      <p style="font-size:13px;color:var(--text2);line-height:1.6;margin:0">Starter and Pro plans are <a href="/pricing.html" style="color:var(--accent);text-decoration:none">published on our pricing page</a>. Business and Enterprise are tailored to your migration — get in touch for a quote.</p>
-    </div>
-  </div>
-</div>
-
-<!-- HERO -->
+<!-- ══ HERO ══════════════════════════════════════════════════════════════ -->
 <section class="hero">
-  <div class="hero-badge">AI-POWERED · ENTERPRISE READY · SQL SERVER &amp; POSTGRES</div>
+  <div class="hero-badge">SQL Server · Azure SQL · Postgres · Files</div>
   <h1>
-    <span class="line1">Database Migration,</span>
-    <span class="line2">Reimagined with AI</span>
+    <span class="line1">Migrate the database.</span>
+    <span class="line2">Prove it moved.</span>
   </h1>
-  <p class="hero-sub">Cygenix connects to SQL Server, Azure SQL, Postgres and file sources (CSV, Excel, text) — on-premises or in any cloud. It maps your schema intelligently using Claude AI, validates results, and delivers professional reports — in minutes, not months.</p>
+  <p class="hero-sub">Cygenix maps your schema with AI, forecasts what would fail before anything runs,
+    moves the server-level objects most tools leave behind, and records every gated action in a
+    hash-chained audit trail. It runs in the browser and connects to your databases directly.</p>
   <div class="hero-btns">
     <a href="/pricing.html" class="btn-hero btn-primary">Start free trial →</a>
-    <a href="#features" class="btn-hero btn-secondary">See the platform</a>
+    <a href="#supports" class="btn-hero btn-secondary">See exactly what it supports</a>
   </div>
-  <div class="stats-row" style="margin-top:3rem">
-    <div class="stat"><div class="stat-num"><span>AI</span></div><div class="stat-label">COLUMN MAPPING</div></div>
-    <div class="stat"><div class="stat-num"><span>Agentive</span></div><div class="stat-label">AUTONOMOUS MIGRATION</div></div>
-    <div class="stat"><div class="stat-num"><span>Live</span></div><div class="stat-label">REPORTING &amp; INSIGHTS</div></div>
-    <div class="stat"><div class="stat-num"><span>100%</span></div><div class="stat-label">BROWSER-BASED</div></div>
-  </div>
+  <div class="hero-note">Every capability on this page is checked against the product's own
+    <a href="/help.html#supported">support matrix</a> at build time. If the code cannot do it, the page cannot say it.</div>
 </section>
 
-<!-- TICKER -->
-<div class="ticker-wrap">
+<!-- ══ TICKER ════════════════════════════════════════════════════════════
+     Sample events from a run. The schema names are the neutral
+     Customer / Orders shape used throughout this page. -->
+<div class="ticker-wrap" aria-hidden="true">
   <div class="ticker">
-    <div class="ticker-item"><i class="ic-dot" style="color:var(--green)"></i> <span>Connected</span> · Source DB · 342 tables loaded</div>
-    <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
-    <div class="ticker-item"><i class="ic ic-robot"></i> <span>Agentive mode</span> · Plan generated · 18 steps queued</div>
-    <div class="ticker-item"><i class="ic ic-chart"></i> <span>Reporting</span> · Exec summary regenerated · 1 page</div>
-    <div class="ticker-item"><i class="ic ic-search"></i> <span>Data insight</span> · "What does dbo.Transaction do?" answered</div>
-    <div class="ticker-item"><i class="ic ic-clock"></i> <span>Task agent</span> · Nightly conversion scheduled · 22:00</div>
-    <div class="ticker-item"><i class="ic ic-package"></i> <span>Execution plan</span> · 4 groups · 27 jobs</div>
-    <div class="ticker-item"><i class="ic-dot" style="color:var(--green)"></i> <span>Migration complete</span> · 0 errors</div>
-    <div class="ticker-item"><i class="ic ic-sync"></i> <span>Was/Is rules applied</span> · 312 translations</div>
-    <div class="ticker-item"><i class="ic ic-calendar"></i> <span>Project Plan updated</span> · 7 days to completion</div>
-    <div class="ticker-item"><i class="ic ic-doc"></i> <span>Conversion report exported</span> · Excel ready</div>
-    <div class="ticker-item"><i class="ic-dot" style="color:var(--green)"></i> <span>Connected</span> · Source DB · 342 tables loaded</div>
-    <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
-    <div class="ticker-item"><i class="ic ic-robot"></i> <span>Agentive mode</span> · Plan generated · 18 steps queued</div>
-    <div class="ticker-item"><i class="ic ic-chart"></i> <span>Reporting</span> · Exec summary regenerated · 1 page</div>
-    <div class="ticker-item"><i class="ic ic-search"></i> <span>Data insight</span> · "What does dbo.Transaction do?" answered</div>
-    <div class="ticker-item"><i class="ic ic-clock"></i> <span>Task agent</span> · Nightly conversion scheduled · 22:00</div>
-    <div class="ticker-item"><i class="ic ic-package"></i> <span>Execution plan</span> · 4 groups · 27 jobs</div>
-    <div class="ticker-item"><i class="ic-dot" style="color:var(--green)"></i> <span>Migration complete</span> · 0 errors</div>
-    <div class="ticker-item"><i class="ic ic-sync"></i> <span>Was/Is rules applied</span> · 312 translations</div>
-    <div class="ticker-item"><i class="ic ic-calendar"></i> <span>Project Plan updated</span> · 7 days to completion</div>
-    <div class="ticker-item"><i class="ic ic-doc"></i> <span>Conversion report exported</span> · Excel ready</div>
+    <div class="ticker-item"><i class="ic ic-plug"></i> <span>Connected</span> · source · 342 tables, 18 views</div>
+    <div class="ticker-item"><i class="ic ic-wand"></i> <span>AI mapped</span> · 47 columns · 6 flagged for review</div>
+    <div class="ticker-item"><i class="ic ic-flask"></i> <span>Preflight</span> · 3 rejections forecast on dbo.Customer</div>
+    <div class="ticker-item"><i class="ic ic-shield"></i> <span>Guardrail</span> · unbounded DELETE held for approval</div>
+    <div class="ticker-item"><i class="ic ic-key"></i> <span>Server objects</span> · 12 logins, 4 Agent jobs discovered</div>
+    <div class="ticker-item"><i class="ic ic-users"></i> <span>Workspace</span> · engineer invited · role assigned</div>
+    <div class="ticker-item"><i class="ic ic-package"></i> <span>Batch</span> · 27 jobs across 4 dependency groups</div>
+    <div class="ticker-item"><i class="ic ic-clock"></i> <span>Task Agent</span> · nightly run scheduled · 22:00</div>
+    <div class="ticker-item"><i class="ic ic-chain"></i> <span>Audit</span> · chain verified · 1,204 entries intact</div>
+    <div class="ticker-item"><i class="ic ic-check-circle"></i> <span>Run complete</span> · 0 errors</div>
+    <div class="ticker-item"><i class="ic ic-plug"></i> <span>Connected</span> · source · 342 tables, 18 views</div>
+    <div class="ticker-item"><i class="ic ic-wand"></i> <span>AI mapped</span> · 47 columns · 6 flagged for review</div>
+    <div class="ticker-item"><i class="ic ic-flask"></i> <span>Preflight</span> · 3 rejections forecast on dbo.Customer</div>
+    <div class="ticker-item"><i class="ic ic-shield"></i> <span>Guardrail</span> · unbounded DELETE held for approval</div>
+    <div class="ticker-item"><i class="ic ic-key"></i> <span>Server objects</span> · 12 logins, 4 Agent jobs discovered</div>
+    <div class="ticker-item"><i class="ic ic-users"></i> <span>Workspace</span> · engineer invited · role assigned</div>
+    <div class="ticker-item"><i class="ic ic-package"></i> <span>Batch</span> · 27 jobs across 4 dependency groups</div>
+    <div class="ticker-item"><i class="ic ic-clock"></i> <span>Task Agent</span> · nightly run scheduled · 22:00</div>
+    <div class="ticker-item"><i class="ic ic-chain"></i> <span>Audit</span> · chain verified · 1,204 entries intact</div>
+    <div class="ticker-item"><i class="ic ic-check-circle"></i> <span>Run complete</span> · 0 errors</div>
   </div>
 </div>
 
-<!-- FEATURES GRID -->
-<section class="section" id="features">
+<!-- ══ PLATFORM ══════════════════════════════════════════════════════════ -->
+<section class="section" id="platform">
   <div class="container">
-    <div class="animate-on-scroll" style="text-align:center;margin-bottom:1rem">
-      <div class="section-tag">Platform Features</div>
-      <div class="section-title">Everything you need to<br>migrate with confidence</div>
+    <div class="center reveal">
+      <div class="section-tag">The platform</div>
+      <div class="section-title">Four things a migration actually needs</div>
+      <p class="section-sub">Most tools do the first one. The other three are where migrations go wrong,
+        and they are the reason this one exists.</p>
     </div>
-    <div class="features-grid animate-on-scroll">
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-robot"></i> </div><div class="feature-card-title">Agentive Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Two ways to run a job. <strong style="color:var(--text2)">AI-Assisted</strong> — Cygenix recommends, you approve each step. <strong style="color:var(--text2)">Agentive</strong> — full autonomous execution end to end, with checkpoints and a human-in-the-loop kill switch.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-chart"></i> </div><div class="feature-card-title">Reporting</div><div class="feature-card-body">Interactive BI dashboards over your source or target database, drag-and-drop chart builder, and the home for auto-generated executive project summaries and conversion reports — ready to email to stakeholders. Upload context documents (emails, client briefs, sign-offs, Was/Is mappings, data dictionaries, schema docs) and Claude reads them when generating narratives, with inline citations back to the source (e.g. <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">[Email, 14 Apr]</code>).</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-search"></i> </div><div class="feature-card-title">Data Insights</div><div class="feature-card-body">Understand any database in plain English. Ask "what does this table do?", "where is config held?", "which tables hold financial data?" — Cygenix reads the schema, samples the data and answers you naturally. Onboard a legacy database in hours, not weeks.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-clock"></i> </div><div class="feature-card-title">Task Agent</div><div class="feature-card-body">Job scheduler for everything Cygenix does. Run conversions, validations, reindexes and reports on a schedule — once, daily, weekly or cron. Job chains, retry policies, email alerts. Set it and walk away.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-plug"></i> </div><div class="feature-card-title">Connect to Anything</div><div class="feature-card-body">Live database connections to SQL Server (on-prem, Azure SQL, Azure Managed Instance, AWS RDS, Google Cloud SQL) and PostgreSQL (self-hosted, RDS, Aurora, Azure Database, Cloud SQL, Supabase, Neon). File sources for <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.csv</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.xlsx</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.tsv</code> and <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.txt</code> — multi-sheet workbooks handled. Cross-engine migration in any direction, with a built-in DDL generator that creates target tables from the source schema and flags lossy conversions (jsonb, arrays, hierarchyid). Azure Function with Managed Identity also supported.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-robot"></i> </div><div class="feature-card-title">AI Column Mapping</div><div class="feature-card-body">Claude AI maps every source column to its target automatically, with a colour-coded confidence score per row. Switch between the table view (target-driven layout, source dropdown per column, fixed value override, truncation warnings) and the visual view (drag-and-drop pills with bezier connection lines, fullscreen for complex jobs). One-to-many mode maps a single source into multiple target tables in one operation.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-sync"></i> </div><div class="feature-card-title">Was/Is Translation & System Parameters</div><div class="feature-card-body">Upload translation tables to convert values during migration — status codes, lookup IDs, department names, currency codes, and more. Define <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">@@Tokens</code> once and use them across SQL, Was/Is rules, WHERE clauses, literal mappings and custom jobs — values substitute at runtime. CSV / JSON import and export, filter and sort.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-check-circle"></i> </div><div class="feature-card-title">Flexible Validation</div><div class="feature-card-body">Add any table as a validation source. Pick which column holds the SQL, choose which columns appear in the report. Run any number of validation tables against any database.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-package"></i> </div><div class="feature-card-title">Grouped Execution Plans</div><div class="feature-card-body">Organise jobs the way an enterprise migration actually runs — group by concern (Static Config, Masters, Transactions), drag jobs between groups, pick sequential or parallel per group. Tick-box selection runs only what you need.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-calendar"></i> </div><div class="feature-card-title">Project Planner</div><div class="feature-card-body">Full calendar (year/month/week/day views), task tracking, blocker management, execution phase tracker, and activity log — driven by your project completion date.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-link"></i> </div><div class="feature-card-title">Integrations</div><div class="feature-card-body">Sync your migration plan with the tools your team already uses. Bidirectional, field-mapped sync with Atlassian Jira and Smartsheet for issue tracking — import existing issues, push new tasks, full sync history. Credentials stay in your browser.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-monitor"></i> </div><div class="feature-card-title">SQL Editor</div><div class="feature-card-body">Full-featured SQL editor with script library, connection selector, find & replace, results grid, history, AI assistant, and one-to-many mapper for complex transformations.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-broom"></i> </div><div class="feature-card-title">Data Cleansing</div><div class="feature-card-body">Find near-duplicate rows in a source table before migration. Pick the columns to match on and a strategy per column — <strong style="color:var(--text2)">exact</strong>, <strong style="color:var(--text2)">fuzzy</strong>, <strong style="color:var(--text2)">phonetic</strong> or <strong style="color:var(--text2)">numeric</strong>. Review candidate clusters, optionally have Claude review ambiguous ones for false positives, then export to CSV/JSON or generate merge SQL. Detection-only — your data stays untouched until you decide to act on it.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-lock"></i> </div><div class="feature-card-title">Secure by Design</div><div class="feature-card-body">Authentication via Azure Entra External ID with SSO and Google sign-in. Azure Managed Identity supported, role-based access, full audit trail of every action. UK GDPR compliant. Database credentials live in your browser, not on our servers — sent only when running queries.</div></div>
-      <div class="feature-card"><div class="feature-card-icon"><i class="ic ic-monitor"></i> </div><div class="feature-card-title">Server Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Move the server-level objects most tools leave behind. Logins migrate with hashed passwords and SIDs preserved (database users stay mapped). SQL Agent jobs travel with their steps, schedules, categories and operators. SSIS projects deploy server-to-server via the catalog — environments, variables and references included. Linked servers reproduce the exact provider and options from source. Verify, discover, preview, execute, audit — one flow.</div></div>
-    </div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- MAPPER -->
-<section class="section section--ink" id="mapper">
-  <div class="container-sm">
-    <div class="animate-on-scroll" style="text-align:center">
-      <div class="section-tag">Intelligent Column Mapping</div>
-      <div class="section-title">Target-driven mapping<br>with AI confidence</div>
-      <div class="section-sub" style="margin:0 auto 1rem">Every target column shown as a fixed row. Source column, fixed value override, truncation warnings and AI confidence — all in one place.</div>
-    </div>
-
-    <div class="feature-block animate-on-scroll">
-      <div>
-        <div class="feature-tag">Simple Map</div>
-        <div class="feature-title">One table to one table, mapped in seconds</div>
-        <div class="feature-body">Select source and target tables. Claude AI maps every column automatically. Override any row, add a fixed SQL value, hide unmapped columns, filter by match confidence.</div>
-        <ul class="feature-points">
-          <li>Target-driven layout — every target column shown, source is a dropdown</li>
-          <li><i class="ic ic-sparkle"></i> Visual mode — drag-and-drop pill view with connection lines and fullscreen</li>
-          <li>Fixed value column — type any SQL literal (N'Value', NULL, GETDATE())</li>
-          <li><i class="ic ic-warning"></i> Truncation warnings when source char type is wider than target</li>
-          <li><i class="ic ic-eye"></i> Show/Hide Unmapped toggle to focus on what matters</li>
-          <li>AI uses Haiku with automatic retry on overload</li>
-        </ul>
+    <div class="cards reveal">
+      <div class="card">
+        <div class="card-ico"><i class="ic ic-wand"></i></div>
+        <h3>Move it</h3>
+        <p>AI column mapping across engines, with transforms, fixed values and type coercion. Views
+          are first-class sources. What the preview shows is what the runner executes — the same
+          transform engine draws both.</p>
       </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Object Mapping · Simple Map</div>
-          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-eye"></i> Hide Unmapped</div>
-        </div>
-        <div class="mock-body">
-          <div style="display:grid;grid-template-columns:1fr 0.7fr 1fr 0.8fr 0.8fr;gap:0.3rem;padding:0.25rem 0;margin-bottom:0.3rem">
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Source col</div>
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Src type</div>
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Target col ▲</div>
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Fixed value</div>
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Match</div>
-          </div>
-          <div id="mapper-rows"></div>
-          <div style="margin-top:0.6rem;font-size:9px;color:var(--green);font-family:var(--mono)">✓ 15 columns mapped · 2 hidden (unmapped)</div>
-          <div style="margin-top:0.4rem;background:var(--bg3);border-radius:4px;padding:0.4rem 0.6rem;font-family:var(--mono);font-size:9px;color:var(--text3)">
-            <span class="sql-kw">INSERT INTO</span> [TargetDB].[dbo].[effective_dated_records]<br>
-            <span class="sql-kw">SELECT</span> [run_number], [code], <span class="sql-fn">LEFT</span>([description_text], <span class="sql-num">100</span>), <span class="sql-str">N'Enterprise'</span>, [active_flag]<br>
-            <span class="sql-kw">FROM</span> [SourceDB].[dbo].[effective_dated_records]
-          </div>
-        </div>
+      <div class="card">
+        <div class="card-ico"><i class="ic ic-flask"></i></div>
+        <h3>Know before you run it</h3>
+        <p>Preflight samples your real data through your real mapping and forecasts the rows that
+          would be rejected — truncation, type failures, null violations — while it is still cheap to
+          fix them.</p>
       </div>
-    </div>
-
-    <div class="divider" style="margin:2rem 0"></div>
-
-    <div class="feature-block reverse animate-on-scroll">
-      <div>
-        <div class="feature-tag">Visual Mapping</div>
-        <div class="feature-title">See the whole schema at once</div>
-        <div class="feature-body">Switch from the table view to a drag-and-drop pill view. Source columns left, target columns right, connection lines fanning across — colour-coded by AI confidence. Fullscreen mode expands the canvas to your full window for complex jobs.</div>
-        <ul class="feature-points">
-          <li>Drag any source pill onto a target to create the mapping</li>
-          <li>Bezier connection lines redraw on every scroll and resize</li>
-          <li>Click a line (or the ✕ on a target pill) to remove the mapping</li>
-          <li>Green / amber / red / grey pills — HIGH / MEDIUM / LOW / unmapped</li>
-          <li><i class="ic ic-fullscreen"></i> Fullscreen toggle expands to the full browser window; Esc to exit</li>
-          <li>Bidirectional state sync with the Table view — switch any time</li>
-        </ul>
-        <div style="margin-top:1rem;font-size:12px;color:var(--text3);font-style:italic"><i class="ic ic-user"></i> Try it — drag a source pill onto a target, or click a line to remove it</div>
+      <div class="card">
+        <div class="card-ico"><i class="ic ic-key"></i></div>
+        <h3>Take the whole server</h3>
+        <p>Logins with their hashed passwords and SIDs, Agent jobs, SSIS projects, linked servers.
+          Cygenix reads your target's engine edition first and tells you what will not fit before it
+          tries.</p>
       </div>
-      <div class="mock" id="vm-mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Object Mapping · Visual view</div>
-          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-fullscreen"></i> Fullscreen</div>
-        </div>
-        <div class="mock-body" style="padding:0.75rem 0.5rem">
-          <div class="vm-canvas" id="vm-canvas">
-            <div class="vm-col" id="vm-src-col"></div>
-            <svg class="vm-lines" id="vm-lines" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
-            <div class="vm-col" id="vm-tgt-col"></div>
-          </div>
-          <div style="margin-top:0.4rem;font-size:9px;color:var(--text3);font-family:var(--mono);text-align:right" id="vm-counter">5 mapped · drag to add more</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="divider" style="margin:2rem 0"></div>
-
-    <div class="feature-block animate-on-scroll">
-      <div>
-        <div class="feature-tag">One-to-Many Map</div>
-        <div class="feature-title">One source, multiple target tables</div>
-        <div class="feature-body">Map a single source table into multiple target tables in one operation. Each target card has its own AI mapping, filter, hide-unmapped toggle, FK relationships and fixed values.</div>
-        <ul class="feature-points">
-          <li>Add as many target table cards as needed</li>
-          <li>PK mode per card — Identity, GUID or natural key</li>
-          <li>FK columns reference PK variables from parent cards</li>
-          <li>AI maps each card independently with overload retry</li>
-          <li>Single generated SQL script covers all target tables</li>
-        </ul>
-      </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Object Mapping · One-to-Many · 3 target tables</div>
-        </div>
-        <div class="mock-body">
-          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem">
-            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
-              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--teal)">dbo.ClientMaster</span>
-              <span style="font-size:9px;color:var(--text3);margin-left:auto">5 mapped</span>
-              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-robot"></i> AI map</span>
-              <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-eye"></i> Hide Unmapped</span>
-            </div>
-            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · @ClientID · 5 cols mapped</div>
-          </div>
-          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem">
-            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
-              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent)">dbo.ClientAddress</span>
-              <span style="font-size:9px;color:var(--text3);margin-left:auto">4 mapped</span>
-              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-robot"></i> AI map</span>
-            </div>
-            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: GUID · FK → @ClientID</div>
-          </div>
-          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem">
-            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
-              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--amber)">dbo.ClientContact</span>
-              <span style="font-size:9px;color:var(--text3);margin-left:auto">3 mapped</span>
-              <span style="font-size:9px;background:var(--purple-g,rgba(107,78,142,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-robot"></i> AI map</span>
-            </div>
-            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · FK → @ClientID</div>
-          </div>
-        </div>
+      <div class="card">
+        <div class="card-ico"><i class="ic ic-shield"></i></div>
+        <h3>Prove what happened</h3>
+        <p>Ten roles with a real permission matrix, separation of duties, change guardrails enforced
+          on the server, and a hash-chained audit trail that reports a break rather than hiding it.</p>
       </div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<!-- SERVER MIGRATION -->
-<section class="section" id="server-migration">
-  <div class="container">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
-      <div>
-        <div class="section-tag">Server Migration</div>
-        <div class="section-title" style="font-size:2.2rem">The objects most tools leave behind.</div>
-        <div class="section-sub">Schema and data are only half a migration. Logins, jobs, SSIS packages, linked servers — these live at the server level and almost every other tool either ignores them or makes you script them by hand. Cygenix moves them in a single, auditable flow.</div>
-        <ul class="feature-points" style="margin-top:1.5rem">
-          <li><strong style="color:var(--text2)">Logins</strong> — hashed passwords and SIDs preserved, so existing database users stay correctly mapped on the target. Server roles and Windows groups included.</li>
-          <li><strong style="color:var(--text2)">SQL Agent jobs</strong> — full dependency graph migrated: steps, schedules, categories, notification operators. Jobs created disabled by default so nothing fires unexpectedly on the target.</li>
-          <li><strong style="color:var(--text2)">SSIS packages</strong> — project deployment model. .ispac binaries transferred server-to-server via the catalog API; environments, variables and parameter overrides included; SSISDB auto-created on target if missing.</li>
-          <li><strong style="color:var(--text2)">Linked servers</strong> — provider, datasource and server options reproduced exactly, regardless of provider type. Remote passwords supplied per server (SQL Server cannot read them back from source).</li>
-          <li>Five-step shell: <strong style="color:var(--text2)">Verify → Discover → Preview → Execute → Audit</strong>. Sysadmin check on both sides, full SQL preview with redacted secrets, downloadable JSON audit trail of every action.</li>
-          <li>Already-existing items skipped via <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">IF NOT EXISTS</code> guards. Re-runs are safe.</li>
-        </ul>
-      </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Server Migration · Step 4 of 5 · Execute</div>
-        </div>
-        <div class="mock-body">
-          <!-- Five-step bar -->
-          <div style="display:flex;border:0.5px solid var(--border2);border-radius:6px;overflow:hidden;margin-bottom:0.6rem;font-size:8px;font-family:var(--mono)">
-            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">1 Verify ✓</div>
-            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">2 Discover ✓</div>
-            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">3 Preview ✓</div>
-            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--accent);border-right:0.5px solid var(--border2);background:rgba(74,91,214,0.12);font-weight:700">4 Execute</div>
-            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3)">5 Audit</div>
-          </div>
-          <!-- Live execute feed mock — one row per category showing the badges that actually appear in the live UI -->
-          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:rgba(74,91,214,0.15);color:#4A5BD6;padding:1px 5px;border-radius:3px;font-size:8px">LOGIN</span>
-            <span style="flex:1">app_service</span>
-            <span style="color:var(--green);font-size:8px">CREATED</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:rgba(74,91,214,0.15);color:#4A5BD6;padding:1px 5px;border-radius:3px;font-size:8px">LOGIN</span>
-            <span style="flex:1">reporting_user</span>
-            <span style="color:var(--green);font-size:8px">CREATED</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:var(--amber-g);color:var(--amber);padding:1px 5px;border-radius:3px;font-size:8px">JOB</span>
-            <span style="flex:1">Nightly_DataRefresh</span>
-            <span style="color:var(--green);font-size:8px">CREATED · 4 steps</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--amber);width:10px">–</span>
-            <span style="background:var(--amber-g);color:var(--amber);padding:1px 5px;border-radius:3px;font-size:8px">JOB</span>
-            <span style="flex:1">Old_BackupCheck</span>
-            <span style="color:var(--amber);font-size:8px">SKIPPED</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:var(--red-g);color:var(--red);padding:1px 5px;border-radius:3px;font-size:8px">PROJ</span>
-            <span style="flex:1">Finance/SalesETL</span>
-            <span style="color:var(--green);font-size:8px">DEPLOYED</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:var(--green-g);color:var(--green);padding:1px 5px;border-radius:3px;font-size:8px">ENV</span>
-            <span style="flex:1">Finance/Production</span>
-            <span style="color:var(--green);font-size:8px">12 vars</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:var(--amber-g);color:var(--amber);padding:1px 5px;border-radius:3px;font-size:8px">LINK</span>
-            <span style="flex:1">LINK_REPORTING</span>
-            <span style="color:var(--green);font-size:8px">CREATED</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--accent)">Progress: 47 / 52</span>
-            <span style="color:var(--green)">✓ 41</span>
-            <span style="color:var(--amber)">– 5</span>
-            <span style="color:var(--red)">✕ 1</span>
-          </div>
-        </div>
-      </div>
+<!-- ══ MAPPING ═══════════════════════════════════════════════════════════ -->
+<section class="section" id="mapping">
+  <div class="container split">
+    <div class="reveal">
+      <div class="section-tag">Intelligent mapping</div>
+      <div class="section-title">Target-driven, and honest about what it changed</div>
+      <p class="section-sub">Every target column is a fixed row. Pick a source, override with a fixed
+        value, or apply a transform — and see the confidence the model actually had, not a number
+        invented to look reassuring.</p>
+      <ul class="flist">
+        <li><i class="ic ic-check"></i><span><b>One transform engine.</b> A <span style="font-family:var(--mono);font-size:12.5px">CAST</span>
+          to a shorter character type truncates in the preview exactly as SQL Server truncates it on
+          the way in — so a job cannot pass preview and then fail on string-would-be-truncated.</span></li>
+        <li><i class="ic ic-check"></i><span><b>Views as sources.</b> Map from a view the same way you
+          map from a table, with its dependencies resolved.</span></li>
+        <li><i class="ic ic-check"></i><span><b>Evidence, not guesswork.</b> Suggestions are scored on
+          name, type, sampled values and referential shape, and the low-confidence ones are marked
+          for a human rather than quietly accepted.</span></li>
+        <li><i class="ic ic-check"></i><span><b>Every changed value is counted.</b> A run reports how
+          many values a transform altered, next to the row count.</span></li>
+      </ul>
     </div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- VALIDATION -->
-<section class="section section--ink flip" id="validation">
-  <div class="container">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
-      <div>
-        <div class="section-tag">Flexible Validation</div>
-        <div class="section-title" style="font-size:2.2rem">Any table. Any SQL. Any database.</div>
-        <div class="section-sub">No longer locked to a fixed schema or table name. Add any table as a validation source, pick which column holds the SQL to execute, choose which columns appear in the failure report, and run against any database.</div>
-        <ul class="feature-points" style="margin-top:1.5rem">
-          <li>Add multiple validation tables from different connections</li>
-          <li>Pick the SQL column, name column and report columns per source</li>
-          <li>Run all, run selected (checkboxes), or run one source at a time</li>
-          <li>Inline result rows shown with your chosen report columns</li>
-          <li>Export to Excel — summary + one sheet per failed script</li>
-          <li><i class="ic ic-stop"></i> Stop mid-run at any time</li>
-        </ul>
-      </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Data Validation · 3 sources</div>
-        </div>
-        <div class="mock-body">
-          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem;display:flex;align-items:center;gap:0.5rem">
-            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--teal)">Post-migration checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.PostMigrationChecks · SQL col: CheckSQL · 24 scripts</div></div>
-            <span style="font-size:9px;background:var(--red-g);color:var(--red);padding:1px 6px;border-radius:100px;font-family:var(--mono)">3 fail</span>
-            <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">21 pass</span>
-          </div>
-          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.5rem">
-            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--amber)">Financial integrity checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.FinancialChecks · SQL col: CheckQuery · 8 scripts</div></div>
-            <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">8 pass</span>
-          </div>
-          <div id="val-rows-mock"></div>
-          <div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:9px;font-family:var(--mono)">
-            <span style="color:var(--green)">✓ Pass: <span id="val-pass-count">0</span></span>
-            <span style="color:var(--red)">✕ Fail: <span id="val-fail-count">0</span></span>
-            <span style="color:var(--text3)"><i class="ic ic-hourglass"></i> Pending: <span id="val-pend-count">0</span></span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- PROJECT PLANNER -->
-<section class="section" id="planner">
-  <div class="container">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Project Plan · Calendar — April 2026</div>
-        </div>
-        <div class="mock-body" style="padding:0.5rem">
-          <!-- Mini calendar -->
-          <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem">
-            <div style="font-size:9px;background:var(--bg4);color:var(--accent);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Year</div>
-            <div style="font-size:9px;background:var(--accent);color:#fff;padding:2px 7px;border-radius:4px;font-family:var(--mono)">Month</div>
-            <div style="font-size:9px;background:var(--bg4);color:var(--text3);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Week</div>
-            <div style="font-size:9px;background:var(--bg4);color:var(--text3);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Day</div>
-            <div style="margin-left:auto;font-size:9px;color:var(--text3);font-family:var(--mono)">◀ April 2026 ▶</div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;font-family:var(--mono);font-size:9px;text-align:center;margin-bottom:2px">
-            <div style="color:var(--text3)">M</div><div style="color:var(--text3)">T</div><div style="color:var(--text3)">W</div><div style="color:var(--text3)">T</div><div style="color:var(--text3)">F</div><div style="color:var(--text3)">S</div><div style="color:var(--text3)">S</div>
-          </div>
-          <div id="cal-mock-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;font-family:var(--mono);font-size:9px"></div>
-          <!-- Stats row -->
-          <div style="display:flex;gap:0.4rem;margin-top:0.5rem;flex-wrap:wrap">
-            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--accent)">7</div><div style="font-size:8px;color:var(--text3)">days left</div></div>
-            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--green)">12</div><div style="font-size:8px;color:var(--text3)">done</div></div>
-            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--amber)">3</div><div style="font-size:8px;color:var(--text3)">in progress</div></div>
-            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--red)">1</div><div style="font-size:8px;color:var(--text3)">blocker</div></div>
-          </div>
-        </div>
-      </div>
-      <div>
-        <div class="section-tag">Project Planner</div>
-        <div class="section-title" style="font-size:2.2rem">Plan, track and deliver your migration</div>
-        <div class="section-sub">A full project management tool built into Cygenix. Calendar views, task tracking, blockers, phase progress and activity log — all driven by your project completion date from Project Settings.</div>
-        <ul class="feature-points" style="margin-top:1.5rem">
-          <li>Year / Month / Week / Day calendar views — click to add events</li>
-          <li>Outlook-style event modal with type, time, location, attendees</li>
-          <li>Task table with status, priority, phase, owner and due date</li>
-          <li>Blocker management with impact level and resolution tracking</li>
-          <li>7-stage execution phase tracker — click to set current phase</li>
-          <li><i class="ic ic-link"></i> Jira &amp; Smartsheet sync — bidirectional, field-mapped, full sync history</li>
-          <li>Activity log records every change automatically</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- SQL EDITOR -->
-<section class="section section--ink" id="sql-editor">
-  <div class="container">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
-      <div>
-        <div class="section-tag">SQL Editor</div>
-        <div class="section-title" style="font-size:2.2rem">Full-featured SQL workspace</div>
-        <div class="section-sub">Write, save, run and manage SQL scripts against source or target databases. AI assistant, find & replace, history, results grid with pivot view and Excel export.</div>
-        <ul class="feature-points" style="margin-top:1.5rem">
-          <li>Script library — save, name and load any number of scripts</li>
-          <li>Ctrl+Enter to run, Ctrl+F to find, Ctrl+/ to comment selection</li>
-          <li>Results grid with row / pivot view and Excel export</li>
-          <li>Query history with re-load and timestamp</li>
-          <li>AI assistant — describe what you need, Claude writes the SQL</li>
-          <li>Snippet toolbar — SELECT, WHERE, INSERT, UPDATE, TRAN</li>
-        </ul>
-      </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">SQL Editor · Source DB</div>
-        </div>
-        <div class="sql-block" style="margin:0.5rem;max-height:130px">
-          <span class="sql-cm">-- Count records by status for reconciliation</span><br>
-          <span class="sql-kw">SELECT</span><br>
-          &nbsp;&nbsp;[status_code],<br>
-          &nbsp;&nbsp;<span class="sql-fn">COUNT</span>(*) <span class="sql-kw">AS</span> record_count,<br>
-          &nbsp;&nbsp;<span class="sql-fn">SUM</span>([amount]) <span class="sql-kw">AS</span> total_amount<br>
-          <span class="sql-kw">FROM</span> [dbo].[transactions]<br>
-          <span class="sql-kw">WHERE</span> [created_date] &gt;= <span class="sql-str">'2024-01-01'</span><br>
-          &nbsp;&nbsp;<span class="sql-kw">AND</span> [active_flag] = <span class="sql-num">1</span><br>
-          <span class="sql-kw">GROUP BY</span> [status_code]<br>
-          <span class="sql-kw">ORDER BY</span> record_count <span class="sql-kw">DESC</span>
-        </div>
-        <div style="background:var(--bg3);border-top:0.5px solid var(--border);padding:0.4rem 0.6rem;display:flex;gap:0.5rem;font-family:var(--mono);font-size:9px;color:var(--text3)">
-          <span style="color:var(--green)">▶ Run (Ctrl+Enter)</span>
-          <span>|</span><span><i class="ic ic-search"></i> Find</span><span>|</span><span><i class="ic ic-download"></i> Export</span>
-        </div>
-        <div style="padding:0.4rem 0.6rem">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.3rem;font-family:var(--mono);font-size:9px;background:var(--bg3);border-radius:4px;padding:0.3rem">
-            <div style="color:var(--text3);text-transform:uppercase;font-size:8px">status_code</div><div style="color:var(--text3);text-transform:uppercase;font-size:8px">record_count</div><div style="color:var(--text3);text-transform:uppercase;font-size:8px">total_amount</div>
-            <div style="color:var(--teal)">ACTIVE</div><div style="color:var(--text2)">1,842</div><div style="color:var(--green)">£2,341,990</div>
-            <div style="color:var(--teal)">PENDING</div><div style="color:var(--text2)">234</div><div style="color:var(--amber)">£89,450</div>
-            <div style="color:var(--teal)">CLOSED</div><div style="color:var(--text2)">89</div><div style="color:var(--text3)">£12,100</div>
-          </div>
-          <div style="font-size:9px;color:var(--green);font-family:var(--mono);margin-top:0.3rem">✓ 3 rows · 12ms</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- AGENTIVE MIGRATION -->
-<section class="section" id="agentive">
-  <div class="container">
-    <div class="animate-on-scroll" style="text-align:center;margin-bottom:1rem">
-      <div class="section-tag">Two Migration Modes · NEW</div>
-      <div class="section-title">AI-Assisted or fully Agentive —<br>you choose how much to hand over</div>
-      <div class="section-sub" style="margin:0 auto">Cygenix offers two ways to run a migration. AI-Assisted keeps you in control with intelligent suggestions at every step — think of it like the driver-assist features in a modern car. Agentive Migration lets Cygenix plan and execute the whole job autonomously while you supervise — closer to a self-driving experience. Both modes give you the kill switch.</div>
-    </div>
-
-    <div class="dual-mode animate-on-scroll" style="margin-top:3rem">
-      <div class="mode-card driver-assist">
-        <div class="mode-card-head">
-          <div class="mode-icon mode-icon-da"><i class="ic ic-truck"></i> </div>
-          <div>
-            <div class="mode-name">AI-Assisted Migration</div>
-            <div class="mode-tag">YOU DECIDE · AI ASSISTS</div>
-          </div>
-        </div>
-        <div class="mode-analogy">Like adaptive cruise and lane-keep — you stay in the driver's seat, the AI keeps you on track and warns you before trouble.</div>
-        <ul class="mode-list">
-          <li>AI suggests every column mapping; you review and approve</li>
-          <li>You click Run on each phase — load, validate, reconcile</li>
-          <li>Cygenix flags risks ahead — truncation, FK gaps, slow queries</li>
-          <li>You decide when to retry, skip, or roll back</li>
-          <li>Best for first-time migrations, regulated workloads, demos</li>
-        </ul>
-      </div>
-
-      <div class="mode-card autopilot">
-        <div class="mode-card-head">
-          <div class="mode-icon mode-icon-ap"><i class="ic ic-robot"></i> </div>
-          <div>
-            <div class="mode-name">Agentive Migration</div>
-            <div class="mode-tag">FULLY AUTONOMOUS · YOU SUPERVISE</div>
-          </div>
-        </div>
-        <div class="mode-analogy">Like full self-driving — the agent plans the route, executes every step, handles obstacles, and pulls over only if it can't safely continue.</div>
-        <ul class="mode-list">
-          <li>Plans the entire migration — extract, map, load, validate</li>
-          <li>Executes phases end-to-end with retries and back-off</li>
-          <li>Self-heals on transient errors; pauses on data anomalies</li>
-          <li>Streams progress — you see every action in the activity log</li>
-          <li>Hit <i class="ic ic-pause"></i> Pause or <i class="ic ic-stop"></i> Kill at any time — full rollback supported</li>
-        </ul>
-      </div>
-    </div>
-
-    <!-- Mode toggle mock-up -->
-    <div class="mock animate-on-scroll" style="margin-top:3rem;max-width:760px;margin-left:auto;margin-right:auto">
-      <div class="mock-topbar">
-        <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-        <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Migration Run · Agentive mode · Phase 3 of 6</div>
-      </div>
+    <div class="mock reveal">
+      <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-title">Object Mapping — dbo.Customer → dbo.Customer</span></div>
       <div class="mock-body">
-        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem;padding:0.4rem 0.5rem;background:var(--bg3);border-radius:6px">
-          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Mode:</div>
-          <div style="display:flex;background:var(--bg);border-radius:5px;padding:2px;gap:2px">
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">AI-Assisted</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:rgba(107,78,142,0.18);color:var(--purple)"><i class="ic ic-robot"></i> Agentive</div>
-          </div>
-          <div style="margin-left:auto;display:flex;align-items:center;gap:0.4rem">
-            <span style="width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite"></span>
-            <span style="font-size:9px;font-family:var(--mono);color:var(--green)">RUNNING</span>
-            <button style="font-size:9px;font-family:var(--mono);padding:3px 8px;border-radius:4px;background:var(--red-g);color:var(--red);border:0.5px solid rgba(240,64,112,0.3)"><i class="ic ic-stop"></i> Kill</button>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:0.6rem">
-          <div style="background:var(--green-g);color:var(--green);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">✓ Connect</div>
-          <div style="background:var(--green-g);color:var(--green);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">✓ Map</div>
-          <div style="background:var(--glow);color:var(--accent);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center;border:0.5px solid rgba(74,91,214,0.4)">⟳ Load</div>
-          <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Validate</div>
-          <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Reconcile</div>
-          <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Report</div>
-        </div>
-        <div style="font-size:9px;font-family:var(--mono);color:var(--text3);line-height:1.7;background:var(--bg);border-radius:6px;padding:0.6rem 0.7rem">
-          <span style="color:var(--green)">[12:04:21]</span> ✓ Connected to source · 342 tables discovered<br>
-          <span style="color:var(--green)">[12:04:38]</span> ✓ AI mapping complete · 47 columns · 2 truncation warnings auto-resolved<br>
-          <span style="color:var(--accent)">[12:05:02]</span> ⟳ Loading dbo.Transaction · batch 8/24 · 5,000 rows/sec<br>
-          <span style="color:var(--amber)">[12:05:14]</span> <i class="ic ic-warning"></i> Transient timeout on dbo.Voucher — retrying with back-off (1/3)<br>
-          <span style="color:var(--green)">[12:05:19]</span> ✓ Recovered · continuing
+        <table>
+          <thead><tr><th class="mono">Source</th><th class="mono">Target</th><th class="mono">Transform</th><th class="mono">Confidence</th></tr></thead>
+          <tbody>
+            <tr><td class="mono k">customer_id</td><td class="mono">CustomerID</td><td class="mono">—</td><td><span class="pill p-ok">High</span></td></tr>
+            <tr><td class="mono k">full_name</td><td class="mono">DisplayName</td><td class="mono">TRIM</td><td><span class="pill p-ok">High</span></td></tr>
+            <tr><td class="mono k">notes</td><td class="mono">Notes</td><td class="mono">CAST → NVARCHAR(100)</td><td><span class="pill p-warn">Truncates</span></td></tr>
+            <tr><td class="mono k">region_code</td><td class="mono">Territory</td><td class="mono">Fixed: N'EMEA'</td><td><span class="pill p-info">Fixed</span></td></tr>
+            <tr><td class="mono k">created_ts</td><td class="mono">CreatedOn</td><td class="mono">CAST → DATETIME2(3)</td><td><span class="pill p-ok">High</span></td></tr>
+            <tr><td class="mono k">legacy_ref</td><td class="mono" style="color:var(--text3)">— unmapped —</td><td class="mono">—</td><td><span class="pill p-mute">Review</span></td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:0.75rem;font-family:var(--mono);font-size:10px;color:var(--text3)">
+          6 target columns · 5 mapped · 1 needs review · 2 transforms will change values
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
+<!-- ══ PREFLIGHT ═════════════════════════════════════════════════════════ -->
+<section class="section" id="preflight">
+  <div class="container split flip">
+    <div class="reveal">
+      <div class="section-tag">Preflight and validation</div>
+      <div class="section-title">The failures you find before the run</div>
+      <p class="section-sub">Preflight pulls a sample of your real rows, pushes them through the
+        mapping you have actually built, and tells you what the target would reject. Validation suites
+        then run any SQL you like, against any table, and report the rows that failed.</p>
+      <ul class="flist">
+        <li><i class="ic ic-check"></i><span><b>Rejection forecast per column</b> — truncation,
+          out-of-range, null-into-not-null, bad conversions.</span></li>
+        <li><i class="ic ic-check"></i><span><b>Your own checks.</b> Point a suite at any table, name
+          the column that holds the SQL, choose which columns appear in the failure report.</span></li>
+        <li><i class="ic ic-check"></i><span><b>Destructive statements are parsed out</b> and listed
+          individually, with whether each one carries a WHERE clause.</span></li>
+      </ul>
+    </div>
+    <div class="mock reveal">
+      <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-title">Preflight — 5,000 sampled rows</span></div>
+      <div class="mock-body">
+        <table>
+          <thead><tr><th class="mono">Check</th><th class="mono">Result</th><th class="mono" style="text-align:right">Rows</th></tr></thead>
+          <tbody>
+            <tr><td class="mono k">CheckRowCounts</td><td><span class="pill p-ok">Pass</span></td><td class="mono" style="text-align:right">—</td></tr>
+            <tr><td class="mono k">CheckOrphanRows</td><td><span class="pill p-bad">Fail</span></td><td class="mono" style="text-align:right">14</td></tr>
+            <tr><td class="mono k">CheckDuplicateKeys</td><td><span class="pill p-bad">Fail</span></td><td class="mono" style="text-align:right">3</td></tr>
+            <tr><td class="mono k">CheckNullConstraints</td><td><span class="pill p-ok">Pass</span></td><td class="mono" style="text-align:right">—</td></tr>
+            <tr><td class="mono k">CheckTotalsBalance</td><td><span class="pill p-mute">Pending</span></td><td class="mono" style="text-align:right">—</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:0.85rem;padding:0.6rem 0.7rem;background:var(--bg3);border-radius:8px;
+                    font-family:var(--mono);font-size:10px;color:var(--text2);line-height:1.7">
+          <span style="color:var(--amber)">FORECAST</span> dbo.Customer.Notes — 3 of 5,000 rows exceed NVARCHAR(100)<br>
+          <span style="color:var(--amber)">FORECAST</span> dbo.Orders.Amount — 1 row fails CAST to DECIMAL(10,2)<br>
+          <span style="color:var(--green)">CLEAR</span> &nbsp;&nbsp;&nbsp;dbo.Product — no rejections forecast
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
-<!-- REPORTING TOOL -->
-<section class="section section--ink flip" id="reporting">
+<!-- ══ SERVER MIGRATION ══════════════════════════════════════════════════ -->
+<section class="section" id="server-migration">
+  <div class="container split">
+    <div class="reveal">
+      <div class="section-tag">Server migration <span class="chip chip-beta">Beta</span></div>
+      <div class="section-title">The objects most tools leave behind</div>
+      <p class="section-sub">Schema and data are half a migration. Logins, Agent jobs, SSIS projects,
+        linked servers and credentials live at the server level, and almost everything else either
+        ignores them or hands you a script to run by hand.</p>
+      <ul class="flist">
+        <li><i class="ic ic-check"></i><span><b>Logins move intact</b> — the hashed password and the
+          SID travel, so orphaned users do not appear on the other side. Passwords held by a remote
+          server are never read and never moved.</span></li>
+        <li><i class="ic ic-check"></i><span><b>It checks the target first.</b> Cygenix reads the
+          engine edition and tells you what that target cannot hold — before it starts, not at the
+          first failing statement.</span></li>
+        <li><i class="ic ic-check"></i><span><b>Named equivalents, not a shrug.</b> Where an object
+          has no home on the target, the panel names the Azure construct that replaces it.</span></li>
+      </ul>
+    </div>
+    <div class="mock reveal">
+      <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-title">Server Migration — target assessment</span></div>
+      <div class="mock-body">
+        <div style="padding:0.6rem 0.7rem;background:rgba(178,106,0,0.10);border:1px solid rgba(178,106,0,0.25);
+                    border-radius:8px;font-size:11.5px;color:var(--text2);line-height:1.6;margin-bottom:0.85rem">
+          <b style="color:var(--amber)">Target reports: SQL Azure.</b> Azure SQL Database holds no
+          server-level objects at all. Nothing in this module can move to it — the equivalents below
+          are Azure constructs you create yourself.
+        </div>
+        <table>
+          <thead><tr><th class="mono">Object class</th><th class="mono">Verdict</th><th class="mono">Equivalent</th></tr></thead>
+          <tbody>
+            <tr><td class="k">Server logins</td><td><span class="pill p-warn">Needs equivalent</span></td><td style="font-size:10.5px">Contained database users</td></tr>
+            <tr><td class="k">Server roles</td><td><span class="pill p-warn">Needs equivalent</span></td><td style="font-size:10.5px">Database roles</td></tr>
+            <tr><td class="k">SQL Agent jobs</td><td><span class="pill p-warn">Needs equivalent</span></td><td style="font-size:10.5px">Elastic Jobs, or Automation</td></tr>
+            <tr><td class="k">SSIS projects</td><td><span class="pill p-warn">Needs equivalent</span></td><td style="font-size:10.5px">Azure-SSIS IR, or Data Factory</td></tr>
+            <tr><td class="k">Linked servers</td><td><span class="pill p-warn">Needs equivalent</span></td><td style="font-size:10.5px">External data sources</td></tr>
+            <tr><td class="k">Credentials, proxies</td><td><span class="pill p-bad">Not possible</span></td><td style="font-size:10.5px">—</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center">
+          <span style="font-family:var(--mono);font-size:10px;padding:0.35rem 0.8rem;border-radius:6px;
+                       background:var(--bg4);color:var(--text3)">Proceed — disabled</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">nothing here can move to this target</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ GOVERNANCE ════════════════════════════════════════════════════════ -->
+<section class="section" id="governance">
   <div class="container">
-    <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:5rem;align-items:center" class="animate-on-scroll">
-      <div>
-        <div class="section-tag">Reporting</div>
-        <div class="section-title" style="font-size:2.2rem">The home for business intelligence,<br>not just migration logs</div>
-        <div class="section-sub">Reporting is where Cygenix turns raw migration data into something you can act on. Build interactive BI dashboards over your source or target database with drag-and-drop charts. Auto-generate executive project summary documents and conversion reports — written in plain English, ready to send to stakeholders.</div>
-        <ul class="feature-points" style="margin-top:1.5rem">
-          <li>Interactive BI dashboards — bar, line, pie, donut, heatmap, KPI tiles, pivot tables</li>
-          <li>Drag-and-drop chart builder — point at any table or query, drop dimensions and measures, done</li>
-          <li>Cross-filter — click any segment in any chart to filter every other chart on the page</li>
-          <li>Executive Project Summary — one-click AI-generated narrative document covering scope, progress, risks and next steps</li>
-          <li>Conversion Reports — every migration run produces a polished, branded report (Excel + PDF) with full lineage</li>
-          <li>Schedule any report to email itself to stakeholders weekly or on milestone completion</li>
-          <li>Drill-through from any chart straight into the SQL Editor for the underlying query</li>
-        </ul>
-      </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · BI Dashboard · Sample Project</div>
-          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-download"></i> Export</div>
-        </div>
-        <div class="mock-body">
-          <!-- Tab strip -->
-          <div style="display:flex;gap:0.3rem;margin-bottom:0.6rem;border-bottom:0.5px solid var(--border);padding-bottom:0.4rem">
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-chart"></i> BI Dashboard</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)"><i class="ic ic-doc"></i> Exec Summary</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)"><i class="ic ic-book"></i> Conversion Report</div>
-            <div style="margin-left:auto;font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">+ Add chart</div>
-          </div>
-
-          <!-- KPI tiles -->
-          <div class="kpi-grid">
-            <div class="kpi-tile">
-              <div class="kpi-label">Total Revenue</div>
-              <div class="kpi-val">£4.82<span style="font-size:11px;color:var(--text3);font-weight:500"> M</span></div>
-              <div class="kpi-trend kpi-up">▲ 12.4% YoY</div>
-            </div>
-            <div class="kpi-tile">
-              <div class="kpi-label">Active Accounts</div>
-              <div class="kpi-val">1,847</div>
-              <div class="kpi-trend kpi-up">▲ 86</div>
-            </div>
-            <div class="kpi-tile">
-              <div class="kpi-label">Avg Cycle Time</div>
-              <div class="kpi-val">42<span style="font-size:11px;color:var(--text3);font-weight:500"> d</span></div>
-              <div class="kpi-trend kpi-down">▼ 3.1 days</div>
-            </div>
-            <div class="kpi-tile">
-              <div class="kpi-label">Margin</div>
-              <div class="kpi-val">87.2<span style="font-size:11px;color:var(--text3);font-weight:500">%</span></div>
-              <div class="kpi-trend kpi-flat">— stable</div>
-            </div>
-          </div>
-
-          <!-- Bar chart -->
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Revenue by category</div>
-            <div style="font-size:8px;font-family:var(--mono);color:var(--accent);background:var(--glow);padding:1px 6px;border-radius:100px">↗ drill through</div>
-          </div>
-          <div class="bar-chart" style="margin-bottom:1.2rem">
-            <div class="bar" style="height:88%;animation-delay:0.05s"><span class="bar-label">Cat A</span></div>
-            <div class="bar bar-teal" style="height:72%;animation-delay:0.1s"><span class="bar-label">Cat B</span></div>
-            <div class="bar bar-purple" style="height:54%;animation-delay:0.15s"><span class="bar-label">Cat C</span></div>
-            <div class="bar bar-green" style="height:48%;animation-delay:0.2s"><span class="bar-label">Cat D</span></div>
-            <div class="bar" style="height:38%;animation-delay:0.25s"><span class="bar-label">Cat E</span></div>
-            <div class="bar bar-teal" style="height:30%;animation-delay:0.3s"><span class="bar-label">Cat F</span></div>
-            <div class="bar bar-purple" style="height:24%;animation-delay:0.35s"><span class="bar-label">Cat G</span></div>
-            <div class="bar bar-green" style="height:18%;animation-delay:0.4s"><span class="bar-label">Other</span></div>
-          </div>
-
-          <!-- Line + Donut -->
-          <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:0.5rem">
-            <div>
-              <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Invoiced vs collected · last 12 months</div>
-              <div class="line-chart-wrap">
-                <svg viewBox="0 0 200 90" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="lcGrad" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stop-color="#4A5BD6" stop-opacity="0.5"/>
-                      <stop offset="100%" stop-color="#4A5BD6" stop-opacity="0"/>
-                    </linearGradient>
-                  </defs>
-                  <line x1="0" y1="22" x2="200" y2="22" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
-                  <line x1="0" y1="45" x2="200" y2="45" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
-                  <line x1="0" y1="68" x2="200" y2="68" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
-                  <path class="lc-area" d="M 0 60 L 18 52 L 36 56 L 54 44 L 72 38 L 90 42 L 108 32 L 126 28 L 144 34 L 162 22 L 180 18 L 200 14 L 200 90 L 0 90 Z"/>
-                  <path class="lc-line-2" d="M 0 68 L 18 60 L 36 64 L 54 50 L 72 48 L 90 50 L 108 42 L 126 38 L 144 40 L 162 32 L 180 28 L 200 24" stroke-dasharray="3,3"/>
-                  <path class="lc-line" d="M 0 60 L 18 52 L 36 56 L 54 44 L 72 38 L 90 42 L 108 32 L 126 28 L 144 34 L 162 22 L 180 18 L 200 14"/>
-                </svg>
-                <div style="display:flex;gap:0.7rem;justify-content:flex-end;font-family:var(--mono);font-size:8px;color:var(--text3);margin-top:2px">
-                  <span><span style="display:inline-block;width:10px;height:2px;background:var(--accent);vertical-align:middle;margin-right:3px"></span>Invoiced</span>
-                  <span><span style="display:inline-block;width:10px;height:0;border-top:1.5px dashed var(--teal);vertical-align:middle;margin-right:3px"></span>Collected</span>
-                </div>
-              </div>
-            </div>
-            <div>
-              <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Accounts by region</div>
-              <div class="donut-wrap">
-                <div class="donut">
-                  <svg viewBox="0 0 36 36">
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--bg4)" stroke-width="6"/>
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--accent)" stroke-width="6" stroke-dasharray="40 87.96" stroke-dashoffset="0"/>
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--teal)" stroke-width="6" stroke-dasharray="22 87.96" stroke-dashoffset="-40"/>
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--purple)" stroke-width="6" stroke-dasharray="14 87.96" stroke-dashoffset="-62"/>
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--amber)" stroke-width="6" stroke-dasharray="12 87.96" stroke-dashoffset="-76"/>
-                  </svg>
-                  <div class="donut-center"><div class="v">1.8K</div><div class="l">accounts</div></div>
-                </div>
-                <div class="donut-legend">
-                  <div class="li"><span class="sw" style="background:var(--accent)"></span>UK · 46%</div>
-                  <div class="li"><span class="sw" style="background:var(--teal)"></span>EU · 25%</div>
-                  <div class="li"><span class="sw" style="background:var(--purple)"></span>US · 16%</div>
-                  <div class="li"><span class="sw" style="background:var(--amber)"></span>APAC · 13%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div class="center reveal">
+      <div class="section-tag">Governance</div>
+      <div class="section-title">Controls that the interface cannot talk its way past</div>
+      <p class="section-sub">A confirmation dialog is not a control if skipping the dialog skips the
+        control. Everything here is decided on the server, and a refusal is recorded as carefully as
+        a permission.</p>
     </div>
-
-    <!-- Second row: Executive Summary preview -->
-    <div class="animate-on-scroll" style="margin-top:5rem;display:grid;grid-template-columns:1.15fr 1fr;gap:5rem;align-items:center">
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · Executive Project Summary · auto-generated</div>
-          <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)"><i class="ic ic-sparkle"></i> Regenerate</div>
-        </div>
-        <div class="mock-body" style="padding:1.1rem 1.25rem;background:var(--bg2);color:var(--text);font-family:var(--sans)">
-          <div style="font-size:8px;color:var(--text3);letter-spacing:0.1em;font-family:var(--mono);text-transform:uppercase;margin-bottom:4px">Project Status Report · 2 May 2026</div>
-          <div style="font-size:15px;font-weight:700;color:var(--text);letter-spacing:-0.02em;margin-bottom:0.5rem">ERP Data Migration — Phase 3 of 4</div>
-          <div style="display:flex;gap:0.4rem;margin-bottom:0.7rem">
-            <span style="font-size:8px;font-family:var(--mono);background:var(--green-g);color:var(--green);padding:2px 7px;border-radius:100px">● ON TRACK</span>
-            <span style="font-size:8px;font-family:var(--mono);background:var(--amber-g);color:var(--amber);padding:2px 7px;border-radius:100px">2 risks open</span>
-            <span style="font-size:8px;font-family:var(--mono);background:var(--glow);color:var(--accent);padding:2px 7px;border-radius:100px">Go-live: 11 Jun 2026</span>
+    <div class="container split" style="margin-top:3.25rem;padding:0">
+      <div class="mock reveal">
+        <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+          <span class="mock-title">Users &amp; Roles — change guardrails</span></div>
+        <div class="mock-body">
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.7rem">
+            <span style="font-family:var(--mono);font-size:10.5px;padding:0.3rem 0.7rem;border:1px solid var(--border2);
+                         border-radius:6px;color:var(--text)">confirm-destructive</span>
+            <span style="font-size:11px;color:var(--text2)"><b style="color:var(--text)">✓</b> Two-person rule</span>
           </div>
-          <div style="font-size:9.5px;line-height:1.55;color:var(--text2);margin-bottom:0.6rem">
-            <strong style="color:var(--text)">Executive summary.</strong> The data conversion is progressing on schedule, with 14 of 19 in-scope tables fully migrated and reconciled. Validation pass rate is holding at <strong style="color:var(--green)">98.7%</strong>, ahead of the 97% target. Two open issues remain in the financial domain and are being tracked.
+          <div style="font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:0.85rem">
+            A DELETE, TRUNCATE, DROP or unbounded UPDATE is queued until somebody other than the
+            requester approves it. Applies to <b style="color:var(--text)">PROD</b> and
+            <b style="color:var(--text)">STAGING</b> — an unclassified connection counts as PROD.
           </div>
-          <div style="font-size:9.5px;line-height:1.55;color:var(--text2);margin-bottom:0.5rem">
-            <strong style="color:var(--text)">Progress this week.</strong> Completed Transaction, TransactionDetail and Invoice loads (2.4M rows). Validation suite ran clean on all three. Cutover rehearsal scheduled for 28 May.
-          </div>
-          <div style="font-size:9.5px;line-height:1.55;color:var(--text2)">
-            <strong style="color:var(--text)">Risks &amp; next steps.</strong> Customer master requires a manual reconciliation pass before final load. Business team availability for UAT remains the critical-path dependency.
-          </div>
-          <div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid var(--border);font-size:8px;color:var(--text3);font-family:var(--mono);display:flex;justify-content:space-between">
-            <span>Generated by Cygenix · 2 May 2026 · 09:14</span>
-            <span><i class="ic ic-doc"></i> Export PDF · <i class="ic ic-mail"></i> Email stakeholders</span>
+          <div style="border-top:1px solid var(--border);padding-top:0.7rem">
+            <div style="font-family:var(--mono);font-size:9.5px;letter-spacing:0.08em;text-transform:uppercase;
+                        color:var(--text3);margin-bottom:0.5rem">Awaiting approval</div>
+            <table>
+              <tbody>
+                <tr><td class="mono" style="font-size:10.5px">DELETE FROM dbo.Orders</td>
+                    <td><span class="pill p-bad">no WHERE</span></td>
+                    <td style="text-align:right"><span class="pill p-info">Approve</span></td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:0.5rem;font-family:var(--mono);font-size:9.5px;color:var(--text3)">
+              requested 2 minutes ago · expires in 13 · you cannot approve your own
+            </div>
           </div>
         </div>
       </div>
-      <div>
-        <div class="feature-tag">Executive Summary &amp; Conversion Reports</div>
-        <div class="feature-title">From raw run logs to a board-ready document — automatically</div>
-        <div class="feature-body">Cygenix reads the full state of your project — completed phases, open risks, validation results, blockers, timeline — and writes a polished one-page status report for executives. Conversion reports give the technical team the full lineage, every mapping decision, every Was/Is rule applied, every row count.</div>
-        <ul class="feature-points">
-          <li>Executive Project Summary — narrative status report, regenerated on demand</li>
-          <li>Conversion Report — full audit trail of every migration run, signed off and timestamped</li>
-          <li>Branded templates — your logo, your colours, your headers</li>
-          <li>Schedule weekly delivery to your steering committee, in their inbox, no copy-paste</li>
-          <li>PDF, Word and Excel formats — no special viewer required</li>
+      <div class="reveal">
+        <ul class="flist" style="margin-top:0">
+          <li><i class="ic ic-users"></i><span><b>Shared workspaces.</b> Projects belong to the
+            workspace, not to whoever created them, and colleagues join by invitation — there is no
+            step in an identity provider's admin console. Jobs, schedules and saved scripts are still
+            personal; that half is not finished yet.</span></li>
+          <li><i class="ic ic-shield"></i><span><b>Change guardrails.</b> Confirm destructive changes,
+            or every change. Enforced against a hash of the exact statement, so an approval cannot be
+            replayed, moved to another target, or survive an edit to the SQL.</span></li>
+          <li><i class="ic ic-user"></i><span><b>A two-person rule.</b> Turn it on and a gated change
+            waits for a second person. Nobody approves their own request, and the sole approver of a
+            change cannot be the one who executes it.</span></li>
+          <li><i class="ic ic-lock"></i><span><b>Ten roles, one matrix.</b> Owner, Administrator,
+            Lead, Engineer, Approver, Data Owner, Validator, Auditor, Member, Automation. Deny by
+            default: an action nobody has been granted is refused to everybody, administrators
+            included.</span></li>
+          <li><i class="ic ic-chain"></i><span><b>A tamper-evident audit trail.</b> Hash-chained and
+            append-only, with an endpoint that re-walks it and names the entry where a break starts.
+            AI provenance is not recorded yet.</span></li>
         </ul>
       </div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
+<!-- ══ AUTOMATION ════════════════════════════════════════════════════════ -->
+<section class="section" id="automation">
+  <div class="container split flip">
+    <div class="reveal">
+      <div class="section-tag">Automation</div>
+      <div class="section-title">Batches, schedules, and a resume that means it</div>
+      <p class="section-sub">Group jobs into a batch, save it, load it back and run it. Or hand it to
+        the Task Agent and walk away — it runs on a cadence, after another job, or at a time you pick,
+        and emails you when it is done.</p>
+      <ul class="flist">
+        <li><i class="ic ic-package"></i><span><b>Batches</b> respect dependency order, so a child
+          table never loads before its parent.</span></li>
+        <li><i class="ic ic-clock"></i><span><b>Task Agent</b> runs conversions, validation suites,
+          reindexes, reports and custom SQL on a schedule.</span></li>
+        <li><i class="ic ic-undo"></i><span><b>Resume</b> picks up from the last committed checkpoint
+          rather than starting the whole job again.</span></li>
+        <li><i class="ic ic-robot"></i><span><b>Two modes.</b> AI-assisted keeps you deciding at each
+          step. Agentive plans and executes the whole job while you supervise. Both stop when you tell
+          them to.<span class="chip chip-beta">Agentive: beta</span></span></li>
+      </ul>
+    </div>
+    <div class="mock reveal">
+      <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-title">Batch — nightly load · 4 groups</span></div>
+      <div class="mock-body">
+        <table>
+          <thead><tr><th class="mono">Group</th><th class="mono">Job</th><th class="mono">State</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">1</td><td class="mono k">dbo.Product</td><td><span class="pill p-ok">Complete</span></td></tr>
+            <tr><td class="mono">1</td><td class="mono k">dbo.Customer</td><td><span class="pill p-ok">Complete</span></td></tr>
+            <tr><td class="mono">2</td><td class="mono k">dbo.CustomerAddress</td><td><span class="pill p-ok">Complete</span></td></tr>
+            <tr><td class="mono">3</td><td class="mono k">dbo.Orders</td><td><span class="pill p-info">Running · 62%</span></td></tr>
+            <tr><td class="mono">4</td><td class="mono k">dbo.OrderLine</td><td><span class="pill p-mute">Queued</span></td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:0.85rem;padding:0.6rem 0.7rem;background:var(--bg3);border-radius:8px;
+                    font-family:var(--mono);font-size:10px;color:var(--text2);line-height:1.7">
+          <span style="color:var(--accent)">22:00:04</span> batch started · 27 jobs<br>
+          <span style="color:var(--amber)">22:06:41</span> transient timeout on dbo.Orders — retrying (1/3)<br>
+          <span style="color:var(--green)">22:06:58</span> resumed from checkpoint · 412,000 rows committed
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
-<!-- DATA INSIGHTS -->
-<section class="section" id="insights">
+<!-- ══ DATA STREAM ═══════════════════════════════════════════════════════
+     Preview, and the chip says so. tests/capabilities.test.js checks that a
+     claim phrase for a non-shipped feature sits next to a qualifier. -->
+<section class="section" id="data-stream">
+  <div class="container center reveal">
+    <div class="section-tag">Data Stream <span class="chip chip-preview">Preview</span></div>
+    <div class="section-title">Keep the old system running while the new one fills up</div>
+    <p class="section-sub">A big-bang cutover is a decision most teams would rather not make. Data
+      Stream is the preview of continuous capture and delivery — capture from the source, a stream
+      store in the middle, delivery to the target, with lag and backlog visible per stream. It is in
+      preview: it runs against seeded demo data and does not yet connect to a real database or
+      broker.</p>
+    <div class="cards" style="margin-top:2.75rem">
+      <div class="card">
+        <div class="card-ico"><i class="ic ic-stream"></i></div>
+        <h3>Capture</h3>
+        <p>Per-object capture with a checkpoint and a key column, started and paused independently.</p>
+      </div>
+      <div class="card">
+        <div class="card-ico"><i class="ic ic-archive"></i></div>
+        <h3>Stream store</h3>
+        <p>A retained middle with per-topic depth, so a slow target does not lose events.</p>
+      </div>
+      <div class="card">
+        <div class="card-ico"><i class="ic ic-monitor"></i></div>
+        <h3>Monitor</h3>
+        <p>Lag, throughput, dead letters and alerts per stream — with a replay for anything held back.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ REPORTING ═════════════════════════════════════════════════════════ -->
+<section class="section" id="reporting">
+  <div class="container split">
+    <div class="reveal">
+      <div class="section-tag">Reporting and insight</div>
+      <div class="section-title">Something to send upstairs, not just a log file</div>
+      <p class="section-sub">Build interactive dashboards over the source or target with drag-and-drop
+        charts, generate an executive summary in plain English, and ask questions of the schema
+        without writing SQL first.</p>
+      <ul class="flist">
+        <li><i class="ic ic-chart"></i><span><b>BI dashboards</b> over either database, saved with the
+          project.</span></li>
+        <li><i class="ic ic-doc"></i><span><b>Conversion reports and executive summaries</b> written
+          from the run's own record, exportable to Excel.</span></li>
+        <li><i class="ic ic-search"></i><span><b>Plain-English questions</b> — what a table is for,
+          what depends on it, what would break if it changed.</span></li>
+        <li><i class="ic ic-calendar"></i><span><b>Project planner and configurator</b> — phases,
+          blockers, effort model and a portfolio view across projects.</span></li>
+      </ul>
+    </div>
+    <div class="mock reveal">
+      <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-title">Reports — conversion summary</span></div>
+      <div class="mock-body">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:0.9rem">
+          <div style="background:var(--bg3);border-radius:8px;padding:0.7rem">
+            <div style="font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:0.08em">ROWS MOVED</div>
+            <div style="font-size:18px;font-weight:600;color:var(--text);margin-top:2px">1,284,902</div></div>
+          <div style="background:var(--bg3);border-radius:8px;padding:0.7rem">
+            <div style="font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:0.08em">REJECTED</div>
+            <div style="font-size:18px;font-weight:600;color:var(--amber);margin-top:2px">17</div></div>
+          <div style="background:var(--bg3);border-radius:8px;padding:0.7rem">
+            <div style="font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:0.08em">TABLES</div>
+            <div style="font-size:18px;font-weight:600;color:var(--text);margin-top:2px">42 / 42</div></div>
+        </div>
+        <svg viewBox="0 0 320 74" style="width:100%;height:74px" role="img" aria-label="Rows loaded per batch">
+          <polyline fill="none" stroke="#4A5BD6" stroke-width="2" stroke-linejoin="round"
+            points="4,62 36,54 68,58 100,40 132,44 164,28 196,32 228,18 260,22 292,10 316,14"/>
+          <polyline fill="none" stroke="#0F6E6C" stroke-width="1.5" stroke-dasharray="3 3"
+            points="4,66 36,63 68,64 100,58 132,60 164,52 196,54 228,47 260,49 292,42 316,44"/>
+        </svg>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65;margin-top:0.6rem;
+                    border-top:1px solid var(--border);padding-top:0.6rem">
+          <b style="color:var(--text)">Summary.</b> All 42 tables loaded. 17 rows were rejected, all on
+          <span style="font-family:var(--mono);font-size:10.5px">dbo.Customer.Notes</span>, where the
+          source value exceeds the target length. The mapping now truncates explicitly; a re-run of the
+          affected batch is recommended before sign-off.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SUPPORT MATRIX ════════════════════════════════════════════════════ -->
+<section class="section" id="supports">
   <div class="container">
-    <div class="feature-block reverse animate-on-scroll">
-      <div>
-        <div class="feature-tag">Data Insights</div>
-        <div class="feature-title">Understand any database<br>in plain English</div>
-        <div class="feature-body">Connect to a database you've never seen before and ask Cygenix what's in it. <em style="color:var(--text)">"What does this table do?" "Where is configuration held?" "Which tables hold financial data?"</em> Cygenix reads the schema, samples the data, and answers in plain English — so you stop guessing and start understanding.</div>
-        <ul class="feature-points">
-          <li>Ask questions in natural language — no SQL knowledge required</li>
-          <li>Auto-generated table summaries — purpose, key columns, what each row represents</li>
-          <li>Smart classification — finds config, lookups, transactions, audit, financial, security tables</li>
-          <li>Column-level descriptions inferred from names, types, samples and FK relationships</li>
-          <li>Domain mapping — see how tables connect into clusters (Customers, Orders, Finance, Inventory)</li>
-          <li>Every answer cites the tables, columns and sample values it's based on</li>
-          <li>Especially powerful on legacy or undocumented databases — onboard in hours, not weeks</li>
-        </ul>
-      </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Data Insights · Ask anything about your database</div>
-        </div>
-        <div class="mock-body">
-          <!-- Q&A: What does this table do? -->
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.7rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0"><i class="ic ic-user"></i> </div>
-            <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">What does <span style="font-family:var(--mono);background:var(--bg);padding:1px 5px;border-radius:3px;color:var(--teal);font-size:10px">dbo.Transaction</span> do?</div>
-          </div>
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.9rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-sparkle"></i> </div>
-            <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
-              <div style="font-size:11px;color:var(--text);line-height:1.55;margin-bottom:0.4rem"><strong style="color:var(--accent)">Transaction</strong> stores financial transaction header records — one row per outgoing payment. Each row captures who was paid, the amount, the originating account and the posting period. It links to <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">TransactionDetail</span> for line-level breakdowns and <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">Counterparty</span> for the recipient.</div>
-              <div style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.5rem">
-                <span style="font-size:8px;font-family:var(--mono);background:var(--bg3);color:var(--text2);padding:2px 6px;border-radius:100px;border:0.5px solid var(--border)">domain: <span style="color:var(--accent)">Financial</span></span>
-                <span style="font-size:8px;font-family:var(--mono);background:var(--bg3);color:var(--text2);padding:2px 6px;border-radius:100px;border:0.5px solid var(--border)">~ 2.4M rows</span>
-                <span style="font-size:8px;font-family:var(--mono);background:var(--bg3);color:var(--text2);padding:2px 6px;border-radius:100px;border:0.5px solid var(--border)">28 cols</span>
-                <span style="font-size:8px;font-family:var(--mono);background:var(--bg3);color:var(--text2);padding:2px 6px;border-radius:100px;border:0.5px solid var(--border)">PK: TransactionId</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Q&A: Which tables hold financial data? -->
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.7rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0"><i class="ic ic-user"></i> </div>
-            <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">Which tables hold financial data?</div>
-          </div>
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.9rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-sparkle"></i> </div>
-            <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
-              <div style="font-size:11px;color:var(--text);line-height:1.55;margin-bottom:0.5rem">Found <strong style="color:var(--accent)">14 tables</strong> with financial data, grouped into three clusters:</div>
-              <div style="display:flex;flex-direction:column;gap:0.35rem">
-                <div style="display:flex;align-items:center;gap:0.4rem;background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem">
-                  <span style="font-size:9px;background:rgba(23,130,124,0.12);color:var(--teal);padding:1px 6px;border-radius:100px;font-family:var(--mono)">Payments</span>
-                  <span style="font-size:9px;color:var(--text2);font-family:var(--mono)">Transaction, TransactionDetail, Voucher, +2</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:0.4rem;background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem">
-                  <span style="font-size:9px;background:rgba(107,78,142,0.12);color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">Receivables</span>
-                  <span style="font-size:9px;color:var(--text2);font-family:var(--mono)">Invoice, InvoiceLine, AccountBalance, +1</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:0.4rem;background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem">
-                  <span style="font-size:9px;background:rgba(16,212,138,0.12);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">Ledger</span>
-                  <span style="font-size:9px;color:var(--text2);font-family:var(--mono)">Journal, Balance, Period, +1</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Q&A: Where is config held? -->
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.7rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0"><i class="ic ic-user"></i> </div>
-            <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">Where is the system configuration held?</div>
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-sparkle"></i> </div>
-            <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
-              <div style="font-size:11px;color:var(--text);line-height:1.55"><span style="font-family:var(--mono);font-size:10px;color:var(--teal)">SystemSetting</span> holds key-value runtime settings (78 entries). <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">FeatureFlag</span> stores per-module flags. Lookup codes live in <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">LookupCode</span> and its 23 child tables (e.g. <span style="font-family:var(--mono);font-size:10px;color:var(--text2)">CurrencyCode</span>, <span style="font-family:var(--mono);font-size:10px;color:var(--text2)">StatusCode</span>).</div>
-            </div>
-          </div>
-
-          <!-- Input bar -->
-          <div style="margin-top:0.8rem;display:flex;align-items:center;gap:0.4rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem">
-            <span style="font-size:11px;color:var(--text3)">→</span>
-            <span style="font-size:10px;color:var(--text3);font-style:italic;flex:1">Ask another question…</span>
-            <span style="font-size:8px;font-family:var(--mono);background:var(--glow);color:var(--accent);padding:2px 7px;border-radius:100px"><i class="ic ic-sparkle"></i> Ask</span>
-          </div>
-        </div>
-      </div>
+    <div class="center reveal">
+      <div class="section-tag">What it supports</div>
+      <div class="section-title">The whole list, including the gaps</div>
+      <p class="section-sub">Cygenix keeps one capability manifest that the product and this page both
+        answer to. A test fails the build if the copy claims something the code has not shipped. The
+        full matrix — every source, target, combination and server-object class — lives in the
+        <a href="/help.html#supported" style="color:var(--accent-ink);text-decoration:none">documentation</a>.</p>
     </div>
+    <div class="scroll-x">
+      <table class="matrix reveal">
+        <thead><tr><th>Source</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><b>SQL Server</b></td><td data-label="Status"><span class="chip chip-ga">Available</span></td><td data-label="Notes">2012 and later, on-premises or hosted. Tables and views.</td></tr>
+          <tr><td><b>Azure SQL Database</b></td><td data-label="Status"><span class="chip chip-ga">Available</span></td><td data-label="Notes">Entra or SQL authentication.</td></tr>
+          <tr><td><b>Azure SQL Managed Instance</b></td><td data-label="Status"><span class="chip chip-beta">Beta</span></td><td data-label="Notes">Including the server-level objects a Managed Instance can hold.</td></tr>
+          <tr><td><b>PostgreSQL</b></td><td data-label="Status"><span class="chip chip-ga">Available</span></td><td data-label="Notes">As a source and as a target.</td></tr>
+          <tr><td><b>Files</b></td><td data-label="Status"><span class="chip chip-ga">Available</span></td><td data-label="Notes">CSV, Excel and delimited text, with schema inference.</td></tr>
+          <tr><td><b>Azure Blob Storage</b></td><td data-label="Status"><span class="chip chip-ga">Available</span></td><td data-label="Notes">Your own container, reached with a SAS you supply.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="matrix-note">Targets: SQL Server, Azure SQL Database, Azure SQL Managed Instance and
+      PostgreSQL. Twelve source-to-target combinations are supported; the matrix in the documentation
+      says which, and what changes when the engines differ.</div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<!-- TASK AGENT (JOB SCHEDULER) -->
-<section class="section section--ink" id="task-agent">
+<!-- ══ NOT YET ═══════════════════════════════════════════════════════════ -->
+<section class="section" id="not-yet">
   <div class="container">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot"></div><div class="mock-dot"></div><div class="mock-dot"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Task Agent · Schedule · 6 jobs queued</div>
-          <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)">+ New Job</div>
-        </div>
-        <div class="mock-body">
-          <!-- Tabs -->
-          <div style="display:flex;gap:0.3rem;margin-bottom:0.7rem;border-bottom:0.5px solid var(--border);padding-bottom:0.4rem">
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3)"><i class="ic ic-clock"></i> Upcoming</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)"><i class="ic ic-doc"></i> Run history</div>
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)"><i class="ic ic-cog"></i> All jobs</div>
-          </div>
-
-          <!-- Upcoming jobs -->
-          <div class="sched-row next-up">
-            <div class="sched-time">02 May<div class="d">22:00</div></div>
-            <div class="sched-body">
-              <div class="sched-name">Nightly conversion · Sample Project</div>
-              <div class="sched-meta">Full run · 19 tables · ~ 4h 20m</div>
-            </div>
-            <span class="sched-recur recur-daily">Daily</span>
-            <span class="sched-status status-scheduled">in 6h 12m</span>
-          </div>
-          <div class="sched-row">
-            <div class="sched-time">03 May<div class="d">06:00</div></div>
-            <div class="sched-body">
-              <div class="sched-name">Validation suite · post-conversion</div>
-              <div class="sched-meta">32 scripts · email report on completion</div>
-            </div>
-            <span class="sched-recur recur-daily">Daily</span>
-            <span class="sched-status status-scheduled">scheduled</span>
-          </div>
-          <div class="sched-row">
-            <div class="sched-time">04 May<div class="d">02:00</div></div>
-            <div class="sched-body">
-              <div class="sched-name">Reindex Transaction + Customer</div>
-              <div class="sched-meta">Maintenance · target DB only</div>
-            </div>
-            <span class="sched-recur recur-weekly">Sun weekly</span>
-            <span class="sched-status status-scheduled">scheduled</span>
-          </div>
-          <div class="sched-row">
-            <div class="sched-time">05 May<div class="d">09:00</div></div>
-            <div class="sched-body">
-              <div class="sched-name">Weekly executive summary email</div>
-              <div class="sched-meta">to: project-stakeholders@example.com</div>
-            </div>
-            <span class="sched-recur recur-weekly">Mon weekly</span>
-            <span class="sched-status status-scheduled">scheduled</span>
-          </div>
-          <div class="sched-row">
-            <div class="sched-time">11 Jun<div class="d">23:00</div></div>
-            <div class="sched-body">
-              <div class="sched-name">Go-live cutover run</div>
-              <div class="sched-meta">Full migration · production target</div>
-            </div>
-            <span class="sched-recur recur-once">Once</span>
-            <span class="sched-status status-scheduled">scheduled</span>
-          </div>
-
-          <!-- Recent run -->
-          <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin:0.8rem 0 0.3rem">Last run</div>
-          <div class="sched-row">
-            <div class="sched-time">01 May<div class="d">22:00</div></div>
-            <div class="sched-body">
-              <div class="sched-name">Nightly conversion · Sample Project</div>
-              <div class="sched-meta">2.41M rows · 4h 06m · 0 errors</div>
-            </div>
-            <span class="sched-recur recur-daily">Daily</span>
-            <span class="sched-status status-success">✓ success</span>
-          </div>
-        </div>
+    <div class="center reveal">
+      <div class="section-tag">Straight answers</div>
+      <div class="section-title">What Cygenix does not do yet</div>
+      <p class="section-sub">Every migration tool's website is a list of things it does. This is the
+        other list, kept in the same manifest and updated by the same tests.</p>
+    </div>
+    <div class="notyet reveal">
+      <div>
+        <h3>Row-by-row proof <span class="chip chip-planned">Planned</span></h3>
+        <p>A hash-level diff of every row across a pair, with a signed report, is not built. What
+          exists today is preflight forecasting and validation suites — real, and not the same
+          thing.</p>
       </div>
       <div>
-        <div class="section-tag">Task Agent</div>
-        <div class="section-title" style="font-size:2.2rem">Job scheduler — set it and walk away</div>
-        <div class="section-sub">Cygenix isn't just for live runs. Schedule any conversion, validation suite, reindex, report or custom SQL job to run at a specific time, on a recurring cadence, or after another job completes. The Task Agent picks it up, runs it, and emails you when it's done.</div>
-        <ul class="feature-points" style="margin-top:1.5rem">
-          <li>One-time, daily, weekly, monthly or custom cron schedules</li>
-          <li>Schedule any job type — full conversion, single table, validation, reindex, report, custom SQL</li>
-          <li>Job chains — "run B only when A succeeds" with up to 10 dependencies</li>
-          <li>Email notifications on success, failure or both</li>
-          <li>Built-in retry policy — pick attempts, back-off and timeout per job</li>
-          <li>Full run history with logs, row counts and timing — keep, replay or branch from any past run</li>
-          <li>Pause an entire schedule with one click for go-live freezes or maintenance windows</li>
-        </ul>
+        <h3>Cutover timing <span class="chip chip-planned">Planned</span></h3>
+        <p>Estimating your downtime window and running a bounded incremental pass before the switch is
+          on the roadmap, not in the product.</p>
+      </div>
+      <div>
+        <h3>Shared jobs and scripts <span class="chip chip-beta">Partly</span></h3>
+        <p>Projects are shared across a workspace. Jobs, schedules and saved scripts are still
+          personal to whoever created them — that store has yet to be moved.</p>
+      </div>
+      <div>
+        <h3>AI provenance in the trail <span class="chip chip-planned">Planned</span></h3>
+        <p>The audit trail records who did what and what was refused. It does not yet record which
+          model produced a suggestion, or on what evidence — so an AI-assisted mapping decision is
+          not yet reconstructable from the trail alone.</p>
       </div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<!-- PERFORMANCE -->
-<section class="section" id="performance">
-  <div class="container-sm animate-on-scroll" style="text-align:center">
-    <div class="section-tag">Performance Tuning</div>
-    <div class="section-title">Tuned for your environment</div>
-    <div class="section-sub" style="margin:0 auto 3rem">Quick presets for common scenarios. Fine-tune batch sizes, timeouts, concurrency and data loading to match your server's capacity. Import and export settings as JSON.</div>
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.75rem;margin-bottom:2rem">
-      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
-        <div style="font-size:10px;font-family:var(--mono);color:var(--green);margin-bottom:0.3rem">Small DB</div>
-        <div style="font-size:9px;color:var(--text3)">1,000 rows/page<br>1 thread<br>Full verify</div>
-      </div>
-      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
-        <div style="font-size:10px;font-family:var(--mono);color:var(--accent);margin-bottom:0.3rem">Medium DB</div>
-        <div style="font-size:9px;color:var(--text3)">2,000 rows/page<br>2 threads<br>Balanced</div>
-      </div>
-      <div style="background:var(--bg2);border:0.5px solid rgba(74,91,214,0.4);border-radius:8px;padding:0.875rem;text-align:center;background:var(--bg3)">
-        <div style="font-size:10px;font-family:var(--mono);color:var(--amber);margin-bottom:0.3rem">Large DB</div>
-        <div style="font-size:9px;color:var(--text3)">5,000 rows/page<br>4 threads<br>NOLOCK</div>
-      </div>
-      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
-        <div style="font-size:10px;font-family:var(--mono);color:var(--teal);margin-bottom:0.3rem">Azure SQL</div>
-        <div style="font-size:9px;color:var(--text3)">90s connect<br>5 retries<br>DTU-safe</div>
-      </div>
-      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
-        <div style="font-size:10px;font-family:var(--mono);color:var(--purple);margin-bottom:0.3rem">Cautious</div>
-        <div style="font-size:9px;color:var(--text3)">100 rows/batch<br>1 thread<br>Row verify</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- CTA -->
-<section class="cta-section section--ink flip">
-  <div class="cta-title">Ready to migrate<br>with confidence?</div>
-  <div class="cta-sub">Cygenix handles the complexity — AI column mapping, AI-Assisted and fully Agentive migration modes, interactive BI reporting with auto-generated executive summaries, plain-English data insights, scheduled jobs, cross-engine migration, file imports, validation, dedup detection, project planning, integrations with Jira and Smartsheet, and AI report narratives grounded in your project documents — so your team can focus on the migration, not the tooling.</div>
+<!-- ══ CTA ═══════════════════════════════════════════════════════════════ -->
+<section class="cta-section">
+  <div class="cta-title">Do it once. Prove it.</div>
+  <div class="cta-sub">AI mapping that tells you its confidence, a preflight that finds the failures
+    while they are cheap, server-level objects that actually travel, and a record of every gated
+    action that stands up to being read back.</div>
   <div class="cta-btns">
     <a href="/pricing.html" class="btn-hero btn-primary">Start free trial →</a>
-    <a href="/help.html" class="btn-hero btn-secondary" target="_blank">Read the docs</a>
+    <a href="/help.html" class="btn-hero btn-secondary">Read the documentation</a>
   </div>
 </section>
 
 <footer>
-  Cygenix AI Migration Platform · Claude AI Column Mapping · <a href="/dashboard.html" style="color:var(--accent);text-decoration:none">Dashboard</a> · <a href="/help.html" style="color:var(--accent);text-decoration:none">Help</a> · <button type="button" class="footer-link" onclick="openAbout()">About</button> · <button type="button" class="footer-link a11y-trigger" aria-label="Accessibility options" aria-expanded="false" onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">Accessibility</button>
+  Cygenix — SQL migration platform ·
+  <a href="/dashboard.html">Console</a> ·
+  <a href="/help.html">Documentation</a> ·
+  <a href="/pricing.html">Pricing</a> ·
+  <button type="button" class="footer-link" onclick="openAbout()">About</button> ·
+  <button type="button" class="footer-link a11y-trigger" aria-label="Accessibility options" aria-expanded="false" onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">Accessibility</button>
 </footer>
 
-<!-- About modal -->
-<div class="about-modal" id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-name" onclick="if(event.target===this)closeAbout()">
-  <div class="about-card">
-    <button type="button" class="about-close" onclick="closeAbout()" aria-label="Close">×</button>
-    <div class="about-eyebrow">About the founder</div>
-    <div class="about-name" id="about-name">Curtis Morris<br><span>— Founder</span></div>
-    <div class="about-body">
-      <p>Curtis has worked in technology since the mid-1990s, with the last twenty years spent specialising in data conversion for the media and legal industries — domains where accuracy, traceability, and proof of correctness aren't optional extras.</p>
-      <p>Born in the UK, his route into professional computing came via an unlikely turn: an exchange student programme in the 1980s that put him in front of Gateway PCs at a time when most of his classmates were still on paper. The interest stuck.</p>
-      <p>Cygenix is the platform Curtis wished existed across two decades of consulting work — built so the next data engineer dealing with a high-stakes migration has the tools to do it once, do it right, and prove it.</p>
-    </div>
+<!-- ══ CONTACT MODAL ═════════════════════════════════════════════════════
+     Kept on the page rather than a separate route so the whole call to action
+     stays here. No form handler — enquiries go straight to a person. -->
+<div class="modal-back" id="contact-modal" role="dialog" aria-modal="true" aria-labelledby="contact-title"
+     onclick="if(event.target===this)closeContact()">
+  <div class="modal-card">
+    <button type="button" class="modal-close" onclick="closeContact()" aria-label="Close">×</button>
+    <div class="section-tag">Get in touch</div>
+    <h2 id="contact-title">Let's talk.</h2>
+    <p>Cygenix is in private preview. Get in touch to discuss pricing, scope a migration, or ask for a
+      demonstration.</p>
+    <a class="contact-row" href="mailto:curtis.morris@cygenix.co.uk">
+      <i class="ic ic-mail"></i>
+      <span><span class="lbl">Email</span><br><span class="val">curtis.morris@cygenix.co.uk</span></span>
+    </a>
+    <a class="contact-row" href="tel:+447809873223">
+      <i class="ic ic-chat"></i>
+      <span><span class="lbl">Phone</span><br><span class="val">+44 7809 873223</span></span>
+    </a>
+    <a class="contact-row" href="/register.html">
+      <i class="ic ic-clipboard"></i>
+      <span><span class="lbl">Waitlist</span><br><span class="val">Get early access updates</span></span>
+    </a>
+    <p style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);margin-bottom:0">
+      Starter and Pro plans are <a href="/pricing.html" style="color:var(--accent-ink);text-decoration:none">published
+      on the pricing page</a>. Business and Enterprise are scoped to the migration — get in touch for a quote.</p>
+  </div>
+</div>
+
+<!-- ══ ABOUT MODAL ═══════════════════════════════════════════════════════ -->
+<div class="modal-back" id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-title"
+     onclick="if(event.target===this)closeAbout()">
+  <div class="modal-card">
+    <button type="button" class="modal-close" onclick="closeAbout()" aria-label="Close">×</button>
+    <div class="section-tag">About the founder</div>
+    <h2 id="about-title">Curtis Morris</h2>
+    <p>Curtis has worked in technology since the mid-1990s, with the last twenty years spent
+      specialising in data conversion for the media and legal industries — domains where accuracy,
+      traceability and proof of correctness are not optional extras.</p>
+    <p>Born in the UK, his route into professional computing came via an unlikely turn: an exchange
+      student programme in the 1980s that put him in front of Gateway PCs at a time when most of his
+      classmates were still on paper. The interest stuck.</p>
+    <p style="margin-bottom:0">Cygenix is the platform Curtis wished existed across two decades of
+      consulting work — built so the next engineer facing a high-stakes migration has the tools to do
+      it once, do it right, and prove it.</p>
   </div>
 </div>
 
 <script>
-// Mapper rows animation
-const mapData = [
-  ['run_number','SMALLINT','run_number','SMALLINT','','high'],
-  ['code','NVARCHAR(50)','code','NVARCHAR(50)','','high'],
-  ['description_text','NVARCHAR(200)','description_text','NVARCHAR(100)','','med'],
-  ['active_flag','BIT','active_flag','BIT','','high'],
-  ['region','NVARCHAR','territory','NVARCHAR','N\'EMEA\'','fixed'],
-  ['legacy_id','INT','—','—','','low'],
-];
-const mapBody = document.getElementById('mapper-rows');
-if(mapBody){
-  mapData.forEach((r,i)=>{
-    setTimeout(()=>{
-      const d=document.createElement('div');
-      d.style.cssText='display:grid;grid-template-columns:1fr 0.7fr 1fr 0.8fr 0.8fr;gap:0.3rem;padding:0.25rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);align-items:center;opacity:0;transition:opacity 0.3s';
-      const isTrunc=r[0]==='description_text';
-      const isFixed=r[4]!=='';
-      const badgeCls=r[5]==='high'?'c-high':r[5]==='med'?'c-med':r[5]==='fixed'?'c-high':'c-low';
-      const badgeTxt=r[5]==='high'?'HIGH':r[5]==='med'?'MED ':r[5]==='fixed'?'FIXED':'LOW';
-      d.innerHTML=`
-        <div style="font-family:var(--mono);font-size:9px;color:${r[5]==='low'?'var(--text3)':'var(--text2)'}">${r[0]}</div>
-        <div style="font-size:8px;color:var(--text3);font-family:var(--mono)">${r[1]}</div>
-        <div style="font-family:var(--mono);font-size:9px;color:${r[2]==='—'?'var(--text3)':'var(--teal)'}">${r[2]}${isTrunc?'<span style="font-size:8px;color:var(--amber)"> <i class="ic ic-warning"></i> LEFT(100)</span>':''}</div>
-        <div style="font-family:var(--mono);font-size:9px;color:${isFixed?'var(--teal)':'var(--text3)'}">${r[4]||'—'}</div>
-        <div><span class="confidence ${badgeCls}">${badgeTxt}</span></div>`;
-      mapBody.appendChild(d);
-      requestAnimationFrame(()=>d.style.opacity='1');
-    },i*100);
-  });
-}
+'use strict';
 
-// Validation rows animation
-const valData=[
-  ['CheckAccountBalances','pass',0],
-  ['CheckOrphanRecords','fail',14],
-  ['CheckDuplicateInvoices','fail',3],
-  ['CheckCounterpartyRefs','pass',0],
-  ['CheckPeriodTotals','pending',0],
-];
-const valBody=document.getElementById('val-rows-mock');
-let vp=0,vf=0,vpend=0;
-if(valBody){
-  valData.forEach((r,i)=>{
-    setTimeout(()=>{
-      const row=document.createElement('div');
-      row.className='val-row';
-      const badge=r[1]==='pass'?'<span class="val-badge v-pass"><i class="ic-dot" style="color:var(--green)"></i> Pass</span>':r[1]==='fail'?'<span class="val-badge v-fail"><i class="ic-dot" style="color:var(--red)"></i> Fail</span>':'<span class="val-badge v-pending">— pending —</span>';
-      row.innerHTML=`<input type="checkbox" ${r[1]!=='pending'?'checked':''} style="accent-color:var(--accent);width:10px;flex-shrink:0"><div class="val-name">${r[0]}</div>${badge}<div class="val-rows">${r[2]>0?r[2]+' rows':''}</div>`;
-      valBody.appendChild(row);
-      if(r[1]==='pass'){vp++;document.getElementById('val-pass-count').textContent=vp;}
-      if(r[1]==='fail'){vf++;document.getElementById('val-fail-count').textContent=vf;}
-      if(r[1]==='pending'){vpend++;document.getElementById('val-pend-count').textContent=vpend;}
-    },400+i*280);
-  });
-}
-
-// Calendar mock
-const calGrid=document.getElementById('cal-mock-grid');
-if(calGrid){
-  const today=14; // April 14 2026
-  const eventDays={8:'ev-task',11:'ev-deadline',14:'ev-milestone',18:'ev-task',21:'ev-meeting',25:'ev-deadline'};
-  const evNames={8:'Schema review',11:'UAT deadline',14:'Go-live!',18:'Data QA',21:'Stakeholder sync',25:'Sign-off'};
-  const evCols={'ev-task':'var(--accent)','ev-deadline':'var(--red)','ev-milestone':'var(--amber)','ev-meeting':'var(--purple)'};
-  // April 2026: starts Wednesday (dow=2 → Mon=0 based → offset=2)
-  for(let i=0;i<2;i++) calGrid.innerHTML+=`<div style="color:var(--text3);text-align:center;padding:2px"></div>`;
-  for(let d=1;d<=30;d++){
-    const isToday=d===today;
-    const ev=eventDays[d];
-    let inner=`<div style="text-align:center;padding:2px;font-size:9px;border-radius:${isToday?'50%':'3px'};background:${isToday?'var(--accent)':'transparent'};color:${isToday?'#fff':'var(--text3)'};font-family:var(--mono);cursor:pointer;position:relative">${d}`;
-    if(ev) inner+=`<span style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:${evCols[ev]}"></span>`;
-    inner+=`</div>`;
-    if(ev){
-      inner=`<div style="position:relative">
-        <div style="text-align:center;padding:2px;font-size:9px;border-radius:${isToday?'50%':'3px'};background:${isToday?'var(--accent)':'transparent'};color:${isToday?'#fff':'var(--text3)'};font-family:var(--mono);cursor:pointer">${d}</div>
-        <div style="font-size:8px;padding:1px 3px;border-radius:2px;background:${evCols[ev]}22;color:${evCols[ev]};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;border-left:2px solid ${evCols[ev]}">${evNames[d]}</div>
-      </div>`;
-    }
-    calGrid.innerHTML+=inner;
-  }
-}
-
-// Scroll animations
-const observer=new IntersectionObserver(entries=>{
-  entries.forEach(e=>{
-    if(e.isIntersecting){e.target.style.transitionDelay=(e.target.dataset.delay||0)+'ms';e.target.classList.add('visible');}
-  });
-},{threshold:0.1});
-document.querySelectorAll('.animate-on-scroll').forEach(el=>observer.observe(el));
-
-// Nav scroll
-const sections=document.querySelectorAll('section[id]');
-const navLinks=document.querySelectorAll('.nav-links a');
-window.addEventListener('scroll',()=>{
-  let cur='';
-  sections.forEach(s=>{if(window.scrollY>=s.offsetTop-100)cur=s.id;});
-  navLinks.forEach(a=>{a.style.color=a.getAttribute('href')==='#'+cur?'var(--text)':'';});
-},{passive:true});
-
-// ── Contact modal ───────────────────────────────────────────────────────────
-// Simple show/hide. Esc closes. No form — users click through to email/phone
-// so inquiries land with a human directly.
-function openContactModal(){
-  const m = document.getElementById('contact-modal');
-  if (!m) return;
-  m.style.display = 'flex';
-  document.body.style.overflow = 'hidden';  // prevent background scroll while modal is open
-}
-function closeContactModal(){
-  const m = document.getElementById('contact-modal');
-  if (!m) return;
-  m.style.display = 'none';
-  document.body.style.overflow = '';
-}
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeContactModal();
-});
-
-// ── Visual mapper interactive widget ────────────────────────────────────────
-(function vmInit(){
-  const srcCol = document.getElementById('vm-src-col');
-  const tgtCol = document.getElementById('vm-tgt-col');
-  const canvas = document.getElementById('vm-canvas');
-  const lines  = document.getElementById('vm-lines');
-  const counter= document.getElementById('vm-counter');
-  if (!srcCol || !tgtCol || !canvas || !lines) return;
-
-  const sources = [
-    {name:'clnum',    type:'VARCHAR'},
-    {name:'clname1',  type:'NVARCHAR'},
-    {name:'clsort',   type:'VARCHAR'},
-    {name:'cbustype', type:'INT'},
-    {name:'address1', type:'NVARCHAR'},
-    {name:'postcode', type:'VARCHAR'},
-    {name:'region',   type:'NVARCHAR'},
-  ];
-  const targets = [
-    {name:'ClientID',    type:'UUID'},
-    {name:'ClientNum',   type:'VARCHAR'},
-    {name:'DisplayName', type:'NVARCHAR'},
-    {name:'SortKey',     type:'VARCHAR'},
-    {name:'BizType',     type:'INT'},
-    {name:'Addr1',       type:'NVARCHAR'},
-    {name:'Postal',      type:'VARCHAR'},
-  ];
-  // Initial mappings — srcName → tgtName, with AI confidence colour
-  const mappings = {
-    'clnum':    {tgt:'ClientNum',   match:'HIGH'},
-    'clname1':  {tgt:'DisplayName', match:'HIGH'},
-    'clsort':   {tgt:'SortKey',     match:'HIGH'},
-    'cbustype': {tgt:'BizType',     match:'MED'},
-    'postcode': {tgt:'Postal',      match:'HIGH'},
-  };
-  // Reverse index: tgt → src (one target can only have one mapping here)
-  function tgtToSrc(){
-    const m = {};
-    Object.keys(mappings).forEach(s => { m[mappings[s].tgt] = {src:s, match:mappings[s].match}; });
-    return m;
-  }
-
-  function renderPills(){
-    const mapped = new Set(Object.keys(mappings));
-    const revMap = tgtToSrc();
-    srcCol.innerHTML = sources.map(s => `
-      <div class="vm-pill${mapped.has(s.name)?' vm-src-mapped':''}" data-side="src" data-col="${s.name}" draggable="true" style="${mapped.has(s.name)?'opacity:0.6':''}">
-        <span>${s.name}</span><span class="vm-type">${s.type}</span>
-      </div>`).join('');
-    tgtCol.innerHTML = targets.map(t => {
-      const m = revMap[t.name];
-      const matchCls = m ? ' match-'+m.match : '';
-      return `<div class="vm-pill${matchCls}" data-side="tgt" data-col="${t.name}">
-        <span>${t.name}${m?` <span style="color:var(--text3);font-size:8px">← ${m.src}</span>`:''}</span><span class="vm-type">${t.type}</span>
-      </div>`;
-    }).join('');
-    updateCounter();
-  }
-
-  function updateCounter(){
-    const n = Object.keys(mappings).length;
-    if (counter) counter.textContent = n + ' mapped · drag to add more';
-  }
-
-  function redrawLines(){
-    const cRect = canvas.getBoundingClientRect();
-    lines.setAttribute('width',  cRect.width);
-    lines.setAttribute('height', cRect.height);
-    lines.setAttribute('viewBox', `0 0 ${cRect.width} ${cRect.height}`);
-    const colorFor = m => ({HIGH:'rgba(34,201,122,0.9)',MED:'rgba(245,158,11,0.9)',LOW:'rgba(240,70,70,0.8)'}[m] || 'rgba(255,255,255,0.4)');
-    const paths = [];
-    Object.keys(mappings).forEach(srcName => {
-      const {tgt, match} = mappings[srcName];
-      const sp = srcCol.querySelector(`.vm-pill[data-col="${srcName}"]`);
-      const tp = tgtCol.querySelector(`.vm-pill[data-col="${tgt}"]`);
-      if (!sp || !tp) return;
-      const sR = sp.getBoundingClientRect();
-      const tR = tp.getBoundingClientRect();
-      const sx = sR.right - cRect.left;
-      const sy = sR.top + sR.height/2 - cRect.top;
-      const tx = tR.left - cRect.left;
-      const ty = tR.top + tR.height/2 - cRect.top;
-      const dx = Math.max(30, (tx - sx) * 0.5);
-      const d = `M ${sx} ${sy} C ${sx+dx} ${sy}, ${tx-dx} ${ty}, ${tx} ${ty}`;
-      paths.push(`<path d="${d}" stroke="${colorFor(match)}" data-src="${srcName}"><title>Click to remove</title></path>`);
-    });
-    lines.innerHTML = paths.join('');
-    // Wire click-to-remove on lines
-    lines.querySelectorAll('path').forEach(p => {
-      p.addEventListener('click', e => {
-        const s = p.getAttribute('data-src');
-        delete mappings[s];
-        renderPills();
-        requestAnimationFrame(redrawLines);
-      });
-    });
-  }
-
-  // Drag and drop
-  let dragging = null;
-  srcCol.addEventListener('dragstart', e => {
-    const pill = e.target.closest('.vm-pill');
-    if (!pill || pill.getAttribute('data-side') !== 'src') return;
-    dragging = pill.getAttribute('data-col');
-    pill.classList.add('dragging');
-    try { e.dataTransfer.setData('text/plain', dragging); } catch {}
-    e.dataTransfer.effectAllowed = 'link';
-  });
-  srcCol.addEventListener('dragend', e => {
-    e.target.closest('.vm-pill')?.classList.remove('dragging');
-    dragging = null;
-  });
-  tgtCol.addEventListener('dragover', e => {
-    const pill = e.target.closest('.vm-pill[data-side="tgt"]');
-    if (!pill) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'link';
-    pill.classList.add('drag-over');
-  });
-  tgtCol.addEventListener('dragleave', e => {
-    e.target.closest('.vm-pill')?.classList.remove('drag-over');
-  });
-  tgtCol.addEventListener('drop', e => {
-    const pill = e.target.closest('.vm-pill[data-side="tgt"]');
-    if (!pill) return;
-    e.preventDefault();
-    pill.classList.remove('drag-over');
-    const srcName = dragging || e.dataTransfer.getData('text/plain');
-    const tgtName = pill.getAttribute('data-col');
-    if (!srcName || !tgtName) return;
-    // Remove any existing mapping for this source or this target
-    delete mappings[srcName];
-    Object.keys(mappings).forEach(k => { if (mappings[k].tgt === tgtName) delete mappings[k]; });
-    mappings[srcName] = { tgt: tgtName, match: 'HIGH' };
-    renderPills();
-    requestAnimationFrame(redrawLines);
-  });
-
-  // Initial render
-  renderPills();
-  // Redraw lines after layout settles (fonts, images, etc.)
-  requestAnimationFrame(redrawLines);
-  setTimeout(redrawLines, 400);
-  // Also redraw on window resize
-  window.addEventListener('resize', redrawLines);
+/* The bar is transparent while the hero is behind it and solid afterwards.
+   The threshold is the hero's own height, so it flips at the boundary rather
+   than at a guessed scroll offset. */
+(function(){
+  var nav = document.querySelector('nav'), hero = document.querySelector('.hero');
+  if (!nav || !hero) return;
+  function sync(){ nav.classList.toggle('solid', window.scrollY > hero.offsetHeight - 80); }
+  sync();
+  window.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
 })();
 
-// ── About modal ────────────────────────────────────────────────────────────
-// Lightweight open/close. The dialog uses display:flex toggled via the
-// `.open` class so the entry animation fires every time. Esc to close,
-// click-outside-card handled inline on the backdrop.
-function openAbout(){
-  const m = document.getElementById('about-modal');
+/* Reveal on scroll. Everything is visible without JavaScript and without an
+   IntersectionObserver — the class only ever adds opacity back. */
+(function(){
+  var items = document.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window)) {
+    items.forEach(function(el){ el.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    });
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+  items.forEach(function(el){ io.observe(el); });
+})();
+
+/* Modals. Both close on Escape and on a backdrop click, and both return focus
+   to the control that opened them. */
+var _lastFocus = null;
+function openModal(id){
+  _lastFocus = document.activeElement;
+  var m = document.getElementById(id);
   if (!m) return;
   m.classList.add('open');
-  document.body.style.overflow = 'hidden'; // prevent background scroll
+  document.body.style.overflow = 'hidden';
+  var c = m.querySelector('.modal-close');
+  if (c) c.focus();
 }
-function closeAbout(){
-  const m = document.getElementById('about-modal');
+function closeModal(id){
+  var m = document.getElementById(id);
   if (!m) return;
   m.classList.remove('open');
   document.body.style.overflow = '';
+  if (_lastFocus && _lastFocus.focus) { try { _lastFocus.focus(); } catch (e) {} }
 }
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeAbout();
+function openContact(){ openModal('contact-modal'); }
+function closeContact(){ closeModal('contact-modal'); }
+function openAbout(){ openModal('about-modal'); }
+function closeAbout(){ closeModal('about-modal'); }
+document.addEventListener('keydown', function(e){
+  if (e.key !== 'Escape') return;
+  closeContact(); closeAbout();
 });
 </script>
 <script src="/cookie-consent.js?v=14f483464b" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
-<script>
-/* The bar is transparent while the hero is behind it and solid afterwards.
-   Threshold is the hero's own height, so it flips exactly at the boundary
-   rather than at a guessed scroll offset. */
-(function(){
-  var nav = document.querySelector('nav'), hero = document.querySelector('.hero');
-  if (!nav || !hero) return;
-  function sync(){
-    nav.classList.toggle('solid', window.scrollY > hero.offsetHeight - 80);
-  }
-  sync();
-  window.addEventListener('scroll', sync, { passive: true });
-  window.addEventListener('resize', sync);
-})();
-</script>
 </body>
 </html>
