@@ -1002,7 +1002,15 @@ async function resolveConfirmation(approved) {
     if (r === null) return;                    // navigated away
     results.push(r);
   } else {
-    pushTrail({ name: p.name, title: (actions[p.name] || {}).title || p.name, error: true, detail: 'Skipped by user' });
+    // Name what was skipped, not just which tool would have done it. "Clicking
+    // — skipped" leaves the user working out which of the three buttons on the
+    // screen they just refused; "Skipped: Run job" does not. The action's own
+    // trailTitle is past tense and would read as though it had happened, so
+    // the subject is asked for separately.
+    var a = actions[p.name] || {};
+    var subject = a.subject ? safe(a.subject, p.input) : null;
+    pushTrail({ name: p.name, title: subject ? 'Skipped: ' + subject : (a.title || p.name),
+                error: true, detail: 'Skipped by user' });
     results.push(toolResult(p.toolUseId, 'The user declined this action. Do not retry it; ask what they would prefer.', true));
   }
   // Continue with whatever was queued behind the confirmation.
