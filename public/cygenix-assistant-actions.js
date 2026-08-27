@@ -207,6 +207,45 @@ A.registerActions([
   },
 
   {
+    /* The generic eye.
+     *
+     * Every other action here is typed: it knows what a stream is, what a job
+     * is, what the editor holds. That is the right shape for the things worth
+     * naming, and the wrong shape for a console with fifty screens — most
+     * controls will never have an action of their own, and until now the
+     * assistant simply could not see them.
+     *
+     * This reads the page the way a person does: what it says, what kind of
+     * control it is, which section it sits in. It reads only. Nothing here
+     * clicks or types, and the description says so plainly, because a model
+     * that believes it can press a button will tell the user it has.
+     */
+    name: 'read_page',
+    title: 'Reading page',
+    icon: '◉',
+    effect: 'read',
+    description: 'Look at the screen the user is on and return what is drawn: the page ' +
+      'title, the route, the headings, and every visible control — buttons, links, ' +
+      'fields, dropdowns — each with a stable id, its kind, its label and its section. ' +
+      'Use this for anything the typed actions do not cover, and again after the screen ' +
+      'changes. Prefer a typed action when one exists: app_read_screen knows the project ' +
+      'and the connections, this only knows what is on screen. ' +
+      'It reads and nothing else — you cannot click, type or submit with it, and the ' +
+      'ids are valid only for the screen they were read from. ' +
+      'Values in credential fields are withheld deliberately; do not ask the user to ' +
+      'type them where you can see them.',
+    input_schema: { type: 'object', properties: {} },
+    handler: async function () {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.readPage !== 'function') {
+        throw new Error('cygenix-page-reader.js is not loaded on this page, so the screen ' +
+          'cannot be read. Tell the user, and work from the typed actions instead.');
+      }
+      return R.readPage();
+    }
+  },
+
+  {
     name: 'app_point_at',
     title: 'Point at a control',
     effect: 'read',
