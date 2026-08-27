@@ -395,10 +395,9 @@ function valueOf(node, tag, label) {
   return null;
 }
 
-/* The result of the most recent read, so a later step can require that an
-   element was actually seen before it is operated on. Nothing consults this
-   yet — read_page is the only tool that exists — but it is read_page's own
-   business to record what it showed, so it does. */
+/* The result of the most recent read. click() works only from this: an element
+   it can operate is one the assistant has actually looked at, recently, on the
+   screen it is still on. */
 var last = null;
 function lastRead() { return last; }
 
@@ -452,18 +451,207 @@ function readPage(opts) {
     interactive_elements: elements
   }, opts.maxChars);
 
+  var entries = {};
+  snapshot.interactive_elements.forEach(function (e) { entries[e.id] = e; });
   last = {
     at: Date.now(),
     route: snapshot.current_route,
     ids: snapshot.interactive_elements.map(function (e) { return e.id; }),
+    entries: entries,
     nodes: byId
   };
   return snapshot;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   click — the one thing the assistant may press, and the rules around it.
+   ══════════════════════════════════════════════════════════════════════════
+
+   Reading a screen is free. Pressing something on it is not: a button here can
+   start a migration, delete a mapping or email a report. So click is fenced on
+   four sides, and the fences are independent — a failure of any one of them
+   does not open the others.
+
+   1. IT MUST HAVE LOOKED. An id that was not in the most recent read_page, or
+      a read older than a minute, or a read taken on a different screen, is
+      refused outright with an instruction to read again. The assistant cannot
+      press something it has not seen.
+
+   2. THE ELEMENT MUST STILL BE THE SAME ELEMENT. Node identity is not enough:
+      a virtualised list recycles its rows, so the node behind "Delete row 1"
+      can quietly become "Delete row 500". The live label and section are
+      re-derived and compared against what was read, and a mismatch is treated
+      as the element being gone.
+
+   3. IRREVERSIBLE THINGS ALWAYS ASK. A label containing delete, remove, drop,
+      destroy, confirm, send, submit, publish, pay, purchase or archive
+      confirms every time, whatever else is true. The match is a plain
+      case-insensitive substring, which over-fires on the odd innocent label
+      ("Dropdown") — and over-firing is the correct direction to be wrong in.
+
+   4. EVERYTHING ELSE ASKS TOO, unless it is demonstrably harmless: focusing a
+      field, following a link to another screen in this app, or a search or
+      filter button — and even then only within thirty seconds of the read it
+      came from. Clicking a link is a navigation, which is what app_navigate
+      already does with effect `read`, so this is not a hole in the guardrail
+      policy: it is the same judgement the catalogue already makes. */
+
+var CLICK_SKIP_MS = 30000;     // a "safe" element may be pressed without asking
+var CLICK_MAX_AGE_MS = 60000;  // past this, the read is refused entirely
+
+var IRREVERSIBLE = ['delete', 'remove', 'drop', 'destroy', 'confirm', 'send',
+                    'submit', 'publish', 'pay', 'purchase', 'archive'];
+
+/* Deliberately short. Cancel and Close are NOT here: cancelling a half-filled
+   form throws the operator's work away, and a control that only might be
+   harmless belongs on the asking side of the line. */
+var SAFE_BUTTON = /^(search|find|filter|refresh|reload|sort)\b|^(apply|clear|reset)\s+(filter|filters|search)\b/i;
+
+/** The word that puts a label on the irreversible list, or null. */
+function irreversible(label) {
+  var l = String(label || '').toLowerCase();
+  for (var i = 0; i < IRREVERSIBLE.length; i++) {
+    if (l.indexOf(IRREVERSIBLE[i]) !== -1) return IRREVERSIBLE[i];
+  }
+  return null;
+}
+
+/** Whether this element is one of the few that may be pressed without asking. */
+function safeToClick(entry, inApp) {
+  if (!entry) return false;
+  if (irreversible(entry.label)) return false;
+  if (entry.kind === 'input' || entry.kind === 'textarea' || entry.kind === 'select') return true;
+  if (entry.kind === 'link') return !!inApp;
+  if (entry.kind === 'button') return SAFE_BUTTON.test(String(entry.label || ''));
+  return false;
+}
+
+/** Does pressing this need the user's word first? Pure, so it is testable. */
+function decideConfirm(entry, ageMs, inApp) {
+  var word = irreversible(entry && entry.label);
+  if (word) {
+    return { confirm: true, reason: 'The label contains "' + word + '", which is on the ' +
+      'irreversible-action list — this always asks, whatever else is true.' };
+  }
+  if (!safeToClick(entry, inApp)) {
+    return { confirm: true, reason: 'This is not one of the controls that may be pressed ' +
+      'without asking (a field, a link within the app, or a search or filter button).' };
+  }
+  if (ageMs > CLICK_SKIP_MS) {
+    return { confirm: true, reason: 'The screen was last read ' + Math.round(ageMs / 1000) +
+      ' seconds ago, so what is under this control may have moved.' };
+  }
+  return { confirm: false, reason: '' };
+}
+
+/* ── looking the element back up ───────────────────────────────────────── */
+
+function hrefInfo(node, win) {
+  var raw = attr(node, 'href');
+  if (!raw || /^(javascript:|#|mailto:|tel:)/i.test(raw)) return { inApp: false, url: null };
+  if (attr(node, 'target') && attr(node, 'target') !== '_self') return { inApp: false, url: null };
+  var abs = node.href || raw;
+  try {
+    var u = new win.URL(abs, win.location.href);
+    if (u.origin !== win.location.origin) return { inApp: false, url: null };
+    return { inApp: true, url: u.pathname + u.search + u.hash };
+  } catch (e) { return { inApp: false, url: null }; }
+}
+
+function Refusal(message) { var e = new Error(message); e.refusal = true; return e; }
+
+/**
+ * Resolve an element id against the last read, or explain why it cannot be.
+ * Returns { entry, node, inApp, url, ageMs } or throws a refusal whose message
+ * is written for the model — it always says what to do next.
+ */
+function resolve(elementId, opts) {
+  opts = opts || {};
+  var doc = opts.document || (typeof document !== 'undefined' ? document : null);
+  var win = opts.window || root || (typeof window !== 'undefined' ? window : null);
+  var id = String(elementId || '');
+
+  if (!last) throw Refusal('There is no read_page result to work from. Call read_page first.');
+  var ageMs = Date.now() - last.at;
+  if (ageMs > CLICK_MAX_AGE_MS) {
+    throw Refusal('The last read_page is ' + Math.round(ageMs / 1000) + ' seconds old, which is ' +
+      'over the ' + (CLICK_MAX_AGE_MS / 1000) + '-second limit. Call read_page again.');
+  }
+  if (!Object.prototype.hasOwnProperty.call(last.entries, id)) {
+    throw Refusal('"' + id + '" was not in the last read_page result. Call read_page again ' +
+      'and use an id from it.');
+  }
+  if (doc && win && routeOf(win.location && win.location.pathname) !== last.route) {
+    throw Refusal('The screen has changed since that read_page (it was taken on ' +
+      last.route + '). Call read_page again.');
+  }
+
+  var entry = last.entries[id];
+  var node = last.nodes[id];
+  var gone = 'Element ' + id + ' no longer exists; call read_page again';
+
+  if (!node || !doc || !doc.contains(node) || !visible(node, win)) throw Refusal(gone);
+
+  // Node identity is not enough. A virtualised list recycles its rows, so the
+  // node that was "Delete row 1" can now be "Delete row 500" — same object,
+  // different meaning. If what it says has changed, it is not the element the
+  // assistant looked at.
+  var liveLabel = clamp(accessibleName(node, doc), MAX_LABEL);
+  if (liveLabel !== entry.label || sectionOf(node) !== (entry.section || '')) throw Refusal(gone);
+
+  var href = hrefInfo(node, win);
+  return { entry: entry, node: node, ageMs: ageMs, inApp: href.inApp, url: href.url };
+}
+
+/**
+ * The confirmation question, answered without touching anything. The runtime
+ * asks this BEFORE it runs the handler, so it has to be synchronous and it has
+ * to be safe to call when the id is stale — in which case it declines to
+ * confirm and lets click() throw the refusal that explains why.
+ */
+function clickConfirmation(elementId) {
+  var r;
+  try { r = resolve(elementId); }
+  catch (e) { return { confirm: false, reason: e.message, label: String(elementId), error: true }; }
+  var d = decideConfirm(r.entry, r.ageMs, r.inApp);
+  return { confirm: d.confirm, reason: d.reason, label: r.entry.label, error: false };
+}
+
+/** Press it. Refuses, loudly and with instructions, rather than guessing. */
+function click(elementId, opts) {
+  var r = resolve(elementId, opts);
+  var entry = r.entry, node = r.node;
+
+  if (node.disabled || node.getAttribute('aria-disabled') === 'true') {
+    throw Refusal('Element ' + elementId + ' ("' + entry.label + '") is disabled and cannot be ' +
+      'clicked. Tell the user what it is waiting for rather than trying again.');
+  }
+
+  // A link is a navigation, and this console persists a run across navigations
+  // rather than letting the browser drop it. Hand it back to the runtime the
+  // same way app_navigate does instead of following it here.
+  if (entry.kind === 'link' && r.inApp && r.url) {
+    return { __navigate: r.url,
+             __result: 'Clicked "' + entry.label + '" and opened ' + r.url + '.' };
+  }
+
+  try { if (node.focus) node.focus(); } catch (e) { /* not focusable; click anyway */ }
+  node.click();
+
+  return {
+    ok: true,
+    clicked: entry.label,
+    kind: entry.kind,
+    note: 'The screen may have changed. Call read_page again to see what it looks like now ' +
+      'before deciding anything else.'
+  };
+}
+
 return {
   readPage: readPage,
   lastRead: lastRead,
+  click: click,
+  clickConfirmation: clickConfirmation,
   /* pure core, exported for the tests */
   __core: {
     sha256Hex: sha256Hex,
@@ -474,8 +662,13 @@ return {
     routeOf: routeOf,
     clamp: clamp,
     fit: fit,
+    irreversible: irreversible,
+    safeToClick: safeToClick,
+    decideConfirm: decideConfirm,
     SELECTOR: SELECTOR,
-    LIMITS: { MAX_CHARS: MAX_CHARS, MAX_LABEL: MAX_LABEL, MAX_VALUE: MAX_VALUE, ID_LEN: ID_LEN }
+    IRREVERSIBLE: IRREVERSIBLE,
+    LIMITS: { MAX_CHARS: MAX_CHARS, MAX_LABEL: MAX_LABEL, MAX_VALUE: MAX_VALUE, ID_LEN: ID_LEN,
+              CLICK_SKIP_MS: CLICK_SKIP_MS, CLICK_MAX_AGE_MS: CLICK_MAX_AGE_MS }
   }
 };
 });
