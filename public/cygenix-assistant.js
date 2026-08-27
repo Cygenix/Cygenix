@@ -178,9 +178,26 @@ function setPolicy(mode) {
   store(policyKey(), { mode: mode, setAt: new Date().toISOString() });
   render();
 }
-function needsConfirmation(action, policy) {
+/* The policy decides by EFFECT — the same answer for every use of an action.
+ * That is right for sql_run, whose effect is a property of the action itself,
+ * and wrong for click, whose consequence is a property of the thing being
+ * clicked: following a link and pressing Delete are the same action and not
+ * remotely the same act.
+ *
+ * So an action may answer for itself with a `confirms(input)` hook. It is
+ * consulted, not obeyed: it can raise a read to a confirmation, and it can
+ * clear one only for an action the policy was not holding anyway. The
+ * guardrail policy remains the floor.
+ */
+function needsConfirmation(action, policy, input) {
   var min = POLICIES[policy || getPolicy()].min;
-  return EFFECTS[action.effect] >= EFFECTS[min];
+  var byPolicy = EFFECTS[action.effect] >= EFFECTS[min];
+  if (typeof action.confirms !== 'function') return byPolicy;
+  var own;
+  try { own = action.confirms(input || {}); } catch (e) { return true; }   // a broken hook asks
+  if (own === true) return true;
+  if (own === false) return EFFECTS[action.effect] >= EFFECTS['destructive'] ? byPolicy : false;
+  return byPolicy;
 }
 
 /* ── the system prompt ─────────────────────────────────────────────────────
@@ -229,10 +246,28 @@ function buildSystemPrompt(context, appMap) {
 'change to the page, read again rather than reasoning from an old list. If two reads\n' +
 'in a row show the same thing and you are no further forward, stop and ask the user\n' +
 'rather than reading a third time.\n' +
-'Reading is all you can do with it. You cannot click, type or submit anything, so do\n' +
-'not tell the user you will — point at the control with app_point_at and say which one\n' +
-'you mean. Anything destructive (delete, remove, drop, or a permanent change) stays\n' +
-'with the user: describe exactly where it is and let them press it.\n' +
+'\n' +
+'PRESSING SOMETHING\n' +
+'click takes an id from the most recent read_page and presses that one element. The\n' +
+'shape of the work is always the same:\n' +
+'  1. read_page, to see what is there.\n' +
+'  2. Say in plain English which control you are about to press and what you expect it\n' +
+'     to do.\n' +
+'  3. click.\n' +
+'  4. read_page again, because the screen has probably changed. Do not reason from ids\n' +
+'     you already have.\n' +
+'Most clicks pause for the user to approve them, and anything that deletes, removes,\n' +
+'sends, submits, publishes or archives always does. If they decline, that is an answer:\n' +
+'do not press it again, ask what they would prefer instead. If a click is refused\n' +
+'because the read is stale or the element has changed, read the page again — do not\n' +
+'guess at another id.\n' +
+'You cannot type into a field yet. If a task needs text entered, say so plainly and\n' +
+'tell the user what to type where.\n' +
+'Destructive work is theirs, not yours. If what the user is asking for ends in deleting\n' +
+'or dropping something, take them to the screen, point at the control with app_point_at,\n' +
+'say exactly what will happen, and let them press it themselves.\n' +
+'If two clicks have gone by with nothing changing, stop and ask rather than pressing a\n' +
+'third time.\n' +
 '\n' +
 'CHANGES AND APPROVAL\n' +
 "The user's project sets a guardrail policy. Depending on it, some or all of your\n" +
@@ -320,6 +355,35 @@ function loadState() {
   if (state.status === 'thinking' || state.status === 'acting') {
     if (!state.resume) state.status = 'idle';
   }
+  healTranscript();
+}
+
+/* A turn can be cut off mid-action: the user reloads, or an action clicks
+ * something that navigates the browser itself. What survives is an assistant
+ * message whose tool calls were never answered — and the API rejects the next
+ * turn outright when it sees one, so the conversation is dead and the panel
+ * reports a request that "could not be processed" for as long as it lives.
+ *
+ * A run parked on a confirmation or waiting to resume after a navigation is
+ * NOT this: those are answered when they finish. Everything else gets an
+ * honest tool_result saying the page went away, which costs nothing and keeps
+ * the transcript valid. */
+function healTranscript() {
+  if (state.pending || state.resume) return;
+  var lastMsg = state.messages[state.messages.length - 1];
+  if (!lastMsg || lastMsg.role !== 'assistant' || !Array.isArray(lastMsg.content)) return;
+  var unanswered = lastMsg.content.filter(function (b) { return b && b.type === 'tool_use'; });
+  if (!unanswered.length) return;
+  state.messages.push({
+    role: 'user',
+    seq: (state.messages.reduce(function (m, x) { return Math.max(m, x.seq || 0); }, 0) + 1),
+    content: unanswered.map(function (b) {
+      return { type: 'tool_result', tool_use_id: b.id, is_error: true,
+        content: 'The page reloaded before this finished, so the result is unknown. ' +
+          'Do not assume it ran. Check the current state before doing anything else.' };
+    })
+  });
+  saveState();
 }
 function saveState() { store(stateKey(), state); }
 
@@ -531,8 +595,13 @@ function render() {
     var a = actions[state.pending.name] || {};
     var preview = '';
     try { preview = a.preview ? a.preview(state.pending.input) : ''; } catch (e) { preview = ''; }
+    // An action may ask the question in its own words. click does: "Assistant
+    // wants to click X. Proceed?" is a better question than "Approve this
+    // action?", because it names the thing that is about to happen.
+    var heading = '';
+    try { heading = a.confirmTitle ? a.confirmTitle(state.pending.input) : ''; } catch (e) { heading = ''; }
     html += '<div class="cyga-confirm">' +
-      '<h4>Approve this ' + (a.effect === 'destructive' ? 'destructive ' : '') + 'action?</h4>' +
+      '<h4>' + esc(heading || ('Approve this ' + (a.effect === 'destructive' ? 'destructive ' : '') + 'action?')) + '</h4>' +
       '<div>' + esc(a.title || state.pending.name) + '</div>' +
       '<pre>' + esc(preview || JSON.stringify(state.pending.input, null, 2)) + '</pre>' +
       '<div class="row">' +
@@ -792,6 +861,15 @@ async function executeAll(toolUses, results) {
     if (state.calls >= MAX_TOOL_CALLS) { breakOut(BUDGET_MESSAGE, toolUses.slice(i), results); return; }
     var sig = callSignature(tu);
     if (sig === state.lastCall) { breakOut(LOOP_MESSAGE, toolUses.slice(i), results); return; }
+    // The same element pressed twice with nothing that clears the guard in
+    // between — a read of the screen — is a stall even when other calls
+    // separated them. Pressing a button that did nothing, navigating, and
+    // pressing it again is the shape this catches and the plain repeat above
+    // does not.
+    var guard = action && action.repeatGuard ? safe(action.repeatGuard, tu.input) : null;
+    if (guard && guard === state.repeatGuard) { breakOut(LOOP_MESSAGE, toolUses.slice(i), results); return; }
+    if (action && action.clearsRepeatGuard) state.repeatGuard = null;
+    else if (guard) state.repeatGuard = guard;
     state.lastCall = sig;
     state.calls++;
 
@@ -806,7 +884,7 @@ async function executeAll(toolUses, results) {
         '"; call app_navigate to "' + action.page + '" first.', true));
       continue;
     }
-    if (needsConfirmation(action)) {
+    if (needsConfirmation(action, null, tu.input)) {
       // Park the remaining tools; the approval handler resumes from here.
       state.pending = { toolUseId: tu.id, name: tu.name, input: tu.input, queue: toolUses.slice(i + 1), done: results };
       endBusy();
@@ -814,16 +892,18 @@ async function executeAll(toolUses, results) {
       saveState(); render();
       return;
     }
-    var r = await execute(tu, action);
+    var r = await execute(tu, action, false);
     if (r === null) return;                      // navigated away
     results.push(r);
   }
   await sendResults(results);
 }
 
-async function execute(tu, action) {
+async function execute(tu, action, confirmed) {
   pushTrail({
-    name: tu.name, title: action.title || tu.name, effect: action.effect, icon: action.icon || null,
+    name: tu.name,
+    title: (action.trailTitle && safe(action.trailTitle, tu.input)) || action.title || tu.name,
+    effect: action.effect, icon: action.icon || null,
     detail: action.summary ? safe(action.summary, tu.input) : null
   });
   // Name the running action in the busy row: "Running a SQL query · 6s" tells
@@ -835,7 +915,7 @@ async function execute(tu, action) {
   try {
     if (action.highlight) highlight(safe(action.highlight, tu.input));
     var out = await action.handler(tu.input || {});
-    audit(tu, action, { ok: true, ms: Date.now() - startedAt });
+    audit(tu, action, { ok: true, ms: Date.now() - startedAt }, confirmed);
 
     // A navigation action ends this page's life: persist and continue after load.
     if (out && out.__navigate) {
@@ -848,7 +928,7 @@ async function execute(tu, action) {
   } catch (err) {
     state.trail[state.trail.length - 1].error = true;
     state.trail[state.trail.length - 1].detail = err.message;
-    audit(tu, action, { ok: false, ms: Date.now() - startedAt, error: err.message });
+    audit(tu, action, { ok: false, ms: Date.now() - startedAt, error: err.message }, confirmed);
     saveState(); render();
     return toolResult(tu.id, 'Action failed: ' + err.message, true);
   }
@@ -881,7 +961,7 @@ async function resolveConfirmation(approved) {
 
   var results = p.done || [];
   if (approved) {
-    var r = await execute({ id: p.toolUseId, name: p.name, input: p.input }, actions[p.name]);
+    var r = await execute({ id: p.toolUseId, name: p.name, input: p.input }, actions[p.name], true);
     if (r === null) return;                    // navigated away
     results.push(r);
   } else {
@@ -909,7 +989,7 @@ async function resumeAfterNavigation() {
    buffer (cygenix_assistant_audit_v1), to the optional auditAction adapter,
    and as a `cygenix:assistant-action` event for anything else to hook. ──── */
 
-function audit(tu, action, outcome) {
+function audit(tu, action, outcome, confirmed) {
   var entry = {
     at: new Date().toISOString(),
     actor: 'assistant',
@@ -920,7 +1000,7 @@ function audit(tu, action, outcome) {
     page: (pageKey || (typeof location !== 'undefined' ? location.pathname : null)),
     projectId: projectId(),
     policy: getPolicy(),
-    confirmed: needsConfirmation(action),
+    confirmed: !!confirmed,
     ok: outcome.ok,
     ms: outcome.ms,
     error: outcome.error || null

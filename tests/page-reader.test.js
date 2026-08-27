@@ -184,9 +184,13 @@ check('a disabled control is reported as disabled rather than offered as clickab
   /if \(node\.disabled\) entry\.disabled = true/.test(src));
 check('the reader records what it showed, for whatever operates on it later',
   /function lastRead/.test(src) && /last = \{/.test(src));
-check('nothing in the reader clicks, types or submits',
-  !/\.click\(\s*\)|\.submit\(\s*\)|dispatchEvent|\.focus\(\s*\)/.test(src),
-  'read_page reads; acting is a separate step that has not shipped');
+const readFn = src.slice(src.indexOf('function readPage'), src.indexOf('click — the one thing'));
+check('reading the page presses nothing',
+  !/\.click\(|\.submit\(|dispatchEvent|\.focus\(/.test(readFn),
+  'read_page describes; only click() may act, and only under its own rules');
+check('the reader still cannot type or submit — clicking is all that shipped',
+  !/\.submit\(|dispatchEvent|node\.value\s*=[^=]|\.textContent\s*=[^=]/.test(src),
+  'type() is a separate step and is not built');
 
 /* ── 8. Registration in the assistant ───────────────────────────────────── */
 
@@ -233,7 +237,8 @@ check('the prompt tells it to say what it is about to do, in plain English, firs
 check('the prompt keeps typed actions ahead of the generic reader',
   /Prefer the typed action, every time/.test(prompt));
 check('the prompt says destructive work stays with the user',
-  /Anything destructive[\s\S]{0,120}stays\s*\n?with the user/.test(prompt.replace(/\n/g, '\n')));
+  /Destructive work is theirs, not yours/.test(prompt)
+  && /let them press it themselves/.test(prompt));
 check('the prompt tells it to re-read after the screen changes', /read again rather than/.test(prompt));
 check('the prompt tells it to stop after two fruitless reads', /stop and ask the user/.test(prompt));
 
@@ -251,6 +256,144 @@ check('breaking out still answers every outstanding tool call, so the transcript
 check('breaking out does not send the results back for another turn',
   /another turn is the thing being prevented/.test(runtime)
   && !/breakOut[\s\S]{0,400}sendResults/.test(runtime));
+
+/* ── 10. click: the rules, decided in the open ──────────────────────────────
+   The consequence of a click is a property of the thing clicked, not of the
+   action, so every one of these decisions is made per element and every one of
+   them is pure enough to state here. */
+
+const SPEC_WORDS = ['Delete', 'Remove', 'Drop', 'Destroy', 'Confirm', 'Send',
+                    'Submit', 'Publish', 'Pay', 'Purchase', 'Archive'];
+const notListed = SPEC_WORDS.filter((w) => !C.irreversible('Please ' + w.toUpperCase() + ' it'));
+check('every word on the irreversible list is matched, case-insensitively, anywhere in the label',
+  notListed.length === 0, notListed.join(', '));
+check('an ordinary label is not on the list',
+  !C.irreversible('Save mapping') && !C.irreversible('Run preflight') && !C.irreversible('Open'));
+check('the list is exactly the eleven words specified',
+  C.IRREVERSIBLE.length === 11 && C.IRREVERSIBLE.join(',') === SPEC_WORDS.join(',').toLowerCase(),
+  C.IRREVERSIBLE.join(','));
+
+check('a field is safe to focus without asking', C.safeToClick({ kind: 'input', label: 'Filter tables' }));
+check('a dropdown and a text area are too',
+  C.safeToClick({ kind: 'select', label: 'Mode' }) && C.safeToClick({ kind: 'textarea', label: 'Notes' }));
+check('a link within the app is safe', C.safeToClick({ kind: 'link', label: 'Schema Explorer' }, true));
+check('a link leaving the app is NOT', !C.safeToClick({ kind: 'link', label: 'Docs' }, false));
+check('a search or filter button is safe',
+  ['Search', 'Find a table', 'Filter', 'Refresh', 'Sort by name', 'Clear filters']
+    .every((l) => C.safeToClick({ kind: 'button', label: l })), 'the specified safe set');
+check('every other button is not',
+  ['Save', 'Run job', 'Create connection', 'Start migration', 'Cancel', 'Close']
+    .every((l) => !C.safeToClick({ kind: 'button', label: l })),
+  'Cancel and Close are deliberately outside the safe set — cancelling can throw work away');
+check('an irreversible label is never safe, whatever kind of control it is on',
+  !C.safeToClick({ kind: 'input', label: 'Delete reason' })
+  && !C.safeToClick({ kind: 'link', label: 'Remove this project' }, true)
+  && !C.safeToClick({ kind: 'button', label: 'Search and destroy' }));
+
+const fresh = 5000, stale = 45000;
+check('an irreversible element always confirms, even fresh and even as a link',
+  C.decideConfirm({ kind: 'link', label: 'Delete project' }, fresh, true).confirm === true);
+check('and the reason names the word that put it there',
+  /"delete"/.test(C.decideConfirm({ kind: 'button', label: 'Delete row' }, fresh, false).reason)
+  && /irreversible-action list/.test(C.decideConfirm({ kind: 'button', label: 'Delete row' }, fresh, false).reason));
+check('an ordinary button confirms', C.decideConfirm({ kind: 'button', label: 'Save' }, fresh, false).confirm === true);
+check('a safe element read within thirty seconds does not',
+  C.decideConfirm({ kind: 'button', label: 'Search' }, fresh, false).confirm === false);
+check('the same element confirms once the read is over thirty seconds old',
+  C.decideConfirm({ kind: 'button', label: 'Search' }, stale, false).confirm === true);
+check('and says how old the read was', /45 seconds ago/.test(
+  C.decideConfirm({ kind: 'button', label: 'Search' }, stale, false).reason));
+check('the skip window is thirty seconds and the refusal is sixty',
+  C.LIMITS.CLICK_SKIP_MS === 30000 && C.LIMITS.CLICK_MAX_AGE_MS === 60000);
+
+/* The refusals, in the reader's source: each one has to tell the model what to
+   do next, because a refusal it cannot act on is just a dead end. */
+check('an id from no read at all is refused', /no read_page result to work from/.test(src));
+check('a read over the age limit is refused with the age', /over the ' \+ \(CLICK_MAX_AGE_MS \/ 1000\)/.test(src));
+check('an id that was not in the last read is refused', /was not in the last read_page result/.test(src));
+check('a read taken on another screen is refused', /The screen has changed since that read_page/.test(src));
+check('a vanished element gets exactly the message the specification asks for',
+  /'Element ' \+ id \+ ' no longer exists; call read_page again'/.test(src));
+check('a recycled list row counts as vanished — node identity is not enough',
+  /liveLabel !== entry\.label \|\| sectionOf\(node\) !== \(entry\.section/.test(src),
+  'a virtualised list can turn "Delete row 1" into "Delete row 500" behind the same node');
+check('a disabled control is refused rather than clicked at',
+  /is disabled and cannot be/.test(src) && /aria-disabled/.test(src));
+check('an in-app link hands the navigation to the runtime rather than following it',
+  /entry\.kind === 'link' && r\.inApp && r\.url/.test(src) && /__navigate: r\.url/.test(src),
+  'the runtime persists a run across a navigation; the browser following a link would drop it');
+check('a link that leaves the app or opens a tab is not treated as in-app navigation',
+  /u\.origin !== win\.location\.origin/.test(src) && /target.*!== '_self'/.test(src));
+check('the confirmation question can be answered without touching anything',
+  /function clickConfirmation/.test(src) && !/clickConfirmation[\s\S]{0,400}node\.click/.test(src));
+check('an unresolvable id declines to confirm and lets the click throw the real reason',
+  /catch \(e\) \{ return \{ confirm: false, reason: e\.message/.test(src));
+
+const clickAct = acts['click'];
+check('click is registered', !!clickAct);
+check('click takes an element id and requires it',
+  clickAct.input_schema.required.join(',') === 'element_id'
+  && !!clickAct.input_schema.properties.element_id);
+check('click asks for a plain-English reason to show the user',
+  !!clickAct.input_schema.properties.reason);
+check('click is a write, so the default policy holds it', clickAct.effect === 'write');
+check('click asks per element, not per action', typeof clickAct.confirms === 'function');
+check('with no reader loaded, the confirmation hook fails closed',
+  clickAct.confirms({ element_id: 'el_deadbeef' }) === true,
+  'anything it cannot resolve must confirm');
+check('the dialog asks the question in the words the specification gives',
+  clickAct.confirmTitle({ element_id: 'el_deadbeef' }) ===
+    'Assistant wants to click "el_deadbeef". Proceed?');
+check('the trail row names what was pressed',
+  /^Clicked: /.test(clickAct.trailTitle({ element_id: 'el_deadbeef' })));
+check('two clicks of the same element with no read between them is a loop',
+  clickAct.repeatGuard({ element_id: 'el_1' }) === 'click:el_1'
+  && clickAct.repeatGuard({ element_id: 'el_1' }) === clickAct.repeatGuard({ element_id: 'el_1' })
+  && clickAct.repeatGuard({ element_id: 'el_2' }) !== clickAct.repeatGuard({ element_id: 'el_1' }));
+check('reading the screen clears that guard', acts['read_page'].clearsRepeatGuard === true);
+check('click tells the model to read again afterwards',
+  /read_page again rather than trusting/.test(clickAct.description));
+check('click tells the model not to retry a declined press',
+  /do not try again/.test(clickAct.description));
+
+let unloadedClick = null;
+clickAct.handler({ element_id: 'el_1' }).then(() => { unloadedClick = 'resolved'; },
+  (e) => { unloadedClick = e.message; });
+
+/* The runtime side: an action may raise a confirmation, and may only clear one
+   the policy was not holding for its own reasons. */
+const nc = A.__core.needsConfirmation;
+check('an action can raise a read to a confirmation',
+  nc({ effect: 'read', confirms: () => true }, 'confirm_destructive') === true);
+check('an action can clear a confirmation the policy would have made',
+  nc({ effect: 'write', confirms: () => false }, 'confirm_all') === false);
+check('but it cannot clear one on a destructive action — the policy is the floor',
+  nc({ effect: 'destructive', confirms: () => false }, 'confirm_all') === true);
+check('an action that answers neither way leaves the policy to decide',
+  nc({ effect: 'write', confirms: () => null }, 'confirm_all') === true
+  && nc({ effect: 'write', confirms: () => null }, 'confirm_destructive') === false);
+check('a hook that throws confirms', nc({ effect: 'read', confirms: () => { throw new Error('x'); } }, 'confirm_all') === true);
+check('an action with no hook behaves exactly as before',
+  nc({ effect: 'write' }, 'confirm_all') === true && nc({ effect: 'write' }, 'confirm_destructive') === false);
+
+check('the panel puts the action\'s own question at the top of the dialog',
+  /a\.confirmTitle \? a\.confirmTitle\(state\.pending\.input\)/.test(runtime));
+check('the audit records whether a confirmation actually happened, not what it would be now',
+  /confirmed: !!confirmed/.test(runtime) && /execute\(tu, action, false\)/.test(runtime)
+  && /actions\[p\.name\], true\)/.test(runtime),
+  'asking after the fact would re-ask a question whose element has since gone');
+check('an unanswered tool call left by a page reload is answered on the next load',
+  /function healTranscript/.test(runtime) && /reloaded before this finished/.test(runtime)
+  && /Do not assume it ran/.test(runtime));
+check('a run parked on a confirmation is not "healed" out from under itself',
+  /if \(state\.pending \|\| state\.resume\) return;/.test(runtime));
+
+check('the prompt gives the read-say-click-read shape', /PRESSING SOMETHING/.test(prompt)
+  && /read_page again, because the screen has probably changed/.test(prompt));
+check('the prompt says a declined click is an answer, not a retry',
+  /do not press it again/.test(prompt));
+check('the prompt is honest that typing is not built yet',
+  /You cannot type into a field yet/.test(prompt));
 
 /* Every page that carries the assistant must carry the reader, or read_page
    fails on some screens and not others — which is worse than not having it. */
@@ -271,6 +414,8 @@ for (const f of ['login.html', 'index.html', 'register.html', 'pricing.html']) {
 setTimeout(() => {
   check('without the reader loaded, read_page says so instead of inventing a screen',
     typeof unloaded === 'string' && /not loaded on this page/.test(unloaded), unloaded);
+  check('and click says so too, rather than pressing something it cannot see',
+    typeof unloadedClick === 'string' && /not loaded on this page/.test(unloadedClick), unloadedClick);
   console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
   process.exit(fail ? 1 : 0);
 }, 0);

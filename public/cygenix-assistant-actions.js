@@ -84,6 +84,16 @@ function connectionSummaries() {
   });
 }
 
+/* What the panel needs to name a click before it happens: the element's label
+   and, when the runtime is asking the user to approve it, why it is asking.
+   Never throws — this runs inside a render. */
+function clickInfo(elementId) {
+  var R = root.CygenixPageReader;
+  if (!R || typeof R.clickConfirmation !== 'function') return { label: elementId, reason: '' };
+  try { return R.clickConfirmation(elementId); }
+  catch (e) { return { label: elementId, reason: '' }; }
+}
+
 /* ================================================================ *
  * App map — mirrors the sidebar's navigation tree
  * ================================================================ */
@@ -224,6 +234,9 @@ A.registerActions([
     title: 'Reading page',
     icon: '◉',
     effect: 'read',
+    /* Looking at the screen is what makes a second click of the same element
+       something other than pressing and hoping, so a read clears the guard. */
+    clearsRepeatGuard: true,
     description: 'Look at the screen the user is on and return what is drawn: the page ' +
       'title, the route, the headings, and every visible control — buttons, links, ' +
       'fields, dropdowns — each with a stable id, its kind, its label and its section. ' +
@@ -242,6 +255,78 @@ A.registerActions([
           'cannot be read. Tell the user, and work from the typed actions instead.');
       }
       return R.readPage();
+    }
+  },
+
+  {
+    /* The generic hand.
+     *
+     * Everything about this action is arranged so that it cannot press
+     * something the assistant has not looked at, and cannot press something
+     * consequential without the user saying so. The rules themselves live in
+     * cygenix-page-reader.js next to the read they depend on; what is here is
+     * the wiring: the confirmation hook the runtime consults BEFORE running
+     * the handler, the question it puts to the user in the assistant's own
+     * words, and the repeat guard that stops the same button being pressed
+     * twice with nothing learned in between.
+     */
+    name: 'click',
+    title: 'Clicking',
+    icon: '◉',
+    effect: 'write',
+    description: 'Click one element on the current screen, by an id from the most recent ' +
+      'read_page. Call read_page first — an id from an older read, from a different screen, ' +
+      'or for an element that has since changed is refused, and the refusal tells you to ' +
+      'read again. Most clicks ask the user to approve them first; you will see the result ' +
+      'either way, and if they decline, do not try again — ask what they would prefer. ' +
+      'Anything that deletes, removes, sends, submits, publishes or archives always asks. ' +
+      'After a click, the screen has probably changed: read_page again rather than trusting ' +
+      'the ids you already have.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        element_id: { type: 'string',
+          description: 'The id of the element, exactly as read_page returned it (el_…).' },
+        reason: { type: 'string',
+          description: 'One short line, in plain English, telling the user what pressing ' +
+            'this is meant to achieve.' }
+      },
+      required: ['element_id']
+    },
+    /* Consulted by the runtime before the handler runs. The consequence of a
+       click is a property of the thing clicked, not of the action, so the
+       decision has to be made per element. It fails closed: anything it cannot
+       resolve confirms. */
+    confirms: function (i) {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.clickConfirmation !== 'function') return true;
+      var d = R.clickConfirmation(i.element_id);
+      return d.error ? true : d.confirm;
+    },
+    confirmTitle: function (i) {
+      var d = clickInfo(i.element_id);
+      return 'Assistant wants to click "' + (d.label || i.element_id) + '". Proceed?';
+    },
+    preview: function (i) {
+      var d = clickInfo(i.element_id);
+      return (i.reason ? i.reason + '\n\n' : '') +
+        'Element: ' + (d.label || i.element_id) + '\n' +
+        'Why this is being asked: ' + (d.reason || 'the guardrail policy for this project.');
+    },
+    trailTitle: function (i) {
+      var d = clickInfo(i.element_id);
+      return 'Clicked: ' + (d.label || i.element_id);
+    },
+    /* Two clicks of the same element with no read of the screen between them
+       is a stall — the assistant is pressing and hoping. read_page clears it. */
+    repeatGuard: function (i) { return 'click:' + i.element_id; },
+    handler: async function (i) {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.click !== 'function') {
+        throw new Error('cygenix-page-reader.js is not loaded on this page, so nothing can ' +
+          'be clicked. Tell the user, and work from the typed actions instead.');
+      }
+      return R.click(i.element_id);
     }
   },
 
