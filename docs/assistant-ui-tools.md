@@ -19,11 +19,17 @@ way a person would.
 | `click(element_id)` | **shipped** |
 | `type(element_id, text)` | **shipped** |
 | `wait_for_change(description, timeout_ms)` | **shipped** |
+| `choose(element_id, option)` | **shipped** |
+| `scroll(direction)` | **shipped** |
 
 Reading shipped on its own first, on purpose: a tool that describes the screen
 can be inspected and trusted before anything is wired to move. `click` and
 `type` then operate one element at a time, under the rules below, and
 `wait_for_change` closes the loop — read, act, wait, read again.
+
+`choose` and `scroll` came last, from gaps the first four made obvious: a
+native dropdown is unreachable by both `type` and `click`, and a reader that
+only describes what is visible leaves a long screen half-known.
 
 ---
 
@@ -352,6 +358,99 @@ the pointer is cleared in a `finally`, so it is right however the action ends.
 
 ---
 
+## `choose(element_id, option)`
+
+```json
+{
+  "name": "choose",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "element_id": { "type": "string" },
+      "option": { "type": "string" },
+      "reason": { "type": "string" }
+    },
+    "required": ["element_id", "option"]
+  }
+}
+```
+
+The gap the first four left. `type` refuses a `<select>` because it holds no
+text; `click` only *opens* one, and the list a native select then draws is
+browser chrome the page does not own — nothing for the reader to see, nothing
+for `click` to press. Every workflow with a dropdown in it stopped at "please
+pick this yourself".
+
+### read_page now lists the options
+
+A dropdown's options are the one thing on a screen a person can see and the
+reader could not. Without them the assistant has to guess a name, be refused,
+and try again — a wasted round trip at every dropdown.
+
+They are also the easiest way to blow the size budget, so all the options on a
+page share **one 1,200-character budget**. A select that does not fit reports
+`option_count` and a note saying to ask by name instead. Nothing is hidden: the
+assistant is told the list exists and how to reach it.
+
+### Matching
+
+Forgiving in the ways a person is, strict in the one that matters:
+
+1. exact option text
+2. the underlying `value` (a model that has seen the markup)
+3. case- and space-insensitive text or value
+4. a **unique** partial
+
+A partial matching two options is **refused, not guessed at** — `Prod` against
+*Production* and *Production (EU)* is exactly when picking wrong is expensive,
+and the refusal names both. An exact match still wins outright, so *Production*
+is never ambiguous with *Production (EU)*.
+
+Nothing matching is not a failure either: the refusal quotes the options that
+do exist (up to 40), so the next attempt is informed rather than another guess.
+A dropdown with **no** options yet is reported as something still loading, with
+`wait_for_change` as the suggested next step, rather than as the model's error.
+
+### Confirmation, and multi-selects
+
+Choosing is safe unless the option is the dangerous part: the irreversible list
+is applied to the **option text** as well as the dropdown's label, so a *Bulk
+action → Delete selected* asks and *Bulk action → Export* does not.
+
+A `<select multiple>` is a set, not a choice. `choose` adds to it; clearing the
+rest would silently undo work the user did.
+
+---
+
+## `scroll(direction)`
+
+```json
+{ "name": "scroll",
+  "input_schema": { "type": "object",
+    "properties": { "direction": { "type": "string", "enum": ["down","up","top","bottom"] } } } }
+```
+
+`read_page` describes what is **visible**, which is the right rule — an element
+nobody can see is not one to be pressing — but it left a long screen half-known
+and the assistant with no way to see the other half. It could ask the user to
+scroll. It could not scroll.
+
+Effect `read`. It moves the viewport and nothing else: nothing is pressed,
+nothing changes, and the user could undo it with a flick of a finger.
+
+- **The window is the usual answer and the wrong one often enough to matter.**
+  Half this console's screens scroll an inner pane inside a fixed shell, so
+  when the window cannot scroll, the largest visible scrollable element is used
+  instead. The search is bounded at 4,000 nodes.
+- **Four-fifths of a screen at a time**, leaving a strip of overlap so nothing
+  falls between two reads.
+- **Reaching the end is reported**, not silently ignored: scrolling down at the
+  bottom answers *"Already at the bottom — do not scroll again"*, so a `scroll`
+  that did nothing does not read as one that might work next time.
+- A screen that does not scroll at all says so calmly.
+
+---
+
 ## The brakes
 
 Two stall detectors live in the runtime (`public/cygenix-assistant.js`), not
@@ -381,17 +480,21 @@ rather than an assistant message with unanswered tool calls.
 
 ## What is left
 
-All four tools are built. What is not built, and would be the next thing worth
-arguing about:
+Everything specified is built, and the two gaps the specification did not
+anticipate are closed. What remains is genuinely optional:
 
-- **A `select` verb.** Choosing an option in a dropdown currently has no tool:
-  `type` refuses a `<select>` and `click` only opens it, since the option list
-  a native select renders is not in the DOM the reader can see. The workaround
-  is to tell the user which option to pick. A `choose(element_id, option)` that
-  sets `selectedIndex` and fires `change` would close the last real gap.
-- **A scroll verb.** `read_page` skips what is not visible and reports how many
-  elements it dropped, so a long screen is only ever half-known. The assistant
-  can ask the user to scroll; it cannot scroll.
+- **A drag verb.** The Object Mapping screen is drag-and-drop, and no amount of
+  clicking reaches it. This is a real hole for exactly one screen, and closing
+  it means synthesising pointer events convincingly enough for that screen's
+  own handlers — considerably more machinery than anything here, for one
+  workflow that already has a keyboard path.
+- **Custom dropdowns.** `choose` operates a native `<select>`. A listbox built
+  out of `<div role="option">` is already reachable — it is just two clicks —
+  but the model has to work that out from the read rather than being told.
 - **Trail rows that stream.** `progress()` rewrites one row, which is enough
-  for `wait_for_change`. A long `sql_run` could use the same thing to show
-  rows arriving.
+  for `wait_for_change`. A long `sql_run` could use the same thing to show rows
+  arriving.
+- **A second read budget.** The 1,200-character option budget is spent in
+  document order, so on a page with several large dropdowns the first ones get
+  listed and the later ones report a count. Honest, bounded, and slightly
+  arbitrary; a fairer split would be to divide it between them.
