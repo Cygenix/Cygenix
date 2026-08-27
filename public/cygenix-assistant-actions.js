@@ -99,6 +99,12 @@ function typeInfo(elementId) {
   try { return R.typeConfirmation(elementId); }
   catch (e) { return { label: elementId, reason: '' }; }
 }
+function chooseInfo(elementId, option) {
+  var R = root.CygenixPageReader;
+  if (!R || typeof R.chooseConfirmation !== 'function') return { label: elementId, reason: '' };
+  try { return R.chooseConfirmation(elementId, option); }
+  catch (e) { return { label: elementId, reason: '' }; }
+}
 
 /* ================================================================ *
  * App map — mirrors the sidebar's navigation tree
@@ -454,6 +460,103 @@ A.registerActions([
                        Math.round(out.waited_ms / 1000) + 's' });
       }
       return out;
+    }
+  },
+
+  {
+    /* The gap the other three left.
+     *
+     * type refuses a <select> because it holds no text; click only opens one,
+     * and the list a native select then draws is browser chrome the page does
+     * not own — nothing for the reader to see, nothing for click to press.
+     * Every workflow with a dropdown in it stopped at "please pick this
+     * yourself".
+     */
+    name: 'choose',
+    title: 'Choosing',
+    icon: '◉',
+    effect: 'write',
+    description: 'Pick an option in a dropdown, by an id from the most recent read_page. ' +
+      'read_page lists the options for you where there are few enough; where it does not, ' +
+      'ask for the one you want and you will be told the real options if it is wrong. ' +
+      'Matching is forgiving — exact text, then the value, then case-insensitive, then a ' +
+      'unique partial — but a partial that matches two options is refused rather than ' +
+      'guessed at. This chooses; it does not save. Something still has to be pressed.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        element_id: { type: 'string',
+          description: 'The id of the dropdown, exactly as read_page returned it (el_…).' },
+        option: { type: 'string', description: 'The option to pick, as it reads on screen.' },
+        reason: { type: 'string',
+          description: 'One short line, in plain English, telling the user what this is for.' }
+      },
+      required: ['element_id', 'option']
+    },
+    confirms: function (i) {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.chooseConfirmation !== 'function') return true;
+      var d = R.chooseConfirmation(i.element_id, i.option);
+      return d.error ? true : d.confirm;
+    },
+    confirmTitle: function (i) {
+      var d = chooseInfo(i.element_id, i.option);
+      return 'Assistant wants to choose "' + i.option + '" in "' +
+        (d.label || i.element_id) + '". Proceed?';
+    },
+    preview: function (i) {
+      var d = chooseInfo(i.element_id, i.option);
+      return (i.reason ? i.reason + '\n\n' : '') +
+        'Dropdown: ' + (d.label || i.element_id) + '\n' +
+        'Option: ' + i.option +
+        (d.reason ? '\n\nWhy this is being asked: ' + d.reason : '');
+    },
+    trailTitle: function (i) {
+      var d = chooseInfo(i.element_id, i.option);
+      return 'Chose: ' + i.option + ' — ' + (d.label || i.element_id);
+    },
+    handler: async function (i) {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.choose !== 'function') {
+        throw new Error('cygenix-page-reader.js is not loaded on this page, so nothing can ' +
+          'be chosen. Tell the user, and work from the typed actions instead.');
+      }
+      return R.choose(i.element_id, i.option);
+    }
+  },
+
+  {
+    /* Moving the viewport, and nothing else.
+     *
+     * read_page describes what is VISIBLE, which is the right rule — an
+     * element nobody can see is not one to be pressing — but it leaves a long
+     * screen half-known. The assistant could ask the user to scroll. It could
+     * not scroll.
+     */
+    name: 'scroll',
+    title: 'Scrolling',
+    icon: '◉',
+    effect: 'read',
+    description: 'Move the screen up or down so read_page can see the rest of it. Use this ' +
+      'when read_page says elements were not listed, or when what you are looking for is ' +
+      'plainly further down. It changes nothing on the page — only what is in view — so ' +
+      'read_page again afterwards. It tells you when you have reached the top or the bottom; ' +
+      'when it does, stop, and say what you did or did not find.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'],
+          description: 'Default down, about four-fifths of a screen at a time.' }
+      }
+    },
+    trailTitle: function (i) { return 'Scrolled ' + (i.direction || 'down'); },
+    handler: async function (i) {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.scroll !== 'function') {
+        throw new Error('cygenix-page-reader.js is not loaded on this page, so the screen ' +
+          'cannot be scrolled. Tell the user, and work from the typed actions instead.');
+      }
+      return R.scroll(i.direction || 'down');
     }
   },
 

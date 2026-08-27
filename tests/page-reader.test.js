@@ -562,6 +562,124 @@ check('the panel is told to wait before reading, not instead of reading',
   /WAITING/.test(prompt) && /read_page afterwards/.test(prompt)
   && /Do\s*\n?not treat a timeout as a reason to retry/.test(prompt));
 
+/* ── 13. choose: the gap the other three left ───────────────────────────────
+   A <select> holds no text, so type refuses it; a native select draws its
+   option list in browser chrome the page does not own, so click can open one
+   and nothing more. Without choose, every workflow with a dropdown in it
+   stopped at "please pick this yourself". */
+
+const OPTS = [
+  { index: 0, text: 'Direct', value: 'direct' },
+  { index: 1, text: 'Relay', value: 'relay' },
+  { index: 2, text: 'Production', value: 'prod' },
+  { index: 3, text: 'Production (EU)', value: 'prod-eu' },
+];
+check('exact text wins', C.matchOption(OPTS, 'Relay').index === 1);
+check('the underlying value works too, for a model reading markup',
+  C.matchOption(OPTS, 'prod-eu').index === 3);
+check('case and stray spaces do not matter', C.matchOption(OPTS, '  rELAy ').index === 1);
+check('a unique partial is accepted', C.matchOption(OPTS, 'Rel').index === 1);
+check('an exact match beats a partial one that would also fit',
+  C.matchOption(OPTS, 'Production').index === 2,
+  '"Production" must not be read as ambiguous with "Production (EU)"');
+check('a partial matching two options is refused, not guessed at', (() => {
+  const r = C.matchOption(OPTS, 'Produc');
+  return r.error === 'ambiguous' && r.matches.length === 2;
+})(), 'picking the wrong one of Production / Production (EU) is exactly when it is expensive');
+check('and the refusal names both, so the next attempt is informed',
+  C.matchOption(OPTS, 'Produc').matches.join(', ') === 'Production, Production (EU)');
+check('nothing matching is reported as such', C.matchOption(OPTS, 'Nope').error === 'nomatch');
+check('the option list the refusal quotes is capped',
+  C.optionList(Array.from({ length: 60 }, (_, i) => ({ text: 'opt' + i, value: '' })))
+    .indexOf('and 20 more') !== -1);
+
+check('choosing an ordinary option does not ask',
+  C.decideChooseConfirm({ label: 'Mode' }, 'Direct').confirm === false);
+check('choosing an irreversible option does — a dropdown that picks an action is that action',
+  C.decideChooseConfirm({ label: 'Bulk action' }, 'Delete selected').confirm === true
+  && /irreversible-action list/.test(C.decideChooseConfirm({ label: 'x' }, 'Delete').reason));
+check('and so does a dropdown whose own label is irreversible',
+  C.decideChooseConfirm({ label: 'Remove which rows' }, 'All').confirm === true);
+
+check('choose refuses anything that is not a dropdown, and says which tool to use',
+  /not a dropdown/.test(src) && /use type for a field and click/.test(src));
+check('a dropdown with no options yet is a wait, not a failure of the model',
+  /has no options yet/.test(src) && /wait_for_change, then read_page/.test(src));
+check('a multi-select is added to rather than replaced',
+  /if \(node\.multiple\) node\.options\[hit\.index\]\.selected = true;/.test(src),
+  'clearing the rest would silently undo work the user did');
+check('choosing fires input and change like typing does', (() => {
+  const fn = src.slice(src.indexOf('function choose('), src.indexOf('scroll — seeing past'));
+  return /fire\(node, win, 'input'\)/.test(fn) && /fire\(node, win, 'change'\)/.test(fn);
+})());
+check('read_page lists a dropdown\'s options, within one budget for the whole page',
+  /function optionsOf/.test(src) && /budget\.left/.test(src)
+  && C.LIMITS.OPTION_BUDGET === 1200);
+check('a dropdown too big to list says how many it has rather than going silent',
+  /entry\.option_count = o\.count/.test(src) && /Too many options to list here/.test(src));
+
+const chooseAct = acts['choose'];
+check('choose is registered and needs both the dropdown and the option',
+  !!chooseAct && chooseAct.input_schema.required.join(',') === 'element_id,option');
+check('with no reader loaded, its confirmation hook fails closed',
+  chooseAct.confirms({ element_id: 'el_x', option: 'y' }) === true);
+check('the dialog names both the option and the dropdown',
+  chooseAct.confirmTitle({ element_id: 'el_x', option: 'Relay' }) ===
+    'Assistant wants to choose "Relay" in "el_x". Proceed?');
+check('the trail row says what was chosen where',
+  chooseAct.trailTitle({ element_id: 'el_x', option: 'Relay' }) === 'Chose: Relay — el_x');
+check('choose tells the model it has not saved anything',
+  /does not save/.test(chooseAct.description));
+
+/* ── 14. scroll: seeing past the fold ───────────────────────────────────────
+   read_page describes what is VISIBLE, which is the right rule — an element
+   nobody can see is not one to be pressing — but it left a long screen
+   half-known and the assistant with no way to see the other half. */
+
+check('the directions are the four a person would name',
+  C.SCROLL_DIRECTIONS.join(',') === 'down,up,top,bottom');
+check('anything else is refused rather than silently treated as down',
+  /is not a direction\. Use /.test(src));
+check('the window is preferred, but an inner pane is found when the window cannot scroll',
+  /function scrollTarget/.test(src) && /doc\.scrollingElement/.test(src)
+  && /overflowY/.test(src),
+  'half the console scrolls a pane inside a fixed shell');
+check('the search for a scrollable pane is bounded',
+  /i < all\.length && i < 4000/.test(src));
+check('a screen that does not scroll says so calmly rather than failing',
+  /This screen does not scroll/.test(src));
+check('hitting the end is reported so it is not tried again',
+  /Already at the bottom/.test(src) && /Do not scroll again/.test(src)
+  && /Already at the top/.test(src));
+check('scrolling overlaps a strip, so nothing falls between two reads',
+  /SCROLL_FRACTION = 0\.8/.test(src));
+check('scrolling changes the viewport and nothing else', (() => {
+  const fn = src.slice(src.indexOf('function scroll('), src.indexOf('wait_for_change — pausing'));
+  return !/\.click\(|\.value\s*=|dispatchEvent|fire\(/.test(fn);
+})());
+
+const scrollAct = acts['scroll'];
+check('scroll is registered as a read — it touches nothing',
+  !!scrollAct && scrollAct.effect === 'read' && !scrollAct.confirms);
+check('its direction is optional and enumerated',
+  (scrollAct.input_schema.required || []).length === 0
+  && scrollAct.input_schema.properties.direction.enum.join(',') === 'down,up,top,bottom');
+check('the trail row says which way it went',
+  scrollAct.trailTitle({ direction: 'up' }) === 'Scrolled up'
+  && scrollAct.trailTitle({}) === 'Scrolled down');
+check('scroll points the model at the truncation notice that should trigger it',
+  /read_page says elements were not listed/.test(scrollAct.description));
+
+check('the prompt says a dropdown is chosen, not clicked',
+  /Do not use click on a dropdown/.test(prompt));
+check('the prompt says to scroll when a read was truncated',
+  /when a read\s*\n?says elements were not listed/.test(prompt));
+
+let unloadedChoose = null, unloadedScroll = null;
+chooseAct.handler({ element_id: 'el_1', option: 'x' }).then(() => { unloadedChoose = 'resolved'; },
+  (e) => { unloadedChoose = e.message; });
+scrollAct.handler({}).then(() => { unloadedScroll = 'resolved'; }, (e) => { unloadedScroll = e.message; });
+
 /* Every page that carries the assistant must carry the reader, or read_page
    fails on some screens and not others — which is worse than not having it. */
 const appPages = fs.readdirSync(P('public')).filter((f) =>
@@ -585,6 +703,10 @@ setTimeout(() => {
     typeof unloadedClick === 'string' && /not loaded on this page/.test(unloadedClick), unloadedClick);
   check('and type says so rather than filling in a field it cannot see',
     typeof unloadedType === 'string' && /not loaded on this page/.test(unloadedType), unloadedType);
+  check('and so do choose and scroll — every one of them fails honestly',
+    /not loaded on this page/.test(String(unloadedChoose))
+    && /not loaded on this page/.test(String(unloadedScroll)),
+    unloadedChoose + ' | ' + unloadedScroll);
   console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
   process.exit(fail ? 1 : 0);
 }, 0);

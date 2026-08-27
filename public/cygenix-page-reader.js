@@ -382,6 +382,34 @@ function routeOf(pathname) {
   return p || '/';
 }
 
+/* A dropdown's options are the one thing on a screen a person can see and the
+   reader could not: they are in the DOM, but a native <select> draws them in
+   chrome the page does not own. Without them the assistant has to guess an
+   option name, be refused, and try again — a wasted round trip on every
+   dropdown it meets.
+
+   They are also the easiest way to blow the size budget: five selects with
+   thirty options each is the whole snapshot. So the options share ONE budget
+   across the page, and a select that does not fit reports how many it has
+   instead. Nothing is hidden — the assistant is told the list exists and how
+   to ask for it. */
+var OPTION_BUDGET = 1200;
+var MAX_OPTION_LABEL = 36;
+
+function optionsOf(node, budget) {
+  var opts = node.options;
+  if (!opts || !opts.length) return null;
+  var list = [], spent = 0;
+  for (var i = 0; i < opts.length; i++) {
+    var t = clamp(opts[i].textContent || opts[i].value, MAX_OPTION_LABEL);
+    spent += t.length + 3;
+    if (spent > budget.left) return { count: opts.length };
+    list.push(t);
+  }
+  budget.left -= spent;
+  return { list: list };
+}
+
 function valueOf(node, tag, label) {
   var type = String(node.type || '').toLowerCase();
   var name = attr(node, 'name') + ' ' + attr(node, 'id');
@@ -413,6 +441,7 @@ function readPage(opts) {
   try { nodes = Array.prototype.slice.call(doc.querySelectorAll(SELECTOR)); } catch (e) { nodes = []; }
 
   var landmarks = [], counts = {}, byId = {}, elements = [];
+  var optionBudget = { left: OPTION_BUDGET };
 
   Array.prototype.slice.call(doc.querySelectorAll(HEADINGS)).forEach(function (h) {
     if (inOwnPanel(h) || !visible(h, win)) return;
@@ -439,6 +468,15 @@ function readPage(opts) {
     if (value != null) entry.value = value;
     if (section) entry.section = section;
     if (node.disabled) entry.disabled = true;
+    if (entry.kind === 'select') {
+      var o = optionsOf(node, optionBudget);
+      if (o && o.list) entry.options = o.list;
+      else if (o && o.count) {
+        entry.option_count = o.count;
+        entry.note = 'Too many options to list here. Use choose with the name you want and ' +
+          'it will tell you if there is no such option.';
+      }
+    }
 
     elements.push(entry);
     byId[id] = node;
@@ -806,6 +844,217 @@ function type(elementId, text, opts) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   choose — picking an option in a dropdown.
+   ══════════════════════════════════════════════════════════════════════════
+
+   The gap the other three left. type refuses a <select> because it holds no
+   text; click only opens one, and the list a native select then draws is
+   browser chrome the page does not own, so there is nothing for the reader to
+   see and nothing for click to press. Every workflow with a dropdown in it
+   stopped at "please pick this yourself".
+
+   The matching is forgiving in the ways a person is and strict in the way that
+   matters. Exact text wins, then the underlying value, then case- and
+   space-insensitive, then a unique substring. TWO substring matches is an
+   error, not a coin toss: "Prod" against "Production" and "Production (EU)"
+   is exactly when picking the wrong one is expensive.
+
+   Nothing matching is not a failure either — it answers with the options that
+   do exist, so the next attempt is informed rather than another guess. */
+
+var MAX_OPTIONS_LISTED = 40;
+
+function optionTexts(node) {
+  var out = [], opts = node.options || [];
+  for (var i = 0; i < opts.length; i++) {
+    out.push({ index: i, text: squash(opts[i].textContent), value: String(opts[i].value == null ? '' : opts[i].value) });
+  }
+  return out;
+}
+
+/**
+ * Which option did they mean? Returns {index, text} or {error, options}.
+ * Pure over a list, so every rung of the ladder is testable without a DOM.
+ */
+function matchOption(options, wanted) {
+  var want = squash(wanted);
+  var lower = want.toLowerCase();
+  var i, hits;
+
+  for (i = 0; i < options.length; i++) if (options[i].text === want) return options[i];
+  for (i = 0; i < options.length; i++) if (options[i].value === want) return options[i];
+  for (i = 0; i < options.length; i++) {
+    if (options[i].text.toLowerCase() === lower || options[i].value.toLowerCase() === lower) return options[i];
+  }
+
+  hits = options.filter(function (o) { return o.text.toLowerCase().indexOf(lower) !== -1; });
+  if (hits.length === 1) return hits[0];
+  if (hits.length > 1) {
+    return { error: 'ambiguous', matches: hits.slice(0, 8).map(function (o) { return o.text; }) };
+  }
+  return { error: 'nomatch' };
+}
+
+function optionList(options) {
+  var names = options.slice(0, MAX_OPTIONS_LISTED).map(function (o) { return o.text || o.value; });
+  return names.join(', ') + (options.length > MAX_OPTIONS_LISTED
+    ? ' … and ' + (options.length - MAX_OPTIONS_LISTED) + ' more' : '');
+}
+
+/** Choosing is safe unless the option itself is the dangerous part. */
+function decideChooseConfirm(entry, optionText) {
+  var word = irreversible(optionText) || irreversible(entry && entry.label);
+  if (word) {
+    return { confirm: true, reason: 'The option contains "' + word + '", which is on the ' +
+      'irreversible-action list — a dropdown that picks an action is still that action.' };
+  }
+  return { confirm: false, reason: '' };
+}
+
+function chooseConfirmation(elementId, option) {
+  var r;
+  try { r = resolve(elementId); }
+  catch (e) { return { confirm: false, reason: e.message, label: String(elementId), error: true }; }
+  var d = decideChooseConfirm(r.entry, option);
+  return { confirm: d.confirm, reason: d.reason, label: r.entry.label, error: false };
+}
+
+function choose(elementId, option, opts) {
+  opts = opts || {};
+  var win = opts.window || root || (typeof window !== 'undefined' ? window : null);
+  var r = resolve(elementId, opts);
+  var entry = r.entry, node = r.node;
+
+  if ((node.tagName || '').toLowerCase() !== 'select') {
+    throw Refusal('Element ' + elementId + ' ("' + entry.label + '") is a ' + entry.kind +
+      ', not a dropdown. choose works on a dropdown only — use type for a field and click ' +
+      'for anything else.');
+  }
+  if (node.disabled || node.getAttribute('aria-disabled') === 'true') {
+    throw Refusal('Element ' + elementId + ' ("' + entry.label + '") is disabled. Tell the ' +
+      'user what it is waiting for rather than trying again.');
+  }
+
+  var options = optionTexts(node);
+  if (!options.length) {
+    throw Refusal('Element ' + elementId + ' ("' + entry.label + '") has no options yet. ' +
+      'Something may still be loading it — wait_for_change, then read_page.');
+  }
+
+  var hit = matchOption(options, option);
+  if (hit.error === 'ambiguous') {
+    throw Refusal('"' + option + '" matches more than one option (' + hit.matches.join(', ') +
+      '). Ask for one of them exactly.');
+  }
+  if (hit.error === 'nomatch') {
+    throw Refusal('"' + option + '" is not an option in "' + entry.label + '". The options are: ' +
+      optionList(options) + '.');
+  }
+
+  // A multi-select is a set, not a choice: adding to it is what "choose" means
+  // there, and clearing the rest would silently undo work the user did.
+  if (node.multiple) node.options[hit.index].selected = true;
+  else node.selectedIndex = hit.index;
+
+  fire(node, win, 'input');
+  fire(node, win, 'change');
+
+  return {
+    ok: true,
+    dropdown: entry.label,
+    chose: hit.text || hit.value,
+    note: 'Chosen, not saved — something still has to be pressed if this is part of a form. ' +
+      'The screen may have reacted to it; read_page again if you need to see how.'
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   scroll — seeing past the fold.
+   ══════════════════════════════════════════════════════════════════════════
+
+   read_page describes what is VISIBLE, which is the right rule — an element
+   nobody can see is not one the assistant should be pressing — but it leaves
+   a long screen half-known, and the assistant with no way to see the other
+   half. It could ask the user to scroll. It could not scroll.
+
+   This moves the viewport and nothing else. It is not an action on the page:
+   nothing is pressed, nothing changes, and the user could undo it with a
+   flick of a finger. It reports where it ended up so "scroll down" at the
+   bottom of the page comes back as "already at the bottom" rather than as a
+   silent no-op the assistant will try again. */
+
+var SCROLL_FRACTION = 0.8;   // a page-down, with a strip of overlap to read across
+
+/* The window is the usual answer and the wrong one often enough to matter:
+   half the console's screens scroll an inner pane with a fixed shell around
+   it. Take the window when it can scroll, otherwise the biggest thing that
+   can. */
+function scrollTarget(doc, win) {
+  var el = doc.scrollingElement || doc.documentElement;
+  if (el && el.scrollHeight > el.clientHeight + 4) return { node: el, isWindow: true };
+
+  var best = null, bestArea = 0;
+  var all = doc.querySelectorAll('*');
+  for (var i = 0; i < all.length && i < 4000; i++) {
+    var n = all[i];
+    if (n.scrollHeight <= n.clientHeight + 4) continue;
+    if (inOwnPanel(n) || !visible(n, win)) continue;
+    var style = null;
+    try { style = win.getComputedStyle(n); } catch (e) { continue; }
+    if (!style || !/(auto|scroll)/.test(style.overflowY + ' ' + style.overflow)) continue;
+    var area = n.clientHeight * n.clientWidth;
+    if (area > bestArea) { bestArea = area; best = n; }
+  }
+  return best ? { node: best, isWindow: false } : null;
+}
+
+var SCROLL_DIRECTIONS = ['down', 'up', 'top', 'bottom'];
+
+function scroll(direction, opts) {
+  opts = opts || {};
+  var doc = opts.document || (typeof document !== 'undefined' ? document : null);
+  var win = opts.window || root || (typeof window !== 'undefined' ? window : null);
+  if (!doc || !win) throw new Error('scroll needs a browser document.');
+
+  var dir = String(direction || 'down').toLowerCase();
+  if (SCROLL_DIRECTIONS.indexOf(dir) === -1) {
+    throw Refusal('"' + direction + '" is not a direction. Use ' + SCROLL_DIRECTIONS.join(', ') + '.');
+  }
+
+  var t = scrollTarget(doc, win);
+  if (!t) {
+    return { scrolled: false, at_top: true, at_bottom: true,
+      note: 'This screen does not scroll — everything on it is already in view.' };
+  }
+
+  var node = t.node;
+  var before = node.scrollTop;
+  var page = Math.max(120, Math.round(node.clientHeight * SCROLL_FRACTION));
+  var max = Math.max(0, node.scrollHeight - node.clientHeight);
+  var to = dir === 'top' ? 0
+    : dir === 'bottom' ? max
+    : dir === 'down' ? Math.min(max, before + page)
+    : Math.max(0, before - page);
+
+  node.scrollTop = to;
+  var after = node.scrollTop;
+  var atTop = after <= 2, atBottom = after >= max - 2;
+
+  return {
+    scrolled: after !== before,
+    direction: dir,
+    at_top: atTop,
+    at_bottom: atBottom,
+    note: after === before
+      ? (dir === 'down' || dir === 'bottom'
+          ? 'Already at the bottom — there is nothing further down. Do not scroll again.'
+          : 'Already at the top — there is nothing further up. Do not scroll again.')
+      : 'The viewport moved; nothing on the page was changed. Call read_page to see what is ' +
+        'in view now.'
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    wait_for_change — pausing until the page reacts.
    ══════════════════════════════════════════════════════════════════════════
 
@@ -997,6 +1246,9 @@ return {
   clickConfirmation: clickConfirmation,
   type: type,
   typeConfirmation: typeConfirmation,
+  choose: choose,
+  chooseConfirmation: chooseConfirmation,
+  scroll: scroll,
   /* pure core, exported for the tests */
   __core: {
     sha256Hex: sha256Hex,
@@ -1016,13 +1268,18 @@ return {
     significantWords: significantWords,
     looselyMatches: looselyMatches,
     words: words,
+    matchOption: matchOption,
+    optionList: optionList,
+    decideChooseConfirm: decideChooseConfirm,
+    SCROLL_DIRECTIONS: SCROLL_DIRECTIONS,
     SELECTOR: SELECTOR,
     IRREVERSIBLE: IRREVERSIBLE,
     NON_TEXT_INPUT: NON_TEXT_INPUT,
     LIMITS: { MAX_CHARS: MAX_CHARS, MAX_LABEL: MAX_LABEL, MAX_VALUE: MAX_VALUE, ID_LEN: ID_LEN,
               CLICK_SKIP_MS: CLICK_SKIP_MS, CLICK_MAX_AGE_MS: CLICK_MAX_AGE_MS,
               MAX_TYPE_CHARS: MAX_TYPE_CHARS, WAIT_DEFAULT_MS: WAIT_DEFAULT_MS,
-              WAIT_MIN_MS: WAIT_MIN_MS, WAIT_MAX_MS: WAIT_MAX_MS }
+              WAIT_MIN_MS: WAIT_MIN_MS, WAIT_MAX_MS: WAIT_MAX_MS,
+              OPTION_BUDGET: OPTION_BUDGET, MAX_OPTIONS_LISTED: MAX_OPTIONS_LISTED }
   }
 };
 });
