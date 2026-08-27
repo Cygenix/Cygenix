@@ -18,12 +18,12 @@ way a person would.
 | `read_page()` | **shipped** |
 | `click(element_id)` | **shipped** |
 | `type(element_id, text)` | **shipped** |
-| `wait_for_change(description, timeout_ms)` | not built |
+| `wait_for_change(description, timeout_ms)` | **shipped** |
 
 Reading shipped on its own first, on purpose: a tool that describes the screen
 can be inspected and trusted before anything is wired to move. `click` and
-`type` then operate one element at a time, under the rules below. Waiting is
-still not built.
+`type` then operate one element at a time, under the rules below, and
+`wait_for_change` closes the loop — read, act, wait, read again.
 
 ---
 
@@ -279,6 +279,79 @@ gains nothing and, in a credential field, loses something. A value cap of
 
 ---
 
+## `wait_for_change(description, timeout_ms)`
+
+```json
+{
+  "name": "wait_for_change",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "description": { "type": "string" },
+      "timeout_ms": { "type": "integer" }
+    },
+    "required": ["description"]
+  }
+}
+```
+
+Effect `read`, no confirmation, nothing touched. Trail row `◉ Waiting for: …`,
+rewritten in place when it finishes to `◉ Detected: …` or `◉ Timeout`.
+
+The other three tools act on a screen that is standing still. This one exists
+because it usually is not: a click starts a query, a save posts to a function,
+a filter re-renders a grid. Without it the assistant has two bad options —
+read again immediately and describe the *old* screen as though it were the new
+one, or spin in a read-read-read loop until the brakes stop it. Both end with
+the user being told something untrue.
+
+### Four signals, strongest first
+
+| | Signal | Reported as |
+| --- | --- | --- |
+| 1 | The address changed | `the address changed to /jobs/42` |
+| 2 | A control that was there has gone | `"Cancel run" is no longer on the screen` |
+| 3 | A heading that was not there is | `a new section appeared: "Results"` |
+| 4 | Text matching the description | `text mentioning "connection" appeared` |
+
+Signal 2 counts a control **hidden** as much as one removed — a node still in
+the document but `display:none` has gone as far as the user is concerned.
+
+A `MutationObserver` on `document.body` collects the text that arrives (capped
+at 20 KB), but **a poll every 120 ms is what actually decides**: a `pushState`
+fires no mutation at all, and neither does a stylesheet class that hides a
+row. The observer only feeds signal 4.
+
+Text matching is deliberately generous. The description is reduced to its
+significant words — four characters or more, minus a stoplist of words that
+describe the *event* rather than the thing (`appears`, `shows`, `changed`,
+`page`) — and **any one of them** counts. The two ways to be wrong are not
+equal: a false match returns early saying exactly which word it saw, and the
+model reads the page and finds out; a false timeout tells it nothing happened
+when something did, which is the answer it cannot recover from.
+
+### A timeout is not an error
+
+It resolves `{changed: false}` and says how long it waited. Returning a failed
+tool call would push the model towards retrying when what it should do is tell
+the user nothing happened — so the note says exactly that, and the system
+prompt repeats it.
+
+Bounds: 5 s default, 250 ms floor, **30 s ceiling** — the panel is blocked
+while this runs. The observer, the poll and the timer are all torn down on
+every exit, so a wait cannot outlive the turn that started it.
+
+### The trail row had to learn to change its mind
+
+Every other action is over in the time it takes to render, so its row is
+written once and never touched. A row that says *Waiting for: the job to
+finish* for five seconds and still says it afterwards is a row that has lied.
+The runtime now tracks the row belonging to the action currently running
+(`activeTrail`) and exposes `CygenixAssistant.progress(patch)` to rewrite it;
+the pointer is cleared in a `finally`, so it is right however the action ends.
+
+---
+
 ## The brakes
 
 Two stall detectors live in the runtime (`public/cygenix-assistant.js`), not
@@ -306,22 +379,19 @@ rather than an assistant message with unanswered tool calls.
 
 ---
 
-## What the next step needs
+## What is left
 
-`wait_for_change(description, timeout_ms)` is the last of the four and needs
-no new plumbing: a `MutationObserver` on `document.body`, resolving on a new
-landmark heading, a previously visible element disappearing, a URL change, or
-text loosely matching the description; rejecting on timeout. It touches
-nothing, so it can be a `read` and needs no confirmation.
+All four tools are built. What is not built, and would be the next thing worth
+arguing about:
 
-Two things to decide rather than inherit:
-
-- The trail rows are pushed **before** the handler runs, so `◉ Clicked: X`
-  appears a moment before the click actually lands. That is the wording the
-  specification asked for and it is fine at human speed, but a
-  `wait_for_change` row has to update *in place* as it goes —
-  `◉ Waiting for: …` then `◉ Detected: …` or `◉ Timeout` — which the trail
-  cannot currently do.
-- A timeout is not an error. If the page did not change, that is a fact worth
-  reporting calmly; returning it as a failed tool call would push the model
-  towards retrying rather than towards telling the user nothing happened.
+- **A `select` verb.** Choosing an option in a dropdown currently has no tool:
+  `type` refuses a `<select>` and `click` only opens it, since the option list
+  a native select renders is not in the DOM the reader can see. The workaround
+  is to tell the user which option to pick. A `choose(element_id, option)` that
+  sets `selectedIndex` and fires `change` would close the last real gap.
+- **A scroll verb.** `read_page` skips what is not visible and reports how many
+  elements it dropped, so a long screen is only ever half-known. The assistant
+  can ask the user to scroll; it cannot scroll.
+- **Trail rows that stream.** `progress()` rewrites one row, which is enough
+  for `wait_for_change`. A long `sql_run` could use the same thing to show
+  rows arriving.

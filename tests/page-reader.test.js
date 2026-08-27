@@ -474,6 +474,94 @@ let unloadedType = null;
 typeAct.handler({ element_id: 'el_1', text: 'x' }).then(() => { unloadedType = 'resolved'; },
   (e) => { unloadedType = e.message; });
 
+/* ── 12. wait_for_change: four signals, and a timeout that is not a failure ── */
+
+check('a description is reduced to the words worth looking for',
+  C.significantWords('the query results appear').join(',') === 'query,results',
+  C.significantWords('the query results appear').join(','));
+check('words describing the event rather than the thing are dropped',
+  C.significantWords('a success message appears on the screen').join(',') === 'success,message',
+  C.significantWords('a success message appears on the screen').join(','));
+check('short words are dropped — "job" would match half the console',
+  C.significantWords('the job is done').indexOf('job') === -1);
+check('the word list is capped, so a rambling description cannot scan forever',
+  C.significantWords(Array.from({ length: 40 }, (_, i) => 'word' + i).join(' ')).length === 8);
+check('a description of nothing but stopwords yields nothing to look for',
+  C.significantWords('it has changed').length === 0);
+
+check('the whole description matching is the strongest signal',
+  C.looselyMatches('The connection test finished', 'connection test') === 'connection test');
+check('any significant word counts',
+  C.looselyMatches('Connection succeeded', 'the connection test result') === 'connection');
+check('matching is case-insensitive and ignores layout whitespace',
+  C.looselyMatches('\n  CONNECTION\t succeeded ', 'connection') === 'connection');
+check('unrelated text does not match',
+  C.looselyMatches('Loading projects', 'the query results appear') === null);
+check('empty text matches nothing', C.looselyMatches('', 'anything') === null);
+check('a description with no significant words matches nothing rather than everything',
+  C.looselyMatches('some arbitrary text on the page', 'it has changed') === null);
+
+check('the four signals are checked strongest first', (() => {
+  const fn = src.slice(src.indexOf('function evaluate()'), src.indexOf('try {\n      obs ='));
+  return fn.indexOf('the address changed') < fn.indexOf('no longer on the screen')
+      && fn.indexOf('no longer on the screen') < fn.indexOf('a new section appeared')
+      && fn.indexOf('a new section appeared') < fn.indexOf('looselyMatches');
+})(), 'address, then a control gone, then a new heading, then text');
+check('the timeout resolves rather than throwing',
+  /timer = setTimeout\(function \(\) \{ finish\(null\); \}, ms\)/.test(src)
+  && !/reject/.test(src),
+  'a page that did not change is a fact, not a failed call');
+check('and the result says so in terms the model can act on',
+  /That is a result, not a failure/.test(src) && /rather than waiting again/.test(src));
+check('a detected change tells the model to read the page to find out what it was',
+  /this only saw that much/.test(src) && /Call read_page to find out/.test(src));
+check('the wait is bounded — the panel is blocked while it runs',
+  C.LIMITS.WAIT_DEFAULT_MS === 5000 && C.LIMITS.WAIT_MAX_MS === 30000
+  && C.LIMITS.WAIT_MIN_MS === 250);
+check('a missing, zero or absurd timeout is clamped rather than trusted',
+  /Math\.max\(WAIT_MIN_MS, Math\.min\(WAIT_MAX_MS/.test(src));
+check('the observer is disconnected on every exit, including the timeout',
+  /function finish\([\s\S]{0,200}obs\.disconnect\(\)[\s\S]{0,120}clearTimeout\(timer\)[\s\S]{0,80}clearInterval\(ticker\)/.test(src),
+  'a wait must not outlive the turn that started it');
+check('a poll decides, because a pushState fires no mutation at all',
+  /setInterval\(evaluate, WAIT_TICK_MS\)/.test(src)
+  && /does NOT catch a pushState/.test(src));
+check('the collected text is bounded so a busy page cannot fill memory',
+  /added\.length < 20000/.test(src));
+check('waiting changes nothing on the page', (() => {
+  const fn = src.slice(src.indexOf('function waitForChange'));
+  return !/\.click\(|\.focus\(|setValue\(|\.textContent\s*=[^=]/.test(fn);
+})());
+
+const waitAct = acts['wait_for_change'];
+check('wait_for_change is registered', !!waitAct);
+check('it is a read, so no policy holds it and nothing is confirmed',
+  waitAct.effect === 'read' && !waitAct.confirms);
+check('it needs a description, and the timeout is optional',
+  waitAct.input_schema.required.join(',') === 'description'
+  && !!waitAct.input_schema.properties.timeout_ms);
+check('the trail row says what is being waited for',
+  waitAct.trailTitle({ description: 'the results appear' }) === 'Waiting for: the results appear');
+check('the description tells the model a timeout is a normal answer',
+  /not a failure/.test(waitAct.description));
+check('and that it must read the page to learn what actually changed',
+  /call read_page afterwards to find out what/.test(waitAct.description));
+
+/* The row is written before the handler runs and has to be rewritten after —
+   a row that says "Waiting for: the job to finish" once the wait is over is a
+   row that lies. */
+check('the runtime lets a long action rewrite its own trail row',
+  /function progress\(patch\)/.test(runtime) && /var activeTrail = -1/.test(runtime)
+  && /activeTrail = state\.trail\.length - 1/.test(runtime));
+check('and clears the pointer when the action ends, however it ends',
+  /\} finally \{\s*\n\s*activeTrail = -1;/.test(runtime));
+check('wait_for_change uses it to say what it found',
+  /A\.progress\(\{ title: out\.changed \? 'Detected: ' \+ out\.what : 'Timeout'/
+    .test(read('public', 'cygenix-assistant-actions.js')));
+check('the panel is told to wait before reading, not instead of reading',
+  /WAITING/.test(prompt) && /read_page afterwards/.test(prompt)
+  && /Do\s*\n?not treat a timeout as a reason to retry/.test(prompt));
+
 /* Every page that carries the assistant must carry the reader, or read_page
    fails on some screens and not others — which is worse than not having it. */
 const appPages = fs.readdirSync(P('public')).filter((f) =>

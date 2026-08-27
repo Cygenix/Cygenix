@@ -403,6 +403,61 @@ A.registerActions([
   },
 
   {
+    /* Doing nothing, on purpose.
+     *
+     * A click here starts a query, a save posts to a function, a filter
+     * re-renders a grid. Without this the assistant either reads again
+     * immediately and describes the old screen as though it were the new one,
+     * or spins in a read-read-read loop until the brakes stop it. Both end
+     * with the user being told something untrue.
+     *
+     * A timeout is NOT an error. If the page did not change, that is a fact
+     * worth reporting calmly — returning it as a failed call would push the
+     * model towards retrying when it should be telling the user nothing
+     * happened.
+     */
+    name: 'wait_for_change',
+    title: 'Waiting',
+    icon: '◉',
+    effect: 'read',
+    description: 'Pause until the screen reacts — the address changes, a control that was ' +
+      'there disappears, a new section appears, or text matching your description shows up ' +
+      '— or until the timeout, whichever comes first. Use it after a click that starts ' +
+      'something, instead of reading the page straight away and describing the state before ' +
+      'it. It returns whether anything changed and what it saw; nothing changing is a ' +
+      'normal answer, not a failure, and means you should say so rather than waiting again. ' +
+      'It only notices THAT something happened — call read_page afterwards to find out what.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        description: { type: 'string',
+          description: 'What you are waiting for, in plain words — "the query results ' +
+            'appear", "the connection test finishes". Shown to the user.' },
+        timeout_ms: { type: 'integer',
+          description: 'How long to wait. Default 5000, maximum 30000.' }
+      },
+      required: ['description']
+    },
+    trailTitle: function (i) { return 'Waiting for: ' + String(i.description || 'the page'); },
+    handler: async function (i) {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.waitForChange !== 'function') {
+        throw new Error('cygenix-page-reader.js is not loaded on this page, so there is ' +
+          'nothing to watch. Tell the user, and work from the typed actions instead.');
+      }
+      var out = await R.waitForChange(i.description, i.timeout_ms);
+      // The row has been saying "Waiting for: …" for as long as this took.
+      // Leaving it that way once it is over would be a row that lies.
+      if (typeof A.progress === 'function') {
+        A.progress({ title: out.changed ? 'Detected: ' + out.what : 'Timeout',
+                     detail: out.changed ? null : 'Nothing changed in ' +
+                       Math.round(out.waited_ms / 1000) + 's' });
+      }
+      return out;
+    }
+  },
+
+  {
     name: 'app_point_at',
     title: 'Point at a control',
     effect: 'read',
