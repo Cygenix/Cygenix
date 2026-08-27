@@ -391,7 +391,7 @@ function valueOf(node, tag, label) {
   }
   if (type === 'checkbox' || type === 'radio') return node.checked ? 'checked' : 'unchecked';
   if (tag === 'input' || tag === 'textarea') return redactValue(type, name, label, node.value);
-  if (attr(node, 'contenteditable')) return redactValue('', name, label, squash(node.textContent));
+  if (isEditableRegion(node)) return redactValue('', name, label, squash(node.textContent));
   return null;
 }
 
@@ -647,11 +647,171 @@ function click(elementId, opts) {
   };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   type — putting text into a field.
+   ══════════════════════════════════════════════════════════════════════════
+
+   Typing is the quietest of the three and, on this console, the one with the
+   sharpest edge. Filling in a table name is nothing. Filling in a password box
+   is the assistant writing a credential into the operator's browser — and this
+   module already refuses to READ those fields, so writing to one without
+   asking would be an odd place to stop being careful.
+
+   So type inherits every fence click has (it must have looked, and the field
+   must still be the field it looked at), narrows the target to the three
+   things that hold text, and asks first when the field is a credential field.
+   Everything else goes straight in, which is what makes it useful.
+
+   What it never does is repeat the text back. The model supplied it, so the
+   conversation already has it; there is nothing to gain by putting it in the
+   result as well, and if it is a credential there is something to lose. */
+
+var MAX_TYPE_CHARS = 10000;
+
+/* Types that live on an <input> but hold no text. A file picker is the one
+   that matters: its value cannot be set from script by design, and a browser
+   that let it be would be a browser with a hole in it. */
+var NON_TEXT_INPUT = /^(checkbox|radio|file|button|submit|reset|image|range|color)$/;
+
+/* attr() cannot answer this: it returns '' both for contenteditable="" — which
+   means editable — and for an element with no such attribute at all. Reading
+   the attribute directly is the only way to tell those apart, and getting it
+   wrong the generous way would make every <div> on the page a text field. */
+function isEditableRegion(node) {
+  if (!node || !node.getAttribute) return false;
+  if (node.isContentEditable === true) return true;
+  var ce = node.getAttribute('contenteditable');
+  return ce != null && String(ce).toLowerCase() !== 'false';
+}
+
+function isTextField(node) {
+  var tag = (node.tagName || '').toLowerCase();
+  if (tag === 'textarea') return true;
+  if (isEditableRegion(node)) return true;
+  if (tag !== 'input') return false;
+  return !NON_TEXT_INPUT.test(String(node.type || 'text').toLowerCase());
+}
+
+/** Is this field one whose contents are a secret? Same rule the reader uses. */
+function isCredentialField(node, entry) {
+  return isSensitive(
+    String(node.type || ''),
+    attr(node, 'name') + ' ' + attr(node, 'id'),
+    (entry && entry.label) || ''
+  );
+}
+
+/**
+ * Does putting text in this field need the user's word first? Two cases, and
+ * both of them are about the operator seeing what is happening to their own
+ * browser rather than about the text being a change to any system — nothing
+ * typed here reaches a database until something is pressed, and that press
+ * has its own confirmation.
+ */
+function decideTypeConfirm(entry, isCredential) {
+  if (isCredential) {
+    return { confirm: true, reason: 'This field holds a credential. Nothing is read back out ' +
+      'of it, and it is worth checking that what is about to go in is what you expect — ' +
+      'passwords and keys are usually better typed by you.' };
+  }
+  var word = irreversible(entry && entry.label);
+  if (word) {
+    return { confirm: true, reason: 'The field\'s label contains "' + word + '", which is on ' +
+      'the irreversible-action list.' };
+  }
+  return { confirm: false, reason: '' };
+}
+
+/** The confirmation question for type, answered without touching anything. */
+function typeConfirmation(elementId) {
+  var r;
+  try { r = resolve(elementId); }
+  catch (e) { return { confirm: false, reason: e.message, label: String(elementId), error: true }; }
+  var d = decideTypeConfirm(r.entry, isCredentialField(r.node, r.entry));
+  return { confirm: d.confirm, reason: d.reason, label: r.entry.label, error: false };
+}
+
+/* Frameworks that track an input's value do it by patching the property on the
+   instance, so a plain assignment can be swallowed. Going through the
+   prototype's own setter is what React's own test utilities do, and it is
+   harmless everywhere else. */
+function setValue(node, text, win) {
+  var proto = null;
+  try {
+    var tag = (node.tagName || '').toLowerCase();
+    if (tag === 'textarea' && win.HTMLTextAreaElement) proto = win.HTMLTextAreaElement.prototype;
+    else if (tag === 'input' && win.HTMLInputElement) proto = win.HTMLInputElement.prototype;
+    var d = proto && Object.getOwnPropertyDescriptor(proto, 'value');
+    if (d && d.set) { d.set.call(node, text); return; }
+  } catch (e) { /* fall through */ }
+  node.value = text;
+}
+
+function fire(node, win, name) {
+  try {
+    node.dispatchEvent(new win.Event(name, { bubbles: true }));
+  } catch (e) {
+    try {
+      var ev = (win.document || document).createEvent('Event');
+      ev.initEvent(name, true, false);
+      node.dispatchEvent(ev);
+    } catch (e2) { /* nothing more to try */ }
+  }
+}
+
+/** Replace a field's contents. Refuses anything that is not a text field. */
+function type(elementId, text, opts) {
+  opts = opts || {};
+  var win = opts.window || root || (typeof window !== 'undefined' ? window : null);
+  var value = text == null ? '' : String(text);
+  if (value.length > MAX_TYPE_CHARS) {
+    throw Refusal('That is ' + value.length + ' characters, over the ' + MAX_TYPE_CHARS +
+      '-character limit for one field. Shorten it, or ask the user to paste it themselves.');
+  }
+
+  var r = resolve(elementId, opts);
+  var entry = r.entry, node = r.node;
+
+  if (!isTextField(node)) {
+    throw Refusal('Element ' + elementId + ' ("' + entry.label + '") is a ' + entry.kind +
+      ' and holds no text. type works on a text field, a text area or an editable region ' +
+      'only. To operate this one, use click.');
+  }
+  if (node.disabled || node.readOnly || node.getAttribute('aria-disabled') === 'true') {
+    throw Refusal('Element ' + elementId + ' ("' + entry.label + '") is read-only or disabled. ' +
+      'Tell the user what it is waiting for rather than trying again.');
+  }
+
+  try { if (node.focus) node.focus(); } catch (e) { /* carry on */ }
+
+  if (isEditableRegion(node)) {
+    node.textContent = value;                 // clears and replaces in one go
+  } else {
+    setValue(node, '', win);                  // clear first, as a person would
+    setValue(node, value, win);
+  }
+  fire(node, win, 'input');
+  fire(node, win, 'change');
+
+  // Deliberately no echo of the text. The model supplied it, so the
+  // conversation has it already; repeating it back gains nothing and, in a
+  // credential field, loses something.
+  return {
+    ok: true,
+    typed_into: entry.label,
+    characters: value.length,
+    note: 'The field now holds what you sent. Nothing has been saved or submitted — ' +
+      'that still needs a click. Call read_page again if you need to see the result.'
+  };
+}
+
 return {
   readPage: readPage,
   lastRead: lastRead,
   click: click,
   clickConfirmation: clickConfirmation,
+  type: type,
+  typeConfirmation: typeConfirmation,
   /* pure core, exported for the tests */
   __core: {
     sha256Hex: sha256Hex,
@@ -665,10 +825,15 @@ return {
     irreversible: irreversible,
     safeToClick: safeToClick,
     decideConfirm: decideConfirm,
+    decideTypeConfirm: decideTypeConfirm,
+    isTextField: isTextField,
+    isCredentialField: isCredentialField,
     SELECTOR: SELECTOR,
     IRREVERSIBLE: IRREVERSIBLE,
+    NON_TEXT_INPUT: NON_TEXT_INPUT,
     LIMITS: { MAX_CHARS: MAX_CHARS, MAX_LABEL: MAX_LABEL, MAX_VALUE: MAX_VALUE, ID_LEN: ID_LEN,
-              CLICK_SKIP_MS: CLICK_SKIP_MS, CLICK_MAX_AGE_MS: CLICK_MAX_AGE_MS }
+              CLICK_SKIP_MS: CLICK_SKIP_MS, CLICK_MAX_AGE_MS: CLICK_MAX_AGE_MS,
+              MAX_TYPE_CHARS: MAX_TYPE_CHARS }
   }
 };
 });

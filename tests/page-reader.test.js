@@ -188,9 +188,12 @@ const readFn = src.slice(src.indexOf('function readPage'), src.indexOf('click �
 check('reading the page presses nothing',
   !/\.click\(|\.submit\(|dispatchEvent|\.focus\(/.test(readFn),
   'read_page describes; only click() may act, and only under its own rules');
-check('the reader still cannot type or submit — clicking is all that shipped',
-  !/\.submit\(|dispatchEvent|node\.value\s*=[^=]|\.textContent\s*=[^=]/.test(src),
-  'type() is a separate step and is not built');
+check('nothing submits a form directly — a submit button is a click, with a click\'s rules',
+  !/\.submit\(/.test(src));
+check('writing to a field happens only in the typing half of the module',
+  src.slice(0, src.indexOf('type — putting text into a field')).indexOf('node.value =') === -1
+  && /function setValue/.test(src),
+  'reading a screen must never change it');
 
 /* ── 8. Registration in the assistant ───────────────────────────────────── */
 
@@ -392,8 +395,84 @@ check('the prompt gives the read-say-click-read shape', /PRESSING SOMETHING/.tes
   && /read_page again, because the screen has probably changed/.test(prompt));
 check('the prompt says a declined click is an answer, not a retry',
   /do not press it again/.test(prompt));
-check('the prompt is honest that typing is not built yet',
-  /You cannot type into a field yet/.test(prompt));
+check('the prompt says typing saves nothing on its own',
+  /It saves nothing/.test(prompt) && /press once at the end/.test(prompt));
+check('the prompt forbids the assistant inventing a credential to type',
+  /NEVER invent a password/.test(prompt)
+  && /let them enter it themselves/.test(prompt));
+
+/* ── 11. type: the same fences, a narrower target, one exception ─────────── */
+
+check('a text input, a text area and an editable region are text fields', (() => {
+  const F = (tag, type, ce) => ({ tagName: tag, type: type,
+    getAttribute: (k) => (k === 'contenteditable' ? ce : null) });
+  return C.isTextField(F('INPUT', 'text')) && C.isTextField(F('TEXTAREA'))
+    && C.isTextField(F('DIV', '', 'true')) && C.isTextField(F('INPUT', 'password'))
+    && C.isTextField(F('INPUT', 'email')) && C.isTextField(F('INPUT', 'search'));
+})());
+check('a checkbox, a radio, a file picker and a button are not', (() => {
+  const F = (type) => ({ tagName: 'INPUT', type: type, getAttribute: () => null });
+  return ['checkbox', 'radio', 'file', 'button', 'submit', 'reset', 'range', 'color']
+    .every((t) => !C.isTextField(F(t)));
+})());
+check('a file picker especially — its value cannot be set from script by design',
+  C.NON_TEXT_INPUT.test('file'));
+check('a select and a plain div are not text fields', (() => {
+  const F = (tag) => ({ tagName: tag, type: '', getAttribute: () => null });
+  return !C.isTextField(F('SELECT')) && !C.isTextField(F('DIV')) && !C.isTextField(F('BUTTON'));
+})());
+
+check('typing into a credential field asks first',
+  C.decideTypeConfirm({ kind: 'input', label: 'Password' }, true).confirm === true);
+check('and says why, without lecturing',
+  /holds a credential/.test(C.decideTypeConfirm({ kind: 'input', label: 'Password' }, true).reason)
+  && /better typed by you/.test(C.decideTypeConfirm({ kind: 'input', label: 'Password' }, true).reason));
+check('typing into an ordinary field does not ask — that is what makes it useful',
+  C.decideTypeConfirm({ kind: 'input', label: 'Table name' }, false).confirm === false);
+check('a field whose label is on the irreversible list asks too, as click does',
+  C.decideTypeConfirm({ kind: 'input', label: 'Type DELETE to confirm' }, false).confirm === true);
+check('the credential test is the same one that refuses to READ those fields',
+  /function isCredentialField[\s\S]{0,240}isSensitive\(/.test(src),
+  'one rule, so a field cannot be unreadable and freely writable at the same time');
+
+check('type replaces rather than appends — it clears first, as a person would',
+  /setValue\(node, '', win\);/.test(src) && /setValue\(node, value, win\)/.test(src));
+check('it dispatches input and change so framework listeners fire',
+  /fire\(node, win, 'input'\)/.test(src) && /fire\(node, win, 'change'\)/.test(src));
+check('and goes through the prototype value setter, which a value tracker cannot swallow',
+  /Object\.getOwnPropertyDescriptor\(proto, 'value'\)/.test(src));
+check('a read-only or disabled field is refused', /is read-only or disabled/.test(src));
+check('a non-text element is refused and pointed at click',
+  /holds no text\./.test(src) && /use click\./.test(src));
+check('an absurdly long value is refused rather than pasted',
+  C.LIMITS.MAX_TYPE_CHARS === 10000 && /-character limit for one field/.test(src));
+check('the text is never echoed back in the result',
+  /Deliberately no echo of the text/.test(src)
+  && /characters: value\.length/.test(src)
+  && !/typed:\s*value|text: value/.test(src),
+  'the model supplied it; repeating it gains nothing and can lose something');
+
+const typeAct = acts['type'];
+check('type is registered', !!typeAct);
+check('type needs both an element and the text',
+  typeAct.input_schema.required.join(',') === 'element_id,text');
+check('with no reader loaded, the confirmation hook fails closed',
+  typeAct.confirms({ element_id: 'el_deadbeef' }) === true);
+check('the dialog names the field it is about to fill in',
+  typeAct.confirmTitle({ element_id: 'el_deadbeef' }) ===
+    'Assistant wants to type into "el_deadbeef". Proceed?');
+check('the trail row names the field',
+  /^Typed into: /.test(typeAct.trailTitle({ element_id: 'el_deadbeef' })));
+check('the dialog shows the operator exactly what is about to go in',
+  typeAct.preview({ element_id: 'el_1', text: 'dbo.customers' }).indexOf('dbo.customers') !== -1,
+  'the point of asking is that they can judge it');
+check('type tells the model it has saved nothing',
+  /does not save or submit anything/.test(typeAct.description));
+check('type forbids inventing a credential', /Never invent a password/.test(typeAct.description));
+
+let unloadedType = null;
+typeAct.handler({ element_id: 'el_1', text: 'x' }).then(() => { unloadedType = 'resolved'; },
+  (e) => { unloadedType = e.message; });
 
 /* Every page that carries the assistant must carry the reader, or read_page
    fails on some screens and not others — which is worse than not having it. */
@@ -416,6 +495,8 @@ setTimeout(() => {
     typeof unloaded === 'string' && /not loaded on this page/.test(unloaded), unloaded);
   check('and click says so too, rather than pressing something it cannot see',
     typeof unloadedClick === 'string' && /not loaded on this page/.test(unloadedClick), unloadedClick);
+  check('and type says so rather than filling in a field it cannot see',
+    typeof unloadedType === 'string' && /not loaded on this page/.test(unloadedType), unloadedType);
   console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
   process.exit(fail ? 1 : 0);
 }, 0);

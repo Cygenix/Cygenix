@@ -17,14 +17,13 @@ way a person would.
 | --- | --- |
 | `read_page()` | **shipped** |
 | `click(element_id)` | **shipped** |
-| `type(element_id, text)` | not built |
+| `type(element_id, text)` | **shipped** |
 | `wait_for_change(description, timeout_ms)` | not built |
 
 Reading shipped on its own first, on purpose: a tool that describes the screen
-can be inspected and trusted before anything is wired to move. `click` now
-presses one element at a time, under the rules below. Typing is still not
-built, and the prompt says so plainly rather than letting the assistant
-promise it.
+can be inspected and trusted before anything is wired to move. `click` and
+`type` then operate one element at a time, under the rules below. Waiting is
+still not built.
 
 ---
 
@@ -213,6 +212,73 @@ waiting to resume is left alone — those get answered when they finish.
 
 ---
 
+## `type(element_id, text)`
+
+```json
+{
+  "name": "type",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "element_id": { "type": "string" },
+      "text": { "type": "string" },
+      "reason": { "type": "string" }
+    },
+    "required": ["element_id", "text"]
+  }
+}
+```
+
+Effect `write`, trail row `◉ Typed into: <label>`. It inherits **fences 1 and
+2 from `click`** unchanged — it must have looked, and the field must still be
+the field it looked at — through the same `resolve()`.
+
+### What it will fill in
+
+A text `<input>`, a `<textarea>`, or a `contenteditable` region. Everything
+else is refused and pointed at `click`: a checkbox, a radio, a range, a colour
+picker, a `<select>`, a button. **A file picker especially** — its `value`
+cannot be set from script by design, and a browser that allowed it would be a
+browser with a hole in it. Read-only and disabled fields are refused too.
+
+It **replaces** rather than appends: the field is cleared first, as a person
+would. The write goes through the prototype's own `value` setter (what React's
+test utilities do) so a framework value-tracker cannot swallow it, then
+`input` and `change` are dispatched so listeners fire.
+
+### The one confirmation
+
+Ordinary typing goes straight in — nothing typed into a form reaches a system
+until something is pressed, and that press has its own confirmation. Two
+exceptions ask first:
+
+- **A credential field** — decided by the *same* `isSensitive()` rule that
+  makes `read_page` refuse to read those fields. One rule, so a field cannot
+  be unreadable and freely writable at the same time. The dialog reads
+  *Assistant wants to type into "Password". Proceed?* and shows the text,
+  because the point of asking is that the operator can judge it.
+- **A label on the irreversible list** — a *"Type DELETE to confirm"* box
+  behaves the same way its button would.
+
+The tool description and the system prompt both tell the model, in the
+strongest terms available, never to invent a credential and type it in: it
+does not know the user's secrets and must not guess at them. The confirmation
+is the backstop, not the control.
+
+### It never echoes the text
+
+The result reports `typed_into` and a character count, and nothing else. The
+model supplied the text, so the conversation already has it; repeating it back
+gains nothing and, in a credential field, loses something. A value cap of
+10,000 characters refuses a paste that has clearly gone wrong.
+
+> **Considered and rejected:** refusing credential fields outright, the way
+> destructive work is refused. Confirmation was chosen because a connection
+> form is exactly where an operator might reasonably want help, and the
+> refusal would land on the honest case as hard as the bad one.
+
+---
+
 ## The brakes
 
 Two stall detectors live in the runtime (`public/cygenix-assistant.js`), not
@@ -242,24 +308,20 @@ rather than an assistant message with unanswered tool calls.
 
 ## What the next step needs
 
-`type` and `wait_for_change` were specified alongside the reader and are not
-built. The pieces already in place for them:
+`wait_for_change(description, timeout_ms)` is the last of the four and needs
+no new plumbing: a `MutationObserver` on `document.body`, resolving on a new
+landmark heading, a previously visible element disappearing, a URL change, or
+text loosely matching the description; rejecting on timeout. It touches
+nothing, so it can be a `read` and needs no confirmation.
 
-- `CygenixPageReader.resolve()` — the lookup behind `click` — already does
-  everything `type` needs to establish that a field is the field the assistant
-  looked at: the 60-second window, the route check, node presence, visibility
-  and the label re-derivation. `type` restricts the result to `input`,
-  `textarea` and `contenteditable`, throws otherwise, and dispatches `input`
-  and `change` events so framework listeners fire. The specification gives it
-  no confirmation of its own; the credential-field rules in `redactValue()`
-  are the reason to think again about that, since typing *into* a password box
-  is a different question from reading one.
-- `wait_for_change` needs no new plumbing: a `MutationObserver` on
-  `document.body`, resolving on a new landmark heading, a previously visible
-  element disappearing, a URL change, or text loosely matching the
-  description; rejecting on timeout. It touches nothing, so it can be a `read`.
+Two things to decide rather than inherit:
 
-One thing to decide rather than inherit: the trail rows are pushed **before**
-the handler runs, so `◉ Clicked: X` appears a moment before the click actually
-lands. That is the wording the specification asked for and it is fine at human
-speed, but a `wait_for_change` row will need to update in place as it goes.
+- The trail rows are pushed **before** the handler runs, so `◉ Clicked: X`
+  appears a moment before the click actually lands. That is the wording the
+  specification asked for and it is fine at human speed, but a
+  `wait_for_change` row has to update *in place* as it goes —
+  `◉ Waiting for: …` then `◉ Detected: …` or `◉ Timeout` — which the trail
+  cannot currently do.
+- A timeout is not an error. If the page did not change, that is a fact worth
+  reporting calmly; returning it as a failed tool call would push the model
+  towards retrying rather than towards telling the user nothing happened.

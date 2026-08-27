@@ -261,8 +261,12 @@ function buildSystemPrompt(context, appMap) {
 'do not press it again, ask what they would prefer instead. If a click is refused\n' +
 'because the read is stale or the element has changed, read the page again — do not\n' +
 'guess at another id.\n' +
-'You cannot type into a field yet. If a task needs text entered, say so plainly and\n' +
-'tell the user what to type where.\n' +
+'type fills in a field the same way, from the same ids, and replaces whatever was\n' +
+'there. It saves nothing: something still has to be pressed afterwards, so fill the\n' +
+'form in first and press once at the end rather than after every field.\n' +
+'NEVER invent a password, an API key, a connection string or any other credential and\n' +
+'type it in. You do not know the user\'s secrets and must not guess at them. If a field\n' +
+'needs one, say which field and let them enter it themselves.\n' +
 'Destructive work is theirs, not yours. If what the user is asking for ends in deleting\n' +
 'or dropping something, take them to the screen, point at the control with app_point_at,\n' +
 'say exactly what will happen, and let them press it themselves.\n' +
