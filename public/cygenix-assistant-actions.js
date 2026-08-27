@@ -325,6 +325,7 @@ A.registerActions([
         'Element: ' + (d.label || i.element_id) + '\n' +
         'Why this is being asked: ' + (d.reason || 'the guardrail policy for this project.');
     },
+    subject: function (i) { return clickInfo(i.element_id).label || i.element_id; },
     trailTitle: function (i) {
       var d = clickInfo(i.element_id);
       return 'Clicked: ' + (d.label || i.element_id);
@@ -394,6 +395,7 @@ A.registerActions([
         'New contents:\n' + String(i.text == null ? '' : i.text) +
         (d.reason ? '\n\nWhy this is being asked: ' + d.reason : '');
     },
+    subject: function (i) { return typeInfo(i.element_id).label || i.element_id; },
     trailTitle: function (i) {
       var d = typeInfo(i.element_id);
       return 'Typed into: ' + (d.label || i.element_id);
@@ -510,6 +512,9 @@ A.registerActions([
         'Dropdown: ' + (d.label || i.element_id) + '\n' +
         'Option: ' + i.option +
         (d.reason ? '\n\nWhy this is being asked: ' + d.reason : '');
+    },
+    subject: function (i) {
+      return i.option + ' in ' + (chooseInfo(i.element_id, i.option).label || i.element_id);
     },
     trailTitle: function (i) {
       var d = chooseInfo(i.element_id, i.option);

@@ -478,16 +478,42 @@ rather than an assistant message with unanswered tool calls.
 
 ---
 
+## How this is tested
+
+Three layers, because the three kinds of mistake are different.
+
+| | | |
+| --- | --- | --- |
+| `tests/page-reader.test.js` | 219 checks, in `npm test` | The **rules**: what an id is made of, what confirms, what is refused, what is never echoed. Pure functions and source-level assertions. |
+| `tests/browser/page-reader.smoke.js` | 96 checks, by hand | The **DOM**: that those rules hold against a real document — a fixed toolbar is not a hidden control, a recycled row is caught, a password is written under confirmation and still never read back. |
+| `tests/browser/assistant-loop.smoke.js` | 23 checks, by hand | The **wiring**: the real runtime, driven by a scripted model, read → type → choose → click → wait. |
+
+`npm run test:browser` runs the last two; they need Chromium, which the deploy
+build has not got. See `tests/browser/README.md`.
+
+The single most valuable assertion in any of them is this, after the model asks
+to click **Run job** and the panel parks:
+
+```
+PASS  AND THE BUTTON HAS NOT BEEN PRESSED
+```
+
+A confirmation dialog that appears while the act has already happened is not a
+confirmation, and that is exactly the sort of failure that passes a
+source-level review.
+
 ## What is left
 
 Everything specified is built, and the two gaps the specification did not
 anticipate are closed. What remains is genuinely optional:
 
-- **A drag verb.** The Object Mapping screen is drag-and-drop, and no amount of
-  clicking reaches it. This is a real hole for exactly one screen, and closing
-  it means synthesising pointer events convincingly enough for that screen's
-  own handlers — considerably more machinery than anything here, for one
-  workflow that already has a keyboard path.
+- **A drag verb.** Drawing a mapping by hand on the Object Mapping screen is
+  drag-and-drop, and no amount of clicking reaches it. The screen auto-maps on
+  load and removing a mapping is an ordinary click, so the assistant is not
+  locked out of the screen — it just cannot create a link the auto-mapper
+  missed. Closing that means synthesising pointer events convincingly enough
+  for that screen's own handlers: considerably more machinery than anything
+  here, for one workflow.
 - **Custom dropdowns.** `choose` operates a native `<select>`. A listbox built
   out of `<div role="option">` is already reachable — it is just two clicks —
   but the model has to work that out from the read rather than being told.

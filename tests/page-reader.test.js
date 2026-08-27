@@ -23,7 +23,7 @@
 //
 // The pure half — the hash, the id, the redaction, the cap, the classifier —
 // is tested directly. The DOM half is checked at the source level, and against
-// a real browser in tests/smoke (run by hand).
+// a real browser by tests/browser/ (npm run test:browser — see its README).
 'use strict';
 
 const fs = require('fs');
@@ -669,6 +669,18 @@ check('the trail row says which way it went',
   && scrollAct.trailTitle({}) === 'Scrolled down');
 check('scroll points the model at the truncation notice that should trigger it',
   /read_page says elements were not listed/.test(scrollAct.description));
+
+/* A declined action must say WHAT was declined. "Clicking — skipped by user"
+   leaves the user working out which of the three buttons on screen they just
+   refused; the action's own trailTitle is past tense and would read as though
+   it had happened, so the subject is asked for separately. */
+check('every action that operates one element can name it',
+  clickAct.subject({ element_id: 'el_x' }) === 'el_x'
+  && typeAct.subject({ element_id: 'el_y' }) === 'el_y'
+  && chooseAct.subject({ element_id: 'el_z', option: 'Relay' }) === 'Relay in el_z');
+check('and the runtime uses that for the skipped row',
+  /var subject = a\.subject \? safe\(a\.subject, p\.input\) : null;/.test(runtime)
+  && /title: subject \? 'Skipped: ' \+ subject/.test(runtime));
 
 check('the prompt says a dropdown is chosen, not clicked',
   /Do not use click on a dropdown/.test(prompt));
