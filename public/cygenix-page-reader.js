@@ -805,9 +805,194 @@ function type(elementId, text, opts) {
   };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   wait_for_change — pausing until the page reacts.
+   ══════════════════════════════════════════════════════════════════════════
+
+   The other three tools act on a screen that is standing still. This one
+   exists because it usually is not: a click starts a query, a save posts to a
+   function, a filter re-renders a grid, and the useful thing to do next is
+   nothing at all for a moment.
+
+   Without it the assistant has two bad options — read again immediately and
+   describe the old screen as though it were the new one, or spin in a
+   read-read-read loop until the brakes stop it. Both end with the user being
+   told something untrue.
+
+   FOUR SIGNALS, IN ORDER OF HOW MUCH THEY MEAN
+     1. The address changed.               Unambiguous: this is a new screen.
+     2. A control that was there has gone. A row deleted, a dialog closed, a
+                                           button replaced by a spinner.
+     3. A heading that was not there is.   A new section, a new panel, a
+                                           results pane that has arrived.
+     4. Text matching the description.     The loosest, and last for that
+                                           reason.
+
+   A TIMEOUT IS NOT AN ERROR. If the page did not change, that is a fact, and
+   reporting it as a failed tool call would push the model towards retrying
+   when what it should do is tell the user nothing happened. It returns
+   {changed: false} calmly and says how long it waited.
+
+   Nothing here touches the page. The observer is disconnected on every exit,
+   including the timeout, so a wait cannot outlive the turn that started it. */
+
+var WAIT_DEFAULT_MS = 5000;
+var WAIT_MIN_MS = 250;
+var WAIT_MAX_MS = 30000;   // the panel is blocked while this runs
+var WAIT_TICK_MS = 120;
+
+/* Words that describe the EVENT rather than the thing that appears. "a success
+   message appears" is looking for "success message", not for "appears". */
+var WAIT_STOPWORDS = {
+  the: 1, a: 1, an: 1, and: 1, or: 1, of: 1, to: 1, in: 1, on: 1, for: 1, with: 1,
+  is: 1, are: 1, was: 1, be: 1, it: 1, its: 1, that: 1, this: 1, then: 1, when: 1,
+  appear: 1, appears: 1, appeared: 1, appearing: 1, show: 1, shows: 1, shown: 1,
+  showing: 1, display: 1, displays: 1, displayed: 1, page: 1, screen: 1, view: 1,
+  change: 1, changes: 1, changed: 1, update: 1, updates: 1, updated: 1, new: 1,
+  after: 1, before: 1, until: 1, some: 1, any: 1, from: 1, into: 1, has: 1, have: 1
+};
+
+/** The words in a description worth looking for. Pure, and capped. */
+function significantWords(description) {
+  var seen = {}, out = [];
+  words(description).forEach(function (w) {
+    if (w.length < 4 || WAIT_STOPWORDS[w] || seen[w]) return;
+    seen[w] = 1;
+    if (out.length < 8) out.push(w);
+  });
+  return out;
+}
+
+/**
+ * Does this newly-appeared text look like what the model was waiting for?
+ *
+ * Deliberately generous: ANY significant word counts. A description is a
+ * sentence a model wrote, not a selector, and the two ways to be wrong are not
+ * equal. A false match returns early saying exactly which word it saw, and the
+ * model reads the page and finds out; a false timeout tells it nothing
+ * happened when something did, which is the answer it cannot recover from.
+ */
+function looselyMatches(text, description) {
+  var hay = squash(text).toLowerCase();
+  if (!hay) return null;
+  var whole = squash(description).toLowerCase();
+  if (whole && hay.indexOf(whole) !== -1) return whole;
+  var wanted = significantWords(description);
+  for (var i = 0; i < wanted.length; i++) {
+    if (hay.indexOf(wanted[i]) !== -1) return wanted[i];
+  }
+  return null;
+}
+
+function waitForChange(description, timeoutMs, opts) {
+  opts = opts || {};
+  var doc = opts.document || (typeof document !== 'undefined' ? document : null);
+  var win = opts.window || root || (typeof window !== 'undefined' ? window : null);
+  if (!doc || !win || !doc.body) throw new Error('wait_for_change needs a browser document.');
+
+  var desc = squash(description);
+  var ms = Number(timeoutMs);
+  ms = Math.max(WAIT_MIN_MS, Math.min(WAIT_MAX_MS, isFinite(ms) && ms > 0 ? ms : WAIT_DEFAULT_MS));
+
+  // The baseline. Nodes are held directly rather than by id: this only has to
+  // answer "is what was here still here", which needs no hashing.
+  var startedAt = Date.now();
+  var url0 = String(win.location && win.location.href || '');
+  var headings0 = {};
+  var watched = [];
+  try {
+    Array.prototype.slice.call(doc.querySelectorAll(HEADINGS)).forEach(function (h) {
+      if (inOwnPanel(h) || !visible(h, win)) return;
+      var t = clamp(h.textContent, MAX_LABEL);
+      if (t) headings0[t.toLowerCase()] = t;
+    });
+    Array.prototype.slice.call(doc.querySelectorAll(SELECTOR)).forEach(function (n) {
+      if (inOwnPanel(n) || !visible(n, win)) return;
+      if (watched.length < 400) watched.push({ node: n, label: clamp(accessibleName(n, doc), MAX_LABEL) });
+    });
+  } catch (e) { /* an unreadable page still gets a timeout rather than a crash */ }
+
+  return new Promise(function (resolve) {
+    var done = false, obs = null, timer = null, ticker = null, added = '';
+
+    function finish(what) {
+      if (done) return;
+      done = true;
+      if (obs) { try { obs.disconnect(); } catch (e) {} }
+      if (timer) clearTimeout(timer);
+      if (ticker) clearInterval(ticker);
+      resolve({
+        changed: !!what,
+        what: what || null,
+        waited_ms: Date.now() - startedAt,
+        description: desc,
+        note: what
+          ? 'Something happened, but this only saw that much. Call read_page to find out ' +
+            'what the screen says now.'
+          : 'Nothing on the page changed in ' + Math.round((Date.now() - startedAt) / 1000) +
+            ' seconds. That is a result, not a failure: say so rather than waiting again. ' +
+            'If you expected a change, check whether the thing you pressed actually did ' +
+            'anything before pressing it a second time.'
+      });
+    }
+
+    function evaluate() {
+      if (done) return;
+      var text = added; added = '';
+
+      var url = String(win.location && win.location.href || '');
+      if (url !== url0) return finish('the address changed to ' + routeOf(win.location.pathname));
+
+      for (var i = 0; i < watched.length; i++) {
+        var w = watched[i];
+        if (!doc.contains(w.node) || !visible(w.node, win)) {
+          return finish('"' + w.label + '" is no longer on the screen');
+        }
+      }
+
+      var fresh = null;
+      try {
+        var hs = Array.prototype.slice.call(doc.querySelectorAll(HEADINGS));
+        for (var j = 0; j < hs.length && !fresh; j++) {
+          if (inOwnPanel(hs[j]) || !visible(hs[j], win)) continue;
+          var t = clamp(hs[j].textContent, MAX_LABEL);
+          if (t && !headings0[t.toLowerCase()]) fresh = t;
+        }
+      } catch (e) { /* ignore */ }
+      if (fresh) return finish('a new section appeared: "' + fresh + '"');
+
+      if (desc && text) {
+        var hit = looselyMatches(text, desc);
+        if (hit) return finish('text mentioning "' + hit + '" appeared');
+      }
+    }
+
+    try {
+      obs = new win.MutationObserver(function (records) {
+        for (var i = 0; i < records.length && added.length < 20000; i++) {
+          var r = records[i];
+          if (r.type === 'characterData') { added += ' ' + (r.target && r.target.data || ''); continue; }
+          for (var k = 0; k < (r.addedNodes ? r.addedNodes.length : 0); k++) {
+            var n = r.addedNodes[k];
+            added += ' ' + (n.textContent || n.nodeValue || '');
+          }
+        }
+      });
+      obs.observe(doc.body, { childList: true, subtree: true, characterData: true });
+    } catch (e) { obs = null; }
+
+    // The observer catches text arriving. It does NOT catch a pushState, or a
+    // control hidden by a stylesheet class rather than a node being removed —
+    // so the poll is what actually decides, and the observer only feeds it.
+    ticker = setInterval(evaluate, WAIT_TICK_MS);
+    timer = setTimeout(function () { finish(null); }, ms);
+  });
+}
+
 return {
   readPage: readPage,
   lastRead: lastRead,
+  waitForChange: waitForChange,
   click: click,
   clickConfirmation: clickConfirmation,
   type: type,
@@ -828,12 +1013,16 @@ return {
     decideTypeConfirm: decideTypeConfirm,
     isTextField: isTextField,
     isCredentialField: isCredentialField,
+    significantWords: significantWords,
+    looselyMatches: looselyMatches,
+    words: words,
     SELECTOR: SELECTOR,
     IRREVERSIBLE: IRREVERSIBLE,
     NON_TEXT_INPUT: NON_TEXT_INPUT,
     LIMITS: { MAX_CHARS: MAX_CHARS, MAX_LABEL: MAX_LABEL, MAX_VALUE: MAX_VALUE, ID_LEN: ID_LEN,
               CLICK_SKIP_MS: CLICK_SKIP_MS, CLICK_MAX_AGE_MS: CLICK_MAX_AGE_MS,
-              MAX_TYPE_CHARS: MAX_TYPE_CHARS }
+              MAX_TYPE_CHARS: MAX_TYPE_CHARS, WAIT_DEFAULT_MS: WAIT_DEFAULT_MS,
+              WAIT_MIN_MS: WAIT_MIN_MS, WAIT_MAX_MS: WAIT_MAX_MS }
   }
 };
 });

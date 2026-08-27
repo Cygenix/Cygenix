@@ -273,6 +273,15 @@ function buildSystemPrompt(context, appMap) {
 'If two clicks have gone by with nothing changing, stop and ask rather than pressing a\n' +
 'third time.\n' +
 '\n' +
+'WAITING\n' +
+'When a click starts something — a query, a save, a test — call wait_for_change before\n' +
+'reading. Reading straight away describes the screen as it was, and reporting that to\n' +
+'the user as the result is how you tell them something untrue.\n' +
+'It notices only THAT the page moved, never what it now says: read_page afterwards.\n' +
+'Nothing changing is a normal answer. Say so — "I pressed Run and nothing happened on\n' +
+'screen" is useful, and much better than waiting again or pressing a second time. Do\n' +
+'not treat a timeout as a reason to retry.\n' +
+'\n' +
 'CHANGES AND APPROVAL\n' +
 "The user's project sets a guardrail policy. Depending on it, some or all of your\n" +
 'actions pause for their approval before running; you will see the result either way.\n' +
@@ -756,6 +765,20 @@ function pushTrail(entry) {
   state.trail.push(entry);
 }
 
+/* The trail row for the action currently running, so a long one can say what
+ * it is doing while it does it. Every other action is over in the time it
+ * takes to render, and its row is written once and never touched again;
+ * wait_for_change is the exception — a row that says "Waiting for: the job to
+ * finish" for five seconds and then still says it is a row that has lied. */
+var activeTrail = -1;
+
+function progress(patch) {
+  if (activeTrail < 0 || !state || !state.trail[activeTrail]) return;
+  var entry = state.trail[activeTrail];
+  for (var k in patch) if (Object.prototype.hasOwnProperty.call(patch, k)) entry[k] = patch[k];
+  saveState(); render();
+}
+
 function ask(text) {
   state.error = null;
   // The budget is per user turn: asking again is what buys the next fifteen.
@@ -910,6 +933,7 @@ async function execute(tu, action, confirmed) {
     effect: action.effect, icon: action.icon || null,
     detail: action.summary ? safe(action.summary, tu.input) : null
   });
+  activeTrail = state.trail.length - 1;
   // Name the running action in the busy row: "Running a SQL query · 6s" tells
   // you what is slow, where "Working…" only tells you that something is.
   beginBusy(action.title || tu.name);
@@ -930,11 +954,13 @@ async function execute(tu, action, confirmed) {
     }
     return toolResult(tu.id, typeof out === 'string' ? out : JSON.stringify(out == null ? { ok: true } : out));
   } catch (err) {
-    state.trail[state.trail.length - 1].error = true;
-    state.trail[state.trail.length - 1].detail = err.message;
+    var row = state.trail[activeTrail] || state.trail[state.trail.length - 1];
+    if (row) { row.error = true; row.detail = err.message; }
     audit(tu, action, { ok: false, ms: Date.now() - startedAt, error: err.message }, confirmed);
     saveState(); render();
     return toolResult(tu.id, 'Action failed: ' + err.message, true);
+  } finally {
+    activeTrail = -1;
   }
 }
 
@@ -1062,6 +1088,7 @@ var api = {
   toggle: function () { setOpen(!state.open); },
   ask: function (t) { setOpen(true); ask(t); },
   highlight: highlight,
+  progress: progress,
   suggestions: [],
   appMap: null,
   auditEntries: function () { return store(AUDIT_KEY) || []; },
