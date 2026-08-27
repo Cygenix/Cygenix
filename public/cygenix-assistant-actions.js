@@ -93,6 +93,12 @@ function clickInfo(elementId) {
   try { return R.clickConfirmation(elementId); }
   catch (e) { return { label: elementId, reason: '' }; }
 }
+function typeInfo(elementId) {
+  var R = root.CygenixPageReader;
+  if (!R || typeof R.typeConfirmation !== 'function') return { label: elementId, reason: '' };
+  try { return R.typeConfirmation(elementId); }
+  catch (e) { return { label: elementId, reason: '' }; }
+}
 
 /* ================================================================ *
  * App map — mirrors the sidebar's navigation tree
@@ -327,6 +333,72 @@ A.registerActions([
           'be clicked. Tell the user, and work from the typed actions instead.');
       }
       return R.click(i.element_id);
+    }
+  },
+
+  {
+    /* Filling in a field.
+     *
+     * Quieter than click and, on this console, sharper. Nothing typed into a
+     * form reaches a system until something is pressed — and that press has
+     * its own confirmation — so ordinary typing goes straight in. A credential
+     * field is the exception: the reader already refuses to READ those, and
+     * writing to one without the operator seeing it would be an odd place to
+     * stop being careful.
+     */
+    name: 'type',
+    title: 'Typing',
+    icon: '◉',
+    effect: 'write',
+    description: 'Replace the contents of one text field, by an id from the most recent ' +
+      'read_page. Works on a text field, a text area or an editable region; anything else ' +
+      'is refused — use click for those. This does not save or submit anything: something ' +
+      'still has to be pressed afterwards. ' +
+      'Never invent a password, key, connection string or any other credential and type it ' +
+      'in. If a field needs one, say so and let the user enter it themselves — typing into ' +
+      'a credential field asks them first in any case, and the value is never read back.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        element_id: { type: 'string',
+          description: 'The id of the field, exactly as read_page returned it (el_…).' },
+        text: { type: 'string',
+          description: 'The full new contents. Whatever is in the field is replaced.' },
+        reason: { type: 'string',
+          description: 'One short line, in plain English, telling the user what this is for.' }
+      },
+      required: ['element_id', 'text']
+    },
+    confirms: function (i) {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.typeConfirmation !== 'function') return true;
+      var d = R.typeConfirmation(i.element_id);
+      return d.error ? true : d.confirm;
+    },
+    confirmTitle: function (i) {
+      var d = typeInfo(i.element_id);
+      return 'Assistant wants to type into "' + (d.label || i.element_id) + '". Proceed?';
+    },
+    preview: function (i) {
+      var d = typeInfo(i.element_id);
+      // The text IS shown. The whole point of asking is that the operator can
+      // see what is about to go into their own field and judge it.
+      return (i.reason ? i.reason + '\n\n' : '') +
+        'Field: ' + (d.label || i.element_id) + '\n' +
+        'New contents:\n' + String(i.text == null ? '' : i.text) +
+        (d.reason ? '\n\nWhy this is being asked: ' + d.reason : '');
+    },
+    trailTitle: function (i) {
+      var d = typeInfo(i.element_id);
+      return 'Typed into: ' + (d.label || i.element_id);
+    },
+    handler: async function (i) {
+      var R = root.CygenixPageReader;
+      if (!R || typeof R.type !== 'function') {
+        throw new Error('cygenix-page-reader.js is not loaded on this page, so nothing can ' +
+          'be typed. Tell the user, and work from the typed actions instead.');
+      }
+      return R.type(i.element_id, i.text);
     }
   },
 
