@@ -52,6 +52,23 @@ var MAX_TOKENS = 2048;
 var AUDIT_KEY = 'cygenix_assistant_audit_v1';
 var AUDIT_CAP = 200;
 
+/* Two brakes on a run that has stopped making progress.
+ *
+ * An agent that can look at the screen will sometimes look at it again, and
+ * again, and again — reading, deciding nothing has changed, and reading once
+ * more. Neither of these is a safety control (the guardrail policy is), they
+ * are stall detectors: an assistant that is going nowhere should hand the
+ * problem back to the person rather than spend their API budget circling.
+ *
+ * When either trips, every outstanding tool call is answered with the reason
+ * and the run STOPS — the results are not sent back for another turn, because
+ * another turn is the thing being prevented. They are still written into the
+ * conversation, so the next thing the user says continues from a valid
+ * transcript rather than an assistant message with unanswered tool calls. */
+var MAX_TOOL_CALLS = 15;
+var BUDGET_MESSAGE = 'Task exceeded ' + MAX_TOOL_CALLS + ' tool calls — pausing for user input.';
+var LOOP_MESSAGE = 'Detected a loop — asking user for guidance.';
+
 /* ── small helpers ─────────────────────────────────────────────────────── */
 
 function esc(s) {
@@ -191,8 +208,31 @@ function buildSystemPrompt(context, appMap) {
 '  more useful than describing where a button is.\n' +
 '- Do one change at a time. Batch reads freely, but let each write stand on its own so\n' +
 '  the user can follow and approve it.\n' +
-'- Explain before you act. A sentence on what you are about to do and why, then the\n' +
-'  action. Never narrate every internal step — the user sees the action trail already.\n' +
+'- Say what you are about to do, in plain English, BEFORE you do it. Name the screen\n' +
+'  and the thing: "I am going to open the Connections page and add a new source\n' +
+'  connection." Not "executing app_navigate". One sentence, then the action — never a\n' +
+'  narration of every internal step, because the user can see the action trail.\n' +
+'\n' +
+'SEEING THE SCREEN\n' +
+'read_page is your eyes. It returns the page title, the route, the headings, and every\n' +
+'visible control with a stable id, a kind and the label a person would read off it.\n' +
+'Use it when:\n' +
+'- The user refers to something on screen and no typed action covers it.\n' +
+'- You need to know whether a control exists before promising anything about it.\n' +
+'- The screen has just changed — after a navigation, a save, or a filter — and your\n' +
+'  previous picture of it is stale.\n' +
+'Do NOT use it when a typed action already answers the question. app_read_screen knows\n' +
+'the project, the connections and the screen\'s own registered state; read_page only\n' +
+'knows what is drawn. Prefer the typed action, every time, and reach for read_page for\n' +
+'the long tail it does not cover.\n' +
+'The ids are only good for the screen you read them on: after a navigation or any\n' +
+'change to the page, read again rather than reasoning from an old list. If two reads\n' +
+'in a row show the same thing and you are no further forward, stop and ask the user\n' +
+'rather than reading a third time.\n' +
+'Reading is all you can do with it. You cannot click, type or submit anything, so do\n' +
+'not tell the user you will — point at the control with app_point_at and say which one\n' +
+'you mean. Anything destructive (delete, remove, drop, or a permanent change) stays\n' +
+'with the user: describe exactly where it is and let them press it.\n' +
 '\n' +
 'CHANGES AND APPROVAL\n' +
 "The user's project sets a guardrail policy. Depending on it, some or all of your\n" +
@@ -264,12 +304,18 @@ function blankState() {
     status: 'idle',          // idle | thinking | acting | confirm | error | stopped
     pending: null,           // { toolUseId, name, input, queue, done } awaiting confirmation
     resume: null,            // { toolUseId, name, result } to complete after a navigation
+    calls: 0,                // tool calls spent on the current user turn
+    lastCall: null,          // signature of the previous tool call, for loop detection
     error: null
   };
 }
 function loadState() {
   state = store(stateKey()) || blankState();
   if (!Array.isArray(state.messages)) state = blankState();
+  // A conversation persisted before the budget existed has no count. Left
+  // undefined it increments to NaN, which compares false against the cap
+  // forever — the brake would be silently off for anyone mid-conversation.
+  if (typeof state.calls !== 'number') state.calls = 0;
   // A run interrupted by anything other than a navigation must not auto-restart.
   if (state.status === 'thinking' || state.status === 'acting') {
     if (!state.resume) state.status = 'idle';
@@ -427,8 +473,11 @@ function stepIcon(kind) {
 
 function renderTrail(entry) {
   var cls = entry.error ? 'cyga-step err' : 'cyga-step';
+  // An action may name its own mark. Looking at the screen is a different act
+  // from reading a record, and the trail says so.
+  var mark = (!entry.error && entry.icon) ? entry.icon : stepIcon(entry.error ? 'err' : (entry.effect || 'ok'));
   return '<div class="' + cls + '">' +
-    '<span class="st-ic">' + stepIcon(entry.error ? 'err' : (entry.effect || 'ok')) + '</span>' +
+    '<span class="st-ic">' + esc(mark) + '</span>' +
     '<span><span class="nm">' + esc(entry.title || entry.name) + '</span>' +
     (entry.detail ? ' — ' + esc(entry.detail) : '') + '</span></div>';
 }
@@ -537,6 +586,7 @@ function wireEvents() {
   el.close.addEventListener('click', function () { setOpen(false); });
   el.clear.addEventListener('click', function () {
     state.messages = []; state.trail = []; state.pending = null; state.resume = null;
+    state.calls = 0; state.lastCall = null;
     state.status = 'idle'; state.error = null; endBusy(); saveState(); render();
   });
   el.send.addEventListener('click', submit);
@@ -635,9 +685,35 @@ function pushTrail(entry) {
 
 function ask(text) {
   state.error = null;
+  // The budget is per user turn: asking again is what buys the next fifteen.
+  state.calls = 0;
+  state.lastCall = null;
   state.messages.push({ role: 'user', content: text, seq: nextSeq() });
   saveState(); render();
   runTurn();
+}
+
+/** The signature loop detection compares — same tool, same arguments. */
+function callSignature(tu) {
+  var input;
+  try { input = JSON.stringify(tu.input || {}); } catch (e) { input = String(tu.input); }
+  return tu.name + ' ' + input;
+}
+
+/* Answer every outstanding tool call with the reason and stop the run. The
+   results go into the conversation but are NOT sent back to the model: another
+   turn is precisely what is being prevented. */
+function breakOut(reason, remaining, results) {
+  pushTrail({ name: 'halted', title: reason, error: true });
+  (remaining || []).forEach(function (tu) {
+    results.push(toolResult(tu.id, reason, true));
+  });
+  state.messages.push({ role: 'user', content: results.filter(Boolean), seq: nextSeq() });
+  state.status = 'stopped';
+  state.pending = null;
+  state.resume = null;
+  endBusy();
+  saveState(); render();
 }
 
 function apiMessages() {
@@ -713,6 +789,12 @@ async function executeAll(toolUses, results) {
     var tu = toolUses[i];
     var action = actions[tu.name];
 
+    if (state.calls >= MAX_TOOL_CALLS) { breakOut(BUDGET_MESSAGE, toolUses.slice(i), results); return; }
+    var sig = callSignature(tu);
+    if (sig === state.lastCall) { breakOut(LOOP_MESSAGE, toolUses.slice(i), results); return; }
+    state.lastCall = sig;
+    state.calls++;
+
     if (!action) {
       results.push(toolResult(tu.id, 'Unknown action "' + tu.name + '".', true));
       continue;
@@ -741,7 +823,7 @@ async function executeAll(toolUses, results) {
 
 async function execute(tu, action) {
   pushTrail({
-    name: tu.name, title: action.title || tu.name, effect: action.effect,
+    name: tu.name, title: action.title || tu.name, effect: action.effect, icon: action.icon || null,
     detail: action.summary ? safe(action.summary, tu.input) : null
   });
   // Name the running action in the busy row: "Running a SQL query · 6s" tells
