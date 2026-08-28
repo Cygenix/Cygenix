@@ -29,68 +29,29 @@ export default async function handler(request, context) {
     return json({ error: 'Method not allowed' }, 405, corsHeaders);
   }
 
-  // Signed-in users only — this endpoint spends the site's Anthropic API
-  // budget. The front-end attaches the token via cygenix-auth-token.js.
-  try {
-    await verifyRequestAuth(request);
-  } catch (e) {
-    return json({ error: 'Auth error: ' + e.message }, 401, corsHeaders);
-  }
+  // ── DISABLED 2026-08-28 ───────────────────────────────────────────────
+  //
+  // This endpoint used to read ANTHROPIC_API_KEY from the Netlify environment
+  // and spend the site owner's personal Anthropic account on behalf of any
+  // signed-in user. The comment that used to sit here said so in as many
+  // words: "this endpoint spends the site's Anthropic API budget".
+  //
+  // It is blocked rather than converted to a user-supplied key because the
+  // page it served — coworker.html — was retired, and nothing in the
+  // repository calls /api/coworker any more. Wiring a key path through an
+  // endpoint with no caller would be maintaining a road to nowhere; the
+  // Assistant panel replaced it and calls Anthropic from the browser with the
+  // user's own key.
+  //
+  // To bring it back: take the key from the x-anthropic-key header (see
+  // azure-function/src/user-anthropic-key.js for the shape), never from the
+  // environment.
+  return json({
+    error: 'This feature is temporarily disabled while user-supplied API key ' +
+           'support is being wired up. It will be re-enabled shortly.',
+    code: 'USER_KEY_REQUIRED',
+  }, 503, corsHeaders);
 
-  const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-  if (!ANTHROPIC_API_KEY) {
-    return json({ error: 'ANTHROPIC_API_KEY is not set in Netlify environment variables.' }, 500, corsHeaders);
-  }
-
-  let body;
-  try {
-    body = await request.json();
-  } catch (e) {
-    return json({ error: 'Invalid JSON: ' + e.message }, 400, corsHeaders);
-  }
-
-  const { messages, context: ctx } = body;
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return json({ error: 'No messages provided.' }, 400, corsHeaders);
-  }
-
-  // Keep only the trailing window of turns so the request stays bounded.
-  const trimmed = messages
-    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-    .slice(-24)
-    .map(m => ({ role: m.role, content: m.content.slice(0, 24000) }));
-
-  const system = buildSystem(ctx || {});
-
-  try {
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 4096,
-        system,
-        messages: trimmed,
-      }),
-    });
-
-    const rawText = await claudeRes.text();
-    if (!claudeRes.ok) {
-      let detail = rawText;
-      try { detail = JSON.parse(rawText).error?.message || rawText; } catch {}
-      return json({ error: `Anthropic API error (${claudeRes.status}): ${detail}` }, claudeRes.status, corsHeaders);
-    }
-
-    const data = JSON.parse(rawText);
-    const reply = data.content?.map(b => b.text || '').join('') || 'No response returned.';
-    return json({ reply }, 200, corsHeaders);
-  } catch (err) {
-    return json({ error: 'Edge function error: ' + err.message }, 500, corsHeaders);
-  }
 }
 
 function buildSystem(ctx) {

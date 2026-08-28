@@ -39,11 +39,12 @@
 //   }
 
 const { app } = require('@azure/functions');
+const { userAnthropicKey } = require('./user-anthropic-key');
 
 // ── CORS (matches existing functions) ────────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization, x-anthropic-key',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type':                 'application/json'
 };
@@ -238,11 +239,18 @@ app.http('agent-suggest-criteria', {
   handler: async (req, ctx) => {
     if (req.method === 'OPTIONS') return { status: 204, headers: CORS, body: '' };
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      ctx.log.error('ANTHROPIC_API_KEY not configured');
-      return err(500, 'Server not configured — ANTHROPIC_API_KEY missing');
-    }
+    // The caller pays. Cygenix holds no Anthropic key of its own — the
+    // process.env.ANTHROPIC_API_KEY read that used to sit here billed the app
+    // owner for anyone who could reach this route, and was removed 2026-08-28.
+    //
+    // NOTE: no caller for this route exists anywhere in the repository. It is
+    // converted rather than blocked because it is shaped for a synchronous
+    // browser call, so if a caller does turn up it needs only to send the
+    // header. If it is genuinely dead, delete the file — that is strictly
+    // better than a live endpoint nobody uses.
+    const keyCheck = userAnthropicKey(req);
+    if (!keyCheck.ok) return keyCheck.response;
+    const apiKey = keyCheck.key;
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');

@@ -66,13 +66,20 @@ const CORS = {
   // and query strings are logged; the browser will not send them at all
   // unless they are named here, so a preflight failure looks like a silent
   // upload that never starts.
-  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization, x-blob-sas, x-blob-name, x-blob-overwrite',
+  // x-anthropic-key carries the CALLER'S OWN Anthropic key. Cygenix has no
+  // key of its own; see user-anthropic-key.js. Same reasoning as the SAS
+  // above — a credential must never travel as a query parameter.
+  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization, x-blob-sas, x-blob-name, x-blob-overwrite, x-anthropic-key',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Content-Type': 'application/json'
 };
 
 // ── Token-based auth (see entra-auth.js for the rollout plan) ────────────────
 const { enforceAuth, logWarn, logErr } = require('./entra-auth');
+
+// Every Anthropic key used anywhere in this app comes from the caller, through
+// this one door. process.env.ANTHROPIC_API_KEY was removed on 2026-08-28.
+const { userAnthropicKey } = require('./user-anthropic-key');
 
 // ── Client-owned blob storage (blob-list / blob-download / blob-upload) ──────
 // Validation for the one family of endpoints where the CALLER chooses the
@@ -2106,12 +2113,12 @@ app.http('data', {
           let stage = 'init';
 
           try {
-            stage = 'env-check';
-            const apiKey = process.env.ANTHROPIC_API_KEY;
-            if (!apiKey) {
-              logErr(ctx, 'ANTHROPIC_API_KEY not configured');
-              return err(500, 'stage=env-check: ANTHROPIC_API_KEY missing');
-            }
+            // The caller pays for this call. There is no Cygenix key to fall
+            // back to, so a request without one stops here.
+            stage = 'user-key';
+            const keyCheck = userAnthropicKey(req);
+            if (!keyCheck.ok) return keyCheck.response;
+            const apiKey = keyCheck.key;
 
             stage = 'parse-body';
             const body = await req.json().catch(() => null);
@@ -2679,8 +2686,9 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
           const fingerprint = body?.fingerprint;
           if (!fingerprint) return err(400, 'fingerprint is required in body');
 
-          const apiKey = process.env.ANTHROPIC_API_KEY;
-          if (!apiKey) return err(500, 'ANTHROPIC_API_KEY not configured');
+          const keyCheck = userAnthropicKey(req);
+          if (!keyCheck.ok) return keyCheck.response;
+          const apiKey = keyCheck.key;
 
           // Load the profile's table docs
           const idPrefix = userId + '_' + fingerprint;
@@ -3306,8 +3314,10 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTE 3: /api/narrative — AI-generated executive summary for migration reports
-// Calls Anthropic's Messages API server-side so the API key never touches the
-// browser. Requires app setting: ANTHROPIC_API_KEY.
+// Calls Anthropic's Messages API server-side, using the CALLER'S OWN key,
+// supplied in the x-anthropic-key header. Cygenix holds no Anthropic key: the
+// ANTHROPIC_API_KEY app setting was removed on 2026-08-28 and reading it
+// anywhere fails tests/anthropic-billing.test.js.
 //
 // Request body: { report: <slim payload>, migrationId?: string }
 // Response:     { narrative: string } on 200; { error: string } otherwise.
@@ -3387,11 +3397,9 @@ app.http('narrative', {
     if (!auth.ok) return auth.response;
 
     try {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        logErr(ctx, 'ANTHROPIC_API_KEY not configured');
-        return err(500, 'Server not configured — ANTHROPIC_API_KEY missing');
-      }
+      const keyCheck = userAnthropicKey(req);
+      if (!keyCheck.ok) return keyCheck.response;
+      const apiKey = keyCheck.key;
 
       const body = await req.json().catch(() => null);
       if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');

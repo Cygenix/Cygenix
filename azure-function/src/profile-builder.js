@@ -26,7 +26,7 @@
 //
 // ── Env vars required ─────────────────────────────────────────────────────
 //   COSMOS_ENDPOINT, COSMOS_KEY                — already set
-//   ANTHROPIC_API_KEY                          — already set, used by narrative
+//   (no Anthropic key — removed 2026-08-28; the caller supplies their own)
 //   (No DB-connection env vars needed — the runner uses the connection
 //    string the caller passes through, hitting /api/db like the browser does.)
 
@@ -59,6 +59,7 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 const { enforceAuth, checkDispatchKey } = require('./entra-auth');
+const { userAnthropicKey, blockedUnattended } = require('./user-anthropic-key');
 const ok  = (body)      => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
 const err = (code, msg) => ({ status: code, headers: CORS, body: JSON.stringify({ error: msg }) });
 
@@ -99,11 +100,32 @@ app.http('profile-build', {
     // Callable two ways: by the browser (Insights page — Entra token,
     // verified when present) and by the Netlify scheduler (dispatch key).
     // When REQUIRE_TOKEN_AUTH is on, one of the two must pass.
+    // Two callers, two answers, and the difference is whether a human is
+    // there to supply a key.
+    //
+    // The browser can be asked for one, so it is. The Netlify cron scheduler
+    // cannot — it fires overnight with nobody watching — and the old code
+    // billed the app owner's personal Anthropic account for exactly that.
+    // There is no key to give it, so the scheduled path is refused outright
+    // rather than quietly reaching for one.
+    let scheduled = false;
     const auth = await enforceAuth(req, ctx);
     if (!auth.ok) {
       const dispatch = checkDispatchKey(req, ctx);
       if (!dispatch.ok) return auth.response;
+      scheduled = true;
     }
+    if (scheduled) {
+      ctx.log('profile-build: refusing an unattended scheduled dispatch — no user key available');
+      return blockedUnattended('Scheduled profile building');
+    }
+
+    // The caller pays for the Claude calls this task will make. Captured HERE,
+    // while the request still exists, because the work runs on after the
+    // response has been sent and the request object is gone by then.
+    const keyCheck = userAnthropicKey(req);
+    if (!keyCheck.ok) return keyCheck.response;
+    const anthropicKey = keyCheck.key;
 
     const userId = req.headers.get('x-user-id') || req.query.get('userId');
     if (!userId) return err(401, 'x-user-id header is required');
@@ -170,7 +192,7 @@ app.http('profile-build', {
 
     // Fire async work
     setImmediate(() => {
-      runProfileBuild(task, conn, ctx).catch(e => {
+      runProfileBuild(task, conn, anthropicKey, ctx).catch(e => {
         ctx.log.error('profile-build runProfileBuild crashed:', e.message, e.stack?.split('\n').slice(0,3).join(' | '));
       });
     });
@@ -245,10 +267,15 @@ async function checkCancelled(task, ctx) {
 // ─────────────────────────────────────────────────────────────────────────
 // MAIN BUILD PIPELINE
 // ─────────────────────────────────────────────────────────────────────────
-async function runProfileBuild(task, conn, ctx) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+// apiKey is the CALLER'S OWN Anthropic key, captured from the request that
+// started this task. It is a parameter rather than an environment read on
+// purpose: this function runs detached, after the HTTP response, and the only
+// way it can hold a key is for the request to have handed it one.
+async function runProfileBuild(task, conn, apiKey, ctx) {
   if (!apiKey) {
-    await finishTask(task, 'failed', { error: 'ANTHROPIC_API_KEY not configured on the Function App' }, ctx);
+    // Unreachable from the route above, which refuses first. Kept as a
+    // backstop so a future caller cannot start this pipeline keyless.
+    await finishTask(task, 'failed', { error: 'No Anthropic API key was supplied with this task.' }, ctx);
     return;
   }
 

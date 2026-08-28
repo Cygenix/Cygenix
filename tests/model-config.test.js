@@ -338,17 +338,18 @@ check('no client file passes a literal model id to the API',
 
 /* ── 6. Wiring — the server surfaces read their model from the environment ─── */
 
+/* The two edge functions used to be checked here for reading ANTHROPIC_MODEL
+   and sending the resolved id. Both were DISABLED on 2026-08-28: they read a
+   Cygenix-owned ANTHROPIC_API_KEY from the Netlify environment and spent the
+   site owner's personal Anthropic account on behalf of any signed-in user.
+   They now answer 503 and make no model call at all, so there is no model to
+   check — what there is to check is that they stay silent, and
+   tests/anthropic-billing.test.js owns that. */
 const edgeCoworker = read('netlify', 'edge-functions', 'coworker.js');
 const edgeAnalyse = read('netlify', 'edge-functions', 'analyse.js');
-check('the coworker edge function reads ANTHROPIC_MODEL from the environment',
-  /Deno\.env\.get\('ANTHROPIC_MODEL'\)/.test(edgeCoworker));
-check('the analyse edge function reads ANTHROPIC_MODEL from the environment',
-  /Deno\.env\.get\('ANTHROPIC_MODEL'\)/.test(edgeAnalyse));
 for (const [label, src] of [['coworker', edgeCoworker], ['analyse', edgeAnalyse]]) {
-  check('the ' + label + ' edge function still has a current default if the env is unset',
-    /\|\|\s*'claude-sonnet-5'/.test(src));
-  check('the ' + label + ' edge function sends the resolved model, not a literal',
-    /model:\s*MODEL/.test(src) && !/model:\s*'claude/.test(src));
+  check('the ' + label + ' edge function makes no model call to pin a model for',
+    !/api\.anthropic\.com/.test(src) && !/model:\s*MODEL/.test(src));
 }
 
 const azureFiles = ['index.js', 'agent.js', 'profile-builder.js', 'agent-suggest-criteria.js'];
