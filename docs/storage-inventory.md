@@ -24,7 +24,7 @@ mechanism that stops an unclassified key being added quietly.
 |---|---|---|---|
 | `anthropic_api_key` | Anthropic API key (legacy key name) | WI-10: server-side proxy | reports-app.js |
 | `cygenix_anthropic_key` | Anthropic API key | WI-10: server-side proxy | reports-app.js |
-| `cygenix_api_key` | User-supplied API key | WI-10 | balancing.html, connect.html, cygenix-assistant.js +9 |
+| `cygenix_api_key` | User-supplied API key | WI-10 | balancing.html, connect.html, cygenix-assistant.js +10 |
 | `cygenix_conn_string` | Target connection string, in plain text | WI-10: move to a Key Vault reference | connect.html, project-builder-app.js |
 | `cygenix_fn_key` | Azure Function key for a user-supplied endpoint | WI-10 | connect.html, project-builder-app.js |
 | `cygenix_pending_token` | Auth token in transit between pages | short-lived; clear on consume | index.html |

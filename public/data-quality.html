@@ -2443,7 +2443,13 @@
     const url  = DATA_PROXY + '?' + params.toString();
     const opts = {
       method,
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+        // The user's own Anthropic key, for the actions that reach Claude
+        // (quality-suggest-rels). Cygenix has no key of its own.
+        ...(window.CygenixModel ? CygenixModel.userKeyHeader() : {}),
+      }
     };
     if (method !== 'GET' && body) opts.body = JSON.stringify(body);
 
@@ -4371,7 +4377,7 @@
 
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
-<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-model.js?v=7d9a5e0980"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=82d9cb828b"></script>
 <script src="/cygenix-assistant-actions.js?v=7f31bf098c"></script>

@@ -178,6 +178,38 @@ async function fireSchedule(containers, schedule, now) {
   //    For migration we keep the existing fast path — no extra reads.
   let bgUrl, dispatchBody;
   if (isProfileBuild) {
+    // ── BLOCKED 2026-08-28 ────────────────────────────────────────────────
+    //
+    // A profile build calls Claude for every hub table it analyses. Dispatched
+    // from here it ran overnight, unattended, with no browser to source a key
+    // from — so it used the key on the Function App, which was the app owner's
+    // personal Anthropic account. A schedule set up once could bill it nightly
+    // for as long as it existed.
+    //
+    // There is no key this cron can honestly supply, so it does not dispatch.
+    // The run is marked failed with a message the owner will actually see on
+    // the schedule, rather than the job firing and dying with a 503 buried in
+    // a Function App log.
+    //
+    // Note this is the ONLY caller of /api/profile-build. The Insights page
+    // creates the schedule and pins the payload; it never dispatches the build
+    // itself (PROFILE_BUILD_URL there is an unused constant). So profile
+    // building is off entirely until it can take a key — there is no live
+    // browser path that still works. Re-enabling it means having Insights
+    // dispatch the build directly, with the user's key on the request.
+    try {
+      await containers.runs.item(runId, schedule.id).replace({
+        ...runDoc,
+        status:       'failed',
+        finishedAt:   nowIso(),
+        errorMessage: 'Profile building is temporarily disabled while ' +
+                      'user-supplied API key support is being wired up. It will be ' +
+                      're-enabled shortly.',
+      });
+    } catch {}
+    return { fired: false, reason: 'profile-build requires a user API key', runId };
+
+    /* eslint-disable no-unreachable */
     bgUrl = getProfileBuildUrl();
     let version;
     try {
@@ -204,6 +236,7 @@ async function fireSchedule(containers, schedule, now) {
       fingerprint: p.fingerprint,
       notifyEmail: p.notifyEmail || schedule.userId,
     };
+    /* eslint-enable no-unreachable */
   } else {
     bgUrl = getMigrationUrl();
     dispatchBody = { runId, scheduleId: schedule.id, userId: schedule.userId };

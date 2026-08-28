@@ -11,6 +11,8 @@
        Anthropic API error (404): model: claude-sonnet-4-20250514
 
    and the surrounding code told the operator to check ANTHROPIC_API_KEY —
+   a variable since removed (2026-08-28): Cygenix holds no Anthropic key, and
+   every call is made on the user's own —
    which was fine, and which sent them looking in the wrong place entirely.
 
    THE SHAPE OF THE FIX HERE
@@ -335,8 +337,35 @@ function mdTestModel(model, apiKey, fetchImpl) {
   });
 }
 
+/* ── The user's own Anthropic key ────────────────────────────────────────────
+   Cygenix owns no Anthropic key. Every Claude call it makes is paid for by the
+   person who asked for it, whether the call goes straight from this browser to
+   api.anthropic.com or through a Cygenix endpoint that needs one server-side.
+
+   The server-side case is why this lives here rather than in each page: the
+   key has to travel on the request, and it has to travel the same way every
+   time. A header, because a query parameter is written to every log between
+   here and there.
+
+   userKeyHeader() returns an EMPTY object when there is no key rather than a
+   header with an empty value. The endpoint then answers "no key" instead of
+   "bad key", which is the more useful thing to tell somebody who has not set
+   one up yet. */
+function mdUserKey() {
+  try {
+    return (sessionStorage.getItem('cygenix_api_key') ||
+            localStorage.getItem('cygenix_api_key') || '').trim();
+  } catch (e) { return ''; }
+}
+function mdUserKeyHeader() {
+  var k = mdUserKey();
+  return k ? { 'x-anthropic-key': k } : {};
+}
+
 return {
   KNOWN: KNOWN, RETIRED: RETIRED,
+  mdUserKey: mdUserKey, mdUserKeyHeader: mdUserKeyHeader,
+  userKey: mdUserKey, userKeyHeader: mdUserKeyHeader,
   DEFAULT_PRIMARY: DEFAULT_PRIMARY, DEFAULT_FALLBACKS: DEFAULT_FALLBACKS,
   PREFS_KEY: PREFS_KEY,
   mdSettings: mdSettings, mdSaveSettings: mdSaveSettings,

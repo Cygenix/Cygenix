@@ -60,7 +60,7 @@ const { verifyAuthHeader } = require('./lib/entra-auth');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-anthropic-key',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Content-Type': 'application/json',
 };
@@ -175,6 +175,15 @@ exports.handler = async function (event) {
   // has something real to check once REQUIRE_TOKEN_AUTH is switched on.
   const bearer = event.headers.authorization || event.headers.Authorization;
   if (bearer) headers.Authorization = bearer;
+
+  // The caller's OWN Anthropic key, for the routes that reach Claude
+  // (narrative, quality-suggest-rels, profile-classify-subjects). Forwarded
+  // verbatim and never inspected, logged or stored: this proxy is a pipe for
+  // it, not a holder of it. Cygenix has no key of its own to substitute, so a
+  // request that arrives without one is refused downstream rather than
+  // quietly succeeding on somebody else's account.
+  const userKey = event.headers['x-anthropic-key'] || event.headers['X-Anthropic-Key'];
+  if (userKey) headers['x-anthropic-key'] = userKey;
 
   try {
     const res = await fetch(url, {

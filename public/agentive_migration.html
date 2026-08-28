@@ -600,6 +600,10 @@ body.cyg-collapsed .topbar{left:54px}
     const userId = getActiveUserId();
     const headers = {
       'Content-Type': 'application/json',
+      // The user's own Anthropic key. An agent run is a long chain of Claude
+      // calls and Cygenix pays for none of them — /agent/migrate refuses
+      // without this header.
+      ...(window.CygenixModel ? CygenixModel.userKeyHeader() : {}),
       ...(options.headers || {}),
     };
     // No x-user-id: the proxy establishes who the caller is from the token.
@@ -3036,7 +3040,7 @@ body.cyg-collapsed .topbar{left:54px}
 
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
-<script src="/cygenix-model.js?v=88ed3b7f22"></script>
+<script src="/cygenix-model.js?v=7d9a5e0980"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=82d9cb828b"></script>
 <script src="/cygenix-assistant-actions.js?v=7f31bf098c"></script>

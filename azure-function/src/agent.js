@@ -33,6 +33,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { app } = require('@azure/functions');
+const { userAnthropicKey } = require('./user-anthropic-key');
 const crypto = require('crypto');
 const { enforceAuth } = require('./entra-auth');
 
@@ -51,23 +52,25 @@ function getCosmosContainer(containerName) {
     .container(containerName);
 }
 
-// ── Anthropic client (lazy singleton) ───────────────────────────────────────
-let _anthropic = null;
-function getAnthropic() {
-  if (!_anthropic) {
-    const Anthropic = require('@anthropic-ai/sdk');
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error('ANTHROPIC_API_KEY is not configured in Function app settings');
-    }
-    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-  return _anthropic;
+// ── Anthropic client ────────────────────────────────────────────────────────
+//
+// Deliberately NOT a singleton any more. It was one, built once from
+// process.env.ANTHROPIC_API_KEY, which meant every agent run any user started
+// billed the app owner's personal Anthropic account. Removed 2026-08-28.
+//
+// A client now belongs to the run that created it, built from the key that
+// run's caller supplied. Caching it across runs would be caching one user's
+// credential and spending it on another's work.
+function makeAnthropic(apiKey) {
+  const Anthropic = require('@anthropic-ai/sdk');
+  if (!apiKey) throw new Error('No Anthropic API key was supplied with this run.');
+  return new Anthropic({ apiKey: apiKey });
 }
 
 // ── Shared CORS headers (match index.js) ────────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization, x-anthropic-key',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Content-Type': 'application/json'
 };
@@ -1234,8 +1237,8 @@ function estimateTokens(messages, systemPrompt) {
 // Returns { finalText, proposalState }. proposalState contains the structured
 // proposals if the model called finalize_proposal; otherwise it's empty (and
 // finalText is the model's free-form fallback message).
-async function runAgentLoop(run, conns, ctx) {
-  const anthropic = getAnthropic();
+async function runAgentLoop(run, conns, apiKey, ctx) {
+  const anthropic = makeAnthropic(apiKey);
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 
   // ── Load project memory (best-effort) ─────────────────────────────────
@@ -1452,7 +1455,7 @@ async function runAgentLoop(run, conns, ctx) {
     : `You have hit the maximum number of turns (${MAX_TURNS}). Based on what you have already seen, call propose_table_mapping for the table pair(s) you can map, then call finalize_proposal. Do not call any other tools.`;
   messages.push({ role: 'user', content: wrapUpText });
   const wrapUpTools = TOOLS.filter(t => t.name === 'propose_table_mapping' || t.name === 'finalize_proposal');
-  return await wrapUpAndReturn(getAnthropic(), model, messages, wrapUpTools, run, proposalState, nextSeq, ctx, systemPrompt);
+  return await wrapUpAndReturn(anthropic, model, messages, wrapUpTools, run, proposalState, nextSeq, ctx, systemPrompt);
 }
 
 // Forced wrap-up helper. Called when the loop must exit (token budget hit or
@@ -1564,10 +1567,10 @@ async function wrapUpAndReturn(anthropic, model, messages, tools, run, proposalS
 // ─────────────────────────────────────────────────────────────────────────────
 // LIVE PROPOSAL — wraps the agent loop, sets pendingApproval at end
 // ─────────────────────────────────────────────────────────────────────────────
-async function liveProduceProposal(run, conns, ctx) {
+async function liveProduceProposal(run, conns, apiKey, ctx) {
   let result;
   try {
-    result = await runAgentLoop(run, conns, ctx);
+    result = await runAgentLoop(run, conns, apiKey, ctx);
   } finally {
     // Always close pools, even if the loop threw
     await closeRunPools(run.id);
@@ -1780,6 +1783,12 @@ app.http('agent_migrate', {
       return err(403, 'Agentive Migration is not enabled for this user');
     }
 
+    // The caller pays for this run's Claude calls. Captured here, while the
+    // request exists — the loop runs on after the response is sent.
+    const keyCheck = userAnthropicKey(req);
+    if (!keyCheck.ok) return keyCheck.response;
+    const anthropicKey = keyCheck.key;
+
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
     const goal = (body.goal || '').trim();
@@ -1910,7 +1919,7 @@ app.http('agent_migrate', {
     //   1. POST migrate enqueues a message with run.id
     //   2. queue-triggered function runs the loop
     //   3. frontend polls run state same as today
-    runInBackground(run, conns, ctx).catch(e => {
+    runInBackground(run, conns, anthropicKey, ctx).catch(e => {
       ctx.log(`[agent] background run ${run.id} threw outside loop: ${e.message}`);
     });
 
@@ -1920,12 +1929,15 @@ app.http('agent_migrate', {
 
 // Run the agent loop without blocking the HTTP response. Errors are caught
 // and converted to a failed run state.
-async function runInBackground(run, conns, ctx) {
+// apiKey is the caller's own, captured from the request that started this run.
+// A parameter rather than an environment read: this runs detached, after the
+// HTTP response, so the only key it can hold is one the request handed it.
+async function runInBackground(run, conns, apiKey, ctx) {
   try {
     if (isStubMode()) {
       await stubProduceFakeProposal(run, ctx);
     } else {
-      await liveProduceProposal(run, conns, ctx);
+      await liveProduceProposal(run, conns, apiKey, ctx);
     }
   } catch (e) {
     ctx.log(`[agent] run ${run.id} failed: ${e.message}`);
