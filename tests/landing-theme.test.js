@@ -94,7 +94,16 @@ check('the landing page wears the same three-chevron mark as the login',
   index.includes(MARK) && login.includes(MARK)
   && /\.mark\{[^}]*linear-gradient\(140deg,var\(--mark-a\),var\(--mark-b\)\)/.test(index));
 check('the mark links home and is reachable by name',
-  /<a class="nav-logo" href="\/" aria-label="Cygenix home">/.test(index));
+  /<a class="nav-logo" href="\/" aria-label="Cygenix home[^"]*">/.test(index));
+/* The product is in beta and the nav says so. It has to say so to a screen
+   reader too: the aria-label REPLACES the link's text, so a badge that is only
+   visible would be invisible to anyone not looking at it. */
+check('the nav marks the product as beta, in the palette rather than beside it',
+  /<span class="nav-beta">Beta<\/span>/.test(index)
+  && /\.nav-beta\{[^}]*color:var\(--text2\)/.test(index)
+  && !/\.nav-beta\{[^}]*#[0-9a-fA-F]{3,6}/.test(index));
+check('and the beta state reaches a screen reader, not just an eye',
+  /aria-label="Cygenix home — the product is in beta"/.test(index));
 
 // ── 4. The type scale matches the rest of the site ──────────────────────────
 const h1 = /\.hero h1\{([^}]*)\}/.exec(index);
