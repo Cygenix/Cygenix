@@ -338,8 +338,24 @@
       }
       .cyg-brand-mark svg{ width:21px;height:21px;display:block; }
       .cyg-brand-word{ display:flex;flex-direction:column;line-height:1.15;overflow:hidden; }
-      .cyg-brand-word b{ font-size:16px;font-weight:700;letter-spacing:-0.01em;color:var(--cyg-fg-strong); }
-      .cyg-brand-word span{ font-size:10px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--cyg-muted);white-space:nowrap; }
+      .cyg-brand-word b{ display:flex;align-items:center;gap:7px;
+        font-size:16px;font-weight:700;letter-spacing:-0.01em;color:var(--cyg-fg-strong); }
+      /* Direct child: the badge below lives INSIDE the <b>, and this rule —
+         which styles the "Migration Console" strapline — would otherwise catch
+         it and render it as a second strapline. */
+      .cyg-brand-word > span{ font-size:10px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--cyg-muted);white-space:nowrap; }
+      /* Beta mark. Outlined rather than filled: the brand mark beside it is
+         already a saturated gradient, and a second solid block turns the
+         lockup into two competing shapes. Same wording and weight as the
+         Assistant panel's badge so the product says "beta" one way. */
+      .cyg-brand-beta{
+        font-size:9px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;
+        padding:2px 6px;border-radius:99px;line-height:1.5;
+        color:rgba(255,255,255,0.62);
+        border:1px solid rgba(255,255,255,0.22);
+        background:rgba(255,255,255,0.05);
+        white-space:nowrap;flex:0 0 auto;
+      }
       .cyg-sidebar.collapsed .cyg-brand-word{ display:none; }
 
       .cyg-sidebar-toggle{
@@ -711,9 +727,9 @@
   // ── HTML build ──────────────────────────────────────────────────────────
   function buildHTML(activeKey){
     const head = `<div class="cyg-sidebar-head">
-      <a class="cyg-brand" href="/dashboard" aria-label="Cygenix — Migration Console">
+      <a class="cyg-brand" href="/dashboard" aria-label="Cygenix (beta) — Migration Console">
         <span class="cyg-brand-mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span>
-        <span class="cyg-brand-word"><b>Cygenix</b><span>Migration Console</span></span>
+        <span class="cyg-brand-word"><b>Cygenix<span class="cyg-brand-beta">Beta</span></b><span>Migration Console</span></span>
       </a>
       <button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Collapse sidebar">❮</button>
     </div>`;

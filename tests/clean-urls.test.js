@@ -188,7 +188,8 @@ section('6. The logos point somewhere useful');
 const index = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
 const login = fs.readFileSync(path.join(PUB, 'login.html'), 'utf8');
 check('the landing page\'s logo goes to the root, which is the landing page',
-  /<a class="nav-logo" href="\/" aria-label="Cygenix home">/.test(index));
+  /<a class="nav-logo" href="\/" aria-label="Cygenix home[^"]*">/.test(index),
+  'the label carries the beta note too — this checks the destination, not the wording');
 check('its canonical address is the bare domain',
   /og:url" content="https:\/\/cygenix\.co\.uk\/"/.test(index));
 check('the login page offers a way back out to the site',

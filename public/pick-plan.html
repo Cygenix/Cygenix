@@ -37,6 +37,17 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:var(--bg2);border-bottom:0.5px solid var(--border)}
 .nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
 .nav-logo span{color:var(--accent)}
+/* Beta mark.
+   NOT a flex container: this wordmark is "Cyge<span>nix</span>", so the bare
+   text node and the span are two children — flex would make them two items and
+   put a gap through the middle of the word ("Cyge nix"). An inline-block with
+   a left margin leaves the wordmark as continuous text.
+   .nav-logo span already colours the second half of the word, so the badge
+   needs its own class and has to undo that colour. */
+.nav-logo .nav-beta{display:inline-block;margin-left:0.5rem;vertical-align:middle;
+  font-size:9.5px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;
+  padding:2px 6px;border-radius:99px;line-height:1.5;color:var(--text2);
+  border:1px solid var(--border);white-space:nowrap}
 .nav-signout{font-family:var(--mono);font-size:11px;color:var(--text2);text-decoration:none;letter-spacing:0.05em;text-transform:uppercase;padding:6px 12px;border:0.5px solid var(--border2);border-radius:6px;transition:all 0.2s;cursor:pointer;background:transparent}
 .nav-signout:hover{color:var(--text);border-color:var(--text2)}
 
@@ -135,7 +146,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 <body>
 
 <nav>
-  <a href="/" class="nav-logo">Cyge<span>nix</span></a>
+  <a href="/" class="nav-logo" aria-label="Cygenix home — the product is in beta">Cyge<span>nix</span><span class="nav-beta">Beta</span></a>
   <div class="nav-right">
     <div class="region-selector" id="region-selector">
       <button type="button" class="region-selector-btn" id="region-selector-btn" aria-haspopup="true" aria-expanded="false">
