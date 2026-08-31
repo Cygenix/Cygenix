@@ -1092,7 +1092,18 @@
   function handleClick(item){
     // If the item is a dashboard view AND we're on dashboard, call showView directly.
     // Otherwise, stash cyg_goto and navigate to dashboard (if view) or the page (if href).
-    const onDashboard = /\/dashboard\.html?$|^\/$/.test(location.pathname);
+    // Addresses are extensionless — /dashboard, not /dashboard.html — and this
+    // test was written before they were. It matched only ".htm"/".html" and the
+    // bare root, so on the real URL it was ALWAYS false: every one of the
+    // fifteen view: items fell through to the navigate branch below and did
+    // nothing, while the twenty href: items carried on working. That split is
+    // what the bug looked like from the outside.
+    //
+    // Normalised the same way auth-gate.js does it, so the two agree about
+    // what page this is. The root is the landing page now, not the dashboard,
+    // so it is deliberately not matched here.
+    const here = location.pathname.replace(/\.html$/, '').replace(/\/+$/, '') || '/';
+    const onDashboard = here === '/dashboard';
     if (item.action === 'cookie-preferences'){
       if (typeof window.openCookiePreferences === 'function') window.openCookiePreferences();
       return;
@@ -1115,9 +1126,20 @@
       } else {
         // Belt-and-braces: stash in sessionStorage AND pass in the URL hash.
         // sessionStorage can be wiped by auth-gate redirects; the hash survives
-        // as long as the redirect preserves it. Dashboard reads either.
+        // as long as the redirect preserves it. dashboard-app.js reads either.
         try { sessionStorage.setItem('cyg_goto', item.view); } catch {}
-        window.location.href = '/dashboard#goto=' + encodeURIComponent(item.view);
+        const url = '/dashboard#goto=' + encodeURIComponent(item.view);
+        if (here === '/dashboard') {
+          // Already here, so assigning a URL that differs only in the hash
+          // updates the address bar and nothing else — and clicking the same
+          // item twice would not even fire a hashchange. Reaching this branch
+          // on the dashboard means showView is missing, i.e. the page did not
+          // finish loading; a real reload is the honest recovery.
+          window.location.href = url;
+          window.location.reload();
+        } else {
+          window.location.href = url;
+        }
       }
       return;
     }

@@ -273,5 +273,58 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
     && /cyg-sidebar-autopad/.test(src2));
 }
 
+/* ── The nav has to know what page it is on ─────────────────────────────────
+   The "am I on the dashboard" test was a regex written against
+   /dashboard.html. When the addresses went extensionless it silently became
+   always-false, and all fifteen view: items stopped switching views while the
+   href: ones carried on — a half-dead menu with no error anywhere.
+
+   The browser proof is tests/browser/sidebar-nav.smoke.js, which is the only
+   thing that can really check a path test against a served URL. These are the
+   two properties that can be pinned without one. */
+{
+  const fs3 = require('fs'), path3 = require('path');
+  const dir3 = path3.join(__dirname, '..', 'public');
+  const nav = fs3.readFileSync(path3.join(dir3, 'cygenix-sidebar.js'), 'utf8');
+  const app = fs3.readFileSync(path3.join(dir3, 'dashboard-app.js'), 'utf8');
+
+  check('the nav decides what page it is on by normalising, not by matching .html',
+    /location\.pathname\.replace\(\/\\\.html\$\/, ''\)/.test(nav)
+    && /onDashboard = here === '\/dashboard'/.test(nav)
+    && !/\/\\\/dashboard\\\.html\?\$\|/.test(nav),
+    'the stale /dashboard.html regex is back');
+
+  check('and normalises it the same way auth-gate.js does, so the two agree',
+    /\.replace\(\/\\\.html\$\/, ''\)\.replace\(\/\\\/\+\$\/, ''\) \|\| '\/'/.test(nav)
+    && /\.replace\(\/\\\.html\$\/, ''\)\.replace\(\/\\\/\+\$\/, ''\) \|\| '\/'/
+        .test(fs3.readFileSync(path3.join(dir3, 'auth-gate.js'), 'utf8')));
+
+  check('the fallback forces a real load rather than a silent hash change',
+    /window\.location\.reload\(\)/.test(nav) && /differs only in the hash/.test(nav),
+    'assigning a URL that differs only in the hash does not reload the page');
+
+  // Both transports need a reader, or every /dashboard#goto= link in the
+  // product lands on Home.
+  check('the dashboard reads a #goto= deep link', /goto=\(\[\^&\]\+\)/.test(app));
+  check('and the cyg_goto key as the other transport', /getItem\('cyg_goto'\)/.test(app));
+  check('it validates the view before switching to it',
+    /getElementById\('view-' \+ view\)/.test(app));
+  check('it clears both, so a refresh does not re-fire the deep link',
+    /removeItem\('cyg_goto'\)/.test(app) && /history\.replaceState/.test(app));
+  check('it only rewrites the hash when goto= is in it, leaving #assistant alone',
+    /if \(\/\(\?:\^\|\[#&\]\)goto=\/\.test\(location\.hash \|\| ''\)\)/.test(app));
+  check('and waits for DOMContentLoaded, not a guessed timer',
+    /addEventListener\('DOMContentLoaded', go\)/.test(app)
+    && !/showView\(goto\); \}, 300\)/.test(app),
+    'a view injected by a later deferred script does not exist yet at parse time');
+
+  // Every producer of the hash form needs the reader to exist.
+  const producers = fs3.readdirSync(dir3)
+    .filter((f) => /\.(js|html)$/.test(f))
+    .filter((f) => /\/dashboard#goto=/.test(fs3.readFileSync(path3.join(dir3, f), 'utf8')));
+  check('the pages that link to /dashboard#goto= are worth having a reader for',
+    producers.length >= 5, producers.join(', '));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
