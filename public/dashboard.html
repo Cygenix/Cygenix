@@ -1335,7 +1335,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
   <script src="/cygenix-conn-builder.js?v=a50f317be6" defer></script>
-  <script src="/dashboard-app.js?v=8fbb8a9ba6" defer></script>
+  <script src="/dashboard-app.js?v=987889d7b1" defer></script>
 
 
   <!-- MAIN -->
@@ -2550,7 +2550,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                    and handed to every job. -->
               <div class="conn-entry-toggle" style="display:flex;gap:0.35rem;margin-bottom:0.6rem">
                 <button id="src-entry-paste" class="btn btn-sm" onclick="setConnEntry('src','paste')" style="flex:1;justify-content:center;font-size:11px">Paste string</button>
-                <button id="src-entry-build" class="btn btn-sm" onclick="setConnEntry('src','build')" style="flex:1;justify-content:center;font-size:11px">Build from details</button>
+                <button id="src-entry-build" class="btn btn-sm" onclick="setConnEntry('src','build')" style="flex:1;justify-content:center;font-size:11px">Settings</button>
               </div>
               <div id="src-build-wrap" style="display:none">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 0.6rem">
@@ -2599,7 +2599,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                     <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="src-b-trust" type="checkbox" onchange="connBuildChanged('src')"> Trust server certificate</label>
                   </div>
                 </div>
-                <label class="form-label" style="margin-top:0.6rem">Connection string being built</label>
+                <label class="form-label" style="margin-top:0.6rem">Connection string</label>
                 <div id="src-b-preview" style="font-family:var(--mono);font-size:11px;color:var(--text3);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.55rem;word-break:break-all;min-height:16px">Fill in a host and a database.</div>
                 <div style="font-size:10px;color:var(--text3);margin-top:0.3rem">The password is hidden here, not in what is saved.</div>
               </div>
@@ -2656,7 +2656,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                    and handed to every job. -->
               <div class="conn-entry-toggle" style="display:flex;gap:0.35rem;margin-bottom:0.6rem">
                 <button id="tgt-entry-paste" class="btn btn-sm" onclick="setConnEntry('tgt','paste')" style="flex:1;justify-content:center;font-size:11px">Paste string</button>
-                <button id="tgt-entry-build" class="btn btn-sm" onclick="setConnEntry('tgt','build')" style="flex:1;justify-content:center;font-size:11px">Build from details</button>
+                <button id="tgt-entry-build" class="btn btn-sm" onclick="setConnEntry('tgt','build')" style="flex:1;justify-content:center;font-size:11px">Settings</button>
               </div>
               <div id="tgt-build-wrap" style="display:none">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 0.6rem">
@@ -2705,7 +2705,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                     <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="tgt-b-trust" type="checkbox" onchange="connBuildChanged('tgt')"> Trust server certificate</label>
                   </div>
                 </div>
-                <label class="form-label" style="margin-top:0.6rem">Connection string being built</label>
+                <label class="form-label" style="margin-top:0.6rem">Connection string</label>
                 <div id="tgt-b-preview" style="font-family:var(--mono);font-size:11px;color:var(--text3);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.55rem;word-break:break-all;min-height:16px">Fill in a host and a database.</div>
                 <div style="font-size:10px;color:var(--text3);margin-top:0.3rem">The password is hidden here, not in what is saved.</div>
               </div>
