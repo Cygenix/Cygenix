@@ -54,6 +54,7 @@ const IDS = ['src','tgt'].flatMap(s => [
   s + '-conn-locked', s + '-conn-locked-label', s + '-conn-locked-value',
   s + '-conn-locked-nick', s + '-conn-hide',
   s + '-direct-wrap', s + '-azure-wrap',
+  s + '-build-wrap', s + '-cs-wrap', s + '-entry-paste', s + '-entry-build', s + '-b-host',
   'proj-' + s + '-cs', 'proj-' + s + '-fn-url', 'proj-' + s + '-fn-key',
 ]);
 
@@ -151,7 +152,15 @@ t.call('connReveal', 'src');
 check('revealing shows the connection-string field', shown(t.els['src-direct-wrap']));
 check('revealing hides the summary card', !shown(t.els['src-conn-locked']));
 check('revealing offers a way to hide again', shown(t.els['src-conn-hide']));
-check('revealing puts the cursor in the field', t.els['proj-src-cs'].focused === true);
+// Edit opens Settings — the form — so the cursor belongs in its first field.
+// It used to land in the connection-string input, which is now hidden behind
+// the form; focusing a hidden input is the kind of thing that looks like
+// nothing happened.
+check('revealing puts the cursor in the first field of the form',
+  t.els['src-b-host'].focused === true);
+check('and the raw string field is not what is shown',
+  t.els['src-cs-wrap'].style.display === 'none');
+check('while the form itself is', shown(t.els['src-build-wrap']));
 
 t.call('connHide', 'src');
 check('hiding restores the summary card', shown(t.els['src-conn-locked']));

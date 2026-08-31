@@ -191,8 +191,32 @@ check('the form writes into the connection string field, not beside it',
   'there must be exactly one field of record for a connection');
 check('switching to the form parses whatever is already in that field',
   /function connBuildLoadFromString/.test(app) && /B\.parse\(target\.value\)/.test(app));
+
+/* The form is what Edit opens, so it is filled in without the user asking.
+   That makes the write-back dangerous in a way it was not when only a
+   deliberate click could reach it: compose() knows the keywords it models and
+   no others, so a stored string carrying MultipleActiveResultSets, Application
+   Name, Connection Timeout or an Authentication= mode would come back trimmed,
+   and the next Save would persist the trimmed version with nobody seeing it
+   happen. Opening the form reads; only editing a field writes. */
+check('the second way in is called Settings',
+  dash.indexOf('>Settings</button>') !== -1 && dash.indexOf('Build from details') === -1);
+check('Edit opens Settings rather than the raw string',
+  /if \(typeof setConnEntry === 'function'\) setConnEntry\(side, connEntry\[side\] \|\| 'build'\)/.test(app)
+  && /var connEntry = \{ src: 'build', tgt: 'build' \}/.test(app));
+check('with the cursor in the first field of the form, not in a hidden input',
+  /getElementById\(side \+ '-b-host'\)/.test(app));
+check('and opening it does NOT rewrite the stored string — only editing does',
+  /function connBuildChanged\(side, engineChanged, quiet\)/.test(app)
+  && /if \(target && !quiet\) target\.value = cs;/.test(app)
+  && /connBuildChanged\(side, false, true\)/.test(app),
+  'a form that silently trims a keyword it does not model is worse than no form');
+check('and the preview shows the string that is really stored, not the recomposed one',
+  /var shown = quiet && target && target\.value \? target\.value : cs;/.test(app));
+check('a side with nothing configured gets the same default, without pressing Edit',
+  /setConnEntry\('src', connEntry\.src\)/.test(app) && /setConnEntry\('tgt', connEntry\.tgt\)/.test(app));
 check('the preview is the masked form, so a password is never drawn on screen',
-  /prev\.textContent = cs \? B\.mask\(cs\)/.test(app));
+  /prev\.textContent = shown \? B\.mask\(shown\)/.test(app));
 check('and the form writes through to the string field on every keystroke',
   /target\.value = cs/.test(app) && /oninput="connBuildChanged/.test(dash));
 check('the engine choice only replaces a port the user has not chosen',

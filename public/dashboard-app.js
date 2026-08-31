@@ -9442,7 +9442,18 @@ function connReveal(side){
   connRevealed[side] = true;
   renderConnLock(side);
   const mode = side === 'src' ? srcMode : tgtMode;
-  const el = document.getElementById('proj-' + side + (mode === 'direct' ? '-cs' : '-fn-url'));
+  if (mode !== 'direct'){
+    const fn = document.getElementById('proj-' + side + '-fn-url');
+    if (fn) try { fn.focus(); } catch {}
+    return;
+  }
+  // Edit opens Settings: the fields, filled in from whatever is stored, with
+  // the cursor in the first one. Opening the form does not rewrite the string
+  // (see connBuildChanged's `quiet`) — only editing a field does.
+  if (typeof setConnEntry === 'function') setConnEntry(side, connEntry[side] || 'build');
+  const el = connEntry[side] === 'build'
+    ? document.getElementById(side + '-b-host')
+    : document.getElementById('proj-' + side + '-cs');
   if (el) try { el.focus(); } catch {}
 }
 
@@ -9471,7 +9482,12 @@ window.connHide   = connHide;
  * switch, and see what is actually in it — which is also the quickest way to
  * find the typo.
  */
-var connEntry = { src: 'paste', tgt: 'paste' };
+/* Settings — the form — is what Edit opens. Most people arriving here are
+   reading credentials off a page rather than holding a finished string, and
+   the form is also the only view that shows what is IN a string somebody
+   inherited. Paste is one click away for the times there is a string to
+   paste. */
+var connEntry = { src: 'build', tgt: 'build' };
 
 function connBuildFields(side) {
   var g = function (suffix) { return document.getElementById(side + '-b-' + suffix); };
@@ -9489,8 +9505,17 @@ function connBuildFields(side) {
 /* Recompose and write through to the one field of record. `engineChanged`
    swaps the default port only when the box still holds the other engine's
    default — retyping a port the user chose would be the form arguing with
-   them. */
-function connBuildChanged(side, engineChanged) {
+   them.
+
+   `quiet` is for opening the form rather than typing in it. The form is now
+   what Edit shows, so it is populated without the user asking for it — and
+   writing back at that moment would silently rewrite whatever was already
+   stored. compose() only knows the keywords it models, so a string carrying
+   MultipleActiveResultSets, Application Name, Connection Timeout or an
+   Authentication= mode would come back without them, and the next Save would
+   persist the trimmed version. Nobody would see it happen. So opening the
+   form reads; only an edit writes. */
+function connBuildChanged(side, engineChanged, quiet) {
   var B = window.CygenixConnBuilder;
   if (!B) return;
   var f = connBuildFields(side);
@@ -9516,12 +9541,16 @@ function connBuildChanged(side, engineChanged) {
 
   var cs = B.compose(f);
   var target = document.getElementById('proj-' + side + '-cs');
-  if (target) target.value = cs;
+  if (target && !quiet) target.value = cs;
 
+  // Preview the string that is actually stored. While the form is only being
+  // read (quiet), that is still the original — showing the recomposed one
+  // would promise a rewrite that has not happened.
+  var shown = quiet && target && target.value ? target.value : cs;
   var prev = document.getElementById(side + '-b-preview');
   if (prev) {
-    prev.textContent = cs ? B.mask(cs) : 'Fill in a host and a database.';
-    prev.style.color = cs ? 'var(--text2)' : 'var(--text3)';
+    prev.textContent = shown ? B.mask(shown) : 'Fill in a host and a database.';
+    prev.style.color = shown ? 'var(--text2)' : 'var(--text3)';
   }
 }
 
@@ -9537,7 +9566,7 @@ function connBuildLoadFromString(side) {
   set('db', f.database); set('user', f.user); set('pw', f.password);
   set('schema', f.schema); set('ssl', f.sslmode || 'auto');
   tick('encrypt', f.encrypt); tick('trust', f.trustCert);
-  connBuildChanged(side);
+  connBuildChanged(side, false, true);   // read the string, do not rewrite it
 }
 
 function setConnEntry(side, how) {
@@ -9610,6 +9639,11 @@ function initConnectionsView() {
   set('proj-tgt-cs',     c.tgtConnString);
   set('proj-tgt-fn-url', c.tgtFnUrl);
   set('proj-tgt-fn-key', c.tgtFnKey);
+  // A side with nothing configured shows its fields without anyone pressing
+  // Edit, so the entry mode has to be applied here too — otherwise the toggle
+  // would sit unstyled above a form nobody had opened.
+  setConnEntry('src', connEntry.src);
+  setConnEntry('tgt', connEntry.tgt);
   updateConnDots();
   // Render saved-connection chips for both sides
   sconnRender('src');
