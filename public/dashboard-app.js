@@ -9457,6 +9457,119 @@ function connHide(side){
 window.connReveal = connReveal;
 window.connHide   = connHide;
 
+/* ── Connection entry: paste a string, or build one ────────────────────────
+ *
+ * Two ways in, ONE field of record. Whichever the user picks, the string in
+ * #proj-<side>-cs is what gets tested, saved, handed to jobs and read by the
+ * agent — the form writes into it and nothing downstream can tell the
+ * difference. A form that stored its own parallel copy would make "what is
+ * this connection" a question with two answers, which is the one thing a
+ * connection must never be.
+ *
+ * Switching to the form parses whatever is in that field, so the form is a
+ * VIEW of the string rather than a rival to it: paste something inherited,
+ * switch, and see what is actually in it — which is also the quickest way to
+ * find the typo.
+ */
+var connEntry = { src: 'paste', tgt: 'paste' };
+
+function connBuildFields(side) {
+  var g = function (suffix) { return document.getElementById(side + '-b-' + suffix); };
+  var val = function (suffix) { var el = g(suffix); return el ? el.value : ''; };
+  var chk = function (suffix) { var el = g(suffix); return !!(el && el.checked); };
+  return {
+    engine: val('engine') || 'mssql',
+    host: val('host'), port: val('port'), database: val('db'),
+    user: val('user'), password: val('pw'), schema: val('schema'),
+    sslmode: val('ssl') || 'auto',
+    encrypt: chk('encrypt'), trustCert: chk('trust'),
+  };
+}
+
+/* Recompose and write through to the one field of record. `engineChanged`
+   swaps the default port only when the box still holds the other engine's
+   default — retyping a port the user chose would be the form arguing with
+   them. */
+function connBuildChanged(side, engineChanged) {
+  var B = window.CygenixConnBuilder;
+  if (!B) return;
+  var f = connBuildFields(side);
+  var portEl = document.getElementById(side + '-b-port');
+
+  if (engineChanged && portEl) {
+    var other = f.engine === 'postgres' ? '1433' : '5432';
+    if (!portEl.value || portEl.value === other) {
+      portEl.value = String(B.defaultPort(f.engine));
+      f.port = portEl.value;
+    }
+  }
+
+  var pg = f.engine === 'postgres';
+  var show = function (id, on) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = on ? '' : 'none';
+  };
+  show(side + '-b-schema-wrap', pg);
+  show(side + '-b-ssl-wrap', pg);
+  show(side + '-b-mssql-opts', !pg);
+  if (portEl && !portEl.value) portEl.placeholder = String(B.defaultPort(f.engine));
+
+  var cs = B.compose(f);
+  var target = document.getElementById('proj-' + side + '-cs');
+  if (target) target.value = cs;
+
+  var prev = document.getElementById(side + '-b-preview');
+  if (prev) {
+    prev.textContent = cs ? B.mask(cs) : 'Fill in a host and a database.';
+    prev.style.color = cs ? 'var(--text2)' : 'var(--text3)';
+  }
+}
+
+/** Fill the form from whatever the string field currently holds. */
+function connBuildLoadFromString(side) {
+  var B = window.CygenixConnBuilder;
+  var target = document.getElementById('proj-' + side + '-cs');
+  if (!B || !target) return;
+  var f = B.parse(target.value);
+  var set = function (suffix, v) { var el = document.getElementById(side + '-b-' + suffix); if (el) el.value = v; };
+  var tick = function (suffix, v) { var el = document.getElementById(side + '-b-' + suffix); if (el) el.checked = !!v; };
+  set('engine', f.engine); set('host', f.host); set('port', f.port);
+  set('db', f.database); set('user', f.user); set('pw', f.password);
+  set('schema', f.schema); set('ssl', f.sslmode || 'auto');
+  tick('encrypt', f.encrypt); tick('trust', f.trustCert);
+  connBuildChanged(side);
+}
+
+function setConnEntry(side, how) {
+  connEntry[side] = how === 'build' ? 'build' : 'paste';
+  var build = connEntry[side] === 'build';
+  if (build) connBuildLoadFromString(side);
+
+  var wrap = document.getElementById(side + '-build-wrap');
+  if (wrap) wrap.style.display = build ? '' : 'none';
+
+  // The raw string field is hidden while the form is open, and the masked
+  // preview is the readout instead.
+  //
+  // The first version left it visible, on the reasoning that somebody might
+  // want to tweak a single character without switching modes. Seeing it
+  // rendered settled the argument: a preview with the password blanked, sitting
+  // directly above the same string with the password in clear text, is not a
+  // safeguard — it is two readouts of one value disagreeing about whether the
+  // value is sensitive. Paste mode is one click away for editing by hand.
+  var raw = document.getElementById(side + '-cs-wrap');
+  if (raw) raw.style.display = build ? 'none' : '';
+  var styleBtn = function (id, active) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.style.background = active ? 'var(--accent-glow)' : 'transparent';
+    el.style.color = active ? 'var(--accent)' : 'var(--text2)';
+    el.style.border = active ? '0.5px solid rgba(74,91,214,0.3)' : '0.5px solid var(--border2)';
+  };
+  styleBtn(side + '-entry-paste', !build);
+  styleBtn(side + '-entry-build', build);
+}
+
 function setSrcMode(mode) {
   srcMode = mode;
   const styles = (id, active) => {

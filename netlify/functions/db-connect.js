@@ -1252,7 +1252,11 @@ function parsePostgresConnectionString(cs, dbOverride) {
 
     const slashIdx = hostPart.indexOf('/');
     const hostPort = slashIdx >= 0 ? hostPart.slice(0, slashIdx) : hostPart;
-    const dbPath   = slashIdx >= 0 ? hostPart.slice(slashIdx + 1) : '';
+    // Decoded, like the user and password above it. A database name may
+    // legally contain a space, and a URL carrying one has to encode it —
+    // leaving this raw meant "my db" arrived as "my%20db" and the connect
+    // failed with "database does not exist", pointing at the wrong thing.
+    const dbPath   = slashIdx >= 0 ? decodeURIComponent(hostPart.slice(slashIdx + 1)) : '';
 
     const lastColon = hostPort.lastIndexOf(':');
     const host = lastColon >= 0 && !hostPort.includes('[') ? hostPort.slice(0, lastColon) : hostPort;
@@ -1301,6 +1305,19 @@ function buildPgConfig({ host, port, database, user, password, qParams }) {
     ssl = cloudHost ? { rejectUnauthorized: false } : false;
   }
 
+  // search_path, when the connection asked for one. Postgres puts every table
+  // in a schema and most estates do not put them all in "public", so a string
+  // that names one has to mean something — otherwise an unqualified
+  // "SELECT * FROM thing" in the SQL Editor fails against a database where the
+  // user can plainly see "thing" in the table list.
+  //
+  // This does NOT narrow what Cygenix can see: introspection walks every
+  // non-system schema and returns each table schema-qualified, which is what
+  // makes a migration across schemas possible in the first place. It changes
+  // only what an unqualified name resolves to.
+  const options = qParams['options'];
+  const searchPath = options && /search_path\s*=\s*([^\s,]+)/i.exec(options);
+
   return {
     host,
     port,
@@ -1308,6 +1325,7 @@ function buildPgConfig({ host, port, database, user, password, qParams }) {
     user: user || undefined,
     password: password || undefined,
     ssl,
+    ...(searchPath ? { options: '-c search_path=' + searchPath[1] } : {}),
     connectionTimeoutMillis: 30000,
     // Bumped for large-schema introspection (9k+ tables). Was 30s, now 120s.
     query_timeout: 120000,
