@@ -8305,13 +8305,57 @@ function onboardGoTo(view){
   showView(view);
 }
 
-// Handle cyg_goto navigation from nav.js sidebar links on other pages
+// ── Deep link to a view: /dashboard#goto=<view>, or the cyg_goto key ────────
+//
+// Two transports, because they fail in different places. sessionStorage is
+// wiped by an auth-gate redirect; the hash survives that but is lost if
+// something rewrites the URL. Whichever arrives, the destination is the same.
+//
+// The hash half went missing when the addresses went extensionless, and
+// nothing read it: every "/dashboard#goto=connections" link on the Data
+// Stream, Schema Explorer and Designer pages, and the assistant's own
+// app_navigate, landed on Home instead. This is that reader, restored.
+//
+// WHY DOMContentLoaded AND NOT A TIMER
+// The old version guessed 300ms. It had to guess because it ran at parse time,
+// before the views existed. Two of them still would not: cygenix-project-
+// summary.js is deferred and loads AFTER this file, and it INJECTS its view
+// into the DOM rather than shipping it in the markup. Waiting for
+// DOMContentLoaded — which fires after every deferred script has run — means
+// the view is really there to check for, and means that module has already had
+// its own look at the hash before this clears it.
+//
+// readyState is 'interactive' while deferred scripts run, so testing for
+// 'loading' would run this immediately and reintroduce the race.
 (function(){
-  const goto = sessionStorage.getItem('cyg_goto');
-  if (goto) {
-    sessionStorage.removeItem('cyg_goto');
-    setTimeout(function(){ if(typeof showView==='function') showView(goto); }, 300);
+  function target(){
+    var m = /(?:^|[#&])goto=([^&]+)/.exec(location.hash || '');
+    if (m) { try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; } }
+    try { return sessionStorage.getItem('cyg_goto') || ''; } catch (e) { return ''; }
   }
+  function clear(){
+    try { sessionStorage.removeItem('cyg_goto'); } catch (e) {}
+    // Only when goto= is actually there: #assistant is a different feature's
+    // hash and rewriting it away would close the panel on every load.
+    if (/(?:^|[#&])goto=/.test(location.hash || '')) {
+      try { history.replaceState({}, document.title, location.pathname + location.search); }
+      catch (e) { /* older browser: a stale hash is better than a thrown error */ }
+    }
+  }
+  function go(){
+    var view = target();
+    // Cleared whether or not it resolves, so a refresh does not re-trigger it
+    // and an unknown name does not sit in the URL waiting to confuse the next
+    // person to look.
+    clear();
+    if (!view) return;
+    // The same test showView itself uses. An unrecognised name leaves the
+    // dashboard on Home rather than on a blank screen.
+    if (!document.getElementById('view-' + view)) return;
+    if (typeof showView === 'function') showView(view);
+  }
+  if (document.readyState === 'complete') go();
+  else document.addEventListener('DOMContentLoaded', go);
 })();
 
 

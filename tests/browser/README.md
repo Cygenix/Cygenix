@@ -7,6 +7,7 @@ check nobody reads until it breaks.
 ```bash
 node tests/browser/page-reader.smoke.js     # 96 checks
 node tests/browser/assistant-loop.smoke.js  # 23 checks
+node tests/browser/sidebar-nav.smoke.js     # 15 checks
 ```
 
 Both start a local static server over `public/`, drive headless Chromium
@@ -16,7 +17,7 @@ about twenty seconds together.
 | Environment variable | Default |
 | --- | --- |
 | `CHROMIUM` | `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` |
-| `SMOKE_PORT` | `8396` / `8397` |
+| `SMOKE_PORT` | `8396` / `8397` / `8399` |
 
 ## What each one is for
 
@@ -43,6 +44,20 @@ It runs after the model asks to click **Run job** and the panel parks for
 approval. A confirmation dialog that appears while the act has already happened
 is not a confirmation, and that is exactly the sort of failure that passes a
 source-level review.
+
+**`sidebar-nav.smoke.js`** — the dashboard nav actually switches views. It
+exists because of a bug no source-level test could have caught: the nav's
+"am I on the dashboard" check was a regex written against `/dashboard.html`,
+and when the addresses went extensionless it silently became always-false.
+Fifteen menu items stopped working, in silence, with no console error —
+because nothing had failed, something had merely not happened. The regex was
+valid, the branch was reachable, the fallback existed. What was wrong was the
+relationship between a string and a deployed URL, and only a browser sitting
+on that URL can see it.
+
+Its sharpest assertion is that a nav click switches the view **in place**. A
+repaired fallback will also land you on the right view — by reloading the whole
+application for every click. That is the bug made survivable, not fixed.
 
 ## Writing another one
 
