@@ -1334,7 +1334,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-preflight.js?v=b84fe6bfb2" defer></script>
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
-  <script src="/dashboard-app.js?v=72b3cebe84" defer></script>
+  <script src="/cygenix-conn-builder.js?v=a50f317be6" defer></script>
+  <script src="/dashboard-app.js?v=8fbb8a9ba6" defer></script>
 
 
   <!-- MAIN -->
@@ -2544,9 +2545,69 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <button class="btn btn-ghost btn-sm" onclick="connReveal('src')" title="Show the connection details so they can be edited"><i class="ic ic-edit"></i> Edit</button>
             </div>
             <div id="src-direct-wrap">
+              <!-- How the string gets in. Two ways into ONE field: whichever
+                   you use, #proj-src-cs is what is stored, tested, saved
+                   and handed to every job. -->
+              <div class="conn-entry-toggle" style="display:flex;gap:0.35rem;margin-bottom:0.6rem">
+                <button id="src-entry-paste" class="btn btn-sm" onclick="setConnEntry('src','paste')" style="flex:1;justify-content:center;font-size:11px">Paste string</button>
+                <button id="src-entry-build" class="btn btn-sm" onclick="setConnEntry('src','build')" style="flex:1;justify-content:center;font-size:11px">Build from details</button>
+              </div>
+              <div id="src-build-wrap" style="display:none">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 0.6rem">
+                  <div style="grid-column:1/-1">
+                    <label class="form-label">Engine</label>
+                    <select id="src-b-engine" class="form-input" style="font-size:11px" onchange="connBuildChanged('src',true)">
+                      <option value="mssql">SQL Server / Azure SQL</option>
+                      <option value="postgres">PostgreSQL</option>
+                    </select>
+                  </div>
+                  <div style="grid-column:1/span 1">
+                    <label class="form-label">Host</label>
+                    <input id="src-b-host" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="db.example.com" oninput="connBuildChanged('src')">
+                  </div>
+                  <div>
+                    <label class="form-label">Port</label>
+                    <input id="src-b-port" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="1433" inputmode="numeric" oninput="connBuildChanged('src')">
+                  </div>
+                  <div style="grid-column:1/-1">
+                    <label class="form-label">Database</label>
+                    <input id="src-b-db" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="database name" oninput="connBuildChanged('src')">
+                  </div>
+                  <div>
+                    <label class="form-label">User</label>
+                    <input id="src-b-user" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="user" autocomplete="off" oninput="connBuildChanged('src')">
+                  </div>
+                  <div>
+                    <label class="form-label">Password</label>
+                    <input id="src-b-pw" class="form-input" style="font-family:var(--mono);font-size:11px" type="password" placeholder="password" autocomplete="new-password" oninput="connBuildChanged('src')">
+                  </div>
+                  <div id="src-b-schema-wrap" style="grid-column:1/-1;display:none">
+                    <label class="form-label">Schema <span style="font-weight:400;color:var(--text3)">— optional</span></label>
+                    <input id="src-b-schema" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="public" oninput="connBuildChanged('src')">
+                    <div style="font-size:10px;color:var(--text3);margin-top:0.2rem">Sets the search path, so an unqualified table name resolves here. Cygenix still reads every schema — this does not narrow what it can see.</div>
+                  </div>
+                  <div id="src-b-ssl-wrap" style="grid-column:1/-1;display:none">
+                    <label class="form-label">SSL</label>
+                    <select id="src-b-ssl" class="form-input" style="font-size:11px" onchange="connBuildChanged('src')">
+                      <option value="auto">Automatic — on for managed hosts</option>
+                      <option value="require">Require</option>
+                      <option value="disable">Disable</option>
+                    </select>
+                  </div>
+                  <div id="src-b-mssql-opts" style="grid-column:1/-1;display:flex;gap:1rem;align-items:center;font-size:11px;color:var(--text2)">
+                    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="src-b-encrypt" type="checkbox" checked onchange="connBuildChanged('src')"> Encrypt</label>
+                    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="src-b-trust" type="checkbox" onchange="connBuildChanged('src')"> Trust server certificate</label>
+                  </div>
+                </div>
+                <label class="form-label" style="margin-top:0.6rem">Connection string being built</label>
+                <div id="src-b-preview" style="font-family:var(--mono);font-size:11px;color:var(--text3);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.55rem;word-break:break-all;min-height:16px">Fill in a host and a database.</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:0.3rem">The password is hidden here, not in what is saved.</div>
+              </div>
+              <div id="src-cs-wrap">
               <label class="form-label">Connection string</label>
               <input id="proj-src-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.25rem" placeholder="SQL Server: Server=host;Database=db;User Id=u;Password=p  OR  Postgres: postgres://user:pass@host:5432/db">
               <div style="font-size:10px;color:var(--text3);margin-bottom:0.5rem">Dialect auto-detected from the string. Postgres URLs start with <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">postgres://</code> or <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">postgresql://</code><br>Entra-only Azure SQL: add <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Authentication=Active Directory Service Principal</code> with the app registration's client id as User Id, its secret as Password, and <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Tenant Id</code>. Scheduled runs can also use <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Authentication=Active Directory Default</code>, which uses the Cygenix Function App's own managed identity.</div>
+              </div>
             </div>
             <div id="src-azure-wrap" style="display:none">
               <label class="form-label">Azure Function URL</label>
@@ -2590,9 +2651,69 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <button class="btn btn-ghost btn-sm" onclick="connReveal('tgt')" title="Show the connection details so they can be edited"><i class="ic ic-edit"></i> Edit</button>
             </div>
             <div id="tgt-direct-wrap" style="display:none">
+              <!-- How the string gets in. Two ways into ONE field: whichever
+                   you use, #proj-tgt-cs is what is stored, tested, saved
+                   and handed to every job. -->
+              <div class="conn-entry-toggle" style="display:flex;gap:0.35rem;margin-bottom:0.6rem">
+                <button id="tgt-entry-paste" class="btn btn-sm" onclick="setConnEntry('tgt','paste')" style="flex:1;justify-content:center;font-size:11px">Paste string</button>
+                <button id="tgt-entry-build" class="btn btn-sm" onclick="setConnEntry('tgt','build')" style="flex:1;justify-content:center;font-size:11px">Build from details</button>
+              </div>
+              <div id="tgt-build-wrap" style="display:none">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 0.6rem">
+                  <div style="grid-column:1/-1">
+                    <label class="form-label">Engine</label>
+                    <select id="tgt-b-engine" class="form-input" style="font-size:11px" onchange="connBuildChanged('tgt',true)">
+                      <option value="mssql">SQL Server / Azure SQL</option>
+                      <option value="postgres">PostgreSQL</option>
+                    </select>
+                  </div>
+                  <div style="grid-column:1/span 1">
+                    <label class="form-label">Host</label>
+                    <input id="tgt-b-host" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="db.example.com" oninput="connBuildChanged('tgt')">
+                  </div>
+                  <div>
+                    <label class="form-label">Port</label>
+                    <input id="tgt-b-port" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="1433" inputmode="numeric" oninput="connBuildChanged('tgt')">
+                  </div>
+                  <div style="grid-column:1/-1">
+                    <label class="form-label">Database</label>
+                    <input id="tgt-b-db" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="database name" oninput="connBuildChanged('tgt')">
+                  </div>
+                  <div>
+                    <label class="form-label">User</label>
+                    <input id="tgt-b-user" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="user" autocomplete="off" oninput="connBuildChanged('tgt')">
+                  </div>
+                  <div>
+                    <label class="form-label">Password</label>
+                    <input id="tgt-b-pw" class="form-input" style="font-family:var(--mono);font-size:11px" type="password" placeholder="password" autocomplete="new-password" oninput="connBuildChanged('tgt')">
+                  </div>
+                  <div id="tgt-b-schema-wrap" style="grid-column:1/-1;display:none">
+                    <label class="form-label">Schema <span style="font-weight:400;color:var(--text3)">— optional</span></label>
+                    <input id="tgt-b-schema" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="public" oninput="connBuildChanged('tgt')">
+                    <div style="font-size:10px;color:var(--text3);margin-top:0.2rem">Sets the search path, so an unqualified table name resolves here. Cygenix still reads every schema — this does not narrow what it can see.</div>
+                  </div>
+                  <div id="tgt-b-ssl-wrap" style="grid-column:1/-1;display:none">
+                    <label class="form-label">SSL</label>
+                    <select id="tgt-b-ssl" class="form-input" style="font-size:11px" onchange="connBuildChanged('tgt')">
+                      <option value="auto">Automatic — on for managed hosts</option>
+                      <option value="require">Require</option>
+                      <option value="disable">Disable</option>
+                    </select>
+                  </div>
+                  <div id="tgt-b-mssql-opts" style="grid-column:1/-1;display:flex;gap:1rem;align-items:center;font-size:11px;color:var(--text2)">
+                    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="tgt-b-encrypt" type="checkbox" checked onchange="connBuildChanged('tgt')"> Encrypt</label>
+                    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="tgt-b-trust" type="checkbox" onchange="connBuildChanged('tgt')"> Trust server certificate</label>
+                  </div>
+                </div>
+                <label class="form-label" style="margin-top:0.6rem">Connection string being built</label>
+                <div id="tgt-b-preview" style="font-family:var(--mono);font-size:11px;color:var(--text3);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.55rem;word-break:break-all;min-height:16px">Fill in a host and a database.</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:0.3rem">The password is hidden here, not in what is saved.</div>
+              </div>
+              <div id="tgt-cs-wrap">
               <label class="form-label">Connection string</label>
               <input id="proj-tgt-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.25rem" placeholder="SQL Server: Server=host;Database=db;User Id=u;Password=p  OR  Postgres: postgres://user:pass@host:5432/db">
               <div style="font-size:10px;color:var(--text3);margin-bottom:0.5rem">Dialect auto-detected from the string. Postgres URLs start with <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">postgres://</code> or <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">postgresql://</code><br>Entra-only Azure SQL: add <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Authentication=Active Directory Service Principal</code> with the app registration's client id as User Id, its secret as Password, and <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Tenant Id</code>. Scheduled runs can also use <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Authentication=Active Directory Default</code>, which uses the Cygenix Function App's own managed identity.</div>
+              </div>
             </div>
             <div id="tgt-azure-wrap">
               <label class="form-label">Azure Function URL</label>
