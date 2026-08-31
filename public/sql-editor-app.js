@@ -379,11 +379,26 @@ function initMonaco(){
   // ── SQL completion provider (keywords, functions, snippets, schema) ──────────
   registerSqlCompletions();
 
-  // ── Set initial value if we had anything queued ──────────────────────────────
-  if (window.__cygMonaco.pendingValue && editor.getValue() !== window.__cygMonaco.pendingValue){
-    editor.setValue(window.__cygMonaco.pendingValue);
+  // ── Hand the editor over to the window system ────────────────────────────────
+  // From here the editor's model belongs to whichever window is active, and
+  // this one instance serves all of them. A queued value (a script or job
+  // opened by URL before Monaco was ready) goes into the active window rather
+  // than into a model that is about to be swapped out from under it.
+  if (typeof sqlwInit === 'function' && window.CygenixSqlWindows) {
+    const queued = window.__cygMonaco.pendingValue;
+    window.__cygMonaco.pendingValue = '';
+    sqlwInit();
+    const st = sqlwStore();
+    if (st) {
+      if (queued) st.update(st.activeId(), { sql: queued, savedSql: queued });
+      sqlwActivate(st.activeId());
+    }
+  } else {
+    if (window.__cygMonaco.pendingValue && editor.getValue() !== window.__cygMonaco.pendingValue){
+      editor.setValue(window.__cygMonaco.pendingValue);
+    }
+    window.__cygMonaco.pendingValue = '';
   }
-  window.__cygMonaco.pendingValue = '';
 
   // Focus the editor for immediate typing
   setTimeout(() => editor.focus(), 100);
@@ -915,9 +930,15 @@ async function runSQL() {
     }
   }
 
+  // The window that asked. Everything below reports back to THIS id, not to
+  // whatever is on screen when the answer arrives — a query left running in a
+  // background tab keeps running and updates its own tab.
+  const winId = (typeof sqlwStore === 'function' && sqlwStore()) ? sqlwStore().activeId() : null;
+  if (winId) { sqlwStore().update(winId, { running: true, error: null }); sqlwRenderStrip(); }
+
   const btn = document.getElementById('run-btn');
   btn.disabled=true; btn.textContent='Running…';
-  setExecStatus('Executing…', 'var(--amber)');
+  sqlwStatus(winId, 'Executing…', 'var(--amber)');
 
   const t0 = Date.now();
   try {
@@ -931,29 +952,35 @@ async function runSQL() {
       const affected = Array.isArray(res.rowsAffected)
         ? res.rowsAffected.reduce((a,b) => a + (b||0), 0)
         : (res.rowsAffected || 0);
-      renderDMLResult(affected, ms, sql);
-      setExecStatus(`✓ ${affected.toLocaleString()} row${affected!==1?'s':''} affected · ${ms}ms`, 'var(--green)');
-      addHistory({sql, rows:affected, ms, ts:new Date().toISOString(), ok:true});
+      sqlwResult(winId, { kind:'dml', affected, ms, sql });
+      sqlwStatus(winId, `✓ ${affected.toLocaleString()} row${affected!==1?'s':''} affected · ${ms}ms`, 'var(--green)');
+      sqlwHistory(winId, {sql, rows:affected, ms, ts:new Date().toISOString(), ok:true});
       // Track execution on the job record for calendar history
       if (currentJobId && isDML(sql)) trackJobExecution(currentJobId, affected, ms, sql);
     } else {
-      renderResults(rows, ms, sql);
-      setExecStatus(`✓ ${rows.length.toLocaleString()} row${rows.length!==1?'s':''} · ${ms}ms`, 'var(--green)');
-      addHistory({sql, rows:rows.length, ms, ts:new Date().toISOString(), ok:true});
+      sqlwResult(winId, { kind:'rows', rows, ms, sql });
+      sqlwStatus(winId, `✓ ${rows.length.toLocaleString()} row${rows.length!==1?'s':''} · ${ms}ms`, 'var(--green)');
+      sqlwHistory(winId, {sql, rows:rows.length, ms, ts:new Date().toISOString(), ok:true});
     }
   } catch(e) {
-    renderError(e.message);
-    setExecStatus('✕ Error', 'var(--red)');
-    addHistory({sql, rows:0, ms:Date.now()-t0, ts:new Date().toISOString(), ok:false, err:e.message});
+    sqlwResult(winId, { kind:'error', message: e.message });
+    sqlwStatus(winId, '✕ Error', 'var(--red)');
+    sqlwHistory(winId, {sql, rows:0, ms:Date.now()-t0, ts:new Date().toISOString(), ok:false, err:e.message});
   } finally {
-    btn.disabled=false; btn.textContent='▶ Run';
+    if (winId && sqlwStore().get(winId)) { sqlwStore().update(winId, { running:false }); sqlwRenderStrip(); }
+    // The Run button belongs to whatever is on screen now, which may not be
+    // the window this run started in.
+    const stillHere = !winId || !sqlwStore() || sqlwStore().activeId() === winId;
+    if (stillHere) { btn.disabled=false; btn.textContent='▶ Run'; }
     // switchBottomTab, not the old switchRightTab: the rename left this call
     // behind, and the ReferenceError it threw aborted the rest of this block —
     // so autoExpandResultsPane() below never ran and results stayed hidden.
-    switchBottomTab('results');
-    // Auto-expand the results panel if it's collapsed, so the user sees the
-    // outcome (rows / DML message / error) without needing to drag it open.
-    autoExpandResultsPane();
+    if (stillHere) {
+      switchBottomTab('results');
+      // Auto-expand the results panel if it's collapsed, so the user sees the
+      // outcome (rows / DML message / error) without needing to drag it open.
+      autoExpandResultsPane();
+    }
   }
 }
 
@@ -1069,6 +1096,11 @@ function clearResults() {
   const toolbar = document.getElementById('results-toolbar');
   if (toolbar) toolbar.style.display = 'none';
   lastResults = {rows:[], cols:[], ms:0};
+  // The window's cached copy has to go too, or switching away and back would
+  // bring back rows the user has just cleared.
+  if (typeof sqlwStore === 'function' && sqlwStore() && sqlwStore().active()) {
+    sqlwStore().update(sqlwStore().activeId(), { results: null, error: null });
+  }
   // Collapse panel when cleared
   collapseResults();
 }
@@ -2639,6 +2671,11 @@ function setEditorContext(type, id, name) {
       ctxBtn.dataset.action = '';
     }
   }
+
+  // What the editor is holding is a property of the WINDOW, not of the page.
+  // Every open and every save comes through here, so this is the one place
+  // that has to tell the active window what it now contains.
+  if (typeof sqlwNoteContext === 'function') sqlwNoteContext(type, id, name);
 }
 
 // Smart Save — routes to script vs job vs Drive-file vs new-script-from-draft
@@ -3934,7 +3971,13 @@ window.__cygOpenWithSqlActive = false;
     if (typeof updateStatus === 'function') updateStatus();
   }
 
+  // SUPERSEDED by the window store (cygenix-sql-windows.js), which persists
+  // every window's text per project rather than one global draft. Left in
+  // place, and disarmed, because the RESTORE half below still rescues a draft
+  // written by an older build — somebody mid-query when this shipped should
+  // not lose it.
   function saveDraft() {
+    if (window.CygenixSqlWindows) return;
     try {
       const v = getEditorValue();
       // Don't save the placeholder "starter" template as a draft — only real
@@ -4041,6 +4084,15 @@ window.__cygOpenWithSqlActive = false;
 Object.assign(window.CygenixAssistantAdapters = window.CygenixAssistantAdapters || {}, {
   getEditorSql: () => document.getElementById('sql-editor').value,
   setEditorSql: (sql) => {
+    // A new window, not the current one. The assistant writing over SQL
+    // somebody was part-way through is a small betrayal that is hard to undo,
+    // and windows are cheap now.
+    if (typeof sqlwNew === 'function' && typeof sqlwStore === 'function' && sqlwStore()) {
+      const w = sqlwNew({ sql, name: 'AI query' });
+      if (w) { updateStatus(); updateLineNumbers(); return; }
+      // At the cap: fall through and use the window we are on rather than
+      // losing the SQL entirely.
+    }
     document.getElementById('sql-editor').value = sql;
     updateStatus(); updateLineNumbers();
   },
@@ -4068,3 +4120,599 @@ Object.assign(window.CygenixAssistantAdapters = window.CygenixAssistantAdapters 
     };
   });
 })();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SQL WINDOWS — many queries open at once, browser-shaped
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// HOW THIS WORKS, AND WHY IT IS NOT TWENTY EDITORS
+// There is ONE Monaco editor and one model per window. `editor.setModel(m)`
+// switches. That matters because a Monaco model owns its own undo/redo stack,
+// so undo history survives a tab switch for nothing — no hidden mounted
+// editors, no store of undo entries to keep in sync. Cursor, selection and
+// scroll come back through saveViewState/restoreViewState, which is the other
+// half of the same idea.
+//
+// And because #sql-editor is a PROXY over `editor.getValue()` (see
+// setupEditorProxy at the top of this file), every one of the forty-odd places
+// that reads or writes the editor became window-aware without being touched:
+// the proxy reads whichever model is currently attached.
+//
+// The list itself — order, names, the closed stack, the cap, persistence —
+// lives in cygenix-sql-windows.js, which owns no DOM and is tested without a
+// browser.
+//
+// KEYBOARD, HONESTLY
+// Ctrl/Cmd+T, W, Shift+T, 1-9 and Ctrl+Tab are reserved by every browser and
+// cannot be intercepted by a page. Binding them would mean Ctrl+W closing the
+// user's browser tab and taking every window with it. The shortcuts here are
+// Alt-based, which is genuinely free, and they are named in the tooltips so
+// nobody has to guess.
+
+var SQLW = null;               // the store
+var _sqlwModels = {};          // window id -> monaco.editor.ITextModel
+var _sqlwMenuEl = null;
+var _sqlwDragId = null;
+
+function sqlwProjectId() {
+  try { return localStorage.getItem('cygenix_active_project_id') || 'default'; }
+  catch (e) { return 'default'; }
+}
+
+function sqlwStore() {
+  if (SQLW) return SQLW;
+  if (!window.CygenixSqlWindows) return null;
+  SQLW = window.CygenixSqlWindows.makeStore({ projectId: sqlwProjectId() });
+  SQLW.init();
+  return SQLW;
+}
+
+/* ── Monaco models ────────────────────────────────────────────────────────── */
+
+function sqlwModel(w) {
+  var m = window.__cygMonaco;
+  if (!m || !m.ready || !window.monaco) return null;
+  if (_sqlwModels[w.id] && !_sqlwModels[w.id].isDisposed()) return _sqlwModels[w.id];
+  var model = window.monaco.editor.createModel(w.sql || '', 'sql');
+  // Text changes are the one thing that must reach the store, because the
+  // store is what survives a reload. Debounced: a keystroke is not a save.
+  model.onDidChangeContent(function () {
+    if (!SQLW) return;
+    SQLW.update(w.id, { sql: model.getValue() });
+    sqlwRenderStrip();
+  });
+  _sqlwModels[w.id] = model;
+  return model;
+}
+
+/** Move the editor onto a window: its model, then its view state. */
+function sqlwAttach(id) {
+  var s = sqlwStore(); if (!s) return;
+  var w = s.get(id); if (!w) return;
+  var m = window.__cygMonaco;
+  if (!m || !m.ready || !m.editor) return;
+
+  // Remember where we were in the window being left.
+  var prev = s.get(m.__attachedId);
+  if (prev && m.__attachedId !== id) {
+    try { prev.viewState = m.editor.saveViewState(); } catch (e) {}
+    try { prev.sql = m.editor.getValue(); } catch (e) {}
+  }
+
+  var model = sqlwModel(w);
+  if (model) {
+    if (model.getValue() !== (w.sql || '')) model.setValue(w.sql || '');
+    m.editor.setModel(model);
+  }
+  m.__attachedId = id;
+  if (w.viewState) { try { m.editor.restoreViewState(w.viewState); } catch (e) {} }
+}
+
+/* ── What the window is holding ───────────────────────────────────────────────
+ * The editor used to have one context — one currentScript, one currentJobId,
+ * one Save button that knew what it meant. With several windows open those are
+ * per-window facts: one tab can be a saved script, the next an unsaved draft,
+ * the third a job's SQL, and the Save button has to mean the right thing for
+ * whichever is on screen.
+ *
+ * setEditorContext() is the single funnel — every open, save and new-draft path
+ * ends in it — so the association is recorded there and replayed on switch.
+ */
+var _sqlwCtxReady = false;      // sqlwInit has run; before that there is no window to tell
+var _sqlwRestoringCtx = false;  // we are replaying a context, not being handed a new one
+
+function sqlwNoteContext(type, id, name) {
+  if (!_sqlwCtxReady || _sqlwRestoringCtx) return;
+  var s = sqlwStore(); if (!s) return;
+  var w = s.active(); if (!w) return;
+  // The Drive link is set just before every setEditorContext call that has
+  // one, so it can be read here rather than threaded through the signature.
+  var script = { type: type, id: id || null, name: name || '',
+                 driveFile: currentDriveFile || null };
+  var patch = { script: script };
+  // A tab still carrying its default name follows what it holds, the way a
+  // browser tab takes its title from the page. A tab the user has named keeps
+  // that name — theirs beats ours. 'New script' is not a name, it is the
+  // absence of one, so it never overwrites "Query 3".
+  if (name && name !== 'New script' && /^Query \d+$/.test(w.name)) patch.name = name;
+  s.update(w.id, patch);
+  // Every caller has just put a known baseline in the editor — loaded a
+  // script, saved one, started a draft. That is what "not dirty" means, and it
+  // is why the dot clears on save without anything else having to know.
+  s.markSaved(w.id, script);
+  sqlwRenderStrip();
+}
+
+/** Put the page's one-at-a-time context back to what this window holds. */
+function sqlwRestoreContext(w) {
+  if (!w || typeof setEditorContext !== 'function') return;
+  var c = w.script || { type: 'draft', id: null, name: 'New script' };
+  _sqlwRestoringCtx = true;
+  try {
+    currentScript = c.type === 'script' ? c.id : null;
+    currentJobId  = c.type === 'job' ? c.id : null;
+    currentDriveFile = c.driveFile || null;
+    setEditorContext(c.type || 'draft', c.id || null, c.name || 'New script');
+    // setEditorContext resets Save to "Save as Script"; a window linked to a
+    // Drive file saves back to that file, and the button has to say so.
+    if (currentDriveFile) {
+      var sb = document.getElementById('save-btn');
+      if (sb) {
+        sb.textContent = 'Save to Drive';
+        sb.title = 'Save changes back to “' + (currentDriveFile.name || 'file') + '” in the Co-Worker Drive';
+      }
+    }
+  } catch (e) { /* a context we cannot replay must not take the switch down */ }
+  _sqlwRestoringCtx = false;
+}
+
+/* ── Painting the rest of the page from the active window ─────────────────── */
+
+function sqlwSyncPage() {
+  var s = sqlwStore(); if (!s) return;
+  var w = s.active(); if (!w) return;
+
+  sqlwRestoreContext(w);
+
+  // Connection selector
+  var sel = document.getElementById('conn-select');
+  if (sel && sel.value !== w.conn) { sel.value = w.conn; }
+  if (typeof refreshConnLabels === 'function') refreshConnLabels();
+
+  // Results: cached, never re-run. A window that has not been run shows the
+  // empty state rather than the previous window's rows.
+  if (w.results) {
+    lastResults = { rows: w.results.rows, cols: w.results.cols, ms: w.results.ms };
+    sqlwPaintResult(w.results);
+  } else {
+    lastResults = { rows: [], cols: [], ms: 0 };
+    var wrap = document.getElementById('results-container');
+    if (wrap) {
+      wrap.innerHTML = w.error
+        ? '<div class="results-empty" style="color:var(--red)">' + esc(w.error) + '</div>'
+        : '<div class="results-empty">Run a query to see results</div>';
+    }
+    var foot = document.getElementById('results-footer');
+    if (foot) foot.textContent = '';
+    var tb = document.getElementById('results-toolbar');
+    if (tb) tb.style.display = 'none';
+  }
+
+  queryHistory = w.history;
+  if (typeof renderHistory === 'function') renderHistory();
+
+  if (typeof setExecStatus === 'function') {
+    setExecStatus(w.running ? 'Executing…' : '', w.running ? 'var(--amber)' : 'var(--text3)');
+  }
+  var runBtn = document.getElementById('run-btn');
+  if (runBtn) { runBtn.disabled = !!w.running; runBtn.textContent = w.running ? 'Running…' : '▶ Run'; }
+
+  if (typeof updateStatus === 'function') updateStatus();
+  if (typeof updateLineNumbers === 'function') updateLineNumbers();
+}
+
+/* ── The strip ────────────────────────────────────────────────────────────── */
+
+function sqlwRenderStrip() {
+  var s = sqlwStore(); if (!s) return;
+  var tabs = document.getElementById('sqlw-tabs');
+  if (!tabs) return;
+  var list = s.list(), activeId = s.activeId();
+
+  tabs.innerHTML = list.map(function (w, i) {
+    var dirty = s.isDirty(w);
+    var mark = w.running
+      ? '<span class="sqlw-mark"><span class="sqlw-spin" title="Running"></span></span>'
+      : '<span class="sqlw-mark sqlw-dot" title="Unsaved changes">' + (dirty ? '•' : '') + '</span>' +
+        '<span class="sqlw-mark sqlw-close" title="Close (Alt+W)" data-close="' + w.id + '">✕</span>';
+    return '<div class="sqlw-tab' + (w.id === activeId ? ' active' : '') + '"' +
+      ' data-id="' + w.id + '" data-i="' + i + '" draggable="true"' +
+      ' role="tab" aria-selected="' + (w.id === activeId) + '"' +
+      ' title="' + esc(w.name) + (dirty ? ' — unsaved changes' : '') + '">' +
+      '<span class="sqlw-name">' + esc(w.name) + '</span>' + mark + '</div>';
+  }).join('');
+
+  // Overflow: hide what does not fit and say how many, rather than letting the
+  // strip scroll sideways where a window can hide off the edge for good.
+  var hidden = 0;
+  var stripW = tabs.clientWidth;
+  var used = 0;
+  Array.prototype.forEach.call(tabs.children, function (el) {
+    used += el.offsetWidth + 2;
+    if (used > stripW && el.dataset.id !== activeId) { el.style.display = 'none'; hidden++; }
+    else el.style.display = '';
+  });
+  var badge = document.getElementById('sqlw-overflow-count');
+  if (badge) badge.textContent = hidden ? String(hidden) : '';
+}
+
+/* ── Actions ──────────────────────────────────────────────────────────────── */
+
+function sqlwNew(init) {
+  var s = sqlwStore(); if (!s) return;
+  var r = s.create(init);
+  if (!r.ok) { alert(r.reason); return; }
+  sqlwActivate(r.window.id);
+  var m = window.__cygMonaco;
+  if (m && m.ready && m.editor) m.editor.focus();
+  return r.window;
+}
+
+function sqlwActivate(id) {
+  var s = sqlwStore(); if (!s) return;
+  if (!s.get(id)) return;
+  s.activate(id);
+  sqlwAttach(id);
+  sqlwSyncPage();
+  sqlwRenderStrip();
+}
+
+function sqlwClose(id) {
+  var s = sqlwStore(); if (!s) return;
+  var w = s.get(id); if (!w) return;
+  if (s.isDirty(w)) {
+    if (!confirm('"' + w.name + '" has unsaved changes.\n\nClose it anyway? ' +
+                 'You can bring it back with Alt+Shift+T.')) return;
+  }
+  var model = _sqlwModels[id];
+  if (model && !model.isDisposed()) { try { model.dispose(); } catch (e) {} }
+  delete _sqlwModels[id];
+  s.close(id);
+  sqlwActivate(s.activeId());
+}
+
+function sqlwReopen() {
+  var s = sqlwStore(); if (!s) return;
+  var r = s.reopen();
+  if (!r.ok) return;
+  sqlwActivate(r.window.id);
+}
+
+function sqlwRename(id) {
+  var s = sqlwStore(); if (!s) return;
+  var tab = document.querySelector('.sqlw-tab[data-id="' + id + '"] .sqlw-name');
+  var w = s.get(id);
+  if (!tab || !w) return;
+  var input = document.createElement('input');
+  input.value = w.name;
+  input.setAttribute('aria-label', 'Rename window');
+  tab.innerHTML = '';
+  tab.appendChild(input);
+  input.focus(); input.select();
+  var done = function (commit) {
+    if (commit) s.rename(id, input.value);
+    sqlwRenderStrip();
+  };
+  input.addEventListener('blur', function () { done(true); });
+  input.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); done(false); }
+  });
+}
+
+/* ── The window menu ──────────────────────────────────────────────────────── */
+
+function sqlwCloseMenu() {
+  if (_sqlwMenuEl) { _sqlwMenuEl.remove(); _sqlwMenuEl = null; }
+  var btn = document.getElementById('sqlw-menu-btn');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function sqlwToggleMenu(ev) {
+  if (ev) ev.stopPropagation();
+  if (_sqlwMenuEl) { sqlwCloseMenu(); return; }
+  var s = sqlwStore(); if (!s) return;
+  var btn = document.getElementById('sqlw-menu-btn');
+  var list = s.list(), activeId = s.activeId();
+
+  var menu = document.createElement('div');
+  menu.className = 'sqlw-menu';
+  menu.setAttribute('role', 'menu');
+
+  var rows = list.map(function (w, i) {
+    var preview = (w.sql || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    return '<div class="sqlw-menu-row" role="menuitemradio" tabindex="-1"' +
+      ' aria-checked="' + (w.id === activeId) + '" data-go="' + w.id + '">' +
+      '<span class="tick">' + (w.id === activeId ? '✓' : '') + '</span>' +
+      '<span style="min-width:0;flex:1">' +
+        '<span style="display:block">' + esc(w.name) +
+          (s.isDirty(w) ? ' <span style="color:var(--amber)">•</span>' : '') +
+          (w.running ? ' <span style="color:var(--accent)">running</span>' : '') + '</span>' +
+        '<span class="sqlw-menu-meta">' + esc(w.conn === 'target' ? 'Target DB' : 'Source DB') +
+          (preview ? ' · ' + esc(preview) : ' · empty') + '</span>' +
+      '</span>' +
+      '<span style="color:var(--text3);font-family:var(--mono);font-size:10px">Alt+' + (i + 1) + '</span>' +
+      '</div>';
+  }).join('');
+
+  menu.innerHTML = rows +
+    '<div class="sqlw-menu-sep"></div>' +
+    '<div class="sqlw-menu-action" role="menuitem" tabindex="-1" data-act="new">New window <span style="float:right;color:var(--text3);font-family:var(--mono);font-size:10px">Alt+T</span></div>' +
+    '<div class="sqlw-menu-action" role="menuitem" tabindex="-1" data-act="reopen"' +
+      (s.canReopen() ? '' : ' aria-disabled="true"') + '>Reopen closed window <span style="float:right;color:var(--text3);font-family:var(--mono);font-size:10px">Alt+Shift+T</span></div>' +
+    '<div class="sqlw-menu-sep"></div>' +
+    '<div class="sqlw-menu-action" role="menuitem" tabindex="-1" data-act="others">Close others</div>' +
+    '<div class="sqlw-menu-action" role="menuitem" tabindex="-1" data-act="unmodified">Close saved and unmodified</div>' +
+    '<div class="sqlw-menu-action" role="menuitem" tabindex="-1" data-act="all">Close all</div>';
+
+  // A portal on <body>: the toolbar and the editor pane both clip their
+  // overflow, and a menu that opens inside either is a menu with its bottom
+  // half cut off.
+  document.body.appendChild(menu);
+  _sqlwMenuEl = menu;
+  if (btn) {
+    var r = btn.getBoundingClientRect();
+    menu.style.top = Math.round(r.bottom + 4) + 'px';
+    menu.style.left = Math.round(Math.max(8, Math.min(r.right - menu.offsetWidth,
+      window.innerWidth - menu.offsetWidth - 8))) + 'px';
+    btn.setAttribute('aria-expanded', 'true');
+  }
+
+  menu.addEventListener('click', function (e) {
+    var go = e.target.closest('[data-go]');
+    if (go) { sqlwCloseMenu(); sqlwActivate(go.dataset.go); return; }
+    var act = e.target.closest('[data-act]');
+    if (!act || act.getAttribute('aria-disabled') === 'true') return;
+    sqlwCloseMenu();
+    sqlwMenuAction(act.dataset.act);
+  });
+
+  // Keyboard: the menu is a list, so up and down walk it and Enter picks.
+  var items = Array.prototype.slice.call(menu.querySelectorAll('[data-go],[data-act]'));
+  var idx = -1;
+  var focusAt = function (n) {
+    items.forEach(function (el) { el.classList.remove('kbd'); });
+    idx = (n + items.length) % items.length;
+    items[idx].classList.add('kbd');
+    items[idx].scrollIntoView({ block: 'nearest' });
+  };
+  menu.__key = function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); sqlwCloseMenu(); document.getElementById('sqlw-menu-btn')?.focus(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); focusAt(idx + 1); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); focusAt(idx - 1); return; }
+    if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); items[idx].click(); return; }
+  };
+  document.addEventListener('keydown', menu.__key, true);
+  menu.addEventListener('remove', function () {
+    document.removeEventListener('keydown', menu.__key, true);
+  });
+}
+
+function sqlwMenuAction(act) {
+  var s = sqlwStore(); if (!s) return;
+  if (act === 'new') { sqlwNew(); return; }
+  if (act === 'reopen') { sqlwReopen(); return; }
+  if (act === 'others') {
+    var others = s.list().filter(function (w) { return w.id !== s.activeId() && s.isDirty(w); });
+    if (others.length && !confirm('Close every other window?\n\nThese have unsaved changes:\n  ' +
+        others.map(function (w) { return w.name; }).join('\n  ') +
+        '\n\nYou can bring them back with Alt+Shift+T.')) return;
+    s.closeOthers(s.activeId());
+    sqlwActivate(s.activeId());
+    return;
+  }
+  if (act === 'unmodified') { s.closeUnmodified(); sqlwActivate(s.activeId()); return; }
+  if (act === 'all') {
+    // One confirmation, naming exactly what would be lost — not one per window.
+    var dirty = s.dirtyNames();
+    if (dirty.length && !confirm('Close all ' + s.list().length + ' windows?\n\n' +
+        dirty.length + ' ' + (dirty.length === 1 ? 'has' : 'have') + ' unsaved changes:\n  ' +
+        dirty.join('\n  ') + '\n\nYou can bring them back with Alt+Shift+T.')) return;
+    s.closeAll();
+    sqlwActivate(s.activeId());
+  }
+}
+
+/* ── Shortcuts, twice ─────────────────────────────────────────────────────────
+ * A document-level keydown listener is not enough. Monaco takes the keyboard
+ * while it has focus and stops some combinations from propagating at all —
+ * Alt+W never reached the document, so the close shortcut did nothing exactly
+ * when it was most likely to be used, with the cursor in the editor. The same
+ * actions are therefore registered as Monaco commands as well; the document
+ * listener stands down inside the editor so the two cannot both fire.
+ *
+ * There is one editor instance for every window, so these are bound once.
+ */
+function sqlwBindEditorKeys() {
+  var m = window.__cygMonaco;
+  if (!m || !m.editor || !window.monaco || m.__sqlwKeysBound) return;
+  var K = window.monaco.KeyMod, C = window.monaco.KeyCode, ed = m.editor;
+  var s = function () { return sqlwStore(); };
+
+  ed.addCommand(K.Alt | C.KeyT, function () { sqlwNew(); });
+  ed.addCommand(K.Alt | K.Shift | C.KeyT, function () { sqlwReopen(); });
+  ed.addCommand(K.Alt | C.KeyW, function () { if (s()) sqlwClose(s().activeId()); });
+  ed.addCommand(K.CtrlCmd | K.Alt | C.RightArrow, function () {
+    if (s()) { s().cycle(1); sqlwActivate(s().activeId()); }
+  });
+  ed.addCommand(K.CtrlCmd | K.Alt | C.LeftArrow, function () {
+    if (s()) { s().cycle(-1); sqlwActivate(s().activeId()); }
+  });
+  for (var i = 1; i <= 9; i++) {
+    (function (n) {
+      ed.addCommand(K.Alt | C['Digit' + n], function () {
+        if (!s()) return;
+        var target = n === 9 ? s().list().length - 1 : n - 1;   // Alt+9 is "the last one"
+        if (s().activateIndex(target).ok) sqlwActivate(s().activeId());
+      });
+    })(i);
+  }
+  m.__sqlwKeysBound = true;
+}
+
+/* ── Wiring ───────────────────────────────────────────────────────────────── */
+
+function sqlwInit() {
+  var s = sqlwStore();
+  if (!s) { console.warn('[sqlw] cygenix-sql-windows.js did not load — single-window mode'); return; }
+  var tabs = document.getElementById('sqlw-tabs');
+  if (!tabs) return;
+
+  tabs.addEventListener('click', function (e) {
+    var close = e.target.closest('[data-close]');
+    if (close) { e.stopPropagation(); sqlwClose(close.dataset.close); return; }
+    var tab = e.target.closest('.sqlw-tab');
+    if (tab) sqlwActivate(tab.dataset.id);
+  });
+  tabs.addEventListener('auxclick', function (e) {
+    if (e.button !== 1) return;                     // middle click closes
+    var tab = e.target.closest('.sqlw-tab');
+    if (tab) { e.preventDefault(); sqlwClose(tab.dataset.id); }
+  });
+  tabs.addEventListener('dblclick', function (e) {
+    var tab = e.target.closest('.sqlw-tab');
+    if (tab) sqlwRename(tab.dataset.id);
+  });
+
+  // Drag to reorder.
+  tabs.addEventListener('dragstart', function (e) {
+    var tab = e.target.closest('.sqlw-tab');
+    if (!tab) return;
+    _sqlwDragId = tab.dataset.id;
+    tab.classList.add('dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _sqlwDragId); } catch (err) {}
+  });
+  tabs.addEventListener('dragover', function (e) {
+    if (!_sqlwDragId) return;
+    e.preventDefault();
+    var tab = e.target.closest('.sqlw-tab');
+    Array.prototype.forEach.call(tabs.children, function (el) {
+      el.classList.remove('drop-before', 'drop-after');
+    });
+    if (!tab || tab.dataset.id === _sqlwDragId) return;
+    var r = tab.getBoundingClientRect();
+    tab.classList.add(e.clientX < r.left + r.width / 2 ? 'drop-before' : 'drop-after');
+  });
+  tabs.addEventListener('drop', function (e) {
+    if (!_sqlwDragId) return;
+    e.preventDefault();
+    var s2 = sqlwStore();
+    var tab = e.target.closest('.sqlw-tab');
+    if (tab && tab.dataset.id !== _sqlwDragId) {
+      var from = s2.indexOf(_sqlwDragId);
+      var to = s2.indexOf(tab.dataset.id);
+      var r = tab.getBoundingClientRect();
+      if (e.clientX >= r.left + r.width / 2 && to < from) to++;
+      if (e.clientX < r.left + r.width / 2 && to > from) to--;
+      s2.move(from, to);
+    }
+    _sqlwDragId = null;
+    sqlwRenderStrip();
+  });
+  tabs.addEventListener('dragend', function () {
+    _sqlwDragId = null;
+    sqlwRenderStrip();
+  });
+
+  document.addEventListener('click', function (e) {
+    if (_sqlwMenuEl && !_sqlwMenuEl.contains(e.target) &&
+        !e.target.closest('#sqlw-menu-btn')) sqlwCloseMenu();
+  });
+  window.addEventListener('resize', sqlwRenderStrip);
+
+  // The connection selector belongs to the active window.
+  var sel = document.getElementById('conn-select');
+  if (sel) {
+    sel.addEventListener('change', function () {
+      var s3 = sqlwStore();
+      if (s3 && s3.active()) s3.update(s3.activeId(), { conn: sel.value });
+    });
+  }
+
+  sqlwBindEditorKeys();
+
+  // Alt-based, because the Ctrl/Cmd equivalents belong to the browser.
+  document.addEventListener('keydown', function (e) {
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    // Inside the editor these are Monaco commands (see sqlwBindEditorKeys):
+    // Monaco consumes some Alt combinations before they reach the document —
+    // Alt+W never arrived here at all — so the two must not both try.
+    if (e.target && e.target.closest && e.target.closest('#monaco-host')) return;
+    var s4 = sqlwStore(); if (!s4) return;
+    var k = e.key;
+    if (k === 't' || k === 'T') {
+      e.preventDefault();
+      if (e.shiftKey) sqlwReopen(); else sqlwNew();
+      return;
+    }
+    if (k === 'w' || k === 'W') { e.preventDefault(); sqlwClose(s4.activeId()); return; }
+    if (/^[1-9]$/.test(k)) {
+      e.preventDefault();
+      var n = parseInt(k, 10) - 1;
+      var target = n === 8 ? s4.list().length - 1 : n;   // Alt+9 is "the last one"
+      if (s4.activateIndex(target).ok) sqlwActivate(s4.activeId());
+      return;
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    // Ctrl+Alt+Left/Right cycles. Alt+Left/Right alone is browser history.
+    if (!(e.ctrlKey && e.altKey)) return;
+    if (e.target && e.target.closest && e.target.closest('#monaco-host')) return;
+    var s5 = sqlwStore(); if (!s5) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); s5.cycle(1); sqlwActivate(s5.activeId()); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); s5.cycle(-1); sqlwActivate(s5.activeId()); }
+  });
+
+  _sqlwCtxReady = true;
+  sqlwRenderStrip();
+}
+
+
+/* ── A run belongs to the window that started it ──────────────────────────────
+ * runSQL awaits a network call and then paints. Without these, switching tabs
+ * mid-query means the answer to one window's question lands in another
+ * window's Results panel — which is not a cosmetic bug, because the two
+ * windows can be pointed at different databases.
+ */
+function sqlwPaintResult(r) {
+  if (!r) return;
+  if (r.kind === 'dml') { renderDMLResult(r.affected, r.ms, r.sql); return; }
+  if (r.kind === 'error') { renderError(r.message); return; }
+  renderResults(r.rows || [], r.ms, r.sql);
+}
+
+function sqlwResult(winId, payload) {
+  var s = sqlwStore();
+  if (s && s.get(winId)) {
+    s.update(winId, {
+      results: payload.kind === 'error' ? null : payload,
+      error: payload.kind === 'error' ? payload.message : null,
+    });
+  }
+  // Only paint if that window is still the one on screen.
+  if (!s || s.activeId() === winId) sqlwPaintResult(payload);
+  sqlwRenderStrip();
+}
+
+function sqlwHistory(winId, entry) {
+  var s = sqlwStore();
+  if (!s || !s.get(winId)) { addHistory(entry); return; }
+  s.addHistory(winId, entry);
+  if (s.activeId() === winId) { queryHistory = s.get(winId).history; renderHistory(); }
+}
+
+function sqlwStatus(winId, msg, color) {
+  var s = sqlwStore();
+  if (!s || s.activeId() === winId) setExecStatus(msg, color);
+}
