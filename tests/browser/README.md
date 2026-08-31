@@ -1,6 +1,6 @@
 # Browser tests
 
-Two suites that need a real browser, and are therefore **not** in `npm test` —
+Four suites that need a real browser, and are therefore **not** in `npm test` —
 the Netlify build has no Chromium and adding one would slow every deploy for a
 check nobody reads until it breaks.
 
@@ -8,16 +8,19 @@ check nobody reads until it breaks.
 node tests/browser/page-reader.smoke.js     # 96 checks
 node tests/browser/assistant-loop.smoke.js  # 23 checks
 node tests/browser/sidebar-nav.smoke.js     # 15 checks
+node tests/browser/sql-windows.smoke.js     # 76 checks
 ```
 
-Both start a local static server over `public/`, drive headless Chromium
-through `playwright-core`, and exit non-zero on the first failure. They take
-about twenty seconds together.
+Each starts a local static server over `public/`, drives headless Chromium
+through `playwright-core`, and exits non-zero on the first failure. Together
+they take about a minute — most of it the SQL Editor, which waits on real
+queries.
 
 | Environment variable | Default |
 | --- | --- |
 | `CHROMIUM` | `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` |
-| `SMOKE_PORT` | `8396` / `8397` / `8399` |
+| `SMOKE_PORT` | `8396` / `8397` / `8399` / `8401` |
+| `MONACO_VS` | a cached copy under the system temp directory |
 
 ## What each one is for
 
@@ -58,6 +61,27 @@ on that URL can see it.
 Its sharpest assertion is that a nav click switches the view **in place**. A
 repaired fallback will also land you on the right view — by reloading the whole
 application for every click. That is the bug made survivable, not fixed.
+
+**`sql-windows.smoke.js`** — the SQL Editor's query windows.
+`tests/sql-windows.test.js` proves the *list* is right: order, the cap, the
+close-and-reopen stack, what reaches storage. None of that is what a person
+feels. What they feel is switching tabs and finding the cursor where they left
+it, an undo that still knows what they typed, and yesterday's rows **not**
+reappearing under today's query. Those are properties of Monaco models and view
+state, and a grep would pass whether or not any of them worked.
+
+It found two defects on its first run. Monaco takes the keyboard while it has
+focus and swallowed **Alt+W** before it reached the document, so the close
+shortcut did nothing with the cursor in the editor — which is where the cursor
+almost always is; the shortcuts are now Monaco commands as well. And the tabs
+were shrinkable, so a dozen windows all "fitted" as unreadable slivers instead
+of overflowing into the Windows menu.
+
+It needs Monaco, which the page loads from a CDN. Rather than reach the network
+mid-test or commit 13MB of editor, it fetches `monaco-editor` once with
+`npm pack`, caches it in the system temp directory, and fulfils the CDN
+requests from there. Set `MONACO_VS` to an existing `min/vs` directory to skip
+the fetch entirely.
 
 ## Writing another one
 

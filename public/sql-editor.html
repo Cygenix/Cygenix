@@ -382,6 +382,65 @@ body.fullscreen .script-panel { display:none }
 
 .panel-toggle.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(74,91,214,0.3)}
 
+
+/* ── SQL windows strip ──────────────────────────────────────────────────────
+   Deliberately the same visual language as .results-bottom-tabs below the
+   editor: same height, same hairline, same active treatment. Two tab strips on
+   one screen that looked different would read as two unrelated features. */
+.sqlw-strip{display:flex;align-items:stretch;gap:2px;background:var(--bg2);
+  border-bottom:0.5px solid var(--border);padding:0 0.35rem;min-height:32px;flex-shrink:0}
+.sqlw-tabs{display:flex;align-items:stretch;gap:2px;flex:1;min-width:0;overflow:hidden}
+/* Deliberately not shrinkable. If tabs could shrink to fit, twelve windows
+   would each become an unreadable sliver instead of overflowing into the
+   Windows menu — the strip would look fine and be useless. */
+.sqlw-tab{display:flex;align-items:center;gap:6px;padding:0 8px;min-width:96px;
+  max-width:190px;flex:0 0 auto;font-size:11.5px;color:var(--text2);cursor:pointer;
+  border:0.5px solid transparent;border-bottom:none;border-radius:5px 5px 0 0;
+  background:transparent;user-select:none;white-space:nowrap}
+.sqlw-tab:hover{background:var(--bg3);color:var(--text)}
+.sqlw-tab.active{background:var(--bg);color:var(--text);border-color:var(--border);
+  box-shadow:inset 0 2px 0 var(--accent)}
+.sqlw-tab.dragging{opacity:0.45}
+.sqlw-tab.drop-before{box-shadow:inset 2px 0 0 var(--accent)}
+.sqlw-tab.drop-after{box-shadow:inset -2px 0 0 var(--accent)}
+.sqlw-name{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.sqlw-name input{font:inherit;color:inherit;background:var(--bg);border:0.5px solid var(--accent);
+  border-radius:3px;padding:0 3px;width:110px}
+/* The dot and the x share a slot, so a tab does not change width when it
+   becomes dirty or when the pointer arrives. */
+.sqlw-mark{width:13px;height:13px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:13px;line-height:1;border-radius:3px;color:var(--text3)}
+.sqlw-tab .sqlw-close{display:none}
+.sqlw-tab:hover .sqlw-dot,.sqlw-tab.active .sqlw-dot{display:none}
+.sqlw-tab:hover .sqlw-close,.sqlw-tab.active .sqlw-close{display:flex}
+.sqlw-close:hover{background:var(--bg4);color:var(--red)}
+.sqlw-dot{color:var(--amber)}
+.sqlw-spin{width:9px;height:9px;border:1.5px solid var(--border2);border-top-color:var(--accent);
+  border-radius:50%;animation:sqlw-spin 0.7s linear infinite;flex-shrink:0}
+@keyframes sqlw-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.sqlw-spin{animation-duration:2.4s}}
+.sqlw-btn{background:transparent;border:none;color:var(--text3);cursor:pointer;font:inherit;
+  font-size:11.5px;padding:0 8px;border-radius:5px;display:flex;align-items:center;gap:4px}
+.sqlw-btn:hover{background:var(--bg3);color:var(--text)}
+.sqlw-btn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#sqlw-overflow-count:not(:empty){background:var(--accent);color:#fff;border-radius:99px;
+  padding:0 5px;font-size:9.5px;font-family:var(--mono)}
+/* The menu is appended to <body> — see sqlwMenu() — so the toolbar's overflow
+   cannot clip it. */
+.sqlw-menu{position:fixed;z-index:9000;background:var(--bg2);border:0.5px solid var(--border2);
+  border-radius:var(--r);box-shadow:0 8px 28px rgba(0,0,0,0.28);min-width:320px;max-width:420px;
+  max-height:70vh;overflow-y:auto;padding:4px;font-size:12px}
+.sqlw-menu-row{display:flex;align-items:flex-start;gap:8px;padding:6px 8px;border-radius:5px;
+  cursor:pointer;color:var(--text2)}
+.sqlw-menu-row:hover,.sqlw-menu-row.kbd{background:var(--bg3);color:var(--text)}
+.sqlw-menu-row .tick{width:12px;flex-shrink:0;color:var(--accent)}
+.sqlw-menu-meta{font-size:10px;color:var(--text3);font-family:var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sqlw-menu-sep{height:0.5px;background:var(--border);margin:4px 2px}
+.sqlw-menu-action{padding:6px 8px;border-radius:5px;cursor:pointer;color:var(--text2)}
+.sqlw-menu-action:hover,.sqlw-menu-action.kbd{background:var(--bg3);color:var(--text)}
+.sqlw-menu-action[aria-disabled="true"]{opacity:0.4;cursor:default}
+.sqlw-menu-action[aria-disabled="true"]:hover{background:transparent;color:var(--text2)}
 </style>
 </head>
 <body>
@@ -390,7 +449,8 @@ body.fullscreen .script-panel { display:none }
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
 <script src="/cygenix-sidebar.js?v=d338426ab1" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
-<script src="/sql-editor-app.js?v=c31eb9822b" defer></script>
+<script src="/cygenix-sql-windows.js?v=f82927b246"></script>
+<script src="/sql-editor-app.js?v=928c322366" defer></script>
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
@@ -472,6 +532,20 @@ body.fullscreen .script-panel { display:none }
 
   <!-- Editor + Results (stacked vertically) -->
   <div class="editor-pane" id="editor-pane">
+    <!-- ══════════════════════════════════════════════════════════════════
+         SQL WINDOWS — one strip of tabs, browser-shaped.
+         Rendered by renderWindowStrip() in sql-editor-app.js; the markup here
+         is only the shell. The overflow chevron and the Windows menu are the
+         same button: when tabs stop fitting they go INTO the menu rather than
+         scrolling off the side, so every window is always one click away.
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="sqlw-strip" id="sqlw-strip">
+      <div class="sqlw-tabs" id="sqlw-tabs"></div>
+      <button class="sqlw-btn" id="sqlw-new" onclick="sqlwNew()" title="New query window (Alt+T)" aria-label="New query window">+</button>
+      <button class="sqlw-btn sqlw-menu-btn" id="sqlw-menu-btn" onclick="sqlwToggleMenu(event)" title="All query windows" aria-haspopup="menu" aria-expanded="false">
+        <span id="sqlw-overflow-count"></span> Windows <span aria-hidden="true">▾</span>
+      </button>
+    </div>
     <div class="editor-toolbar">
       <!-- Object Explorer toggle: opens the schema browser panel -->
       <button id="toggle-ob-btn" class="btn btn-ghost btn-sm panel-toggle" onclick="toggleObjectBrowser()" title="Toggle Object Explorer (browse tables, views, columns)"><i class="ic ic-search"></i> Object Explorer</button>
