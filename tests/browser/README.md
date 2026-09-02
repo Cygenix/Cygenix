@@ -1,6 +1,6 @@
 # Browser tests
 
-Four suites that need a real browser, and are therefore **not** in `npm test` —
+Five suites that need a real browser, and are therefore **not** in `npm test` —
 the Netlify build has no Chromium and adding one would slow every deploy for a
 check nobody reads until it breaks.
 
@@ -9,6 +9,7 @@ node tests/browser/page-reader.smoke.js     # 96 checks
 node tests/browser/assistant-loop.smoke.js  # 23 checks
 node tests/browser/sidebar-nav.smoke.js     # 15 checks
 node tests/browser/sql-windows.smoke.js     # 76 checks
+node tests/browser/pipeline.smoke.js        # 31 checks
 ```
 
 Each starts a local static server over `public/`, drives headless Chromium
@@ -19,7 +20,7 @@ queries.
 | Environment variable | Default |
 | --- | --- |
 | `CHROMIUM` | `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` |
-| `SMOKE_PORT` | `8396` / `8397` / `8399` / `8401` |
+| `SMOKE_PORT` | `8396` / `8397` / `8399` / `8401` / `8404` |
 | `MONACO_VS` | a cached copy under the system temp directory |
 
 ## What each one is for
@@ -82,6 +83,19 @@ mid-test or commit 13MB of editor, it fetches `monaco-editor` once with
 `npm pack`, caches it in the system temp directory, and fulfils the CDN
 requests from there. Set `MONACO_VS` to an existing `min/vs` directory to skip
 the fetch entirely.
+
+**`pipeline.smoke.js`** — the Migration Pipeline card on the dashboard.
+`tests/pipeline.test.js` pins the derivation: which stage is the bottleneck,
+what the sentence says, that the confidence contributions add up. What it
+cannot show is that any of it reaches a screen. The sharpest assertion here is
+that the narrative is on screen **with the network cut off** — every request
+other than the local server is aborted, so a narrative that needed an Anthropic
+call to appear would fail this file. That is the acceptance criterion stated as
+a test rather than as a promise.
+
+It also checks the card in `data-theme="dark"` and under `html.a11y-hc`, and
+that every state carries a word, because "readable with colour ignored" is not
+something a source-level test can claim.
 
 ## Writing another one
 

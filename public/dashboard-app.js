@@ -1311,6 +1311,11 @@ function updateStats() {
   // which contradicted the card's own label and missed every project run.
   set('stat-done',     jobs.filter(j => { const b = jobBucket(j); return b === 'ready' || b === 'complete'; }).length);
   set('stat-files',    state.totalFilesProcessed);
+  // A zero here usually means "this project has no file-based jobs", which is
+  // fine, and looked identical to "the upload failed", which is not.
+  set('stat-files-sub', state.totalFilesProcessed
+    ? 'read by Claude in this browser'
+    : 'none uploaded yet — file jobs only');
   set('jobs-count',    jobs.length);
   renderDashboardProjects();
 }
@@ -4375,11 +4380,143 @@ function renderDashboard() {
   // We still call updateStats() for the stat cards at the top.
   updateStats();
   renderRing();
+  renderMigrationPipeline();
   renderProjectStatus();
   renderCutoverConfidence();
   // Schedules need a network round trip, so they fill in behind the rest
   // rather than holding the whole view up.
   loadDashboardSchedules();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MIGRATION PIPELINE
+// ══════════════════════════════════════════════════════════════════════════
+// Eight cards of equal weight, each true, none of them saying what today's
+// problem is. A person had to read all eight and do the joining up
+// themselves, every morning.
+//
+// This is the Flow view from the Data Stream page applied to the lifecycle:
+// six stages in a row, what is sitting at each, and at most ONE of them
+// named as the blockage — because the value of that view is that it points
+// at one thing. The sentence underneath is the whole point of the card.
+//
+// The derivation is all in cygenix-pipeline.js and is unit-tested against
+// fixtures; this function turns a PipelineModel into markup and nothing else.
+
+/** What the pipeline model needs, read from where the console keeps it. */
+function pipelineInput(){
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  const projects = safeArr('cygenix_projects');
+  const project  = projects.find(p => p.id === activeId) || null;
+  const jobs     = project ? liveJobs(state.jobs).filter(j => j.projectId === project.id) : [];
+
+  let conns = {};
+  try {
+    const c = CygenixConnections.get();
+    conns = { source: c.srcConnString || c.srcFnUrl, target: c.tgtConnString || c.tgtFnUrl };
+  } catch {}
+
+  // Data quality: the same two facts the Data Quality Review card reads, so
+  // the card and the pipeline cannot disagree about whether it has ever run.
+  const rules = safeArr('cygenix_wasis_rules')
+    .filter(r => !r.projectId || (project && r.projectId === project.id));
+  const inspected = jobs.filter(j => Array.isArray(j.tables) && j.tables.some(t => Number(t.rows) > 0)).length;
+
+  let confidence = null;
+  try {
+    const preflight = CygenixPreflight.pfLoad(activeId || 'default');
+    confidence = CygenixPreflight.pfConfidence({ jobs, preflight });
+  } catch {}
+
+  return {
+    project, jobs, connections: conns,
+    quality: { rulesCount: rules.length, inspectedJobs: inspected },
+    confidence, now: Date.now(),
+  };
+}
+
+function renderMigrationPipeline(){
+  const host = document.getElementById('migration-pipeline');
+  if (!host || typeof CygenixPipeline === 'undefined') return;
+
+  const model = CygenixPipeline.toPipelineModel(pipelineInput());
+  window._cygPipeline = model;              // read by renderCutoverConfidence
+
+  const STATE_WORD = { done: '✓ done', active: 'active', attention: 'attention',
+                       blocked: 'blocked', waiting: 'not started' };
+
+  const stageHtml = model.stages.map((s, i) => {
+    const hot = model.bottleneck === s.key;
+    const chip = `
+      <a class="mp-stage is-${s.state}" href="${s.href}"
+         title="${escHtml(s.reason || s.headline)}">
+        <div class="mp-stage-key">${escHtml(s.label)}</div>
+        <div class="mp-stage-count">${escHtml(s.headline)}</div>
+        <div class="mp-stage-detail">${escHtml(s.detail || s.reason || '')}</div>
+        <span class="mp-state mp-state-${s.state}">${STATE_WORD[s.state]}</span>
+        ${hot ? `<span class="mp-bottleneck ${s.state === 'blocked' ? 'red' : 'amber'}">bottleneck</span>` : ''}
+      </a>`;
+    if (i === model.stages.length - 1) return chip;
+    // The label on the connector is the transition count, not a rate: this is
+    // a lifecycle, not a throughput.
+    const next = model.stages[i + 1];
+    const hotArrow = model.bottleneck === next.key;
+    return chip + `
+      <div class="mp-arrow${hotArrow ? ' hot' : ''}" aria-hidden="true">
+        <div class="mp-arrow-label">${next.total ? next.count + '/' + next.total : ''}</div>
+        <div class="mp-arrow-line"></div>
+      </div>`;
+  }).join('');
+
+  // The CTA goes to whatever the bottleneck is; with nothing blocked it goes
+  // to the jobs list, which is the next thing anyone wants anyway.
+  const bs = model.stages.find(s => s.key === model.bottleneck);
+  const cta = bs
+    ? { href: bs.href, label: 'Go to ' + bs.label + ' →' }
+    : { href: '/dashboard#goto=all-jobs', label: 'Open all jobs →' };
+
+  // A previously generated AI summary replaces the deterministic line when
+  // one exists. It is never fetched here: the call bills the user's own
+  // Anthropic key, and spending someone's money on every dashboard render is
+  // not a thing to do quietly. ↻ regenerates on request.
+  const ai = model.project ? readAiNarrative(model.project.id) : null;
+
+  host.innerHTML = `
+    <div class="mp-head">
+      <div>
+        <div class="mp-title">Migration pipeline</div>
+        <div class="mp-sub">connect → cutover, with what is sitting at each stage${
+          model.project ? ' · ' + escHtml(model.project.name || 'Untitled project') : ''}</div>
+      </div>
+      <div class="mp-asof">
+        as of ${new Date(model.asOf).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+        <button type="button" onclick="refreshPipelineNarrative()"
+          title="Rewrite the summary with Claude, using your own API key">↻</button>
+      </div>
+    </div>
+    <div class="mp-row" role="list">${stageHtml}</div>
+    <div class="mp-narrative">
+      <div>
+        <div class="mp-narrative-text" id="mp-narrative-text">${escHtml(ai ? ai.text : model.narrative)}</div>
+        ${ai ? `<div class="mp-narrative-src">Written by ${escHtml(ai.model || 'Claude')} · ${
+          new Date(ai.ts).toLocaleString('en-GB')} · ↻ to rewrite</div>` : ''}
+      </div>
+      <a class="mp-cta" href="${cta.href}">${escHtml(cta.label)}</a>
+    </div>`;
+}
+
+function readAiNarrative(projectId){
+  try { return JSON.parse(localStorage.getItem('cygenix_ps_ai_' + projectId) || 'null'); }
+  catch { return null; }
+}
+
+/** The ↻ on the pipeline card: regenerate the AI narrative, then repaint. */
+async function refreshPipelineNarrative(){
+  const el = document.getElementById('mp-narrative-text');
+  if (el) el.textContent = 'Asking Claude…';
+  try { await generateProjectAiSummary({ silent: true }); }
+  catch (e) { if (el) el.textContent = 'Could not rewrite the summary: ' + e.message; return; }
+  renderMigrationPipeline();
 }
 
 // ── Cutover Confidence ───────────────────────────────────────────────────────
@@ -4398,14 +4535,39 @@ function renderCutoverConfidence() {
   val.textContent = c.score === null ? '—' : c.score;
   val.style.color = COLOR[c.grade];
   sub.textContent = LABEL[c.grade];
+  // The breakdown is the point of the tile: a composite number nobody can
+  // take apart is a number nobody can act on. pfConfidence is a WEIGHTED
+  // AVERAGE, not a hundred points with deductions, so what is shown is each
+  // component's weighted contribution — those really do sum to the score —
+  // and, beside it, what that component is costing against a perfect one.
   const detail = $('confidence-detail');
   if (detail) {
-    detail.innerHTML = c.parts.map(p =>
-      '<div style="display:flex;justify-content:space-between;gap:1rem;padding:4px 0;border-bottom:0.5px solid var(--border);font-size:12px">'
-      + '<span>' + escHtml(p.label) + ' <span style="color:var(--text3)">· ' + escHtml(p.note) + '</span></span>'
-      + '<b style="font-family:var(--mono)">' + (p.hasData ? p.score : '—') + '</b></div>').join('')
-      + '<div style="font-size:11px;color:var(--text3);padding-top:6px">Weighted over components with data. '
-      + 'Run <i class="ic ic-takeoff"></i> Preflight on the Execute page to feed the risk component.</div>';
+    const drivers = typeof CygenixPipeline !== 'undefined'
+      ? CygenixPipeline.confidenceDrivers(c) : [];
+    if (!drivers.length) {
+      detail.innerHTML = '<div style="font-size:12px;color:var(--text3)">'
+        + 'No signals yet. The score appears once there is a mapping to grade, a preflight to read '
+        + 'or a job to count.</div>';
+    } else {
+      detail.innerHTML = drivers.map(d =>
+        '<div class="mp-conf-row">'
+        + '<span>' + escHtml(d.label)
+        + ' <span style="color:var(--text3)">· ' + escHtml(d.note) + '</span>'
+        + (d.hasData && d.lost > 0
+            ? '<a class="mp-conf-fix" href="' + d.href + '">Fix →</a>' : '')
+        + '</span>'
+        + '<span class="mp-conf-pts">'
+        + (d.hasData
+            ? '+' + d.points + ' of ' + (d.points + d.lost) + ' <span style="color:var(--text3)">('
+              + d.weightPct + '% weight)</span>'
+            : '<span style="color:var(--text3)">not counted</span>')
+        + '</span></div>').join('')
+        + '<div class="mp-conf-sum">'
+        + drivers.filter(d => d.hasData).map(d => '+' + d.points).join(' ')
+        + ' = ' + (c.score === null ? '—' : c.score) + '<br>'
+        + 'Weighted over the components that have data — a component with none is excluded, '
+        + 'never guessed at.</div>';
+    }
   }
 }
 function toggleConfidenceDetail() {
@@ -5367,9 +5529,12 @@ function renderProjectStatus(){
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v6h6M9 14h6M9 17h6M9 11h2"/></svg>
         </div>
       </div>
-      <div class="ps-card-value" id="ps-card-report-value">—</div>
+      <div class="ps-card-value" id="ps-card-report-value">0</div>
       <div class="ps-card-sub" id="ps-card-report-body">
-        <span class="ps-pill ps-pill-idle">Checking…</span>
+        <span class="ps-pill ps-pill-idle">Looking for saved reports…</span>
+        <div style="margin-top:0.5rem;font-family:var(--mono);font-size:11px;color:var(--text3)">
+          reading the reports store
+        </div>
       </div>
       <div class="ps-card-foot"><span>Open Reports</span><span>→</span></div>
     </div>`;
@@ -5379,11 +5544,14 @@ function renderProjectStatus(){
     title: 'Data Quality Review',
     icon: svgSparkles(),
     status: !dqRun ? 'idle' : (dqPct >= 80 ? 'ok' : (dqPct >= 40 ? 'warn' : 'warn')),
-    value: dqRun ? `${dqPct}%` : '—',
-    valueSub: dqRun ? ` of jobs inspected` : '',
+    value: dqRun ? `${dqPct}%` : '0%',
+    valueSub: dqRun ? ` of jobs inspected` : ' of jobs inspected',
     body: `<div class="ps-card-sub">
-      <span class="ps-pill ps-pill-${dqRun ? (dqPct >= 80 ? 'ok' : 'warn') : 'idle'}">${dqRun ? 'Run' : 'Not run'}</span>
-      <div style="margin-top:0.5rem;font-family:var(--mono);font-size:11px;color:var(--text3)">${jobsInspected}/${projJobs.length} jobs · ${projWasis.length} cleansing rule${projWasis.length===1?'':'s'}</div>
+      <span class="ps-pill ps-pill-${dqRun ? (dqPct >= 80 ? 'ok' : 'warn') : 'idle'}">${dqRun ? 'Run' : 'Never run'}</span>
+      <div style="margin-top:0.5rem;font-family:var(--mono);font-size:11px;color:var(--text3)">${jobsInspected}/${projJobs.length} jobs checked · ${projWasis.length} cleansing rule${projWasis.length===1?'':'s'}</div>
+      ${dqRun ? '' : `<div style="margin-top:0.35rem;font-size:11px;color:var(--text3)">${
+        projJobs.length ? 'Nothing has been inspected yet — this is what the cutover score is waiting on.'
+                        : 'No jobs to inspect yet.'}</div>`}
     </div>`,
     foot: `<span>Open Cleansing</span><span>→</span>`,
     onClick: 'cleansing',
@@ -5394,11 +5562,12 @@ function renderProjectStatus(){
     title: 'Validation Report',
     icon: svgCheckCircle(),
     status: validatedJobs.length === 0 ? 'idle' : (validationRun ? (valPct >= 80 ? 'ok' : 'warn') : 'warn'),
-    value: validatedJobs.length === 0 ? '—' : `${valPct}%`,
-    valueSub: validatedJobs.length === 0 ? '' : ` of jobs validated`,
+    value: validatedJobs.length === 0 ? '0%' : `${valPct}%`,
+    valueSub: ` of jobs validated`,
     body: `<div class="ps-card-sub">
       <span class="ps-pill ps-pill-${validatedJobs.length === 0 ? 'idle' : (validationRun ? 'ok' : 'warn')}">${validatedJobs.length === 0 ? 'No checks set' : (validationRun ? 'Run' : 'Set, not run')}</span>
       <div style="margin-top:0.5rem;font-family:var(--mono);font-size:11px;color:var(--text3)">${validatedJobs.length}/${projJobs.length} jobs have verify SQL</div>
+      ${validatedJobs.length === 0 && projJobs.length ? `<div style="margin-top:0.35rem;font-size:11px;color:var(--text3)">Nothing would be checked after a run.</div>` : ''}
     </div>`,
     foot: `<span>Open Validation</span><span>→</span>`,
     onClick: 'validation',
@@ -5409,8 +5578,8 @@ function renderProjectStatus(){
     title: 'Migration Scope',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16M4 12h16M4 16h10"/></svg>',
     status: totalRows > 0 ? 'ok' : 'idle',
-    value: totalRows > 0 ? totalRows.toLocaleString() : '—',
-    valueSub: totalRows > 0 ? ` row${totalRows === 1 ? '' : 's'}` : '',
+    value: totalRows > 0 ? totalRows.toLocaleString() : '0',
+    valueSub: totalRows > 0 ? ` row${totalRows === 1 ? '' : 's'}` : ' rows counted yet',
     body: `<div class="ps-card-sub" style="font-family:var(--mono);font-size:11.5px;line-height:1.55">
       <div style="color:var(--text2)">${whereLine}</div>
       <div style="color:var(--text3);margin-top:0.25rem">${distinctSources.length || 0} source · ${distinctTargets.length || 0} target tbl(s)</div>
@@ -5442,29 +5611,12 @@ function renderProjectStatus(){
       </div>
     </div>`;
 
-  // AI summary panel — gated behind a button so we don't burn API tokens on
-  // every dashboard render. Cached per project; cache is invalidated on
-  // project change or manual regen.
-  const cacheKey = `cygenix_ps_ai_${project.id}`;
-  let cached = null;
-  try { cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch {}
-
-  const aiHtml = `
-    <div class="ps-ai" id="ps-ai-block">
-      <div class="ps-ai-head">
-        <div class="ps-ai-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/></svg>
-          AI Summary
-        </div>
-        <div style="display:flex;gap:0.4rem;align-items:center">
-          <button id="ps-ai-btn" class="btn btn-ghost btn-sm" onclick="generateProjectAiSummary()" style="font-size:11px;padding:0.35rem 0.7rem">
-            ${cached ? '↻ Regenerate' : 'Generate summary'}
-          </button>
-        </div>
-      </div>
-      <div id="ps-ai-body" class="ps-ai-body${cached ? '' : ' empty'}">${cached ? escP(cached.text) : 'Click "Generate summary" for an AI-written narrative of the current state of this project.'}</div>
-      ${cached ? `<div class="ps-ai-meta">Generated ${new Date(cached.ts).toLocaleString('en-GB')} · model ${escP(cached.model || CygenixModel.primary())}</div>` : ''}
-    </div>`;
+  // The AI Summary block that used to sit here is gone. It was a narrative
+  // behind a button at the bottom of the page — which meant the one thing on
+  // this screen that said what to do next was the one thing nobody saw. The
+  // narrative is now the Migration Pipeline card at the top, present at first
+  // paint with no call and no click, and a previously generated AI rewrite
+  // takes its place there when one exists.
 
   host.innerHTML = `
     <div class="ps-inner">
@@ -5477,7 +5629,6 @@ function renderProjectStatus(){
         ${valCard}
         ${scopeCard}
       </div>
-      ${aiHtml}
     </div>`;
 
   // Wire card clicks. Using a small action map keeps inline handlers out of
@@ -5588,8 +5739,10 @@ async function refreshConversionReportCard(projectId){
   if (typeof window.cygenixFetch !== 'function'){
     cardEl.classList.remove('status-ok','status-warn','status-err');
     cardEl.classList.add('status-idle');
-    valEl.textContent = '—';
-    bodyEl.innerHTML = '<span class="ps-pill ps-pill-idle">Auth not loaded</span>';
+    valEl.innerHTML = '<span style="color:var(--text3);font-size:1rem">not known</span>';
+    bodyEl.innerHTML = '<span class="ps-pill ps-pill-idle">Cannot check yet</span>'
+      + '<div style="margin-top:0.5rem;color:var(--text3);font-size:11px">'
+      + 'Sign-in has not finished loading, so the reports store has not been asked.</div>';
     refreshConversionReportCard._inFlight = false;
     return;
   }
@@ -5619,15 +5772,16 @@ async function refreshConversionReportCard(projectId){
             : '');
     } else {
       cardEl.classList.add('status-idle');
-      valEl.textContent = '—';
-      // Distinguish "no reports for this project" from "no reports at all
-      // across any project" — the latter is more useful for new users.
+      // A real zero, not an em-dash: none saved is a fact, and the line
+      // underneath says why that is fine (or not) and what produces one.
+      valEl.innerHTML = '0<span class="ps-card-value-sub"> saved</span>';
       const otherProjects = all.length - forThisProject.length;
-      bodyEl.innerHTML = '<span class="ps-pill ps-pill-idle">Not yet produced</span>'
+      bodyEl.innerHTML = '<span class="ps-pill ps-pill-idle">Never produced</span>'
         + '<div style="margin-top:0.5rem;color:var(--text3);font-size:11px">'
         + (otherProjects > 0
-            ? otherProjects + ' report' + (otherProjects===1?'':'s') + ' saved under other projects.'
-            : 'Run a migration in Projects → Execute, then click Save Report.')
+            ? otherProjects + ' report' + (otherProjects===1?'':'s') + ' saved under other projects — '
+              + 'none for this one yet.'
+            : 'Available once a migration has run: Projects → Execute, then Save Report.')
         + '</div>';
     }
   } catch (e) {
@@ -5635,7 +5789,7 @@ async function refreshConversionReportCard(projectId){
     const isAuth = /unauthor|missing authorization|bearer|token/i.test(msg);
     cardEl.classList.remove('status-ok','status-warn','status-err','status-idle');
     cardEl.classList.add(isAuth ? 'status-warn' : 'status-err');
-    valEl.textContent = '—';
+    valEl.innerHTML = '<span style="color:var(--text3);font-size:1rem">not known</span>';
     bodyEl.innerHTML = '<span class="ps-pill ps-pill-' + (isAuth?'warn':'err') + '">'
       + (isAuth ? 'Sign in required' : 'Lookup failed')
       + '</span>'
@@ -5655,48 +5809,28 @@ async function refreshConversionReportCard(projectId){
 // and renders the prose response inline. Result is cached in localStorage
 // against the project id so re-opening the dashboard doesn't re-charge the
 // API. User can hit "Regenerate" to refresh.
+// Rewrite the project narrative with Claude. Called by the ↻ on the pipeline
+// card and by nothing else: it bills the caller's own Anthropic key, so it is
+// never fired on a render. Throws on failure so the caller can say what went
+// wrong; returns the text and caches it for the next page load.
 async function generateProjectAiSummary(){
-  const btn      = document.getElementById('ps-ai-btn');
-  const bodyEl   = document.getElementById('ps-ai-body');
-  const blockEl  = document.getElementById('ps-ai-block');
-  if (!btn || !bodyEl || !blockEl) return;
-
   const apiKey = (typeof getApiKey === 'function' && getApiKey())
               || localStorage.getItem('cygenix_api_key')
               || sessionStorage.getItem('cygenix_api_key')
               || '';
+  // There is no Cygenix-side key to fall back to, by design — every Anthropic
+  // call in this product is on the caller's own key (see
+  // docs/DEPLOY-remove-anthropic-key.md). An earlier version of this branch
+  // asked /health whether a server key was configured; that field was removed
+  // with the key itself, so the question could only ever be answered "no".
   if (!apiKey){
-    bodyEl.classList.remove('empty');
-    // The header "Claude AI · Connected" badge can be green when the server-side
-    // key (Netlify function) is configured even if the browser has no key. The
-    // AI summary feature calls Claude direct from the browser, so it needs a
-    // key in localStorage/sessionStorage. Diagnose which case we're in and tell
-    // the user the truth rather than a generic "no key set" message that
-    // contradicts the green header badge.
-    bodyEl.textContent = 'Checking key location…';
-    let serverHasKey = false;
-    try {
-      const r = await fetch('/.netlify/functions/health', { signal: AbortSignal.timeout(5000) });
-      if (r.ok){
-        const d = await r.json().catch(() => ({}));
-        serverHasKey = !!d.apiKeyConfigured;
-      }
-    } catch {}
-    if (serverHasKey){
-      bodyEl.innerHTML = 'The "Claude AI · Connected" badge is green because an API key is configured on the Cygenix server, '
-        + 'but the AI summary calls Claude directly from your browser and needs a key here too. '
-        + 'Open <strong>Settings → API Key</strong> and paste your Anthropic API key, then try again. '
-        + '<span style="color:var(--text3);display:block;margin-top:0.4rem;font-size:11px;font-family:var(--mono)">'
-        + '(A future update can route this through the server-side key — let me know if you\'d like that.)</span>';
-    } else {
-      bodyEl.textContent = 'No Anthropic API key set. Open Settings → API Key to add one, then try again.';
-    }
-    return;
+    throw new Error('No Anthropic API key set. Open Settings → API Key to add one — '
+      + 'Cygenix holds no key of its own, so this call is on yours.');
   }
 
   const activeId = localStorage.getItem('cygenix_active_project_id') || '';
   const project  = safeArr('cygenix_projects').find(p => p.id === activeId);
-  if (!project){ bodyEl.textContent = 'No active project.'; return; }
+  if (!project) throw new Error('No active project.');
 
   // Build a compact, redacted snapshot — no row data, just structure & status.
   const allJobs  = liveJobs();           // don't describe trashed jobs to the model
@@ -5751,14 +5885,7 @@ Be direct and factual — no marketing tone, no bullet points, no headers, just 
 Project state:
 ${JSON.stringify(snapshot, null, 2)}`;
 
-  // UI: loading
-  btn.disabled = true;
-  const originalLabel = btn.textContent;
-  btn.innerHTML = '<span class="ps-ai-loading">Generating</span>';
-  bodyEl.classList.remove('empty');
-  bodyEl.textContent = 'Asking Claude…';
-
-  try {
+  {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -5781,26 +5908,10 @@ ${JSON.stringify(snapshot, null, 2)}`;
     const text = (data.content || []).map(b => b.text || '').join('').trim();
     if (!text) throw new Error('Claude returned an empty response.');
 
-    // Cache and render
+    // Cached so the next page load has it at first paint without a call.
     const payload = { text, ts: Date.now(), model: CygenixModel.primary() };
     try { localStorage.setItem(`cygenix_ps_ai_${project.id}`, JSON.stringify(payload)); } catch {}
-
-    bodyEl.textContent = text;
-    btn.disabled = false;
-    btn.textContent = '↻ Regenerate';
-
-    // Add or replace the "Generated …" meta line
-    let metaEl = blockEl.querySelector('.ps-ai-meta');
-    if (!metaEl){
-      metaEl = document.createElement('div');
-      metaEl.className = 'ps-ai-meta';
-      blockEl.appendChild(metaEl);
-    }
-    metaEl.textContent = `Generated ${new Date(payload.ts).toLocaleString('en-GB')} · model ${payload.model}`;
-  } catch(err){
-    bodyEl.textContent = `Could not generate summary: ${err.message}`;
-    btn.disabled = false;
-    btn.textContent = originalLabel || 'Generate summary';
+    return payload;
   }
 }
 
