@@ -195,12 +195,84 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
 /* STATS */
-.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.75rem}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:1rem;margin-bottom:1.75rem}
 .stat-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.25rem}
 .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem}
 .stat-val{font-size:1.6rem;font-weight:600;color:var(--text);line-height:1;margin-bottom:0.25rem}
 .stat-sub{font-size:11px;color:var(--text3)}
 .stat-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
+/* The scope a stat counts over. Two tiles that count different populations
+   and say neither is how "4 generated of 2 analysed" happens. */
+.stat-scope{font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:0.04em}
+
+/* ── MIGRATION PIPELINE ───────────────────────────────────────────────────
+   Deliberately the same treatment as the Data Stream Flow row (see
+   cygenix-datastream.css → .ds-flow): same node card, same arrow with a
+   label on it, same bottleneck pill. Two rows on two screens that looked
+   different would read as two unrelated features rather than one idea. */
+.mp-panel{padding:1rem 1.15rem}
+.mp-head{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-bottom:0.85rem;flex-wrap:wrap}
+.mp-title{font-size:13px;font-weight:600;color:var(--text)}
+.mp-sub{font-size:11px;color:var(--text3)}
+.mp-asof{font-size:10.5px;color:var(--text3);font-family:var(--mono);display:flex;align-items:center;gap:0.4rem}
+.mp-asof button{background:transparent;border:none;color:var(--text3);cursor:pointer;font:inherit;padding:2px 5px;border-radius:5px}
+.mp-asof button:hover{background:var(--hover-tint,rgba(22,26,32,0.04));color:var(--text)}
+.mp-row{display:flex;align-items:stretch;gap:0;flex-wrap:nowrap;overflow-x:auto;padding:0.2rem 0}
+.mp-stage{flex:1 1 0;min-width:128px;background:var(--bg3);border:0.5px solid var(--border2);
+  border-radius:var(--r);padding:0.6rem 0.7rem;text-decoration:none;color:inherit;display:block;
+  transition:border-color 0.12s,background 0.12s}
+.mp-stage:hover{border-color:var(--accent);background:var(--bg2)}
+.mp-stage-key{font-size:9.5px;letter-spacing:0.08em;color:var(--text3);font-family:var(--mono);
+  text-transform:uppercase;margin-bottom:4px}
+.mp-stage-count{font-size:13px;font-weight:600;color:var(--text)}
+.mp-stage-detail{font-size:10.5px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Every state carries a word. Colour is the second signal, never the only
+   one — with colour ignored these still read correctly. */
+.mp-state{display:inline-block;margin-top:6px;font-size:9.5px;font-family:var(--mono);
+  letter-spacing:0.05em;padding:1px 6px;border-radius:100px}
+.mp-state-done{color:var(--green);background:var(--green-bg)}
+.mp-state-active{color:var(--accent);background:var(--accent-glow)}
+.mp-state-attention{color:var(--amber);background:var(--amber-bg)}
+.mp-state-blocked{color:var(--red);background:var(--red-bg)}
+.mp-state-waiting{color:var(--text3);background:var(--bg4)}
+.mp-stage.is-attention{border-left:3px solid var(--amber)}
+.mp-stage.is-blocked{border-left:3px solid var(--red)}
+.mp-stage.is-done{background:var(--green-bg);border-color:rgba(63,125,78,0.28)}
+.mp-arrow{flex:0 0 56px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;color:var(--text3);padding:0 0.25rem}
+.mp-arrow-label{font-family:var(--mono);font-size:9.5px;white-space:nowrap}
+.mp-arrow-line{width:100%;height:1px;background:currentColor;position:relative}
+.mp-arrow-line::after{content:'';position:absolute;right:-1px;top:-3px;border-left:6px solid currentColor;
+  border-top:3.5px solid transparent;border-bottom:3.5px solid transparent}
+.mp-arrow.hot{color:var(--amber)}
+.mp-bottleneck{font-size:9.5px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;
+  margin-top:5px;display:inline-block;padding:1px 6px;border-radius:100px}
+.mp-bottleneck.amber{color:var(--amber);background:var(--amber-bg)}
+.mp-bottleneck.red{color:var(--red);background:var(--red-bg)}
+.mp-narrative{margin-top:0.9rem;padding-top:0.8rem;border-top:0.5px solid var(--border);
+  display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.mp-narrative-text{font-size:13px;line-height:1.6;color:var(--text);max-width:70ch;flex:1 1 320px}
+.mp-narrative-src{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:0.3rem}
+.mp-cta{font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap;font-weight:500}
+.mp-cta:hover{text-decoration:underline}
+/* Under ~720px the row becomes a column and the arrows become a left rail. */
+@media (max-width:720px){
+  .mp-row{flex-direction:column;overflow-x:visible}
+  .mp-stage{min-width:0}
+  .mp-arrow{flex:0 0 auto;height:22px;width:100%;flex-direction:row}
+  .mp-arrow-line{width:1px;height:100%;margin-left:1.1rem}
+  .mp-arrow-line::after{right:-3px;top:auto;bottom:-1px;border-left:3.5px solid transparent;
+    border-right:3.5px solid transparent;border-top:6px solid currentColor;border-bottom:none}
+}
+
+/* Confidence breakdown — the arithmetic, not just the components. */
+.mp-conf-row{display:flex;align-items:baseline;justify-content:space-between;gap:0.75rem;
+  padding:5px 0;border-bottom:0.5px solid var(--border);font-size:12px}
+.mp-conf-row:last-of-type{border-bottom:none}
+.mp-conf-pts{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.mp-conf-sum{font-family:var(--mono);font-size:11px;color:var(--text3);padding-top:8px;line-height:1.7}
+.mp-conf-fix{color:var(--accent);text-decoration:none;font-size:11px;margin-left:0.5rem}
+.mp-conf-fix:hover{text-decoration:underline}
 
 /* DASHBOARD PROJECTS CARDS */
 .dash-proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:0.85rem}
@@ -1331,11 +1403,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
 <script src="/cygenix-sidebar.js?v=d338426ab1" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
+  <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
   <script src="/cygenix-preflight.js?v=b84fe6bfb2" defer></script>
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
   <script src="/cygenix-conn-builder.js?v=a50f317be6" defer></script>
-  <script src="/dashboard-app.js?v=987889d7b1" defer></script>
+  <script src="/dashboard-app.js?v=66ba02ba94" defer></script>
 
 
   <!-- MAIN -->
@@ -1346,11 +1419,21 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="panel-header">
         <div><div class="panel-title">SQL Migration Overview</div><div class="panel-sub" id="today-date"></div></div>
       </div>
+
+      <!-- MIGRATION PIPELINE — connect → cutover, with what is sitting at each
+           stage and at most one thing named as the blockage. The Data Stream
+           page's Flow view does this for a single stream and is the best thing
+           in the product; this is the same idea applied to the lifecycle.
+           Rendered by renderMigrationPipeline() from a model built in
+           cygenix-pipeline.js — see that file for why the derivation lives
+           away from the DOM. -->
+      <div class="panel mp-panel" id="migration-pipeline" style="margin-bottom:1rem"></div>
+
       <div class="stats-row">
-        <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub">All time</div></div>
-        <div class="stat-card"><div class="stat-label">Analysed</div><div class="stat-val" id="stat-analysed" style="color:var(--purple)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--purple)"></span>Schema ready</div></div>
-        <div class="stat-card"><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Ready to run</div></div>
-        <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
+        <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub"><span class="stat-scope">all projects</span></div></div>
+        <div class="stat-card" title="A job counts as analysed once at least one source column is mapped to a target column."><div class="stat-label">Analysed</div><div class="stat-val" id="stat-analysed" style="color:var(--purple)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--purple)"></span>columns mapped · <span class="stat-scope">all projects</span></div></div>
+        <div class="stat-card" title="A job counts here once it has generated SQL or has run. It does not require a mapping — SQL can arrive with an imported job — so this can exceed Analysed."><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>ready or run · <span class="stat-scope">all projects</span></div></div>
+        <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub" id="stat-files-sub">none uploaded yet</div></div>
         <!-- Cutover Confidence — one number rolling up mapping confidence,
              the latest Preflight forecast and delivery state. Click for the
              component breakdown. Rendered by renderCutoverConfidence(). -->
