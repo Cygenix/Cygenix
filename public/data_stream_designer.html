@@ -104,9 +104,9 @@ select.ds-input{cursor:pointer}
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
 <script src="/cygenix-sidebar.js?v=d338426ab1" defer></script>
 <script src="/connections.js?v=d199ff3358"></script>
-<script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
-<script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
-<script src="/cygenix-datastream-page.js?v=5da200b5fe"></script>
+<script src="/cygenix-datastream.js?v=02be5ef4bd"></script>
+<script src="/cygenix-datastream-ui.js?v=3d5b0de0cc"></script>
+<script src="/cygenix-datastream-page.js?v=34eee094b8"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -803,12 +803,42 @@ function step4() {
           + (d.guardrail === v ? ' checked' : '') + ' onchange="setDelivery(\'guardrail\',\'' + v + '\')">'
           + '<span>' + t + '<span class="b">' + b + '</span></span></label>').join('')
       + '<div class="hint">Starting, replaying and deleting a stream count as destructive at both levels.</div></div>'
+    /* Who reads what comes out of this. Optional — but when a stream stalls,
+       an empty list is the difference between "paused 8 days" and "Finance
+       reporting has had no new data for 8 days", which is the version somebody
+       acts on. One per line, name first, an optional owner after a comma. */
+    + '<div class="ds-field"><label class="lbl" for="ds-consumers">Downstream consumers</label>'
+      + '<textarea id="ds-consumers" class="ds-input" rows="3" spellcheck="false"'
+      + ' placeholder="Finance reporting, finance-data@example.internal&#10;Client portal"'
+      + ' oninput="setConsumers(this.value)">' + U.esc(consumersText(draft)) + '</textarea>'
+      + '<div class="hint">One per line — name, then an optional owner after a comma. '
+      + 'A stalled stream with consumers named says who it is affecting, and sorts above '
+      + 'one nobody is reading.</div></div>'
     + '<div class="ds-field"><label class="lbl" for="ds-retention">Stream Store retention (hours)</label>'
       + '<input id="ds-retention" class="ds-input" type="number" min="1" value="'
       + ((draft.profile && draft.profile.retentionHours) || 72) + '"'
       + ' oninput="draft.profile.retentionHours=Math.max(1,parseInt(this.value,10)||1);touch()">'
       + '<div class="hint">How far back a replay can reach. Longer costs storage; shorter costs recoverability.</div></div>';
 }
+function consumersText(d) {
+  return ((d && d.consumers) || []).map(c =>
+    c.name + (c.owner ? ', ' + c.owner : '')).join('\n');
+}
+function setConsumers(text) {
+  draft.consumers = String(text || '').split('\n')
+    .map(line => line.trim()).filter(Boolean)
+    .map(line => {
+      const parts = line.split(',');
+      const name = (parts.shift() || '').trim();
+      const owner = parts.join(',').trim();
+      return owner ? { name, owner } : { name };
+    })
+    .filter(c => c.name);
+  dirty = true;
+  DS.wipSave(P.projectId, draft);
+  refreshValidity();
+}
+
 function setDelivery(key, value) {
   const numeric = ['batchSize', 'maxIntervalMs', 'retries', 'lagThresholdSeconds', 'maxEventsPerMin'];
   draft.delivery[key] = numeric.indexOf(key) !== -1 ? (parseInt(value, 10) || 0) : value;

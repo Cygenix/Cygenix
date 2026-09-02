@@ -779,5 +779,241 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
     DS.relativeTime(new Date(Date.now() + 60000).toISOString()) === '0s ago');
 }
 
+/* ── Enriched stream cards ───────────────────────────────────────────────
+   A tile reading 191 says nothing; 191 rising about 2 a minute says the thing
+   an operator needs. The trend, the redaction and the impact line are all
+   derivations, so they are pinned here rather than eyeballed on a screen that
+   changes every two seconds. */
+{
+  const st = DS.seedDemo('trend');
+
+  /* Sparklines and the trend behind them */
+  check('the KPI strip keeps its own history, one sample per tick',
+    st.kpiHistory.length > 0 && typeof st.kpiHistory[0].errors === 'number',
+    JSON.stringify(st.kpiHistory[0]));
+  check('and every tile reads the same history, so two tiles cannot disagree',
+    ['running', 'eventsPerMin', 'maxLagSeconds', 'errors']
+      .every((k) => DS.kpiSeries(st, k).length === st.kpiHistory.length));
+
+  check('under eight points there is no sparkline — a flat line from three '
+      + 'samples is a lie told in a confident font',
+    DS.trend([1, 2, 3], false).enough === false);
+  check('and the tile says it is still collecting rather than drawing nothing',
+    /still collecting/.test(DS.trend([1, 2, 3], false, { label: 'Delivery errors', value: 3 }).sentence));
+
+  const rising = [10, 11, 12, 13, 14, 15, 16, 20];
+  const falling = rising.slice().reverse();
+  check('errors rising is adverse; errors falling is not',
+    DS.trend(rising, false).adverse === true && DS.trend(falling, false).adverse === false);
+  check('throughput falling is adverse; throughput rising is not',
+    DS.trend(falling, true).adverse === true && DS.trend(rising, true).adverse === false);
+  check('a small wobble is not painted red — significance is a 10% move',
+    DS.trend([100, 100, 101, 100, 102, 101, 100, 103], false).adverse === false,
+    'colour that fires on noise teaches people to ignore colour');
+  check('a delta label reads as a rate for errors and a percentage otherwise',
+    /\/min$/.test(DS.trend(rising, false, { unit: 'per-min' }).label)
+    && /%$/.test(DS.trend(rising, true).label),
+    DS.trend(rising, false, { unit: 'per-min' }).label + ' | ' + DS.trend(rising, true).label);
+  check('a level series says level rather than +0',
+    DS.trend([5, 5, 5, 5, 5, 5, 5, 5], false).label === 'level');
+
+  check('the accessible name is a sentence, not a list of numbers',
+    (() => {
+      const t = DS.trend(rising, false, { label: 'Delivery errors', value: 194, unit: 'per-min' });
+      return /^Delivery errors: 194, rising about [\d.]+ per minute over the last minute\.$/.test(t.sentence);
+    })(), DS.trend(rising, false, { label: 'Delivery errors', value: 194, unit: 'per-min' }).sentence);
+
+  check('the polyline spans the box and has a point per sample',
+    DS.sparkPoints([0, 5, 10], 100, 24).split(' ').length === 3
+    && /^0,/.test(DS.sparkPoints([0, 5, 10], 100, 24))
+    && /100,0$/.test(DS.sparkPoints([0, 5, 10], 100, 24)),
+    DS.sparkPoints([0, 5, 10], 100, 24));
+  check('a genuinely flat series draws down the middle, not along the floor',
+    DS.sparkPoints([7, 7, 7], 100, 24) === '0,12 50,12 100,12',
+    'a line on the floor reads as zero rather than as unchanging');
+  check('one point draws nothing at all', DS.sparkPoints([4], 100, 24) === '');
+
+  /* Failure detail — why, not just where */
+  const failed = st.streams.filter((s) => s.status === 'failed')[0];
+  const f = DS.failureDetail(st, failed, st.clockNow);
+  check('a failure is classified, not just quoted',
+    f.errorClass === 'String truncation', f.errorClass + ' ← ' + f.message);
+  check('every class the destination can throw maps to words',
+    DS.errorClass('FK constraint violated') === 'Constraint violation'
+    && DS.errorClass('login failed for user') === 'Permission denied'
+    && DS.errorClass('the operation timed out') === 'Timeout'
+    && DS.errorClass('connection refused') === 'Connection failure'
+    && DS.errorClass(null) === null);
+  check('the checkpoint is carried, so an engineer can still replay by position',
+    typeof f.checkpoint === 'string' && f.checkpoint.length > 0);
+  check('a dead-lettered record is offered as a sample',
+    !!f.sample && f.sample.fields.length > 0, JSON.stringify(f.sample && f.sample.fields));
+  check('with its field NAMES shown and its values redacted by default',
+    f.sample.fields.every((k) => f.sample.redacted[k] === '••••••'),
+    'customer rows do not belong in a status screen unless somebody asks');
+  check('and the real values only come back from an explicit call',
+    (() => {
+      const real = DS.revealSample(st, failed.id, f.sample.id);
+      return real && Object.keys(real).length === f.sample.fields.length
+        && Object.keys(real).some((k) => real[k] !== '••••••');
+    })());
+
+  /* How long, not just how far behind */
+  {
+    const s2 = DS.seedDemo('clock');
+    const fs2 = s2.streams.filter((x) => x.status === 'failed')[0];
+    const d = DS.failureDetail(s2, fs2, Date.parse(fs2.failingSince) + 3720000);
+    check('"failing for" is measured from when it started, not from the lag',
+      d.failingForSeconds === 3720, d.failingForSeconds);
+    check('and reads in the page\'s own duration idiom rather than raw seconds',
+      DS.formatLag(d.failingForSeconds) === '1h 2m', DS.formatLag(d.failingForSeconds));
+    check('while the consumer line uses the grain that suits days',
+      DS.durationWords(8 * 86400) === '8 days' && DS.durationWords(45) === '45 seconds');
+    check('a stream that has never delivered says so rather than showing a blank',
+      DS.failureDetail(s2, { id: 'x', status: 'failed', metrics: { dlqDepth: 0, failedToday: 1 },
+        capture: { position: {} } }, Date.now()).lastGoodDeliveryAt === null);
+  }
+
+  /* Downstream consumers */
+  const paused = st.streams.filter((s) => s.status === 'paused')[0];
+  const eightDays = Date.parse(paused.lastEventAt) + 8 * 86400000;
+  const impact = DS.consumerImpact(paused, eightDays);
+  check('a stalled stream with consumers says who it is affecting',
+    !!impact && /Data science sandbox has had no new data for 8 days\./.test(impact.line),
+    impact && impact.line);
+  check('a running stream reports no impact, however many consumers it has',
+    DS.consumerImpact(st.streams.filter((s) => s.status === 'running')[0], eightDays) === null);
+  check('and a stalled stream nobody reads reports none either — "consumers may '
+      + 'be affected" is not information',
+    DS.consumerImpact({ status: 'paused', consumers: [], metrics: {} }, Date.now()) === null);
+  check('two consumers are named as two, not as a count',
+    (() => {
+      const many = JSON.parse(JSON.stringify(paused));
+      many.consumers = [{ name: 'Finance reporting' }, { name: 'Client portal' }];
+      const im = DS.consumerImpact(many, eightDays);
+      return /Finance reporting and Client portal have had no new data/.test(im.line);
+    })());
+
+  check('a stalled stream somebody is reading sorts above one nobody is',
+    (() => {
+      const a = { id: 'a', status: 'paused', consumers: [], metrics: { lagSeconds: 900 } };
+      const b = { id: 'b', status: 'paused', consumers: [{ name: 'Finance reporting' }],
+                  metrics: { lagSeconds: 1 }, lastEventAt: new Date(Date.now() - 8.64e8).toISOString() };
+      return DS.sortStreams([a, b])[0].id === 'b';
+    })(),
+    'both are broken; only one is quietly feeding stale numbers to a person');
+  check('but it never jumps ahead of an outright failure',
+    (() => {
+      const failedOne = { id: 'f', status: 'failed', consumers: [], metrics: { lagSeconds: 1 } };
+      const pausedRead = { id: 'p', status: 'paused', consumers: [{ name: 'X' }],
+                           metrics: { lagSeconds: 1 }, lastEventAt: new Date().toISOString() };
+      return DS.sortStreams([pausedRead, failedOne])[0].id === 'f';
+    })());
+
+  /* Consumers survive a round trip through the editor */
+  check('consumers are kept when a stream is edited',
+    (() => {
+      const s3 = DS.seedDemo('edit');
+      const target = s3.streams[0];
+      const draft = JSON.parse(JSON.stringify(target));
+      delete draft.consumers;                       // an older draft shape
+      DS.updateStream(s3, target.id, draft);
+      return (DS.getStream(s3, target.id).consumers || []).length > 0;
+    })(), 'editing a batch size must not silently forget who is downstream');
+  check('and setConsumers drops the blank lines a textarea produces',
+    (() => {
+      const s4 = DS.seedDemo('set');
+      const out = DS.setConsumers(s4, s4.streams[0].id,
+        [{ name: ' Finance ' }, { name: '' }, { name: 'BI', owner: 'bi@x' }]);
+      return out.length === 2 && out[0].name === 'Finance' && out[1].owner === 'bi@x';
+    })());
+
+  /* Reset to the last good checkpoint */
+  check('resetting to the checkpoint clears the failure without losing the backlog',
+    (() => {
+      const s5 = DS.seedDemo('reset');
+      const target = s5.streams.filter((x) => x.status === 'failed')[0];
+      const pending = target.metrics.pendingInStore;
+      const r = DS.resetToCheckpoint(s5, target.id);
+      return r.pending === pending && target.lastError === null
+        && target.failingSince === null && target.status === 'paused';
+    })(), 'the Stream Store still holds everything captured since — that is the point of a checkpoint');
+  check('and it is written to the audit trail like every other production change',
+    (() => {
+      const s6 = DS.seedDemo('audit');
+      const target = s6.streams.filter((x) => x.status === 'failed')[0];
+      DS.resetToCheckpoint(s6, target.id);
+      return s6.audit.some((a) => a.action === 'stream.checkpoint_reset');
+    })());
+
+  /* The seeded clock, and the live one */
+  check('a seeded demo rebases onto the real clock exactly once',
+    (() => {
+      const s7 = DS.seedDemo('rebase');
+      const before = Date.parse(s7.streams[0].lastEventAt);
+      DS.rebaseToNow(s7, Date.parse('2027-01-01T00:00:00Z'));
+      const after = Date.parse(s7.streams[0].lastEventAt);
+      const stamp = s7.rebasedAt;
+      DS.rebaseToNow(s7, Date.parse('2028-01-01T00:00:00Z'));   // ignored
+      return after > before && s7.rebasedAt === stamp
+        && Date.parse(s7.streams[0].lastEventAt) === after;
+    })(),
+    'twice would double the shift and put the demo in the future');
+  check('and every interval inside it survives the shift',
+    (() => {
+      const s8 = DS.seedDemo('intervals');
+      const f8 = s8.streams.filter((x) => x.status === 'failed')[0];
+      const gap = Date.parse(f8.lastEventAt) - Date.parse(f8.failingSince);
+      DS.rebaseToNow(s8, Date.now() + 5 * 86400000);
+      return Date.parse(f8.lastEventAt) - Date.parse(f8.failingSince) === gap;
+    })(),
+    'a stream seeded as failing for 22s must not read as failing for nine days');
+
+  /* Old state still opens */
+  check('a state written before any of this opens without throwing',
+    (() => {
+      const old = { version: 1, projectId: 'legacy', tickNo: 3,
+        streams: [{ id: 's', status: 'paused', metrics: {}, capture: {}, destination: {} }],
+        events: [], points: [], audit: [], seeded: true };
+      try {
+        if (typeof localStorage === 'undefined') {
+          global.localStorage = {
+            _d: {}, getItem(k) { return this._d[k] || null; },
+            setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; },
+          };
+        }
+        localStorage.setItem(DS.storeKey('legacy'), JSON.stringify(old));
+        const loaded = DS.load('legacy');
+        return Array.isArray(loaded.kpiHistory) && Array.isArray(loaded.streams[0].consumers);
+      } catch (e) { return false; }
+    })());
+}
+
+/* ── Wiring ──────────────────────────────────────────────────────────────── */
+{
+  const page = fs.readFileSync(path.join(__dirname, '..', 'public', 'data_stream.html'), 'utf8');
+  const css  = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream.css'), 'utf8');
+
+  check('every KPI tile draws its own series',
+    (page.match(/series: DS\.kpiSeries\(s, '/g) || []).length === 4);
+  check('the sparkline is inline SVG — no charting dependency was added',
+    /<polyline points/.test(page) && /vector-effect="non-scaling-stroke"/.test(page)
+    && !/\b(chart\.js|d3\.min\.js|recharts|apexcharts|highcharts)\b/i.test(page));
+  check('the svg is hidden from screen readers and the sentence carries the meaning',
+    /aria-hidden="true" focusable="false"/.test(page) && /aria-label="' \+ U\.esc\(t\.sentence/.test(page));
+  check('the hex checkpoint is demoted to a chip rather than shown as a headline',
+    /class="ds-checkpoint"/.test(page) && /ds-checkpoint \{/.test(css));
+  check('the dead-letter sample is rendered from the redacted copy',
+    /sample\.redacted\[k2\]/.test(page) && !/sample\.after\[/.test(page));
+  check('revealing values is a separate, deliberate click',
+    /function dsRevealSample/.test(page) && /Reveal values/.test(page));
+  check('the three failure actions go through the existing guardrail, not a bespoke confirm',
+    /U\.confirmText\('checkpoint'/.test(page) && /dsRequeue/.test(page) && /dsPause/.test(page));
+  check('consumers are rendered on the row and in the flow card',
+    (page.match(/consumersLine\(r\)/g) || []).length >= 2);
+  check('and the impact line is amber with words, not a colour alone',
+    /ds-impact/.test(page) && /ds-impact \{[^}]*var\(--amber\)/.test(css));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

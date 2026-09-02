@@ -1,6 +1,6 @@
 # Browser tests
 
-Five suites that need a real browser, and are therefore **not** in `npm test` —
+Six suites that need a real browser, and are therefore **not** in `npm test` —
 the Netlify build has no Chromium and adding one would slow every deploy for a
 check nobody reads until it breaks.
 
@@ -10,6 +10,7 @@ node tests/browser/assistant-loop.smoke.js  # 23 checks
 node tests/browser/sidebar-nav.smoke.js     # 15 checks
 node tests/browser/sql-windows.smoke.js     # 76 checks
 node tests/browser/pipeline.smoke.js        # 31 checks
+node tests/browser/stream-cards.smoke.js    # 31 checks
 ```
 
 Each starts a local static server over `public/`, drives headless Chromium
@@ -20,7 +21,7 @@ queries.
 | Environment variable | Default |
 | --- | --- |
 | `CHROMIUM` | `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` |
-| `SMOKE_PORT` | `8396` / `8397` / `8399` / `8401` / `8404` |
+| `SMOKE_PORT` | `8396` / `8397` / `8399` / `8401` / `8404` / `8405` |
 | `MONACO_VS` | a cached copy under the system temp directory |
 
 ## What each one is for
@@ -96,6 +97,19 @@ a test rather than as a promise.
 It also checks the card in `data-theme="dark"` and under `html.a11y-hc`, and
 that every state carries a word, because "readable with colour ignored" is not
 something a source-level test can claim.
+
+**`stream-cards.smoke.js`** — the enriched KPI tiles and failure detail on
+`/data-stream`. `tests/data-stream.test.js` pins the derivations; this proves
+they reach a screen. Its sharpest assertion reads the DOM rather than the
+model: **every dead-letter value arrives redacted**, because "redacted by
+default" is a claim about what is on screen, not about what a function
+returns. It also checks that under eight samples no sparkline is drawn at all
+— a flat line from three points is a lie told in a confident font.
+
+One thing to copy from it: it calls `P.stop()` before testing the inspector.
+The page repaints every two seconds by design, and a test that reads a panel,
+clicks it, then reads it again is racing that repaint rather than testing
+anything.
 
 ## Writing another one
 
