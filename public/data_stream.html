@@ -159,9 +159,9 @@ body.cyg-collapsed{padding-left:54px}
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
 <script src="/cygenix-sidebar.js?v=d338426ab1" defer></script>
-<script src="/cygenix-datastream.js?v=22ebb91fd3"></script>
-<script src="/cygenix-datastream-ui.js?v=2a5e5f29a2"></script>
-<script src="/cygenix-datastream-page.js?v=5da200b5fe"></script>
+<script src="/cygenix-datastream.js?v=02be5ef4bd"></script>
+<script src="/cygenix-datastream-ui.js?v=3d5b0de0cc"></script>
+<script src="/cygenix-datastream-page.js?v=34eee094b8"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -207,28 +207,64 @@ function paint(state) {
   paintInspector(s);
 }
 
+/* The tiles moved on every refresh — errors 191 → 193 → 194 — and each one
+   showed a bare instantaneous number, so the movement was invisible unless
+   you happened to be staring at it. The trend is the part that carries the
+   meaning; the sparkline shows the shape and is secondary to the delta label
+   beside the figure.
+
+   Colour is reserved for problems: a tile goes red only when the series has
+   moved ≥10% the wrong way, never green for "good and rising", or the colour
+   stops meaning anything. Below eight points there is no line at all — a flat
+   line drawn from three samples is a lie told in a confident font. */
 function paintKpis(s) {
   const k = DS.kpis(s);
   const el = document.getElementById('ds-kpis');
-  const tile = (id, label, figure, cls, context, on) =>
-    '<button class="ds-kpi' + (on ? ' on' : '') + '" type="button" onclick="dsKpi(\'' + id + '\')">'
-    + '<div class="ds-kpi-label">' + label + '</div>'
-    + '<div class="ds-kpi-figure' + (cls ? ' ' + cls : '') + '">' + figure + '</div>'
-    + '<div class="ds-kpi-context">' + context + '</div></button>';
+
+  const tile = (o) => {
+    const t = DS.trend(o.series, o.higherIsBetter,
+      { label: o.label, value: o.figure, unit: o.unit, unitWord: o.unitWord });
+    const bad = o.bad || t.adverse;
+    const spark = t.enough
+      ? '<svg class="ds-spark' + (bad ? ' bad' : '') + '" viewBox="0 0 100 24" preserveAspectRatio="none"'
+        + ' aria-hidden="true" focusable="false"><polyline points="'
+        + DS.sparkPoints(t.points, 100, 24) + '" vector-effect="non-scaling-stroke"/></svg>'
+      : '<div class="ds-spark-none">collecting…</div>';
+    return '<button class="ds-kpi' + (o.on ? ' on' : '') + '" type="button"'
+      + ' onclick="dsKpi(\'' + o.id + '\')"'
+      // The accessible name is the sentence, not the numbers: it is what a
+      // screen-reader user gets instead of the shape, and it is also what a
+      // high-contrast reader gets when the colour is gone.
+      + ' aria-label="' + U.esc(t.sentence || (o.label + ': ' + o.figure)) + '">'
+      + '<div class="ds-kpi-label">' + o.label + '</div>'
+      + '<div class="ds-kpi-figurerow">'
+        + '<div class="ds-kpi-figure' + (o.cls ? ' ' + o.cls : '') + '">' + o.figure + '</div>'
+        + (t.enough && t.label
+            ? '<span class="ds-kpi-delta' + (bad ? ' bad' : '') + '">' + U.esc(t.label) + '</span>' : '')
+      + '</div>'
+      + spark
+      + '<div class="ds-kpi-context">' + o.context + '</div></button>';
+  };
 
   const lagLevel = DS.lagLevel(k.maxLagSeconds, 30);
   el.innerHTML =
-      tile('running', 'Streams running', k.running + ' of ' + k.total, '',
-        k.paused + ' paused · ' + k.failed + ' failed', filter.status === 'running')
-    + tile('rate', 'Events / min', DS.formatCount(k.eventsPerMin), '',
-        'across every running stream', false)
-    + tile('lag', 'Max lag', DS.formatLag(k.maxLagSeconds),
-        lagLevel === 'red' ? 'bad' : lagLevel === 'amber' ? 'warn' : '',
-        k.worstStream ? 'worst stream: ' + U.esc(k.worstStream) : 'no stream is behind',
-        filter.status === 'lagging')
-    + tile('errors', 'Delivery errors', String(k.errorsLastHour),
-        k.errorsLastHour ? 'bad' : '',
-        k.dlqDepth + ' in dead-letter', filter.errorsOnly);
+      tile({ id: 'running', label: 'Streams running', figure: k.running + ' of ' + k.total,
+        context: k.paused + ' paused · ' + k.failed + ' failed',
+        series: DS.kpiSeries(s, 'running'), higherIsBetter: true, unitWord: 'streams',
+        on: filter.status === 'running' })
+    + tile({ id: 'rate', label: 'Events / min', figure: DS.formatCount(k.eventsPerMin),
+        context: 'across every running stream',
+        series: DS.kpiSeries(s, 'eventsPerMin'), higherIsBetter: true, unitWord: 'per minute' })
+    + tile({ id: 'lag', label: 'Max lag', figure: DS.formatLag(k.maxLagSeconds),
+        cls: lagLevel === 'red' ? 'bad' : lagLevel === 'amber' ? 'warn' : '',
+        context: k.worstStream ? 'worst stream: ' + U.esc(k.worstStream) : 'no stream is behind',
+        series: DS.kpiSeries(s, 'maxLagSeconds'), higherIsBetter: false, unitWord: 'seconds',
+        bad: lagLevel === 'red', on: filter.status === 'lagging' })
+    + tile({ id: 'errors', label: 'Delivery errors', figure: String(k.errorsLastHour),
+        cls: k.errorsLastHour ? 'bad' : '',
+        context: k.dlqDepth + ' in dead-letter',
+        series: DS.kpiSeries(s, 'errors'), higherIsBetter: false, unit: 'per-min',
+        bad: !!k.errorsLastHour, on: filter.errorsOnly });
 }
 
 function dsKpi(id) {
@@ -325,6 +361,19 @@ function paintTable(rows, s) {
   }
 }
 
+/* Who reads what comes out of this stream, and — when it has stalled — what
+   that means for them. A stream paused for eight days is not a fact about a
+   stream: somewhere a reporting team is looking at eight-day-old numbers, and
+   this screen is the only thing in the building that knows. */
+function consumersLine(r) {
+  const consumers = (r.consumers || []).filter(c => c && c.name);
+  if (!consumers.length) return '';
+  const impact = DS.consumerImpact(r, (P.state || {}).clockNow);
+  return '<div class="ds-cell-sub ds-consumers">Consumers: '
+    + consumers.map(c => U.esc(c.name)).join(', ') + '</div>'
+    + (impact ? '<div class="ds-impact"><i class="ic ic-warning"></i> ' + U.esc(impact.line) + '</div>' : '');
+}
+
 function rowHtml(r) {
   const tables = (r.objects || []).length;
   const when = new Date(r.createdAt);
@@ -341,7 +390,8 @@ function rowHtml(r) {
     + '<td><div class="ds-num">' + U.esc(r.capture.methodLabel) + cdc + '</div></td>'
     + '<td><div class="ds-num"><i class="ic ic-' + destIcon(r.destination.kind) + '"></i> '
       + U.esc(r.destination.label) + '</div>'
-      + '<div class="ds-cell-sub">' + U.esc(r.destination.writeMode) + '</div></td>'
+      + '<div class="ds-cell-sub">' + U.esc(r.destination.writeMode) + '</div>'
+      + consumersLine(r) + '</td>'
     + '<td data-c="spark" class="ds-nowrap">' + U.sparkline(r.metrics.spark)
       + ' <span class="ds-num">' + DS.formatCount(r.metrics.eventsPerMin) + '/min</span></td>'
     + '<td data-c="lag" class="ds-right">' + U.lagCell(r) + '</td>'
@@ -411,7 +461,8 @@ function paintFlow(rows, s) {
       + U.statusPill(r)
       + '<div class="panel-title" style="margin-left:0.2rem">' + U.esc(r.name) + '</div>'
       + '<span class="panel-sub" style="margin-left:auto">' + U.lagCell(r) + ' lag</span></div>'
-    + '<div style="padding:0.7rem 0.9rem">' + U.flowDiagram(r) + '</div></div>').join('') + '</div>';
+    + '<div style="padding:0.7rem 0.9rem">' + U.flowDiagram(r)
+      + consumersLine(r) + '</div></div>').join('') + '</div>';
 }
 
 /* ── Store view ─────────────────────────────────────────────────────────── */
@@ -511,6 +562,12 @@ function inspSummary(s, st) {
     + kv('On schema drift', U.esc(s.delivery.onSchemaDrift))
     + kv('Guardrail', s.delivery.guardrail === 'confirm_all' ? 'Confirm every change' : 'Confirm destructive only')
     + '<div style="height:0.6rem"></div>'
+    + kv('Consumers', (s.consumers || []).length
+        ? (s.consumers || []).map(c => U.esc(c.name)
+            + (c.owner ? ' <span class="ds-dim">(' + U.esc(c.owner) + ')</span>' : '')).join(', ')
+        : '<span class="ds-dim">none recorded — add them in the designer so a stall can name who it affects</span>')
+    + ((() => { const im = DS.consumerImpact(s, st.clockNow);
+        return im ? '<div class="ds-impact">' + U.esc(im.line) + '</div>' : ''; })())
     + kv('Uptime', started ? uptime : 'not started')
     + kv('Delivered today', s.metrics.deliveredToday.toLocaleString())
     + kv('In the Stream Store', s.metrics.pendingInStore.toLocaleString() + ' pending')
@@ -564,19 +621,96 @@ function inspRecent(s, st) {
     + DS.buildQuery({ stream: s.id }) + '">View all →</a></div>';
 }
 
-function inspErrors(s) {
+/* The stream said "Failed", "1h 1m" lag, "7,387 pending", "224 in dead-letter"
+   — every one of those is WHERE, and none of them is WHY. What an operator
+   needs first is the error class and how long it has been happening; the lag
+   figure answers a different question (how far behind the data is, not when
+   the trouble started).
+
+   The hex checkpoint stays, because an engineer replaying by position needs
+   it, but it is demoted to a mono chip behind the copy button rather than
+   presented as a headline. */
+function inspErrors(s, st) {
   if (!s.lastError && !s.metrics.dlqDepth && !s.metrics.failedToday) {
-    return '<div class="ds-note ok">Nothing has failed on this stream.</div>';
+    return '<div class="ds-note ok">Nothing has failed on this stream.</div>'
+      + (s.lastGoodDeliveryAt
+          ? '<div style="height:0.6rem"></div>'
+            + kv('Last delivery', U.esc(humanTime(s.lastGoodDeliveryAt, st)))
+          : '');
   }
-  return (s.lastError ? '<div class="ds-note error">' + U.esc(s.lastError) + '</div><div style="height:0.6rem"></div>' : '')
+  const f = DS.failureDetail(st, s, st.clockNow);
+  const sample = f.sample;
+
+  return (f.errorClass
+      ? '<div class="ds-note error"><b>' + U.esc(f.errorClass) + '</b>'
+        + (f.message ? '<div style="margin-top:0.25rem">' + U.esc(f.message) + '</div>' : '')
+        + '</div><div style="height:0.6rem"></div>'
+      : '')
+    + kv('Failing for', f.failingForSeconds === null
+        ? 'not known — no failure start recorded'
+        : U.esc(DS.formatLag(f.failingForSeconds))
+          + (f.firstSeen ? ' · since ' + U.esc(clockOf(f.firstSeen)) : ''))
+    + kv('Last successful delivery', s.lastGoodDeliveryAt
+        ? U.esc(humanTime(s.lastGoodDeliveryAt, st))
+        : 'none recorded on this stream')
     + kv('Failed today', String(s.metrics.failedToday))
     + kv('Dead-letter depth', String(s.metrics.dlqDepth))
     + kv('Retries configured', String(s.delivery.retries) + ' · ' + U.esc(s.delivery.backoff))
+    + kv('Checkpoint', '<span class="ds-checkpoint">' + U.monoCopy(f.checkpoint, { max: 16 }) + '</span>')
+
+    /* One representative dead record, field names shown and values hidden.
+       A status screen gets read over shoulders and pasted into tickets;
+       customer rows do not go into one unless somebody asks for them. */
+    + (sample ? '<div class="ds-dlq">'
+        + '<div class="ds-dlq-head"><b>A dead-lettered record</b>'
+          + '<span class="ds-dlq-meta">' + U.opBadge(sample.op) + ' ' + U.esc(sample.table)
+          + ' · ' + U.esc(clockOf(sample.ts)) + '</span></div>'
+        + '<table class="ds-dlq-table"><tbody id="ds-dlq-rows">'
+        + sample.fields.map((k2) => '<tr><td class="f">' + U.esc(k2) + '</td>'
+            + '<td class="v">' + U.esc(sample.redacted[k2]) + '</td></tr>').join('')
+        + '</tbody></table>'
+        + '<div class="ds-dlq-foot">'
+          + '<button class="btn btn-sm" id="ds-dlq-reveal" onclick="dsRevealSample(\''
+            + U.escArg(s.id) + '\',\'' + U.escArg(sample.id) + '\')">Reveal values</button>'
+          + '<span class="ds-dim">Values are hidden by default.</span></div>'
+        + (sample.error ? '<div class="ds-dlq-err">' + U.esc(sample.error) + '</div>' : '')
+        + '</div>' : '')
+
     + '<div style="margin-top:0.7rem;display:flex;gap:0.4rem;flex-wrap:wrap">'
     + '<button class="btn" onclick="dsRequeue(\'' + U.escArg(s.id) + '\')"'
-      + (s.metrics.dlqDepth ? '' : ' disabled') + '>Requeue dead letters</button>'
+      + (s.metrics.dlqDepth ? '' : ' disabled') + '>Retry dead letters</button>'
+    + '<button class="btn" onclick="dsResetCheckpoint(\'' + U.escArg(s.id) + '\')">'
+      + 'Reset to last good checkpoint</button>'
+    + (DS.isLive(s.status)
+        ? '<button class="btn" onclick="dsPause(\'' + U.escArg(s.id) + '\')">Pause</button>' : '')
     + '<a class="btn" href="/data-stream-events'
       + DS.buildQuery({ stream: s.id, state: 'dead' }) + '">See the dead letters →</a></div>';
+}
+
+/* "14:02, 1h 4m ago" — the clock time for anyone comparing against another
+   system, the elapsed time for anyone asking how bad it is. A hex position
+   answers neither question. */
+function humanTime(iso, st) {
+  if (!iso) return 'not recorded';
+  return clockOf(iso) + ', ' + DS.relativeTime(iso, (st || P.state || {}).clockNow);
+}
+function clockOf(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? String(iso) : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/* Deliberately a separate click, and deliberately not sticky: the next render
+   redacts again. */
+function dsRevealSample(streamId, eventId) {
+  const row = DS.revealSample(P.state, streamId, eventId);
+  const tbody = document.getElementById('ds-dlq-rows');
+  if (!row || !tbody) return;
+  tbody.innerHTML = Object.keys(row).map((k2) =>
+    '<tr><td class="f">' + U.esc(k2) + '</td><td class="v revealed">'
+    + U.esc(String(row[k2])) + '</td></tr>').join('');
+  const btn = document.getElementById('ds-dlq-reveal');
+  if (btn) { btn.textContent = 'Hide values'; btn.setAttribute('onclick', 'paintInspector()'); }
+  P.announce('Values revealed for one dead-lettered record.');
 }
 
 /* ── Row menu ───────────────────────────────────────────────────────────── */
@@ -683,6 +817,21 @@ function dsRequeue(id) {
   DS.requeueDlq(P.state, id);
   P.persist(); paint();
   P.announce('Dead letters requeued.');
+}
+
+/* Winds delivery back to the position the stream last delivered from. Through
+   the same guardrail as the other three: it re-delivers records the
+   destination may already hold, which is a change to a production system
+   whichever way the level is set. */
+function dsResetCheckpoint(id) {
+  const s = DS.getStream(P.state, id);
+  if (!confirm(U.confirmText('checkpoint', {
+    name: s.name, position: (s.capture.position || {}).lsn,
+    pending: s.metrics.pendingInStore, destination: s.destination.label,
+  }))) return;
+  DS.resetToCheckpoint(P.state, id);
+  P.persist(); paint();
+  P.announce(s.name + ' reset to its last good checkpoint.');
 }
 
 /* Guardrail: confirm_all confirms everything; confirm_destructive lets an

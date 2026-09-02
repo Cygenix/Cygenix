@@ -62,6 +62,12 @@ var TICK_MS      = 2000;
 var MAX_EVENTS   = 500;    // in-memory tail cap, per the brief
 var MAX_POINTS   = 720;    // 720 × 2s ≈ 24 minutes of chart history
 var MAX_AUDIT    = 300;
+/* The KPI strip's own history. There is no metrics-history endpoint to ask —
+   the stream engine is a client-side simulator with a 2s tick — so the trend
+   behind each tile is a rolling buffer kept beside the state and persisted
+   with it. Sixty samples is a minute of ticks, which is what the tiles claim
+   to be showing. */
+var KPI_HISTORY  = 60;
 var SEED         = 'cygenix-data-stream-v1';
 
 /* ── Enums. The UI never invents a status string; it asks here. ──────────── */
@@ -165,6 +171,7 @@ function emptyState(projectId) {
     streams: [],
     events: [],       // newest first, capped at MAX_EVENTS
     points: [],       // oldest first, capped at MAX_POINTS
+    kpiHistory: [],   // oldest first, one sample per tick, capped at KPI_HISTORY
     audit: [],        // newest first
     seeded: false,
   };
@@ -180,7 +187,11 @@ function load(projectId) {
   if (!Array.isArray(s.streams)) s.streams = [];
   if (!Array.isArray(s.events))  s.events  = [];
   if (!Array.isArray(s.points))  s.points  = [];
+  if (!Array.isArray(s.kpiHistory)) s.kpiHistory = [];
   if (!Array.isArray(s.audit))   s.audit   = [];
+  // Streams written before consumers existed open without them rather than
+  // throwing on a missing array in every render path.
+  s.streams.forEach(function (st) { if (!Array.isArray(st.consumers)) st.consumers = []; });
   s.projectId = projectId || s.projectId || 'default';
   return s;
 }
@@ -189,6 +200,7 @@ function save(state) {
   // Cap before writing: an uncapped tail would grow localStorage without limit.
   state.events = state.events.slice(0, MAX_EVENTS);
   state.points = state.points.slice(-MAX_POINTS);
+  if (Array.isArray(state.kpiHistory)) state.kpiHistory = state.kpiHistory.slice(-KPI_HISTORY);
   state.audit  = state.audit.slice(0, MAX_AUDIT);
   return writeLS(storeKey(state.projectId), state);
 }
@@ -279,7 +291,9 @@ function demoObject(spec, i, streamId) {
 var DEMO_STREAMS = [
   { name: 'Source → Reporting warehouse', status: 'running', side: 'source', method: 'log',
     connectionLabel: 'LEGACY-SQL01 · dbo', destKind: 'database', destLabel: 'SNOWFLAKE-EU · RAW_LEGACY',
-    writeMode: 'upsert', tables: 4, baseRate: 412, capacityRate: 520, retentionHours: 72 },
+    writeMode: 'upsert', tables: 4, baseRate: 412, capacityRate: 520, retentionHours: 72,
+    consumers: [{ name: 'Finance reporting', owner: 'finance-data@example.internal', notifyOnStall: true },
+                { name: 'Exec dashboard', owner: 'bi@example.internal' }] },
   { name: 'Source → Kafka change topic', status: 'lagging', side: 'source', method: 'log',
     connectionLabel: 'LEGACY-SQL01 · dbo', destKind: 'broker', destLabel: 'events.legacy.cdc',
     writeMode: 'append', tables: 5, baseRate: 980, capacityRate: 640, retentionHours: 48 },
@@ -288,10 +302,12 @@ var DEMO_STREAMS = [
     writeMode: 'append', tables: 2, baseRate: 96, capacityRate: 300, retentionHours: 24 },
   { name: 'Target → Data lake landing', status: 'paused', side: 'target', method: 'trigger',
     connectionLabel: 'AZSQL-TARGET · dbo', destKind: 'file', destLabel: 'adls://cygenix/landing/target',
-    writeMode: 'audit-table', tables: 3, baseRate: 140, capacityRate: 400, retentionHours: 72 },
+    writeMode: 'audit-table', tables: 3, baseRate: 140, capacityRate: 400, retentionHours: 72,
+    consumers: [{ name: 'Data science sandbox', owner: 'ds@example.internal' }] },
   { name: 'Source → Cutover delta into target', status: 'failed', side: 'source', method: 'log',
     connectionLabel: 'LEGACY-SQL01 · dbo', destKind: 'cygenix-target', destLabel: 'AZSQL-TARGET · dbo',
-    writeMode: 'merge', tables: 2, baseRate: 260, capacityRate: 0, retentionHours: 72 },
+    writeMode: 'merge', tables: 2, baseRate: 260, capacityRate: 0, retentionHours: 72,
+    consumers: [{ name: 'Cutover reconciliation', owner: 'migration@example.internal', notifyOnStall: true }] },
 ];
 
 function seedDemo(projectId, opts) {
@@ -342,6 +358,7 @@ function seedDemo(projectId, opts) {
         objectPrefix: d.destKind === 'database' ? 'stg_' : '',
       },
       objects: objects,
+      consumers: (d.consumers || []).slice(),
       delivery: {
         batchSize: 500, maxIntervalMs: 2000, ordering: 'per-key',
         retries: 5, backoff: 'exponential', dlq: true, onSchemaDrift: 'pause',
@@ -384,6 +401,7 @@ function seedDemo(projectId, opts) {
     destination: { kind: 'webhook', connectionId: null, label: 'https://portal.example/hooks/changes',
       writeMode: 'append', objectPrefix: '' },
     objects: [demoObject(DEMO_TABLES.source[0], 0, draftId)],
+    consumers: [],
     delivery: { batchSize: 200, maxIntervalMs: 5000, ordering: 'per-key', retries: 3,
       backoff: 'exponential', dlq: true, onSchemaDrift: 'pause', maxEventsPerMin: 0,
       activeWindow: null, guardrail: 'confirm_all', lagThresholdSeconds: 60 },
@@ -459,6 +477,11 @@ function tick(state, opts) {
         m.pendingInStore += capturedThisTick;
         m.storeRecords += capturedThisTick;
         if (n % 5 === 0) { m.dlqDepth += 1; m.failedToday += 1; }
+        // How long it has been failing is the question an operator actually
+        // asks, and the lag figure does not answer it: lag says how far
+        // behind the data is, not when the trouble started.
+        if (!s.failingSince) s.failingSince = new Date(at).toISOString();
+        if (!s.lastErrorAt) s.lastErrorAt = new Date(at).toISOString();
         m.eventsPerMin = p.baseRate;
         m.lagSeconds = lagFromPending(m.pendingInStore, p.capacityRate);
         s.lastEventAt = new Date(at).toISOString();
@@ -505,6 +528,12 @@ function tick(state, opts) {
     m.pendingInStore = available - outN;              // the invariant, exactly
     m.storeRecords += inN;
     m.deliveredToday += outN;
+    // "Last successful delivery" only means something if it is recorded when
+    // one happens. A recovered stream also stops failing, so the clock resets.
+    if (outN > 0) {
+      s.lastGoodDeliveryAt = new Date(at).toISOString();
+      s.failingSince = null;
+    }
     m.eventsPerMin = Math.round(inN * (60000 / TICK_MS));
     m.lagSeconds = lagFromPending(m.pendingInStore, p.capacityRate);
     if (m.lagSeconds > m.lagPeak24h) m.lagPeak24h = m.lagSeconds;
@@ -533,7 +562,51 @@ function tick(state, opts) {
   if (newEvents.length) {
     state.events = newEvents.concat(state.events).slice(0, MAX_EVENTS);
   }
+  pushKpiSample(state, at);
   return { events: newEvents, tickNo: n };
+}
+
+/**
+ * Shift a seeded state onto the live clock.
+ *
+ * The demo seeds at a FIXED instant so two seeds agree exactly — that is what
+ * makes the figures reproducible and the tests meaningful. The live tick then
+ * uses the real clock, and the gap between the two lands in every "how long
+ * ago" on the screen: a stream seeded as failing twenty seconds ago reads as
+ * "failing for 224h 31m" the moment the first live tick arrives, and a paused
+ * one reads as nine days idle. Both are arithmetically correct and useless.
+ *
+ * So the page rebases once, when a seeded state first meets the real clock:
+ * every timestamp moves by the same delta, which keeps every interval between
+ * them exactly as seeded.
+ */
+function rebaseToNow(state, now) {
+  if (!state || state.rebasedAt) return state;
+  var at = now || Date.now();
+  var delta = at - (state.clockNow || at);
+  state.rebasedAt = at;
+  if (Math.abs(delta) < 60000) return state;      // already close enough
+
+  var shift = function (iso) {
+    if (!iso) return iso;
+    var t = Date.parse(iso);
+    return isFinite(t) ? new Date(t + delta).toISOString() : iso;
+  };
+  (state.streams || []).forEach(function (s) {
+    s.createdAt = shift(s.createdAt);
+    s.startedAt = shift(s.startedAt);
+    s.lastEventAt = shift(s.lastEventAt);
+    s.failingSince = shift(s.failingSince);
+    s.lastGoodDeliveryAt = shift(s.lastGoodDeliveryAt);
+    s.lastErrorAt = shift(s.lastErrorAt);
+    if (s.capture && s.capture.position) s.capture.position.capturedAt = shift(s.capture.position.capturedAt);
+  });
+  (state.events || []).forEach(function (e) { e.ts = shift(e.ts); });
+  (state.points || []).forEach(function (p) { if (p.at) p.at += delta; });
+  (state.kpiHistory || []).forEach(function (p) { if (p.at) p.at += delta; });
+  (state.audit || []).forEach(function (a) { a.at = shift(a.at); });
+  state.clockNow = at;
+  return state;
 }
 
 function snapshotRows(s) {
@@ -638,13 +711,268 @@ function kpis(state) {
   };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Trend — the part of a KPI tile that carries the meaning
+   ══════════════════════════════════════════════════════════════════════════
+   A tile showing 191 says nothing. 191 rising by about 2 a minute says the
+   thing an operator needs. The sparkline is secondary to that sentence; it is
+   there to show the shape, not to be read off.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* One sample per tick, so every tile draws from the same history and cannot
+   disagree with its neighbour about what "the last minute" means. */
+function pushKpiSample(state, at) {
+  var k = kpis(state);
+  if (!Array.isArray(state.kpiHistory)) state.kpiHistory = [];
+  state.kpiHistory.push({
+    at: at,
+    running: k.running,
+    eventsPerMin: k.eventsPerMin,
+    maxLagSeconds: k.maxLagSeconds,
+    errors: k.errorsLastHour,
+  });
+  if (state.kpiHistory.length > KPI_HISTORY) {
+    state.kpiHistory = state.kpiHistory.slice(-KPI_HISTORY);
+  }
+}
+
+function kpiSeries(state, key) {
+  return (state && Array.isArray(state.kpiHistory) ? state.kpiHistory : [])
+    .map(function (p) { return Number(p[key]) || 0; });
+}
+
+/* Below this many points there is no trend, only noise pretending to be one.
+   A flat line drawn from three samples is a lie told in a confident font. */
+var SPARK_MIN_POINTS = 8;
+/* And a move smaller than this is the system breathing, not a trend. Colour
+   is for problems; painting a tile red every time a number wobbles teaches
+   people to ignore the colour. */
+var SPARK_SIGNIFICANT = 0.10;
+
+/**
+ * What the series is doing, as numbers and as a sentence.
+ * `higherIsBetter` decides which direction is bad: false for errors and lag,
+ * true for throughput and streams running.
+ */
+function trend(series, higherIsBetter, opts) {
+  var o = opts || {};
+  var pts = (series || []).filter(function (v) { return typeof v === 'number' && isFinite(v); });
+  if (pts.length < SPARK_MIN_POINTS) {
+    return { enough: false, points: pts, label: '', adverse: false,
+             sentence: o.label ? o.label + ': ' + (o.value != null ? o.value : (pts.length ? pts[pts.length - 1] : 'no value'))
+               + ', still collecting history.' : '' };
+  }
+  var first = pts[0], last = pts[pts.length - 1];
+  var delta = last - first;
+  var span = pts.length - 1;
+  var perTick = delta / span;
+  var base = Math.abs(first) || 1;
+  var pctChange = delta / base;
+  var rising = delta > 0;
+  // Adverse means moving the wrong way AND far enough to mean it.
+  var adverse = Math.abs(pctChange) >= SPARK_SIGNIFICANT
+    && (higherIsBetter ? delta < 0 : delta > 0);
+
+  var label;
+  if (delta === 0) label = 'level';
+  else if (o.unit === 'per-min') {
+    label = (rising ? '+' : '−') + Math.abs(Math.round(perTick * (60000 / TICK_MS) * 10) / 10) + '/min';
+  } else {
+    label = (rising ? '↑ ' : '↓ ') + Math.abs(Math.round(pctChange * 100)) + '%';
+  }
+
+  return {
+    enough: true, points: pts, first: first, last: last, delta: delta,
+    pctChange: pctChange, rising: rising, adverse: adverse, label: label,
+    sentence: trendSentence(o.label, o.value != null ? o.value : last, delta, perTick, o),
+  };
+}
+
+/* The accessible name is a sentence, not a list of numbers — it is what a
+   screen-reader user gets INSTEAD of the shape, and "194, 192, 193…" is not
+   an alternative to a picture, it is a worse version of one. */
+function trendSentence(label, value, delta, perTick, o) {
+  var name = label || 'Value';
+  if (delta === 0) return name + ': ' + value + ', level over the last minute.';
+  var dir = delta > 0 ? 'rising' : 'falling';
+  var amount;
+  if ((o || {}).unit === 'per-min') {
+    amount = 'about ' + Math.abs(Math.round(perTick * (60000 / TICK_MS) * 10) / 10) + ' per minute';
+  } else {
+    amount = 'by about ' + Math.abs(Math.round(delta)) + (o && o.unitWord ? ' ' + o.unitWord : '');
+  }
+  return name + ': ' + value + ', ' + dir + ' ' + amount + ' over the last minute.';
+}
+
+/**
+ * Points for an inline <polyline>, in a 0..w × 0..h box. Thirty lines of
+ * arithmetic instead of a charting dependency, which is the correct trade for
+ * a 24px sparkline.
+ */
+function sparkPoints(series, w, h) {
+  var pts = (series || []).filter(function (v) { return typeof v === 'number' && isFinite(v); });
+  if (pts.length < 2) return '';
+  var width = w || 100, height = h || 24;
+  var min = Math.min.apply(null, pts), max = Math.max.apply(null, pts);
+  var span = max - min;
+  return pts.map(function (v, i) {
+    var x = (i / (pts.length - 1)) * width;
+    // A genuinely flat series draws down the middle rather than along the
+    // floor, which would read as "zero" instead of "unchanging".
+    var y = span === 0 ? height / 2 : height - ((v - min) / span) * height;
+    return (Math.round(x * 10) / 10) + ',' + (Math.round(y * 10) / 10);
+  }).join(' ');
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Failure detail — why, not just where
+   ══════════════════════════════════════════════════════════════════════════ */
+
+var ERROR_CLASSES = [
+  { re: /truncat/i,                    cls: 'String truncation' },
+  { re: /constraint|foreign key|dupl/i, cls: 'Constraint violation' },
+  { re: /permission|denied|login/i,    cls: 'Permission denied' },
+  { re: /timeout|timed out/i,          cls: 'Timeout' },
+  { re: /connect|network|refused/i,    cls: 'Connection failure' },
+  { re: /schema|column|type/i,         cls: 'Schema mismatch' },
+];
+function errorClass(message) {
+  for (var i = 0; i < ERROR_CLASSES.length; i++) {
+    if (ERROR_CLASSES[i].re.test(String(message || ''))) return ERROR_CLASSES[i].cls;
+  }
+  return message ? 'Delivery rejected' : null;
+}
+
+/** Field names, no values. What broke is structure; the values are payload. */
+function redactRow(row) {
+  var out = {};
+  Object.keys(row || {}).forEach(function (k) { out[k] = '••••••'; });
+  return out;
+}
+
+/**
+ * Everything the operator needs to know about a failure, in one shape.
+ * `now` is passed rather than read so this stays testable.
+ */
+function failureDetail(state, stream, now) {
+  var s = stream;
+  if (!s) return null;
+  var at = now || (state && state.clockNow) || Date.now();
+  var dead = ((state && state.events) || []).filter(function (e) {
+    return e.streamId === s.id && e.deliveryState === 'dead';
+  });
+  var sample = dead[0] || null;
+  var since = s.failingSince ? Date.parse(s.failingSince) : null;
+  var good = s.lastGoodDeliveryAt ? Date.parse(s.lastGoodDeliveryAt) : null;
+
+  return {
+    failing: s.status === 'failed' || (s.metrics.failedToday || 0) > 0,
+    message: s.lastError || null,
+    errorClass: errorClass(s.lastError),
+    firstSeen: s.failingSince || null,
+    failingForSeconds: since ? Math.max(0, Math.round((at - since) / 1000)) : null,
+    lastGoodDeliveryAt: s.lastGoodDeliveryAt || null,
+    lastGoodAgoSeconds: good ? Math.max(0, Math.round((at - good) / 1000)) : null,
+    checkpoint: (s.capture.position && s.capture.position.lsn) || null,
+    dlqDepth: s.metrics.dlqDepth || 0,
+    sample: sample ? {
+      id: sample.id, table: sample.table, op: sample.op, ts: sample.ts,
+      fields: Object.keys(sample.after || sample.before || {}),
+      // Redacted by default, always. A status screen is looked at in open
+      // offices and pasted into tickets; customer rows do not belong in one
+      // unless somebody deliberately asks.
+      redacted: redactRow(sample.after || sample.before),
+      error: sample.error || s.lastError || null,
+    } : null,
+  };
+}
+
+/** The values behind a redacted sample. Only ever called from a click. */
+function revealSample(state, streamId, eventId) {
+  var e = ((state && state.events) || []).filter(function (x) {
+    return x.id === eventId && x.streamId === streamId;
+  })[0];
+  return e ? (e.after || e.before || null) : null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Downstream consumers — who is reading this, and since when
+   ══════════════════════════════════════════════════════════════════════════
+   A stream paused for eight days is not a fact about a stream. Somewhere a
+   reporting team is looking at eight-day-old numbers and making decisions on
+   them, and the screen that knows the stream is paused is the only thing in
+   the building that could have said so.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+var STALLED = { paused: 1, failed: 1, stopped: 1, lagging: 1 };
+
+/**
+ * The impact line for a stalled stream with consumers, or null.
+ * Named consumers only — "consumers may be affected" is not information.
+ */
+function consumerImpact(stream, now) {
+  var s = stream;
+  if (!s || !STALLED[s.status]) return null;
+  var consumers = (s.consumers || []).filter(function (c) { return c && c.name; });
+  if (!consumers.length) return null;
+
+  var at = now || Date.now();
+  /* Since when there has been nothing new AT THE OTHER END. The last
+     successful delivery is the honest answer; failing that, when the failure
+     started, because a failed stream goes on capturing — its lastEventAt is
+     seconds old while the consumer has had nothing for an hour, and reading
+     that as "no new data for 1 second" would be exactly backwards. A paused
+     stream has stopped capturing too, so there its last event is the right
+     mark. */
+  var sinceIso = s.lastGoodDeliveryAt
+    || (s.status === 'failed' ? s.failingSince : null)
+    || s.lastEventAt || s.startedAt || null;
+  var since = sinceIso ? Date.parse(sinceIso) : null;
+  var seconds = since ? Math.max(0, Math.round((at - since) / 1000)) : null;
+
+  var names = consumers.map(function (c) { return c.name; });
+  var who = names.length === 1 ? names[0]
+    : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  var verb = names.length === 1 ? 'has' : 'have';
+
+  return {
+    consumers: consumers,
+    names: names,
+    sinceIso: sinceIso,
+    seconds: seconds,
+    line: who + ' ' + verb + ' had no new data for ' + durationWords(seconds) + '.',
+  };
+}
+
+function durationWords(seconds) {
+  if (seconds === null || seconds === undefined) return 'an unknown length of time';
+  if (seconds < 90) {
+    var n = Math.max(1, Math.round(seconds));
+    return n + ' second' + (n === 1 ? '' : 's');
+  }
+  var mins = Math.round(seconds / 60);
+  if (mins < 90) return mins + ' minute' + (mins === 1 ? '' : 's');
+  var hours = Math.round(seconds / 3600);
+  if (hours < 48) return hours + ' hour' + (hours === 1 ? '' : 's');
+  var days = Math.round(seconds / 86400);
+  return days + ' day' + (days === 1 ? '' : 's');
+}
+
 /* Sort by how much attention a stream needs, then by lag. A screen that
    sorted alphabetically would bury the failed stream. */
 var SEVERITY = { failed: 0, lagging: 1, snapshotting: 2, running: 3, paused: 4, stopped: 5, draft: 6 };
-function sortStreams(list) {
+function sortStreams(list, now) {
+  var at = now || Date.now();
+  var sev = function (s) {
+    var base = SEVERITY[s.status] === undefined ? 9 : SEVERITY[s.status];
+    // A stalled stream somebody is READING outranks one nobody is. Both are
+    // broken; only one of them is quietly feeding stale numbers to a person.
+    // Half a step, so it lifts within its band rather than jumping the queue
+    // ahead of an outright failure.
+    return consumerImpact(s, at) ? base - 0.5 : base;
+  };
   return list.slice().sort(function (a, b) {
-    var d = (SEVERITY[a.status] === undefined ? 9 : SEVERITY[a.status])
-          - (SEVERITY[b.status] === undefined ? 9 : SEVERITY[b.status]);
+    var d = sev(a) - sev(b);
     if (d) return d;
     return (b.metrics.lagSeconds || 0) - (a.metrics.lagSeconds || 0);
   });
@@ -1004,6 +1332,10 @@ function blankDraft(projectId) {
       backoff: 'exponential', dlq: true, onSchemaDrift: 'pause', maxEventsPerMin: 0,
       activeWindow: null, guardrail: 'confirm_destructive', lagThresholdSeconds: 30 },
     profile: { baseRate: 120, capacityRate: 400, retentionHours: 72 },
+    // Who reads what comes out of this. Optional, and empty is honest — but
+    // when it is filled in, a stall stops being a fact about a stream and
+    // becomes a fact about the people downstream of it.
+    consumers: [],
   };
 }
 
@@ -1040,6 +1372,7 @@ function createStream(state, draft, opts) {
   s.capture.methodLabel = s.capture.methodLabel || methodLabel(s.capture.method, s.capture.connectionLabel);
   s.metrics = { eventsPerMin: 0, lagSeconds: 0, lagPeak24h: 0, pendingInStore: 0,
     deliveredToday: 0, failedToday: 0, dlqDepth: 0, storeRecords: 0, spark: [] };
+  if (!Array.isArray(s.consumers)) s.consumers = [];
   s.status = 'draft';
   s.objects = (s.objects || []).map(function (ob) {
     return Object.assign({ state: 'paused', eventsToday: 0 }, ob); });
@@ -1065,6 +1398,12 @@ function updateStream(state, id, draft) {
   next.lastEventAt = was.lastEventAt;
   next.metrics = was.metrics;
   next.status = was.status;
+  // The failure clock belongs to the stream too: editing a batch size does not
+  // mean the destination started accepting records again.
+  next.lastError = was.lastError;
+  next.failingSince = was.failingSince;
+  next.lastGoodDeliveryAt = was.lastGoodDeliveryAt;
+  if (!Array.isArray(next.consumers)) next.consumers = was.consumers || [];
   state.streams[i] = next;
   audit(state, 'stream.updated', id, { name: next.name });
   return next;
@@ -1128,6 +1467,38 @@ function duplicateStream(state, id) {
 /* Resync one object: re-snapshot that table without disturbing the others.
    The point of naming the object is that a single bad table does not cost a
    full re-snapshot of the stream. */
+/**
+ * Wind the stream back to the last position it is known to have delivered
+ * from, and clear the failure. Everything captured since is still in the
+ * Stream Store, so this re-delivers rather than loses — which is the whole
+ * reason a checkpoint is worth keeping.
+ */
+function resetToCheckpoint(state, id) {
+  var s = mustGet(state, id);
+  var from = s.capture.position && s.capture.position.lsn;
+  s.lastError = null;
+  s.failingSince = null;
+  s.metrics.failedToday = 0;
+  if (s.status === 'failed') s.status = 'paused';
+  audit(state, 'stream.checkpoint_reset', id, {
+    position: from, pending: s.metrics.pendingInStore, dlq: s.metrics.dlqDepth });
+  return { position: from, pending: s.metrics.pendingInStore };
+}
+
+/** Replace the downstream consumer list. Editable from the stream's settings. */
+function setConsumers(state, id, list) {
+  var s = mustGet(state, id);
+  s.consumers = (list || [])
+    .filter(function (c) { return c && String(c.name || '').trim(); })
+    .map(function (c) {
+      return { name: String(c.name).trim().slice(0, 60),
+               owner: c.owner ? String(c.owner).trim().slice(0, 120) : undefined,
+               notifyOnStall: !!c.notifyOnStall };
+    });
+  audit(state, 'stream.consumers_set', id, { count: s.consumers.length });
+  return s.consumers;
+}
+
 function resyncObject(state, id, table) {
   var s = mustGet(state, id);
   var o = (s.objects || []).filter(function (x) { return x.table === table; })[0];
@@ -1459,10 +1830,15 @@ return {
   audit: audit, storeKey: storeKey, wipKey: wipKey,
 
   // simulation
-  tick: tick, ratePerTick: ratePerTick, lagFromPending: lagFromPending, isLive: isLive,
+  tick: tick, rebaseToNow: rebaseToNow, ratePerTick: ratePerTick, lagFromPending: lagFromPending, isLive: isLive,
 
   // reads
   kpis: kpis, sortStreams: sortStreams, filterStreams: filterStreams, flowOf: flowOf,
+  kpiSeries: kpiSeries, pushKpiSample: pushKpiSample, trend: trend, sparkPoints: sparkPoints,
+  failureDetail: failureDetail, revealSample: revealSample, errorClass: errorClass,
+  redactRow: redactRow, consumerImpact: consumerImpact, durationWords: durationWords,
+  SPARK_MIN_POINTS: SPARK_MIN_POINTS, SPARK_SIGNIFICANT: SPARK_SIGNIFICANT,
+  KPI_HISTORY: KPI_HISTORY,
   topicsOf: topicsOf, storeTotals: storeTotals, alertsOf: alertsOf, heatGrid: heatGrid,
   getStream: getStream, streamsForTable: streamsForTable,
 
@@ -1475,6 +1851,7 @@ return {
   createStream: createStream, updateStream: updateStream, duplicateStream: duplicateStream,
   startStream: startStream, pauseStream: pauseStream, resumeStream: resumeStream,
   stopStream: stopStream, deleteStream: deleteStream, resyncObject: resyncObject,
+  resetToCheckpoint: resetToCheckpoint, setConsumers: setConsumers,
   replay: replay, replayCount: replayCount, requeueDlq: requeueDlq, redeliverEvent: redeliverEvent,
   setRetention: setRetention, retentionImpact: retentionImpact, setEvictionPolicy: setEvictionPolicy,
   cutoverPlan: cutoverPlan, beginCutover: beginCutover, cutoverComplete: cutoverComplete,

@@ -53,6 +53,11 @@
 
   function start() {
     if (timer) return;
+    // A seeded demo carries a fixed clock so its figures are reproducible;
+    // the tick below uses the real one. Rebasing once, here, is where those
+    // two clocks meet — without it every "how long ago" on the screen is out
+    // by the gap between the seed date and today.
+    if (state) { DS.rebaseToNow(state); persist(); }
     timer = setInterval(function () {
       if (!state) return;
       DS.tick(state);

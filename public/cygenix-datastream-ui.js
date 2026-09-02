@@ -257,6 +257,12 @@ function confirmText(kind, detail) {
       return 'Resync ' + d.table + '?\n\nCygenix re-reads all '
         + Number(d.rows || 0).toLocaleString() + ' row(s) of that table and re-delivers them. '
         + 'The rest of the stream keeps running.';
+    case 'checkpoint':
+      return 'Reset "' + d.name + '" to its last good checkpoint?\n\nDelivery restarts from '
+        + (d.position || 'the last committed position') + '. The '
+        + Number(d.pending || 0).toLocaleString() + ' record(s) already in the Stream Store are '
+        + 're-delivered to ' + (d.destination || 'the destination')
+        + ', so records it already holds may arrive again.';
     case 'retention':
       return 'Shorten retention from ' + d.from + 'h to ' + d.to + 'h?\n\nAbout '
         + Number(d.recordsLost || 0).toLocaleString() + ' retained record(s) are dropped, and '
