@@ -11,6 +11,7 @@
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
+<link rel="stylesheet" href="/cygenix-datastream.css">
 <script src="/cygenix-model.js?v=7d9a5e0980"></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-history.css">
@@ -1410,12 +1411,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-sidebar.js?v=d338426ab1" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
-  <script src="/cygenix-datastream.js?v=178f60ad22" defer></script>
+  <script src="/cygenix-datastream.js?v=e6205ed8d2" defer></script>
+  <script src="/cygenix-datastream-ui.js?v=fe758c6fa1" defer></script>
   <script src="/cygenix-preflight.js?v=b84fe6bfb2" defer></script>
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
   <script src="/cygenix-conn-builder.js?v=a50f317be6" defer></script>
-  <script src="/dashboard-app.js?v=d9438358c8" defer></script>
+  <script src="/dashboard-app.js?v=fc35b51265" defer></script>
 
 
   <!-- MAIN -->
@@ -1426,6 +1428,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="panel-header">
         <div><div class="panel-title">SQL Migration Overview</div><div class="panel-sub" id="today-date"></div></div>
       </div>
+
+      <!-- Blocked streams, in the same words as the Data Stream page. An
+           operator who opens Home and clicks nothing has to be able to say
+           which stream is broken, that nothing is reaching the destination,
+           roughly why, what is at risk and how long they have. -->
+      <div id="dash-bandhost"></div>
 
       <!-- MIGRATION PIPELINE — connect → cutover, with what is sitting at each
            stage and at most one thing named as the blockage. The Data Stream

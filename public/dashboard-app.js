@@ -4380,6 +4380,7 @@ function renderDashboard() {
   // We still call updateStats() for the stat cards at the top.
   updateStats();
   renderRing();
+  renderStreamBand();
   renderMigrationPipeline();
   renderStreamControlTile();
   renderProjectStatus();
@@ -4541,6 +4542,23 @@ function streamState(){
     return (st && st.streams && st.streams.length) ? st : null;
   } catch { return null; }
 }
+
+/* The blocked band, rendered from the same builder the Data Stream page uses,
+   so the two screens cannot describe one incident differently. Home gets the
+   read-only variant: the actions that change a production system live on the
+   page that owns them. */
+let _dashBandDismissed = false;
+function renderStreamBand(){
+  const host = document.getElementById('dash-bandhost');
+  if (!host) return;
+  const st = streamState();
+  if (!st || _dashBandDismissed || typeof CygenixDataStreamUI === 'undefined') {
+    host.innerHTML = ''; return;
+  }
+  host.innerHTML = CygenixDataStreamUI.blockedBand(CygenixDataStream, st, { actions: false });
+}
+function dsBandDismiss(){ _dashBandDismissed = true; renderStreamBand(); }
+function dsBandCycle(){ /* one band on Home; the page owns the carousel */ }
 
 function renderStreamControlTile(){
   const host = document.getElementById('stream-control');

@@ -130,8 +130,13 @@ const server = http.createServer((req, res) => {
 
   check('every tile\'s accessible name is a sentence, not a number list',
     t.every((x) => /[a-z]{4,}.*\./.test(x.aria || '')), JSON.stringify(t.map((x) => x.aria)));
+  // The delivery tile reads as a state now, so its accessible name is the
+  // state sentence rather than a rate glued onto a phrase.
   check('and it names the metric, the value and the direction',
-    /^Delivery errors: \d+, (rising|falling|level)/.test(t[3].aria || ''), t[3].aria);
+    /^Max lag: .+, (rising|falling|level)/.test(t[2].aria || ''), t[2].aria);
+  check('the delivery tile says what is wrong, not how fast a counter moves',
+    /^\d+ streams? blocked: .+\.$|^All streams are delivering\.$|losing records/.test(t[3].aria || ''),
+    t[3].aria);
   check('the drawing itself is hidden from screen readers',
     t.every((x) => x.svgHidden));
 
@@ -145,7 +150,7 @@ const server = http.createServer((req, res) => {
   check('and the tile says it is still collecting',
     thin.every((x) => /collecting/.test(x.collecting)), JSON.stringify(thin.map((x) => x.collecting)));
   check('the accessible name says so too, rather than implying a trend',
-    /still collecting/.test(thin[3].aria || ''), thin[3].aria);
+    /still collecting/.test(thin[1].aria || ''), thin[1].aria);
   await page.evaluate(() => { P.boot(); paint(); });
   await page.waitForTimeout(300);
 
@@ -251,7 +256,101 @@ const server = http.createServer((req, res) => {
       return (first.consumers || []).length > 0;
     }));
 
-  /* ── 8. Nothing threw ───────────────────────────────────────────────────── */
+  /* ── 8. The blocked band, which is the whole acceptance test ────────────── */
+  //
+  // "An operator who opens Home and does not click anything must be able to
+  // say, out loud: which stream is broken, that nothing is reaching the
+  // destination, roughly why, what data is at risk, and how long they have."
+  // Those five, read off the DOM, with nothing clicked.
+
+  await open();
+  const band = await page.evaluate(() => {
+    const b = document.querySelector('#ds-bandhost .ds-band');
+    if (!b) return null;
+    return {
+      tag: b.querySelector('.ds-band-tag').textContent.trim(),
+      what: b.querySelector('.ds-band-what').textContent.trim(),
+      why: b.querySelector('.ds-band-err').textContent.trim(),
+      target: (b.querySelector('.ds-band-target') || {}).textContent || '',
+      piling: b.querySelector('.ds-band-line').textContent.trim(),
+      means: b.querySelector('.ds-band-line.means').textContent.trim(),
+      deadline: b.querySelector('.ds-band-deadline').textContent.trim(),
+      actions: Array.from(b.querySelectorAll('.ds-band-actions .btn')).map((x) => x.textContent.trim()),
+      aboveTiles: (() => {
+        const k = document.getElementById('ds-kpis');
+        return (b.compareDocumentPosition(k) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      })(),
+    };
+  });
+  check('a blocked stream gets a band, above the KPI tiles',
+    !!band && band.aboveTiles, JSON.stringify(band));
+  check('WHICH STREAM — it is named, in a sentence',
+    /Cutover delta into target has delivered nothing for/.test(band.what), band.what);
+  check('THAT NOTHING IS ARRIVING — said in words, not as a rate of 0',
+    /delivered nothing/.test(band.what));
+  check('ROUGHLY WHY — the destination\'s own message, verbatim',
+    band.why === 'destination rejected: string truncation on stg_customers.name', band.why);
+  check('with the failing table and column picked out of it',
+    band.target === 'stg_customers.name', band.target);
+  check('WHAT IS AT RISK — the queue and what has been given up on',
+    /changes are queued and \d+ have been given up on/.test(band.piling), band.piling);
+  check('and what that means for the data, not just for the system',
+    /Deletions are not being applied|not reaching/.test(band.means), band.means);
+  check('HOW LONG THEY HAVE — the retention deadline, which was shown nowhere before',
+    /retention · .*(expires|resync|headroom)/.test(band.deadline), band.deadline);
+  check('with the actions beside it',
+    band.actions.length >= 4 && /Copy diagnostics/.test(band.actions.join('|')),
+    band.actions.join(' | '));
+
+  /* The row, which is where the original lie was told */
+  const row = await page.evaluate(() => {
+    const tr = document.querySelector('.ds-table tbody tr');
+    const c = tr.querySelectorAll('td');
+    return {
+      cls: tr.className,
+      name: c[1].querySelector('.ds-cell-name').textContent.trim(),
+      reason: (c[1].querySelector('.ds-rowreason') || {}).textContent || '',
+      capture: c[5].textContent.trim(),
+      deliver: c[6].textContent.trim(),
+      deliverStalled: !!c[6].querySelector('.ds-stalled'),
+      lastDelivered: c[8].textContent.trim(),
+    };
+  });
+  check('the blocked stream sorts to the top, whatever its status label says',
+    /Cutover delta/.test(row.name), row.name);
+  check('its row is marked as blocked', /blocked-blocked/.test(row.cls), row.cls);
+  check('and carries a one-line reason under the name',
+    /truncation/.test(row.reason), row.reason);
+  check('capture and deliver are two columns, because they disagree',
+    /260/.test(row.capture) && row.deliver === '0', row.capture + ' / ' + row.deliver);
+  check('and the zero that is the whole problem is not a quiet number',
+    row.deliverStalled);
+  check('"last delivered" reads 13 minutes, not "0s ago"',
+    /1[0-9]m ago|13m ago/.test(row.lastDelivered), row.lastDelivered);
+
+  /* The flow view */
+  await page.evaluate(() => dsSetView('flow'));
+  await page.waitForTimeout(400);
+  check('the flow view severs the delivery hop instead of labelling it 0/min',
+    await page.evaluate(() => {
+      const a = document.querySelector('.ds-flow-arrow.cut');
+      return !!a && /delivering nothing/.test(a.textContent)
+        && !!a.querySelector('.ds-flow-err');
+    }));
+  await page.evaluate(() => dsSetView('table'));
+  await page.waitForTimeout(300);
+
+  /* Dismissal is per session */
+  await page.evaluate(() => dsBandDismiss());
+  await page.waitForTimeout(200);
+  check('the band can be dismissed for the session',
+    (await page.evaluate(() => !document.querySelector('#ds-bandhost .ds-band'))));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1200);
+  check('and comes back on the next visit, because the stream is still broken',
+    (await page.evaluate(() => !!document.querySelector('#ds-bandhost .ds-band'))));
+
+  /* ── 9. Nothing threw ───────────────────────────────────────────────────── */
 
   const real = errors.filter((e) => !/ResizeObserver|Failed to fetch|NetworkError|Load failed/.test(e));
   check('no page errors through all of that', real.length === 0, real.join(' | '));

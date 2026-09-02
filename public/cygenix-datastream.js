@@ -369,6 +369,8 @@ function seedDemo(projectId, opts) {
       profile: { baseRate: d.baseRate, capacityRate: d.capacityRate, retentionHours: d.retentionHours },
       metrics: {
         eventsPerMin: isLive(d.status) ? d.baseRate : 0,
+        deliveredPerMin: isLive(d.status) ? Math.min(d.baseRate, d.capacityRate) : 0,
+        consecutiveFailures: d.status === 'failed' ? 12 : 0,
         lagSeconds: lagFromPending(pending, d.capacityRate),
         lagPeak24h: d.status === 'lagging' ? 68 : d.status === 'failed' ? 240 : 12,
         pendingInStore: pending,
@@ -385,6 +387,13 @@ function seedDemo(projectId, opts) {
       lastError: d.status === 'failed'
         ? 'destination rejected: string truncation on stg_customers.name'
         : null,
+      /* A failed demo stream opens with a history, because a stream that has
+         only just started failing is not the state anybody needs to see
+         modelled. Thirteen minutes ago it was delivering; it has not since. */
+      lastGoodDeliveryAt: d.status === 'failed' ? new Date(base - 13 * 60000).toISOString()
+        : isLive(d.status) ? new Date(base).toISOString() : null,
+      failingSince: d.status === 'failed' ? new Date(base - 13 * 60000).toISOString() : null,
+      oldestPendingAt: pending > 0 ? new Date(base - 13 * 60000).toISOString() : null,
     });
   });
 
@@ -407,7 +416,8 @@ function seedDemo(projectId, opts) {
       backoff: 'exponential', dlq: true, onSchemaDrift: 'pause', maxEventsPerMin: 0,
       activeWindow: null, guardrail: 'confirm_all', lagThresholdSeconds: 60 },
     profile: { baseRate: 40, capacityRate: 200, retentionHours: 24 },
-    metrics: { eventsPerMin: 0, lagSeconds: 0, lagPeak24h: 0, pendingInStore: 0, deliveredToday: 0,
+    metrics: { eventsPerMin: 0, deliveredPerMin: 0, consecutiveFailures: 0, lagSeconds: 0,
+      lagPeak24h: 0, pendingInStore: 0, deliveredToday: 0,
       failedToday: 0, dlqDepth: 0, storeRecords: 0, spark: [] },
     createdBy: currentActor(),
     createdAt: new Date(base - 2 * 86400000).toISOString(),
@@ -487,6 +497,9 @@ function tick(state, opts) {
         if (!s.failingSince) s.failingSince = new Date(at).toISOString();
         if (!s.lastErrorAt) s.lastErrorAt = new Date(at).toISOString();
         m.eventsPerMin = p.baseRate;
+        // Capture is running. Delivery is not. One number cannot say that.
+        m.deliveredPerMin = 0;
+        if (n % 5 === 0) m.consecutiveFailures = (m.consecutiveFailures || 0) + 1;
         m.lagSeconds = lagFromPending(m.pendingInStore, p.capacityRate);
         s.lastEventAt = new Date(at).toISOString();
         s.capture.position = { lsn: fakeLsn(s.id, n), capturedAt: new Date(at).toISOString() };
@@ -500,6 +513,7 @@ function tick(state, opts) {
         for (var k = 0; k < emitF; k++) newEvents.push(makeEvent(state, s, k, at, true));
       } else {
         m.eventsPerMin = 0;
+        m.deliveredPerMin = 0;
         pushSpark(m, 0);
       }
       // The metric point reports what actually happened, including on a
@@ -545,6 +559,8 @@ function tick(state, opts) {
       s.failingSince = null;
     }
     m.eventsPerMin = Math.round(inN * (60000 / TICK_MS));
+    m.deliveredPerMin = Math.round(outN * (60000 / TICK_MS));
+    if (outN > 0) m.consecutiveFailures = 0;
     m.lagSeconds = lagFromPending(m.pendingInStore, p.capacityRate);
     if (m.lagSeconds > m.lagPeak24h) m.lagPeak24h = m.lagSeconds;
     s.lastEventAt = new Date(at).toISOString();
@@ -633,7 +649,7 @@ function pushPoint(state, s, inN, outN, at) {
     t: new Date(at).toISOString(), streamId: s.id,
     in: inN, out: outN,
     lagSeconds: s.metrics.lagSeconds, errors: s.status === 'failed' ? 1 : 0,
-    storeDepth: s.metrics.pendingInStore,
+    storeDepth: s.metrics.pendingInStore, dlq: s.metrics.dlqDepth || 0,
   });
   if (state.points.length > MAX_POINTS) state.points = state.points.slice(-MAX_POINTS);
 }
@@ -904,6 +920,209 @@ function revealSample(state, streamId, eventId) {
     return x.id === eventId && x.streamId === streamId;
   })[0];
   return e ? (e.after || e.before || null) : null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BLOCKED — a stream that is not delivering must not look like one that is
+   ══════════════════════════════════════════════════════════════════════════
+   The failure this exists for, from the live build:
+
+     Source → Cutover delta into target
+     Status      Failed
+     Throughput  260/min        ← reassuring
+     Last event  0s ago         ← reassuring
+     Actually    capture 260/min, DELIVER 0/min, 1,600 pending and climbing,
+                 every recent event dead, ~95 in the dead-letter queue,
+                 "destination rejected: string truncation on stg_customers.name"
+
+   Two of the three numbers on that row are comforting and both are true. It
+   IS reading 260 changes a minute and it DID see an event a second ago.
+   Nothing is arriving at the destination. The cause was three clicks away in
+   a tab nobody had a reason to open.
+
+   Blocked is therefore derived from the SERIES, not from the status label —
+   a status can say "Failed" while the numbers beside it say "busy", and the
+   numbers are what people read.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+var BLOCK_NO_DELIVERY_MS = 3 * 60000;    // (a) capturing, delivering nothing
+var BLOCK_DLQ_WINDOW_MS = 5 * 60000;     // (b) dead-letter queue growing
+var BLOCK_PENDING_MS = 10 * 60000;       // (d) store rising and never falling
+
+function pointsFor(state, streamId, sinceMs, now) {
+  var at = now || (state && state.clockNow) || Date.now();
+  return ((state && state.points) || []).filter(function (p) {
+    if (p.streamId !== streamId) return false;
+    var t = Date.parse(p.t);
+    return isFinite(t) && at - t <= sinceMs;
+  });
+}
+
+/**
+ * Is this stream stopped, struggling, or fine — and on what evidence.
+ *
+ * Hard-blocked (a, c) means nothing is arriving at the destination.
+ * Degraded (b, d) means it is delivering AND losing some: a stream doing
+ * 900/min while dead-lettering 5/min is losing data but is not stopped, and
+ * lumping the two together would make the loud state meaningless.
+ */
+function blockedState(state, stream, now) {
+  var s = stream;
+  if (!s) return null;
+  var at = now || (state && state.clockNow) || Date.now();
+  var m = s.metrics || {};
+  var reasons = [];
+  var hard = false, degraded = false;
+
+  // (a) Capturing, delivering nothing, for long enough that it is not a gap
+  //     between batches.
+  var recent = pointsFor(state, s.id, BLOCK_NO_DELIVERY_MS, at);
+  var enough = recent.length >= Math.floor(BLOCK_NO_DELIVERY_MS / TICK_MS) * 0.6;
+  var noDelivery = enough && recent.every(function (p) { return (p.out || 0) === 0; })
+    && recent.some(function (p) { return (p.in || 0) > 0; });
+  // A stream that has only just started failing has no three minutes of
+  // history yet; its own failure clock answers the same question.
+  var failingFor = s.failingSince ? at - Date.parse(s.failingSince) : 0;
+  if (noDelivery || (failingFor >= BLOCK_NO_DELIVERY_MS && (m.deliveredPerMin || 0) === 0
+      && (m.eventsPerMin || 0) > 0)) {
+    hard = true;
+    reasons.push({ code: 'no-delivery', text: 'capturing but delivering nothing' });
+  }
+
+  // (c) The same error, past the point where retrying is going to help.
+  var retries = (s.delivery && s.delivery.retries) || 5;
+  if ((m.consecutiveFailures || 0) > retries) {
+    hard = true;
+    reasons.push({ code: 'retries-exhausted',
+      text: m.consecutiveFailures + ' consecutive failures, past the ' + retries + ' configured retries' });
+  }
+
+  // (b) The dead-letter queue is growing: records are being given up on.
+  var dlqWindow = pointsFor(state, s.id, BLOCK_DLQ_WINDOW_MS, at);
+  if (dlqWindow.length > 1) {
+    var dlqRise = (dlqWindow[dlqWindow.length - 1].dlq || 0) - (dlqWindow[0].dlq || 0);
+    if (dlqRise > 0) {
+      degraded = true;
+      reasons.push({ code: 'dlq-growing',
+        text: dlqRise + ' more record(s) given up on in the last 5 minutes' });
+    }
+  }
+
+  // (d) The store only goes up. Not stopped, but not keeping up either.
+  var pendWindow = pointsFor(state, s.id, BLOCK_PENDING_MS, at);
+  if (pendWindow.length >= Math.floor(BLOCK_PENDING_MS / TICK_MS) * 0.6) {
+    var monotonic = true;
+    for (var i = 1; i < pendWindow.length; i++) {
+      if ((pendWindow[i].storeDepth || 0) < (pendWindow[i - 1].storeDepth || 0)) { monotonic = false; break; }
+    }
+    if (monotonic && (pendWindow[pendWindow.length - 1].storeDepth || 0) > (pendWindow[0].storeDepth || 0)) {
+      degraded = true;
+      reasons.push({ code: 'backlog-growing', text: 'the store has only grown for 10 minutes' });
+    }
+  }
+
+  if (!hard && !degraded) return null;
+
+  var stoppedSince = s.lastGoodDeliveryAt ? Date.parse(s.lastGoodDeliveryAt)
+    : (s.failingSince ? Date.parse(s.failingSince) : null);
+  var stoppedFor = stoppedSince ? Math.max(0, Math.round((at - stoppedSince) / 1000)) : null;
+
+  return {
+    level: hard ? 'blocked' : 'degraded',
+    // A paused stream nobody expects to be running should not carry a live
+    // "13 minutes and counting" — the clock is frozen and labelled instead.
+    paused: s.status === 'paused' || s.status === 'stopped',
+    reasons: reasons,
+    stoppedForSeconds: stoppedFor,
+    deadline: retentionDeadline(s, at),
+  };
+}
+
+/** Every blocked or degraded stream, worst first. */
+function blockedStreams(state, now) {
+  var at = now || (state && state.clockNow) || Date.now();
+  return ((state && state.streams) || [])
+    .map(function (s) {
+      var b = blockedState(state, s, at);
+      return b ? { stream: s, blocked: b } : null;
+    })
+    .filter(Boolean)
+    .sort(function (a, b) {
+      if (a.blocked.level !== b.blocked.level) return a.blocked.level === 'blocked' ? -1 : 1;
+      return a.blocked.deadline.secondsRemaining - b.blocked.deadline.secondsRemaining;
+    });
+}
+
+/* ── What it MEANS, which is the bit nobody writes ─────────────────────────
+ * Derived from the write mode and from what is actually stuck, not
+ * hardcoded: an append-only webhook feed losing records is a different
+ * sentence from a merge stream that is not applying deletes.
+ */
+function blockedConsequence(state, stream) {
+  var s = stream;
+  if (!s) return '';
+  var dest = (s.destination && s.destination.label) || 'the destination';
+  var mode = (s.destination && s.destination.writeMode) || 'append';
+  var dead = ((state && state.events) || []).filter(function (e) {
+    return e.streamId === s.id && e.deliveryState === 'dead';
+  });
+  var ops = {};
+  dead.forEach(function (e) { ops[e.op] = (ops[e.op] || 0) + 1; });
+  var tables = {};
+  dead.forEach(function (e) { tables[e.table] = 1; });
+  var tableList = Object.keys(tables).slice(0, 3).join(', ');
+
+  if (mode === 'merge' || mode === 'upsert') {
+    if (ops.D) {
+      return 'Deletions are not being applied to ' + dest + '. The target is drifting '
+        + 'further out of date every minute'
+        + (tableList ? ', on ' + tableList : '') + '.';
+    }
+    return 'Updates are not reaching ' + dest + (tableList ? ' for ' + tableList : '')
+      + ', so it is serving values that have already changed.';
+  }
+  if (mode === 'append') {
+    return 'New records are not reaching ' + dest + '. Anything reading it sees a feed '
+      + 'that simply stops, with no gap to notice.';
+  }
+  if (mode === 'audit-table') {
+    return 'The audit trail at ' + dest + ' has a hole in it from the moment delivery stopped.';
+  }
+  return 'Nothing is reaching ' + dest + ' while this is stopped.';
+}
+
+/** One paste-ready block for a ticket or a chat. */
+function blockedDiagnostics(state, stream, now) {
+  var s = stream;
+  var b = blockedState(state, s, now);
+  var d = retentionDeadline(s, now || (state && state.clockNow));
+  var lines = [
+    'Stream:        ' + s.name,
+    'Status:        ' + statusLabel(s.status) + (b ? ' (' + b.level + ')' : ''),
+    'Route:         ' + ((s.capture && s.capture.connectionLabel) || '?') + ' -> '
+      + ((s.destination && s.destination.label) || '?') + ' (' + ((s.destination && s.destination.writeMode) || '?') + ')',
+    'Capture:       ' + (s.metrics.eventsPerMin || 0) + '/min',
+    'Deliver:       ' + (s.metrics.deliveredPerMin || 0) + '/min',
+    'Last delivery: ' + (s.lastGoodDeliveryAt || 'none recorded'),
+    'Pending:       ' + (s.metrics.pendingInStore || 0),
+    'Dead-letter:   ' + (s.metrics.dlqDepth || 0),
+    'Error:         ' + (s.lastError || 'none recorded'),
+    'Retention:     ' + d.retentionHours + 'h, ' + d.line,
+    'Checkpoint:    ' + ((s.capture && s.capture.position && s.capture.position.lsn) || 'none'),
+  ];
+  if (b) lines.push('Detected:      ' + b.reasons.map(function (r) { return r.text; }).join('; '));
+  lines.push('Consequence:   ' + blockedConsequence(state, s));
+  return lines.join('\n');
+}
+
+/* Pull the table and column out of a destination's own words where the shape
+   allows it, so the band can point at them. The message is never rewritten —
+   this only says which part of it to highlight. */
+function parseErrorTarget(message) {
+  var m = /\b((?:\[[^\]]+\]|\w+)(?:\.(?:\[[^\]]+\]|\w+))+)\b/.exec(String(message || ''));
+  if (!m) return null;
+  var parts = m[1].split('.');
+  return { full: m[1], table: parts.slice(0, -1).join('.'), column: parts[parts.length - 1] };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1277,9 +1496,22 @@ function durationWords(seconds) {
 /* Sort by how much attention a stream needs, then by lag. A screen that
    sorted alphabetically would bury the failed stream. */
 var SEVERITY = { failed: 0, lagging: 1, snapshotting: 2, running: 3, paused: 4, stopped: 5, draft: 6 };
-function sortStreams(list, now) {
-  var at = now || Date.now();
+/**
+ * Sorted by what needs attention first — and now that is a fact about the
+ * numbers rather than about the status label. Pass `state` and a blocked
+ * stream ranks above every status, ordered by how long it has left before its
+ * backlog expires: the one with four hours goes above the one with three days.
+ */
+function sortStreams(list, now, state) {
+  var at = now || (state && state.clockNow) || Date.now();
+  var blocked = {};
+  if (state) {
+    blockedStreams(state, at).forEach(function (e) { blocked[e.stream.id] = e.blocked; });
+  }
   var sev = function (s) {
+    var b = blocked[s.id];
+    if (b && b.level === 'blocked') return -10 + Math.min(9, b.deadline.secondsRemaining / 86400);
+    if (b && b.level === 'degraded') return -1;
     var base = SEVERITY[s.status] === undefined ? 9 : SEVERITY[s.status];
     // A stalled stream somebody is READING outranks one nobody is. Both are
     // broken; only one of them is quietly feeding stale numbers to a person.
@@ -1686,8 +1918,10 @@ function createStream(state, draft, opts) {
   s.lastEventAt = null;
   s.lastError = null;
   s.capture.methodLabel = s.capture.methodLabel || methodLabel(s.capture.method, s.capture.connectionLabel);
-  s.metrics = { eventsPerMin: 0, lagSeconds: 0, lagPeak24h: 0, pendingInStore: 0,
-    deliveredToday: 0, failedToday: 0, dlqDepth: 0, storeRecords: 0, spark: [] };
+  s.metrics = { eventsPerMin: 0, deliveredPerMin: 0, consecutiveFailures: 0, lagSeconds: 0,
+    lagPeak24h: 0, pendingInStore: 0,
+    deliveredToday: 0, failedToday: 0, dlqDepth: 0, storeRecords: 0, spark: [],
+    deliveredPerMin: 0, consecutiveFailures: 0 };
   if (!Array.isArray(s.consumers)) s.consumers = [];
   s.status = 'draft';
   s.objects = (s.objects || []).map(function (ob) {
@@ -2153,6 +2387,9 @@ return {
   kpiSeries: kpiSeries, pushKpiSample: pushKpiSample, trend: trend, sparkPoints: sparkPoints,
   failureDetail: failureDetail, revealSample: revealSample, errorClass: errorClass,
   retentionDeadline: retentionDeadline, roughDuration: roughDuration,
+  blockedState: blockedState, blockedStreams: blockedStreams,
+  blockedConsequence: blockedConsequence, blockedDiagnostics: blockedDiagnostics,
+  parseErrorTarget: parseErrorTarget,
   globalPauseState: globalPauseState, pauseAllPreview: pauseAllPreview, pauseAll: pauseAll,
   pauseAllPlan: pauseAllPlan, commitGlobalPause: commitGlobalPause,
   resumeAllPreview: resumeAllPreview, resumeAll: resumeAll,
