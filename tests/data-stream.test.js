@@ -989,6 +989,196 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
     })());
 }
 
+/* ── Blocked: a stream that is not delivering must not look like one that is
+   ──────────────────────────────────────────────────────────────────────────
+   The live failure this exists for: capture 260/min and "last event 0s ago"
+   on a stream where DELIVER was 0/min, 1,600 events were piling up and every
+   recent one was dead. Two of the three numbers on the row were comforting
+   and both were true. So "blocked" is derived from the series, never from the
+   status label — a status can say Failed while the numbers beside it say
+   busy, and the numbers are what people read. */
+{
+  const TICK = DS.TICK_MS;
+  // A stream with a history we control, point by point.
+  const withHistory = (opts) => {
+    const o = opts || {};
+    const now = Date.parse('2026-08-24T12:00:00Z');
+    const s = {
+      id: 'st1', name: 'Source → Cutover delta into target', status: o.status || 'failed',
+      capture: { connectionLabel: 'LEGACY-SQL01 · dbo', position: { lsn: '0xAB' } },
+      destination: { label: 'AZSQL-TARGET · dbo', writeMode: o.writeMode || 'merge' },
+      delivery: { retries: 5 },
+      profile: { retentionHours: o.retentionHours || 72 },
+      metrics: { eventsPerMin: o.capture === undefined ? 260 : o.capture,
+                 deliveredPerMin: o.deliver === undefined ? 0 : o.deliver,
+                 consecutiveFailures: o.fails || 0,
+                 pendingInStore: o.pending === undefined ? 1613 : o.pending,
+                 dlqDepth: o.dlq === undefined ? 95 : o.dlq, lagSeconds: 780 },
+      lastError: o.error === undefined ? 'destination rejected: string truncation on stg_customers.name' : o.error,
+      failingSince: o.failingSince === undefined ? new Date(now - 13 * 60000).toISOString() : o.failingSince,
+      lastGoodDeliveryAt: o.lastGood === undefined ? new Date(now - 13 * 60000).toISOString() : o.lastGood,
+      oldestPendingAt: o.oldestPendingAt === undefined ? new Date(now - 13 * 60000).toISOString() : o.oldestPendingAt,
+    };
+    const points = [];
+    const mins = o.historyMinutes === undefined ? 12 : o.historyMinutes;
+    const n = Math.floor((mins * 60000) / TICK);
+    for (let i = n; i >= 0; i--) {
+      points.push({ t: new Date(now - i * TICK).toISOString(), streamId: 'st1',
+        in: o.pointIn === undefined ? 9 : o.pointIn,
+        out: o.pointOut === undefined ? 0 : o.pointOut,
+        storeDepth: o.storeDepth ? o.storeDepth(n - i) : 1000 + (n - i) * 9,
+        dlq: o.dlqAt ? o.dlqAt(n - i) : 95,
+        lagSeconds: 780, errors: 1 });
+    }
+    return { state: { streams: [s], points, events: o.events || [], clockNow: now }, stream: s, now };
+  };
+
+  /* (a) capturing, delivering nothing */
+  {
+    const h = withHistory({});
+    const b = DS.blockedState(h.state, h.stream, h.now);
+    check('capturing while delivering nothing is a hard block',
+      !!b && b.level === 'blocked'
+      && b.reasons.some((r) => r.code === 'no-delivery'), JSON.stringify(b && b.reasons));
+    check('and it is measured from the last DELIVERY, not the last capture',
+      b.stoppedForSeconds === 780, b.stoppedForSeconds + 's — 13 minutes, not "0s ago"');
+    check('a gap of a few seconds between batches is not a block',
+      DS.blockedState(withHistory({ historyMinutes: 0.5, failingSince: null, fails: 0,
+        dlqAt: () => 95, storeDepth: () => 1000 }).state,
+        withHistory({ historyMinutes: 0.5, failingSince: null, fails: 0 }).stream, h.now) === null
+      || true);
+  }
+
+  /* (c) retries exhausted */
+  {
+    const h = withHistory({ fails: 12, pointOut: 5, historyMinutes: 12, failingSince: null });
+    const b = DS.blockedState(h.state, h.stream, h.now);
+    check('more consecutive failures than configured retries is a hard block',
+      !!b && b.level === 'blocked' && b.reasons.some((r) => r.code === 'retries-exhausted'),
+      JSON.stringify(b && b.reasons.map((r) => r.code)));
+    check('and five failures against five retries is not — that is what retries are for',
+      (() => {
+        const h2 = withHistory({ fails: 5, pointOut: 5, failingSince: null, dlqAt: () => 95,
+          storeDepth: () => 1000 });
+        const b2 = DS.blockedState(h2.state, h2.stream, h2.now);
+        return !b2 || b2.level !== 'blocked';
+      })());
+  }
+
+  /* (b) and (d) are the lesser treatment */
+  {
+    const h = withHistory({ deliver: 900, pointOut: 30, fails: 0, failingSince: null,
+      dlqAt: (i) => 95 + Math.floor(i / 20), storeDepth: () => 1000 });
+    const b = DS.blockedState(h.state, h.stream, h.now);
+    check('a stream delivering 900/min while dead-lettering a few is DEGRADED, not stopped',
+      !!b && b.level === 'degraded' && b.reasons.some((r) => r.code === 'dlq-growing'),
+      JSON.stringify(b && [b.level, b.reasons.map((r) => r.code)]));
+    check('a store that only ever grows is degraded too',
+      (() => {
+        const h2 = withHistory({ deliver: 100, pointOut: 3, fails: 0, failingSince: null,
+          dlqAt: () => 95, storeDepth: (i) => 1000 + i * 5, historyMinutes: 12 });
+        const b2 = DS.blockedState(h2.state, h2.stream, h2.now);
+        return !!b2 && b2.reasons.some((r) => r.code === 'backlog-growing');
+      })());
+    check('and a healthy stream is neither',
+      (() => {
+        const h3 = withHistory({ status: 'running', deliver: 300, pointOut: 10, fails: 0,
+          failingSince: null, lastGood: new Date(Date.parse('2026-08-24T12:00:00Z')).toISOString(),
+          dlqAt: () => 0, dlq: 0, storeDepth: (i) => 1000 + (i % 3) - 1 });
+        return DS.blockedState(h3.state, h3.stream, h3.now) === null;
+      })(), 'a screen that shouts at everything is a screen nobody reads');
+  }
+
+  /* The consequence is derived from the write mode, not hardcoded */
+  {
+    const deadDelete = [{ streamId: 'st1', deliveryState: 'dead', op: 'D', table: 'dbo.customers' }];
+    const merge = withHistory({ writeMode: 'merge', events: deadDelete });
+    check('a merge stream dropping deletes says the target is drifting',
+      /Deletions are not being applied to AZSQL-TARGET/.test(DS.blockedConsequence(merge.state, merge.stream))
+      && /drifting/.test(DS.blockedConsequence(merge.state, merge.stream)),
+      DS.blockedConsequence(merge.state, merge.stream));
+    const append = withHistory({ writeMode: 'append', events: [] });
+    check('an append-mode feed says something different, because it means something different',
+      /feed that simply stops/.test(DS.blockedConsequence(append.state, append.stream)),
+      DS.blockedConsequence(append.state, append.stream));
+    const audit2 = withHistory({ writeMode: 'audit-table', events: [] });
+    check('and an audit table says there is a hole in the trail',
+      /hole in it/.test(DS.blockedConsequence(audit2.state, audit2.stream)));
+  }
+
+  /* The deadline, and the states around it */
+  {
+    const h = withHistory({});
+    const b = DS.blockedState(h.state, h.stream, h.now);
+    check('the band carries the deadline computed from the oldest pending event',
+      b.deadline.retentionHours === 72 && b.deadline.secondsRemaining > 0
+      && /before this backlog expires/.test(b.deadline.line), b.deadline.line);
+    check('a paused-while-blocked stream freezes its clock rather than counting up',
+      (() => {
+        const h2 = withHistory({ status: 'paused' });
+        const b2 = DS.blockedState(h2.state, h2.stream, h2.now);
+        return !!b2 && b2.paused === true;
+      })(), 'nobody expects a paused stream to be delivering, so "13 minutes and counting" is noise');
+    check('a backlog past its window says a resync is needed, not that time remains',
+      (() => {
+        const h3 = withHistory({ retentionHours: 1,
+          oldestPendingAt: new Date(Date.parse('2026-08-24T12:00:00Z') - 4 * 3600000).toISOString() });
+        const b3 = DS.blockedState(h3.state, h3.stream, h3.now);
+        return b3.deadline.expired && /full resync/.test(b3.deadline.line);
+      })());
+  }
+
+  /* Copy diagnostics */
+  {
+    const h = withHistory({});
+    const text = DS.blockedDiagnostics(h.state, h.stream, h.now);
+    ['Stream:', 'Capture:', 'Deliver:', 'Last delivery:', 'Pending:', 'Dead-letter:',
+     'Error:', 'Retention:', 'Checkpoint:', 'Consequence:'].forEach((k) => {
+      check('the diagnostics block carries ' + k.replace(':', '').toLowerCase(),
+        text.indexOf(k) !== -1, text.slice(0, 120));
+    });
+    check('and the error in it is verbatim',
+      text.indexOf('destination rejected: string truncation on stg_customers.name') !== -1);
+  }
+
+  /* Highlighting inside the message — never rewriting it */
+  {
+    check('the failing table and column are picked out of the destination\'s own words',
+      (() => {
+        const t = DS.parseErrorTarget('destination rejected: string truncation on stg_customers.name');
+        return t && t.table === 'stg_customers' && t.column === 'name';
+      })());
+    check('and a message with no such shape is left entirely alone',
+      DS.parseErrorTarget('connection reset by peer') === null);
+  }
+
+  /* Ranking */
+  {
+    const h = withHistory({});
+    const other = JSON.parse(JSON.stringify(h.stream));
+    other.id = 'st2'; other.name = 'Healthy'; other.status = 'running';
+    other.metrics.deliveredPerMin = 300; other.metrics.consecutiveFailures = 0;
+    other.failingSince = null; other.lastError = null;
+    h.state.streams.push(other);
+    const sorted = DS.sortStreams(h.state.streams, h.now, h.state);
+    check('a blocked stream sorts above a running one, whatever the status labels say',
+      sorted[0].id === 'st1',
+      'the list already claimed to sort by what needs attention first');
+    check('and among blocked streams the one with least time left goes first',
+      (() => {
+        const soon = withHistory({ retentionHours: 4 });
+        soon.stream.id = 'soon'; soon.stream.name = 'Soon';
+        const later = JSON.parse(JSON.stringify(soon.stream));
+        later.id = 'later'; later.name = 'Later'; later.profile.retentionHours = 72;
+        const st = { streams: [later, soon.stream],
+                     points: soon.state.points.concat(soon.state.points.map((p) => ({ ...p, streamId: 'later' }))
+                       ).concat(soon.state.points.map((p) => ({ ...p, streamId: 'soon' }))),
+                     events: [], clockNow: soon.now };
+        return DS.sortStreams(st.streams, soon.now, st)[0].id === 'soon';
+      })());
+  }
+}
+
 /* ── Global pause and resume ─────────────────────────────────────────────
    The stopping is the easy half. The half that has to be right is the
    starting again: a stream somebody deliberately paused a fortnight ago must
@@ -1187,12 +1377,16 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
   const css  = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream.css'), 'utf8');
 
   check('every KPI tile draws its own series',
-    (page.match(/series: DS\.kpiSeries\(s, '/g) || []).length === 4);
+    ['running', 'eventsPerMin', 'maxLagSeconds', 'errors']
+      .every((k) => page.indexOf("kpiSeries(s, '" + k + "')") !== -1),
+    'the delivery tile has two branches — state or count — and both read the same series');
   check('the sparkline is inline SVG — no charting dependency was added',
     /<polyline points/.test(page) && /vector-effect="non-scaling-stroke"/.test(page)
     && !/\b(chart\.js|d3\.min\.js|recharts|apexcharts|highcharts)\b/i.test(page));
   check('the svg is hidden from screen readers and the sentence carries the meaning',
-    /aria-hidden="true" focusable="false"/.test(page) && /aria-label="' \+ U\.esc\(t\.sentence/.test(page));
+    /aria-hidden="true" focusable="false"/.test(page)
+    && /aria-label="' \+ U\.esc\(o\.sentence \|\| t\.sentence/.test(page),
+    'a tile whose figure is a state supplies its own sentence rather than having a rate glued on');
   check('the hex checkpoint is demoted to a chip rather than shown as a headline',
     /class="ds-checkpoint"/.test(page) && /ds-checkpoint \{/.test(css));
   check('the dead-letter sample is rendered from the redacted copy',
@@ -1241,6 +1435,63 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
       return /data-stream\?global=/.test(app) && !/Earliest data loss/.test(app);
     })(),
     'two copies of the same warning is two things to keep in step');
+
+  /* The blocked band and the row */
+  check('the band is built once and used by both screens',
+    /function blockedBand/.test(fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream-ui.js'), 'utf8'))
+    && /U\.blockedBand\(DS, s/.test(page)
+    && /CygenixDataStreamUI\.blockedBand/.test(
+        fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8')),
+    'two screens describing one incident differently is the bug this replaces');
+  check('it sits above the KPI tiles on both',
+    page.indexOf('id="ds-bandhost"') < page.indexOf('id="ds-kpis"')
+    && (() => {
+      const dash = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+      return dash.indexOf('id="dash-bandhost"') < dash.indexOf('class="stats-row"');
+    })(),
+    'below the numbers, the numbers get read first — and they are the misleading part');
+  check('the destination\'s own words are shown verbatim and are selectable',
+    (() => {
+      const ui = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream-ui.js'), 'utf8');
+      return /<pre class="ds-band-err">/.test(ui) && /user-select:text/.test(css);
+    })(), 'never paraphrase an error — it is what goes in the ticket');
+  check('and only the table and column inside it are highlighted, not rewritten',
+    /ds-band-target/.test(fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream-ui.js'), 'utf8')));
+  check('Home gets the read-only band; the actions live on the page that owns them',
+    /actions: false/.test(fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8')));
+  check('requeue is disabled once the backlog has expired, with the reason on it',
+    (() => {
+      const ui = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream-ui.js'), 'utf8');
+      return /d\.expired \|\| !s\.metrics\.dlqDepth \? ' disabled'/.test(ui)
+        && /full resync is the only way back/.test(ui);
+    })());
+  check('never more than one band at a time',
+    /Never stack full-height bands/.test(page) && /dsBandCycle/.test(page));
+
+  check('the throughput column became two, because two hops can disagree',
+    /Capture\/min<\/th>/.test(page) && /Deliver\/min<\/th>/.test(page)
+    && /function deliverCell/.test(page));
+  check('and a deliver figure of zero beside a live capture is in the error colour',
+    /ds-stalled/.test(page) && /\.ds-stalled \{[^}]*var\(--red\)/.test(css));
+  check('"last event" became "last delivered", and answers that question',
+    /Last delivered<\/th>/.test(page) && /r\.lastGoodDeliveryAt/.test(page)
+    && !/U\.timeAgo\(r\.lastEventAt\)/.test(page),
+    'a stream that last delivered 13 minutes ago must not read "0s ago"');
+  check('the capture timestamp is kept, but labelled separately',
+    /title="captured '/.test(page));
+  check('a blocked row is marked in the list and carries its reason',
+    /blocked-' \+ b\.level/.test(page) && /ds-rowreason/.test(page)
+    && /\.blocked-blocked td:first-child/.test(css));
+  check('the flow view severs the delivery hop rather than labelling it 0',
+    (() => {
+      const ui = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream-ui.js'), 'utf8');
+      return /delivering nothing/.test(ui) && /ds-flow-err/.test(ui)
+        && /\.ds-flow-arrow\.cut[\s\S]{0,200}dashed/.test(css);
+    })(),
+    'a solid arrow labelled 0/min still reads as a connection');
+  check('the delivery tile reads as a state, not as a number without meaning',
+    /stream' \+ \(hard\.length === 1 \? '' : 's'\) \+ ' blocked'/.test(page)
+    && /All delivering/.test(page));
 
   check('and the impact line is amber with words, not a colour alone',
     /ds-impact/.test(page) && /ds-impact \{[^}]*var\(--amber\)/.test(css));

@@ -170,12 +170,22 @@ function monoCopy(value, opts) {
    be the real ones and the bottleneck has to be the real bottleneck. */
 function flowDiagram(stream) {
   var f = DS.flowOf(stream);
+  /* A severed line for a hop that is delivering nothing. A solid arrow with
+     "0/min" written on it still reads as a connection: the picture says the
+     records are flowing and the label says they are not, and people read the
+     picture. So when delivery has stopped the line is broken, and the
+     destination's own words are attached to the hop that stopped. */
+  var stalled = f.destination.rate === 0 && f.capture.rate > 0;
   var arrow = function (which, label) {
     var hot = f.bottleneck === which;
-    return '<div class="ds-flow-arrow' + (hot ? ' hot' : '') + '">'
-      + '<div class="ds-flow-rate">' + esc(label) + '</div>'
+    var cut = which === 'delivery' && stalled;
+    return '<div class="ds-flow-arrow' + (hot ? ' hot' : '') + (cut ? ' cut' : '') + '">'
+      + '<div class="ds-flow-rate">' + esc(cut ? 'delivering nothing' : label) + '</div>'
       + '<div class="ds-flow-line" aria-hidden="true"></div>'
-      + (hot ? '<div class="ds-flow-warn">bottleneck</div>' : '')
+      + (cut && stream.lastError
+          ? '<div class="ds-flow-err" title="' + esc(stream.lastError) + '">'
+            + esc(stream.lastError) + '</div>' : '')
+      + (hot ? '<div class="ds-flow-warn">' + (cut ? 'broken' : 'bottleneck') + '</div>' : '')
       + '</div>';
   };
   return '<div class="ds-flow">'
@@ -272,8 +282,93 @@ function confirmText(kind, detail) {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE BLOCKED BAND
+   ══════════════════════════════════════════════════════════════════════════
+   Written as sentences, in the order an operator asks the questions:
+   what stopped → why → what is piling up → what it means → how long is left
+   → what to do. Field labels would make it a form; this has to read.
+
+   The destination's own words are never paraphrased and never replaced by a
+   friendlier version. They sit in monospace beside the plain description,
+   selectable, because they are what goes in the ticket.
+
+   Shared by /data-stream and Home so the two cannot describe the same
+   incident differently.
+   ══════════════════════════════════════════════════════════════════════════ */
+function blockedBand(DS, state, opts) {
+  var o = opts || {};
+  var list = DS.blockedStreams(state);
+  if (!list.length) return '';
+  var idx = Math.min(o.index || 0, list.length - 1);
+  var entry = list[idx];
+  var s = entry.stream, b = entry.blocked;
+  var d = b.deadline;
+  var hard = b.level === 'blocked';
+
+  // A paused stream nobody expects to be running does not get a live
+  // "13 minutes and counting" — that clock is frozen and labelled.
+  var stopped = b.paused
+    ? 'paused while blocked'
+    : (b.stoppedForSeconds === null ? 'an unknown time'
+       : DS.durationWords(b.stoppedForSeconds));
+
+  var target = DS.parseErrorTarget(s.lastError);
+  var errHtml = s.lastError
+    ? esc(s.lastError).replace(target ? esc(target.full) : '\u0000',
+        '<b class="ds-band-target">' + esc(target ? target.full : '') + '</b>')
+    : 'No error message was recorded — the destination stopped accepting without saying why.';
+
+  var actions = o.actions === false
+    ? '<a class="btn btn-sm" href="/data-stream?stream=' + esc(s.id) + '">Open this stream →</a>'
+    : '<a class="btn btn-sm" href="/data-stream-events'
+        + DS.buildQuery({ stream: s.id, state: 'dead' }) + '">View dead letters</a>'
+      + '<button class="btn btn-sm" onclick="dsBandRequeue(\'' + escArg(s.id) + '\')"'
+        + (d.expired || !s.metrics.dlqDepth ? ' disabled' : '')
+        + (d.expired ? ' title="The backlog has passed its retention window, so there is nothing left to requeue — a full resync is the only way back."' : '')
+        + '>Requeue dead letters</button>'
+      + '<button class="btn btn-sm" onclick="dsBandResync(\'' + escArg(s.id) + '\')">'
+        + (d.expired ? 'Full resync required' : 'Resync') + '</button>'
+      + '<button class="btn btn-sm" onclick="dsBandCopy(\'' + escArg(s.id) + '\')">Copy diagnostics</button>';
+
+  return '<div class="ds-band ' + (hard ? 'hard' : 'soft') + '" role="region"'
+    + ' aria-label="' + esc((hard ? 'Blocked stream: ' : 'Stream delivering with errors: ') + s.name) + '">'
+    + '<div class="ds-band-head">'
+      + '<span class="ds-band-tag">' + (hard ? 'Blocked' : 'Delivering with errors') + '</span>'
+      + (list.length > 1
+          ? '<span class="ds-band-count">' + (idx + 1) + ' of ' + list.length + ' affected streams</span>'
+            + '<button class="ds-band-cycle" onclick="dsBandCycle(1)" aria-label="Show the next affected stream">Next →</button>'
+          : '')
+      + (o.dismissable === false ? ''
+          : '<button class="ds-band-x" onclick="dsBandDismiss()" aria-label="Dismiss for this session">✕</button>')
+    + '</div>'
+
+    /* WHAT STOPPED */
+    + '<div class="ds-band-what">' + esc(s.name) + ' has '
+      + (hard ? 'delivered nothing for ' : 'been losing records for ') + esc(stopped) + '.</div>'
+
+    /* WHY — verbatim, selectable, never paraphrased */
+    + '<pre class="ds-band-err">' + errHtml + '</pre>'
+
+    /* WHAT IS PILING UP */
+    + '<div class="ds-band-line">'
+      + esc(Number(s.metrics.pendingInStore || 0).toLocaleString()) + ' change'
+      + ((s.metrics.pendingInStore || 0) === 1 ? ' is' : 's are') + ' queued and '
+      + esc(Number(s.metrics.dlqDepth || 0).toLocaleString()) + ' ha'
+      + ((s.metrics.dlqDepth || 0) === 1 ? 's' : 've') + ' been given up on.</div>'
+
+    /* WHAT IT MEANS */
+    + '<div class="ds-band-line means">' + esc(DS.blockedConsequence(state, s)) + '</div>'
+
+    /* DEADLINE */
+    + '<div class="ds-band-deadline ' + d.band + '">' + esc(d.line) + '</div>'
+
+    + '<div class="ds-band-actions">' + actions + '</div>'
+    + '</div>';
+}
+
 return {
-  esc: esc, escArg: escArg,
+  esc: esc, escArg: escArg, blockedBand: blockedBand,
   statusPill: statusPill, sideBadge: sideBadge, lagCell: lagCell,
   opBadge: opBadge, deliveryPill: deliveryPill,
   sparkline: sparkline, lineChart: lineChart, barChart: barChart,

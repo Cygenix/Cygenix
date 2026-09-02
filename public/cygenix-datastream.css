@@ -53,6 +53,47 @@
 .ds-spark-none { height:24px; margin-top:3px; font-size:10.5px; font-family:var(--mono);
   color:var(--text3); display:flex; align-items:center; }
 
+/* ── The blocked band ─────────────────────────────────────────────────── */
+/* Colour and position carry the urgency; there are no exclamation marks and
+   no alarm icons. */
+.ds-band { border-radius:var(--r); padding:0.75rem 0.9rem; margin-bottom:0.75rem;
+  border:0.5px solid; line-height:1.6; }
+.ds-band.hard { border-color:rgba(192,57,43,0.45); background:var(--red-bg); }
+.ds-band.soft { border-color:rgba(178,106,0,0.45); background:var(--amber-bg); }
+.ds-band-head { display:flex; align-items:center; gap:0.6rem; margin-bottom:0.4rem; }
+.ds-band-tag { font-size:9.5px; font-family:var(--mono); letter-spacing:0.08em;
+  text-transform:uppercase; padding:2px 7px; border-radius:100px; }
+.ds-band.hard .ds-band-tag { color:var(--red); background:rgba(192,57,43,0.14); }
+.ds-band.soft .ds-band-tag { color:var(--amber); background:rgba(178,106,0,0.14); }
+.ds-band-count { font-size:11px; color:var(--text3); font-family:var(--mono); }
+.ds-band-cycle, .ds-band-x { background:transparent; border:none; color:var(--text3);
+  cursor:pointer; font:inherit; font-size:11px; padding:2px 6px; border-radius:5px; }
+.ds-band-cycle:hover, .ds-band-x:hover { background:var(--hover-tint,rgba(22,26,32,0.06)); color:var(--text); }
+.ds-band-x { margin-left:auto; }
+.ds-band-what { font-size:13.5px; font-weight:600; color:var(--text); }
+/* The destination's own words, verbatim and selectable — they are what goes
+   in the ticket. */
+.ds-band-err { font-family:var(--mono); font-size:11.5px; color:var(--text2); margin:0.45rem 0;
+  padding:0.45rem 0.6rem; background:var(--code-tint,rgba(22,26,32,0.06)); border-radius:6px;
+  white-space:pre-wrap; word-break:break-word; user-select:text; }
+.ds-band-target { color:var(--red); font-weight:600; }
+.ds-band-line { font-size:12.5px; color:var(--text2); }
+.ds-band-line.means { color:var(--text); margin-top:0.2rem; }
+.ds-band-deadline { font-size:12px; font-family:var(--mono); margin-top:0.45rem; color:var(--text3); }
+.ds-band-deadline.amber { color:var(--amber); font-weight:500; }
+.ds-band-deadline.red, .ds-band-deadline.expired { color:var(--red); font-weight:600; }
+.ds-band-actions { display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.6rem; }
+
+/* ── Blocked rows ─────────────────────────────────────────────────────── */
+.ds-table tr.blocked-blocked td:first-child { box-shadow:inset 3px 0 0 var(--red); }
+.ds-table tr.blocked-degraded td:first-child { box-shadow:inset 3px 0 0 var(--amber); }
+.ds-rowreason { font-size:11px; line-height:1.45; margin-top:2px; max-width:280px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ds-rowreason.blocked { color:var(--red); }
+.ds-rowreason.degraded { color:var(--amber); }
+/* A zero that is the whole problem is not a quiet number. */
+.ds-stalled { color:var(--red); font-weight:600; }
+
 /* ── Global pause switch ──────────────────────────────────────────────── */
 /* Labelled, because an operator reaching for this during an incident should
    not have to work out which way "on" points. The label is the state. */
@@ -287,6 +328,15 @@ table.ds-table tbody tr.ds-new { animation:ds-flash 1.4s ease-out 1; }
   border-top:3.5px solid transparent; border-bottom:3.5px solid transparent;
 }
 .ds-flow-arrow.hot { color:var(--amber); }
+/* A broken hop is drawn broken. A solid arrow labelled 0/min reads as a
+   connection, and the picture wins the argument with the label. */
+.ds-flow-arrow.cut { color:var(--red); flex-basis:150px; }
+.ds-flow-arrow.cut .ds-flow-line { background:none;
+  border-top:1px dashed currentColor; height:0; }
+.ds-flow-arrow.cut .ds-flow-line::after { border-left-color:currentColor; opacity:0.45; }
+.ds-flow-err { font-family:var(--mono); font-size:9.5px; line-height:1.35; color:var(--red);
+  text-align:center; max-width:150px; overflow:hidden; display:-webkit-box;
+  -webkit-line-clamp:2; -webkit-box-orient:vertical; }
 .ds-flow-warn { font-size:9.5px; text-transform:uppercase; letter-spacing:0.06em; }
 .ds-flowcard { margin-bottom:0.6rem; }
 .ds-flowcard .panel-header { cursor:pointer; }

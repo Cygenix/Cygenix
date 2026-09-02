@@ -111,6 +111,10 @@ body.cyg-collapsed{padding-left:54px}
     </div>
   </div>
 
+  <!-- Blocked streams, in plain sentences, above everything. A stream that
+       is not delivering must not be able to look like one that is. -->
+  <div id="ds-bandhost"></div>
+
   <!-- KPI strip. Each tile is a filter, because a figure you cannot act on
        is decoration. -->
   <div class="ds-kpis" id="ds-kpis"></div>
@@ -188,8 +192,8 @@ body.cyg-collapsed{padding-left:54px}
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
 <script src="/cygenix-sidebar.js?v=d338426ab1" defer></script>
-<script src="/cygenix-datastream.js?v=178f60ad22"></script>
-<script src="/cygenix-datastream-ui.js?v=3d5b0de0cc"></script>
+<script src="/cygenix-datastream.js?v=e6205ed8d2"></script>
+<script src="/cygenix-datastream-ui.js?v=fe758c6fa1"></script>
 <script src="/cygenix-datastream-page.js?v=d0766024f4"></script>
 <script>
 'use strict';
@@ -234,9 +238,10 @@ function paint(state) {
   const s = state || P.state;
   if (!s) return;
   dsPaintGlobalSwitch();
+  paintBand(s);
   paintKpis(s);
   paintFilters(s);
-  const rows = DS.sortStreams(DS.filterStreams(s.streams, filter));
+  const rows = DS.sortStreams(DS.filterStreams(s.streams, filter), s.clockNow, s);
   if (view === 'flow') paintFlow(rows, s);
   else if (view === 'store') paintStoreView(rows, s);
   else paintTable(rows, s);
@@ -253,6 +258,48 @@ function paint(state) {
    moved ≥10% the wrong way, never green for "good and rising", or the colour
    stops meaning anything. Below eight points there is no line at all — a flat
    line drawn from three samples is a lie told in a confident font. */
+/* ── The blocked band ───────────────────────────────────────────────────── */
+let bandDismissed = false;      // per session, per the brief — not persisted
+let bandIndex = 0;
+
+function paintBand(s) {
+  const host = document.getElementById('ds-bandhost');
+  if (!host) return;
+  if (bandDismissed) { host.innerHTML = ''; return; }
+  // Never stack full-height bands: one at a time, with a count and a way
+  // through them.
+  host.innerHTML = U.blockedBand(DS, s, { index: bandIndex });
+}
+function dsBandDismiss() { bandDismissed = true; paintBand(P.state); }
+function dsBandCycle(step) {
+  const n = DS.blockedStreams(P.state).length;
+  if (!n) return;
+  bandIndex = (bandIndex + step + n) % n;
+  paintBand(P.state);
+}
+function dsBandRequeue(id) { dsRequeue(id); }
+function dsBandResync(id) {
+  selectedId = id; inspOpen = true; inspTab = 'errors';
+  P.setUrl({ stream: id });
+  paint();
+  dsResync(id);
+}
+function dsBandCopy(id) {
+  const s = DS.getStream(P.state, id);
+  const text = DS.blockedDiagnostics(P.state, s, P.state.clockNow);
+  const done = () => P.announce('Diagnostics copied — paste it into the ticket.');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => dsCopyFallback(text, done));
+  } else dsCopyFallback(text, done);
+}
+function dsCopyFallback(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) { window.prompt('Copy this:', text); }
+  ta.remove();
+}
+
 function paintKpis(s) {
   const k = DS.kpis(s);
   const el = document.getElementById('ds-kpis');
@@ -271,7 +318,7 @@ function paintKpis(s) {
       // The accessible name is the sentence, not the numbers: it is what a
       // screen-reader user gets instead of the shape, and it is also what a
       // high-contrast reader gets when the colour is gone.
-      + ' aria-label="' + U.esc(t.sentence || (o.label + ': ' + o.figure)) + '">'
+      + ' aria-label="' + U.esc(o.sentence || t.sentence || (o.label + ': ' + o.figure)) + '">'
       + '<div class="ds-kpi-label">' + o.label + '</div>'
       + '<div class="ds-kpi-figurerow">'
         + '<div class="ds-kpi-figure' + (o.cls ? ' ' + o.cls : '') + '">' + o.figure + '</div>'
@@ -296,11 +343,36 @@ function paintKpis(s) {
         context: k.worstStream ? 'worst stream: ' + U.esc(k.worstStream) : 'no stream is behind',
         series: DS.kpiSeries(s, 'maxLagSeconds'), higherIsBetter: false, unitWord: 'seconds',
         bad: lagLevel === 'red', on: filter.status === 'lagging' })
-    + tile({ id: 'errors', label: 'Delivery errors', figure: String(k.errorsLastHour),
-        cls: k.errorsLastHour ? 'bad' : '',
-        context: k.dlqDepth + ' in dead-letter',
-        series: DS.kpiSeries(s, 'errors'), higherIsBetter: false, unit: 'per-min',
-        bad: !!k.errorsLastHour, on: filter.errorsOnly });
+    + (() => {
+        /* "DELIVERY ERRORS 41" is a number without meaning: 41 of what, since
+           when, and is anything actually stopped? The tile now leads with the
+           state and keeps the count as context. */
+        const blocked = DS.blockedStreams(s);
+        const hard = blocked.filter(x => x.blocked.level === 'blocked');
+        if (!hard.length) {
+          return tile({ id: 'errors',
+            label: 'Delivery', figure: blocked.length ? 'Delivering with errors' : 'All delivering',
+            sentence: blocked.length
+              ? blocked.length + ' stream(s) are delivering but losing records.'
+              : 'All streams are delivering.',
+            cls: blocked.length ? 'warn' : '',
+            context: blocked.length
+              ? blocked.length + ' stream(s) losing records · ' + k.dlqDepth + ' in dead-letter'
+              : k.errorsLastHour + ' error(s) today · ' + k.dlqDepth + ' in dead-letter',
+            series: DS.kpiSeries(s, 'errors'), higherIsBetter: false, unit: 'per-min',
+            bad: false, on: filter.errorsOnly });
+        }
+        const first = hard[0];
+        const stopped = first.blocked.paused ? 'paused while blocked'
+          : 'nothing delivered for ' + DS.durationWords(first.blocked.stoppedForSeconds);
+        return tile({ id: 'errors', label: 'Delivery',
+          figure: hard.length + ' stream' + (hard.length === 1 ? '' : 's') + ' blocked',
+          sentence: hard.length + ' stream' + (hard.length === 1 ? '' : 's') + ' blocked: '
+            + first.stream.name + ', ' + stopped + '.',
+          cls: 'bad', context: stopped + ' · ' + first.stream.name,
+          series: DS.kpiSeries(s, 'errors'), higherIsBetter: false, unit: 'per-min',
+          bad: true, on: filter.errorsOnly });
+      })();
 }
 
 function dsKpi(id) {
@@ -609,7 +681,8 @@ function paintTable(rows, s) {
     main.innerHTML = '<div class="ds-tablewrap"><table class="ds-table" data-ids="'
       + rows.map(r => r.id).join(',') + '">'
       + '<thead><tr><th>Status</th><th>Name</th><th>Reads from</th><th>Capture</th>'
-      + '<th>Feeds</th><th>Throughput</th><th class="ds-right">Lag</th><th>Last event</th><th></th></tr></thead>'
+      + '<th>Feeds</th><th class="ds-right">Capture/min</th><th class="ds-right">Deliver/min</th>'
+      + '<th class="ds-right">Lag</th><th>Last delivered</th><th></th></tr></thead>'
       + '<tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
     wireRows();
   } else {
@@ -618,13 +691,52 @@ function paintTable(rows, s) {
       const tr = main.querySelector('tr[data-id="' + cssId(r.id) + '"]');
       if (!tr) return;
       setCell(tr, 'status', statusOrPending(r));
-      setCell(tr, 'spark', U.sparkline(r.metrics.spark) + ' <span class="ds-num">'
-        + DS.formatCount(r.metrics.eventsPerMin) + '/min</span>');
+      setCell(tr, 'spark', captureCell(r));
+      setCell(tr, 'deliver', deliverCell(r));
       setCell(tr, 'lag', U.lagCell(r));
-      setCell(tr, 'last', U.timeAgo(r.lastEventAt, s.clockNow));
+      setCell(tr, 'last', lastDeliveredCell(r));
+      const b2 = DS.blockedState(s, r);
+      tr.classList.toggle('blocked-blocked', !!b2 && b2.level === 'blocked');
+      tr.classList.toggle('blocked-degraded', !!b2 && b2.level === 'degraded');
       tr.classList.toggle('sel', r.id === selectedId);
     });
   }
+}
+
+/* Two hops that can disagree get two columns. One figure standing for both is
+   how a stream reading 260 changes a minute and delivering none of them read
+   as healthy. When deliver is zero and capture is not, the zero is in the
+   error colour: it is not a quiet number, it is the whole problem. */
+function captureCell(r) {
+  return U.sparkline(r.metrics.spark)
+    + ' <span class="ds-num">' + DS.formatCount(r.metrics.eventsPerMin) + '</span>';
+}
+function deliverCell(r) {
+  const out = r.metrics.deliveredPerMin || 0;
+  const stalled = out === 0 && (r.metrics.eventsPerMin || 0) > 0;
+  return '<span class="ds-num' + (stalled ? ' ds-stalled' : '') + '">'
+    + DS.formatCount(out) + '</span>';
+}
+/* "Last event" was ambiguous and answered with the capture timestamp, so a
+   stream that had delivered nothing for thirteen minutes read "0s ago". This
+   column answers the question it asks. */
+function lastDeliveredCell(r) {
+  if (!r.lastGoodDeliveryAt) {
+    return '<span class="ds-dim">never</span>';
+  }
+  const ago = DS.relativeTime(r.lastGoodDeliveryAt, (P.state || {}).clockNow);
+  const stalled = (r.metrics.deliveredPerMin || 0) === 0 && (r.metrics.eventsPerMin || 0) > 0;
+  return '<span class="' + (stalled ? 'ds-stalled' : '') + '" title="captured '
+    + U.esc(DS.relativeTime(r.lastEventAt, (P.state || {}).clockNow)) + '">' + U.esc(ago) + '</span>';
+}
+function blockedReasonShort(r, b) {
+  if (b.paused) return 'paused while blocked';
+  if (b.level === 'degraded') return 'delivering with errors — ' + b.reasons[0].text;
+  return r.lastError || b.reasons[0].text;
+}
+function blockedReasonFull(r, b) {
+  return (r.lastError ? r.lastError + ' — ' : '')
+    + b.reasons.map(x => x.text).join('; ') + '. ' + b.deadline.line;
 }
 
 /* Who reads what comes out of this stream, and — when it has stalled — what
@@ -658,9 +770,13 @@ function rowHtml(r) {
   const created = isFinite(when) ? when.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—';
   const cdc = (r.capture.method === 'log' || r.capture.method === 'trigger')
     ? ' <span class="ds-tag">CDC</span>' : '';
-  return '<tr data-id="' + U.esc(r.id) + '"' + (r.id === selectedId ? ' class="sel"' : '') + '>'
+  const b = DS.blockedState(P.state, r);
+  const cls = [r.id === selectedId ? 'sel' : '', b ? 'blocked-' + b.level : ''].filter(Boolean).join(' ');
+  return '<tr data-id="' + U.esc(r.id) + '"' + (cls ? ' class="' + cls + '"' : '') + '>'
     + '<td data-c="status">' + statusOrPending(r) + '</td>'
     + '<td><div class="ds-cell-name">' + U.esc(r.name) + '</div>'
+      + (b ? '<div class="ds-rowreason ' + b.level + '" title="' + U.esc(blockedReasonFull(r, b)) + '">'
+             + U.esc(blockedReasonShort(r, b)) + '</div>' : '')
       + '<div class="ds-cell-sub">' + tables + ' table' + (tables === 1 ? '' : 's')
       + ' · created ' + created + ' by ' + U.esc(shortActor(r.createdBy)) + '</div></td>'
     + '<td class="ds-nowrap">' + U.sideBadge(r.capture.side)
@@ -670,10 +786,10 @@ function rowHtml(r) {
       + U.esc(r.destination.label) + '</div>'
       + '<div class="ds-cell-sub">' + U.esc(r.destination.writeMode) + '</div>'
       + consumersLine(r) + '</td>'
-    + '<td data-c="spark" class="ds-nowrap">' + U.sparkline(r.metrics.spark)
-      + ' <span class="ds-num">' + DS.formatCount(r.metrics.eventsPerMin) + '/min</span></td>'
+    + '<td data-c="spark" class="ds-nowrap ds-right">' + captureCell(r) + '</td>'
+    + '<td data-c="deliver" class="ds-right">' + deliverCell(r) + '</td>'
     + '<td data-c="lag" class="ds-right">' + U.lagCell(r) + '</td>'
-    + '<td data-c="last">' + U.timeAgo(r.lastEventAt) + '</td>'
+    + '<td data-c="last">' + lastDeliveredCell(r) + '</td>'
     + '<td><button class="ds-rowmenu-btn" type="button" aria-haspopup="menu"'
       + ' aria-label="Actions for ' + U.esc(r.name) + '" data-menu="' + U.esc(r.id) + '">⋯</button></td>'
     + '</tr>';
