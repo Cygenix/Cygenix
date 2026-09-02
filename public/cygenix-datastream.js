@@ -172,6 +172,7 @@ function emptyState(projectId) {
     events: [],       // newest first, capped at MAX_EVENTS
     points: [],       // oldest first, capped at MAX_POINTS
     kpiHistory: [],   // oldest first, one sample per tick, capped at KPI_HISTORY
+    globalPause: null,// { at, actor, reason, streams:[{id, priorStatus}] } — see pauseAll
     audit: [],        // newest first
     seeded: false,
   };
@@ -474,6 +475,9 @@ function tick(state, opts) {
         // Capture continues, delivery does not: the backlog and the
         // dead-letter queue are what the operator has to see.
         capturedThisTick = Math.round(ratePerTick(p.baseRate) * (0.7 + rand(n, s.id, 'jitter') * 0.6));
+        if (m.pendingInStore === 0 && capturedThisTick > 0 && !s.oldestPendingAt) {
+          s.oldestPendingAt = new Date(at).toISOString();
+        }
         m.pendingInStore += capturedThisTick;
         m.storeRecords += capturedThisTick;
         if (n % 5 === 0) { m.dlqDepth += 1; m.failedToday += 1; }
@@ -525,7 +529,13 @@ function tick(state, opts) {
     var available = m.pendingInStore + inN;
     var outN = Math.min(available, capacity);
 
+    var wasEmpty = m.pendingInStore === 0;
     m.pendingInStore = available - outN;              // the invariant, exactly
+    /* The store's clock. Retention expires records by AGE, so what matters is
+       when the oldest unacknowledged change arrived — not how many there are.
+       It starts when the store stops being empty and resets when it drains. */
+    if (m.pendingInStore === 0) s.oldestPendingAt = null;
+    else if (wasEmpty || !s.oldestPendingAt) s.oldestPendingAt = new Date(at).toISOString();
     m.storeRecords += inN;
     m.deliveredToday += outN;
     // "Last successful delivery" only means something if it is recorded when
@@ -599,6 +609,7 @@ function rebaseToNow(state, now) {
     s.failingSince = shift(s.failingSince);
     s.lastGoodDeliveryAt = shift(s.lastGoodDeliveryAt);
     s.lastErrorAt = shift(s.lastErrorAt);
+    s.oldestPendingAt = shift(s.oldestPendingAt);
     if (s.capture && s.capture.position) s.capture.position.capturedAt = shift(s.capture.position.capturedAt);
   });
   (state.events || []).forEach(function (e) { e.ts = shift(e.ts); });
@@ -893,6 +904,311 @@ function revealSample(state, streamId, eventId) {
     return x.id === eventId && x.streamId === streamId;
   })[0];
   return e ? (e.after || e.before || null) : null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The retention deadline — the number nobody was showing
+   ══════════════════════════════════════════════════════════════════════════
+   A stream's store keeps records for a fixed window. While delivery is
+   stopped — paused, blocked, whatever — captured changes sit there ageing.
+   When the OLDEST one passes the window, that backlog is gone: the stream
+   can no longer replay, it needs a full resync, which on a large table is a
+   different order of operation entirely.
+
+   That deadline is the single most decision-relevant number about a stopped
+   stream, and it appeared nowhere. It is computed here, once, so the pause
+   dialog and the blocked band cannot disagree about how long somebody has.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+var DEADLINE_AMBER_H = 12;
+var DEADLINE_RED_H = 4;
+
+/**
+ * How long before this stream's backlog expires.
+ *
+ * Age, not volume: retention throws records away by how old they are, so a
+ * stream with eleven pending records and a 24h window is in exactly as much
+ * trouble as one with eleven million, if both stopped delivering at the same
+ * moment.
+ */
+function retentionDeadline(stream, now) {
+  var s = stream;
+  if (!s) return null;
+  var at = now || Date.now();
+  var hours = (s.profile && s.profile.retentionHours) || 72;
+  var windowSeconds = hours * 3600;
+  var pending = (s.metrics && s.metrics.pendingInStore) || 0;
+  var capturePerMin = (s.metrics && s.metrics.eventsPerMin) || 0;
+
+  var oldest = s.oldestPendingAt ? Date.parse(s.oldestPendingAt) : null;
+  var ageSeconds;
+  if (oldest && isFinite(oldest)) {
+    ageSeconds = Math.max(0, Math.round((at - oldest) / 1000));
+  } else if (pending > 0 && capturePerMin > 0) {
+    // No mark to read — estimate from how long this backlog would have taken
+    // to accumulate at the rate it is arriving. Never claims more than the
+    // window, because a backlog older than the window has already expired.
+    ageSeconds = Math.min(windowSeconds, Math.round((pending / capturePerMin) * 60));
+  } else {
+    ageSeconds = 0;
+  }
+
+  var remaining = windowSeconds - ageSeconds;
+  var band = remaining <= 0 ? 'expired'
+    : remaining <= DEADLINE_RED_H * 3600 ? 'red'
+    : remaining <= DEADLINE_AMBER_H * 3600 ? 'amber' : 'ok';
+
+  return {
+    retentionHours: hours,
+    pending: pending,
+    dlqDepth: (s.metrics && s.metrics.dlqDepth) || 0,
+    capturePerMin: capturePerMin,
+    oldestPendingAt: s.oldestPendingAt || null,
+    backlogAgeSeconds: ageSeconds,
+    secondsRemaining: Math.max(0, remaining),
+    expired: remaining <= 0,
+    band: band,
+    /* "48h retention · ~46h before backlog expires". An empty store is
+       phrased differently on purpose: there is no backlog to lose yet, and
+       saying "~72h before this backlog expires" about nothing invents one. */
+    line: hours + 'h retention · '
+      + (remaining <= 0
+          ? 'backlog has already expired — a full resync is needed, not a replay'
+          : pending === 0
+            ? 'nothing queued yet, so ' + roughDuration(remaining) + ' of headroom once it starts'
+            : '~' + roughDuration(remaining) + ' before this backlog expires'),
+  };
+}
+
+/** "~46h", "~13h", "~35m" — a deadline does not need seconds. */
+function roughDuration(seconds) {
+  if (seconds === null || seconds === undefined) return 'an unknown time';
+  if (seconds < 90 * 60) return Math.max(1, Math.round(seconds / 60)) + 'm';
+  if (seconds < 48 * 3600) return Math.round(seconds / 3600) + 'h';
+  return Math.round(seconds / 86400) + 'd';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Global pause and resume
+   ══════════════════════════════════════════════════════════════════════════
+   Stopping replication during an incident, a cutover window or maintenance on
+   the source meant clicking through every stream in turn. This does it in one
+   action — and the part that has to be right is not the stopping, it is the
+   starting again.
+
+   A stream somebody deliberately paused a fortnight ago must not come back to
+   life because a colleague pressed global resume. So the prior state of every
+   stream is recorded when the global pause is applied, and resume restores
+   ONLY what was live at that moment. The snapshot lives in the stream state,
+   which is persisted and synced — it survives a reload, another browser and
+   another operator, which is the whole requirement.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Statuses a global pause acts on. Draft has never started; paused is
+    somebody's decision and is not ours to undo. */
+var GLOBAL_PAUSABLE = { running: 1, lagging: 1, failed: 1, snapshotting: 1 };
+
+/** What the switch should say, computed rather than remembered. */
+function globalPauseState(state) {
+  var streams = (state && state.streams) || [];
+  var live = streams.filter(function (s) { return isLive(s.status) || s.status === 'failed'; });
+  var eligible = streams.filter(function (s) { return s.status !== 'draft'; });
+  var snap = (state && state.globalPause) || null;
+  var mode = !eligible.length ? 'empty'
+    : live.length === 0 ? 'paused'
+    : live.length === eligible.length ? 'running' : 'mixed';
+  return {
+    mode: mode,
+    running: live.length,
+    total: eligible.length,
+    snapshot: snap,
+    // "Partially paused — 3 of 6 running"
+    label: mode === 'empty' ? 'No streams yet'
+      : mode === 'running' ? 'All streams running'
+      : mode === 'paused' ? 'All streams paused'
+      : 'Partially paused — ' + live.length + ' of ' + eligible.length + ' running',
+  };
+}
+
+/** Which streams a global pause would touch, and what it would cost each. */
+function pauseAllPreview(state, now) {
+  var at = now || (state && state.clockNow) || Date.now();
+  var affected = ((state && state.streams) || [])
+    .filter(function (s) { return GLOBAL_PAUSABLE[s.status]; })
+    .map(function (s) {
+      return {
+        id: s.id, name: s.name, status: s.status,
+        from: (s.capture && s.capture.connectionLabel) || '',
+        to: (s.destination && s.destination.label) || '',
+        deadline: retentionDeadline(s, at),
+      };
+    });
+  // The worst case leads, because it is the one that sets the clock.
+  var soonest = affected.slice().sort(function (a, b) {
+    return a.deadline.secondsRemaining - b.deadline.secondsRemaining;
+  })[0] || null;
+  return {
+    streams: affected,
+    soonest: soonest,
+    skipped: ((state && state.streams) || []).filter(function (s) { return !GLOBAL_PAUSABLE[s.status]; })
+      .map(function (s) { return { id: s.id, name: s.name, status: s.status }; }),
+    headline: !soonest ? 'No stream is currently capturing, so nothing is at risk.'
+      : soonest.deadline.expired
+        ? 'Data already lost: ' + soonest.name + '\u2019s backlog has passed its '
+          + soonest.deadline.retentionHours + 'h window and needs a full resync'
+        : 'Earliest data loss: ~' + roughDuration(soonest.deadline.secondsRemaining)
+          + ' (' + soonest.name + ', ' + soonest.deadline.retentionHours + 'h retention)',
+  };
+}
+
+/* Pausing six streams is a sequence, not an instant, and the screen has to be
+   able to say which of them have actually stopped. So the bookkeeping is
+   separated from the loop: `pauseAllPlan` says who is in scope, the caller
+   applies them one at a time at whatever pace lets it repaint, and
+   `commitGlobalPause` writes the snapshot and the single audit entry once.
+   `pauseAll` is the synchronous wrapper for callers that do not need to
+   render progress. Either way there is one snapshot and one audit entry. */
+
+function pauseAllPlan(state) {
+  return (state.streams || [])
+    .filter(function (s) { return GLOBAL_PAUSABLE[s.status]; })
+    .map(function (s) {
+      return { id: s.id, name: s.name, priorStatus: s.status,
+               dlqDepth: (s.metrics && s.metrics.dlqDepth) || 0 };
+    });
+}
+
+/**
+ * Record what was stopped and why. `results` is what actually happened, one
+ * entry per attempted stream — only the successes reach the snapshot, because
+ * a snapshot claiming to have stopped something it did not is worse than none.
+ */
+function commitGlobalPause(state, opts) {
+  var o = opts || {};
+  var results = o.results || [];
+  var snapshot = state.globalPause || {
+    at: nowIso(state), actor: currentActor(), reason: o.reason || '', streams: [],
+  };
+  results.filter(function (r) { return r.ok; }).forEach(function (r) {
+    if (snapshot.streams.some(function (x) { return x.id === r.id; })) return;   // idempotent
+    snapshot.streams.push({ id: r.id, name: r.name, priorStatus: r.priorStatus,
+                            dlqDepth: r.dlqDepth || 0 });
+  });
+  if (snapshot.streams.length) state.globalPause = snapshot;
+
+  var failed = results.filter(function (r) { return !r.ok; });
+  // One entry for the action, not one per stream: the operator did one thing.
+  audit(state, 'streams.pause_all', null, {
+    requested: results.length, paused: results.length - failed.length,
+    failed: failed.length, reason: o.reason || null,
+    prior: snapshot.streams.map(function (x) { return x.id + ':' + x.priorStatus; }),
+  });
+  return { ok: !failed.length, results: results, snapshot: snapshot,
+           paused: results.length - failed.length, failed: failed };
+}
+
+/**
+ * Pause every eligible stream, recording what each was first.
+ * Returns a per-stream result so a caller can render a partial failure —
+ * "all or nothing" is not one of the outcomes this can have.
+ * Idempotent: a second call adds nothing to the snapshot and reports ok.
+ */
+function pauseAll(state, opts) {
+  var o = opts || {};
+  var results = pauseAllPlan(state).map(function (t) {
+    try {
+      if (typeof o.apply === 'function') o.apply(state, t.id);
+      else pauseStream(state, t.id);
+      return { id: t.id, name: t.name, ok: true, priorStatus: t.priorStatus, dlqDepth: t.dlqDepth };
+    } catch (e) {
+      return { id: t.id, name: t.name, ok: false, priorStatus: t.priorStatus,
+               error: e && e.message ? e.message : String(e) };
+    }
+  });
+  return commitGlobalPause(state, { results: results, reason: o.reason });
+}
+
+/** What a resume would and would not restart, and what would fail again. */
+function resumeAllPreview(state) {
+  var snap = (state && state.globalPause) || null;
+  var byId = {};
+  ((state && state.streams) || []).forEach(function (s) { byId[s.id] = s; });
+
+  var willResume = [], willFailAgain = [], stayPaused = [];
+  ((snap && snap.streams) || []).forEach(function (rec) {
+    var s = byId[rec.id];
+    if (!s) return;
+    // A stream that was failing with records already given up on will fail
+    // again the moment it starts, and add to the pile. That is an opt-in.
+    if (rec.priorStatus === 'failed' && (s.metrics.dlqDepth || 0) > 0) {
+      willFailAgain.push({ id: s.id, name: s.name, error: s.lastError || 'previously failed',
+                           dlqDepth: s.metrics.dlqDepth });
+    } else {
+      willResume.push({ id: s.id, name: s.name, priorStatus: rec.priorStatus });
+    }
+  });
+  ((state && state.streams) || []).forEach(function (s) {
+    if (s.status !== 'paused') return;
+    if (((snap && snap.streams) || []).some(function (r) { return r.id === s.id; })) return;
+    // Paused before the global pause, by a person, for a reason nobody here
+    // knows. It stays paused.
+    stayPaused.push({ id: s.id, name: s.name });
+  });
+  return { willResume: willResume, willFailAgain: willFailAgain, stayPaused: stayPaused, snapshot: snap };
+}
+
+/** Which stream ids a resume would act on, given the failed opt-in. */
+function resumeAllPlan(state, includeFailed) {
+  var pv = resumeAllPreview(state);
+  return pv.willResume.concat(includeFailed ? pv.willFailAgain : []);
+}
+
+/** Clear the snapshot for what was restarted, and write the one audit entry. */
+function commitGlobalResume(state, opts) {
+  var o = opts || {};
+  var results = o.results || [];
+  var failed = results.filter(function (r) { return !r.ok; });
+  // The snapshot is only cleared once everything it held has been dealt with.
+  // Clearing it on a partial resume would strand the rest with nothing left
+  // recording what they used to be.
+  var remaining = ((state.globalPause && state.globalPause.streams) || []).filter(function (rec) {
+    return !results.some(function (r) { return r.ok && r.id === rec.id; });
+  });
+  if (!remaining.length) state.globalPause = null;
+  else state.globalPause = Object.assign({}, state.globalPause, { streams: remaining });
+
+  audit(state, 'streams.resume_all', null, {
+    resumed: results.length - failed.length, failed: failed.length,
+    heldBack: (o.stayPaused || []).length,
+    skippedFailed: (o.skippedFailed || []).length,
+    reason: o.reason || null,
+  });
+  return { ok: !failed.length, results: results, resumed: results.length - failed.length,
+           failed: failed, stayPaused: o.stayPaused || [], skippedFailed: o.skippedFailed || [] };
+}
+
+/**
+ * Restore what the global pause stopped, and only that.
+ * `opts.includeFailed` opts in to restarting streams that were failing with a
+ * non-empty dead-letter queue; without it they stay paused.
+ */
+function resumeAll(state, opts) {
+  var o = opts || {};
+  var pv = resumeAllPreview(state);
+  var list = resumeAllPlan(state, o.includeFailed);
+  var results = list.map(function (rec) {
+    try {
+      if (typeof o.apply === 'function') o.apply(state, rec.id);
+      else resumeStream(state, rec.id);
+      return { id: rec.id, name: rec.name, ok: true };
+    } catch (e) {
+      return { id: rec.id, name: rec.name, ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  });
+  return commitGlobalResume(state, {
+    results: results, reason: o.reason, stayPaused: pv.stayPaused,
+    skippedFailed: o.includeFailed ? [] : pv.willFailAgain,
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1650,7 +1966,7 @@ function streamsForTable(state, table) {
    a row. The allow-list below is the difference, and buildQuery drops
    anything not on it rather than trusting the caller. */
 var URL_KEYS = ['stream', 'view', 'step', 'clone', 'connection', 'tables',
-                'state', 'topic', 'range', 'table', 'op', 'from'];
+                'state', 'topic', 'range', 'table', 'op', 'from', 'global'];
 
 function parseQuery(search) {
   var out = {};
@@ -1836,6 +2152,11 @@ return {
   kpis: kpis, sortStreams: sortStreams, filterStreams: filterStreams, flowOf: flowOf,
   kpiSeries: kpiSeries, pushKpiSample: pushKpiSample, trend: trend, sparkPoints: sparkPoints,
   failureDetail: failureDetail, revealSample: revealSample, errorClass: errorClass,
+  retentionDeadline: retentionDeadline, roughDuration: roughDuration,
+  globalPauseState: globalPauseState, pauseAllPreview: pauseAllPreview, pauseAll: pauseAll,
+  pauseAllPlan: pauseAllPlan, commitGlobalPause: commitGlobalPause,
+  resumeAllPreview: resumeAllPreview, resumeAll: resumeAll,
+  resumeAllPlan: resumeAllPlan, commitGlobalResume: commitGlobalResume,
   redactRow: redactRow, consumerImpact: consumerImpact, durationWords: durationWords,
   SPARK_MIN_POINTS: SPARK_MIN_POINTS, SPARK_SIGNIFICANT: SPARK_SIGNIFICANT,
   KPI_HISTORY: KPI_HISTORY,

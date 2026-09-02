@@ -49,7 +49,10 @@
     return state;
   }
 
-  function persist() { if (state) DS.save(state); }
+  /* Returns whether the write actually landed. The global pause reads this:
+     a stream reported as paused that could not be persisted would come back
+     running on the next reload, having told the operator otherwise. */
+  function persist() { return state ? DS.save(state) : false; }
 
   function start() {
     if (timer) return;

@@ -989,6 +989,198 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
     })());
 }
 
+/* ── Global pause and resume ─────────────────────────────────────────────
+   The stopping is the easy half. The half that has to be right is the
+   starting again: a stream somebody deliberately paused a fortnight ago must
+   not come back to life because a colleague pressed global resume. */
+{
+  /* Mixed state */
+  {
+    const st = DS.seedDemo('mixed');
+    const g = DS.globalPauseState(st);
+    check('the switch reports a mixed state rather than forcing a binary',
+      g.mode === 'mixed' && /Partially paused — \d of \d running/.test(g.label), g.label);
+    check('and the label counts only streams that could be running',
+      g.total === st.streams.filter((s) => s.status !== 'draft').length,
+      g.total + ' vs ' + st.streams.length + ' — a draft has never started, so it is not "not running"');
+    check('all running reads as all running',
+      (() => {
+        const s2 = DS.seedDemo('allrun');
+        s2.streams.forEach((x) => { if (x.status !== 'draft') x.status = 'running'; });
+        return DS.globalPauseState(s2).label === 'All streams running';
+      })());
+    check('all paused reads as all paused',
+      (() => {
+        const s3 = DS.seedDemo('allpaused');
+        s3.streams.forEach((x) => { if (x.status !== 'draft') x.status = 'paused'; });
+        return DS.globalPauseState(s3).label === 'All streams paused';
+      })());
+  }
+
+  /* Scope */
+  {
+    const st = DS.seedDemo('scope');
+    const draftBefore = st.streams.filter((s) => s.status === 'draft').map((s) => s.status);
+    const pausedBefore = st.streams.filter((s) => s.status === 'paused').map((s) => s.id);
+    const r = DS.pauseAll(st, { reason: 'maintenance' });
+    check('a global pause stops everything that was live, including failures',
+      r.results.every((x) => x.ok) && r.paused >= 3, JSON.stringify(r.results.map((x) => x.name)));
+    check('drafts are untouched',
+      st.streams.filter((s) => s.status === 'draft').map((s) => s.status).join() === draftBefore.join());
+    check('and a stream somebody had already paused is not in the snapshot',
+      pausedBefore.every((id) => !st.globalPause.streams.some((x) => x.id === id)),
+      'it was not ours to stop, so it is not ours to restart');
+
+    const before = st.streams.map((s) => s.id + '=' + s.status).join('|');
+    DS.pauseAll(st, {});
+    check('pausing twice is idempotent — the snapshot does not grow',
+      st.streams.map((s) => s.id + '=' + s.status).join('|') === before
+      && st.globalPause.streams.length === r.snapshot.streams.length);
+
+    const rr = DS.resumeAll(st, {});
+    check('global resume restores only what the global pause stopped',
+      pausedBefore.every((id) => DS.getStream(st, id).status === 'paused'),
+      'a stream paused two weeks ago must not come back to life');
+    check('and reports what it deliberately left alone',
+      rr.stayPaused.length === pausedBefore.length, JSON.stringify(rr.stayPaused));
+    check('drafts are untouched by resume too',
+      st.streams.filter((s) => s.status === 'draft').map((s) => s.status).join() === draftBefore.join());
+  }
+
+  /* The failed opt-in */
+  {
+    const st = DS.seedDemo('failed');
+    DS.pauseAll(st, {});
+    const pv = DS.resumeAllPreview(st);
+    check('a stream that was failing with a dead-letter queue is listed separately',
+      pv.willFailAgain.length === 1 && pv.willFailAgain[0].dlqDepth > 0,
+      JSON.stringify(pv.willFailAgain.map((x) => x.name)));
+    check('with the error message, so the dialog can say why it would fail again',
+      /truncation/.test(pv.willFailAgain[0].error), pv.willFailAgain[0].error);
+
+    const r1 = DS.resumeAll(st, {});                       // opt-in NOT given
+    check('and it is not resumed unless somebody opts in',
+      DS.getStream(st, pv.willFailAgain[0].id).status === 'paused'
+      && r1.skippedFailed.length === 1);
+    check('the snapshot keeps holding it, so its prior state is not lost',
+      !!st.globalPause && st.globalPause.streams.length === 1,
+      'clearing the snapshot on a partial resume would strand the rest');
+
+    const r2 = DS.resumeAll(st, { includeFailed: true });
+    check('opting in resumes it',
+      r2.resumed === 1 && DS.getStream(st, pv.willFailAgain[0].id).status !== 'paused');
+    check('and now the snapshot is finished with',
+      st.globalPause === null);
+  }
+
+  /* Partial failure */
+  {
+    const st = DS.seedDemo('partial');
+    const targets = DS.pauseAllPlan(st).map((t) => t.id);
+    const doomed = targets[1];
+    const r = DS.pauseAll(st, { apply: (state, id) => {
+      if (id === doomed) throw new Error('the change could not be saved');
+      DS.pauseStream(state, id);
+    } });
+    check('a partial failure is a real outcome, reported per stream',
+      r.ok === false && r.failed.length === 1 && r.failed[0].id === doomed,
+      JSON.stringify(r.results));
+    check('the streams that did stop are still recorded',
+      st.globalPause.streams.length === targets.length - 1);
+    check('and the one that did not is NOT in the snapshot',
+      !st.globalPause.streams.some((x) => x.id === doomed),
+      'a snapshot claiming to have stopped something it did not is worse than none');
+    check('the switch lands in a mixed state, not a success',
+      DS.globalPauseState(st).mode === 'mixed', DS.globalPauseState(st).label);
+  }
+
+  /* The deadline the dialog is for */
+  {
+    const st = DS.seedDemo('deadline');
+    DS.rebaseToNow(st);
+    const pv = DS.pauseAllPreview(st, st.clockNow);
+    check('every affected stream is costed from its OWN retention window',
+      pv.streams.every((x) => x.deadline.retentionHours === (DS.getStream(st, x.id).profile.retentionHours)),
+      pv.streams.map((x) => x.deadline.retentionHours).join(','));
+    check('and the worst case leads, because it is the one that sets the clock',
+      /^Earliest data loss: ~\d+[mhd] \(.+, \d+h retention\)$/.test(pv.headline), pv.headline);
+    check('the soonest really is the soonest',
+      pv.streams.every((x) => x.deadline.secondsRemaining >= pv.soonest.deadline.secondsRemaining));
+    check('a stream that is already past its window says so instead of a countdown',
+      (() => {
+        const s2 = DS.seedDemo('expired');
+        const one = s2.streams[0];
+        one.metrics.pendingInStore = 5000;
+        one.oldestPendingAt = new Date(Date.parse(s2.clockNow ? new Date(s2.clockNow).toISOString() : new Date().toISOString()) - 100 * 3600000).toISOString();
+        const d = DS.retentionDeadline(one, s2.clockNow);
+        return d.expired && /full resync/.test(d.line);
+      })());
+    check('an empty store is not given a backlog it does not have',
+      (() => {
+        const s3 = DS.seedDemo('empty');
+        const one = s3.streams[0];
+        one.metrics.pendingInStore = 0; one.oldestPendingAt = null;
+        const d = DS.retentionDeadline(one, s3.clockNow);
+        return /nothing queued yet/.test(d.line) && !d.expired;
+      })());
+    check('the deadline goes amber under 12h and red under 4h',
+      (() => {
+        const mk = (hoursLeft) => {
+          const s4 = DS.seedDemo('band' + hoursLeft);
+          const one = s4.streams[0];
+          one.profile.retentionHours = 24;
+          one.metrics.pendingInStore = 10;
+          one.oldestPendingAt = new Date(s4.clockNow - (24 - hoursLeft) * 3600000).toISOString();
+          return DS.retentionDeadline(one, s4.clockNow).band;
+        };
+        return mk(20) === 'ok' && mk(8) === 'amber' && mk(2) === 'red';
+      })());
+  }
+
+  /* Persistence — the requirement is that this survives a reload */
+  {
+    if (typeof localStorage === 'undefined') {
+      global.localStorage = { _d: {}, getItem(k) { return this._d[k] || null; },
+        setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } };
+    }
+    const st = DS.seedDemo('persist');
+    st.projectId = 'persist';
+    DS.pauseAll(st, { reason: 'cutover window' });
+    DS.save(st);
+    const reloaded = DS.load('persist');          // a different session, same store
+    check('the prior-state snapshot survives a reload',
+      !!reloaded.globalPause && reloaded.globalPause.streams.length === st.globalPause.streams.length,
+      'component state would not survive, and this has to');
+    check('with the prior status of each stream, and the reason',
+      reloaded.globalPause.streams.every((x) => !!x.priorStatus)
+      && reloaded.globalPause.reason === 'cutover window');
+    const priorById = {};
+    reloaded.globalPause.streams.forEach((x) => { priorById[x.id] = x.priorStatus; });
+    const rr = DS.resumeAll(reloaded, { includeFailed: true });
+    check('and a different operator resuming restores exactly what was running',
+      rr.results.length > 0 && rr.results.every((r) => r.ok)
+      && rr.results.every((r) => priorById[r.id] && DS.getStream(reloaded, r.id).status !== 'paused'),
+      JSON.stringify(rr.results.map((r) => r.name + '=' + DS.getStream(reloaded, r.id).status)));
+  }
+
+  /* Audit */
+  {
+    const st = DS.seedDemo('audit2');
+    DS.pauseAll(st, { reason: 'incident 4412' });
+    const entries = st.audit.filter((a) => a.action === 'streams.pause_all');
+    check('one audit entry per global action, not one per stream',
+      entries.length === 1, entries.length);
+    check('carrying the actor, the count, the reason and the prior state',
+      !!entries[0].actor && entries[0].detail.reason === 'incident 4412'
+      && Array.isArray(entries[0].detail.prior) && entries[0].detail.prior.length > 0,
+      JSON.stringify(entries[0].detail));
+    DS.resumeAll(st, {});
+    check('and one for the resume, saying what it held back',
+      st.audit.filter((a) => a.action === 'streams.resume_all').length === 1
+      && st.audit.filter((a) => a.action === 'streams.resume_all')[0].detail.skippedFailed >= 0);
+  }
+}
+
 /* ── Wiring ──────────────────────────────────────────────────────────────── */
 {
   const page = fs.readFileSync(path.join(__dirname, '..', 'public', 'data_stream.html'), 'utf8');
@@ -1011,6 +1203,45 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
     /U\.confirmText\('checkpoint'/.test(page) && /dsRequeue/.test(page) && /dsPause/.test(page));
   check('consumers are rendered on the row and in the flow card',
     (page.match(/consumersLine\(r\)/g) || []).length >= 2);
+  /* The global switch, on the page */
+  check('the switch is a labelled control with a real mixed state',
+    /role="switch"/.test(page) && /aria-checked="' \+ \(mixed \? 'mixed'/.test(page)
+    && /ds-gsw mixed|\.ds-gsw\.mixed/.test(page + css));
+  check('its accessible name carries the count, not just on or off',
+    /aria-label="' \+ U\.esc\(g\.label/.test(page));
+  check('the pause dialog leads with the worst case and costs every stream',
+    /ds-gx-headline/.test(page) && /deadline\.line/.test(page)
+    && /pending<\/div>/.test(page));
+  check('focus lands on Cancel, never on the destructive action',
+    /getElementById\('ds-pauseall-cancel'\)\.focus\(\)/.test(page));
+  check('a stream set to "confirm every change" forces the typed word',
+    /guardrail === 'confirm_all'/.test(page) && /Type <b>PAUSE<\/b>/.test(page)
+    && /toUpperCase\(\) !== 'PAUSE'/.test(page),
+    'a global action takes the strictest guardrail in scope');
+  check('the transition is applied one stream at a time, with a real frame between',
+    /await dsFrame\(\)/.test(page) && /gxBusy\.done = results\.length/.test(page));
+  check('and a row waiting its turn shows that rather than a status about to change',
+    /function statusOrPending/.test(page) && /ds-pendingpill/.test(page),
+    'optimistic UI here means telling an operator replication has stopped when it has not');
+  check('a write that does not land counts as a failure',
+    /if \(!P\.persist\(\)\) throw/.test(page)
+    && /return state \? DS\.save\(state\) : false/.test(
+        fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream-page.js'), 'utf8')));
+  check('a partial result is never announced as a success',
+    /A partial result is not a success/.test(page) && /Retry failed/.test(page));
+  check('and Home mirrors the same state rather than keeping a second copy',
+    (() => {
+      const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8');
+      return /CygenixDataStream\.globalPauseState\(st\)/.test(app)
+        && /renderStreamControlTile/.test(app);
+    })());
+  check('Home hands the confirmation to the page that owns it',
+    (() => {
+      const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8');
+      return /data-stream\?global=/.test(app) && !/Earliest data loss/.test(app);
+    })(),
+    'two copies of the same warning is two things to keep in step');
+
   check('and the impact line is amber with words, not a colour alone',
     /ds-impact/.test(page) && /ds-impact \{[^}]*var\(--amber\)/.test(css));
 }

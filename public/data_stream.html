@@ -99,6 +99,11 @@ body.cyg-collapsed{padding-left:54px}
     </div>
 
     <div class="ds-head-actions">
+      <!-- Global pause. A labelled switch rather than a bare icon: an
+           operator reaching for this during an incident should not have to
+           work out which way "on" points. The label states the real state,
+           including a mixed one — see dsPaintGlobalSwitch(). -->
+      <div class="ds-globalswitch" id="ds-globalswitch"></div>
       <button class="btn btn-primary" onclick="dsNewStream()"><i class="ic ic-plus"></i> New stream</button>
       <button class="btn" onclick="dsRefresh()" title="Re-read the streams for this project"><i class="ic ic-sync"></i> Refresh</button>
       <button class="btn" onclick="CygenixDataStreamPage.paletteOpen()" title="Search streams and tables">
@@ -155,13 +160,37 @@ body.cyg-collapsed{padding-left:54px}
   </div>
 </div>
 
+<!-- Global pause. The dialog is the feature: pausing replication is not
+     free, and the cost is a deadline nobody was shown. -->
+<div class="ds-modal" id="ds-pauseall" role="dialog" aria-modal="true" aria-labelledby="ds-pauseall-title">
+  <div class="ds-modal-card">
+    <div class="ds-modal-head" id="ds-pauseall-title">Pause all streams</div>
+    <div class="ds-modal-body" id="ds-pauseall-body"></div>
+    <div class="ds-modal-foot">
+      <button class="btn" id="ds-pauseall-cancel" onclick="dsClosePauseAll()">Cancel</button>
+      <button class="btn btn-danger" id="ds-pauseall-go" onclick="dsDoPauseAll()">Pause all streams</button>
+    </div>
+  </div>
+</div>
+
+<div class="ds-modal" id="ds-resumeall" role="dialog" aria-modal="true" aria-labelledby="ds-resumeall-title">
+  <div class="ds-modal-card">
+    <div class="ds-modal-head" id="ds-resumeall-title">Resume streams</div>
+    <div class="ds-modal-body" id="ds-resumeall-body"></div>
+    <div class="ds-modal-foot">
+      <button class="btn" id="ds-resumeall-cancel" onclick="dsCloseResumeAll()">Cancel</button>
+      <button class="btn btn-primary" id="ds-resumeall-go" onclick="dsDoResumeAll()">Resume streams</button>
+    </div>
+  </div>
+</div>
+
 <div id="ds-live" class="sr-only" role="status" aria-live="polite"></div>
 
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
 <script src="/cygenix-sidebar.js?v=d338426ab1" defer></script>
-<script src="/cygenix-datastream.js?v=02be5ef4bd"></script>
+<script src="/cygenix-datastream.js?v=178f60ad22"></script>
 <script src="/cygenix-datastream-ui.js?v=3d5b0de0cc"></script>
-<script src="/cygenix-datastream-page.js?v=34eee094b8"></script>
+<script src="/cygenix-datastream-page.js?v=d0766024f4"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -188,6 +217,12 @@ document.addEventListener('DOMContentLoaded', () => {
   P.onTick(paint);
   P.start();
   paint();
+
+  // Arriving from Home's replication tile: open the same dialog rather than
+  // acting on the click that happened on another screen. Pausing replication
+  // is never a thing that happens because somebody followed a link.
+  if (q.global === 'pause') dsOpenPauseAll();
+  else if (q.global === 'resume') dsOpenResumeAll();
 });
 
 /* ── Painting ────────────────────────────────────────────────────────────
@@ -198,6 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function paint(state) {
   const s = state || P.state;
   if (!s) return;
+  dsPaintGlobalSwitch();
   paintKpis(s);
   paintFilters(s);
   const rows = DS.sortStreams(DS.filterStreams(s.streams, filter));
@@ -323,6 +359,236 @@ function dsSetView(v) {
   paint();
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   GLOBAL PAUSE / RESUME
+   ══════════════════════════════════════════════════════════════════════════
+   During an incident, a cutover window, or maintenance on the source, an
+   operator needs replication stopped now — not after clicking through six
+   streams. The switch is one control; everything below it exists because
+   stopping replication has a cost, and the cost has a deadline.
+
+   Nothing here is optimistic. Each stream is applied in turn and the row is
+   only marked done once the engine confirms it, because an operator who
+   believes replication has stopped when it has not is the worst outcome this
+   feature can produce. */
+
+let gxBusy = null;        // { done, total, results } while a transition runs
+let gxError = null;       // { action, failed: [...] } after a partial failure
+
+function dsPaintGlobalSwitch() {
+  const host = document.getElementById('ds-globalswitch');
+  if (!host || !P.state) return;
+  const g = DS.globalPauseState(P.state);
+  const busy = !!gxBusy;
+  // Mixed is a real state and is rendered as one: forcing a binary would make
+  // the control lie about half the streams.
+  const on = g.mode === 'running';
+  const mixed = g.mode === 'mixed';
+
+  host.innerHTML =
+      '<button type="button" role="switch" class="ds-gsw' + (on ? ' on' : '')
+    + (mixed ? ' mixed' : '') + '"'
+    + ' aria-checked="' + (mixed ? 'mixed' : String(on)) + '"'
+    + ' aria-label="' + U.esc(g.label + '. Activate to '
+        + (g.mode === 'paused' ? 'resume the streams this paused' : 'pause all streams') + '.') + '"'
+    + (busy ? ' disabled' : '') + ' onclick="dsToggleGlobal()">'
+    + '<span class="ds-gsw-track" aria-hidden="true"><span class="ds-gsw-knob"></span></span>'
+    + '<span class="ds-gsw-label">' + U.esc(busy
+        ? gxBusy.verb + '… ' + gxBusy.done + ' of ' + gxBusy.total
+        : g.label) + '</span></button>'
+    + (gxError ? '<div class="ds-gsw-error" role="alert">'
+        + U.esc(gxError.failed.length + ' stream' + (gxError.failed.length === 1 ? '' : 's')
+          + ' did not ' + gxError.action + ': ' + gxError.failed.map(f => f.name).join(', '))
+        + ' <button class="btn btn-sm" onclick="dsRetryFailedGlobal()">Retry failed</button></div>' : '');
+}
+
+function dsToggleGlobal() {
+  if (gxBusy) return;
+  const g = DS.globalPauseState(P.state);
+  if (g.mode === 'paused') dsOpenResumeAll();
+  else dsOpenPauseAll();
+}
+
+/* ── The pause dialog ───────────────────────────────────────────────────── */
+function dsOpenPauseAll() {
+  const pv = DS.pauseAllPreview(P.state, P.state.clockNow);
+  if (!pv.streams.length) {
+    P.announce('Nothing to pause — no stream is running.');
+    return;
+  }
+  // The guardrail is a per-stream setting; a global action takes the
+  // strictest one in scope. Anything else would let one stream's "confirm
+  // every change" be overridden by another stream's looser setting.
+  const strict = pv.streams.some(x => {
+    const s = DS.getStream(P.state, x.id);
+    return s && s.delivery && s.delivery.guardrail === 'confirm_all';
+  });
+
+  document.getElementById('ds-pauseall-body').innerHTML =
+      '<div class="ds-gx-headline ' + (pv.soonest && pv.soonest.deadline.band === 'red' ? 'red' : 'amber')
+    + '">' + U.esc(pv.headline) + '</div>'
+    + '<p style="margin:0.6rem 0">Capture and delivery stop on '
+      + pv.streams.length + ' stream' + (pv.streams.length === 1 ? '' : 's')
+      + '. Changes keep arriving in each store until its retention window passes, '
+      + 'after which the backlog cannot be replayed and the stream needs a full resync.</p>'
+    + '<table class="ds-gx-table"><tbody>' + pv.streams.map(x =>
+        '<tr><td><div class="ds-gx-name">' + U.esc(x.name) + '</div>'
+        + '<div class="ds-gx-route">' + U.esc(x.from) + ' → ' + U.esc(x.to) + '</div></td>'
+        + '<td class="ds-right"><div class="ds-num">' + x.deadline.pending.toLocaleString() + ' pending</div>'
+        + '<div class="ds-gx-deadline ' + x.deadline.band + '">' + U.esc(x.deadline.line) + '</div></td></tr>'
+      ).join('') + '</tbody></table>'
+    + (pv.skipped.length
+        ? '<p class="ds-dim" style="margin-top:0.6rem">Left alone: '
+          + pv.skipped.map(x => U.esc(x.name) + ' (' + x.status + ')').join(', ')
+          + '. Streams somebody already paused stay paused, and drafts have never started.</p>'
+        : '')
+    + '<label class="ds-gx-field"><span>Reason (optional, recorded in the audit log)</span>'
+      + '<input class="ds-input" id="ds-gx-reason" placeholder="Source maintenance window"></label>'
+    + (strict
+        ? '<label class="ds-gx-field"><span>One of these streams is set to <b>Confirm every change</b>. '
+          + 'Type <b>PAUSE</b> to continue.</span>'
+          + '<input class="ds-input" id="ds-gx-typed" autocomplete="off" spellcheck="false"'
+          + ' oninput="dsPauseAllTyped()"></label>'
+        : '');
+
+  const go = document.getElementById('ds-pauseall-go');
+  go.disabled = strict;
+  document.getElementById('ds-pauseall').classList.add('open');
+  // Focus lands on Cancel, never on the destructive button.
+  document.getElementById('ds-pauseall-cancel').focus();
+}
+function dsPauseAllTyped() {
+  const v = (document.getElementById('ds-gx-typed') || {}).value || '';
+  document.getElementById('ds-pauseall-go').disabled = v.trim().toUpperCase() !== 'PAUSE';
+}
+function dsClosePauseAll() { document.getElementById('ds-pauseall').classList.remove('open'); }
+
+async function dsDoPauseAll() {
+  const reason = (document.getElementById('ds-gx-reason') || {}).value || '';
+  dsClosePauseAll();
+  await dsRunGlobal('pause', reason);
+}
+
+/* ── The resume dialog ──────────────────────────────────────────────────── */
+function dsOpenResumeAll() {
+  const pv = DS.resumeAllPreview(P.state);
+  if (!pv.willResume.length && !pv.willFailAgain.length) {
+    P.announce('Nothing to resume — no stream was paused by a global pause.');
+    return;
+  }
+  document.getElementById('ds-resumeall-body').innerHTML =
+      (pv.willResume.length
+        ? '<p><b>Restarting ' + pv.willResume.length + ' stream'
+          + (pv.willResume.length === 1 ? '' : 's') + '</b></p><ul class="ds-gx-list">'
+          + pv.willResume.map(x => '<li>' + U.esc(x.name) + '</li>').join('') + '</ul>'
+        : '')
+    + (pv.willFailAgain.length
+        ? '<div class="ds-gx-warn"><b>These streams will fail again unless the underlying '
+          + 'error is fixed</b><ul class="ds-gx-list">'
+          + pv.willFailAgain.map(x => '<li>' + U.esc(x.name)
+              + '<div class="ds-gx-err">' + U.esc(x.error) + '</div>'
+              + '<div class="ds-dim">' + x.dlqDepth + ' record(s) already given up on · '
+              + '<a href="#" onclick="dsGotoErrors(\'' + U.escArg(x.id) + '\');return false">Errors tab</a>'
+              + '</div></li>').join('') + '</ul>'
+          + '<label class="ds-gx-check"><input type="checkbox" id="ds-gx-failed">'
+          + '<span>Resume them anyway</span></label></div>'
+        : '')
+    + (pv.stayPaused.length
+        ? '<p class="ds-dim" style="margin-top:0.6rem"><b>Staying paused:</b> '
+          + pv.stayPaused.map(x => U.esc(x.name)).join(', ')
+          + ' — paused individually before this, so not ours to restart.</p>'
+        : '');
+  document.getElementById('ds-resumeall').classList.add('open');
+  document.getElementById('ds-resumeall-cancel').focus();
+}
+function dsCloseResumeAll() { document.getElementById('ds-resumeall').classList.remove('open'); }
+function dsGotoErrors(id) {
+  dsCloseResumeAll();
+  selectedId = id; inspOpen = true; inspTab = 'errors';
+  P.setUrl({ stream: id });
+  paint();
+}
+
+async function dsDoResumeAll() {
+  const includeFailed = !!(document.getElementById('ds-gx-failed') || {}).checked;
+  dsCloseResumeAll();
+  await dsRunGlobal('resume', '', includeFailed);
+}
+
+/* ── The transition ─────────────────────────────────────────────────────── */
+/* Applied one stream at a time, with the strip repainted between each, so
+   "Pausing… 4 of 6" is a report of what has actually happened rather than an
+   animation. A stream that throws is recorded as a failure and the rest carry
+   on: stopping at the first error would leave replication half-stopped and
+   say nothing about which half. */
+const dsFrame = () => new Promise((r) => (window.requestAnimationFrame || setTimeout)(r, 0));
+
+async function dsRunGlobal(action, reason, includeFailed) {
+  const isPause = action === 'pause';
+  const pv = isPause ? null : DS.resumeAllPreview(P.state);
+  const plan = isPause ? DS.pauseAllPlan(P.state) : DS.resumeAllPlan(P.state, includeFailed);
+
+  gxError = null;
+  gxBusy = { verb: isPause ? 'Pausing' : 'Resuming', done: 0, total: plan.length,
+             pending: plan.map(t => t.id) };
+  dsPaintGlobalSwitch();
+  paint();
+
+  const results = [];
+  for (const t of plan) {
+    // A real frame between streams. This is not simulated latency: it is what
+    // lets the row that has just stopped repaint before the next one is
+    // touched, so "Pausing… 4 of 6" is a report rather than an animation.
+    await dsFrame();
+    try {
+      if (isPause) DS.pauseStream(P.state, t.id); else DS.resumeStream(P.state, t.id);
+      // Persisted per stream, and a write that does not land is a failure.
+      // A stream reported as paused that came back running on the next reload
+      // is precisely the lie this feature must not tell.
+      if (!P.persist()) throw new Error('the change could not be saved');
+      results.push({ id: t.id, name: t.name, ok: true,
+                     priorStatus: t.priorStatus, dlqDepth: t.dlqDepth });
+    } catch (e) {
+      results.push({ id: t.id, name: t.name, ok: false, priorStatus: t.priorStatus,
+                     error: e && e.message ? e.message : String(e) });
+    }
+    gxBusy.done = results.length;
+    gxBusy.pending = plan.slice(results.length).map(x => x.id);
+    dsPaintGlobalSwitch();
+    paint();
+  }
+
+  // One snapshot, one audit entry, written once the sequence has finished and
+  // it is known which streams actually moved.
+  const outcome = isPause
+    ? DS.commitGlobalPause(P.state, { results: results, reason: reason })
+    : DS.commitGlobalResume(P.state, { results: results, reason: reason,
+        stayPaused: pv.stayPaused, skippedFailed: includeFailed ? [] : pv.willFailAgain });
+
+  gxBusy = null;
+  P.persist();
+
+  if (outcome.failed.length) {
+    // A partial result is not a success, and is never announced as one.
+    gxError = { action: isPause ? 'pause' : 'resume', failed: outcome.failed };
+    P.announce(outcome.failed.length + ' stream(s) did not '
+      + (isPause ? 'pause' : 'resume') + '. The switch shows the real state.');
+  } else {
+    P.announce(isPause
+      ? 'All streams paused. ' + outcome.paused + ' stopped.'
+      : outcome.resumed + ' stream(s) resumed.'
+        + (outcome.skippedFailed.length ? ' ' + outcome.skippedFailed.length + ' left paused because they were failing.' : ''));
+  }
+  dsPaintGlobalSwitch();
+  paint();
+}
+
+function dsRetryFailedGlobal() {
+  const action = gxError && gxError.action;
+  gxError = null;
+  dsRunGlobal(action === 'pause' ? 'pause' : 'resume', 'retry after partial failure', true);
+}
+
 /* ── Streams table ──────────────────────────────────────────────────────── */
 function paintTable(rows, s) {
   const main = document.getElementById('ds-main');
@@ -351,7 +617,7 @@ function paintTable(rows, s) {
     rows.forEach(r => {
       const tr = main.querySelector('tr[data-id="' + cssId(r.id) + '"]');
       if (!tr) return;
-      setCell(tr, 'status', U.statusPill(r));
+      setCell(tr, 'status', statusOrPending(r));
       setCell(tr, 'spark', U.sparkline(r.metrics.spark) + ' <span class="ds-num">'
         + DS.formatCount(r.metrics.eventsPerMin) + '/min</span>');
       setCell(tr, 'lag', U.lagCell(r));
@@ -365,6 +631,18 @@ function paintTable(rows, s) {
    that means for them. A stream paused for eight days is not a fact about a
    stream: somewhere a reporting team is looking at eight-day-old numbers, and
    this screen is the only thing in the building that knows. */
+/* While a global transition is in flight, a row whose turn has not come yet
+   shows a spinner instead of its old status. Showing "Running" for a stream
+   that is about to be paused — or worse, "Paused" before the engine has
+   confirmed it — is the optimistic UI this feature cannot have. */
+function statusOrPending(r) {
+  if (gxBusy && gxBusy.pending.indexOf(r.id) !== -1) {
+    return '<span class="ds-pendingpill"><span class="sqlw-spin ds-pendingspin"></span>'
+      + (gxBusy.verb === 'Pausing' ? 'pausing…' : 'resuming…') + '</span>';
+  }
+  return U.statusPill(r);
+}
+
 function consumersLine(r) {
   const consumers = (r.consumers || []).filter(c => c && c.name);
   if (!consumers.length) return '';
@@ -381,7 +659,7 @@ function rowHtml(r) {
   const cdc = (r.capture.method === 'log' || r.capture.method === 'trigger')
     ? ' <span class="ds-tag">CDC</span>' : '';
   return '<tr data-id="' + U.esc(r.id) + '"' + (r.id === selectedId ? ' class="sel"' : '') + '>'
-    + '<td data-c="status">' + U.statusPill(r) + '</td>'
+    + '<td data-c="status">' + statusOrPending(r) + '</td>'
     + '<td><div class="ds-cell-name">' + U.esc(r.name) + '</div>'
       + '<div class="ds-cell-sub">' + tables + ' table' + (tables === 1 ? '' : 's')
       + ' · created ' + created + ' by ' + U.esc(shortActor(r.createdBy)) + '</div></td>'

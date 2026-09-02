@@ -4381,6 +4381,7 @@ function renderDashboard() {
   updateStats();
   renderRing();
   renderMigrationPipeline();
+  renderStreamControlTile();
   renderProjectStatus();
   renderCutoverConfidence();
   // Schedules need a network round trip, so they fill in behind the rest
@@ -4517,6 +4518,60 @@ async function refreshPipelineNarrative(){
   try { await generateProjectAiSummary({ silent: true }); }
   catch (e) { if (el) el.textContent = 'Could not rewrite the summary: ' + e.message; return; }
   renderMigrationPipeline();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// REPLICATION CONTROL — the global pause, mirrored on Home
+// ══════════════════════════════════════════════════════════════════════════
+// The switch also lives in the Data Stream page header. Both read and write
+// the same persisted state, so changing one changes the other: there is no
+// second copy of "are the streams running" to drift.
+//
+// Home deliberately gets the LIGHT version. Pausing from here goes through
+// the same confirmation — the deadline each stream is running against is the
+// point of that dialog — so the button navigates to Data Stream with the
+// dialog open rather than reproducing it on a screen that would then own two
+// copies of the same warning.
+
+function streamState(){
+  if (typeof CygenixDataStream === 'undefined') return null;
+  try {
+    const pid = localStorage.getItem('cygenix_active_project_id') || 'default';
+    const st = CygenixDataStream.load(pid);
+    return (st && st.streams && st.streams.length) ? st : null;
+  } catch { return null; }
+}
+
+function renderStreamControlTile(){
+  const host = document.getElementById('stream-control');
+  if (!host) return;
+  const st = streamState();
+  if (!st) { host.style.display = 'none'; return; }   // nothing configured; say nothing
+
+  const g = CygenixDataStream.globalPauseState(st);
+  const snap = g.snapshot;
+  const tone = g.mode === 'running' ? 'ok' : g.mode === 'paused' ? 'red' : 'amber';
+  const COLOR = { ok: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)' };
+
+  host.style.display = '';
+  host.innerHTML = `
+    <div class="sc-row">
+      <div>
+        <div class="sc-label">Replication</div>
+        <div class="sc-state" style="color:${COLOR[tone]}">${escHtml(g.label)}</div>
+        <div class="sc-sub">${escHtml(
+          snap
+            ? 'Paused globally' + (snap.reason ? ' — ' + snap.reason : '')
+              + ' · ' + snap.streams.length + ' stream' + (snap.streams.length === 1 ? '' : 's')
+              + ' will restart on resume'
+            : g.mode === 'running'
+              ? 'Every stream that is meant to be running is running.'
+              : 'Some streams are paused individually. Global resume will not restart those.')}</div>
+      </div>
+      <a class="btn btn-sm ${g.mode === 'paused' ? 'btn-primary' : ''}"
+         href="/data-stream?global=${g.mode === 'paused' ? 'resume' : 'pause'}">${
+        g.mode === 'paused' ? 'Resume streams →' : 'Pause all streams →'}</a>
+    </div>`;
 }
 
 // ── Cutover Confidence ───────────────────────────────────────────────────────
