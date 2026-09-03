@@ -5,7 +5,10 @@
   # so a deployed change is fetched immediately instead of sitting behind a
   # cached copy of the same URL. Running it at build time means a deploy can
   # never ship stamps that disagree with the files.
-  command = "npm install && node scripts/stamp-assets.js && node scripts/build-routes.js"
+  # check-env runs FIRST and fails the build on missing configuration that
+  # would otherwise deploy cleanly and then silently break all persistence —
+  # which is what happened for three weeks when CYGENIX_DATA_FN_KEY was unset.
+  command = "npm install && node scripts/check-env.js && node scripts/stamp-assets.js && node scripts/build-routes.js"
 [[edge_functions]]
   path = "/api/analyse"
   function = "analyse"

@@ -236,34 +236,111 @@ const CygenixSync = (() => {
   // download it twice, and the editor awaited the second copy. A 5s TTL is
   // enough to cover a boot without ever serving genuinely stale data to a
   // user-triggered refresh later in the session.
-  let _loadShared = null;        // { at, promise }
-  function sharedLoad() {
+  let _loadShared = null;        // { at, promise }  — promise of a RESULT
+
+  /** The shared load, as a result. A failed load is never cached: retrying
+   *  after a 503 must actually retry. */
+  function sharedLoadResult() {
     const now = Date.now();
     if (_loadShared && now - _loadShared.at < 5000) return _loadShared.promise;
-    const promise = callApiRaw('load', 'GET');
+    const promise = callApiResult('load', 'GET');
     _loadShared = { at: now, promise };
-    promise.then((r) => { if (r == null) _loadShared = null; },
+    promise.then((r) => { if (!r.ok) _loadShared = null; },
                  ()  => { _loadShared = null; });
     return promise;
   }
 
+  /** Load the whole user blob, as a result. Every path that overwrites or
+   *  clears local storage goes through this rather than callApi, so it can
+   *  refuse to act on an answer that never came. */
+  function loadResult() { return sharedLoadResult(); }
+
   async function callApi(action, method, body) {
-    if (action === 'load' && (method || 'GET') === 'GET' && !body) return sharedLoad();
+    if (action === 'load' && (method || 'GET') === 'GET' && !body) {
+      const r = await sharedLoadResult();
+      return r.ok ? r.data : null;
+    }
     return callApiRaw(action, method, body);
   }
 
-  async function callApiRaw(action, method, body) {
+  /* ── Health ────────────────────────────────────────────────────────────────
+     What the last call to the data layer actually did. This exists because
+     for three weeks it did nothing at all and no surface said so: every save
+     returned null, every load returned null, and the only trace was a
+     console.warn nobody was reading. A user kept working, and none of it was
+     kept.
+
+     `verified` is the important field. It is true only when the proxy
+     answered — not when it 503'd, not when the token expired. Nothing in this
+     module may overwrite or clear local data on the strength of an
+     unverified response. */
+  const _health = {
+    verified: false,        // did the last load come back from a real answer
+    degraded: false,        // is the data layer currently not working
+    reason: '',             // 'config' | 'auth' | 'network' | 'server' | …
+    lastError: '',          // human-readable, never carries a credential
+    pendingSaves: 0,        // edits made but not yet accepted by the cloud
+    lastSaveAt: null,
+    lastLoadAt: null,
+  };
+
+  function setHealth(patch) {
+    const before = _health.degraded + '|' + _health.reason + '|' + _health.pendingSaves;
+    Object.assign(_health, patch);
+    const after = _health.degraded + '|' + _health.reason + '|' + _health.pendingSaves;
+    if (before === after) return;
+    // The banner listens for this. Anything else that wants to show sync
+    // state can too — that is why it is an event and not a direct call into
+    // a UI module this file should not know about.
+    try {
+      window.dispatchEvent(new CustomEvent('cygenix-sync-health', { detail: getHealth() }));
+    } catch {}
+  }
+
+  function getHealth() { return Object.assign({}, _health); }
+
+  /**
+   * The call every other function here goes through, as a result.
+   *
+   *   { ok: true, data }  the proxy answered; data may be legitimately empty
+   *   { ok: false, … }    it did not; nothing may be concluded from this
+   */
+  async function callApiResult(action, method, body) {
     // No userId and no key are sent. The proxy establishes both from the
     // verified token — anything this file asserted about identity would be
     // exactly the header the Function App used to trust.
-    if (!window.CygenixDataApi) {
+    if (!window.CygenixDataApi || !window.CygenixDataApi.callResult) {
       console.warn('[CygenixSync] cygenix-data-api.js is not loaded; sync is disabled on this page.');
-      return null;
+      return { ok: false, code: 'no-data-api', retryable: false, message: 'data api not loaded' };
     }
-    // callOrNull keeps the previous contract: every caller here treats null
-    // as "sync unavailable" and carries on against local state, so a failed
-    // save must not throw into them.
-    return window.CygenixDataApi.callOrNull(action, { method: method || 'GET', body: body });
+    const r = await window.CygenixDataApi.callResult(action, { method: method || 'GET', body: body });
+    if (r.ok) {
+      setHealth({ degraded: false, reason: '', lastError: '' });
+      return { ok: true, data: r.data };
+    }
+    // 'no-token' is not a fault: it is a signed-out page, and this module
+    // already declines to do anything without an identity.
+    if (r.error.code !== 'no-token') {
+      setHealth({
+        degraded: true,
+        reason: r.error.code,
+        // The message carries a status and an action, never a key: the proxy
+        // does not echo one and this does not construct one.
+        lastError: r.error.message,
+      });
+      console.error('[CygenixSync]', action, 'failed:', r.error.code, r.error.message);
+    }
+    return { ok: false, code: r.error.code, retryable: r.error.retryable, message: r.error.message };
+  }
+
+  async function callApiRaw(action, method, body) {
+    // The payload-or-null shape the older internal callers were written
+    // against. Kept so those call sites are unchanged, but everything that
+    // WRITES or CLEARS local data now uses callApiResult and checks `ok` —
+    // null here still cannot be told apart from a verified empty answer,
+    // which is exactly the confusion that lost three weeks of saves.
+    const r = await callApiResult(action, method, body);
+    return r.ok ? r.data : null;
   }
 
   // Build the payload to push to Cosmos. CRITICAL: this used to read
@@ -374,20 +451,22 @@ const CygenixSync = (() => {
     if (!Object.keys(payload).length) {
       return { ok: false, error: 'no-local-data' };
     }
-    let r;
-    try {
-      r = await callApi('save', 'POST', payload);
-    } catch (e) {
-      return { ok: false, error: 'call-threw: ' + (e.message || e) };
+    const r = await callApiResult('save', 'POST', payload);
+    if (!r.ok) {
+      // The code is the useful part: 'config' means somebody has to set an
+      // environment variable, 'auth' means sign in again, 'network' means
+      // try later. "call-failed (check console)" told a user none of that.
+      return { ok: false, error: r.message, code: r.code, retryable: r.retryable };
     }
-    if (!r) {
-      return { ok: false, error: 'call-failed (check console for [CygenixSync])' };
+    if (!r.data || !r.data.saved) {
+      return { ok: false, error: 'server-rejected: ' + JSON.stringify(r.data), code: 'rejected' };
     }
-    if (!r.saved) {
-      return { ok: false, error: 'server-rejected: ' + JSON.stringify(r) };
-    }
-    console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt);
-    return { ok: true, updatedAt: r.updatedAt };
+    console.log('[CygenixSync] Saved to Cosmos DB', r.data.updatedAt);
+    _dirtyKeys.clear();
+    _saveFailures = 0;
+    _health.lastSaveAt = new Date().toISOString();
+    setHealth({ pendingSaves: 0, degraded: false, reason: '', lastError: '' });
+    return { ok: true, updatedAt: r.data.updatedAt };
   }
 
   // localStorage keys written since the last successful flush.
@@ -431,40 +510,207 @@ const CygenixSync = (() => {
       }
     }
     if (!Object.keys(payload).length) { if (dirty) dirty.forEach(k => _dirtyKeys.delete(k)); return null; }
-    const r = await callApi('save', 'POST', payload);
-    if (r?.saved) {
-      console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt,
+    const r = await callApiResult('save', 'POST', payload);
+    if (r.ok && r.data && r.data.saved) {
+      console.log('[CygenixSync] Saved to Cosmos DB', r.data.updatedAt,
         dirty ? '(' + Object.keys(payload).length + ' changed field(s))' : '(full)');
       // Clear only what this flush carried — keys dirtied while the POST
       // was in flight stay marked for the next one.
       if (dirty) dirty.forEach(k => _dirtyKeys.delete(k));
       else _dirtyKeys.clear();
+      _saveFailures = 0;
+      _health.lastSaveAt = new Date().toISOString();
+      setHealth({ pendingSaves: _dirtyKeys.size, degraded: false, reason: '', lastError: '' });
+      return r.data;
     }
-    return r;
+
+    /* The save did not land.
+       This is the failure that cost three weeks. It used to return null here
+       and nothing else happened: no retry, no record, no surface. The keys
+       stayed dirty — which was correct — but the only thing that would ever
+       flush them again was the user happening to make another edit, and that
+       flush hit the same 503. Every edit in between was kept nowhere but this
+       browser, and the user had no way to know.
+
+       Now the dirty keys stay marked AND a retry is scheduled AND the pending
+       count is published, so the banner can say how many edits are unsaved. */
+    _saveFailures++;
+    setHealth({ pendingSaves: _dirtyKeys.size });
+    if (r.ok) {
+      // A verified answer that refused the write — a server-side rejection,
+      // not a transport fault. Retrying the identical payload will not help.
+      console.error('[CygenixSync] save rejected by the server:', JSON.stringify(r.data));
+      setHealth({ degraded: true, reason: 'rejected',
+        lastError: 'The server refused the save.' });
+    } else if (r.retryable !== false) {
+      scheduleRetry();
+    }
+    return r.ok ? r.data : null;
   }
 
-  async function load() {
-    const data = await callApi('load','GET');
-    if (!data || !Object.keys(data).length) { console.log('[CygenixSync] No cloud data yet'); return false; }
-    let n = 0;
-    Object.entries(FIELD_MAP).forEach(([f,k]) => {
-      const v = data[f];
-      if (v !== undefined && v !== null) { try { localStorage.setItem(k, JSON.stringify(v)); n++; } catch {} }
+  /* Retry with backoff, capped. A misconfigured deployment is not fixed by
+     hammering it, so this backs off to a couple of minutes and stays there
+     until either a save succeeds or the page goes away. The point is not to
+     out-wait the outage; it is that when someone sets the missing variable,
+     the queued edits go up on their own rather than needing a lucky keystroke. */
+  let _saveFailures = 0;
+  let _retryTimer = null;
+  const RETRY_STEPS = [5000, 15000, 45000, 120000];
+
+  function scheduleRetry() {
+    if (_retryTimer || !_dirtyKeys.size) return;
+    const wait = RETRY_STEPS[Math.min(_saveFailures - 1, RETRY_STEPS.length - 1)] || RETRY_STEPS[0];
+    console.warn('[CygenixSync]', _dirtyKeys.size, 'unsaved change(s); retrying in', Math.round(wait / 1000) + 's');
+    _retryTimer = setTimeout(() => { _retryTimer = null; save(); }, wait);
+  }
+
+  /** Flush the queue now — what the banner's Retry button calls. */
+  async function retryPending() {
+    if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
+    _saveFailures = 0;
+    return saveNow();
+  }
+
+  /* ── The one place cloud state becomes local state ─────────────────────────
+
+     Everything that writes localStorage from a cloud response goes through
+     here. There used to be four such places — load(), forceLoad(), init() and
+     resetToCloud() — each with slightly different rules about when to clear a
+     key, and only one of them (init) had any guard at all.
+
+     Two rules, and both were learned the hard way.
+
+     RULE 1: AN OMITTED FIELD IS NOT A DELETION.
+     init() used to call localStorage.removeItem() for every FIELD_MAP key the
+     cloud response did not carry, guarded only against a WHOLLY empty object.
+     A partial response therefore deleted local data for every field it left
+     out. That is not hypothetical: FIELD_MAP's own note on conv_project and
+     last_snapshots says these may not round-trip until the backend schema
+     catches up — and the code deleted local state for exactly the fields that
+     did not come back.
+
+     A genuine deletion is not an omission. save() serialises whatever is in
+     localStorage, so a user who deletes all their jobs sends `jobs: []` — a
+     present, empty value. Absence means the field never made the round trip.
+     So: a present value is applied, an absent one leaves local alone.
+
+     RULE 2: NOTHING WIPES EVERYTHING AT ONCE.
+     A verified response that would empty every key that currently holds real
+     data is a backend fault, not fifteen simultaneous deletions. Per-field
+     emptying is still allowed — that IS how a deletion propagates — but not
+     all of it at once. When this trips, local is kept and the health state
+     goes degraded so the banner says so rather than the user finding out by
+     looking at an empty screen.
+
+     @param cloud   a VERIFIED response body. Callers must have checked ok
+                    first; there is no path here that can be reached with the
+                    null from a failed call.
+     @returns { applied, skipped, refused }
+  */
+  function isMeaningful(raw) {
+    if (raw === null || raw === undefined) return false;
+    const s = String(raw).trim();
+    return s !== '' && s !== '[]' && s !== '{}' && s !== 'null' && s !== '""';
+  }
+
+  function applyCloud(cloud, source) {
+    if (!cloud || typeof cloud !== 'object') return { applied: 0, skipped: 0, refused: false };
+
+    const present = [];   // [cloudField, localKey, value]
+    const absent  = [];
+    for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
+      const v = cloud[cloudField];
+      if (v === undefined || v === null) absent.push(localKey);
+      else present.push([cloudField, localKey, v]);
+    }
+
+    // Rule 2. Would this leave every key that currently holds something
+    // meaningful holding nothing?
+    const localMeaningful = Object.values(FIELD_MAP).filter((k) => {
+      try { return isMeaningful(localStorage.getItem(k)); } catch { return false; }
     });
-    console.log('[CygenixSync] Loaded', n, 'keys from Cosmos DB');
-    return n > 0;
+    if (localMeaningful.length) {
+      const survives = localMeaningful.some((k) => {
+        const hit = present.find(([, lk]) => lk === k);
+        // Absent → local is left alone, so it survives. Present → it survives
+        // only if what is arriving is itself meaningful.
+        return hit ? isMeaningful(JSON.stringify(hit[2])) : true;
+      });
+      if (!survives) {
+        console.error('[CygenixSync] applyCloud(' + source + '): refusing — the response would '
+          + 'empty all ' + localMeaningful.length + ' populated keys at once. Keeping local data.');
+        setHealth({ degraded: true, reason: 'suspect-empty',
+          lastError: 'Cloud returned an empty state for every key while this device holds data. '
+            + 'Local data kept.' });
+        return { applied: 0, skipped: 0, refused: true };
+      }
+    }
+
+    let applied = 0;
+    for (const [, localKey, value] of present) {
+      try {
+        // _orig, not localStorage.setItem: this is cloud-to-local hydration,
+        // not a user edit, and must not schedule a save of what we just read.
+        _orig(localKey, JSON.stringify(value));
+        applied++;
+      } catch (e) {
+        console.warn('[CygenixSync] applyCloud: failed to write', localKey, e.message);
+      }
+    }
+    if (absent.length) {
+      console.log('[CygenixSync] applyCloud(' + source + '):', absent.length,
+        'field(s) absent from the response — local left untouched:', absent.join(', '));
+    }
+    _health.lastLoadAt = new Date().toISOString();
+    setHealth({ verified: true });
+    try {
+      window.dispatchEvent(new CustomEvent('cygenix-sync-loaded', {
+        detail: { filled: applied, source: source }
+      }));
+    } catch {}
+    return { applied: applied, skipped: absent.length, refused: false };
+  }
+
+  // load() and forceLoad() keep their boolean contract — roughly forty
+  // scripts call them and several branch on the result. The structured
+  // version is loadDetailed(); it was added alongside rather than by
+  // repurposing these.
+  async function load() {
+    const d = await loadDetailed();
+    return d.ok && d.applied > 0;
   }
 
   async function forceLoad() {
-    const data = await callApi('load','GET');
-    if (!data) return false;
-    let n = 0;
-    Object.entries(FIELD_MAP).forEach(([f,k]) => {
-      const v = data[f];
-      if (v !== undefined && v !== null) { try { localStorage.setItem(k, JSON.stringify(v)); n++; } catch {} }
-    });
-    console.log('[CygenixSync] Force-loaded', n, 'keys from Cosmos DB');
-    return n > 0;
+    const d = await loadDetailed({ force: true });
+    return d.ok && d.applied > 0;
+  }
+
+  /**
+   * Load, with the reason when it does not work.
+   *
+   *   { ok:true,  verified:true,  applied, skipped }
+   *   { ok:false, verified:false, code, message }   — local data untouched
+   */
+  async function loadDetailed(opts) {
+    if (opts && opts.force) _loadShared = null;
+    const r = await loadResult();
+    if (!r.ok) {
+      console.warn('[CygenixSync] load failed (' + r.code + ') — local data left as it is');
+      return { ok: false, verified: false, code: r.code, message: r.message, applied: 0 };
+    }
+    const cloud = r.data;
+    if (!cloud || !Object.keys(cloud).length) {
+      // Verified and empty. A real fact — this account has nothing stored —
+      // but not a licence to clear anything: on a first sign-in the local
+      // data is the only copy there is.
+      console.log('[CygenixSync] Cloud is empty for this account (verified); local data kept');
+      _health.lastLoadAt = new Date().toISOString();
+      setHealth({ verified: true, degraded: false, reason: '' });
+      return { ok: true, verified: true, empty: true, applied: 0, skipped: 0 };
+    }
+    const res = applyCloud(cloud, (opts && opts.source) || 'load');
+    console.log('[CygenixSync] Loaded', res.applied, 'keys from Cosmos DB');
+    return { ok: true, verified: true, applied: res.applied, skipped: res.skipped, refused: res.refused };
   }
 
   async function ensureUser() {
@@ -685,30 +931,34 @@ const CygenixSync = (() => {
       console.error('[CygenixSync] resetToCloud: not signed in');
       return { ok: false, error: 'not-signed-in' };
     }
-    console.log('[CygenixSync] resetToCloud: wiping local sync keys...');
+    // FETCH FIRST, WIPE SECOND. This used to be the other way round: it
+    // removed every sync key and then called the API, so a failed load left
+    // the machine with nothing and said so by returning
+    // `{local_now_empty: true}` — a recovery helper that destroyed the only
+    // surviving copy of the data whenever the thing it was recovering from
+    // was still broken. The order is the entire fix.
+    _loadShared = null;                       // a genuine refresh, not a boot
+    const r = await loadResult();
+    if (!r.ok) {
+      console.warn('[CygenixSync] resetToCloud: load failed (' + r.code + ') — local data untouched');
+      return { ok: false, error: 'load-failed', code: r.code, local_untouched: true };
+    }
+    const cloud = r.data;
+    if (!cloud || !Object.keys(cloud).length) {
+      console.warn('[CygenixSync] resetToCloud: cloud is empty for this account — '
+        + 'refusing to wipe local, since that would leave no copy anywhere. '
+        + 'Use CygenixSync.exportBackup() first if you intend to start clean.');
+      return { ok: false, error: 'cloud-empty', local_untouched: true };
+    }
+
+    console.log('[CygenixSync] resetToCloud: cloud verified, wiping local sync keys...');
     SYNC_KEYS.forEach(k => localStorage.removeItem(k));
     localStorage.removeItem('cygenix_active_project_id');
 
-    const cloud = await callApi('load', 'GET');
-    if (!cloud) {
-      console.warn('[CygenixSync] resetToCloud: callApi returned null, local is now empty');
-      return { ok: false, error: 'load-failed', local_now_empty: true };
-    }
-    let n = 0;
-    for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
-      const v = cloud[cloudField];
-      if (v !== undefined && v !== null) {
-        try { _orig(localKey, JSON.stringify(v)); n++; } catch {}
-      }
-    }
-    console.log('[CygenixSync] resetToCloud: loaded', n, 'keys from cloud');
-    try {
-      window.dispatchEvent(new CustomEvent('cygenix-sync-loaded', {
-        detail: { filled: n, source: 'resetToCloud' }
-      }));
-    } catch {}
+    const res = applyCloud(cloud, 'resetToCloud');
+    console.log('[CygenixSync] resetToCloud: loaded', res.applied, 'keys from cloud');
     console.log('[CygenixSync] resetToCloud: done. Reload page or refresh views to see new state.');
-    return { ok: true, loaded: n };
+    return { ok: true, loaded: res.applied };
   }
 
   async function nuke(opts) {
@@ -720,6 +970,19 @@ const CygenixSync = (() => {
     if (!getUserId()) {
       console.error('[CygenixSync] nuke: not signed in');
       return { ok: false, error: 'not-signed-in' };
+    }
+
+    // READ THE CLOUD BEFORE OVERWRITING IT. nuke() pushes a near-empty
+    // document over the user's entire Cosmos partition. It used to do that
+    // without ever looking at what was there — so running it while the data
+    // layer was broken (the case where someone is most likely to reach for a
+    // recovery helper) destroyed the cloud copy on the strength of a local
+    // state that may itself have been empty for the same reason.
+    const probe = await callApiResult('load', 'GET');
+    if (!probe.ok) {
+      console.error('[CygenixSync] nuke: cannot read the cloud (' + probe.code + '). '
+        + 'Refusing to overwrite a partition whose contents are unknown.');
+      return { ok: false, error: 'cloud-unreadable', code: probe.code };
     }
 
     // Determine which project to keep. Default: current local conv_project.
@@ -823,6 +1086,9 @@ const CygenixSync = (() => {
     _orig(k, v);
     if (SYNC_KEYS.includes(k) && getUserId()) {
       _dirtyKeys.add(k);
+      // Publish immediately, so "3 unsaved changes" is true from the moment
+      // the edit is made rather than from the moment a save fails.
+      setHealth({ pendingSaves: _dirtyKeys.size });
       if (_saveTimer) clearTimeout(_saveTimer);
       _saveTimer = setTimeout(save, 3000);
     }
@@ -870,7 +1136,7 @@ const CygenixSync = (() => {
     // are independent, and each can be seconds on an Azure cold start, so
     // paying them serially doubled the wait for first data. Start both now;
     // the load's result is picked up below.
-    const _loadP = callApi('load', 'GET');
+    const _loadP = loadResult();
     await ensureUser();
 
     // ── Per-key gap-fill from cloud ────────────────────────────────────────
@@ -904,48 +1170,34 @@ const CygenixSync = (() => {
     // debounced save, and immediately hard-refreshes tab A will lose the
     // unsaved edit (cloud will overwrite). That window is ~3 seconds and
     // is an acceptable cost to stop the multi-machine pollution.
-    const cloud = await _loadP;
-    let n = 0;
-    if (cloud && typeof cloud === 'object') {
-      for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
-        const cloudVal = cloud[cloudField];
-        if (cloudVal === undefined || cloudVal === null) {
-          // Cloud has nothing for this field — also clear local, otherwise
-          // a stale local value sits forever. The exception is during
-          // first-ever sign-in when cloud is empty across the board; in
-          // that case we'd be clearing legitimately local-only data. We
-          // detect that via Object.keys(cloud).length: if cloud is wholly
-          // empty (no fields at all), don't clear anything.
-          if (Object.keys(cloud).length === 0) continue;
-          // Remove the key outright. The old code wrote the literal string
-          // "null" for every field (cloudVal is null here, so the
-          // Array.isArray branch could never hit), which made downstream
-          // JSON.parse(getItem(k) || '[]') return null instead of [] and
-          // broke jobs-count / JSON-export consumers.
-          try { localStorage.removeItem(localKey); } catch {}
-          continue;
-        }
-        try {
-          // Use _orig to avoid re-triggering the auto-save debounce — we
-          // don't want page load to schedule a save of cloud-just-written
-          // data back to the cloud.
-          _orig(localKey, JSON.stringify(cloudVal));
-          n++;
-        } catch (e) {
-          console.warn('[CygenixSync] init: failed to load', localKey, e.message);
-        }
-      }
+    // v1.4 change (3-Sep-2026): the apply is guarded, and it is the same
+    // guarded apply every other path uses. What used to be here walked
+    // FIELD_MAP and called localStorage.removeItem() for any field the
+    // response did not carry — guarded only against a response with NO
+    // fields at all. A partial response therefore deleted local data for
+    // every field it omitted, and FIELD_MAP's own note says two fields may
+    // not round-trip until the backend schema catches up. See applyCloud()
+    // for why an omission is now never read as a deletion.
+    const r = await _loadP;
+    if (!r.ok) {
+      // Unverified. Local is the only copy of anything unsaved, so it is
+      // kept exactly as it is, and the health state says why — this is the
+      // state that lasted three weeks in silence.
+      console.warn('[CygenixSync] init: cloud unavailable (' + r.code + ') — '
+        + 'working from local data only. Nothing has been cleared.');
+      setHealth({ verified: false });
+    } else if (!r.data || !Object.keys(r.data).length) {
+      console.log('[CygenixSync] init: cloud is empty for this account (verified)');
+      _health.lastLoadAt = new Date().toISOString();
+      setHealth({ verified: true, degraded: false, reason: '' });
+    } else {
+      const res = applyCloud(r.data, 'init-v1.4');
+      console.log('[CygenixSync] Loaded', res.applied, 'keys from Cosmos DB (cloud-authoritative)');
     }
-    console.log('[CygenixSync] Loaded', n, 'keys from Cosmos DB (cloud-authoritative)');
 
-    // Notify views that they should re-read localStorage. The dispatched
-    // event is the same one used by the legacy gap-fill path so any handler
-    // listening for it keeps working.
-    try {
-      window.dispatchEvent(new CustomEvent('cygenix-sync-loaded', {
-        detail: { filled: n, source: 'init-v1.3' }
-      }));
-    } catch {}
+    // Anything already queued from a previous page — the dirty set survives
+    // in localStorage terms because the edits do — gets a flush attempt now.
+    if (_dirtyKeys.size) scheduleRetry();
 
     // v1.3 change: NO post-init save kick. Saves only fire from genuine
     // user edits via the localStorage.setItem monkey-patch. This eliminates
@@ -959,6 +1211,10 @@ const CygenixSync = (() => {
 
   return {
     init, save, saveNow, load, forceLoad, ensureKey, ensureUser, ping, getSubscription, getUserId,
+    // Structured counterparts. Added ALONGSIDE load()/forceLoad() rather
+    // than by changing what those return: roughly forty scripts call them
+    // and branch on a boolean.
+    loadDetailed, getHealth, retryPending,
     // Console-callable backup/restore helpers — see definitions above.
     exportBackup, importBackup,
     // v1.3 recovery helpers — see definitions above.
