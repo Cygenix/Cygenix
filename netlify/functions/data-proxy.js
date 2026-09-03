@@ -64,8 +64,16 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Content-Type': 'application/json',
 };
-const fail = (msg, code) => ({
-  statusCode: code || 500, headers: CORS, body: JSON.stringify({ error: msg }),
+// Errors carry a machine-readable `code` alongside the prose. The client
+// cannot act sensibly on "Auth error: …" as a string — it needs to know
+// whether this deployment is misconfigured (nobody can fix it by retrying,
+// and it says nothing about whether the user has data) or the token expired
+// (sign in again) or the far side fell over (retry later). Codes are stable;
+// the prose is not.
+const fail = (msg, status, code) => ({
+  statusCode: status || 500,
+  headers: CORS,
+  body: JSON.stringify({ error: msg, code: code || 'error' }),
 });
 
 // The Function App base and key both come from the environment. A missing
@@ -128,15 +136,48 @@ exports.handler = async function (event) {
   const action = q.action || '';
   const agentPath = q.path || '';
 
+  // ── health ──────────────────────────────────────────────────────────────
+  // Deliberately unauthenticated and deliberately first, before the key check
+  // and before token verification. It answers one question — is this
+  // deployment configured well enough to reach the Function App — which is
+  // exactly the question nobody could answer during the three-week outage.
+  //
+  // It reports the PRESENCE of configuration, never its content: no key, no
+  // fragment of a key, no key length. `apiBase` is a public hostname that is
+  // already in this file as a literal and in every network tab.
+  if (action === 'health') {
+    const ok = !!FN_KEY;
+    return {
+      statusCode: ok ? 200 : 503,
+      headers: CORS,
+      body: JSON.stringify({
+        ok,
+        code: ok ? 'ok' : 'no-fn-key',
+        // The one thing an operator needs to be told, in the words of the
+        // thing they have to go and set.
+        detail: ok ? 'data-proxy is configured'
+                   : 'CYGENIX_DATA_FN_KEY is not set for this deployment; every '
+                     + 'call to /api/data will fail until it is.',
+        apiBaseConfigured: !!process.env.CYGENIX_DATA_API_BASE,
+        checkedAt: new Date().toISOString(),
+      }),
+    };
+  }
+
   if (agentPath) {
-    if (!agentPathAllowed(agentPath)) return fail('Unsupported path: ' + agentPath, 400);
+    if (!agentPathAllowed(agentPath)) return fail('Unsupported path: ' + agentPath, 400, 'bad-path');
   } else if (!ALLOWED.has(action)) {
-    return fail('Unknown or unsupported action: ' + action, 400);
+    return fail('Unknown or unsupported action: ' + action, 400, 'bad-action');
   }
   if (!FN_KEY) {
     // Loud, not silent. A proxy that cannot authenticate to the Function App
     // must not degrade into an unauthenticated one.
-    return fail('CYGENIX_DATA_FN_KEY is not configured for this deployment.', 503);
+    //
+    // console.error, not warn: this is the line that should have been paging
+    // somebody for three weeks. Netlify surfaces error-level function logs,
+    // and a 503 with no log entry is how a deployment fault stays invisible.
+    console.error('[data-proxy] CYGENIX_DATA_FN_KEY is not set — refusing action:', action || agentPath);
+    return fail('CYGENIX_DATA_FN_KEY is not configured for this deployment.', 503, 'no-fn-key');
   }
 
   // ── Identity: verified claims only ──────────────────────────────────────
@@ -149,7 +190,7 @@ exports.handler = async function (event) {
     identity = String(authed.email || authed.sub || '').trim().toLowerCase();
     if (!identity) throw new Error('token carries no email or subject claim');
   } catch (e) {
-    return fail('Auth error: ' + e.message, 401);
+    return fail('Auth error: ' + e.message, 401, 'auth');
   }
 
   // ── Forward ─────────────────────────────────────────────────────────────
@@ -201,6 +242,7 @@ exports.handler = async function (event) {
       body: text || '{}',
     };
   } catch (e) {
-    return fail('Upstream error: ' + e.message, 502);
+    console.error('[data-proxy] upstream call failed for', action || agentPath, '-', e.message);
+    return fail('Upstream error: ' + e.message, 502, 'upstream');
   }
 };
