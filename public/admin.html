@@ -189,6 +189,10 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
 .role-gate-spinner{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
+<!-- Accessibility engine: re-applies the visitor's saved text size and
+     high-contrast choice. Without it here, a setting turned on elsewhere in
+     the product silently disappears on this page. -->
+<script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
 </head>
 <body>
 

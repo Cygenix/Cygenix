@@ -12,8 +12,9 @@
 <meta property="og:url" content="https://cygenix.co.uk/about">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
-<meta name="twitter:card" content="summary_large_image">
+<!-- TODO: when a 1200x630 OG image exists at /og-image.png, restore
+     <meta property="og:image"> and set this back to summary_large_image. -->
+<meta name="twitter:card" content="summary">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -176,6 +177,10 @@ h1 em{font-style:italic;color:var(--accent)}
 </style>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
+<!-- Accessibility engine: re-applies the visitor's saved text size and
+     high-contrast choice. Without it here, a setting turned on elsewhere in
+     the product silently disappears on this page. -->
+<script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
 </head>
 <body>
 

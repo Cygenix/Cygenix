@@ -71,16 +71,38 @@ const stray = [...new Set((scannable.match(/#[0-9A-Fa-f]{3,8}\b/g) || []).map(h 
 check('every colour on the page is a house colour', stray.length === 0, stray.join(', '));
 
 // ── 3. The brand is still the login's brand ─────────────────────────────────
-check('the accent is the same on both pages, and it is the console\'s accent',
-  tok(index, 'accent') === tok(login, 'accent') && tok(index, 'accent') === '#4a5bd6',
-  'index=' + tok(index, 'accent') + ' login=' + tok(login, 'accent'));
+/* The accent used to be written out on both pages and this test compared the
+   two copies. It now has ONE home — cygenix-brand.css — so the stronger claim
+   is available: neither page declares it at all, and the shared file declares
+   it once. Two equal copies were only ever one careless edit from being two
+   different ones. */
+const brand = pub('cygenix-brand.css');
+const rootBlock = (src) => {
+  const at = src.indexOf(':root{');
+  return at === -1 ? '' : src.slice(at, src.indexOf('}', at));
+};
+check('the brand accent has exactly one home, and it is the console\'s accent',
+  tok(brand, 'accent') === '#4a5bd6',
+  'cygenix-brand.css says ' + tok(brand, 'accent'));
+check('and neither page redeclares it at :root',
+  tok(rootBlock(index), 'accent') === null && tok(rootBlock(login), 'accent') === null,
+  'index=' + tok(rootBlock(index), 'accent') + ' login=' + tok(rootBlock(login), 'accent'));
+check('both pages load that one file',
+  /<link rel="stylesheet" href="\/cygenix-brand\.css">/.test(index)
+  && /<link rel="stylesheet" href="\/cygenix-brand\.css">/.test(login));
+// The product mockups on the landing page deliberately carry the console's own
+// palette in a scoped block — that is not drift, it is the mock being the app.
+check('the mockups still map to the console palette',
+  /\.mock\b[\s\S]{0,400}--accent:#4A5BD6/.test(index));
 check('the brand ink is kept, so the dark surfaces still match the login',
   tok(index, 'ink') === tok(login, 'ink') && tok(index, 'ink') === '#12141c');
 check('the brand mark gradient is the same pair of blues',
   tok(index, 'mark-a') === '#6d5df2' && tok(index, 'mark-b') === '#4a7cf3'
   && login.includes('#6d5df2') && login.includes('#4a7cf3'));
-check('both pages round corners by the same radius token',
-  tok(index, 'r') === tok(login, 'r'));
+check('both pages round corners by the same radius token, from the shared file',
+  tok(brand, 'r') === '10px'
+  && tok(rootBlock(index), 'r') === null && tok(rootBlock(login), 'r') === null,
+  'a null on both sides used to pass this by accident');
 
 // #4A5BD6 does not carry type on black — the palette anticipated that with a
 // lifted accent, and the page has to actually use it.
