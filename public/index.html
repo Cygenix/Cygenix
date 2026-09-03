@@ -18,11 +18,13 @@
 <meta name="description" content="Cygenix migrates SQL Server, Azure SQL and Postgres — AI column mapping, preflight forecasting, server-level objects, and governance that is enforced on the server rather than in the browser.">
 <meta property="og:title" content="Cygenix – AI-Powered SQL Database Migration Platform">
 <meta property="og:description" content="AI column mapping, preflight forecasting, server-level object migration, and governance enforced server-side.">
+<link rel="canonical" href="https://cygenix.co.uk/">
 <meta property="og:url" content="https://cygenix.co.uk/">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
-<meta name="twitter:card" content="summary_large_image">
+<!-- TODO: when a 1200x630 OG image exists at /og-image.png, restore
+     <meta property="og:image"> and set this back to summary_large_image. -->
+<meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Cygenix – AI-Powered SQL Database Migration Platform">
 <meta name="twitter:description" content="AI column mapping, preflight forecasting, server-level object migration, and governance enforced server-side.">
 <title>Cygenix – AI-Powered SQL Database Migration Platform</title>
@@ -31,6 +33,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-brand.css">
 <style>
 /* ═══════════════════════════════════════════════════════════════════════════
    Cygenix landing page — one surface, black, all the way down.
@@ -52,10 +55,11 @@
   --bg:#000000;--bg2:#0a0b0f;--bg3:#101219;--bg4:#171a22;
   --border:rgba(255,255,255,0.09);--border2:rgba(255,255,255,0.16);
   --text:#f2f4f8;--text2:rgba(255,255,255,0.62);--text3:rgba(255,255,255,0.40);
-  /* The brand accent, identical to login.html and the console. On black it is
-     too dark to carry type, so --accent-ink is the working accent here and
-     --accent stays as the brand's own value. */
-  --accent:#4a5bd6;--accent2:#3d4ec4;--glow:rgba(74,91,214,0.10);
+  /* --accent, --accent2 and the type stacks come from cygenix-brand.css, which
+     is the one home for them. On black the brand indigo is too dark to carry
+     type, so --accent-ink is the working accent here; --accent stays the
+     brand's own value and is used for fills. */
+  --glow:rgba(74,91,214,0.10);
   --accent-ink:#8ea0ff;--accent-ink2:#a9b6ff;
   /* Status colours, lifted for a black ground — the Redwood set is mixed for
      paper and goes muddy here. The console's own values live inside .mock. */
@@ -64,12 +68,7 @@
   --red:#ef6f62;--red-g:rgba(239,111,98,0.12);
   --teal:#3fb5b0;--purple:#a98fd6;
   --ink:#12141c;--faint:#9aa0af;
-  --mark-a:#6d5df2;--mark-b:#4a7cf3;
-  --r:10px;
-  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
-  --sans:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
-  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
-}
+  --mark-a:#6d5df2;--mark-b:#4a7cf3;}
 html{scroll-behavior:smooth;background:var(--bg)}
 body{font-family:var(--sans);background:var(--bg);color:var(--text);overflow-x:hidden;
   -webkit-font-smoothing:antialiased;position:relative}
@@ -310,6 +309,9 @@ footer{position:relative;z-index:1;text-align:center;padding:2.5rem 1rem 3rem;fo
   color:var(--text3);border-top:1px solid var(--border);line-height:2}
 footer a{color:var(--accent-ink);text-decoration:none}
 footer a:hover{text-decoration:underline}
+.footer-links{margin-bottom:0.6rem}
+.footer-legal{font-size:12px;color:var(--text3);line-height:1.6;max-width:70ch;
+  margin:0 auto}
 .footer-link{background:none;border:none;padding:0;font:inherit;color:var(--accent-ink);cursor:pointer}
 .footer-link:hover{text-decoration:underline}
 
@@ -364,7 +366,8 @@ footer a:hover{text-decoration:underline}
     <a href="#planning">Planning</a>
     <a href="#supports">What it supports</a>
     <a href="/pricing">Pricing</a>
-    <a href="#" onclick="openContact();return false">Contact</a>
+    <a href="mailto:curtis.morris@cygenix.co.uk"
+       onclick="openContact();return false">Contact</a>
   </div>
   <a href="/login" class="nav-cta">Log in →</a>
 </nav>
@@ -420,7 +423,7 @@ footer a:hover{text-decoration:underline}
   <div class="container">
     <div class="center reveal">
       <div class="section-tag">The platform</div>
-      <div class="section-title">Four things a migration actually needs</div>
+      <h2 class="section-title">Four things a migration actually needs</h2>
       <p class="section-sub">Most tools do the first one. The other three are where migrations go wrong,
         and they are the reason this one exists.</p>
     </div>
@@ -461,7 +464,7 @@ footer a:hover{text-decoration:underline}
   <div class="container split">
     <div class="reveal">
       <div class="section-tag">Intelligent mapping</div>
-      <div class="section-title">Drag a column across. Or let the model draw it.</div>
+      <h2 class="section-title">Drag a column across. Or let the model draw it.</h2>
       <p class="section-sub">The mapper is a canvas: source columns on the left, target columns on
         the right, and you join them by dragging one onto the other. The model proposes the joins
         first and shows the confidence it actually had — not a number invented to look reassuring —
@@ -594,7 +597,7 @@ footer a:hover{text-decoration:underline}
   <div class="container split flip">
     <div class="reveal">
       <div class="section-tag">Preflight and validation</div>
-      <div class="section-title">The failures you find before the run</div>
+      <h2 class="section-title">The failures you find before the run</h2>
       <p class="section-sub">Preflight pulls a sample of your real rows, pushes them through the
         mapping you have actually built, and tells you what the target would reject. Validation suites
         then run any SQL you like, against any table, and report the rows that failed.</p>
@@ -637,7 +640,7 @@ footer a:hover{text-decoration:underline}
   <div class="container">
     <div class="center reveal">
       <div class="section-tag">Schema Explorer</div>
-      <div class="section-title">Nine ways to look at an estate<br>you have never seen before</div>
+      <h2 class="section-title">Nine ways to look at an estate<br>you have never seen before</h2>
       <p class="section-sub">You inherit a database with four hundred tables, no documentation and the
         person who built it long gone. Schema Explorer is where you find out what you are actually
         dealing with — the same estate, drawn nine different ways, from one picker.</p>
@@ -695,7 +698,7 @@ footer a:hover{text-decoration:underline}
         <div class="fig-cap"><span>Schema map</span><span><b>3 direct dependencies</b> · 6 tables one hop out</span></div>
       </div>
       <div class="reveal">
-        <div class="section-title" style="font-size:1.35rem">Follow the keys</div>
+        <h2 class="section-title" style="font-size:1.35rem">Follow the keys</h2>
         <p class="section-sub" style="font-size:14.5px">Pick a table and the diagram narrows to it —
           one hop, two hops, or the whole estate. Ask for the shortest join path between two tables
           and it draws that instead.</p>
@@ -715,7 +718,7 @@ footer a:hover{text-decoration:underline}
 
     <div class="fig-pair rev" style="margin-top:1.25rem">
       <div class="reveal">
-        <div class="section-title" style="font-size:1.35rem">Where the data actually is</div>
+        <h2 class="section-title" style="font-size:1.35rem">Where the data actually is</h2>
         <p class="section-sub" style="font-size:14.5px">The Globe reads geography out of the database
           itself — country columns, region columns, postal codes, foreign keys into your own country
           table — and stands a bar off the sphere for each region it finds. Height is the volume,
@@ -808,7 +811,7 @@ footer a:hover{text-decoration:underline}
   <div class="container split">
     <div class="reveal">
       <div class="section-tag">Server migration <span class="chip chip-beta">Beta</span></div>
-      <div class="section-title">The objects most tools leave behind</div>
+      <h2 class="section-title">The objects most tools leave behind</h2>
       <p class="section-sub">Schema and data are half a migration. Logins, Agent jobs, SSIS projects,
         linked servers and credentials live at the server level, and almost everything else either
         ignores them or hands you a script to run by hand.</p>
@@ -859,7 +862,7 @@ footer a:hover{text-decoration:underline}
   <div class="container">
     <div class="center reveal">
       <div class="section-tag">Governance</div>
-      <div class="section-title">Controls that the interface cannot talk its way past</div>
+      <h2 class="section-title">Controls that the interface cannot talk its way past</h2>
       <p class="section-sub">A confirmation dialog is not a control if skipping the dialog skips the
         control. Everything here is decided on the server, and a refusal is recorded as carefully as
         a permission.</p>
@@ -925,7 +928,7 @@ footer a:hover{text-decoration:underline}
   <div class="container split flip">
     <div class="reveal">
       <div class="section-tag">Automation</div>
-      <div class="section-title">Batches, schedules, and a resume that means it</div>
+      <h2 class="section-title">Batches, schedules, and a resume that means it</h2>
       <p class="section-sub">Group jobs into a batch, save it, load it back and run it. Or hand it to
         the Task Agent and walk away — it runs on a cadence, after another job, or at a time you pick,
         and emails you when it is done.</p>
@@ -973,7 +976,7 @@ footer a:hover{text-decoration:underline}
 <section class="section" id="data-stream">
   <div class="container center reveal">
     <div class="section-tag">Data Stream <span class="chip chip-preview">Preview</span></div>
-    <div class="section-title">Keep the old system running while the new one fills up</div>
+    <h2 class="section-title">Keep the old system running while the new one fills up</h2>
     <p class="section-sub">A big-bang cutover is a decision most teams would rather not make. Data
       Stream is continuous capture and delivery — capture from the source, a stream store in the
       middle, delivery to the target, with lag, backlog and dead letters visible per stream. In
@@ -1003,7 +1006,7 @@ footer a:hover{text-decoration:underline}
   <div class="container">
     <div class="center reveal">
       <div class="section-tag">Configurator and Project Plan</div>
-      <div class="section-title">Scope it, price it, then plan it —<br>without leaving the tool</div>
+      <h2 class="section-title">Scope it, price it, then plan it —<br>without leaving the tool</h2>
       <p class="section-sub">Two screens that most migration tools leave to a spreadsheet. The
         Configurator turns scope into days and a delivery date; the Project Plan turns that estimate
         into a grid you can hand to a client.</p>
@@ -1078,7 +1081,7 @@ footer a:hover{text-decoration:underline}
         <div class="fig-cap"><span>Configurator · effort model</span><span>tick a module in or out · the weights are yours</span></div>
       </div>
       <div class="reveal">
-        <div class="section-title" style="font-size:1.35rem">An estimate you can argue with</div>
+        <h2 class="section-title" style="font-size:1.35rem">An estimate you can argue with</h2>
         <p class="section-sub" style="font-size:14.5px">Seven standard use cases, your own module
           list, a complexity weight on each, and project variables on top. Every macro from the
           spreadsheet this replaces is a formula printed on the page — so when a client asks why the
@@ -1104,7 +1107,7 @@ footer a:hover{text-decoration:underline}
 
     <div class="fig-pair rev" style="margin-top:1.25rem">
       <div class="reveal">
-        <div class="section-title" style="font-size:1.35rem">A plan you paint</div>
+        <h2 class="section-title" style="font-size:1.35rem">A plan you paint</h2>
         <p class="section-sub" style="font-size:14.5px">Phases down the side, a month-by-week timeline
           across the top. Choose a tool and drag across the weeks to lay in work or stand up a
           milestone. It is not a Gantt chart pretending to be a project manager — it is a grid, and
@@ -1212,7 +1215,7 @@ footer a:hover{text-decoration:underline}
   <div class="container split">
     <div class="reveal">
       <div class="section-tag">Reporting and insight</div>
-      <div class="section-title">Something to send upstairs, not just a log file</div>
+      <h2 class="section-title">Something to send upstairs, not just a log file</h2>
       <p class="section-sub">Build interactive dashboards over the source or target with drag-and-drop
         charts, generate an executive summary in plain English, and ask questions of the schema
         without writing SQL first.</p>
@@ -1265,7 +1268,7 @@ footer a:hover{text-decoration:underline}
   <div class="container">
     <div class="center reveal">
       <div class="section-tag">What it supports</div>
-      <div class="section-title">Exactly what it connects to</div>
+      <h2 class="section-title">Exactly what it connects to</h2>
       <p class="section-sub">Cygenix keeps one capability manifest that the product and this page both
         answer to, so every engine named here is one the code connects to today. The full matrix —
         every source, target, combination and server-object class — lives in the
@@ -1303,12 +1306,24 @@ footer a:hover{text-decoration:underline}
 </section>
 
 <footer>
-  Cygenix — SQL migration platform ·
-  <a href="/dashboard">Console</a> ·
-  <a href="/help">Documentation</a> ·
-  <a href="/pricing">Pricing</a> ·
-  <button type="button" class="footer-link" onclick="openAbout()">About</button> ·
-  <button type="button" class="footer-link a11y-trigger" aria-label="Accessibility options" aria-expanded="false" onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">Accessibility</button>
+  <div class="footer-links">
+    Cygenix — SQL migration platform ·
+    <a href="/dashboard">Console</a> ·
+    <a href="/help">Documentation</a> ·
+    <a href="/pricing">Pricing</a> ·
+    <a href="/terms">Terms</a> ·
+    <a href="/privacy">Privacy</a> ·
+    <button type="button" class="footer-link" onclick="openAbout()">About</button> ·
+    <button type="button" class="footer-link a11y-trigger" aria-label="Accessibility options" aria-expanded="false" onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">Accessibility</button>
+  </div>
+  <!-- TODO: company number and registered office. Left as placeholders on
+       purpose — inventing either would be a false statement about a legal
+       entity, and both are on the Companies House record. Replace the two
+       ⟨…⟩ values below and delete this comment. -->
+  <div class="footer-legal">
+    Cygenix Ltd · Registered in England and Wales, company number ⟨TODO: company number⟩ ·
+    Registered office: ⟨TODO: registered office address⟩
+  </div>
 </footer>
 
 <!-- ══ CONTACT MODAL ═════════════════════════════════════════════════════

@@ -1,0 +1,55 @@
+/* ============================================================================
+   cygenix-brand.css — the tokens that are the same everywhere.
+   ----------------------------------------------------------------------------
+   WHY THIS EXISTS
+   The brand indigo was written out five times: index.html, login.html,
+   pricing.html, register.html and help.html each carried their own :root, and
+   each carried its own copy of #4A5BD6. Nothing kept them in step. They had
+   already started to disagree — index spelled it #4a5bd6, help had dropped
+   --accent2 entirely and was setting a Helvetica stack where every other page
+   uses IBM Plex Sans. That is drift, and it happens because a value with five
+   homes has no home.
+
+   WHAT BELONGS HERE, AND WHAT DOES NOT
+   Only what is genuinely identical across every surface: the accent, the type
+   stacks, the corner radius. Colours of SURFACES are deliberately not here.
+   index.html is black because a landing page reads better as one dark sheet;
+   login.html is a light neutral because the product is. Those are different
+   answers to different questions, and forcing one set of surface tokens on
+   both would be a redesign wearing the clothes of a refactor.
+
+   This is NOT cygenix-theme.css. That file holds the alternative named themes
+   (financial, and any others) that a signed-in user can pick in Settings, and
+   it applies under html[data-theme="…"]. Loading it here would let a console
+   theme choice retone the marketing pages in ways nobody has designed.
+
+   HOW TO USE IT
+   One line in <head>, BEFORE the page's own <style> block:
+
+       <link rel="stylesheet" href="/cygenix-brand.css">
+
+   The page's own :root then keeps its surfaces and may still override a brand
+   token deliberately — later rules of equal specificity win, so an override
+   is a decision somebody wrote down rather than an accident.
+   ========================================================================== */
+
+:root {
+  /* The brand accent. One value, one place. Buttons, links and focus rings on
+     every public page resolve to this. */
+  --accent: #4A5BD6;
+  --accent2: #3D4EC4;                        /* hover / pressed */
+  --accent-glow: rgba(74, 91, 214, 0.15);    /* focus rings, soft halos */
+
+  /* IBM Plex Sans is the product's voice; the mono face is for values, ids and
+     SQL. --serif is the historical name on some pages and --sans on others,
+     so both are defined and both resolve to the same stack rather than one
+     page quietly rendering in Helvetica. */
+  --sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+  --serif: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+
+  /* Corner radius. pricing.html and register.html never declared one and were
+     inheriting whatever their component CSS happened to say. */
+  --r: 10px;
+  --r-lg: 14px;
+}

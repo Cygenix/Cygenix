@@ -11,28 +11,26 @@
 <meta property="og:url" content="https://cygenix.netlify.app/help">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://cygenix.netlify.app/og-image.png">
-<meta name="twitter:card" content="summary_large_image">
+<!-- TODO: when a 1200x630 OG image exists at /og-image.png, restore
+     <meta property="og:image"> and set this back to summary_large_image. -->
+<meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Cygenix – Help & Guide">
 <meta name="twitter:description" content="Full documentation for the Cygenix migration platform.">
 <title>Cygenix – Help & Guide</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/cygenix-brand.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
   --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
   --text:#1A1D21;--text2:#565B63;--text3:#363D49;
-  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
   --green:#3F7D4E;--green-bg:rgba(63,125,78,0.10);
   --amber:#B26A00;--amber-bg:rgba(178,106,0,0.10);
   --red:#C0392B;--red-bg:rgba(192,57,43,0.10);
-  --teal:#0F6E6C;--purple:#6B4E8E;
-  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
-  --r:10px;--r-lg:14px;
-}
+  --teal:#0F6E6C;--purple:#6B4E8E;}
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
 .logo{font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
@@ -82,6 +80,10 @@ section{margin-bottom:0.5rem}
 </style>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
+<!-- Accessibility engine: re-applies the visitor's saved text size and
+     high-contrast choice. Without it here, a setting turned on elsewhere in
+     the product silently disappears on this page. -->
+<script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
 </head>
 <body>
 

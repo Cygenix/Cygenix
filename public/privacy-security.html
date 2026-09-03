@@ -133,6 +133,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.7rem 1rem;font-size:12px;color:var(--text2);z-index:500;opacity:0;transform:translateY(10px);transition:all 0.2s;pointer-events:none}
 .toast.show{opacity:1;transform:translateY(0)}
 </style>
+<!-- Accessibility engine: re-applies the visitor's saved text size and
+     high-contrast choice. Without it here, a setting turned on elsewhere in
+     the product silently disappears on this page. -->
+<script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
 </head>
 <body>
 
