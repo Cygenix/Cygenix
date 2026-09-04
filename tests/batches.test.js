@@ -233,19 +233,40 @@ check('every entry point degrades when the module is absent rather than throwing
   /function batchApi\(\) \{ return window\.CygenixBatches; \}/.test(app)
   && (app.match(/if \(!B\)/g) || []).length >= 4);
 
-/* ── 8. The screen is called Batches ────────────────────────────────────── */
+/* ── 8. The screen is called Pipelines ──────────────────────────────────── */
+//
+// Execute Migration → Batches → Pipelines. Each rename has been user-facing
+// only: the route, the key, the storage and this module's own API all still
+// say batch, and that is deliberate — see the note below.
 
-check('the browser tab says Batches', /<title>Cygenix – Batches<\/title>/.test(page));
-check('the topbar says Batches', />Batches<\/span><\/a>/.test(page));
+check('the browser tab says Pipelines', /<title>Cygenix – Pipelines<\/title>/.test(page));
+check('the topbar says Pipelines', />Pipelines<\/span><\/a>/.test(page));
 check('it no longer says Execute Migration', !/Execute Migration/.test(page));
+check('and no longer calls itself Batches anywhere a user reads',
+  !/>Batches</.test(page) && !/Cygenix – Batches/.test(page),
+  (page.match(/>[^<]*Batch[^<]*</g) || []).slice(0, 4).join(' | '));
+check('the buttons say pipeline, not batch',
+  / Load pipeline</.test(page) && / Save as pipeline</.test(page)
+  && />Saved pipelines</.test(page));
+
 const sidebar = read('public', 'cygenix-sidebar.js');
-check('the sidebar item says Batches', /label:'Batches'/.test(sidebar));
+check('the sidebar item says Pipelines', /label:'Pipelines'/.test(sidebar));
 // The key is what pages set data-active on and what the dashboard routes from;
 // renaming a label must not rename an identifier.
 check('its key is unchanged, so nothing that routes on it breaks',
-  /key:'project-builder', label:'Batches'/.test(sidebar));
-check('the dashboard link says Batches too',
-  />Batches<\/a>/.test(read('public', 'dashboard.html')));
+  /key:'project-builder', label:'Pipelines'/.test(sidebar));
+check('the dashboard link says Pipelines too',
+  />Pipelines<\/a>/.test(read('public', 'dashboard.html')));
+
+/* The other "batch" in this codebase, which is a different word that happens
+   to be spelled the same: the multi-row INSERT batches the runner emits, and
+   the report column that counts them. A rename of the SCREEN must not touch
+   them — a report saying "Pipelines: 47" for one table would be nonsense. */
+check('the conversion report still counts INSERT batches, not pipelines',
+  /label: 'Batches'/.test(read('public', 'report.html')),
+  'this column counts insert batches per table and is unrelated to the screen');
+check('and the runner still speaks db-connect\'s batch protocol',
+  /action:'batch'/.test(app));
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);

@@ -5872,15 +5872,19 @@ function confirmCreateTask(){
 
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Batches — named arrangements of the jobs on this screen
+   Pipelines — named arrangements of the jobs on this screen
    ──────────────────────────────────────────────────────────────────────────
-   A batch is which jobs, in which groups, in what order. Before this there
+   Called Batches until Sep 2026. The rename is user-facing only: the storage
+   key, the module (cygenix-batches.js) and every identifier below still say
+   batch, because renaming those buys nothing and would churn a tested API.
+
+   A pipeline is which jobs, in which groups, in what order. Before this there
    was exactly one arrangement per project, held on the project record, so a
    second one (a full load and a nightly delta; a smoke set and the real run)
    meant destroying the first.
 
-   A batch stores job IDS, not copies of the jobs. Editing a job's mapping
-   therefore updates every batch that includes it — a batch is a running
+   A pipeline stores job IDS, not copies of the jobs. Editing a job's mapping
+   therefore updates every pipeline that includes it — a pipeline is a running
    order, not a fork. The cost is that a job deleted afterwards leaves a hole,
    which is why loading reports what it could not find instead of quietly
    loading a step that would fail at run time.

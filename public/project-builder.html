@@ -35,7 +35,7 @@
   }
 })();
 </script>
-<title>Cygenix – Batches</title>
+<title>Cygenix – Pipelines</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -283,10 +283,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 
 <div id="cyg-sidebar-mount" data-active="project-builder"></div>
 <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=d338426ab1" defer></script>
+<script src="/cygenix-sidebar.js?v=1ef4330a6c" defer></script>
 
 <div class="topbar">
-  <a href="/dashboard" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Batches</span></a>
+  <a href="/dashboard" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Pipelines</span></a>
   <div class="topbar-right">
     <div class="user-pill" onclick="signOut()">
       <div class="avatar" id="user-avatar">?</div>
@@ -340,9 +340,9 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <!-- Batches: named arrangements of the jobs below. Save keeps the
              CURRENT arrangement on the project; Load swaps in a saved one. -->
         <button class="btn btn-ghost btn-sm" id="batch-load-btn" onclick="openBatchPicker()"
-                title="Load a saved batch — a named set of jobs, groups and run order"><i class="ic ic-folder-open"></i> Load batch</button>
+                title="Load a saved pipeline — a named set of jobs, groups and run order"><i class="ic ic-folder-open"></i> Load pipeline</button>
         <button class="btn btn-ghost btn-sm" onclick="openSaveBatchPrompt()"
-                title="Save the jobs below as a named batch you can load again"><i class="ic ic-archive"></i> Save as batch</button>
+                title="Save the jobs below as a named pipeline you can load again"><i class="ic ic-archive"></i> Save as pipeline</button>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()"><i class="ic ic-save"></i> Save</button>
         <button class="btn btn-ghost btn-sm" id="create-task-btn" onclick="openCreateTaskModal()" title="Package selected jobs as a single composite job. Then schedule it from Dashboard → Task Agent → + New schedule."><i class="ic ic-package"></i> Create task</button>
         <!-- Staging mode toggle.
@@ -519,7 +519,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
   <div class="modal" style="max-width:620px">
     <div class="modal-header">
       <div>
-        <div style="font-size:14px;font-weight:600">Saved batches</div>
+        <div style="font-size:14px;font-weight:600">Saved pipelines</div>
         <div style="font-size:11.5px;color:var(--text3);margin-top:2px" id="batch-modal-sub"></div>
       </div>
       <button onclick="closeBatchPicker()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
@@ -529,7 +529,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       <div id="batch-msg" style="display:none;margin-top:0.85rem;font-size:12px;line-height:1.55;padding:0.6rem 0.75rem;border-radius:var(--r)"></div>
     </div>
     <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-ghost btn-sm" onclick="openSaveBatchPrompt()"><i class="ic ic-archive"></i> Save current as a batch</button>
+      <button class="btn btn-ghost btn-sm" onclick="openSaveBatchPrompt()"><i class="ic ic-archive"></i> Save current as a pipeline</button>
       <button class="btn btn-ghost" onclick="closeBatchPicker()">Close</button>
     </div>
   </div>
@@ -652,7 +652,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
      a data stream, and can begin a cutover drain. It never ticks the world. -->
 <script src="/cygenix-datastream.js?v=e6205ed8d2" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
-<script src="/project-builder-app.js?v=c8c7463cfd" defer></script>
+<script src="/project-builder-app.js?v=2e5fdff7b1" defer></script>
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=7d9a5e0980"></script>
