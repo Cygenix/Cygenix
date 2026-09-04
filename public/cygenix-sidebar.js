@@ -106,9 +106,16 @@
       { key:'jobs-group', label:'Jobs', icon: iconPlay(), children: [
         { key:'jobs',            label:'All Jobs', view:'jobs',                  icon: iconList() },
         // The key stays 'project-builder' — pages set data-active on it and the
-        // dashboard routes from it. Only the visible name changed: the screen is
-        // where you assemble and run a BATCH of jobs, and it now says so.
-        { key:'project-builder', label:'Batches',  href:'/project-builder', color:'var(--purple)', icon: iconPlay() },
+        // dashboard routes from it. Only the visible name has ever changed:
+        // first to Batches, now to Pipelines — the screen is where you arrange
+        // jobs into an ordered run, and "pipeline" is the word for that.
+        //
+        // Note for anyone grepping: "batch" still appears all over this
+        // codebase in an UNRELATED sense — the multi-row INSERT batches the
+        // runner emits, db-connect's `action:'batch'`, and the "Batches"
+        // column on the conversion report, which counts them. None of those
+        // were renamed, because none of them are this screen.
+        { key:'project-builder', label:'Pipelines',  href:'/project-builder', color:'var(--purple)', icon: iconPlay() },
       ]},
       // Data Stream sits between Jobs and Task Manager because that is the
       // order of the question it answers: batches move the bulk, streams move
