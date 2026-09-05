@@ -9,9 +9,23 @@
    single call to /api/data returned 503, so nothing anyone did was kept.
 
    A missing environment variable that breaks all persistence should not be
-   able to reach production quietly. This runs first in the build command, so
-   the deploy fails at the point where the fix is a two-minute change in the
-   Netlify UI, rather than three weeks later in a support conversation.
+   able to reach production QUIETLY. This runs first in the build command and
+   says so, in the build log, in the words of the thing that has to be set.
+
+   WHY IT WARNS RATHER THAN REFUSES (changed 5 Sep 2026)
+
+   The first version of this script exited non-zero and failed the build. It
+   then blocked every production deploy for two days: the variable was set in
+   Netlify, but not in a scope the BUILD could see (a variable scoped only to
+   Functions is invisible here), so a correctly configured site could not
+   ship anything, while the owner received a "Deploy failed" email per push.
+
+   That is the wrong trade. Since #173 the RUNTIME is no longer quiet about a
+   missing key — data-proxy logs it at error level, ?action=health reports
+   no-fn-key, and the sync banner tells every user their work is not being
+   saved — so the build gate was belt-and-braces, and its false positive was
+   "no deploys at all". So: warn loudly, always; refuse only when the operator
+   asks for the hard gate with CYGENIX_ENFORCE_ENV=true.
 
    WHAT IS AND IS NOT REQUIRED
 
@@ -67,6 +81,8 @@ function main() {
   // does not need it — the check is about what gets DEPLOYED. Netlify sets
   // NETLIFY=true in its build image.
   const isDeploy = process.env.NETLIFY === 'true' || process.env.CYGENIX_ENFORCE_ENV === 'true';
+  // The hard gate is opt-in. See the header for why it is not the default.
+  const enforce = process.env.CYGENIX_ENFORCE_ENV === 'true';
 
   const missing = REQUIRED.filter((v) => !String(process.env[v.name] || '').trim());
 
@@ -96,7 +112,20 @@ function main() {
     return 0;
   }
 
-  console.error('\n[check-env] REFUSING TO BUILD.\n');
+  if (!enforce) {
+    // Loud, and in the build log, and then let the deploy through. The site
+    // will tell its users at runtime; this tells the operator now.
+    console.error('\n[check-env] WARNING — deploying anyway.\n');
+    console.error('This deployment is missing configuration without which the site '
+      + 'deploys and then cannot save anything (every /api/data call returns 503, '
+      + 'and users see the "not being saved" banner):'
+      + lines.join('') + '\n');
+    console.error('Set the variable(s) above and redeploy. To make this a hard '
+      + 'failure instead of a warning, set CYGENIX_ENFORCE_ENV=true.\n');
+    return 0;
+  }
+
+  console.error('\n[check-env] REFUSING TO BUILD (CYGENIX_ENFORCE_ENV=true).\n');
   console.error('This deployment is missing configuration without which the site '
     + 'deploys successfully and then silently fails to save anything:'
     + lines.join('') + '\n');

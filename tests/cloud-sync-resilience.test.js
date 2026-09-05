@@ -451,8 +451,31 @@ console.log('Cloud sync resilience — a broken data layer must be loud, contain
       'not a fragment, not a length');
 
     const env = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'check-env.js'), 'utf8');
-    check('the build refuses to deploy without CYGENIX_DATA_FN_KEY',
+    check('CYGENIX_DATA_FN_KEY is the one required variable',
       /name: 'CYGENIX_DATA_FN_KEY'/.test(env) && /REQUIRED/.test(env));
+    // Behaviour, not text: run it the way Netlify does. It must WARN and let
+    // the deploy through by default — the first version refused, and blocked
+    // production for two days when the variable was set in a scope the build
+    // could not see — and refuse only when the hard gate is asked for.
+    const { spawnSync } = require('child_process');
+    const runEnv = (extra) => spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'check-env.js')],
+      { env: Object.assign({}, process.env, { CYGENIX_DATA_FN_KEY: '', CYGENIX_ENFORCE_ENV: '' }, extra), encoding: 'utf8' });
+    const asNetlify = runEnv({ NETLIFY: 'true' });
+    check('in a Netlify build with the key missing it warns and still exits 0',
+      asNetlify.status === 0 && /WARNING — deploying anyway/.test(asNetlify.stderr), 'exit ' + asNetlify.status);
+    check('and the warning says where and in which SCOPE to set it',
+      /SCOPE MATTERS/.test(asNetlify.stderr) && /Builds/.test(asNetlify.stderr));
+    const enforced = runEnv({ NETLIFY: 'true', CYGENIX_ENFORCE_ENV: 'true' });
+    check('with CYGENIX_ENFORCE_ENV=true it refuses, for operators who want the hard gate',
+      enforced.status === 1 && /REFUSING TO BUILD/.test(enforced.stderr), 'exit ' + enforced.status);
+    // The marker is deliberately not a real word: the script's own success
+    // line says "variables are present", and a marker of 'present' matched it.
+    const MARKER = 'zq9-secret-marker-7f3';
+    const withKey = runEnv({ NETLIFY: 'true', CYGENIX_DATA_FN_KEY: MARKER });
+    check('and with the key present it is quiet and exits 0',
+      withKey.status === 0 && !/WARNING|REFUSING/.test(withKey.stderr)
+      && (withKey.stdout + withKey.stderr).indexOf(MARKER) === -1,
+      'the value must never be echoed');
     // Read the REQUIRED array literal itself. The prose above it discusses
     // both variables by name, so searching the whole file finds the
     // explanation and calls it a declaration.

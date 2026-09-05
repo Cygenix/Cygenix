@@ -128,8 +128,12 @@ user.)
 
 ### The deployment cannot ship broken quietly
 
-- `scripts/check-env.js` runs first in the Netlify build and fails it when
-  `CYGENIX_DATA_FN_KEY` is absent. `CYGENIX_DATA_API_BASE` is **not** required:
+- `scripts/check-env.js` runs first in the Netlify build and **warns loudly** when
+  `CYGENIX_DATA_FN_KEY` is absent — it no longer fails the build. Its first version
+  did, and blocked every production deploy for two days when the variable was set in
+  Netlify but scoped only to Functions, which the build cannot see. The runtime is
+  loud enough on its own now (below); `CYGENIX_ENFORCE_ENV=true` opts back into the
+  hard gate. `CYGENIX_DATA_API_BASE` is **not** required:
   `data-proxy.js` falls back to the production hostname and that literal is
   correct, so requiring it would have failed the very deploy carrying the fix.
   Presence is checked, never content — no value, no fragment, no length.
