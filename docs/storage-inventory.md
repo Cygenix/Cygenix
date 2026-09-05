@@ -76,7 +76,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, cygenix-assistant-actions.js, cygenix-assistant.js +14 |
 | `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-cosmos-sync.js, cygenix-sidebar.js +2 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
-| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, assurance.html +33 |
+| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, assurance.html +34 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |

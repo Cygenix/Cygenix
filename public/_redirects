@@ -26,6 +26,7 @@
 /connect.html             /connect                301!
 /coworker.html            /coworker               301!
 /dashboard.html           /dashboard              301!
+/data-analyser.html       /data-analyser          301!
 /data-cleansing.html      /data-cleansing         301!
 /data-enrichment.html     /data-enrichment        301!
 /data-generator.html      /data-generator         301!
@@ -89,6 +90,7 @@
 /connect                  /connect.html           200
 /coworker                 /coworker.html          200
 /dashboard                /dashboard.html         200
+/data-analyser            /data-analyser.html     200
 /data-cleansing           /data-cleansing.html    200
 /data-enrichment          /data-enrichment.html   200
 /data-generator           /data-generator.html    200
