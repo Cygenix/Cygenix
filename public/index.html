@@ -87,6 +87,18 @@ h1,h2,h3,.line1,.line2{font-family:var(--serif);font-weight:600;letter-spacing:-
   background-size:52px 52px;
   mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 72%);
   -webkit-mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 72%)}
+/* The third decorative layer: packets of light travelling left-to-right
+   behind the hero, drawn by /brand-stream.js into a <canvas> it inserts
+   right after .brand-glow — so it sits under the grid and under all page
+   content. Same rules as its two siblings: fixed, z-index 0, inert. The
+   mask softens every edge so trails enter and leave rather than being cut
+   off. The script fades it to 0 past the hero and stops drawing; under
+   prefers-reduced-motion it is one static frame, dimmer, with no fade. */
+.brand-stream{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:0.62;
+  transition:opacity 0.6s ease;
+  mask-image:radial-gradient(125% 95% at 50% 26%,#000 0%,rgba(0,0,0,0.82) 42%,transparent 86%);
+  -webkit-mask-image:radial-gradient(125% 95% at 50% 26%,#000 0%,rgba(0,0,0,0.82) 42%,transparent 86%)}
+@media (prefers-reduced-motion:reduce){.brand-stream{opacity:0.32;transition:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ── Nav ──────────────────────────────────────────────────────────────────
@@ -1436,5 +1448,8 @@ document.addEventListener('keydown', function(e){
 <script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
+<!-- The data-stream layer behind the hero. Deferred: it inserts its canvas
+     after .brand-glow, which must already be in the DOM. -->
+<script src="/brand-stream.js?v=651b2c8d50" defer></script>
 </body>
 </html>
