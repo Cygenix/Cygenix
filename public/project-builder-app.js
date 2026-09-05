@@ -5986,11 +5986,11 @@ function openSaveBatchPrompt() {
   const B = batchApi();
   if (!B) { showToast('The batches module did not load — refresh the page.'); return; }
   if (!B.countSteps(project.groups)) {
-    alert('There are no jobs to save.\n\nAdd jobs from the list on the left first, then save the arrangement as a batch.');
+    alert('There are no jobs to save.\n\nAdd jobs from the list on the left first, then save the arrangement as a pipeline.');
     return;
   }
-  const suggested = (project.name || 'Batch') + ' — ' + new Date().toLocaleDateString('en-GB');
-  const name = (prompt('Name for this batch:\n\n'
+  const suggested = (project.name || 'Pipeline') + ' — ' + new Date().toLocaleDateString('en-GB');
+  const name = (prompt('Name for this pipeline:\n\n'
     + B.countSteps(project.groups) + ' job(s) in ' + project.groups.length + ' group(s).\n'
     + 'Saving over an existing name replaces it.', suggested) || '').trim();
   if (!name) return;

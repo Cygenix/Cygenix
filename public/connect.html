@@ -2087,8 +2087,8 @@ async function executeNow(){
       totalRows += res.totalRowsAffected || 0;
       errors    += res.errors || 0;
       res.results?.forEach(r => {
-        if (r.success) logLine(' Batch ' + (i+r.index+1) + '/' + total + ': ' + r.rowsAffected + ' rows inserted');
-        else logLine(' Batch ' + (i+r.index+1) + '/' + total + ' FAILED: ' + r.error);
+        if (r.success) logLine(' Write ' + (i+r.index+1) + '/' + total + ': ' + r.rowsAffected + ' rows inserted');
+        else logLine(' Write ' + (i+r.index+1) + '/' + total + ' FAILED: ' + r.error);
       });
     } catch(e) {
       errors++;
@@ -2231,7 +2231,7 @@ async function executeNow(){
   $('exec-result-title').style.color  = errors === 0 ? 'var(--green)' : 'var(--amber)';
   $('exec-result-body').innerHTML =
     'Rows inserted: <strong>' + totalRows.toLocaleString() + '</strong><br>' +
-    'Batches: <strong>' + done + '</strong><br>' +
+    'Writes: <strong>' + done + '</strong><br>' +
     'Errors: <strong style="color:' + (errors>0?'var(--red)':'var(--green)') + '">' + errors + '</strong><br>' +
     (rollbackInfo ? '<span style="font-size:11px;color:var(--text3)">Rollback log: <span style="font-family:var(--mono)">' + logTable + '</span></span><br>' : '') +
     '<br>' + (errors > 0 ? 'Check the log above for failed batches.' : 'All rows inserted successfully.') +

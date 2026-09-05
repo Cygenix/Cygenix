@@ -9065,7 +9065,7 @@ function presMountGrids(report) {
       { key: 'inserted',   label: 'Inserted',    type: 'number', align: 'right', color: 'green', bold: true },
       { key: 'errors',     label: 'Errors',      type: 'number', align: 'right',
         dynamicColor: v => v > 0 ? '#f04646' : 'var(--text3)' },
-      { key: 'batches',    label: 'Batches',     type: 'number', align: 'right' },
+      { key: 'batches',    label: 'Writes',      type: 'number', align: 'right' },
       { key: 'status',     label: 'Status',      type: 'status' },
     ],
     rows: resultsRows, emptyMsg: 'No migration results in this report.',
