@@ -68,6 +68,15 @@ body.cyg-collapsed{padding-left:54px}
 }
 #analyser.cygx[data-theme=light]{--accent:#3D4EC4}
 
+.da-handoff{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:0.9rem 0 0;padding:0.75rem 0.9rem;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--bg2)}
+.da-handoff-text{flex:1 1 380px;font-size:12px;color:var(--text2);line-height:1.55}
+.da-handoff-text b{color:var(--text)}
+.da-btn{flex:0 0 auto;cursor:pointer;padding:0.55rem 0.95rem;border-radius:8px;border:0.5px solid var(--accent);background:var(--accent);color:#fff;font:600 12.5px/1 var(--serif)}
+.da-btn:hover{filter:brightness(1.08)}
+.da-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.da-btn[disabled]{opacity:0.6;cursor:progress}
+.da-handoff-msg{flex:1 1 100%;font-size:11.5px;color:var(--text2);min-height:1em}
+.da-handoff-msg.err{color:var(--red)}
 .da-limits{margin-top:1.25rem;max-width:760px;font-size:12px;color:var(--text2);line-height:1.6}
 .da-limits h2{font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:0.3rem}
 .da-limits ul{padding-left:1.1rem}
@@ -88,13 +97,24 @@ body.cyg-collapsed{padding-left:54px}
 
   <div class="da-note">
     <i class="ic ic-shield"></i>
-    <div><b>Nothing leaves this page.</b> The file is read and profiled in your browser. No upload, no
-      server, no API key — so it is safe to try with real data, and it works with the connection down.</div>
+    <div><b>Nothing leaves this page</b> while you analyse. The file is read and profiled in your browser — no
+      upload, no server, no API key — so it is safe to try with real data, and it works with the connection down.
+      If you hand the file on to Object Mapping, the column profile — names and inferred types, never the rows —
+      is saved to your account as a job.</div>
   </div>
 
-  <!-- The whole integration. The widget mounts here; the page adds nothing
-       else to it. -->
+  <!-- The widget mounts here; the page adds nothing inside it. -->
   <div id="analyser"></div>
+
+  <!-- The one thing the page adds AROUND it: the way out. Hidden until there
+       is a result to hand on. -->
+  <div id="da-handoff" class="da-handoff" hidden>
+    <div class="da-handoff-text"><b>Make this a source.</b> Saves the column profile — names and inferred types,
+      never the rows — as a draft job in your account and opens it in Object Mapping, where you choose the
+      target and map the columns.</div>
+    <button type="button" class="da-btn" id="da-handoff-btn">Use as a source in Object Mapping</button>
+    <div id="da-handoff-msg" class="da-handoff-msg" role="status" aria-live="polite"></div>
+  </div>
 
   <div class="da-limits">
     <h2>What it flags, and what it will not do</h2>
@@ -127,6 +147,7 @@ body.cyg-collapsed{padding-left:54px}
 
 <script src="/cygenix-analyser.js?v=8fa5b06782"></script>
 <script src="/cygenix-analyser-widget.js?v=997d87306d"></script>
+<script src="/cygenix-analyser-handoff.js?v=6cbae9a4cf"></script>
 <script>
 (function () {
   // The widget has its own light and dark surfaces; hand it whichever the
@@ -135,15 +156,78 @@ body.cyg-collapsed{padding-left:54px}
   function consoleTheme() {
     return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
   }
+  var handoff = document.getElementById('da-handoff');
+  var handoffBtn = document.getElementById('da-handoff-btn');
+  var handoffMsg = document.getElementById('da-handoff-msg');
+  // The widget keeps the file's name to itself, so the page keeps its own
+  // copy: from the file picker, from a drop, or from a load() call. Pasted
+  // text has no name and gets a plain one.
+  var lastName = 'pasted_data.txt';
+
   var widget = CygenixAnalyserWidget.mount('#analyser', {
     theme: consoleTheme(),
     target: 'sql',
     dialect: 'sqlserver',
     table: 'imported_data',
+    onResult: function () { handoff.hidden = false; handoffMsg.textContent = ''; handoffMsg.className = 'da-handoff-msg'; },
   });
+  var host = document.getElementById('analyser');
+  host.addEventListener('change', function (e) {
+    if (e.target && e.target.type === 'file' && e.target.files && e.target.files[0]) lastName = e.target.files[0].name;
+  });
+  host.addEventListener('drop', function (e) {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) lastName = e.dataTransfer.files[0].name;
+  }, true);
+  host.addEventListener('input', function (e) {
+    if (e.target && e.target.classList.contains('cygx-paste')) lastName = 'pasted_data.txt';
+  });
+
   // Exposed so the smoke test, the assistant, or a console user can drive it:
-  // CygenixAnalyserPage.load(text, name) / .result / .destroy()
-  window.CygenixAnalyserPage = widget;
+  // CygenixAnalyserPage.load(text, name) / .result / .handoff() / .destroy()
+  window.CygenixAnalyserPage = {
+    load: function (text, name) { if (name) lastName = name; return widget.load(text, name); },
+    get result() { return widget.result; },
+    destroy: function () { return widget.destroy(); },
+    handoff: handOff,
+  };
+
+  /* Make the profiled file a source: write the job, flush it to the account,
+     open it in Object Mapping. The flush is not optional — Object Mapping
+     hydrates cygenix_jobs from the cloud on load and that OVERWRITES local,
+     so a job that has only been written here would be gone on arrival. If
+     the flush fails the cloud copy is not fetched either (ensureKey returns
+     false and keeps local), so the two paths agree; we say so and go. */
+  async function handOff() {
+    var r = widget.result;
+    if (!r) { say('Load a file first.', true); return; }
+    if (typeof CygenixAnalyserHandoff === 'undefined' || typeof CygenixAnalyser === 'undefined') {
+      say('The hand-off module did not load — refresh the page.', true); return;
+    }
+    handoffBtn.disabled = true;
+    try {
+      var job = CygenixAnalyserHandoff.buildFileSourceJob(r, {
+        name: lastName,
+        sqlType: CygenixAnalyser.dialects.sqlserver.type,
+        projectId: localStorage.getItem('cygenix_active_project_id') || '',
+      });
+      var jobs = [];
+      try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]') || []; } catch (e) { jobs = []; }
+      jobs.unshift(job);
+      localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0, 100)));
+      say('Saving the column profile to your account…');
+      if (window.CygenixSync && typeof CygenixSync.saveNow === 'function') {
+        var res = await CygenixSync.saveNow();
+        if (!res || !res.ok) say('Saved on this device; the account copy will follow when the connection is back. Opening Object Mapping…');
+        else say('Saved. Opening Object Mapping…');
+      }
+      location.href = '/object-mapping?edit=' + encodeURIComponent(job.id);
+    } catch (e) {
+      say('Could not hand this on: ' + (e && e.message ? e.message : e), true);
+      handoffBtn.disabled = false;
+    }
+  }
+  function say(text, isErr) { handoffMsg.textContent = text; handoffMsg.className = 'da-handoff-msg' + (isErr ? ' err' : ''); }
+  handoffBtn.addEventListener('click', handOff);
   new MutationObserver(function () {
     var host = document.getElementById('analyser');
     if (host) host.setAttribute('data-theme', consoleTheme());

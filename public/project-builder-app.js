@@ -4001,6 +4001,17 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   }
 
   if (!step.srcTable) throw new Error('Source table not set');
+  // A source profiled from a file by the Data Analyser. The console holds its
+  // column profile and not its rows, so there is nothing to SELECT from —
+  // without this the run would try a table literally named file:orders.csv
+  // and fail three layers down with a SQL error. Refuse here, with the way
+  // forward. The srcTable prefix is checked as well as the job fields
+  // because a step is a projection of its job and may not carry them all.
+  if (typeof CygenixAnalyserHandoff !== 'undefined') {
+    const H = CygenixAnalyserHandoff;
+    const fileJob = H.isFileJob(step) ? step : (H.isFileJob(step.job) ? step.job : null);
+    if (fileJob || String(step.srcTable).indexOf(H.SOURCE_PREFIX) === 0) throw new Error(H.runRefusal(fileJob || step));
+  }
   if (!srcConn)       throw new Error('Source connection not configured');
   if (!tgtConn)       throw new Error('Target connection not configured');
 

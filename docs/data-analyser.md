@@ -108,10 +108,53 @@ and the DDL says so instead of guessing.
 - Practical ceiling is roughly a 50 MB file. Above that, profile server-side.
 - Nested JSON and XML flatten to dotted paths; scalar arrays join with `; `.
 
-## What this is not, yet
+## Handing it to Object Mapping
 
-It analyses a file and stops. It does not create a connection, open a job, or push the
-emitted DDL anywhere. The obvious next step — "make this a source" — hands the profiled
-columns to Object Mapping via `CygenixAnalyser.map()`, which already does fuzzy source→target
-matching. That is a product decision about where a file becomes a project, not a widget
-change.
+Once there is a result, the page offers **Use as a source in Object Mapping**. That writes a
+job record, flushes it to the account, and opens `/object-mapping?edit=<id>`.
+
+### What the record carries, and what it never carries
+
+The page says nothing leaves it, and a job record is synced to the account like any other
+job. So the record carries the column **profile** — names, inferred SQL types, nullability,
+key candidates, the issue *codes* the profiler raised — and **not one row**. No samples, no
+min/max, no distinct lists. `tests/data-analyser-handoff.test.js` builds a job from a file
+with recognisable cell values and asserts none of them appear in the serialised record; the
+browser smoke captures the actual save request and asserts the same. The page copy says so
+at the point of hand-off.
+
+Types travel as T-SQL strings (`INT`, `BIT`, `NVARCHAR(50)`, `DECIMAL(12,2)`) because that is
+what Object Mapping reasons over — `isCharType()`, `parseTypeLen()`, the truncation warnings.
+The engine's own finer category (`email`, `uuid`, `money`) rides alongside as `analyserType`.
+
+### Why the flush before navigating is not optional
+
+Object Mapping hydrates `cygenix_jobs` from the cloud on load, and that **overwrites** local.
+A job that had only been written to this browser would be gone on arrival. So the page
+awaits `CygenixSync.saveNow()` first. If the flush fails, the cloud copy is not fetched
+either (`ensureKey` returns false and keeps local), so the two paths agree; the page says
+so and goes anyway.
+
+### How Object Mapping takes a source that has no connection
+
+`cygenix-analyser-handoff.js` is loaded on both pages. `fileSourceToSrcTable(job)` produces
+the same shape `connectSrc()` builds for a database table, and `installFileSource()` makes it
+the only entry in `srcAllTables`. From there the **existing** restore path — find by value,
+`selectTable('src')`, `restoreJobMapping` — runs unchanged. Three places had to learn a
+source can be a file, and nothing else did:
+
+- `connectSrc()` peeks synchronously at the `?edit=` job before fetching, and re-checks
+  after the fetch, so a real source connection cannot overwrite the installed entry.
+- `saveAsJob()` rebuilds the record from scratch and would have turned the job back into a
+  database job pointing at a table called `file:orders.csv`; it now carries the file fields
+  over.
+- The evidence map samples live rows from both sides and refuses a file source, saying
+  why. AI map and mapping by hand work as normal.
+
+### What it will not do
+
+The runner refuses to **run** a file job: the console holds the profile, not the rows, so
+there is nothing to read from. The refusal names the file and points at Data import
+(Connections → Import), which stages a file to the target through the existing path. Making
+those two meet — a mapped file job that runs — is the next step, and it is a runner change,
+not a mapping one.

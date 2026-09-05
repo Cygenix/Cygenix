@@ -110,6 +110,13 @@ let _lastTruncWarnings = [];
 
 // Edit mode
 let editJobId = null;
+// The job being edited, when its source is a FILE profiled by the Data
+// Analyser rather than a database object. Set by installFileSource(); read by
+// connectSrc() (so a real source connection cannot overwrite the installed
+// entry), by saveAsJob() (so the file fields survive a save that otherwise
+// rebuilds the record from scratch) and by runEvidenceMap() (which samples a
+// connection this source does not have). Null for every other job.
+let _fileSourceJob = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function $(id){ return document.getElementById(id); }
@@ -586,7 +593,57 @@ async function _fetchSchemaSmart(conn) {
   }
 }
 
+/* ── A file as the source ─────────────────────────────────────────────────
+   A job made by the Data Analyser carries its source's column profile on the
+   record — see cygenix-analyser-handoff.js for what that is and is not. This
+   installs it as the ONLY entry in srcAllTables, in the same shape
+   connectSrc() builds for a database table, so the ordinary restore path in
+   checkEditMode() — find by value, selectTable('src'), restoreJobMapping —
+   runs without knowing the difference. Nothing else in the source half of
+   this file needs to learn that a source can be a file.
+
+   Called from two places, on purpose. checkEditMode() calls it once the job
+   is in hand — but the job may only arrive from the cloud after ensureKey,
+   while connectSrc() has already been kicked off and may be mid-fetch.
+   connectSrc() therefore also peeks synchronously at localStorage before it
+   fetches, and re-checks after. Whichever wins, the file entry stands. */
+function installFileSource(job){
+  if (typeof CygenixAnalyserHandoff === 'undefined') {
+    showStatus('This job\'s source is a file, but the hand-off module did not load — refresh the page.', 'err');
+    return;
+  }
+  const t = CygenixAnalyserHandoff.fileSourceToSrcTable(job);
+  if (!t) return;
+  _fileSourceJob = job;
+  srcSchema = { database: 'file', tables: [] };
+  srcAllTables = [t];
+  window._joinAllTables = srcAllTables;
+  setBanner('src', 'ok', CygenixAnalyserHandoff.describeFileSource(job));
+  if (typeof renderObjTypeToggle === 'function') renderObjTypeToggle();
+}
+
+// The ?edit= job, read synchronously from localStorage, IF it is a file job.
+// Used by connectSrc() to decide not to fetch a schema at all. A job that is
+// only in the cloud so far is not seen here; checkEditMode() covers that case
+// after ensureKey.
+function _peekFileEditJob(){
+  try {
+    const p = new URLSearchParams(location.search);
+    const id = p.get('edit') || p.get('job');
+    if (!id || typeof CygenixAnalyserHandoff === 'undefined') return null;
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const j = jobs.find(x => x && x.id === id);
+    return CygenixAnalyserHandoff.isFileJob(j) ? j : null;
+  } catch { return null; }
+}
+
 async function connectSrc(){
+  // A file source has no schema to fetch. Install it and stop — otherwise the
+  // "Source: not configured" banner would fire for a job that is configured
+  // perfectly well, and a real connection, if one exists, would list a
+  // database the job has nothing to do with.
+  const fileJob = _fileSourceJob || _peekFileEditJob();
+  if (fileJob) { installFileSource(fileJob); return; }
   const c = CygenixConnections.get();
   // Build source connection — Azure Function URL with ?code=KEY, or direct
   // string. Same shape as the init() IIFE above.
@@ -596,6 +653,9 @@ async function connectSrc(){
   const connBusy = window.CygenixBusy && CygenixBusy.start('Reading the source schema');
   try {
     const { res, paginated } = await _fetchSchemaSmart(srcConn);
+    // checkEditMode() may have installed a file source while this fetch was
+    // in flight. The file wins: the job being edited is the file job.
+    if (_fileSourceJob) return;
     srcSchema = res;
     srcAllTables = (res.tables||[]).map(t=>({
       value: t.schema+'.'+t.name,
@@ -2370,6 +2430,11 @@ function renderLineageHtml(chain, impact){
 async function runEvidenceMap(){
   if (typeof CygenixEvidenceMap === 'undefined') { alert('Evidence-map module not loaded — refresh the page.'); return; }
   if (!srcTable || !tgtTable) { alert('Pick a source and a target table first.'); return; }
+  if (srcTable.isFile) {
+    showStatus('Evidence map samples live rows from both sides, and a file source has none here — '
+      + 'the console holds its column profile, not its data. Use AI map, or map by hand.', 'warn');
+    return;
+  }
   const hasEdits = columnMapping.some(m => m.srcCol || m.literalValue);
   if (hasEdits && !confirm('Replace the current mapping with evidence-based proposals? Fixed values and manual picks will be overwritten.')) return;
 
@@ -4383,6 +4448,21 @@ function saveAsJob(){
       created: new Date().toISOString(),
       warnings: _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen)
     };
+    // The record above is rebuilt from scratch on every save, which is right
+    // for a database source and would silently turn a file job back into a
+    // database job pointing at a table called file:orders.csv. Carry the
+    // file half over, and keep the profiler's findings ahead of the
+    // truncation warnings so the job card leads with the data's problems.
+    if (srcTable.isFile && _fileSourceJob) {
+      Object.assign(job, {
+        sourceKind: 'file',
+        sourceObjectType: 'FILE',
+        sourceSystem: _fileSourceJob.sourceSystem,
+        fileSource: _fileSourceJob.fileSource,
+        fromAnalyser: true,
+        warnings: (_fileSourceJob.warnings || []).concat(job.warnings || []),
+      });
+    }
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
@@ -4445,6 +4525,21 @@ function saveAsJob(){
       created: new Date().toISOString(),
       warnings: _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen)
     };
+    // The record above is rebuilt from scratch on every save, which is right
+    // for a database source and would silently turn a file job back into a
+    // database job pointing at a table called file:orders.csv. Carry the
+    // file half over, and keep the profiler's findings ahead of the
+    // truncation warnings so the job card leads with the data's problems.
+    if (srcTable.isFile && _fileSourceJob) {
+      Object.assign(job, {
+        sourceKind: 'file',
+        sourceObjectType: 'FILE',
+        sourceSystem: _fileSourceJob.sourceSystem,
+        fileSource: _fileSourceJob.fileSource,
+        fromAnalyser: true,
+        warnings: (_fileSourceJob.warnings || []).concat(job.warnings || []),
+      });
+    }
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
@@ -4529,6 +4624,10 @@ async function checkEditMode(){
   const jobs=(() => { try{ return JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); }catch{return[];} })();
   const job=jobs.find(j=>j.id===jobId);
   if(!job){ showStatus('Job not found: '+jobId,'err'); return; }
+
+  // A file profiled by the Data Analyser. Installed before the poll below so
+  // srcAllTables is populated and the source is found by its value.
+  if (typeof CygenixAnalyserHandoff !== 'undefined' && CygenixAnalyserHandoff.isFileJob(job)) installFileSource(job);
 
   $('edit-banner').style.display='flex';
   $('edit-job-name').textContent=job.name;
