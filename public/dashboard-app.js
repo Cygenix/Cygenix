@@ -8511,32 +8511,60 @@ function onboardGoTo(view){
 //
 // readyState is 'interactive' while deferred scripts run, so testing for
 // 'loading' would run this immediately and reintroduce the race.
+//
+// THE SHAPE OF A TARGET
+// A view name, optionally followed by a slash and a tab within it:
+// "connections" or "connections/import". The tab half exists because the
+// Data Analyser's old address, /data-analyser, redirects to the Data import
+// tab of Connections, and "land on Connections" alone would have put the
+// person on the database tab with the file they came to analyse nowhere in
+// sight. Only Connections has tabs today, and only its tabs are honoured.
+//
+// The value is read from the hash (#goto=), then the query string (?goto=),
+// then sessionStorage. The query form is what the redirect table uses: a
+// fragment is not reliably preserved across a server-side 301 and a query
+// string is (see scripts/build-routes.js).
 (function(){
   function target(){
-    var m = /(?:^|[#&])goto=([^&]+)/.exec(location.hash || '');
+    var m = /(?:^|[#&])goto=([^&]+)/.exec(location.hash || '')
+         || /(?:^|[?&])goto=([^&]+)/.exec(location.search || '');
     if (m) { try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; } }
     try { return sessionStorage.getItem('cyg_goto') || ''; } catch (e) { return ''; }
   }
   function clear(){
     try { sessionStorage.removeItem('cyg_goto'); } catch (e) {}
     // Only when goto= is actually there: #assistant is a different feature's
-    // hash and rewriting it away would close the panel on every load.
-    if (/(?:^|[#&])goto=/.test(location.hash || '')) {
-      try { history.replaceState({}, document.title, location.pathname + location.search); }
-      catch (e) { /* older browser: a stale hash is better than a thrown error */ }
-    }
+    // hash and rewriting it away would close the panel on every load. When
+    // it came in the query string, only that parameter goes; the hash and
+    // any other parameters stay as they were.
+    var inHash = /(?:^|[#&])goto=/.test(location.hash || '');
+    var inSearch = /(?:^|[?&])goto=/.test(location.search || '');
+    if (!inHash && !inSearch) return;
+    var qs = (location.search || '').replace(/^\?/, '').split('&')
+      .filter(function (p) { return p && !/^goto=/.test(p); }).join('&');
+    var hash = inHash ? '' : (location.hash || '');
+    try { history.replaceState({}, document.title, location.pathname + (qs ? '?' + qs : '') + hash); }
+    catch (e) { /* older browser: a stale address is better than a thrown error */ }
   }
   function go(){
-    var view = target();
+    var raw = target();
     // Cleared whether or not it resolves, so a refresh does not re-trigger it
     // and an unknown name does not sit in the URL waiting to confuse the next
     // person to look.
     clear();
-    if (!view) return;
+    if (!raw) return;
+    var parts = raw.split('/');
+    var view = parts[0], tab = parts[1] || '';
     // The same test showView itself uses. An unrecognised name leaves the
     // dashboard on Home rather than on a blank screen.
     if (!document.getElementById('view-' + view)) return;
     if (typeof showView === 'function') showView(view);
+    // A tab is honoured only where one exists to switch to; an unknown tab
+    // name leaves the view on its default tab rather than on nothing.
+    if (tab && view === 'connections' && typeof switchConnTab === 'function'
+        && document.getElementById('conn-tab-' + tab)) {
+      switchConnTab(tab);
+    }
   }
   if (document.readyState === 'complete') go();
   else document.addEventListener('DOMContentLoaded', go);
@@ -11674,6 +11702,10 @@ function switchConnTab(tab){
   if (bl) bl.style.display = tab === 'blob'      ? 'block' : 'none';
   if (rs) rs.style.display = tab === 'restore'   ? 'block' : 'none';
   if (tab === 'restore') { try { rstInit(); } catch(e){ console.warn('[restore] init:', e); } }
+  // The Data Analyser mounts on the first visit to the import tab and not
+  // before: it injects styles and builds its DOM, and a boot that never
+  // opens this tab should not pay for either.
+  if (tab === 'import')  { try { impAnalyserInit(); } catch(e){ console.warn('[data-import] analyser init:', e); } }
   // Hide save/clear buttons when not on db connections tab
   const s = document.getElementById('conn-tab-save-btn');
   const c = document.getElementById('conn-tab-clear-btn');
@@ -11710,9 +11742,10 @@ function switchConnTab(tab){
 // flags this; the test step surfaces CORS failures with a recognisable message.
 //
 // After fetch, the bytes are wrapped in a `File` object (so file.name carries
-// through) and passed to the existing impHandleFile() — same code path as a
-// drag-drop in the Data Import tab. The user gets the schema preview, target
-// picker and import button automatically; nothing duplicated.
+// through) and passed to the existing impHandleFiles() — same code path as a
+// drag-drop in the Data Import tab. The user gets the analyser's profile, the
+// schema preview, target picker and import button automatically; nothing
+// duplicated.
 //
 // FOLLOW-UP (deferred): add `cygenix_blob_sources` to SYNC_KEYS in
 // cygenix-cosmos-sync.js so saved sources roam across devices. Single-line
@@ -12770,10 +12803,12 @@ async function blobSourceImportFile(blobNameEncoded){
 
   // Switch tab so the user sees the schema preview render.
   try { switchConnTab('import'); } catch(e){ console.warn('[blob-source] could not switch tab:', e); }
-  // Kick off the existing parse pipeline.
-  try { impHandleFile(file); }
+  // Kick off the existing pipeline through the router, so the file is
+  // profiled by the analyser as well as parsed for import — the same as a
+  // single file dropped on the tab.
+  try { impHandleFiles([file]); }
   catch (e){
-    console.error('[blob-source] impHandleFile threw:', e);
+    console.error('[blob-source] impHandleFiles threw:', e);
     alert('Import pipeline failed: ' + (e && e.message || e));
   }
 }
@@ -13333,21 +13368,33 @@ function impDrop(e){
   if (files && files.length) impHandleFiles(files);
 }
 
-// Router: single file → existing schema-preview flow; multiple files → batch flow.
-// Called from both the file input's onchange and impDrop.
+// Router: single file → the analyser profiles it AND the schema-preview flow
+// parses it for import; multiple files → batch flow, analyser hidden.
+// Called from the file input's onchange, impDrop, and the Blob Source tab.
+//
+// The two single-file readers are independent on purpose. The analyser
+// reads a bounded slice into memory (impAnalyserProfile); the importer
+// streams the whole file (impHandleFile). Sharing one read would either
+// hold a 1 GB CSV in memory for the analyser's sake or deny the analyser a
+// file the importer cannot take — a JSON file, say — and neither is right.
 function impHandleFiles(fileList){
   if (!fileList || fileList.length === 0) return;
+  const aw = document.getElementById('imp-analyser-wrap');
   if (fileList.length === 1){
     // Make sure the batch panel is hidden in case it was left open from a prior batch
     const bw = document.getElementById('imp-batch-wrap');
     if (bw) bw.style.display = 'none';
+    if (aw) aw.style.display = '';
+    try { impAnalyserProfile(fileList[0]); } catch(e){ console.warn('[data-import] analyser:', e); }
     impHandleFile(fileList[0]);
   } else {
-    // Hide the single-file schema/target panels so the UI focuses on the batch view
+    // Hide the single-file schema/target panels so the UI focuses on the batch view.
+    // The analyser goes too: it profiles one file, and this is many.
     const sw = document.getElementById('imp-schema-wrap');
     const tw = document.getElementById('imp-target-wrap');
     if (sw) sw.style.display = 'none';
     if (tw) tw.style.display = 'none';
+    if (aw) aw.style.display = 'none';
     impBatchPrepare(Array.from(fileList));
   }
 }
@@ -13357,7 +13404,16 @@ function impHandleFile(file){
   const isCSV   = /\.(csv|tsv|txt)$/i.test(file.name);
   const isExcel = /\.(xlsx|xls)$/i.test(file.name);
   if (!isCSV && !isExcel){
-    impShowError('Only CSV, TSV, TXT, XLSX, or XLS files are supported in this release.');
+    // Not an error any more: the analyser above takes JSON, XML, YAML and the
+    // rest, so a file of that kind is doing something useful on this tab.
+    // It is only the import path that needs CSV or Excel, and the analyser's
+    // Export tab can produce a CSV from what it read.
+    impShowNote('Profiled above. Import to a database needs CSV or Excel: '
+      + 'hand this file to Object Mapping as a source, or export it as CSV from the analyser and drop that here.');
+    const sw = document.getElementById('imp-schema-wrap');
+    const tw = document.getElementById('imp-target-wrap');
+    if (sw) sw.style.display = 'none';
+    if (tw) tw.style.display = 'none';
     return;
   }
   // CSV is streamed in passes, so we can handle up to ~1GB. Excel must be loaded
@@ -13784,6 +13840,18 @@ function impShowError(msg){
   console.warn('[data-import]', msg);
 }
 
+// Same line, ordinary colour: something the person should know that is not
+// a failure. Introduced when the analyser joined this tab, for the file the
+// analyser can read and the importer cannot.
+function impShowNote(msg){
+  const meta = document.getElementById('imp-file-meta');
+  if (meta){
+    meta.style.display = 'block';
+    meta.style.color = '';
+    meta.innerHTML = escP(msg);
+  }
+}
+
 function impReset(){
   impState = { fileName:null, rows:null, columns:null, rowCount:0, streaming:false, streamingFile:null };
   impAbortRequested = false;
@@ -13797,6 +13865,9 @@ function impReset(){
   const result = document.getElementById('imp-run-result');
   if (result){ result.style.display = 'none'; result.textContent = ''; }
   document.getElementById('imp-target-table').value = '';
+  // "Start over" means the analyser's result too: it was made from the same
+  // file, and a profile of one file next to the import of another misleads.
+  try { impAnalyserReset(); } catch(e){ console.warn('[data-import] analyser reset:', e); }
 }
 
 // ── Execution flow ────────────────────────────────────────────────────────
@@ -15375,10 +15446,224 @@ function impBatchReset(){
   if (fileInput) fileInput.value = '';
   const tbody = document.querySelector('#imp-batch-table tbody');
   if (tbody) tbody.innerHTML = '';
+  // The analyser was hidden for the batch; with the batch gone it is the
+  // tab's single-file half again.
+  const aw = document.getElementById('imp-analyser-wrap');
+  if (aw) aw.style.display = '';
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Data Analyser — inside the Data import tab
+// ═════════════════════════════════════════════════════════════════════════════
+// The analyser (public/cygenix-analyser.js, its widget, and the Object
+// Mapping hand-off) had its own page at /data-analyser for a short while.
+// It lives here now because this tab is where a file arrives, and "what is
+// this file, and what will break when it loads" is the question to answer
+// BEFORE choosing types and a target below. The old address redirects here.
+//
+// WHAT IT IS NOT
+// It is not the importer, and it did not replace the importer. The
+// analyser reads a bounded slice of one file into memory, profiles its
+// first 20,000 rows, and never touches a database. The import steps on
+// this tab stream the whole file into one, with the types chosen in the
+// review table. A file profiled here can be handed to Object Mapping as a
+// source; when that job is run, the runner needs the rows, and the import
+// steps are how the rows get within reach. So both stay, and the router
+// (impHandleFiles) feeds a single file to both.
+//
+// MOUNTING
+// Lazily, on the first visit to the tab (switchConnTab), never at boot.
+// The widget injects its own styles, scoped under .cygx, and builds its
+// DOM; dashboard.html imposes the console's accent and type on it by id,
+// and hides the widget's own drop zone — the tab's drop zone above is the
+// one entry point, because it takes several files and the widget's takes
+// one. The paste box stays: identifying a pasted sample as you type is the
+// analyser's, and the importer has no equivalent.
+//
+// THE THEME
+// The widget has its own light and dark surfaces. It is handed whichever
+// the console is showing, and a MutationObserver keeps it in step when
+// Settings flips the attribute on <html> without a reload.
+//
+// THE BOUNDED READ
+// The widget's practical ceiling is about 50 MB in memory. The importer
+// takes a CSV of up to 1 GB, so for a text file above the ceiling only the
+// first 50 MB are read for the profile and the note says so; the profile
+// is from a sample either way (the first 20,000 rows), so a partial read
+// changes nothing about what it claims. A workbook cannot be sliced — its
+// structure is at the end of the file — so a workbook above the ceiling is
+// not profiled, and the note says that instead. The import path is
+// unaffected in both cases.
+
+let impAnalyser = null;                    // the mounted widget, or null until the first visit
+let impAnalyserName = 'pasted_data.txt';   // the file's name, for the hand-off; pasted text has none
+const IMP_ANALYSER_SLICE = 50 * 1024 * 1024;
+
+function impAnalyserTheme(){
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+}
+
+function impAnalyserNote(text, isErr){
+  const n = document.getElementById('imp-analyser-note');
+  if (!n) return;
+  n.textContent = text || '';
+  n.style.display = text ? '' : 'none';
+  n.style.color = isErr ? 'var(--red)' : '';
+}
+
+function impAnalyserInit(){
+  if (impAnalyser) return impAnalyser;
+  const host = document.getElementById('analyser');
+  if (!host) return null;
+  if (typeof CygenixAnalyserWidget === 'undefined' || typeof CygenixAnalyser === 'undefined'){
+    // Loud, in the place the widget would have been. A blocked script is a
+    // deployment or network fault and the person should know that the
+    // import steps below still work.
+    host.innerHTML = '<div style="padding:0.75rem 0.9rem;font-size:12px;color:var(--red)">The Data Analyser did not load. '
+      + 'Refresh the page; if it persists, the import steps below still work without it.</div>';
+    return null;
+  }
+  const handoff = document.getElementById('da-handoff');
+  const msg = document.getElementById('da-handoff-msg');
+  impAnalyser = CygenixAnalyserWidget.mount(host, {
+    theme: impAnalyserTheme(),
+    target: 'sql',
+    dialect: 'sqlserver',
+    table: 'imported_data',
+    // The "Try:" sample chips are for a page that has nothing else on it.
+    // This tab has a drop zone with a file on the way.
+    samples: false,
+    onResult: function(){
+      if (handoff) handoff.hidden = false;
+      if (msg){ msg.textContent = ''; msg.className = 'da-handoff-msg'; }
+    },
+  });
+  if (!host._impWired){
+    host._impWired = true;
+    host.addEventListener('input', function(e){
+      if (e.target && e.target.classList && e.target.classList.contains('cygx-paste')) impAnalyserName = 'pasted_data.txt';
+    });
+  }
+  const btn = document.getElementById('da-handoff-btn');
+  if (btn && !btn._impWired){
+    btn._impWired = true;
+    btn.addEventListener('click', impAnalyserHandoff);
+  }
+  return impAnalyser;
+}
+
+// Profile one file. Runs alongside impHandleFile, never instead of it.
+function impAnalyserProfile(file){
+  if (!file) return;
+  const w = impAnalyserInit();
+  if (!w) return;
+  impAnalyserName = file.name || 'data';
+  impAnalyserNote('');
+  const isWorkbook = /\.(xlsx|xlsm|xls)$/i.test(file.name || '')
+    || (file.size > 0 && /sheet|excel|octet-stream|zip/.test(file.type || ''));
+  if (isWorkbook && file.size > IMP_ANALYSER_SLICE){
+    impAnalyserNote('This workbook is over 50 MB, more than the analyser reads in the browser, so it is not profiled. '
+      + 'The import steps below still take it, or save the sheet as CSV to profile it.');
+    return;
+  }
+  const truncated = !isWorkbook && file.size > IMP_ANALYSER_SLICE;
+  const part = truncated ? file.slice(0, IMP_ANALYSER_SLICE) : file;
+  const fr = new FileReader();
+  fr.onerror = function(){ impAnalyserNote('Could not read ' + (file.name || 'the file') + ' for profiling.', true); };
+  fr.onload = function(){
+    try { w.load(fr.result, impAnalyserName); }
+    catch (e){ impAnalyserNote('Could not profile ' + (file.name || 'the file') + ': ' + (e && e.message ? e.message : e), true); return; }
+    if (truncated){
+      impAnalyserNote('Profiled from the first 50 MB of ' + (file.name || 'the file') + '. The profile is a sample of the '
+        + 'first 20,000 rows either way; the import steps below read the whole file.');
+    }
+  };
+  if (isWorkbook) fr.readAsArrayBuffer(part); else fr.readAsText(part);
+}
+
+// Take the analyser down and put a fresh one up. destroy() empties the
+// host; mount() rebuilds it. The listeners on the host and the button are
+// guarded so they are attached once for the life of the page.
+function impAnalyserReset(){
+  if (impAnalyser){
+    try { impAnalyser.destroy(); } catch(e){ /* nothing to keep */ }
+    impAnalyser = null;
+  }
+  const handoff = document.getElementById('da-handoff');
+  if (handoff) handoff.hidden = true;
+  impAnalyserNote('');
+  impAnalyserName = 'pasted_data.txt';
+  impAnalyserInit();
+}
+
+/* Make the profiled file a source: write the job, flush it to the account,
+   open it in Object Mapping. The flush is not optional — Object Mapping
+   hydrates cygenix_jobs from the cloud on load and that OVERWRITES local,
+   so a job that has only been written here would be gone on arrival. If
+   the flush fails the cloud copy is not fetched either (ensureKey returns
+   false and keeps local), so the two paths agree; we say so and go. */
+async function impAnalyserHandoff(){
+  const btn = document.getElementById('da-handoff-btn');
+  const r = impAnalyser ? impAnalyser.result : null;
+  if (!r){ impAnalyserSay('Load a file first.', true); return; }
+  if (typeof CygenixAnalyserHandoff === 'undefined' || typeof CygenixAnalyser === 'undefined'){
+    impAnalyserSay('The hand-off module did not load — refresh the page.', true); return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const job = CygenixAnalyserHandoff.buildFileSourceJob(r, {
+      name: impAnalyserName,
+      sqlType: CygenixAnalyser.dialects.sqlserver.type,
+      projectId: localStorage.getItem('cygenix_active_project_id') || '',
+    });
+    let jobs = [];
+    try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]') || []; } catch (e) { jobs = []; }
+    jobs.unshift(job);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0, 100)));
+    impAnalyserSay('Saving the column profile to your account…');
+    if (window.CygenixSync && typeof CygenixSync.saveNow === 'function'){
+      const res = await CygenixSync.saveNow();
+      if (!res || !res.ok) impAnalyserSay('Saved on this device; the account copy will follow when the connection is back. Opening Object Mapping…');
+      else impAnalyserSay('Saved. Opening Object Mapping…');
+    }
+    location.href = '/object-mapping?edit=' + encodeURIComponent(job.id);
+  } catch (e){
+    impAnalyserSay('Could not hand this on: ' + (e && e.message ? e.message : e), true);
+    if (btn) btn.disabled = false;
+  }
+}
+function impAnalyserSay(text, isErr){
+  const m = document.getElementById('da-handoff-msg');
+  if (!m) return;
+  m.textContent = text;
+  m.className = 'da-handoff-msg' + (isErr ? ' err' : '');
+}
+
+new MutationObserver(function(){
+  const host = document.getElementById('analyser');
+  if (host && impAnalyser) host.setAttribute('data-theme', impAnalyserTheme());
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// The same handle the standalone page exposed, so the smoke test, the
+// assistant, or a console user can drive it:
+//   CygenixAnalyserPage.load(text, name) / .profile(file) / .result / .handoff() / .destroy()
+window.CygenixAnalyserPage = {
+  load: function(text, name){
+    const w = impAnalyserInit();
+    if (!w) throw new Error('The Data Analyser is not mounted');
+    if (name) impAnalyserName = name;
+    return w.load(text, name);
+  },
+  profile: impAnalyserProfile,
+  get result(){ return impAnalyser ? impAnalyser.result : null; },
+  destroy: impAnalyserReset,
+  handoff: impAnalyserHandoff,
+};
 
 // Expose for inline handlers
 window.impHandleFiles  = impHandleFiles;
+window.impAnalyserInit = impAnalyserInit;
+window.impAnalyserHandoff = impAnalyserHandoff;
 window.impBatchRun     = impBatchRun;
 window.impBatchReset   = impBatchReset;
 window.impAbortRun     = impAbortRun;

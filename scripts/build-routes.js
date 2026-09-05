@@ -106,6 +106,15 @@ const LEGACY = [
   // briefly belonged to the sign-in screen. Anything that saw it in that
   // window is sent to the root rather than to a 404.
   ['/home',              '/'],
+  // The Data Analyser was its own page for a short while. It now lives on
+  // the Data import tab of Connections, and the dashboard's goto reader
+  // takes a view and a tab (see the deep-link block in dashboard-app.js).
+  // A query string rather than a fragment, because a fragment does not
+  // reliably survive a server-side redirect and a query string does. Both
+  // the clean address and the file name are covered: with the page gone,
+  // the generated .html→clean rule below no longer exists for it.
+  ['/data-analyser',      '/dashboard?goto=connections/import'],
+  ['/data-analyser.html', '/dashboard?goto=connections/import'],
 ];
 
 function pages() {

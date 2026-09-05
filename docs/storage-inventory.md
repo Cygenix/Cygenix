@@ -42,7 +42,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_conv_project` | The currently-open project blob | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, cygenix-schema-graph.js |
 | `cygenix_effort_estimates_v1` | Saved Configurator estimates | NOT SYNCED — WI-1 | project_plan.html |
 | `cygenix_inventory` | Project artifact inventory | synced (SYNC_KEYS) | dashboard-app.js, projects.html, report.html +1 |
-| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +15 |
+| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +14 |
 | `cygenix_objmap_wip_` | Object-mapping work in progress | NOT SYNCED — WI-1 | schema_explorer.html |
 | `cygenix_profiles_v1` | Connection profiles | NOT SYNCED — WI-1 | cygenix-sidebar.js |
 | `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | dashboard-app.js |
@@ -73,10 +73,10 @@ mechanism that stops an unclassified key being added quietly.
 |---|---|---|---|
 | `cyg_goto` | Cross-page navigation intent | — | connect.html, cygenix-sidebar.js, dashboard-app.js +2 |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
-| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, cygenix-assistant-actions.js, cygenix-assistant.js +15 |
+| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, cygenix-assistant-actions.js, cygenix-assistant.js +14 |
 | `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-cosmos-sync.js, cygenix-sidebar.js +2 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
-| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, assurance.html +34 |
+| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, assurance.html +33 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |

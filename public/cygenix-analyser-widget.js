@@ -3,8 +3,9 @@
    ----------------------------------------------------------------------------
    The drop-in front end for cygenix-analyser.js. It injects its own styles,
    scoped under .cygx, and mounts into whatever element the page hands it —
-   see public/data-analyser.html for the one call that does so, and for the
-   page-level overrides that put the console's accent and type on it.
+   see impAnalyserInit() in public/dashboard-app.js for the one call that
+   does so (the Data import tab of Connections), and public/dashboard.html
+   for the overrides that put the console's accent and type on it.
 
    Renamed from cygenix-transform-widget.js for the reason given at the top of
    cygenix-analyser.js: the engine's original global collided with a module
@@ -568,7 +569,12 @@
     }
 
     return {
-      load: function (input, name) { if (name) state.name = name; if (typeof input === 'string') paste.value = input; run(input); },
+      // The paste box shows the text so a person can see what was read, but
+      // it is a textarea: a 50 MB string put in it is 50 MB the browser
+      // lays out. The first 200,000 characters are plenty to look at, and
+      // the parse gets the whole input regardless. (This is the one line in
+      // the widget that differs from upstream; docs/data-analyser.md says so.)
+      load: function (input, name) { if (name) state.name = name; if (typeof input === 'string') paste.value = input.slice(0, 200000); run(input); },
       get result() { return state.ds ? { dataset: state.ds, columns: state.cols } : null; },
       destroy: function () { host.innerHTML = ''; host.classList.remove('cygx'); }
     };
