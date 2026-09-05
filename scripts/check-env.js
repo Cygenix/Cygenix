@@ -43,7 +43,13 @@ const REQUIRED = [
     breaks: 'Every call to /api/data returns 503. No project, job, connection '
           + 'or setting can be saved or loaded by anyone.',
     where: 'Netlify → Site configuration → Environment variables. The value is '
-         + 'the Azure Function App host key (Portal → Function App → App keys).',
+         + 'the Azure Function App host key (Portal → Function App → App keys). '
+         + 'SCOPE MATTERS: this check runs during the BUILD, so the variable must '
+         + 'be scoped to "All scopes" or at least include "Builds". A variable '
+         + 'scoped only to "Functions" is correct for the proxy at runtime and '
+         + 'invisible here — the build will refuse even though the site would work. '
+         + 'If the variable IS set and you are reading this, that is almost '
+         + 'certainly why.',
   },
 ];
 

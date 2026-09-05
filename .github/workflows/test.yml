@@ -28,8 +28,20 @@ jobs:
         with:
           node-version: '22'
 
+      # `npm install`, not `npm ci`, and the reason is in .gitignore: this
+      # repository deliberately does not track package-lock.json, and `npm ci`
+      # refuses to run without one. From the day this workflow was added it
+      # failed at this step in about one second, every run, on every branch —
+      # which meant nothing after it ever ran, including the secret-exposure
+      # test the header above says must never be skipped.
+      #
+      # Installing the way Netlify's build does also means CI resolves the
+      # same dependency versions the deploy will. Committing a lockfile would
+      # be the better long-term answer; it is a deliberate call recorded in
+      # .gitignore, and the person who makes it should also switch this back
+      # to `npm ci` in the same change.
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       # Generated artefacts are committed, so a stale one is a real failure.
       # The suite checks both, but running them first makes the diagnosis
