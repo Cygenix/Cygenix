@@ -110,11 +110,16 @@
         // first to Batches, now to Pipelines — the screen is where you arrange
         // jobs into an ordered run, and "pipeline" is the word for that.
         //
-        // Note for anyone grepping: "batch" still appears all over this
-        // codebase in an UNRELATED sense — the multi-row INSERT batches the
-        // runner emits, db-connect's `action:'batch'`, and the "Batches"
-        // column on the conversion report, which counts them. None of those
-        // were renamed, because none of them are this screen.
+        // Note for anyone grepping: "batch" still appears in this codebase in
+        // an UNRELATED sense — the multi-row INSERT batches the runner emits,
+        // and db-connect's `action:'batch'`. Those are a different word that
+        // happens to be spelled the same, and they are NOT this screen.
+        //
+        // Where that other meaning was user-visible it now reads "Writes"
+        // rather than "Batches" — the conversion report column, and the run
+        // log's per-write lines. Renaming those to "Pipelines" would have
+        // made the report say something untrue, so they got an accurate word
+        // instead of this one.
         { key:'project-builder', label:'Pipelines',  href:'/project-builder', color:'var(--purple)', icon: iconPlay() },
       ]},
       // Data Stream sits between Jobs and Task Manager because that is the

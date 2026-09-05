@@ -258,15 +258,52 @@ check('its key is unchanged, so nothing that routes on it breaks',
 check('the dashboard link says Pipelines too',
   />Pipelines<\/a>/.test(read('public', 'dashboard.html')));
 
-/* The other "batch" in this codebase, which is a different word that happens
-   to be spelled the same: the multi-row INSERT batches the runner emits, and
-   the report column that counts them. A rename of the SCREEN must not touch
-   them — a report saying "Pipelines: 47" for one table would be nonsense. */
-check('the conversion report still counts INSERT batches, not pipelines',
-  /label: 'Batches'/.test(read('public', 'report.html')),
-  'this column counts insert batches per table and is unrelated to the screen');
-check('and the runner still speaks db-connect\'s batch protocol',
+/* ── 9. The word is gone from the site ──────────────────────────────────── */
+//
+// The instruction was to remove "Batches" from the site, not only from the
+// menu. That runs into a genuine collision: the runner emits multi-row INSERT
+// batches, and the conversion report has a column counting them. Renaming
+// THAT to "Pipelines" would make the report say something untrue — 47
+// pipelines against one table is nonsense — so it became "Writes": the word
+// is gone, and the number still means what it means.
+
+const HOME = read('public', 'index.html');
+check('the homepage no longer sells the feature as Batches',
+  !/\bBatch(es)?\b/.test(HOME),
+  (HOME.match(/[^<>]*\bBatch(es)?\b[^<>]*/g) || []).slice(0, 3).join(' | '));
+check('and sells it as Pipelines instead',
+  /<b>Pipelines<\/b> respect dependency order/.test(HOME)
+  && /Pipelines, schedules, and a resume that means it/.test(HOME)
+  && /Group jobs into a pipeline/.test(HOME));
+
+// The three report surfaces share one column definition shape. All three, or
+// an export and a preview disagree about what the same number is called.
+['report.html', 'report_settings.html'].forEach((f) => {
+  check(f + ' calls the insert-batch count Writes',
+    /label: 'Writes'/.test(read('public', f)) && !/label: 'Batches'/.test(read('public', f)));
+});
+check('dashboard-app.js agrees',
+  /label: 'Writes'/.test(read('public', 'dashboard-app.js'))
+  && !/label: 'Batches'/.test(read('public', 'dashboard-app.js')));
+check('and the report column KEY is untouched, so stored reports still read',
+  /key: 'batches',    label: 'Writes'/.test(read('public', 'report.html')),
+  'renaming a label must not orphan the data behind it');
+
+const CONNECT = read('public', 'connect.html');
+check('the run summary counts Writes, not Batches',
+  /'Writes: <strong>'/.test(CONNECT) && !/'Batches: <strong>'/.test(CONNECT));
+check('and the per-write log lines match it',
+  /logLine\(' Write '/.test(CONNECT) && !/logLine\(' Batch '/.test(CONNECT));
+
+check('the save prompt asks for a pipeline name',
+  /Name for this pipeline:/.test(app) && !/Name for this batch:/.test(app));
+
+// What deliberately survives: the wire protocol, and the module's own API.
+// Neither is user-visible, and churning them buys nothing.
+check('the runner still speaks db-connect\'s batch protocol',
   /action:'batch'/.test(app));
+check('and CygenixBatches is still the module name',
+  /window\.CygenixBatches/.test(app));
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);

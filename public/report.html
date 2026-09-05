@@ -864,7 +864,7 @@ function renderReport(d) {
   }
   resultsColumns.push(
     { key: 'errors',     label: 'Errors',      type: 'number',  align: 'right', dynamicColor: v => v > 0 ? 'var(--red)' : 'var(--text3)' },
-    { key: 'batches',    label: 'Batches',     type: 'number',  align: 'right' },
+    { key: 'batches',    label: 'Writes',      type: 'number',  align: 'right' },
     { key: 'status',     label: 'Status',      type: 'status' }
   );
   window._grids.results = new DataGrid({
@@ -2976,7 +2976,7 @@ function doExport() {
       // Fallback — raw tables if grid not available
       const tables = d.tables || [{ name: d.targetTable||'migration', sourceRows: totalRows, insertedRows: inserted, errors, batches: Math.ceil(totalRows/100), status: errors===0?'success':'partial' }];
       const resultsData = [
-        ['Source table', 'Target table', 'Source rows', 'Inserted', 'Errors', 'Batches', 'Status']
+        ['Source table', 'Target table', 'Source rows', 'Inserted', 'Errors', 'Writes', 'Status']
       ].concat(tables.map(t => [
         t.sourceName || d.sourceTable || d.sourceFile || '—', t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
       ]));
