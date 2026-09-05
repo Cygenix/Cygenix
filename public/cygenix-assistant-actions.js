@@ -118,7 +118,8 @@ var PAGES = [
   { key: 'project-plan-grid',  label: 'Project Plan',       href: '/project-plan' },
   { key: 'connections',        label: 'Connections',        view: 'connections' },
   { key: 'profiles',           label: 'Profiles',           href: '/profiles' },
-  { key: 'data-analyser',      label: 'Data Analyser',      href: '/data-analyser' },
+  // The Data Analyser is a tab of Connections (Data import), not a page:
+  // the assistant reaches it through 'connections'.
   { key: 'integrations',       label: 'Integrations',       view: 'integrations' },
   { key: 'project-settings',   label: 'Settings — General', view: 'project-settings' },
   { key: 'notifications',      label: 'Notifications',      view: 'notifications' },

@@ -311,8 +311,12 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
     /getElementById\('view-' \+ view\)/.test(app));
   check('it clears both, so a refresh does not re-fire the deep link',
     /removeItem\('cyg_goto'\)/.test(app) && /history\.replaceState/.test(app));
-  check('it only rewrites the hash when goto= is in it, leaving #assistant alone',
-    /if \(\/\(\?:\^\|\[#&\]\)goto=\/\.test\(location\.hash \|\| ''\)\)/.test(app));
+  // The reader also takes ?goto= from the query string now (the old
+  // /data-analyser address redirects that way), and the same rule holds for
+  // both: nothing is rewritten unless goto= is actually present.
+  check('it only rewrites the address when goto= is in it, leaving #assistant alone',
+    /var inHash = \/\(\?:\^\|\[#&\]\)goto=\/\.test\(location\.hash \|\| ''\)/.test(app)
+    && /if \(!inHash && !inSearch\) return;/.test(app));
   check('and waits for DOMContentLoaded, not a guessed timer',
     /addEventListener\('DOMContentLoaded', go\)/.test(app)
     && !/showView\(goto\); \}, 300\)/.test(app),

@@ -172,14 +172,19 @@ check('the runner refuses a file job with the hand-off\'s reason, instead of SEL
   /CygenixAnalyserHandoff[\s\S]{0,300}\.isFileJob\(/.test(runner) && /\.runRefusal\(/.test(runner)
   && /SOURCE_PREFIX/.test(runner));
 
-const page = read('public', 'data-analyser.html');
-check('the Data Analyser page offers the hand-off once there is a result',
-  /Use as a source in Object Mapping/.test(page) && /onResult/.test(page));
+// The analyser lives on the Data import tab of the dashboard's Connections
+// view now (it was its own page); the hand-off went with it.
+const page = read('public', 'dashboard.html');
+const app = read('public', 'dashboard-app.js');
+check('the Data import tab offers the hand-off once there is a result',
+  /Use as a source in Object Mapping/.test(page) && /onResult: function\(\)\{[\s\S]{0,200}handoff\.hidden = false/.test(app));
 check('it flushes the sync queue BEFORE navigating, or ensureKey wipes the new job on arrival',
-  /saveNow\(\)[\s\S]{0,600}\/object-mapping\?edit=/.test(page),
+  /saveNow\(\)[\s\S]{0,600}\/object-mapping\?edit=/.test(app),
   'Object Mapping hydrates cygenix_jobs from the cloud on load and that overwrites local');
-check('and the page copy says what leaves when you hand it on',
+check('and the tab copy says what leaves when you hand it on',
   /Nothing leaves this page/.test(page) && /names and (inferred )?types, (never|not) the rows/.test(page));
+check('and that the import steps are how the rows themselves get somewhere',
+  /To put the rows themselves in a database, use the import steps below/.test(page));
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);

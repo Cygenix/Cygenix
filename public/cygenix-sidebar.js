@@ -79,11 +79,12 @@
     { section: 'Connect', group:'connect', items: [
       { key:'connections',  label:'Connections',  view:'connections',  color:'var(--green)', icon: iconPlug() },
       { key:'profiles',     label:'Profiles',     href:'/profiles', color:'var(--amber, #f59e0b)', icon: iconShield() },
-      // Data Analyser: drop a file in, learn what it is before you connect to
-      // anything. It sits in Connect because that is when you have the file
-      // and not yet the table — the question it answers is "what would this
-      // become, and what will break", which is a step before Connections.
-      { key:'data-analyser', label:'Data Analyser', href:'/data-analyser', color:'var(--teal)', icon: iconPulse() },
+      // The Data Analyser was briefly its own item here, at /data-analyser.
+      // It now lives INSIDE Connections, on the Data import tab: that tab is
+      // where a file arrives, and "what is this file and what will break"
+      // is the question to answer before importing it. /data-analyser still
+      // redirects there (scripts/build-routes.js), so nothing bookmarked
+      // breaks. Do not add it back as an item — one place for files.
       { key:'integrations', label:'Integrations', view:'integrations', color:'var(--teal)',  icon: iconIntegrations() },
       { key:'settings-group', label:'Settings', icon: iconSettings(), children: [
         { key:'project-settings',  label:'General',           view:'project-settings',  color:'var(--amber)',  icon: iconSettings() },

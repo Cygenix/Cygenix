@@ -723,6 +723,46 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .imp-type-bool{ background:rgba(245,158,11,0.12);color:#f59e0b; }
 #view-connections .imp-type-string{ background:rgba(255,255,255,0.06);color:var(--text2); }
 
+/* ─── Data Analyser, inside the Data import tab ───────────────────────
+   Moved here from its own page. The widget ships its own scoped styles and
+   injects them at mount, which is AFTER this block — so a same-specificity
+   rule here would lose. The id makes these win, and they are the only
+   things the console imposes: its accent, its type, a hover tint derived
+   from that accent, and one hidden element. Surfaces stay the widget's own;
+   it already has a light and a dark set and the tab hands it whichever the
+   console is showing. */
+#analyser.cygx{
+  --accent:#4A5BD6;--accent-dim:rgba(74,91,214,0.18);
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  font-family:var(--serif);
+  border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;
+}
+#analyser.cygx[data-theme=light]{--accent:#3D4EC4}
+/* The widget's own drop zone and sample chips are hidden: the tab's drop
+   zone above is the one entry point, because it takes SEVERAL files and
+   the widget's takes one. The paste box stays — identifying a pasted
+   sample as you type is the analyser's, and the import has no equivalent. */
+#analyser.cygx .cygx-drop{ display:none; }
+#analyser.cygx .cygx-paste{ margin-top:16px; }
+
+#view-connections .da-note{display:flex;gap:10px;align-items:flex-start;margin:0 0 1rem;padding:0.6rem 0.8rem;border-radius:var(--r);border:0.5px solid var(--border);background:var(--bg2);font-size:12px;color:var(--text2);line-height:1.55}
+#view-connections .da-note .ic{flex:none;margin-top:2px;color:var(--teal)}
+#view-connections .da-note b{color:var(--text)}
+#view-connections .da-handoff{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:0.9rem 0 0;padding:0.75rem 0.9rem;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--bg2)}
+#view-connections .da-handoff-text{flex:1 1 380px;font-size:12px;color:var(--text2);line-height:1.55}
+#view-connections .da-handoff-text b{color:var(--text)}
+#view-connections .da-btn{flex:0 0 auto;cursor:pointer;padding:0.55rem 0.95rem;border-radius:8px;border:0.5px solid var(--accent);background:var(--accent);color:#fff;font:600 12.5px/1 var(--serif)}
+#view-connections .da-btn:hover{filter:brightness(1.08)}
+#view-connections .da-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#view-connections .da-btn[disabled]{opacity:0.6;cursor:progress}
+#view-connections .da-handoff-msg{flex:1 1 100%;font-size:11.5px;color:var(--text2);min-height:1em}
+#view-connections .da-handoff-msg.err{color:var(--red)}
+#view-connections .da-limits{margin-top:1rem;font-size:12px;color:var(--text2);line-height:1.6}
+#view-connections .da-limits h2{font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:0.3rem}
+#view-connections .da-limits ul{padding-left:1.1rem}
+#view-connections .da-limits li{margin:2px 0}
+#view-connections .da-limits code{font-family:var(--mono);font-size:11.5px;color:var(--text)}
+
 /* Blob Source — filter toolbar chips. Inactive chips look like ghost buttons,
    active chip uses the accent fill matching the rest of the connections UI. */
 #view-connections .blob-type-chip{
@@ -1363,6 +1403,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   function warm(){
     inject('https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js');
     inject('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    // js-yaml is the Data Analyser's optional library: anchors and block
+    // scalars in YAML. Without it the analyser says what is missing rather
+    // than failing quietly, so a blocked CDN degrades a feature, never the
+    // tab. Pinned; cdnjs is the one host the console already trusts.
+    inject('https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js');
     if (!document.getElementById('server-migration-js') && !window.ServerMigration) {
       var sm = document.createElement('script');
       sm.id = 'server-migration-js'; sm.src = '/server-migration.js'; sm.async = true;
@@ -1410,7 +1455,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=1039b41609" defer></script>
+<script src="/cygenix-sidebar.js?v=bdd3bc3ad3" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
   <script src="/cygenix-datastream.js?v=e6205ed8d2" defer></script>
@@ -1419,7 +1464,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
   <script src="/cygenix-conn-builder.js?v=a50f317be6" defer></script>
-  <script src="/dashboard-app.js?v=c31e322797" defer></script>
+  <!-- The Data Analyser, which lives in the Data import tab of Connections.
+       The engine loads before the widget, which requires it; the hand-off
+       module turns a profile into an Object Mapping job. All three are
+       deferred and the widget is mounted lazily on the first visit to the
+       tab, so a boot that never opens it pays only the download. -->
+  <script src="/cygenix-analyser.js?v=8fa5b06782" defer></script>
+  <script src="/cygenix-analyser-widget.js?v=b79dce439d" defer></script>
+  <script src="/cygenix-analyser-handoff.js?v=6cbae9a4cf" defer></script>
+  <script src="/dashboard-app.js?v=26a8d86428" defer></script>
 
 
   <!-- MAIN -->
@@ -2957,9 +3010,24 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
       </div>
 
-      <!-- Tab: Data import — single-file flow (with schema review) OR batch flow when multiple files
-           are selected. Batch flow auto-targets the SOURCE database, names tables dbo.<filename>,
-           and falls back to NVARCHAR(MAX) on any column that fails type validation. -->
+      <!-- Tab: Data import.
+           The Data Analyser lives here now — it used to be its own page at
+           /data-analyser, and /data-analyser still lands on this tab. One drop
+           zone, two behaviours:
+             * ONE file  → the analyser profiles it (what the file is, every
+               column, what will break on load, a target schema, a hand-off to
+               Object Mapping) AND the import pipeline parses it for the
+               review-schema / choose-target / import steps below.
+             * SEVERAL   → the batch flow, unchanged: auto-targets the SOURCE
+               database, names tables dbo.<filename>, and falls back to
+               NVARCHAR(MAX) on any column that fails type validation. The
+               analyser does not take part: it profiles one file at a time.
+           The analyser and the importer are not the same thing and neither
+           replaced the other. The analyser reads the first 20,000 rows in
+           memory and never touches a database; the importer streams the whole
+           file into one. A file profiled here can be handed to Object Mapping
+           as a source; the runner then needs its rows, which is what the
+           import steps put in reach. -->
       <div id="conn-tab-import" style="display:none">
         <!-- Step 1: file + parse -->
         <div class="panel" style="margin-bottom:1rem">
@@ -2970,13 +3038,58 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
 
           <div id="imp-drop" class="imp-drop" onclick="document.getElementById('imp-file').click()" ondragover="impDragOver(event)" ondragleave="impDragLeave(event)" ondrop="impDrop(event)">
-            <input type="file" id="imp-file" accept=".csv,.tsv,.txt,.xlsx,.xls" multiple style="display:none" onchange="impHandleFiles(this.files)">
+            <input type="file" id="imp-file" accept=".csv,.tsv,.txt,.xlsx,.xls,.json,.ndjson,.jsonl,.xml,.html,.htm,.yaml,.yml,.ini,.properties,.sql,.psv,.dat" multiple style="display:none" onchange="impHandleFiles(this.files)">
             <div style="font-size:28px;margin-bottom:0.4rem;opacity:0.5"><i class="ic ic-doc"></i> </div>
             <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop one or more CSV / Excel files here, or click to browse</div>
             <div style="font-size:11px;color:var(--text3)">Single file → schema preview · Multiple files → auto-import to <strong>source</strong> DB as <code style="font-family:var(--mono)">dbo.&lt;filename&gt;</code></div>
+            <div style="font-size:11px;color:var(--text3);margin-top:0.25rem">A single file can also be JSON, NDJSON, XML, an HTML table, YAML, INI or a SQL dump: the analyser profiles any of those, and import to a database needs CSV or Excel.</div>
           </div>
 
           <div id="imp-file-meta" style="display:none;margin-top:0.75rem;padding:0.75rem 0.9rem;background:var(--bg3);border-radius:var(--r);font-family:var(--mono);font-size:11px"></div>
+        </div>
+
+        <!-- The analyser. Mounted lazily by impAnalyserInit() the first time
+             this tab is opened, so a dashboard boot that never comes here
+             pays nothing for it. Hidden while a batch is on screen — the
+             analyser profiles one file, and a batch is many. -->
+        <div id="imp-analyser-wrap" style="margin-bottom:1rem">
+          <div class="da-note">
+            <i class="ic ic-shield"></i>
+            <div><b>Nothing leaves this page</b> while you analyse. The file is read and profiled in your browser — no
+              upload, no server, no API key — so it is safe to try with real data, and it works with the connection down.
+              If you hand the file on to Object Mapping, the column profile — names and inferred types, never the rows —
+              is saved to your account as a job. If you import it below, the rows go to the database you choose, and nowhere else.</div>
+          </div>
+
+          <!-- Analyser-side notes: a file profiled from its first 50 MB, a
+               workbook too large to profile. The import path has its own
+               line (#imp-file-meta) and the two must not overwrite each other. -->
+          <div id="imp-analyser-note" style="display:none;margin-bottom:0.6rem;font-size:11.5px;color:var(--text2);line-height:1.5"></div>
+
+          <!-- The widget mounts here; the tab adds nothing inside it. -->
+          <div id="analyser"></div>
+
+          <!-- The one thing the tab adds AROUND it: the way out. Hidden until
+               there is a result to hand on. -->
+          <div id="da-handoff" class="da-handoff" hidden>
+            <div class="da-handoff-text"><b>Make this a source.</b> Saves the column profile — names and inferred types,
+              never the rows — as a draft job in your account and opens it in Object Mapping, where you choose the
+              target and map the columns. To put the rows themselves in a database, use the import steps below instead.</div>
+            <button type="button" class="da-btn" id="da-handoff-btn">Use as a source in Object Mapping</button>
+            <div id="da-handoff-msg" class="da-handoff-msg" role="status" aria-live="polite"></div>
+          </div>
+
+          <div class="da-limits">
+            <h2>What it flags, and what it will not do</h2>
+            <ul>
+              <li><code>AMBIGUOUS_DATE</code> — dates like <code>01/02/2024</code> where day and month cannot be told apart from the data. Silently wrong for up to twelve days a month.</li>
+              <li><code>MIXED_TYPES</code> — the share of values a strict target column will reject. <code>INT_OVERFLOW</code> — values past 32-bit, so the column must be <code>BIGINT</code>. <code>CURRENCY_SYMBOLS</code> — amounts carrying a sign that needs stripping.</li>
+              <li>Leading zeros stay <code>string</code>. <code>00417</code> and a postcode are not numbers, and a numeric cast destroys them.</li>
+              <li>Types, lengths and key candidates are inferred <b>from the rows given</b> — the first 20,000 — a starting point for review, not a claim about the full extract. The generated DDL says so in its header. The import steps below read the whole file.</li>
+              <li>Parquet, Avro, SQLite and PDF are recognised from their first bytes and honestly refused: a browser cannot read them. Convert server-side.</li>
+              <li>Practical ceiling for profiling is roughly a 50 MB file; a larger file is profiled from its first 50 MB. Import streams the whole file regardless.</li>
+            </ul>
+          </div>
         </div>
 
         <!-- Batch panel — only shown when 2+ files are selected. Auto-runs through every file
@@ -3023,11 +3136,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
         </div>
 
-        <!-- Step 2: schema preview -->
+        <!-- Step 2: schema preview for the import path. The analyser above
+             shows what the file IS; this table decides what the TABLE will be,
+             and its types are the ones the import creates. -->
         <div id="imp-schema-wrap" class="panel" style="margin-bottom:1rem;display:none">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
-            <div style="font-size:13px;font-weight:600">2 · Review schema</div>
-            <span style="font-size:10.5px;color:var(--text3)">Types inferred from first 500 rows. Override any column using the dropdown.</span>
+            <div style="font-size:13px;font-weight:600">2 · Review schema for import</div>
+            <span style="font-size:10.5px;color:var(--text3)">Types inferred from first 500 rows; these are the types the import will create. Override any column using the dropdown.</span>
             <button class="btn btn-ghost btn-sm" onclick="impAllToMax()" style="margin-left:auto;font-size:11px" title="Set every column to TEXT (MAX). Good for problem files — imports always succeed, clean up in SQL after.">
               All to TEXT (MAX)
             </button>
@@ -4364,7 +4479,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=82d9cb828b"></script>
-<script src="/cygenix-assistant-actions.js?v=74380c56f8"></script>
+<script src="/cygenix-assistant-actions.js?v=4444d9f942"></script>
 <script>CygenixAssistant.registerPage('dashboard');</script>
 </body>
 </html>
