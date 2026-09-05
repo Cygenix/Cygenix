@@ -118,6 +118,7 @@ var PAGES = [
   { key: 'project-plan-grid',  label: 'Project Plan',       href: '/project-plan' },
   { key: 'connections',        label: 'Connections',        view: 'connections' },
   { key: 'profiles',           label: 'Profiles',           href: '/profiles' },
+  { key: 'data-analyser',      label: 'Data Analyser',      href: '/data-analyser' },
   { key: 'integrations',       label: 'Integrations',       view: 'integrations' },
   { key: 'project-settings',   label: 'Settings — General', view: 'project-settings' },
   { key: 'notifications',      label: 'Notifications',      view: 'notifications' },

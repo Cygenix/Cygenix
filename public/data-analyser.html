@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js?v=8053f04e2e"></script>
+<script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-icons.css">
+<link rel="stylesheet" href="/cygenix-mobile.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Data Analyser: drop a file in and learn what it is, what every column holds, what will break on load, and what schema it wants — entirely in your browser.">
+<title>Cygenix – Data Analyser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --purple:#a888d0;--purple-bg:rgba(107,78,142,0.18);
+  --teal:#3fbdb7;--teal-bg:rgba(23,130,124,0.16);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1rem 1.25rem 3rem;max-width:1160px}
+.da-head{margin-bottom:0.9rem}
+.da-title{font-size:18px;font-weight:600}
+.da-sub{font-size:12px;color:var(--text2);line-height:1.55;max-width:760px;margin-top:2px}
+.da-sub b{color:var(--text)}
+.da-note{display:flex;gap:10px;align-items:flex-start;margin:0.9rem 0 1rem;padding:0.6rem 0.8rem;border-radius:var(--r);border:0.5px solid var(--border);background:var(--bg2);font-size:12px;color:var(--text2);line-height:1.55;max-width:760px}
+.da-note .ic{flex:none;margin-top:2px;color:var(--teal)}
+.da-note b{color:var(--text)}
+
+/* The widget ships its own scoped styles and injects them at mount, which is
+   AFTER this block — so a same-specificity rule here would lose. The id
+   makes these win, and they are the only three things the console imposes:
+   its accent, its type, and a hover tint derived from that accent. Surfaces
+   stay the widget's own; it already has a light and a dark set and the page
+   hands it whichever the console is showing. */
+#analyser.cygx{
+  --accent:#4A5BD6;--accent-dim:rgba(74,91,214,0.18);
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  font-family:var(--serif);
+}
+#analyser.cygx[data-theme=light]{--accent:#3D4EC4}
+
+.da-limits{margin-top:1.25rem;max-width:760px;font-size:12px;color:var(--text2);line-height:1.6}
+.da-limits h2{font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:0.3rem}
+.da-limits ul{padding-left:1.1rem}
+.da-limits li{margin:2px 0}
+.da-limits code{font-family:var(--mono);font-size:11.5px;color:var(--text)}
+</style>
+</head>
+<body>
+<div id="cyg-sidebar-mount" data-active="data-analyser"></div>
+
+<div class="page">
+  <div class="da-head">
+    <div class="da-title">Data Analyser</div>
+    <div class="da-sub">Drop a file in. It works out <b>what the file is</b> and says how sure it is and why,
+      profiles every column, flags <b>what will break on load</b>, and emits a target schema for SQL Server,
+      Azure SQL, PostgreSQL, MySQL or SQLite — or CSV, JSON, NDJSON, XML, YAML, Markdown.</div>
+  </div>
+
+  <div class="da-note">
+    <i class="ic ic-shield"></i>
+    <div><b>Nothing leaves this page.</b> The file is read and profiled in your browser. No upload, no
+      server, no API key — so it is safe to try with real data, and it works with the connection down.</div>
+  </div>
+
+  <!-- The whole integration. The widget mounts here; the page adds nothing
+       else to it. -->
+  <div id="analyser"></div>
+
+  <div class="da-limits">
+    <h2>What it flags, and what it will not do</h2>
+    <ul>
+      <li><code>AMBIGUOUS_DATE</code> — dates like <code>01/02/2024</code> where day and month cannot be told apart from the data. Silently wrong for up to twelve days a month.</li>
+      <li><code>MIXED_TYPES</code> — the share of values a strict target column will reject. <code>INT_OVERFLOW</code> — values past 32-bit, so the column must be <code>BIGINT</code>. <code>CURRENCY_SYMBOLS</code> — amounts carrying a sign that needs stripping.</li>
+      <li>Leading zeros stay <code>string</code>. <code>00417</code> and a postcode are not numbers, and a numeric cast destroys them.</li>
+      <li>Types, lengths and key candidates are inferred <b>from the rows given</b> — a starting point for review, not a claim about the full extract. The generated DDL says so in its header.</li>
+      <li>Parquet, Avro, SQLite and PDF are recognised from their first bytes and honestly refused: a browser cannot read them. Convert server-side.</li>
+      <li>Practical ceiling is roughly a 50 MB file. Above that, profile server-side.</li>
+    </ul>
+  </div>
+</div>
+
+<script src="/connections.js?v=d199ff3358" defer></script>
+<script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=d7666a463b" defer></script>
+<script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
+<script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
+<script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
+<script src="/cygenix-sidebar.js?v=1039b41609" defer></script>
+
+<!-- Optional, progressive. Excel workbooks need SheetJS; anchors and block
+     scalars in YAML need js-yaml. Without them the widget says what is
+     missing rather than failing quietly, so a blocked CDN degrades a feature
+     and never the page. Pinned versions; cdnjs is the one host the console
+     already trusts for MSAL. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js" defer></script>
+
+<script src="/cygenix-analyser.js?v=8fa5b06782"></script>
+<script src="/cygenix-analyser-widget.js?v=997d87306d"></script>
+<script>
+(function () {
+  // The widget has its own light and dark surfaces; hand it whichever the
+  // console is showing, and keep it in step when the user switches theme
+  // in Settings, which flips the attribute on <html> without a reload.
+  function consoleTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+  var widget = CygenixAnalyserWidget.mount('#analyser', {
+    theme: consoleTheme(),
+    target: 'sql',
+    dialect: 'sqlserver',
+    table: 'imported_data',
+  });
+  // Exposed so the smoke test, the assistant, or a console user can drive it:
+  // CygenixAnalyserPage.load(text, name) / .result / .destroy()
+  window.CygenixAnalyserPage = widget;
+  new MutationObserver(function () {
+    var host = document.getElementById('analyser');
+    if (host) host.setAttribute('data-theme', consoleTheme());
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+})();
+</script>
+
+<script src="/cookie-consent.js?v=d15e88322f" defer></script>
+<script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
+<script src="/cygenix-busy.js?v=6b748aa0aa"></script>
+<!-- Assistant — docked side panel, present on every app screen -->
+<script src="/cygenix-model.js?v=7d9a5e0980"></script>
+<script src="/cygenix-page-reader.js?v=42e45abb62"></script>
+<script src="/cygenix-assistant.js?v=82d9cb828b"></script>
+<script src="/cygenix-assistant-actions.js?v=74380c56f8"></script>
+<script>CygenixAssistant.registerPage('data-analyser');</script>
+</body>
+</html>
