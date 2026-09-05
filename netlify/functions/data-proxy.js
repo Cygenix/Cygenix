@@ -110,6 +110,9 @@ const ALLOWED = new Set([
   // which made that a second identity provider. Invitations are issued by
   // the product now — see netlify/functions/lib/tenancy.js.
   'audit', 'waitlist-list',
+  // Handled HERE, never forwarded: returns the Function App key to a
+  // verified caller for the Drive's blob relay. See the handler below.
+  'blob-credential',
 ]);
 
 // `waitlist` is deliberately absent: it is the one genuinely anonymous
@@ -191,6 +194,26 @@ exports.handler = async function (event) {
     if (!identity) throw new Error('token carries no email or subject claim');
   } catch (e) {
     return fail('Auth error: ' + e.message, 401, 'auth');
+  }
+
+  // ── blob-credential: served here, to a verified caller only ────────────
+  // The Drive's blob relay streams file bodies straight to the Function App
+  // (a Netlify function in the path would cap uploads at 6 MB), so it needs
+  // the host key in the browser. It used to be a literal in dashboard-app.js
+  // — and once the same key was set as CYGENIX_DATA_FN_KEY, Netlify's secrets
+  // scanning found it in the build output and refused every deploy.
+  //
+  // Issuing it here instead keeps it out of the repository and the build,
+  // and hands it only to someone with a verified Entra token. That is a
+  // narrower exposure, not a closed one: the real fix is Entra auth on the
+  // relay and a rotated key. no-store, so no cache ever holds it.
+  if (action === 'blob-credential') {
+    console.log('[data-proxy] blob-credential issued');
+    return {
+      statusCode: 200,
+      headers: Object.assign({}, CORS, { 'Cache-Control': 'no-store' }),
+      body: JSON.stringify({ base: API_BASE, code: FN_KEY }),
+    };
   }
 
   // ── Forward ─────────────────────────────────────────────────────────────

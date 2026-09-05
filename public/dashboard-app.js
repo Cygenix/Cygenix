@@ -11820,12 +11820,39 @@ function blobSourceParseSas(sasUrl){
   };
 }
 
-// Azure Function endpoint for the blob proxy. Uses the same hardcoded
-// function key as the rest of dashboard.html (whoami, billing-portal,
-// cygenix-cosmos-sync.js). Flagged in user memory as tech debt — proper
-// fix is JWT Bearer auth mirroring reports.js, deferred until prioritised.
+// Azure Function endpoint for the blob proxy — a public hostname, the same
+// one data-proxy forwards to. The credential it needs is fetched at runtime;
+// see blobRelayCode() below for why it is no longer written here.
 const BLOB_PROXY_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-const BLOB_PROXY_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+// There is no key literal here any more, and the reason is worth keeping.
+//
+// The relay used the Function App's host key, embedded in this file — the
+// last tracked exception after #145 took every other key out of the client,
+// kept because the relay streams file BODIES and routing those through a
+// Netlify function would cap uploads at 6 MB. Then the same key was set in
+// Netlify as CYGENIX_DATA_FN_KEY so data-proxy could use it, and Netlify's
+// secrets scanning — correctly — found that value in this file on every
+// build and refused to publish. Nothing deployed for days.
+//
+// So the browser now asks data-proxy for the credential, at runtime, after
+// Entra verification, and keeps it in memory for the page. The value is no
+// longer in the repository or the build output. This narrows the exposure
+// from "anyone who fetches this JS file" to "a signed-in user" — it does
+// not eliminate it, and it is an interim: the real fix is still Entra auth
+// on the relay itself and rotation of the host key, both Azure-side.
+//
+// Never write this to localStorage or sessionStorage. Every key there is
+// classified in docs/storage-inventory.md, and this would be class S.
+let _blobRelayCode = null;
+async function blobRelayCode(){
+  if (_blobRelayCode) return _blobRelayCode;
+  if (!window.CygenixDataApi || !CygenixDataApi.callResult) throw new Error('data api not loaded');
+  const r = await CygenixDataApi.callResult('blob-credential');
+  if (!r.ok) throw new Error('Could not obtain the blob relay credential (' + r.error.code + ')');
+  if (!r.data || !r.data.code) throw new Error('The blob relay credential was empty');
+  _blobRelayCode = r.data.code;
+  return _blobRelayCode;
+}
 
 // Pull the caller's email from the MSAL local cache for the x-user-id header
 // the Function dispatcher requires. Same retrieval pattern as enhanceUserPill
@@ -11874,7 +11901,7 @@ async function blobSourceListContainer(parsed){
 
   let resp;
   try {
-    resp = await fetch(BLOB_PROXY_BASE + '/blob-list?code=' + encodeURIComponent(BLOB_PROXY_CODE), {
+    resp = await fetch(BLOB_PROXY_BASE + '/blob-list?code=' + encodeURIComponent(await blobRelayCode()), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -12041,7 +12068,7 @@ async function blobSourceProxyJson(action, payload){
 
   let resp;
   try {
-    resp = await fetch(BLOB_PROXY_BASE + '/' + action + '?code=' + encodeURIComponent(BLOB_PROXY_CODE), {
+    resp = await fetch(BLOB_PROXY_BASE + '/' + action + '?code=' + encodeURIComponent(await blobRelayCode()), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
       body: JSON.stringify(Object.assign({ sasUrl }, payload || {})),
@@ -12676,7 +12703,7 @@ async function blobSourceImportFile(blobNameEncoded){
 
   let resp;
   try {
-    resp = await fetch(BLOB_PROXY_BASE + '/blob-download?code=' + encodeURIComponent(BLOB_PROXY_CODE), {
+    resp = await fetch(BLOB_PROXY_BASE + '/blob-download?code=' + encodeURIComponent(await blobRelayCode()), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -12779,7 +12806,7 @@ async function blobSourceDownloadFile(blobNameEncoded){
 
   let resp;
   try {
-    resp = await fetch(BLOB_PROXY_BASE + '/blob-download?code=' + encodeURIComponent(BLOB_PROXY_CODE), {
+    resp = await fetch(BLOB_PROXY_BASE + '/blob-download?code=' + encodeURIComponent(await blobRelayCode()), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -13109,11 +13136,17 @@ function blobUploadSetStatus(msg, kind){
 // One file, one PUT through the proxy. XHR because it reports upload
 // progress; fetch does not. Resolves { ok, error, status } — never rejects,
 // so one bad file cannot abandon the rest of the queue.
-function blobUploadOne(item, sasUrl, userId, overwrite){
+async function blobUploadOne(item, sasUrl, userId, overwrite){
+  // The credential comes from data-proxy, not from this file — see
+  // blobRelayCode(). Fetched before the XHR is built, and a failure resolves
+  // the same {ok:false, error} shape every other failure here resolves.
+  let relayCode;
+  try { relayCode = await blobRelayCode(); }
+  catch (e) { return { ok: false, error: e.message || String(e) }; }
   return new Promise((resolve) => {
     const target = blobUploadTargetName(item);
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', BLOB_PROXY_BASE + '/blob-upload?code=' + encodeURIComponent(BLOB_PROXY_CODE), true);
+    xhr.open('POST', BLOB_PROXY_BASE + '/blob-upload?code=' + encodeURIComponent(relayCode), true);
     xhr.setRequestHeader('x-user-id', userId);
     xhr.setRequestHeader('x-blob-sas', sasUrl);
     // Header values must be latin-1; unicode filenames survive as percent-

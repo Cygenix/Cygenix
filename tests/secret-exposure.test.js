@@ -62,19 +62,18 @@ function code(dir, f) {
 const FN_KEY_SHAPE = /['"][A-Za-z0-9_-]{40,}==['"]/;
 const ASSIGNED_SECRET = /\b(FUNC_CODE|FUNCTION_KEY|fnKey|funcCode|apiKey|API_KEY|SAS_TOKEN|sasToken|accountKey|COSMOS_KEY|clientSecret)\s*[:=]\s*['"][A-Za-z0-9_+/=-]{20,}['"]/;
 
-// ONE documented exception, and it is asserted to be the only one.
+// There used to be ONE documented exception here: the Drive's blob relay
+// embedded the Function App host key, because it streams file BODIES and a
+// Netlify function in the path would cap uploads at 6 MB.
 //
-// The Drive's blob relay streams file BODIES to the Function App. Routing
-// those through a Netlify function would cap every upload at 6 MB, which
-// would break real customer workflows — so the fix is to authenticate the
-// relay with the Entra token instead (the file's own comment already says
-// so), and that is an Azure-side change requiring a Function App deploy.
-//
-// It is also materially lower severity than the /api/data bypass: the relay
-// carries the CUSTOMER'S OWN container SAS per request, so the key alone
-// reaches nobody's storage. Recorded here so it cannot be forgotten and
-// cannot spread.
-const KNOWN_EXCEPTIONS = new Set(['dashboard-app.js:BLOB_PROXY_CODE']);
+// It is gone (5 Sep 2026), and not because the relay got its proper auth.
+// The same key was set in Netlify as CYGENIX_DATA_FN_KEY, and Netlify's
+// secrets scanning then found that value in dashboard-app.js on every build
+// and refused to publish — nothing deployed for days. The relay now fetches
+// the credential at runtime from data-proxy, after Entra verification. The
+// browser still ends up holding a host key, so the real fix (Entra auth on
+// the relay, plus rotation) still stands; but no key ships in the build.
+const KNOWN_EXCEPTIONS = new Set([]);
 
 {
   const offenders = [];
@@ -88,18 +87,27 @@ const KNOWN_EXCEPTIONS = new Set(['dashboard-app.js:BLOB_PROXY_CODE']);
       offenders.push(f + ':' + (i + 1) + ' ' + t.slice(0, 90));
     });
   }
-  check('no Function App key or embedded secret ships to the browser, '
-    + 'beyond the one tracked exception',
+  check('no Function App key or embedded secret ships to the browser — no exceptions',
     offenders.length === 0, offenders.join(' | '));
 }
 
 {
-  // The exception must still BE there — if the blob relay gets fixed, this
-  // fails and the entry above should be deleted rather than left to rot.
+  // The blob relay must not grow its key literal back, and must get the
+  // credential the one sanctioned way.
   const dash = read('public', 'dashboard-app.js');
-  check('the tracked blob-relay exception is still the only one outstanding',
-    /BLOB_PROXY_CODE\s*=\s*'/.test(dash),
-    'the blob relay no longer embeds a key — remove it from KNOWN_EXCEPTIONS');
+  check('the blob relay no longer embeds a key literal',
+    !/BLOB_PROXY_CODE\s*=\s*'/.test(dash),
+    'a key literal in the client is what stopped every deploy');
+  check('it fetches the credential at runtime through the data api, after verification',
+    /callResult\('blob-credential'\)/.test(dash) && (dash.match(/blobRelayCode\(\)/g) || []).length >= 6);
+  check('and never writes it to browser storage',
+    !/(localStorage|sessionStorage)\.setItem\([^)]*blob[^)]*code/i.test(dash));
+  const proxy = read('netlify', 'functions', 'data-proxy.js');
+  check('the proxy serves blob-credential itself, after identity verification, and never forwards it',
+    proxy.indexOf("action === 'blob-credential'") > proxy.indexOf('await verifyAuthHeader(')
+    && proxy.indexOf("action === 'blob-credential'") < proxy.indexOf('// ── Forward'));
+  check('with no-store, so no cache ever holds the key',
+    /blob-credential'[\s\S]{0,600}'Cache-Control': 'no-store'/.test(proxy));
 }
 
 {
@@ -110,11 +118,10 @@ const KNOWN_EXCEPTIONS = new Set(['dashboard-app.js:BLOB_PROXY_CODE']);
                   'UfQpm2qJuc0lWIbYwtGUm_k6ys_FDEquCma-KCPl_e8rAzFu5qfwbA=='];
   const back = [];
   for (const [dir, f] of clientFiles) {
-    if (f === 'dashboard-app.js') continue;          // the tracked exception above
     const src = read(dir, f);
     LEAKED.forEach(k => { if (src.includes(k)) back.push(f); });
   }
-  check('neither exposed key is anywhere else in the client tree',
+  check('neither exposed key is anywhere in the client tree',
     back.length === 0, back.join(', '));
 }
 

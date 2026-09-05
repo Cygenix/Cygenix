@@ -66,11 +66,15 @@ discarded. `tests/data-proxy.test.js` drives the handler and asserts what the up
    caller's token, so this is finally safe to switch on — and until it is, a holder of an old key can
    still call the Function App directly and spoof the header.
 
-One tracked exception remains in the client: `BLOB_PROXY_CODE` in `dashboard-app.js`. The Drive's
-blob relay streams file **bodies**, and routing those through a Netlify function would cap every
-upload at 6 MB. It is also lower severity — the relay carries the *customer's own* container SAS per
-request, so the key alone reaches nobody's storage. The fix is Entra auth on the relay
-(an Azure-side change); `tests/secret-exposure.test.js` asserts it is the only one outstanding.
+There was one tracked exception in the client: `BLOB_PROXY_CODE` in `dashboard-app.js`, kept
+because the Drive's blob relay streams file **bodies** and a Netlify function in the path would cap
+uploads at 6 MB. **It is gone as of 5 Sep 2026**, and for an instructive reason: once the same key
+was set in Netlify as `CYGENIX_DATA_FN_KEY`, Netlify's secrets scanning found the value in the build
+output and refused every deploy for days. The relay now fetches the credential at runtime from
+`data-proxy` (`?action=blob-credential`), after Entra verification, `no-store`. That narrows the
+exposure from "anyone who fetches the JS file" to "a signed-in user"; it does not close it. The real
+fix — Entra auth on the relay, plus rotating the host key — is unchanged and still Azure-side.
+`tests/secret-exposure.test.js` now asserts there are **no** exceptions.
 
 ---
 
