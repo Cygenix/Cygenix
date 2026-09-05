@@ -111,18 +111,45 @@ const KNOWN_EXCEPTIONS = new Set([]);
 }
 
 {
-  // The two keys that actually leaked, pinned by value. They are revoked, so
-  // a reappearance is a revert rather than a new mistake — and the message
-  // should say so.
-  const LEAKED = ['WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==',
-                  'UfQpm2qJuc0lWIbYwtGUm_k6ys_FDEquCma-KCPl_e8rAzFu5qfwbA=='];
+  // The two keys that actually leaked, pinned by HASH — never again by value.
+  //
+  // This block used to hold the two values in the clear, so that a revert
+  // could be recognised as a revert. Then the live key was set in Netlify as
+  // CYGENIX_DATA_FN_KEY, and Netlify's secrets scanner — which reads the
+  // WHOLE repository, not only the build output — found the value here and
+  // in docs/DEPLOY-auth-fix.md and refused every deploy. A test that pins a
+  // secret by value is itself a place the secret lives.
+  //
+  // So: every key-shaped literal anywhere in the tree is hashed and compared
+  // to the hashes of the published keys. Same detection, no value in the
+  // repository, and it now covers every file Netlify scans, so this fails
+  // before the deploy does.
+  const crypto = require('crypto');
+  const LEAKED_SHA256 = new Set([
+    '2e9ea3053ba20068bf9953a080b2365aabf28df07fe6ef02ce7428dabb5ff63b',   // key 1 — data, blob, admin, narrative surfaces
+    'd98ec8c5f35fd14c7b2edc9aabf81eb65f3438ec747676ef944407285b9cebd1',   // key 2 — agent routes
+  ]);
+  const ROOT = path.join(__dirname, '..');
+  const SKIP_DIRS = new Set(['.git', 'node_modules', '.netlify']);
+  const files = [];
+  (function walk(dir) {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (ent.isDirectory()) { if (!SKIP_DIRS.has(ent.name)) walk(path.join(dir, ent.name)); continue; }
+      const full = path.join(dir, ent.name);
+      try { if (fs.statSync(full).size <= 2 * 1024 * 1024) files.push(full); } catch {}
+    }
+  })(ROOT);
   const back = [];
-  for (const [dir, f] of clientFiles) {
-    const src = read(dir, f);
-    LEAKED.forEach(k => { if (src.includes(k)) back.push(f); });
+  for (const full of files) {
+    let src; try { src = fs.readFileSync(full, 'utf8'); } catch { continue; }
+    for (const m of src.matchAll(/[A-Za-z0-9_-]{40,}==/g)) {
+      if (LEAKED_SHA256.has(crypto.createHash('sha256').update(m[0]).digest('hex'))) {
+        back.push(path.relative(ROOT, full)); break;
+      }
+    }
   }
-  check('neither exposed key is anywhere in the client tree',
-    back.length === 0, back.join(', '));
+  check('neither published key appears anywhere in the repository (' + files.length + ' files, by hash)',
+    back.length === 0, back.join(', ') + ' — Netlify\'s scanner reads the whole tree and will refuse the deploy');
 }
 
 /* ══ 2. The browser never asserts an identity to the API ════════════════ */

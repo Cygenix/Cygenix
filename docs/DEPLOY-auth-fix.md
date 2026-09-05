@@ -26,9 +26,14 @@ second key used by the agent routes.
 Two keys were published in the client and committed to a GitHub repository:
 
 ```
-WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==     (data, blob, admin, narrative surfaces)
-UfQpm2qJuc0lWIbYwtGUm_k6ys_FDEquCma-KCPl_e8rAzFu5qfwbA==     (agent routes)
+<redacted — key 1, sha256 2e9ea3053ba20068…>     (data, blob, admin, narrative surfaces)
+<redacted — key 2, sha256 d98ec8c5f35fd14c…>     (agent routes)
 ```
+
+The values are deliberately not reproduced here. Netlify's secrets scanner reads the whole
+repository, not only the build output, and refused every deploy for as long as they were written
+down in this file and in a test. They are still in git history, which is one more reason the
+rotation above is not optional. `tests/secret-exposure.test.js` pins them by hash.
 
 Removing them from the client stops **new** exposure. It revokes **nothing already copied**. Anyone
 holding an old key can still call the Function App directly and spoof `x-user-id` until they are
