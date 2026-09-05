@@ -151,6 +151,21 @@ function loadProxy(key) {
     void h;
   }
 
+  /* ── blob-credential: the relay's key, served here, to a verified caller ─ */
+  {
+    r = await call({ q: { action: 'blob-credential' }, headers: {} });
+    check('blob-credential without a token is refused', r.statusCode === 401, r.body);
+    lastReq = null;
+    r = await call({ q: { action: 'blob-credential' } });
+    const body = JSON.parse(r.body || '{}');
+    check('a verified caller receives the server-held key and the relay base',
+      r.statusCode === 200 && body.code === 'TEST-KEY-NOT-REAL' && /\/api\/data$/.test(body.base || ''), r.body);
+    check('it is served by the proxy itself — nothing reached the Function App', lastReq === null,
+      lastReq && lastReq.url);
+    check('and is marked no-store, so no cache keeps a host key',
+      /no-store/.test(r.headers['Cache-Control'] || ''), JSON.stringify(r.headers));
+  }
+
   upstream.close();
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
