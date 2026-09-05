@@ -31,10 +31,27 @@ const TYPES = {
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
 };
 
+// Clean addresses are hyphenated (/object-mapping); some files are not
+// (object_mapping.html). Production bridges that in public/_redirects, so the
+// toy server reads the same table rather than guessing — appending .html to
+// the address served a 404 for Object Mapping and the smoke could not tell,
+// because the URL still matched.
+const REWRITES = (() => {
+  const map = {};
+  try {
+    fs.readFileSync(path.join(PUB, '_redirects'), 'utf8').split('\n').forEach((ln) => {
+      const m = ln.trim().match(/^(\/\S*)\s+(\/\S+\.html)\s+200/);
+      if (m) map[m[1]] = m[2];
+    });
+  } catch (e) { /* no table — fall back to the .html guess below */ }
+  return map;
+})();
+
 function serve() {
   return http.createServer((req, res) => {
     let p = decodeURIComponent(req.url.split('?')[0]);
     if (p === '/') p = '/index.html';
+    if (REWRITES[p]) p = REWRITES[p];
     let file = path.join(PUB, p);
     if (!fs.existsSync(file) && fs.existsSync(file + '.html')) file += '.html';
     if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -92,6 +109,8 @@ const SAMPLE = [
       // empty record, so the stub has to answer like a subscribed account.
       if (/data-proxy.*action=whoami/.test(url)) return route.fulfill({ status: 200, contentType: 'application/json',
         body: JSON.stringify({ email: 'smoke@example.com', tier: 'pro', tier_status: 'trialing' }) });
+      if (/data-proxy.*action=save/.test(url)) return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ saved: true, updatedAt: new Date().toISOString() }) });
       if (/data-proxy/.test(url)) return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
       return route.continue();
     });
@@ -164,6 +183,39 @@ const SAMPLE = [
 
     const unexpected = errors.filter((e) => !/xlsx|jsyaml|XLSX/i.test(e));
     check('no page errors (the aborted optional libraries excepted)', unexpected.length === 0, unexpected.join(' | '));
+
+    // ── Hand it to Object Mapping ──────────────────────────────────────
+    check('the hand-off appears once there is a result', await page.locator('#da-handoff').isVisible());
+    const before = requests.length;
+    await page.click('#da-handoff-btn');
+    await page.waitForURL(/\/object-mapping\?edit=job_\d+/, { timeout: 20000 });
+    check('clicking it opens Object Mapping on the new job', /\/object-mapping\?edit=job_/.test(page.url()), page.url());
+
+    const saves = requests.slice(before).filter((r) => /action=save/.test(r.url) && r.method === 'POST');
+    check('the profile was flushed to the account before leaving the page', saves.length >= 1);
+    const saved = saves.map((r) => r.post).join('\n');
+    check('and that save carried the column names', /postcode/.test(saved) && /order_date/.test(saved));
+    check('but not one cell value', !/Smith, John|LS1 4AP|00417|1042\.50/.test(saved),
+      'the profile travels; the data does not');
+
+    // Object Mapping, with no source connection at all.
+    await page.waitForFunction(() => /profiled by the Data Analyser/.test(document.body.innerText), null, { timeout: 20000 });
+    const omText = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+    check('Object Mapping shows the file as the source, in its own banner',
+      /Source: orders\.csv · CSV · 6 columns · 3 rows · profiled by the Data Analyser/.test(omText), omText.slice(0, 300));
+    await page.waitForFunction(() => /\b6 cols\b/.test((document.getElementById('src-col-count') || {}).textContent || ''), null, { timeout: 15000 });
+    check('and the six columns are loaded as the source side', true);
+    // srcTable is a top-level `let` in a classic script — reachable by bare
+    // name from the page's global scope, but NOT a window property.
+    const srcTypes = await page.evaluate(() => {
+      let t = null;
+      try { t = srcTable; } catch (e) { t = null; }
+      return t ? t.columns.map((c) => c.name + ':' + c.type) : null;
+    });
+    check('with SQL types Object Mapping can reason about',
+      !!srcTypes && srcTypes.some((c) => /^order_id:INT$/.test(c)) && srcTypes.some((c) => /^postcode:NVARCHAR\(/.test(c)),
+      JSON.stringify(srcTypes));
+    check('it did not fall back to "Source: not configured"', !/Source: not configured/.test(omText));
   } finally {
     await browser.close();
     server.close();
