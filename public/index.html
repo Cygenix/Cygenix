@@ -87,18 +87,6 @@ h1,h2,h3,.line1,.line2{font-family:var(--serif);font-weight:600;letter-spacing:-
   background-size:52px 52px;
   mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 72%);
   -webkit-mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 72%)}
-/* The third decorative layer: packets of light travelling left-to-right
-   behind the hero, drawn by /brand-stream.js into a <canvas> it inserts
-   right after .brand-glow — so it sits under the grid and under all page
-   content. Same rules as its two siblings: fixed, z-index 0, inert. The
-   mask softens every edge so trails enter and leave rather than being cut
-   off. The script fades it to 0 past the hero and stops drawing; under
-   prefers-reduced-motion it is one static frame, dimmer, with no fade. */
-.brand-stream{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:0.62;
-  transition:opacity 0.6s ease;
-  mask-image:radial-gradient(125% 95% at 50% 26%,#000 0%,rgba(0,0,0,0.82) 42%,transparent 86%);
-  -webkit-mask-image:radial-gradient(125% 95% at 50% 26%,#000 0%,rgba(0,0,0,0.82) 42%,transparent 86%)}
-@media (prefers-reduced-motion:reduce){.brand-stream{opacity:0.32;transition:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ── Nav ──────────────────────────────────────────────────────────────────
@@ -147,6 +135,20 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
    behind it is the only thing that marks it out. */
 .hero{position:relative;z-index:1;text-align:center;padding:9rem clamp(1rem,5vw,2rem) 3.5rem;
   max-width:1000px;margin:0 auto}
+/* The mesh behind the hero (cygenix-mesh.js). The stage is the full-width
+   box the mesh fills; it adds nothing to the layout — no padding, no margin,
+   no height beyond the hero's own — and clips the canvas so the mesh can
+   never widen the page. isolation:isolate keeps its z-order private: the
+   layer at 0 and the hero at 1 are ordered against each other and nothing
+   else. It sits above the fixed .brand-glow and .brand-grid, which stay
+   underneath as they were. The mask fades the mesh out before the section
+   below, so the field does not end at a hard line. */
+.hero-stage{position:relative;z-index:1;isolation:isolate;overflow:hidden}
+.hero-stage>.hero{position:relative;z-index:1}
+.cx-mesh-layer{position:absolute;inset:0;z-index:0;pointer-events:none;
+  mask-image:linear-gradient(to bottom,#000 0%,#000 70%,transparent 100%);
+  -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 70%,transparent 100%)}
+.cx-mesh-layer canvas{display:block;width:100%;height:100%}
 .hero-badge{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:500;
   letter-spacing:0.14em;text-transform:uppercase;color:var(--accent-ink);
   border:1px solid rgba(142,160,255,0.28);border-radius:100px;padding:0.35rem 0.9rem;margin-bottom:1.75rem}
@@ -385,6 +387,12 @@ footer a:hover{text-decoration:underline}
 </nav>
 
 <!-- ══ HERO ══════════════════════════════════════════════════════════════ -->
+<!-- .hero-stage is a full-width box that adds no height, padding or margin:
+     it exists so the mesh can span the viewport while .hero keeps its 1000px
+     centred box exactly as it was. The mesh layer is the stage's first child
+     and paints under the hero; see cygenix-mesh.js for why. -->
+<div class="hero-stage">
+<div class="cx-mesh-layer" aria-hidden="true"><canvas id="cx-mesh"></canvas></div>
 <section class="hero">
   <div class="hero-badge">SQL Server · Azure SQL · Postgres · Files</div>
   <h1>
@@ -401,6 +409,7 @@ footer a:hover{text-decoration:underline}
   <div class="hero-note">Every capability on this page is checked against the product's own
     <a href="/help#supported">support matrix</a> at build time, so what you read here is what ships.</div>
 </section>
+</div>
 
 <!-- ══ TICKER ════════════════════════════════════════════════════════════
      Sample events from a run. The schema names are the neutral
@@ -1448,8 +1457,29 @@ document.addEventListener('keydown', function(e){
 <script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
-<!-- The data-stream layer behind the hero. Deferred: it inserts its canvas
-     after .brand-glow, which must already be in the DOM. -->
-<script src="/brand-stream.js?v=651b2c8d50" defer></script>
+<!-- The mesh behind the hero. The engine is deferred like every other
+     shared module; deferred scripts run before DOMContentLoaded, so the
+     mount below waits for that and is a no-op wherever #cx-mesh is absent.
+     The values are the "balanced" preset, written out so they can be tuned
+     one at a time; the colours are the page's own tokens (--accent-ink2 for
+     nodes, --accent for lines and the bloom). -->
+<script src="/cygenix-mesh.js?v=9fa41425d0" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var el = document.getElementById('cx-mesh');
+  if (!el || !window.CygenixMesh) return;
+  window.cygenixHeroMesh = CygenixMesh.mount(el, {
+    density:   1.00,   // nodes per screenful
+    speed:     0.75,   // drift rate
+    reach:     165,    // px at which two nodes link
+    glow:      0.65,   // blue bloom behind the headline
+    parallax:  0.55,   // layer shift against the pointer
+    lineAlpha: 0.30,   // link opacity — kept low, the headline has to win
+    node:      '#a9b6ff',
+    line:      '#4a5bd6',
+    glowColor: '#4a5bd6'
+  });
+});
+</script>
 </body>
 </html>
