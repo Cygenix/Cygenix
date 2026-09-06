@@ -1464,22 +1464,31 @@ document.addEventListener('keydown', function(e){
      (see the header of cygenix-mesh.js), written out so they can be tuned
      one at a time; the colours are the page's own tokens (--accent-ink2 for
      nodes, --accent for lines and the bloom). -->
-<script src="/cygenix-mesh.js?v=76cb517724" defer></script>
+<script src="/cygenix-mesh.js?v=014c22dd1f" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   var el = document.getElementById('cx-mesh');
   if (!el || !window.CygenixMesh) return;
+  // The colours are the page's own tokens, read from the stylesheet so
+  // they track it: nodes --accent-ink2, connectors --accent-ink (the brand
+  // accent is darker than the nodes and made the lines read as background
+  // texture rather than structure), bloom --accent. The fallbacks are the
+  // same three house values.
+  var tok = function (name, fallback) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return /^#[0-9a-f]{3,6}$/i.test(v) ? v : fallback;
+  };
   window.cygenixHeroMesh = CygenixMesh.mount(el, {
     density:   1.45,   // denser field — more polygon closure
-    speed:     0.40,   // slower than 'balanced': the reference drifts, it doesn't swarm
+    speed:     1.0,    // tuned live: below ~0.5 it did not read as motion
     reach:     200,    // longer connections so triangles actually form
     glow:      0.80,   // blue bloom behind the headline
     parallax:  0.55,   // layer shift against the pointer and the camera sweep
-    lineAlpha: 0.34,   // link opacity — kept low, the headline has to win
+    lineAlpha: 0.50,   // link opacity, tuned live with the brighter connector colour
     nodeAlpha: 0.95,
-    node:      '#a9b6ff',
-    line:      '#4a5bd6',
-    glowColor: '#4a5bd6'
+    node:      tok('--accent-ink2', '#a9b6ff'),
+    line:      tok('--accent-ink', '#8ea0ff'),
+    glowColor: tok('--accent', '#4a5bd6')
   });
 });
 </script>

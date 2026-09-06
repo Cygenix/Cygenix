@@ -57,21 +57,30 @@
    offset in draw(), so the whole field sweeps slowly even when the mouse
    never moves. Before that, a still mouse saw only the individual nodes.
 
+   WANDERING PATHS
+   A node keeps a heading and a base speed and turns a little each frame on
+   its own wander phase (step()), so it curves rather than crossing the
+   field in a straight line. The turn rate, 0.02, is deliberate; leave it.
+
    INTENSITY
-   The mount call in index.html is tuned towards a slow, dense field with
-   long connections, so the triangles close up: density 1.45, speed 0.40,
-   reach 200. PRESETS below still holds subtle, balanced and cinematic;
-   pass { preset: 'subtle' } to update() or mount() to switch wholesale.
-   window.cygenixHeroMesh keeps the mount's handle, so the console can tune
-   it live: cygenixHeroMesh.update({ speed: 0.3, reach: 220 }).
+   The values in the mount call in index.html were tuned live against the
+   running page through cygenixHeroMesh.update() and confirmed by eye, not
+   guessed: density 1.45, speed 1.0, reach 200, glow 0.80, lineAlpha 0.50,
+   nodeAlpha 0.95. The connector colour is the page's --accent-ink rather
+   than the engine's darker default, so the lines read as structure and not
+   as background texture. PRESETS below still holds subtle, balanced and
+   cinematic; pass { preset: 'subtle' } to update() or mount() to switch
+   wholesale. The reduced-motion path is speed × 0.15 of whatever the mount
+   passes, so it moved with the retune, from 0.06 to 0.15.
 
    DEPARTURES FROM THE ENGINE AS SUPPLIED
-   Three, all marked in place: the `reduced` guard removed from start() and
-   the mount sequence degrading instead of freezing; the camera sweep; and
-   the order of that reduced-motion branch relative to resize(), which the
+   Four, all marked in place: the `reduced` guard removed from start() and
+   the mount sequence degrading instead of freezing; the camera sweep; the
+   order of that reduced-motion branch relative to resize(), which the
    brief had the wrong way round (velocities are computed from cfg.speed
-   when the nodes are built, so the speed must be lowered first). Nothing
-   else differs, so a later drop-in replacement is a small diff.
+   when the nodes are built, so the speed must be lowered first); and the
+   wandering paths in build() and step(). Nothing else differs, so a later
+   drop-in replacement is a small diff.
    ========================================================================== */
 /* Cygenix ambient mesh — animated polygon network background.
    window.CygenixMesh.mount(canvas, opts) -> { update(opts), destroy() } */
@@ -129,6 +138,10 @@
           pts.push({
             x: Math.random() * W,
             y: Math.random() * H,
+            ang: ang,                          // current heading
+            spd: v,                            // base speed
+            wa: Math.random() * Math.PI * 2,   // wander phase
+            ws: 0.004 + Math.random() * 0.010, // wander rate — per node, so no two agree
             vx: Math.cos(ang) * v,
             vy: Math.sin(ang) * v * 0.7,
             r: 0.7 + d * 1.5 * (0.6 + Math.random() * 0.8),
@@ -159,10 +172,18 @@
       if (!running) draw(16);
     }
 
+    // Steer, then move. A node keeps its heading and base speed as state and
+    // turns a little each frame on its own wander phase, so paths curve
+    // instead of running dead straight to the edge. vx/vy are derived here
+    // every frame; nothing else reads them as constants.
     function step(pts, dt) {
       var m = 60;
       for (var i = 0; i < pts.length; i++) {
         var p = pts[i];
+        p.wa += p.ws * dt;
+        p.ang += Math.sin(p.wa) * 0.02 * dt;   // heading turns smoothly
+        p.vx = Math.cos(p.ang) * p.spd;
+        p.vy = Math.sin(p.ang) * p.spd * 0.7;
         p.x += p.vx * dt; p.y += p.vy * dt; p.tw += p.ts * dt;
         if (p.x < -m) p.x = W + m; else if (p.x > W + m) p.x = -m;
         if (p.y < -m) p.y = H + m; else if (p.y > H + m) p.y = -m;

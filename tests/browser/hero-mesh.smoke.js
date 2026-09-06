@@ -135,6 +135,16 @@ async function open(browser, opts) {
         && cs.cssW === Math.round(cs.layerW) + 'px', JSON.stringify(cs));
       check('the fixed grid underneath is still there and still visible', cs.gridOp === '0.65', cs.gridOp);
 
+      // The colours resolved from the stylesheet's tokens, not the engine's
+      // darker defaults: connectors are --accent-ink, nodes --accent-ink2.
+      const colours = await page.evaluate(() => {
+        const c = window.cygenixHeroMesh.config;
+        return { node: c.node, line: c.line, glow: c.glowColor, speed: c.speed, lineAlpha: c.lineAlpha };
+      });
+      check('the mount resolved the page\'s own tokens for its colours',
+        colours.node === '#a9b6ff' && colours.line === '#8ea0ff' && colours.glow.toLowerCase() === '#4a5bd6', JSON.stringify(colours));
+      check('with the live-tuned speed and line opacity', colours.speed === 1.0 && colours.lineAlpha === 0.5, JSON.stringify(colours));
+
       // 2. Contrast: the copy's colours are what they were, and the thing at
       // each of them is the text or the button, never the canvas.
       const hero = await page.evaluate(() => {
@@ -224,7 +234,7 @@ async function open(browser, opts) {
       check('with reduced motion the mesh is visible', rm.lit > 0, JSON.stringify(rm));
       check('and still animating, slowly: the loop runs', rm.raf > 1, rm.raf);
       check('at 15% of the configured speed with parallax zeroed',
-        Math.abs(rm.speed - 0.40 * 0.15) < 1e-9 && rm.parallax === 0, JSON.stringify(rm));
+        Math.abs(rm.speed - 1.0 * 0.15) < 1e-9 && rm.parallax === 0, JSON.stringify(rm));
       check('no console errors there either', problems.length === 0, problems.join(' | '));
       await ctx.close();
     }

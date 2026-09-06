@@ -38,11 +38,20 @@ check('index.html loads it deferred and mounts it after DOMContentLoaded, guarde
 check('and no other page loads it — the hero only exists on the landing page',
   fs.readdirSync(P('public')).filter((f) => f.endsWith('.html') && f !== 'index.html')
     .every((f) => !/cygenix-mesh\.js/.test(read('public', f))));
-check('the mount uses the slow, dense, long-reach tuning with the page\'s own colours',
-  /density:\s*1\.45/.test(index) && /speed:\s*0\.40/.test(index) && /reach:\s*200/.test(index)
-  && /glow:\s*0\.80/.test(index) && /parallax:\s*0\.55/.test(index) && /lineAlpha:\s*0\.34/.test(index) && /nodeAlpha:\s*0\.95/.test(index)
-  && /node:\s*'#a9b6ff'/.test(index) && /line:\s*'#4a5bd6'/.test(index) && /glowColor:\s*'#4a5bd6'/.test(index)
-  && /--accent-ink2:#a9b6ff/.test(index) && /--accent:\s*#4A5BD6/i.test(read('public', 'cygenix-brand.css')));
+check('the mount uses the live-tuned values',
+  /density:\s*1\.45/.test(index) && /speed:\s*1\.0\b/.test(index) && /reach:\s*200/.test(index)
+  && /glow:\s*0\.80/.test(index) && /parallax:\s*0\.55/.test(index) && /lineAlpha:\s*0\.50/.test(index) && /nodeAlpha:\s*0\.95/.test(index));
+// The connectors used to take the engine's default, the brand accent, which
+// is darker than the nodes and read as texture. They now take --accent-ink.
+// All three colours are read from the stylesheet's tokens, with the same
+// house values as fallbacks, so the page holds no colour the palette test
+// does not already sanction.
+check('and the page\'s own tokens for colour: nodes --accent-ink2, connectors --accent-ink, bloom --accent',
+  /node:\s*tok\('--accent-ink2', '#a9b6ff'\)/.test(index)
+  && /line:\s*tok\('--accent-ink', '#8ea0ff'\)/.test(index)
+  && /glowColor:\s*tok\('--accent', '#4a5bd6'\)/.test(index)
+  && /--accent-ink:#8ea0ff/.test(index) && /--accent-ink2:#a9b6ff/.test(index)
+  && /--accent:\s*#4A5BD6/i.test(read('public', 'cygenix-brand.css')));
 
 // The layout: a full-width stage wrapping the hero, the layer first in it.
 check('the hero is wrapped in a stage whose first child is the mesh layer, then the hero itself',
@@ -99,6 +108,11 @@ check('reduced motion degrades rather than freezes, and does so BEFORE the nodes
   'velocities are computed from cfg.speed at build time, so the speed must be lowered first');
 check('and the header no longer promises a single still frame',
   !/draws one frame and never schedules/.test(js) && /DEGRADED, NOT FROZEN/.test(js));
+check('nodes wander: heading and base speed are state, steered each frame, and vx/vy are derived from them',
+  /ang: ang,/.test(js) && /spd: v,/.test(js) && /wa: Math\.random\(\) \* Math\.PI \* 2,/.test(js) && /ws: 0\.004 \+ Math\.random\(\) \* 0\.010,/.test(js)
+  && /p\.wa \+= p\.ws \* dt;\s*p\.ang \+= Math\.sin\(p\.wa\) \* 0\.02 \* dt;[^\n]*\n\s*p\.vx = Math\.cos\(p\.ang\) \* p\.spd;\s*p\.vy = Math\.sin\(p\.ang\) \* p\.spd \* 0\.7;/.test(js)
+  // Nothing else reads vx/vy: the only uses are the derivation and the move.
+  && (js.match(/\.vx\b/g) || []).length === 2 && (js.match(/\.vy\b/g) || []).length === 2);
 
 /* ── 3. What it does, run for real ──────────────────────────────────────── */
 //
