@@ -153,7 +153,7 @@ console.log('Capabilities — one manifest, and pages that cannot contradict it\
    whose feature is not ga or beta must sit near a qualifier, or the build
    fails. This is what stops the copy drifting ahead again. */
 {
-  const PUBLIC_PAGES = ['index.html', 'pricing.html', 'help.html', 'about.html',
+  const PUBLIC_PAGES = ['index.html', 'pricing.html', 'help.html', 'about.html', 'llms.txt',
                         'privacy-security.html', 'pick-plan.html'];
   const QUALIFIER = /\b(planned|coming soon|on the roadmap|not yet|preview|in preview|beta|forthcoming|we do not|does not yet)\b/i;
 
@@ -187,7 +187,7 @@ console.log('Capabilities — one manifest, and pages that cannot contradict it\
 
 {
   // The same rule for sources and targets, which is what contradiction 1 was.
-  const PUBLIC_PAGES = ['index.html', 'pricing.html', 'pick-plan.html'];
+  const PUBLIC_PAGES = ['index.html', 'pricing.html', 'pick-plan.html', 'llms.txt'];
   const offenders = [];
   for (const page of PUBLIC_PAGES) {
     if (!fs.existsSync(P('public', page))) continue;

@@ -6,12 +6,15 @@
 <title>Cygenix – About</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#FFFFFF">
-<meta name="description" content="Cygenix connects to your SQL Server databases, maps columns intelligently with Claude AI, validates data and executes migrations — all from the browser. Built for UK enterprises.">
-<meta property="og:title" content="Cygenix – AI-Powered SQL Database Migration">
-<meta property="og:description" content="Map columns, validate data and execute SQL Server migrations with AI. Browser-based. No installation required.">
+<!-- Kept under ~160 characters, like the other public pages, so Google does not
+     cut it mid-clause. The old one ran to 178 and described the product rather
+     than this page, which is about the person behind it. -->
+<meta name="description" content="Thirty years moving data between systems, eight of them at Thomson Reuters Elite. The person who built Cygenix — and who can run your migration with you.">
+<meta property="og:title" content="About Curtis Morris – Cygenix">
+<meta property="og:description" content="Thirty years moving data between systems, eight of them at Thomson Reuters Elite. The person who built Cygenix — and who can run your migration with you.">
 <meta property="og:url" content="https://cygenix.co.uk/about">
 <meta property="og:site_name" content="Cygenix">
-<meta property="og:type" content="website">
+<meta property="og:type" content="profile">
 <!-- TODO: when a 1200x630 OG image exists at /og-image.png, restore
      <meta property="og:image"> and set this back to summary_large_image. -->
 <meta name="twitter:card" content="summary">
@@ -181,6 +184,71 @@ h1 em{font-style:italic;color:var(--accent)}
      high-contrast choice. Without it here, a setting turned on elsewhere in
      the product silently disappears on this page. -->
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
+<link rel="canonical" href="https://cygenix.co.uk/about">
+<!-- The consultant-led half of the business, stated in its own right rather
+     than left to be inferred from prose beside a SaaS product. The @id
+     references resolve against the Organization on the homepage. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ProfessionalService",
+  "name": "Cygenix — database migration consultancy",
+  "url": "https://cygenix.co.uk/about",
+  "parentOrganization": {
+    "@id": "https://cygenix.co.uk/#organization"
+  },
+  "description": "Consultant-led SQL database migration delivery, beginning with a free schema assessment, then a fixed scope and delivery date. Migrations run by Curtis Morris using the Cygenix platform.",
+  "areaServed": {
+    "@type": "Country",
+    "name": "United Kingdom"
+  },
+  "provider": {
+    "@type": "Person",
+    "@id": "https://cygenix.co.uk/about#curtis",
+    "name": "Curtis Morris",
+    "jobTitle": "Founder and migration consultant",
+    "email": "curtis.morris@cygenix.co.uk",
+    "sameAs": "https://www.linkedin.com/in/curtis-morris-957819b6/",
+    "knowsAbout": [
+      "SQL Server migration",
+      "Azure SQL Database migration",
+      "PostgreSQL migration",
+      "Legal practice management data conversion",
+      "Thomson Reuters Elite 3E data conversion",
+      "Database schema mapping and validation"
+    ]
+  },
+  "hasOfferCatalog": {
+    "@type": "OfferCatalog",
+    "name": "Engagements",
+    "itemListElement": [
+      {
+        "@type": "Offer",
+        "itemOffered": {
+          "@type": "Service",
+          "name": "Free schema assessment"
+        },
+        "price": "0",
+        "priceCurrency": "GBP"
+      },
+      {
+        "@type": "Offer",
+        "itemOffered": {
+          "@type": "Service",
+          "name": "Fixed-scope migration delivery"
+        }
+      },
+      {
+        "@type": "Offer",
+        "itemOffered": {
+          "@type": "Service",
+          "name": "Supervised migration alongside your team"
+        }
+      }
+    ]
+  }
+}
+</script>
 </head>
 <body>
 

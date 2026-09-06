@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Served from the root of the Netlify publish directory (public/).
+
+  Every <loc> is the page's CLEAN address, which is the only address the site
+  serves: /pricing, not /pricing.html (see scripts/build-routes.js, which
+  generates public/_redirects, and tests/clean-urls.test.js, which holds it
+  there). A sitemap listing the .html form would advertise the address the
+  site permanently redirects away from.
+
+  Marketing and legal pages only. The console is excluded here and in
+  robots.txt — it is behind auth-gate.js and has nothing to offer an index.
+
+  Update <lastmod> when a page meaningfully changes; Google treats it as a
+  hint, not a promise. Add a <url> block each time a guide is published.
+  tests/seo.test.js checks that every address here resolves to a real page.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <url>
+    <loc>https://cygenix.co.uk/</loc>
+    <lastmod>2026-09-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+
+  <url>
+    <loc>https://cygenix.co.uk/pricing</loc>
+    <lastmod>2026-09-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <url>
+    <loc>https://cygenix.co.uk/about</loc>
+    <lastmod>2026-09-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://cygenix.co.uk/help</loc>
+    <lastmod>2026-09-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <url>
+    <loc>https://cygenix.co.uk/register</loc>
+    <lastmod>2026-09-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <url>
+    <loc>https://cygenix.co.uk/terms</loc>
+    <lastmod>2026-09-06</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.2</priority>
+  </url>
+
+  <url>
+    <loc>https://cygenix.co.uk/privacy</loc>
+    <lastmod>2026-09-06</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.2</priority>
+  </url>
+
+</urlset>

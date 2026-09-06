@@ -289,6 +289,103 @@ footer a:hover{text-decoration:underline}
      high-contrast choice. Without it here, a setting turned on elsewhere in
      the product silently disappears on this page. -->
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
+<link rel="canonical" href="https://cygenix.co.uk/pricing">
+<!-- Structured data. Inert JSON in a script tag the browser never executes;
+     it tells machines what this page states instead of leaving them to infer
+     it from prose. The ten answers below are GENERATED from the visible
+     accordion, and tests/seo.test.js re-derives them and fails on any drift:
+     markup that does not match what a visitor reads is a manual-action risk.
+     Google restricted FAQ rich results to government and health sites in
+     2023, so this puts no dropdowns in the search result. It is here because
+     it is what gets quoted when someone asks an assistant how Cygenix prices. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What counts as a \"row\"?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A row is a single source-table record processed by a migration job. We count rows once when read from your source database — re-validations, retries, and target-side writes are not double-counted. A 10M-row job means 10M source records, regardless of how complex the transformations are."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What happens if I exceed my tier's limits?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Jobs that exceed your tier's row cap are paused and you'll be prompted to either split the job into smaller batches or upgrade. No surprise overage charges — you stay in control of what you spend. If you regularly hit your limits, we'll proactively suggest the next tier."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does the 14-day free trial work?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Pick Starter or Pro, enter your card details to start, and you won't be charged for 14 days. Cancel anytime during the trial and you pay nothing. Your card is only charged on day 15 if you haven't cancelled. We'll email you on day 12 as a reminder."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I switch tiers later?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Upgrades take effect immediately and we prorate the difference for the current billing period. Downgrades take effect at the end of your current period. You can switch as often as you need — no contracts, no penalty."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What happens to my data if I cancel?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Cygenix never stores your production data — we move it from source to target and don't keep copies. What we retain is metadata: job logs, mapping configurations, and validation results. After cancellation, this metadata is held for 30 days (so you can reactivate seamlessly), then permanently deleted. You can also export everything as JSON before you cancel."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is my data ever sent outside the UK?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Cygenix runs in Azure UK South. Source and target connections are made directly from our UK infrastructure. Enterprise customers can additionally deploy into their own Azure subscription for full data sovereignty."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is this different from Boomi or MuleSoft?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Two ways. First, Cygenix is purpose-built for SQL database migration — not general iPaaS — so the workflow, validation, and AI mapping are tuned specifically for that job. Second, we charge a flat subscription, not per-document/per-message. A migration of 50 million rows costs the same on Pro as a migration of 1 million rows. With Boomi, that difference can be tens of thousands of pounds."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do you offer annual discounts?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — pay annually and save 20% on Starter, Pro, and Business plans. Toggle \"Annual\" at the top of the page to see annual pricing. Enterprise contracts are always annual and priced per engagement."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What payment methods do you accept?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "All major credit and debit cards via Stripe. Annual Business and Enterprise contracts can be invoiced with bank transfer (BACS / SEPA / SWIFT) on net-30 terms. VAT is added where applicable; UK VAT-registered customers can supply their VAT number to be charged net."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I get a custom plan?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — that's what Enterprise is for. If your needs sit between two tiers (e.g. you need Business-level concurrency but not the full row cap), get in touch and we'll work something out. We'd rather build a plan that fits than push you onto a tier you don't need."
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 

@@ -1,0 +1,21 @@
+# https://cygenix.co.uk/robots.txt
+# Served from the root of the Netlify publish directory (public/), alongside
+# index.html. Disallow is a PREFIX match, so /dashboard also covers
+# /dashboard.html and /login also covers /login.html — the OAuth callback
+# address that has to keep its extension.
+#
+# Only these two are excluded today. The rest of the console (object-mapping,
+# schema-explorer, sql-editor and the others) is still crawlable and, being
+# behind auth-gate.js, would index as a redirect to the sign-in page. Widening
+# this list is a judgement about which screens are worth indexing, so it is
+# left to be made deliberately rather than guessed at here.
+
+User-agent: *
+Allow: /
+
+# The application, not the marketing site — no value in the index,
+# and you don't want a login wall showing up as a search result.
+Disallow: /dashboard
+Disallow: /login
+
+Sitemap: https://cygenix.co.uk/sitemap.xml
