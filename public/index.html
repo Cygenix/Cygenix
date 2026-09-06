@@ -15,7 +15,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#000000">
-<meta name="description" content="Cygenix migrates SQL Server, Azure SQL and Postgres — AI column mapping, preflight forecasting, server-level objects, and governance that is enforced on the server rather than in the browser.">
+<!-- Kept under ~160 characters. The previous one ran to 191 and Google cut it
+     off mid-clause ("…rather than in the browser"), so the last thing a
+     searcher read was a fragment. -->
+<meta name="description" content="AI column mapping, a preflight that forecasts failures before anything runs, server-level objects that actually move, and a hash-chained audit trail. UK-hosted.">
 <meta property="og:title" content="Cygenix – AI-Powered SQL Database Migration Platform">
 <meta property="og:description" content="AI column mapping, preflight forecasting, server-level object migration, and governance enforced server-side.">
 <link rel="canonical" href="https://cygenix.co.uk/">
@@ -364,6 +367,88 @@ footer a:hover{text-decoration:underline}
   .cta-section{padding:5rem 1rem}
 }
 </style>
+<!-- Structured data. Inert JSON in a script tag the browser never executes.
+     It does not raise a ranking; what it does is state, unambiguously, that
+     this is a real UK company with a named person behind it, what the product
+     is, and what it costs — rather than leaving AI Overviews, ChatGPT,
+     Perplexity and Claude to infer all of it from the prose.
+     Every capability named below is ga or beta in the manifest
+     (public/cygenix-capabilities.js); tests/capabilities.test.js scans this
+     page's text and fails on a claim that has run ahead of the code. The
+     registered particulars match the footer, which is the legal statement. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": "https://cygenix.co.uk/#organization",
+  "name": "Cygenix",
+  "legalName": "Cygenix Ltd",
+  "url": "https://cygenix.co.uk/",
+  "email": "curtis.morris@cygenix.co.uk",
+  "description": "AI-assisted SQL database migration platform. Schema mapping, preflight failure forecasting, server-level object migration and a hash-chained audit trail.",
+  "foundingDate": "2025",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "97 New Haw Road",
+    "addressLocality": "Addlestone",
+    "addressRegion": "Surrey",
+    "postalCode": "KT15 2DA",
+    "addressCountry": "GB"
+  },
+  "identifier": {
+    "@type": "PropertyValue",
+    "name": "Companies House registration number",
+    "value": "16063342"
+  },
+  "founder": {
+    "@type": "Person",
+    "@id": "https://cygenix.co.uk/about#curtis",
+    "name": "Curtis Morris",
+    "jobTitle": "Founder",
+    "sameAs": "https://www.linkedin.com/in/curtis-morris-957819b6/"
+  },
+  "areaServed": "GB",
+  "contactPoint": {
+    "@type": "ContactPoint",
+    "contactType": "sales",
+    "email": "curtis.morris@cygenix.co.uk",
+    "availableLanguage": "English"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Cygenix",
+  "url": "https://cygenix.co.uk/",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Database migration",
+  "operatingSystem": "Web browser",
+  "publisher": {
+    "@id": "https://cygenix.co.uk/#organization"
+  },
+  "description": "Browser-based SQL database migration. AI column mapping with stated confidence, preflight rejection forecasting on sampled real data, server-level object migration including logins, SQL Agent jobs, SSIS projects and linked servers, role-based governance with change guardrails, and a hash-chained append-only audit trail.",
+  "featureList": [
+    "AI column mapping with confidence scoring",
+    "Preflight rejection forecasting on sampled production data",
+    "Schema explorer with inferred foreign keys",
+    "Server-level object migration",
+    "Ten-role permission matrix with two-person approval",
+    "Hash-chained tamper-evident audit trail",
+    "Pipelines, scheduling and checkpoint resume",
+    "Migration effort estimation and project planning"
+  ],
+  "offers": {
+    "@type": "AggregateOffer",
+    "priceCurrency": "GBP",
+    "lowPrice": "99",
+    "highPrice": "799",
+    "offerCount": "4",
+    "availability": "https://schema.org/InStock"
+  }
+}
+</script>
 </head>
 <body>
 <div class="brand-glow" aria-hidden="true"></div>

@@ -1,0 +1,27 @@
+# Cygenix
+
+> AI-assisted SQL database migration platform. Maps schemas, forecasts row-level
+> failures before a run, moves server-level objects (logins, SQL Agent jobs, SSIS
+> projects, linked servers), and records every gated action in a hash-chained
+> audit trail. Runs in the browser, connects directly to your databases, hosted
+> in UK South.
+
+Cygenix Ltd is a UK company (registered in England and Wales, no. 16063342).
+It is run by Curtis Morris, who spent thirty years in data migration, eight of
+them at Thomson Reuters Elite running conversions for law firms.
+
+Two ways to use it: self-service subscription from £99/month with a 14-day
+trial, or consultant-led delivery, which begins with a free schema assessment.
+
+## Sources and targets
+- Sources: SQL Server 2012+, Azure SQL Database, Azure SQL Managed Instance (beta), PostgreSQL, CSV/Excel/delimited files, Azure Blob Storage
+- Targets: SQL Server, Azure SQL Database, Azure SQL Managed Instance (beta), PostgreSQL
+
+## Pages
+- [Platform](https://cygenix.co.uk/): mapping, preflight, schema explorer, server objects, governance, automation, reporting
+- [Pricing](https://cygenix.co.uk/pricing): Starter £99, Pro £299, Business £799 per month, Enterprise custom. No per-row charges.
+- [About](https://cygenix.co.uk/about): Curtis Morris, founder, and how consultant-led engagements work
+- [Documentation](https://cygenix.co.uk/help): getting started, workflow, capability matrix
+
+## Contact
+- curtis.morris@cygenix.co.uk
