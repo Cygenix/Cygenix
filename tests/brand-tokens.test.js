@@ -153,10 +153,14 @@ check('the footer links Terms and Privacy, as every other page does',
 check('Contact goes somewhere real, so it still works with scripting off',
   /<a href="mailto:[^"]+"\s*\n?\s*onclick="openContact\(\)/.test(index)
   && !/<a href="#" onclick="openContact/.test(index));
-check('the registered particulars are present, with the unknown values marked TODO',
-  /Registered in England and Wales, company number/.test(index)
-  && /TODO: company number/.test(index) && /TODO: registered office/.test(index),
-  'inventing a company number would be a false statement about a legal entity');
+// The particulars were placeholders marked TODO until the company supplied
+// them. They are a statement about a legal entity, so this pins the exact
+// values as given rather than merely checking that something is there — a
+// stray edit to a company number is the kind of drift nobody notices.
+check('the registered particulars are present and are the values the company supplied',
+  /Registered in England and Wales, company number 16063342 · Cygenix Ltd, 97 New Haw Road Addlestone Surrey KT152DA/.test(index)
+  && !/TODO: company number|TODO: registered office/.test(index),
+  'the company number and registered office come from the Companies House record');
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);
