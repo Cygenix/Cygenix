@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#FFFFFF">
+<meta name="theme-color" content="#000000">
 <meta name="description" content="Cygenix pricing — predictable subscriptions for SQL database migration. No per-row penalties, no surprise overage. Starter, Pro, Business and Enterprise plans.">
 <meta property="og:title" content="Cygenix Pricing — Predictable SQL Migration Subscriptions">
 <meta property="og:description" content="Four tiers, transparent pricing, no per-document fees. Start free for 14 days.">
@@ -27,53 +27,92 @@
 .footer-link:hover{text-decoration:underline}
 .footer-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
-  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
-  --text:#1A1D21;--text2:#565B63;--text3:#363D49;--glow:rgba(74,91,214,0.10);
-  --green:#3F7D4E;--green-g:rgba(63,125,78,0.12);
-  --amber:#B26A00;--amber-g:rgba(178,106,0,0.12);
-  --red:#C0392B;--red-g:rgba(192,57,43,0.12);
-  --teal:#0F6E6C;--purple:#6B4E8E;}
-html{scroll-behavior:smooth}
-body{font-family:var(--serif);background:var(--bg);color:var(--text);overflow-x:hidden;-webkit-font-smoothing:antialiased}
-body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(74,91,214,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(74,91,214,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+/* ═══════════════════════════════════════════════════════════════════════════
+   Pricing — the landing page's theme, carried through.
 
-/* Nav — copied verbatim from index.html for visual consistency */
-nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:var(--bg2);border-bottom:0.5px solid var(--border)}
-.nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
-.nav-logo span{color:var(--accent)}
-/* Beta mark.
-   NOT a flex container: this wordmark is "Cyge<span>nix</span>", so the bare
-   text node and the span are two children — flex would make them two items and
-   put a gap through the middle of the word ("Cyge nix"). An inline-block with
-   a left margin leaves the wordmark as continuous text.
-   .nav-logo span already colours the second half of the word, so the badge
-   needs its own class and has to undo that colour. */
-.nav-logo .nav-beta{display:inline-block;margin-left:0.5rem;vertical-align:middle;
-  font-size:9.5px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;
+   This page was on the console's light Redwood palette while the landing
+   page it is reached from is black. Crossing from one to the other read as
+   leaving the site. It now sits on the same black ground, with the same
+   tokens, the same nav, the same two radial glows and masked grid behind
+   everything, and the same mesh behind its hero — the values below are
+   index.html's, copied rather than approximated, so the two pages stay one
+   surface. Only the page's own components (tier cards, the comparison
+   table, the FAQ) are its own.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  /* The ground. Black, and everything above it is a step out of black. */
+  --bg:#000000;--bg2:#0a0b0f;--bg3:#101219;--bg4:#171a22;
+  --border:rgba(255,255,255,0.09);--border2:rgba(255,255,255,0.16);
+  --text:#f2f4f8;--text2:rgba(255,255,255,0.62);--text3:rgba(255,255,255,0.40);
+  /* --accent, --accent2 and the type stacks come from cygenix-brand.css, which
+     is the one home for them. On black the brand indigo is too dark to carry
+     type, so --accent-ink is the working accent here; --accent stays the
+     brand's own value and is used for fills. */
+  --glow:rgba(74,91,214,0.10);
+  --accent-ink:#8ea0ff;--accent-ink2:#a9b6ff;
+  --green:#5fd08a;--green-g:rgba(95,208,138,0.12);
+  --amber:#e3a33d;--amber-g:rgba(227,163,61,0.12);
+  --red:#ef6f62;--red-g:rgba(239,111,98,0.12);
+  --teal:#3fb5b0;--purple:#a98fd6;
+  --ink:#12141c;--faint:#9aa0af;
+  --mark-a:#6d5df2;--mark-b:#4a7cf3;}
+html{scroll-behavior:smooth;background:var(--bg)}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;position:relative}
+h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:-0.01em}
+
+/* ── The brand atmosphere — the landing page's, drawn once behind the whole
+   page. Fixed, so it does not scroll with the content and never tiles. */
+.brand-glow{position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(760px 420px at 20% -10%,rgba(109,93,242,0.22),transparent 62%),
+             radial-gradient(620px 360px at 110% 110%,rgba(74,124,243,0.18),transparent 62%)}
+.brand-grid{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:0.65;
+  background-image:linear-gradient(rgba(255,255,255,0.05) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,0.05) 1px,transparent 1px);
+  background-size:52px 52px;
+  mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 72%);
+  -webkit-mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 72%)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ── Nav — the landing page's: transparent over the hero, then a black bar
+   with a hairline under it once the hero has scrolled away. */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;
+  justify-content:space-between;gap:1rem;padding:0.85rem clamp(1rem,4vw,2.5rem);
+  background:transparent;border-bottom:1px solid transparent;transition:background 0.25s,border-color 0.25s}
+nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px)}
+.nav-logo{display:flex;align-items:center;gap:0.55rem;text-decoration:none;color:var(--text);flex-shrink:0}
+.nav-logo b{font-size:1.05rem;font-weight:600;letter-spacing:-0.02em}
+.nav-beta{font-size:9.5px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;
   padding:2px 6px;border-radius:99px;line-height:1.5;color:var(--text2);
   border:1px solid var(--border);white-space:nowrap}
-.nav-links{display:flex;gap:2rem;align-items:center}
-.nav-links a{font-size:13px;color:var(--text2);text-decoration:none;transition:color 0.2s;cursor:pointer}
+.mark{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;
+  background:linear-gradient(140deg,var(--mark-a),var(--mark-b));
+  box-shadow:0 6px 18px -8px rgba(109,93,242,0.9)}
+.mark svg{width:20px;height:20px}
+.nav-links{display:flex;gap:1.35rem;align-items:center;font-size:13.5px}
+.nav-links a{color:var(--text2);text-decoration:none;transition:color 0.16s;white-space:nowrap;cursor:pointer}
 .nav-links a:hover,.nav-links a.active{color:var(--text)}
-.nav-cta{background:var(--accent);color:#fff;padding:0.45rem 1.1rem;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s}
-.nav-cta:hover{background:var(--accent2);color:#fff}
+.nav-right{display:flex;align-items:center;flex-shrink:0}
+.nav-cta{flex-shrink:0;font-size:13.5px;font-weight:500;text-decoration:none;color:var(--text);
+  padding:0.5rem 0.95rem;border:1px solid var(--border2);border-radius:var(--r);transition:all 0.16s}
+.nav-cta:hover{border-color:var(--accent-ink);color:var(--accent-ink)}
+@media (max-width:900px){.nav-links{display:none}}
 
 /* Region selector — sits to the LEFT of the Log in CTA in the nav.
    Closed state: flag + currency code, e.g. "🇬🇧 GBP". Click toggles a small
    dropdown of all three options. Persists choice in localStorage via
    cygenix-region.js. */
 .region-selector{position:relative;margin-right:0.6rem}
-.region-selector-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--text2);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.7rem;font-size:13px;cursor:pointer;font-family:var(--mono);letter-spacing:0.04em;transition:all 0.2s}
-.region-selector-btn:hover{color:var(--text);border-color:var(--text2)}
+.region-selector-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--text2);border:1px solid var(--border2);border-radius:var(--r);padding:0.45rem 0.7rem;font-size:13px;cursor:pointer;font-family:var(--mono);letter-spacing:0.04em;transition:all 0.16s}
+.region-selector-btn:hover{color:var(--accent-ink);border-color:var(--accent-ink)}
 .region-selector-btn .chev{font-size:10px;color:var(--text3);transition:transform 0.2s}
 .region-selector.open .region-selector-btn .chev{transform:rotate(180deg)}
-.region-selector-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:4px;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,0.4);display:none;z-index:200}
+.region-selector-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:4px;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,0.6);display:none;z-index:200}
 .region-selector.open .region-selector-menu{display:block}
 .region-selector-menu button{display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:none;color:var(--text);padding:0.55rem 0.7rem;border-radius:6px;font-family:var(--serif);font-size:13px;text-align:left;cursor:pointer;transition:background 0.15s}
 .region-selector-menu button:hover{background:var(--bg3)}
-.region-selector-menu button.active{background:var(--bg3);color:var(--accent)}
+.region-selector-menu button.active{background:var(--bg3);color:var(--accent-ink)}
 .region-selector-menu .flag{font-size:16px;line-height:1}
 .region-selector-menu .label{flex:1;font-family:var(--mono);font-size:12px;letter-spacing:0.04em}
 .region-selector-menu .region-label{color:var(--text3);font-size:11px;font-family:var(--mono);letter-spacing:0.04em}
@@ -81,126 +120,146 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
   .region-selector-btn{padding:0.35rem 0.55rem;font-size:11px}
 }
 
-/* Hero */
-.pricing-hero{padding:9rem 2rem 3rem;text-align:center;position:relative;z-index:1}
-.hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--glow);border:0.5px solid rgba(74,91,214,0.3);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:500;color:var(--accent);font-family:var(--mono);letter-spacing:0.05em;margin-bottom:1.5rem}
-.hero-badge::before{content:'◆';font-size:8px}
-.pricing-hero h1{font-size:clamp(2.4rem,5.5vw,4.2rem);font-weight:800;letter-spacing:-0.04em;line-height:1.05;margin-bottom:1.25rem;max-width:880px;margin-left:auto;margin-right:auto}
-.pricing-hero h1 .grad{color:var(--accent)}
-.pricing-hero-sub{font-size:clamp(1rem,1.5vw,1.15rem);color:var(--text2);max-width:640px;line-height:1.7;margin:0 auto 2rem}
+/* ── Hero — the landing page's hero, with the same mesh behind it.
+   .hero-stage is the full-width box the mesh fills; it adds no padding,
+   margin or height of its own, and clips the canvas so the mesh can never
+   widen the page. The layer is the stage's first child and paints under the
+   hero; see cygenix-mesh.js. */
+.hero-stage{position:relative;z-index:1;isolation:isolate;overflow:hidden}
+.hero-stage>.pricing-hero{position:relative;z-index:1}
+.cx-mesh-layer{position:absolute;inset:0;z-index:0;pointer-events:none;
+  mask-image:linear-gradient(to bottom,#000 0%,#000 70%,transparent 100%);
+  -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 70%,transparent 100%)}
+.cx-mesh-layer canvas{display:block;width:100%;height:100%}
+.pricing-hero{position:relative;z-index:1;text-align:center;padding:9rem clamp(1rem,5vw,2rem) 3rem;
+  max-width:1000px;margin:0 auto}
+.hero-badge{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:500;
+  letter-spacing:0.14em;text-transform:uppercase;color:var(--accent-ink);
+  border:1px solid rgba(142,160,255,0.28);border-radius:100px;padding:0.35rem 0.9rem;margin-bottom:1.75rem}
+.pricing-hero h1{font-size:clamp(2.4rem,6vw,4rem);font-weight:700;letter-spacing:-0.03em;line-height:1.06;
+  margin-bottom:1.4rem;max-width:880px;margin-left:auto;margin-right:auto}
+.pricing-hero h1 .grad{background:linear-gradient(100deg,var(--accent-ink),var(--accent-ink2) 55%,var(--mark-a));
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.pricing-hero-sub{font-size:clamp(15px,1.7vw,17.5px);color:var(--text2);line-height:1.65;max-width:720px;
+  margin:0 auto 2rem}
 
 /* Billing toggle */
-.billing-toggle{display:inline-flex;align-items:center;gap:0.4rem;background:var(--bg2);border:0.5px solid var(--border2);border-radius:100px;padding:4px;margin-bottom:0.75rem}
+.billing-toggle{display:inline-flex;align-items:center;gap:0.4rem;background:var(--bg2);border:1px solid var(--border2);border-radius:100px;padding:4px;margin-bottom:0.75rem}
 .billing-toggle button{background:transparent;border:none;color:var(--text2);font-family:var(--serif);font-size:13px;font-weight:500;padding:0.5rem 1.2rem;border-radius:100px;cursor:pointer;transition:all 0.2s}
-.billing-toggle button.active{background:var(--accent);color:#fff;box-shadow:0 0 20px rgba(74,91,214,0.25)}
+.billing-toggle button.active{background:var(--accent);color:#fff;box-shadow:0 0 20px rgba(74,91,214,0.35)}
 .billing-toggle button:not(.active):hover{color:var(--text)}
 .save-pill{font-size:10px;font-family:var(--mono);color:var(--green);background:var(--green-g);padding:2px 7px;border-radius:100px;margin-left:4px;vertical-align:middle;letter-spacing:0.05em}
 .toggle-hint{font-size:11px;font-family:var(--mono);color:var(--text3);letter-spacing:0.05em;margin-bottom:3rem}
 
-/* Pricing grid */
+/* Pricing grid — the cards are the page's own; on black they are lifted
+   off the ground the way the landing page's product mockups are. */
 .pricing-grid{max-width:1280px;margin:0 auto;padding:0 2rem 4rem;display:grid;grid-template-columns:repeat(4,1fr);gap:1.25rem;position:relative;z-index:1}
-.tier{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:1.75rem 1.5rem;display:flex;flex-direction:column;position:relative;transition:border-color 0.2s,transform 0.2s,box-shadow 0.2s;cursor:pointer}
-.tier:hover:not(.featured){border-color:rgba(74,91,214,0.45)}
-.tier.featured{border-color:var(--accent);box-shadow:0 0 0 0.5px var(--accent),0 20px 60px rgba(74,91,214,0.12)}
+.tier{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:1.75rem 1.5rem;display:flex;flex-direction:column;position:relative;transition:border-color 0.2s,transform 0.2s,box-shadow 0.2s;cursor:pointer}
+.tier:hover:not(.featured){border-color:rgba(142,160,255,0.45)}
+.tier.featured{border-color:var(--accent-ink);box-shadow:0 0 0 1px rgba(142,160,255,0.35),0 30px 70px -30px rgba(74,91,214,0.6)}
 .tier-badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:10px;font-family:var(--mono);font-weight:600;letter-spacing:0.08em;padding:3px 12px;border-radius:100px;white-space:nowrap;display:none}
 .tier.featured .tier-badge{display:block}
-.tier-name{font-size:13px;font-family:var(--mono);color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:500;margin-bottom:0.5rem}
+.tier-name{font-size:13px;font-family:var(--mono);color:var(--accent-ink);letter-spacing:0.1em;text-transform:uppercase;font-weight:500;margin-bottom:0.5rem}
 .tier-tagline{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:1.5rem;min-height:40px}
 .tier-price{display:flex;align-items:baseline;gap:0.3rem;margin-bottom:0.4rem}
-.tier-price .amount{font-size:2.6rem;font-weight:800;letter-spacing:-0.03em;line-height:1}
+.tier-price .amount{font-size:2.6rem;font-weight:700;letter-spacing:-0.03em;line-height:1}
 .tier-price .currency{font-size:1.5rem;font-weight:600;color:var(--text2);line-height:1}
 .tier-price .period{font-size:13px;color:var(--text3);font-family:var(--mono)}
 .tier-price-sub{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:1.5rem;min-height:16px}
 .tier-price.custom .amount{font-size:2rem}
-.tier-cta{display:block;text-align:center;padding:0.7rem 1rem;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.2s;width:100%;margin-bottom:1.5rem}
-.tier-cta.primary{background:var(--accent);color:#fff;box-shadow:0 0 20px rgba(74,91,214,0.25)}
-.tier-cta.primary:hover{background:var(--accent2);box-shadow:0 0 30px rgba(74,91,214,0.4);transform:translateY(-1px)}
-.tier-cta.secondary{background:transparent;color:var(--text);border:0.5px solid var(--border2)}
-.tier-cta.secondary:hover{border-color:var(--accent);color:var(--accent)}
+.tier-cta{display:block;text-align:center;padding:0.7rem 1rem;border-radius:var(--r);font-size:13px;font-weight:600;text-decoration:none;cursor:pointer;border:1px solid transparent;font-family:var(--serif);transition:all 0.2s;width:100%;margin-bottom:1.5rem}
+.tier-cta.primary{background:var(--accent);color:#fff;box-shadow:0 6px 16px -6px rgba(74,91,214,.6)}
+.tier-cta.primary:hover{background:var(--accent2);transform:translateY(-1px)}
+.tier-cta.secondary{background:transparent;color:var(--text);border-color:var(--border2)}
+.tier-cta.secondary:hover{border-color:var(--accent-ink);color:var(--accent-ink)}
 .tier-features{list-style:none;display:flex;flex-direction:column;gap:0.65rem;margin-bottom:1.25rem}
 .tier-features li{font-size:13px;color:var(--text2);line-height:1.5;padding-left:1.25rem;position:relative}
-.tier-features li::before{content:'✓';color:var(--accent);font-weight:600;position:absolute;left:0;top:0}
+.tier-features li::before{content:'✓';color:var(--accent-ink);font-weight:600;position:absolute;left:0;top:0}
 .tier-features li strong{color:var(--text);font-weight:600}
 
 /* Expandable technical details */
-.tech-toggle{background:transparent;border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.75rem;font-family:var(--mono);font-size:10px;color:var(--text3);cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;width:100%;transition:all 0.2s;margin-top:auto}
-.tech-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.tech-toggle{background:transparent;border:1px solid var(--border);border-radius:6px;padding:0.5rem 0.75rem;font-family:var(--mono);font-size:10px;color:var(--text3);cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;width:100%;transition:all 0.2s;margin-top:auto}
+.tech-toggle:hover{border-color:var(--accent-ink);color:var(--accent-ink)}
 .tech-toggle .chev{transition:transform 0.2s;font-size:12px}
 .tech-toggle.open .chev{transform:rotate(180deg)}
-.tech-details{display:none;margin-top:0.75rem;padding:0.85rem;background:var(--bg);border:0.5px solid var(--border);border-radius:6px;font-size:11.5px;line-height:1.65;color:var(--text2)}
+.tech-details{display:none;margin-top:0.75rem;padding:0.85rem;background:var(--bg3);border:1px solid var(--border);border-radius:6px;font-size:11.5px;line-height:1.65;color:var(--text2)}
 .tech-details.open{display:block;animation:fadeUp 0.3s ease both}
-.tech-details strong{color:var(--text);font-weight:600;font-family:var(--mono);font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;display:block;margin-bottom:0.25rem;color:var(--accent)}
+.tech-details strong{font-weight:600;font-family:var(--mono);font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;display:block;margin-bottom:0.25rem;color:var(--accent-ink)}
 .tech-details p{margin-bottom:0.6rem}
 .tech-details p:last-child{margin-bottom:0}
 
 /* Section spacing */
 .section{padding:5rem 2rem;position:relative;z-index:1}
 .container{max-width:1100px;margin:0 auto}
-.section-tag{font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem;text-align:center}
-.section-title{font-size:clamp(1.8rem,3.5vw,2.5rem);font-weight:800;letter-spacing:-0.03em;line-height:1.15;margin-bottom:1rem;text-align:center}
+.section-tag{font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent-ink);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem;text-align:center}
+.section-title{font-size:clamp(1.8rem,3.5vw,2.5rem);font-weight:700;letter-spacing:-0.03em;line-height:1.15;margin-bottom:1rem;text-align:center}
 .section-sub{font-size:14px;color:var(--text2);line-height:1.7;max-width:560px;margin:0 auto 3rem;text-align:center}
-.divider{height:0.5px;background:linear-gradient(90deg,transparent,var(--border2),transparent);margin:0 auto;max-width:800px}
+.divider{height:1px;background:linear-gradient(90deg,transparent,var(--border2),transparent);margin:0 auto;max-width:800px;position:relative;z-index:1}
 
 /* Comparison matrix */
-.compare-wrap{overflow-x:auto;border:0.5px solid var(--border2);border-radius:12px;background:var(--bg2)}
+.compare-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--bg2)}
 .compare{width:100%;border-collapse:collapse;min-width:780px}
-.compare th,.compare td{padding:0.85rem 1rem;text-align:left;font-size:13px;border-bottom:0.5px solid var(--border)}
-.compare thead th{background:var(--bg3);font-family:var(--mono);font-size:10.5px;color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:500;padding:1rem;text-align:center;border-bottom:0.5px solid var(--border2)}
+.compare th,.compare td{padding:0.85rem 1rem;text-align:left;font-size:13px;border-bottom:1px solid var(--border)}
+.compare thead th{background:var(--bg3);font-family:var(--mono);font-size:10.5px;color:var(--accent-ink);letter-spacing:0.1em;text-transform:uppercase;font-weight:500;padding:1rem;text-align:center;border-bottom:1px solid var(--border2)}
 .compare thead th:first-child{text-align:left}
 .compare tbody td{color:var(--text2);text-align:center}
 .compare tbody td:first-child{color:var(--text);text-align:left;font-weight:500}
 .compare tbody tr:last-child td{border-bottom:none}
-.compare .group-header td{background:var(--bg3);color:var(--accent);font-family:var(--mono);font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;padding:0.65rem 1rem;text-align:left}
+.compare .group-header td{background:var(--bg3);color:var(--accent-ink);font-family:var(--mono);font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;padding:0.65rem 1rem;text-align:left}
 .compare .check{color:var(--green);font-weight:600}
 .compare .dash{color:var(--text3)}
 .compare-note{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:1rem;text-align:center;letter-spacing:0.03em}
 
 /* FAQ */
 .faq-list{display:flex;flex-direction:column;gap:0.75rem;max-width:800px;margin:0 auto}
-.faq-item{background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;overflow:hidden;transition:border-color 0.2s}
-.faq-item:hover{border-color:rgba(74,91,214,0.25)}
+.faq-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color 0.2s}
+.faq-item:hover{border-color:rgba(142,160,255,0.35)}
 .faq-q{width:100%;background:transparent;border:none;color:var(--text);font-family:var(--serif);font-size:15px;font-weight:600;padding:1.1rem 1.25rem;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:1rem;letter-spacing:-0.01em}
-.faq-q:hover{color:var(--accent)}
-.faq-q .plus{font-family:var(--mono);font-weight:300;font-size:18px;color:var(--accent);transition:transform 0.2s;flex-shrink:0}
+.faq-q:hover{color:var(--accent-ink)}
+.faq-q .plus{font-family:var(--mono);font-weight:300;font-size:18px;color:var(--accent-ink);transition:transform 0.2s;flex-shrink:0}
 .faq-q.open .plus{transform:rotate(45deg)}
 .faq-a{display:none;padding:0 1.25rem 1.1rem;color:var(--text2);font-size:13.5px;line-height:1.7}
 .faq-a.open{display:block;animation:fadeUp 0.25s ease both}
 
-/* Bottom CTA */
+/* Bottom CTA — the landing page's buttons: 46px on the shared radius, the
+   primary carrying the accent glow the login card uses. */
 .bottom-cta{padding:6rem 2rem;text-align:center;position:relative;z-index:1}
-.cta-title{font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-0.03em;line-height:1.1;margin-bottom:1rem}
+.cta-title{font-size:clamp(2rem,4vw,3rem);font-weight:700;letter-spacing:-0.03em;line-height:1.1;margin-bottom:1rem}
 .cta-sub{font-size:15px;color:var(--text2);line-height:1.7;max-width:560px;margin:0 auto 2rem}
-.cta-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
-.btn-hero{padding:0.75rem 1.75rem;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;border:none;font-family:var(--serif);transition:all 0.2s}
-.btn-primary{background:var(--accent);color:#fff;box-shadow:0 0 30px rgba(74,91,214,0.3)}
-.btn-primary:hover{background:var(--accent2);box-shadow:0 0 40px rgba(74,91,214,0.5);transform:translateY(-1px)}
-.btn-secondary{background:transparent;color:var(--text);border:0.5px solid var(--border2)}
-.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+.cta-btns{display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap}
+.btn-hero{display:inline-flex;align-items:center;justify-content:center;gap:0.4rem;height:46px;
+  padding:0 1.4rem;border-radius:var(--r);font-size:14.5px;font-weight:500;text-decoration:none;cursor:pointer;
+  transition:transform 0.16s,box-shadow 0.16s,background 0.16s,border-color 0.16s;border:1px solid transparent;font-family:var(--serif)}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 6px 16px -6px rgba(74,91,214,.6)}
+.btn-primary:hover{background:var(--accent2);transform:translateY(-1px)}
+.btn-secondary{background:transparent;color:var(--text);border-color:var(--border2)}
+.btn-secondary:hover{border-color:var(--accent-ink);color:var(--accent-ink)}
 
 /* Trust strip */
-.trust-strip{padding:3rem 2rem;text-align:center;position:relative;z-index:1;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border)}
+.trust-strip{padding:3rem 2rem;text-align:center;position:relative;z-index:1;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
 .trust-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;max-width:1000px;margin:0 auto}
 .trust-item{display:flex;flex-direction:column;align-items:center;gap:0.5rem}
-.trust-icon{font-size:1.4rem;color:var(--accent)}
+.trust-icon{font-size:1.4rem;color:var(--accent-ink)}
 .trust-label{font-size:13px;font-weight:600;color:var(--text)}
 .trust-sub{font-size:11px;color:var(--text3);font-family:var(--mono);letter-spacing:0.03em}
 
 /* Footer */
-footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-size:12px;color:var(--text3);position:relative;z-index:1}
-footer a{color:var(--accent);text-decoration:none}
+footer{padding:2rem;text-align:center;border-top:1px solid var(--border);font-size:12px;color:var(--text3);position:relative;z-index:1}
+footer a{color:var(--accent-ink);text-decoration:none}
 footer a:hover{text-decoration:underline}
+.footer-link{color:var(--accent-ink)}
 
-/* Modal — copied pattern from index.html for consistency */
+/* Modal — the landing page's pattern */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;display:none;align-items:center;justify-content:center;padding:2rem}
 .modal-overlay.open{display:flex;animation:fadeIn 0.2s ease both}
-.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;max-width:520px;width:100%;padding:2.25rem;position:relative}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;max-width:520px;width:100%;padding:2.25rem;position:relative}
 .modal-close{position:absolute;top:1rem;right:1rem;background:transparent;border:none;color:var(--text2);font-size:1.5rem;cursor:pointer;width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:all 0.2s}
 .modal-close:hover{background:var(--bg4);color:var(--text)}
 .modal h3{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.5rem}
 .modal p{font-size:13.5px;color:var(--text2);line-height:1.7;margin-bottom:1.25rem}
-.modal-row{display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:8px;margin-bottom:0.5rem;font-size:13px}
+.modal-row{display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:0.5rem;font-size:13px}
 .modal-row strong{color:var(--text);font-weight:600;min-width:80px}
-.modal-row a{color:var(--accent);text-decoration:none}
+.modal-row a{color:var(--accent-ink);text-decoration:none}
 .modal-row a:hover{text-decoration:underline}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -212,13 +271,15 @@ footer a:hover{text-decoration:underline}
   .trust-grid{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:768px){
-  nav{padding:0 1.25rem}
-  nav .nav-links{display:none}
   .pricing-hero{padding:7rem 1.25rem 2rem}
   .pricing-grid{grid-template-columns:1fr;padding:0 1.25rem 3rem;gap:1rem}
   .section{padding:3.5rem 1.25rem}
   .bottom-cta{padding:4rem 1.25rem}
   .trust-grid{grid-template-columns:1fr;gap:1.5rem}
+}
+@media (max-width:640px){
+  .cta-btns{flex-direction:column;align-items:stretch}
+  .cta-btns .btn-hero{width:100%}
 }
 </style>
 <script src="/cygenix-region.js?v=f9955e4f0f" defer></script>
@@ -231,17 +292,21 @@ footer a:hover{text-decoration:underline}
 </head>
 <body>
 
+<div class="brand-glow" aria-hidden="true"></div>
+<div class="brand-grid" aria-hidden="true"></div>
+
 <nav>
-  <a href="/" class="nav-logo" aria-label="Cygenix home — the product is in beta">Cyge<span>nix</span><span class="nav-beta">Beta</span></a>
+  <a class="nav-logo" href="/" aria-label="Cygenix home — the product is in beta"><span class="mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span><b>Cygenix</b><span class="nav-beta">Beta</span></a>
   <div class="nav-links">
-    <a href="/#features">Features</a>
-    <a href="/#mapper">Mapping</a>
-    <a href="/#agentive">Agentive</a>
-    <a href="/#reporting">Reporting</a>
+    <a href="/#platform">Platform</a>
+    <a href="/#mapping">Mapping</a>
+    <a href="/#explorer">Explorer</a>
+    <a href="/#governance">Governance</a>
+    <a href="/#supports">What it supports</a>
     <a href="/pricing" class="active">Pricing</a>
-    <a href="#" onclick="openContactModal();return false">Contact us</a>
+    <a href="mailto:sales@cygenix.co.uk" onclick="openContactModal();return false">Contact</a>
   </div>
-  <div style="display:flex;align-items:center">
+  <div class="nav-right">
     <div class="region-selector" id="region-selector">
       <button type="button" class="region-selector-btn" id="region-selector-btn" aria-haspopup="true" aria-expanded="false">
         <span class="flag" id="region-current-flag">🇬🇧</span>
@@ -255,8 +320,14 @@ footer a:hover{text-decoration:underline}
 </nav>
 
 <!-- ===================== HERO ===================== -->
+<!-- .hero-stage is a full-width box that adds no height, padding or margin:
+     it exists so the mesh can span the viewport while .pricing-hero keeps its
+     1000px centred box. The mesh layer is the stage's first child and paints
+     under the hero; see cygenix-mesh.js. -->
+<div class="hero-stage">
+<div class="cx-mesh-layer" aria-hidden="true"><canvas id="cx-mesh"></canvas></div>
 <section class="pricing-hero">
-  <div class="hero-badge">PRICING</div>
+  <div class="hero-badge">Pricing</div>
   <h1>Predictable subscriptions.<br><span class="grad">No per-row penalty.</span></h1>
   <p class="pricing-hero-sub">
     Pick a tier, run as many migrations as you need within its limits. No metering on every record. No "message" charges. No surprise bills when you scale.
@@ -268,6 +339,7 @@ footer a:hover{text-decoration:underline}
   </div>
   <div class="toggle-hint">14-DAY FREE TRIAL · CANCEL ANYTIME · NO SETUP FEES</div>
 </section>
+</div>
 
 <!-- ===================== PRICING GRID ===================== -->
 <div class="pricing-grid">
@@ -917,5 +989,24 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeContactModal();
 });
 </script>
+<script>
+/* The bar is transparent while the hero is behind it and solid afterwards —
+   the landing page's behaviour. The threshold is the hero's own height, so
+   it flips at the boundary rather than at a guessed scroll offset. */
+(function(){
+  var nav = document.querySelector('nav'), hero = document.querySelector('.pricing-hero');
+  if (!nav || !hero) return;
+  function sync(){ nav.classList.toggle('solid', window.scrollY > hero.offsetHeight - 80); }
+  sync();
+  window.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
+})();
+</script>
+<!-- The mesh behind the hero — the landing page's engine and its mount,
+     shared rather than copied. The engine is deferred like every other
+     shared module; the mount waits for DOMContentLoaded and is a no-op
+     wherever #cx-mesh is absent. -->
+<script src="/cygenix-mesh.js?v=014c22dd1f" defer></script>
+<script src="/cygenix-hero-mesh.js?v=63a5abce93" defer></script>
 </body>
 </html>
