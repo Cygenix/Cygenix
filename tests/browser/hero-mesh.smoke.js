@@ -58,7 +58,7 @@ function countFrames() {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function open(browser, opts) {
+async function open(browser, opts, file) {
   const ctx = await browser.newContext(Object.assign({ viewport: { width: 1440, height: 900 } }, opts || {}));
   await ctx.addInitScript(countFrames);
   const requests = [];
@@ -76,7 +76,7 @@ async function open(browser, opts) {
       problems.push(m.type() + ': ' + m.text());
     }
   });
-  await page.goto('http://localhost:' + PORT + '/index.html', { waitUntil: 'load' });
+  await page.goto('http://localhost:' + PORT + '/' + (file || 'index.html'), { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.cygenixHeroMesh, null, { timeout: 15000 });
   return { ctx, page, problems, requests };
 }
@@ -236,6 +236,59 @@ async function open(browser, opts) {
       check('at 15% of the configured speed with parallax zeroed',
         Math.abs(rm.speed - 1.0 * 0.15) < 1e-9 && rm.parallax === 0, JSON.stringify(rm));
       check('no console errors there either', problems.length === 0, problems.join(' | '));
+      await ctx.close();
+    }
+
+    // ── The pricing page carries the theme and the motion ──────────────
+    {
+      const { ctx, page, problems, requests } = await open(browser, {}, 'pricing.html');
+      const p = await page.evaluate(() => {
+        const stage = document.querySelector('.hero-stage');
+        const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 10) / 10).join(','); };
+        const layer = document.querySelector('.cx-mesh-layer');
+        const shown = { hero: r('.pricing-hero'), h1: r('.pricing-hero h1'), toggle: r('.billing-toggle') };
+        layer.style.display = 'none';
+        const hidden = { hero: r('.pricing-hero'), h1: r('.pricing-hero h1'), toggle: r('.billing-toggle') };
+        layer.style.display = '';
+        const at = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return e ? (e.tagName + '.' + e.className) : null; };
+        return {
+          tree: stage ? Array.from(stage.children).map((e) => e.tagName + '.' + e.className) : null,
+          bg: getComputedStyle(document.body).backgroundColor,
+          h1: getComputedStyle(document.querySelector('.pricing-hero h1')).color,
+          grid: !!document.querySelector('.brand-grid') && getComputedStyle(document.querySelector('.brand-grid')).opacity,
+          mark: !!document.querySelector('nav .mark svg'),
+          navBg: getComputedStyle(document.querySelector('nav')).backgroundColor,
+          shift: JSON.stringify(shown) === JSON.stringify(hidden),
+          underH1: at('.pricing-hero h1'), underToggle: at('#bill-monthly'),
+          cfg: window.cygenixHeroMesh.config,
+          raf: window.__raf,
+        };
+      });
+      check('pricing: the mesh layer sits first in a stage, with the hero after it',
+        !!p.tree && p.tree.length === 2 && /cx-mesh-layer/.test(p.tree[0]) && /SECTION\.pricing-hero/.test(p.tree[1]), JSON.stringify(p.tree));
+      check('pricing: black ground, light type, the grid behind, the landing page\'s mark in a transparent nav',
+        p.bg === 'rgb(0, 0, 0)' && p.h1 === 'rgb(242, 244, 248)' && p.grid === '0.65' && p.mark && p.navBg === 'rgba(0, 0, 0, 0)', JSON.stringify(p));
+      check('pricing: the hero, headline and billing toggle sit exactly where they do without the layer', p.shift);
+      // The headline's centre lands on its gradient span, which is still the headline.
+      check('pricing: the copy and the controls are in front of the mesh',
+        /^(H1|SPAN\.grad)/.test(p.underH1) && /BUTTON/.test(p.underToggle), p.underH1 + ' / ' + p.underToggle);
+      check('pricing: the same tuning and the same token colours as the landing page',
+        p.cfg.speed === 1.0 && p.cfg.reach === 200 && p.cfg.line === '#8ea0ff' && p.cfg.node === '#a9b6ff', JSON.stringify(p.cfg));
+      await wait(400);
+      const raf2 = await page.evaluate(() => window.__raf);
+      check('pricing: the loop is running', raf2 > p.raf && p.raf > 0, p.raf + ' → ' + raf2);
+      const clickable = [];
+      for (const sel of ['.tier.featured .tier-cta', '#bill-annual', '.nav-cta', '#region-selector-btn']) {
+        try { await page.click(sel, { trial: true, timeout: 3000 }); } catch (e) { clickable.push(sel); }
+      }
+      check('pricing: the tier button, billing toggle, region selector and Log in are all clickable', clickable.length === 0, clickable.join(', '));
+      await page.evaluate(() => window.scrollTo({ top: 1200, behavior: 'instant' }));
+      await wait(300);
+      check('pricing: the nav solidifies once the hero has scrolled away',
+        (await page.evaluate(() => document.querySelector('nav').classList.contains('solid'))));
+      check('pricing: no console errors', problems.length === 0, problems.join(' | '));
+      const ext = requests.filter((u) => !/^http:\/\/localhost:8399\//.test(u) && !/fonts\.g(oogleapis|static)\.com/.test(u));
+      check('pricing: nothing fetched from anywhere else', ext.length === 0, ext.join(', '));
       await ctx.close();
     }
   } finally {

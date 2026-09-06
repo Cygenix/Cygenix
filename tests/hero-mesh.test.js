@@ -32,26 +32,67 @@ const index = read('public', 'index.html');
 check('the engine exists and exposes CygenixMesh.mount and its presets',
   /window\.CygenixMesh = \{ mount: mount, presets: PRESETS \}/.test(js)
   && /subtle:\s*\{ density: 0\.55/.test(js) && /balanced:\s*\{ density: 1\.00/.test(js) && /cinematic:\s*\{ density: 1\.60/.test(js));
-check('index.html loads it deferred and mounts it after DOMContentLoaded, guarded',
-  /<script src="\/cygenix-mesh\.js(\?v=[a-f0-9]+)?" defer><\/script>/.test(index)
-  && /document\.addEventListener\('DOMContentLoaded', function \(\) \{\s*var el = document\.getElementById\('cx-mesh'\);\s*if \(!el \|\| !window\.CygenixMesh\) return;/.test(index));
-check('and no other page loads it — the hero only exists on the landing page',
-  fs.readdirSync(P('public')).filter((f) => f.endsWith('.html') && f !== 'index.html')
-    .every((f) => !/cygenix-mesh\.js/.test(read('public', f))));
+// The mount is one shared file, cygenix-hero-mesh.js, loaded after the engine
+// by every page with a hero: the landing page and, since it took the landing
+// page's theme, the pricing page. One tuning block, not two that drift.
+const mount = read('public', 'cygenix-hero-mesh.js');
+const pricing = read('public', 'pricing.html');
+const MESH_PAGES = ['index.html', 'pricing.html'];
+const ENGINE = /<script src="\/cygenix-mesh\.js(\?v=[a-f0-9]+)?" defer><\/script>/;
+const MOUNT = /<script src="\/cygenix-hero-mesh\.js(\?v=[a-f0-9]+)?" defer><\/script>/;
+check('the mount waits for DOMContentLoaded and is a no-op without a #cx-mesh',
+  /document\.addEventListener\('DOMContentLoaded', function \(\) \{\s*var el = document\.getElementById\('cx-mesh'\);\s*if \(!el \|\| !window\.CygenixMesh\) return;/.test(mount));
+MESH_PAGES.forEach((f) => {
+  const src = read('public', f);
+  check(f + ' loads the engine deferred, then the shared mount',
+    ENGINE.test(src) && MOUNT.test(src) && src.search(ENGINE) < src.search(MOUNT));
+  check(f + ' does not carry its own copy of the mount',
+    !/CygenixMesh\.mount\(/.test(src));
+});
+check('and no other page loads either — only pages with a hero',
+  fs.readdirSync(P('public')).filter((f) => f.endsWith('.html') && !MESH_PAGES.includes(f))
+    .every((f) => !/cygenix-mesh\.js|cygenix-hero-mesh\.js/.test(read('public', f))));
 check('the mount uses the live-tuned values',
-  /density:\s*1\.45/.test(index) && /speed:\s*1\.0\b/.test(index) && /reach:\s*200/.test(index)
-  && /glow:\s*0\.80/.test(index) && /parallax:\s*0\.55/.test(index) && /lineAlpha:\s*0\.50/.test(index) && /nodeAlpha:\s*0\.95/.test(index));
+  /density:\s*1\.45/.test(mount) && /speed:\s*1\.0\b/.test(mount) && /reach:\s*200/.test(mount)
+  && /glow:\s*0\.80/.test(mount) && /parallax:\s*0\.55/.test(mount) && /lineAlpha:\s*0\.50/.test(mount) && /nodeAlpha:\s*0\.95/.test(mount));
 // The connectors used to take the engine's default, the brand accent, which
 // is darker than the nodes and read as texture. They now take --accent-ink.
 // All three colours are read from the stylesheet's tokens, with the same
-// house values as fallbacks, so the page holds no colour the palette test
-// does not already sanction.
+// house values as fallbacks, so no page holds a colour the palette test does
+// not already sanction — and both pages declare the tokens it reads.
 check('and the page\'s own tokens for colour: nodes --accent-ink2, connectors --accent-ink, bloom --accent',
-  /node:\s*tok\('--accent-ink2', '#a9b6ff'\)/.test(index)
-  && /line:\s*tok\('--accent-ink', '#8ea0ff'\)/.test(index)
-  && /glowColor:\s*tok\('--accent', '#4a5bd6'\)/.test(index)
-  && /--accent-ink:#8ea0ff/.test(index) && /--accent-ink2:#a9b6ff/.test(index)
+  /node:\s*tok\('--accent-ink2', '#a9b6ff'\)/.test(mount)
+  && /line:\s*tok\('--accent-ink', '#8ea0ff'\)/.test(mount)
+  && /glowColor:\s*tok\('--accent', '#4a5bd6'\)/.test(mount)
+  && MESH_PAGES.every((f) => /--accent-ink:#8ea0ff/.test(read('public', f)) && /--accent-ink2:#a9b6ff/.test(read('public', f)))
   && /--accent:\s*#4A5BD6/i.test(read('public', 'cygenix-brand.css')));
+
+/* ── 1b. The pricing page carries the landing page's theme ──────────────── */
+
+check('pricing sits on the same black ground with the same tokens',
+  /--bg:#000000;--bg2:#0a0b0f;--bg3:#101219;--bg4:#171a22/.test(pricing)
+  && /--text:#f2f4f8/.test(pricing) && /<meta name="theme-color" content="#000000">/.test(pricing)
+  && !/--bg:#F3F4F5/i.test(pricing));
+check('with the same two glows and masked grid behind everything',
+  /radial-gradient\(760px 420px at 20% -10%/.test(pricing) && /radial-gradient\(620px 360px at 110% 110%/.test(pricing)
+  && /background-size:52px 52px/.test(pricing) && /mask-image:radial-gradient\(circle at 30% 40%/.test(pricing)
+  && /<div class="brand-glow" aria-hidden="true"><\/div>\s*<div class="brand-grid" aria-hidden="true"><\/div>/.test(pricing));
+check('the same nav: the three-chevron mark, transparent over the hero and solid past it',
+  /M9 10\.5 14 16 9 21\.5/.test(pricing) && /nav\{[^}]*background:transparent/.test(pricing)
+  && /nav\.solid\{background:rgba\(0,0,0/.test(pricing) && /nav\.classList\.toggle\('solid'/.test(pricing)
+  && /querySelector\('\.pricing-hero'\)/.test(pricing));
+check('and the same mesh behind its hero, in a stage that adds no space',
+  /<div class="hero-stage">\s*<div class="cx-mesh-layer" aria-hidden="true"><canvas id="cx-mesh"><\/canvas><\/div>\s*<section class="pricing-hero">/.test(pricing)
+  && /\.hero-stage\{position:relative;z-index:1;isolation:isolate;overflow:hidden\}/.test(pricing)
+  && /\.hero-stage>\.pricing-hero\{position:relative;z-index:1\}/.test(pricing)
+  && /\.cx-mesh-layer\{position:absolute;inset:0;z-index:0;pointer-events:none;/.test(pricing));
+check('its nav links point at sections the landing page actually has',
+  (pricing.match(/href="\/#([a-z-]+)"/g) || []).map((h) => h.slice(8, -1))
+    .every((id) => new RegExp('id="' + id + '"').test(index)),
+  (pricing.match(/href="\/#([a-z-]+)"/g) || []).join(' '));
+check('the checkout, region and modal logic is untouched',
+  /async function startCheckout\(tier\)/.test(pricing) && /function setupRegionSelector\(\)/.test(pricing)
+  && /function openContactModal\(tier\)/.test(pricing) && /const TIER_PRICES = \{/.test(pricing));
 
 // The layout: a full-width stage wrapping the hero, the layer first in it.
 check('the hero is wrapped in a stage whose first child is the mesh layer, then the hero itself',
@@ -75,6 +116,8 @@ check('the fixed glow and grid underneath are exactly as they were',
 check('the data-stream layer it replaced is gone, everywhere',
   !fs.existsSync(P('public', 'brand-stream.js')) && !/brand-stream/.test(index)
   && !/brand-stream/.test(read('package.json')));
+check('the landing page\'s calls to action read Sign Up',
+  (index.match(/class="btn-hero btn-primary">Sign Up →<\/a>/g) || []).length === 2 && !/Start free trial/.test(index));
 
 /* ── 2. The budget ──────────────────────────────────────────────────────── */
 

@@ -403,7 +403,7 @@ footer a:hover{text-decoration:underline}
     moves the server-level objects most tools leave behind, and records every gated action in a
     hash-chained audit trail. It runs in the browser and connects to your databases directly.</p>
   <div class="hero-btns">
-    <a href="/pricing" class="btn-hero btn-primary">Start free trial →</a>
+    <a href="/pricing" class="btn-hero btn-primary">Sign Up →</a>
     <a href="#supports" class="btn-hero btn-secondary">See exactly what it supports</a>
   </div>
   <div class="hero-note">Every capability on this page is checked against the product's own
@@ -1321,7 +1321,7 @@ footer a:hover{text-decoration:underline}
     while they are cheap, server-level objects that actually travel, and a record of every gated
     action that stands up to being read back.</div>
   <div class="cta-btns">
-    <a href="/pricing" class="btn-hero btn-primary">Start free trial →</a>
+    <a href="/pricing" class="btn-hero btn-primary">Sign Up →</a>
     <a href="/help" class="btn-hero btn-secondary">Read the documentation</a>
   </div>
 </section>
@@ -1457,40 +1457,10 @@ document.addEventListener('keydown', function(e){
 <script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
-<!-- The mesh behind the hero. The engine is deferred like every other
-     shared module; deferred scripts run before DOMContentLoaded, so the
-     mount below waits for that and is a no-op wherever #cx-mesh is absent.
-     The values are tuned towards a slow, dense field with long connections
-     (see the header of cygenix-mesh.js), written out so they can be tuned
-     one at a time; the colours are the page's own tokens (--accent-ink2 for
-     nodes, --accent for lines and the bloom). -->
+<!-- The mesh behind the hero: the engine, then the mount that the pricing
+     page shares (one tuning block, not two). Both deferred; the mount waits
+     for DOMContentLoaded and is a no-op wherever #cx-mesh is absent. -->
 <script src="/cygenix-mesh.js?v=014c22dd1f" defer></script>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  var el = document.getElementById('cx-mesh');
-  if (!el || !window.CygenixMesh) return;
-  // The colours are the page's own tokens, read from the stylesheet so
-  // they track it: nodes --accent-ink2, connectors --accent-ink (the brand
-  // accent is darker than the nodes and made the lines read as background
-  // texture rather than structure), bloom --accent. The fallbacks are the
-  // same three house values.
-  var tok = function (name, fallback) {
-    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return /^#[0-9a-f]{3,6}$/i.test(v) ? v : fallback;
-  };
-  window.cygenixHeroMesh = CygenixMesh.mount(el, {
-    density:   1.45,   // denser field — more polygon closure
-    speed:     1.0,    // tuned live: below ~0.5 it did not read as motion
-    reach:     200,    // longer connections so triangles actually form
-    glow:      0.80,   // blue bloom behind the headline
-    parallax:  0.55,   // layer shift against the pointer and the camera sweep
-    lineAlpha: 0.50,   // link opacity, tuned live with the brighter connector colour
-    nodeAlpha: 0.95,
-    node:      tok('--accent-ink2', '#a9b6ff'),
-    line:      tok('--accent-ink', '#8ea0ff'),
-    glowColor: tok('--accent', '#4a5bd6')
-  });
-});
-</script>
+<script src="/cygenix-hero-mesh.js?v=63a5abce93" defer></script>
 </body>
 </html>
