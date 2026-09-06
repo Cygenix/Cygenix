@@ -1460,21 +1460,23 @@ document.addEventListener('keydown', function(e){
 <!-- The mesh behind the hero. The engine is deferred like every other
      shared module; deferred scripts run before DOMContentLoaded, so the
      mount below waits for that and is a no-op wherever #cx-mesh is absent.
-     The values are the "balanced" preset, written out so they can be tuned
+     The values are tuned towards a slow, dense field with long connections
+     (see the header of cygenix-mesh.js), written out so they can be tuned
      one at a time; the colours are the page's own tokens (--accent-ink2 for
      nodes, --accent for lines and the bloom). -->
-<script src="/cygenix-mesh.js?v=9fa41425d0" defer></script>
+<script src="/cygenix-mesh.js?v=76cb517724" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   var el = document.getElementById('cx-mesh');
   if (!el || !window.CygenixMesh) return;
   window.cygenixHeroMesh = CygenixMesh.mount(el, {
-    density:   1.00,   // nodes per screenful
-    speed:     0.75,   // drift rate
-    reach:     165,    // px at which two nodes link
-    glow:      0.65,   // blue bloom behind the headline
-    parallax:  0.55,   // layer shift against the pointer
-    lineAlpha: 0.30,   // link opacity — kept low, the headline has to win
+    density:   1.45,   // denser field — more polygon closure
+    speed:     0.40,   // slower than 'balanced': the reference drifts, it doesn't swarm
+    reach:     200,    // longer connections so triangles actually form
+    glow:      0.80,   // blue bloom behind the headline
+    parallax:  0.55,   // layer shift against the pointer and the camera sweep
+    lineAlpha: 0.34,   // link opacity — kept low, the headline has to win
+    nodeAlpha: 0.95,
     node:      '#a9b6ff',
     line:      '#4a5bd6',
     glowColor: '#4a5bd6'

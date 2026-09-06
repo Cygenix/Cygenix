@@ -34,21 +34,44 @@
 
    WHAT IT MUST NEVER DO
    Change the hero's height or spacing, cross in front of the copy, eat a
-   click, keep drawing when nobody can see it, or start a loop for a reader
-   who asked for reduced motion. So: the layer is pointer-events:none and
-   under the copy; an IntersectionObserver stops the loop when the hero is
-   scrolled out of view and visibilitychange stops it on a hidden tab;
-   prefers-reduced-motion draws one frame and never schedules a
-   requestAnimationFrame; devicePixelRatio is capped at 2. The mount call in
+   click, or keep drawing when nobody can see it. So: the layer is
+   pointer-events:none and under the copy; an IntersectionObserver stops the
+   loop when the hero is scrolled out of view and visibilitychange stops it
+   on a hidden tab; devicePixelRatio is capped at 2. The mount call in
    index.html is guarded so it is a no-op wherever #cx-mesh is absent.
 
-   INTENSITY
-   The mount call uses the "balanced" preset's values, written out so they
-   can be tuned one at a time. PRESETS below holds subtle and cinematic too;
-   pass { preset: 'subtle' } to update() or mount() to switch wholesale.
+   REDUCED MOTION: DEGRADED, NOT FROZEN
+   The engine as supplied drew one frame under prefers-reduced-motion and
+   never scheduled a requestAnimationFrame. On a machine with Reduce Motion
+   switched on that produced a different still on every refresh and looked,
+   reasonably, like a broken animation. It now degrades instead: the node
+   drift runs at 15% of its speed and parallax is zeroed, which stops both
+   the pointer response and the camera sweep (both are scaled by it). A
+   reader who asked for less motion gets a barely-perceptible drift; nobody
+   gets a frozen field. That is a deliberate trade against the strictest
+   reading of the preference, and it is recorded here so nobody "fixes" it
+   back without knowing why.
 
-   The engine below is as it was supplied, verbatim; this header is the only
-   addition. Keep it that way so a later drop-in replacement is a clean diff.
+   MOTION WITHOUT A POINTER
+   A time-driven camera offset (cam, set in frame()) is added to the pointer
+   offset in draw(), so the whole field sweeps slowly even when the mouse
+   never moves. Before that, a still mouse saw only the individual nodes.
+
+   INTENSITY
+   The mount call in index.html is tuned towards a slow, dense field with
+   long connections, so the triangles close up: density 1.45, speed 0.40,
+   reach 200. PRESETS below still holds subtle, balanced and cinematic;
+   pass { preset: 'subtle' } to update() or mount() to switch wholesale.
+   window.cygenixHeroMesh keeps the mount's handle, so the console can tune
+   it live: cygenixHeroMesh.update({ speed: 0.3, reach: 220 }).
+
+   DEPARTURES FROM THE ENGINE AS SUPPLIED
+   Three, all marked in place: the `reduced` guard removed from start() and
+   the mount sequence degrading instead of freezing; the camera sweep; and
+   the order of that reduced-motion branch relative to resize(), which the
+   brief had the wrong way round (velocities are computed from cfg.speed
+   when the nodes are built, so the speed must be lowered first). Nothing
+   else differs, so a later drop-in replacement is a small diff.
    ========================================================================== */
 /* Cygenix ambient mesh — animated polygon network background.
    window.CygenixMesh.mount(canvas, opts) -> { update(opts), destroy() } */
@@ -87,6 +110,10 @@
     var layers = [];
     var pointer = { x: 0, y: 0, tx: 0, ty: 0 };
     var raf = 0, last = 0, running = false, visible = true;
+    // A slow, time-driven camera sweep, added to the pointer offset in draw().
+    // Without it the only whole-field motion came from the pointer, so a still
+    // mouse saw nothing but the individual nodes drifting.
+    var cam = { x: 0, y: 0 };
     var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     function area() { return W * H; }
@@ -223,28 +250,36 @@
         ctx.fillRect(0, 0, W, H);
       }
 
+      // Pointer and camera combined once; both are scaled by cfg.parallax, so
+      // parallax = 0 (the reduced-motion path) kills the sweep as well as the
+      // pointer response and leaves only the slowed node drift.
+      var px = pointer.x + cam.x, py = pointer.y + cam.y;
+
       var l0 = layers[0];
       fctx.clearRect(0, 0, W, H);
-      renderLayer(fctx, l0, pointer.x * cfg.parallax * 10, pointer.y * cfg.parallax * 8, nodeRGB, lineRGB);
+      renderLayer(fctx, l0, px * cfg.parallax * 10, py * cfg.parallax * 8, nodeRGB, lineRGB);
       var prev = ctx.filter;
       ctx.filter = 'blur(1.6px)';
       ctx.drawImage(far, 0, 0, W, H);
       ctx.filter = prev || 'none';
 
-      renderLayer(ctx, layers[1], pointer.x * cfg.parallax * 20, pointer.y * cfg.parallax * 15, nodeRGB, lineRGB);
-      renderLayer(ctx, layers[2], pointer.x * cfg.parallax * 34, pointer.y * cfg.parallax * 26, nodeRGB, lineRGB);
+      renderLayer(ctx, layers[1], px * cfg.parallax * 20, py * cfg.parallax * 15, nodeRGB, lineRGB);
+      renderLayer(ctx, layers[2], px * cfg.parallax * 34, py * cfg.parallax * 26, nodeRGB, lineRGB);
     }
 
     function frame(now) {
       raf = requestAnimationFrame(frame);
       var dt = Math.min(3, (now - last) / 16.6667 || 1);
       last = now;
+      var t = now * 0.00004;                    // slower = smaller number
+      cam.x = Math.cos(t) * 0.6;
+      cam.y = Math.sin(t * 0.8) * 0.4;          // 0.8 keeps x and y out of phase
       for (var i = 0; i < layers.length; i++) step(layers[i].pts, dt);
       draw(dt);
     }
 
     function start() {
-      if (running || reduced || cfg.paused || !visible) return;
+      if (running || cfg.paused || !visible) return;
       running = true; last = performance.now();
       raf = requestAnimationFrame(frame);
     }
@@ -276,8 +311,15 @@
     window.addEventListener('pointermove', onPointer, { passive: true });
     host.addEventListener('pointerleave', onLeave);
 
+    // Reduced motion degrades rather than freezes: the field drifts at a
+    // fraction of its speed and neither the pointer nor the camera moves it.
+    // This runs BEFORE resize(), because resize() builds the nodes and each
+    // node's velocity is computed from cfg.speed at build time — slowing the
+    // speed afterwards would leave the first field moving at full speed until
+    // the next rebuild.
+    if (reduced) { cfg.speed *= 0.15; cfg.parallax = 0; }
     resize();
-    if (reduced) draw(1); else start();
+    start();
 
     return {
       update: function (next) {

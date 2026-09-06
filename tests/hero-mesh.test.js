@@ -38,9 +38,9 @@ check('index.html loads it deferred and mounts it after DOMContentLoaded, guarde
 check('and no other page loads it — the hero only exists on the landing page',
   fs.readdirSync(P('public')).filter((f) => f.endsWith('.html') && f !== 'index.html')
     .every((f) => !/cygenix-mesh\.js/.test(read('public', f))));
-check('the mount uses the balanced values with the page\'s own colours',
-  /density:\s*1\.00/.test(index) && /speed:\s*0\.75/.test(index) && /reach:\s*165/.test(index)
-  && /glow:\s*0\.65/.test(index) && /parallax:\s*0\.55/.test(index) && /lineAlpha:\s*0\.30/.test(index)
+check('the mount uses the slow, dense, long-reach tuning with the page\'s own colours',
+  /density:\s*1\.45/.test(index) && /speed:\s*0\.40/.test(index) && /reach:\s*200/.test(index)
+  && /glow:\s*0\.80/.test(index) && /parallax:\s*0\.55/.test(index) && /lineAlpha:\s*0\.34/.test(index) && /nodeAlpha:\s*0\.95/.test(index)
   && /node:\s*'#a9b6ff'/.test(index) && /line:\s*'#4a5bd6'/.test(index) && /glowColor:\s*'#4a5bd6'/.test(index)
   && /--accent-ink2:#a9b6ff/.test(index) && /--accent:\s*#4A5BD6/i.test(read('public', 'cygenix-brand.css')));
 
@@ -82,9 +82,23 @@ check('it stops out of view and on a hidden tab',
   /new IntersectionObserver\(/.test(js) && /inView = es\[0\]\.isIntersecting/.test(js)
   && /document\.addEventListener\('visibilitychange', onVis\)/.test(js));
 check('the pointer listener is passive', /addEventListener\('pointermove', onPointer, \{ passive: true \}\)/.test(js));
-check('the engine below the header is the one supplied, verbatim',
+check('the engine below the header is the one supplied, with its three departures marked',
   js.indexOf('/* Cygenix ambient mesh — animated polygon network background.') > 0
-  && /^\(function \(\) \{\n  var PRESETS = \{/m.test(js) && /^\}\)\(\);\n$/m.test(js));
+  && /^\(function \(\) \{\n  var PRESETS = \{/m.test(js) && /^\}\)\(\);\n$/m.test(js)
+  && /DEPARTURES FROM THE ENGINE AS SUPPLIED/.test(js));
+check('the field sweeps on its own: a time-driven camera offset, added to the pointer, scaled by parallax',
+  /var cam = \{ x: 0, y: 0 \};/.test(js)
+  && /cam\.x = Math\.cos\(t\) \* 0\.6;/.test(js) && /cam\.y = Math\.sin\(t \* 0\.8\) \* 0\.4;/.test(js)
+  && /var px = pointer\.x \+ cam\.x, py = pointer\.y \+ cam\.y;/.test(js)
+  && /renderLayer\(ctx, layers\[2\], px \* cfg\.parallax \* 34, py \* cfg\.parallax \* 26/.test(js)
+  && !/pointer\.x \* cfg\.parallax/.test(js));
+check('reduced motion degrades rather than freezes, and does so BEFORE the nodes are built',
+  /function start\(\) \{\s*if \(running \|\| cfg\.paused \|\| !visible\) return;/.test(js)
+  && /if \(reduced\) \{ cfg\.speed \*= 0\.15; cfg\.parallax = 0; \}\s*resize\(\);\s*start\(\);/.test(js)
+  && !/if \(reduced\) draw\(1\); else start\(\);/.test(js),
+  'velocities are computed from cfg.speed at build time, so the speed must be lowered first');
+check('and the header no longer promises a single still frame',
+  !/draws one frame and never schedules/.test(js) && /DEGRADED, NOT FROZEN/.test(js));
 
 /* ── 3. What it does, run for real ──────────────────────────────────────── */
 //
@@ -95,12 +109,14 @@ check('the engine below the header is the one supplied, verbatim',
 
 function world(opts) {
   opts = opts || {};
-  const calls = { raf: 0, cancel: 0, draws: 0, clears: 0, removed: [] };
+  const calls = { raf: 0, cancel: 0, draws: 0, clears: 0, removed: [], arcs: [] };
   const listeners = { window: {}, document: {}, host: {} };
   let ioCb = null, roCb = null;
   const ctx2d = () => ({
     setTransform() {}, clearRect() { calls.clears++; }, fillRect() {}, drawImage() { calls.draws++; },
-    beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, arc() {}, fill() { calls.draws++; },
+    // The x of every node drawn, in order. The first arc of a frame is the
+    // far layer's first node, which is how the motion checks read speed.
+    beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, arc(x) { calls.arcs.push(x); }, fill() { calls.draws++; },
     createRadialGradient() { return { addColorStop() {} }; },
     filter: 'none', lineWidth: 1, strokeStyle: null, fillStyle: null, globalCompositeOperation: 'source-over',
   });
@@ -127,7 +143,10 @@ function world(opts) {
     performance: { now: () => 1000 },
     IntersectionObserver: function (cb) { ioCb = cb; this.observe = () => {}; this.disconnect = () => { calls.removed.push('io'); }; },
     ResizeObserver: function (cb) { roCb = cb; this.observe = () => {}; this.disconnect = () => { calls.removed.push('ro'); }; },
-    Math, Object, console,
+    // A fixed Math.random makes two worlds comparable: every node starts at
+    // the same place with the same heading, so only the speed differs.
+    Math: opts.fixedRandom ? Object.create(Math, { random: { value: () => 0.5 } }) : Math,
+    Object, console,
   };
   win.window = win; win.self = win;
   vm.createContext(win);
@@ -174,14 +193,40 @@ function world(opts) {
     t.calls.removed.join(','));
 }
 
-// prefers-reduced-motion: one still frame, no loop, ever.
+// prefers-reduced-motion: a slow drift, not a still — and the slowing has
+// to reach the nodes, which is only true if it happens before they are built.
 {
   const t = world({ reduced: true });
-  check('under prefers-reduced-motion it draws one still frame', t.calls.draws > 0 && t.calls.clears >= 1);
-  check('and never calls requestAnimationFrame', t.calls.raf === 0, t.calls.raf);
+  check('under prefers-reduced-motion the loop still runs', t.calls.raf === 1, t.calls.raf);
+  check('at 15% of the configured speed, with parallax zeroed',
+    Math.abs(t.api.config.speed - 0.75 * 0.15) < 1e-9 && t.api.config.parallax === 0, JSON.stringify(t.api.config));
+  t.win.document.hidden = true; t.listeners.document.visibilitychange();
+  check('and it still pauses on a hidden tab', t.calls.cancel === 1 && t.calls.next === null);
   t.win.document.hidden = false; t.listeners.document.visibilitychange();
-  t.io()([{ isIntersecting: true }]);
-  check('not even after a visibility or intersection event', t.calls.raf === 0, t.calls.raf);
+  check('and resumes', t.calls.raf === 2, t.calls.raf);
+}
+
+// The slowing has to reach the nodes. Their velocities are computed from
+// cfg.speed when they are built, so the brief's order — build, then slow —
+// would have left the first field at full speed. Two worlds with the same
+// fixed randomness, one reduced, one not: how far does the first node move
+// between two frames in each?
+{
+  const travel = (w) => {
+    const first = () => { const n = w.calls.arcs.length; w.calls.next(w.calls.next.__t = (w.calls.next.__t || 1000) + 16); return w.calls.arcs[n]; };
+    const a = first(), b = first();
+    return b - a;
+  };
+  const full = world({ fixedRandom: true });
+  const slow = world({ fixedRandom: true, reduced: true });
+  const df = travel(full), ds = travel(slow);
+  check('the reduced-motion field moves at roughly 15% of the full field\'s speed — the nodes were built slow',
+    Math.abs(df) > 0.02 && Math.abs(ds / df - 0.15) < 0.03, 'full ' + df.toFixed(4) + ' per frame, reduced ' + ds.toFixed(4));
+  // And with a still pointer the full field is nonetheless offset by the
+  // camera: the first node is drawn away from where it sits.
+  const camOffset = full.calls.arcs[full.calls.arcs.length - 1] - (1440 * 0.5 - 0);
+  check('the camera sweep moves the full field even though the pointer never moved',
+    Math.abs(camOffset) > 1, camOffset.toFixed(3));
 }
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');

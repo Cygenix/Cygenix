@@ -206,7 +206,10 @@ async function open(browser, opts) {
       await ctx.close();
     }
 
-    // ── prefers-reduced-motion: visible, completely still ──────────────
+    // ── prefers-reduced-motion: degraded, not frozen ───────────────────
+    // The engine as supplied drew one still frame here. That looked broken
+    // on any machine with Reduce Motion on, so it now drifts at 15% speed
+    // with parallax (pointer response and camera sweep) zeroed.
     {
       const { ctx, page, problems } = await open(browser, { reducedMotion: 'reduce' });
       await wait(500);
@@ -215,10 +218,13 @@ async function open(browser, opts) {
         const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
         let lit = 0;
         for (let i = 3; i < d.length; i += 4 * 97) if (d[i] > 0) lit++;
-        return { raf: window.__raf, lit };
+        const cfg = window.cygenixHeroMesh.config;
+        return { raf: window.__raf, lit, speed: cfg.speed, parallax: cfg.parallax };
       });
       check('with reduced motion the mesh is visible', rm.lit > 0, JSON.stringify(rm));
-      check('and requestAnimationFrame is never scheduled', rm.raf === 0, rm.raf);
+      check('and still animating, slowly: the loop runs', rm.raf > 1, rm.raf);
+      check('at 15% of the configured speed with parallax zeroed',
+        Math.abs(rm.speed - 0.40 * 0.15) < 1e-9 && rm.parallax === 0, JSON.stringify(rm));
       check('no console errors there either', problems.length === 0, problems.join(' | '));
       await ctx.close();
     }
