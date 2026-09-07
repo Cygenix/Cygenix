@@ -25,10 +25,10 @@
    An adapter left unimplemented produces a clear "not wired up in this build"
    result, which the model is instructed to report plainly instead of
    improvising. Deliberately NOT wired: running or cancelling migration jobs,
-   and deleting mappings. The Execute page's own guard rails (RBAC, profile
+   and deleting mappings. The Packages page's own guard rails (RBAC, profile
    write-guards, typed confirmation) exist precisely so a click cannot start a
    migration casually — an assistant action that bypassed them would undo
-   that. The assistant can list jobs and take the user to the Execute page;
+   that. The assistant can list jobs and take the user to the Packages page;
    the run button stays human.
 
    SECRETS STAY OUT OF THE CONVERSATION
@@ -130,7 +130,7 @@ var PAGES = [
   { key: 'sql-editor',         label: 'SQL Editor',         href: '/sql-editor' },
   { key: 'agentive-migration', label: 'AI Assist',          href: '/agentive-migration' },
   { key: 'jobs',               label: 'All Jobs',           view: 'jobs' },
-  { key: 'project-builder',    label: 'Execute',            href: '/project-builder' },
+  { key: 'project-builder',    label: 'Packages',           href: '/project-builder' },
   { key: 'data-stream',        label: 'Data Stream',        href: '/data-stream' },
   { key: 'data-stream-store',  label: 'Stream Store',       href: '/data-stream-store' },
   { key: 'data-stream-events', label: 'Change Events',      href: '/data-stream-events' },
@@ -774,7 +774,7 @@ A.registerActions([
 
 /* ================================================================ *
  * Jobs — read-only, deliberately.
- * Starting or cancelling a migration goes through the Execute page's own
+ * Starting or cancelling a migration goes through the Packages page's own
  * guard rails (RBAC, profile write-guards, typed confirmation). The
  * assistant lists and navigates; the run button stays human.
  * ================================================================ */
@@ -785,7 +785,7 @@ A.registerActions([
     title: 'List jobs',
     effect: 'read',
     description: 'List migration jobs and their most recent status. To run one, take ' +
-      'the user to the Execute page (app_navigate to project-builder) — jobs are ' +
+      'the user to the Packages page (app_navigate to project-builder) — jobs are ' +
       'started there, behind its own confirmations, never from this panel.',
     input_schema: {
       type: 'object',

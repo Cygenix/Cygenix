@@ -1,7 +1,12 @@
-// Tests for saved Batches on the Batches screen (project-builder).
+// Tests for saved arrangements on the Packages screen (project-builder).
 //
-// A batch is a named arrangement of jobs: which jobs, in which groups, in what
-// order. Before this there was exactly ONE arrangement per project, held on
+// The screen has been Execute Migration, then Batches, then Pipelines, and is
+// now Packages. Every rename has been user-facing only, so this file, the
+// module it exercises (cygenix-batches.js) and every identifier in both still
+// say batch. Section 8 is what holds the visible name in one place.
+//
+// A package is a named arrangement of jobs: which jobs, in which groups, in
+// what order. Before this there was exactly ONE arrangement per project, held on
 // the project record — so wanting a second (a full load and a nightly delta; a
 // three-job smoke set and the real forty-job run) meant destroying the first.
 //
@@ -233,30 +238,54 @@ check('every entry point degrades when the module is absent rather than throwing
   /function batchApi\(\) \{ return window\.CygenixBatches; \}/.test(app)
   && (app.match(/if \(!B\)/g) || []).length >= 4);
 
-/* ── 8. The screen is called Pipelines ──────────────────────────────────── */
+/* ── 8. The screen is called Packages ───────────────────────────────────── */
 //
-// Execute Migration → Batches → Pipelines. Each rename has been user-facing
-// only: the route, the key, the storage and this module's own API all still
-// say batch, and that is deliberate — see the note below.
+// Execute Migration → Batches → Pipelines → Packages. Each rename has been
+// user-facing only: the route, the key, the storage and this module's own API
+// all still say batch, and that is deliberate — see the note below.
 
-check('the browser tab says Pipelines', /<title>Cygenix – Pipelines<\/title>/.test(page));
-check('the topbar says Pipelines', />Pipelines<\/span><\/a>/.test(page));
+check('the browser tab says Packages', /<title>Cygenix – Packages<\/title>/.test(page));
+check('the topbar says Packages', />Packages<\/span><\/a>/.test(page));
 check('it no longer says Execute Migration', !/Execute Migration/.test(page));
 check('and no longer calls itself Batches anywhere a user reads',
   !/>Batches</.test(page) && !/Cygenix – Batches/.test(page),
   (page.match(/>[^<]*Batch[^<]*</g) || []).slice(0, 4).join(' | '));
-check('the buttons say pipeline, not batch',
-  / Load pipeline</.test(page) && / Save as pipeline</.test(page)
-  && />Saved pipelines</.test(page));
+check('nor Pipelines, the name before this one',
+  !/>Pipelines</.test(page) && !/ Load pipeline</.test(page) && !/ Save as pipeline</.test(page));
+check('the buttons say package',
+  / Load package</.test(page) && / Save as package</.test(page)
+  && />Saved packages</.test(page));
 
 const sidebar = read('public', 'cygenix-sidebar.js');
-check('the sidebar item says Pipelines', /label:'Pipelines'/.test(sidebar));
+check('the sidebar item says Packages', /label:'Packages'/.test(sidebar));
 // The key is what pages set data-active on and what the dashboard routes from;
 // renaming a label must not rename an identifier.
 check('its key is unchanged, so nothing that routes on it breaks',
-  /key:'project-builder', label:'Pipelines'/.test(sidebar));
-check('the dashboard link says Pipelines too',
-  />Pipelines<\/a>/.test(read('public', 'dashboard.html')));
+  /key:'project-builder', label:'Packages'/.test(sidebar));
+check('the dashboard link says Packages too',
+  />Packages<\/a>/.test(read('public', 'dashboard.html')));
+
+// The screen is reachable from three places that are not the sidebar, and all
+// three said "Execute" — a name no menu item had carried for two renames. An
+// assistant offering to take you to "the Execute page" for a screen called
+// Packages is worse than one that uses the name on the menu.
+check('the older nav, the summary panel and the assistant all use the current name',
+  /\n    Packages\n/.test(read('public', 'nav.js'))
+  && />Go to Packages →<\/a>/.test(read('public', 'cygenix-project-summary.js'))
+  && /key: 'project-builder',    label: 'Packages'/.test(read('public', 'cygenix-assistant-actions.js')));
+check('and no user-visible surface still says Execute for it',
+  !/Execute Jobs/.test(read('public', 'nav.js'))
+  && !/Go to Execute/.test(read('public', 'cygenix-project-summary.js'))
+  && !/the Execute page/.test(read('public', 'cygenix-assistant-actions.js')));
+
+// "Package" is a word this screen now shares with two older features. Neither
+// was renamed to match, because both are accurate as they stand: renaming
+// them would be the Batches-to-Writes mistake in reverse.
+check('Export Deployable Package is untouched — a different thing with the same word',
+  /Export Deployable Package/.test(read('public', 'dashboard.html'))
+  && /id="export-package-modal"/.test(read('public', 'dashboard.html')));
+check('and so are SSIS packages in the tier features',
+  /MS SQL Server Migration \(packages, logins, objects\)/.test(read('public', 'pricing.html')));
 
 /* ── 9. The word is gone from the site ──────────────────────────────────── */
 //
@@ -271,10 +300,12 @@ const HOME = read('public', 'index.html');
 check('the homepage no longer sells the feature as Batches',
   !/\bBatch(es)?\b/.test(HOME),
   (HOME.match(/[^<>]*\bBatch(es)?\b[^<>]*/g) || []).slice(0, 3).join(' | '));
-check('and sells it as Pipelines instead',
-  /<b>Pipelines<\/b> respect dependency order/.test(HOME)
-  && /Pipelines, schedules, and a resume that means it/.test(HOME)
-  && /Group jobs into a pipeline/.test(HOME));
+check('and sells it as Packages instead',
+  /<b>Packages<\/b> respect dependency order/.test(HOME)
+  && /Packages, schedules, and a resume that means it/.test(HOME)
+  && /Group jobs into a package/.test(HOME));
+check('including in the structured data, which is read by machines rather than people',
+  /"Packages, scheduling and checkpoint resume"/.test(HOME));
 
 // The three report surfaces share one column definition shape. All three, or
 // an export and a preview disagree about what the same number is called.
@@ -295,8 +326,9 @@ check('the run summary counts Writes, not Batches',
 check('and the per-write log lines match it',
   /logLine\(' Write '/.test(CONNECT) && !/logLine\(' Batch '/.test(CONNECT));
 
-check('the save prompt asks for a pipeline name',
-  /Name for this pipeline:/.test(app) && !/Name for this batch:/.test(app));
+check('the save prompt asks for a package name',
+  /Name for this package:/.test(app)
+  && !/Name for this batch:/.test(app) && !/Name for this pipeline:/.test(app));
 
 // What deliberately survives: the wire protocol, and the module's own API.
 // Neither is user-visible, and churning them buys nothing.

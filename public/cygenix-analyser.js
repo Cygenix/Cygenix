@@ -17,7 +17,7 @@
    TRANSFORM does to a value inside the migration runner. Both files assigned
    a global called CygenixTransform. The existing one guards its assignment
    with `!root.CygenixTransform`; this one overwrote unconditionally. Which
-   module a page got would have depended on script order, and the Pipelines
+   module a page got would have depended on script order, and the Packages
    screen, which loads the runner's module, would have been the first casualty.
 
    So the file and its global were renamed on the way in: cygenix-analyser.js,

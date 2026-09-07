@@ -69,7 +69,7 @@ It arrived under that name, defining a global called `CygenixTransform`. This re
 already has `public/cygenix-transform.js` — the module that defines what a column
 **transform** does to a value inside the migration runner — and it defines the same
 global. The existing one guards its assignment; the new one overwrote unconditionally.
-Which module a page got would have depended on script order, and the Pipelines screen,
+Which module a page got would have depended on script order, and the Packages screen,
 which loads the runner's module, would have been the first casualty.
 
 So both files and both globals were renamed on the way in.
