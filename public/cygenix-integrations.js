@@ -332,7 +332,7 @@
 
       localStorage.setItem('cygenix_projects', JSON.stringify(projects));
       localStorage.setItem('cygenix_active_project_id', newProjectId);
-      return { ok:true, message:'Imported '+(bundle.jobs?.length||0)+' job(s). Switch to project-builder to see the imported project.' };
+      return { ok:true, message:'Imported '+(bundle.jobs?.length||0)+' job(s). Switch to Packages to see the imported project.' };
     } catch(e){
       return { ok:false, message:'Import failed: '+e.message };
     }

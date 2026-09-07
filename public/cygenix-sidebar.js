@@ -113,23 +113,33 @@
         { key:'jobs',            label:'All Jobs', view:'jobs',                  icon: iconList() },
         // The key stays 'project-builder' — pages set data-active on it and the
         // dashboard routes from it. Only the visible name has ever changed:
-        // first to Batches, now to Pipelines — the screen is where you arrange
-        // jobs into an ordered run, and "pipeline" is the word for that.
+        // Execute Migration, then Batches, then Pipelines, now Packages. The
+        // screen is where you arrange jobs into an ordered run and save that
+        // arrangement by name; "package" is what you have when you do. It also
+        // frees "pipeline", which is wanted for something else.
         //
-        // Note for anyone grepping: "batch" still appears in this codebase in
-        // an UNRELATED sense — the multi-row INSERT batches the runner emits,
-        // and db-connect's `action:'batch'`. Those are a different word that
-        // happens to be spelled the same, and they are NOT this screen.
+        // TWO WORDS THIS SCREEN SHARES WITH SOMETHING ELSE. Both are older
+        // than the rename and neither is this screen:
         //
-        // Where that other meaning was user-visible it now reads "Writes"
-        // rather than "Batches" — the conversion report column, and the run
-        // log's per-write lines. Renaming those to "Pipelines" would have
-        // made the report say something untrue, so they got an accurate word
-        // instead of this one.
-        { key:'project-builder', label:'Pipelines',  href:'/project-builder', color:'var(--purple)', icon: iconPlay() },
+        //   "batch"    — the multi-row INSERT batches the runner emits, and
+        //                db-connect's `action:'batch'`. Where that meaning was
+        //                user-visible it now reads "Writes" (the conversion
+        //                report column, the run log's per-write lines): calling
+        //                it Batches, or Pipelines, or Packages would have made
+        //                the report say something untrue.
+        //
+        //   "package"  — Export Deployable Package on the dashboard (a job as a
+        //                self-contained .sql file), SSIS packages in server-
+        //                object migration, and "Package selected jobs as a task"
+        //                on this very screen. Those are all a different word
+        //                that happens to be spelled the same, and renaming them
+        //                to match would make each one less accurate, not more.
+        //
+        // So: grep for the label, not for the word.
+        { key:'project-builder', label:'Packages',  href:'/project-builder', color:'var(--purple)', icon: iconPlay() },
       ]},
       // Data Stream sits between Jobs and Task Manager because that is the
-      // order of the question it answers: batches move the bulk, streams move
+      // order of the question it answers: packages move the bulk, streams move
       // the changes, and the Task Manager schedules both. Streams are
       // run-time objects, so they belong in RUN rather than in a section of
       // their own.

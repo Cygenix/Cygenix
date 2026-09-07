@@ -8,7 +8,7 @@
 // is the module that defines what a column transform does to a value inside
 // the migration runner, and it defines the same global. The existing one
 // guards its assignment; the new one overwrote unconditionally. Which module
-// a page got would have depended on script order — and the Pipelines screen,
+// a page got would have depended on script order — and the Packages screen,
 // which loads the runner's module, would have been the first thing to break,
 // silently, on a page that has nothing to do with file analysis.
 //

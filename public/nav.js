@@ -168,7 +168,7 @@
 
   <a class="${isActive('/project-builder')}" href="/project-builder">
     <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="var(--bg2)" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    Execute Jobs
+    Packages
   </a>
   <a class="cyg-nav-item" href="/dashboard" onclick="sessionStorage.setItem('cyg_goto','jobs')">
     <svg viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>

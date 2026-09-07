@@ -5883,19 +5883,20 @@ function confirmCreateTask(){
 
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Pipelines — named arrangements of the jobs on this screen
+   Packages — named arrangements of the jobs on this screen
    ──────────────────────────────────────────────────────────────────────────
-   Called Batches until Sep 2026. The rename is user-facing only: the storage
-   key, the module (cygenix-batches.js) and every identifier below still say
-   batch, because renaming those buys nothing and would churn a tested API.
+   Called Batches, then Pipelines, until Sep 2026. Every rename has been
+   user-facing only: the storage key, the module (cygenix-batches.js) and
+   every identifier below still say batch, because renaming those buys
+   nothing and would churn a tested API.
 
-   A pipeline is which jobs, in which groups, in what order. Before this there
+   A package is which jobs, in which groups, in what order. Before this there
    was exactly one arrangement per project, held on the project record, so a
    second one (a full load and a nightly delta; a smoke set and the real run)
    meant destroying the first.
 
-   A pipeline stores job IDS, not copies of the jobs. Editing a job's mapping
-   therefore updates every pipeline that includes it — a pipeline is a running
+   A package stores job IDS, not copies of the jobs. Editing a job's mapping
+   therefore updates every package that includes it — a package is a running
    order, not a fork. The cost is that a job deleted afterwards leaves a hole,
    which is why loading reports what it could not find instead of quietly
    loading a step that would fail at run time.
@@ -5997,11 +5998,11 @@ function openSaveBatchPrompt() {
   const B = batchApi();
   if (!B) { showToast('The batches module did not load — refresh the page.'); return; }
   if (!B.countSteps(project.groups)) {
-    alert('There are no jobs to save.\n\nAdd jobs from the list on the left first, then save the arrangement as a pipeline.');
+    alert('There are no jobs to save.\n\nAdd jobs from the list on the left first, then save the arrangement as a package.');
     return;
   }
-  const suggested = (project.name || 'Pipeline') + ' — ' + new Date().toLocaleDateString('en-GB');
-  const name = (prompt('Name for this pipeline:\n\n'
+  const suggested = (project.name || 'Package') + ' — ' + new Date().toLocaleDateString('en-GB');
+  const name = (prompt('Name for this package:\n\n'
     + B.countSteps(project.groups) + ' job(s) in ' + project.groups.length + ' group(s).\n'
     + 'Saving over an existing name replaces it.', suggested) || '').trim();
   if (!name) return;
