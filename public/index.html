@@ -122,6 +122,46 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
 .nav-cta:hover{border-color:var(--accent-ink);color:var(--accent-ink)}
 @media (max-width:900px){.nav-links{display:none}}
 
+/* ── Security section ────────────────────────────────────────────────────
+   Six blocks under one h2, so each block's own heading is an h3 and the
+   outline stays valid. Everything below is built from the page's existing
+   tokens; the section adds no colour of its own. */
+.sec-eyebrow{font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:0.14em;
+  text-transform:uppercase;color:var(--accent-ink);margin-bottom:0.6rem}
+.sec-lede{font-size:14.5px;color:var(--text2);line-height:1.7;max-width:760px;margin-bottom:0.5rem}
+.sec-lede b{color:var(--text);font-weight:600}
+.sec-lede a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid var(--border2)}
+.sec-lede a:hover{border-bottom-color:var(--accent-ink)}
+.sec-note{font-size:13px;color:var(--text3);line-height:1.7;max-width:760px;margin-top:1rem}
+.sec-note a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid var(--border2)}
+.sec-note a:hover{border-bottom-color:var(--accent-ink)}
+/* A wide table must scroll inside its own box; the page itself must never
+   scroll sideways. tabindex makes the scroller reachable by keyboard, which
+   is the part that is usually forgotten. */
+.sec-scroll{overflow-x:auto;margin-top:1.25rem;border:1px solid var(--border);border-radius:var(--r-lg)}
+.sec-scroll:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+.sec-table{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
+.sec-caption{caption-side:top;text-align:left;padding:0.85rem 1rem 0;font-family:var(--mono);
+  font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3)}
+.sec-table th,.sec-table td{padding:0.7rem 1rem;text-align:left;vertical-align:top;
+  border-bottom:1px solid var(--border);line-height:1.6}
+.sec-table thead th{font-family:var(--mono);font-size:10px;letter-spacing:0.08em;
+  text-transform:uppercase;color:var(--text3);font-weight:500}
+.sec-table tbody th{color:var(--text);font-weight:600;white-space:nowrap}
+.sec-table tbody td{color:var(--text2)}
+.sec-table tbody tr:last-child th,.sec-table tbody tr:last-child td{border-bottom:none}
+.sec-table code{font-family:var(--mono);font-size:11.5px;color:var(--accent-ink)}
+.sec-cols{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem}
+.sec-card{border:1px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.25rem;background:var(--bg2)}
+.sec-card-h{font-size:13px;font-weight:600;color:var(--text);margin-bottom:0.6rem}
+.sec-list{list-style:none;display:grid;gap:0.45rem}
+.sec-list li{font-size:13px;color:var(--text2);line-height:1.55;padding-left:0.9rem;position:relative}
+.sec-list li::before{content:'';position:absolute;left:0;top:0.5em;width:4px;height:4px;
+  border-radius:50%;background:var(--text3)}
+.sec-list b{color:var(--text);font-weight:600}
+#security code{font-family:var(--mono);font-size:12px;color:var(--accent-ink)}
+@media (max-width:760px){ .sec-cols{grid-template-columns:1fr} }
+
 /* ── Buttons ─────────────────────────────────────────────────────────────
    The login's buttons: 46px on the shared radius, and the primary carries the
    same accent glow the login card uses. */
@@ -462,6 +502,7 @@ footer a:hover{text-decoration:underline}
     <a href="#explorer">Explorer</a>
     <a href="#server-migration">Server objects</a>
     <a href="#governance">Governance</a>
+    <a href="#security">Security</a>
     <a href="#planning">Planning</a>
     <a href="#supports">What it supports</a>
     <a href="/pricing">Pricing</a>
@@ -1109,6 +1150,289 @@ footer a:hover{text-decoration:underline}
   </div>
 </section>
 
+<!-- ══ SECURITY ══════════════════════════════════════════════════════════
+     Written from docs/security-posture-audit.md, which traced every claim
+     below to code. Three rules govern this section and none of them are
+     negotiable:
+
+       1. No badge, no claim. There is no ISO 27001, no SOC 2, no Cyber
+          Essentials, and no shield iconography pretending otherwise. The
+          last block turns the absence into the thing that makes the rest
+          believable.
+       2. Mechanisms, not intentions. "We take security seriously" is the
+          register to avoid; every line here names something that happens.
+       3. Nothing unverified. Where a fact was not traceable to code it was
+          cut rather than softened — which is why the validation failure
+          report the audit could not find is absent, and why there is no
+          sentence about breach notification or a DPA.
+
+     tests/security-section.test.js pins the claims against the code the
+     same way tests/data-claims.test.js does: the code still does it, and
+     the page still says so. -->
+<section class="section" id="security">
+  <div class="container">
+    <div class="center reveal">
+      <div class="section-tag">Security</div>
+      <h2 class="section-title">Where your data goes, named place by place</h2>
+      <p class="section-sub">Migrating a database means reading it, so your rows pass through Cygenix
+        on the way to your target. What follows is where they go, what is kept afterwards, and the two
+        places a literal value from your data can come to rest. No certification stands behind any of
+        it. What stands behind it is a mechanism you can check.</p>
+    </div>
+
+    <!-- ── 1. The data path ───────────────────────────────────────────── -->
+    <div class="reveal" style="margin-top:3.25rem">
+      <h3 class="sec-eyebrow">The data path</h3>
+      <p class="sec-lede">Four classes, because they have four different answers. The distinction that
+        matters is between data we move and data we keep: almost everything we keep is derived from
+        your data rather than taken from it.</p>
+      <div class="sec-scroll" tabindex="0" role="region" aria-label="Classes of data, scrollable">
+        <table class="sec-table">
+          <caption class="sec-caption">Classes of data, where each one lives, and for how long</caption>
+          <thead>
+            <tr><th scope="col">Class</th><th scope="col">What it is</th><th scope="col">Where it lives</th><th scope="col">Control</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">In flight</th>
+              <td>Rows read from your source, transformed, and written to your target</td>
+              <td>Memory of the function running the batch</td>
+              <td>Never written to disk by us, and gone when the batch ends</td>
+            </tr>
+            <tr>
+              <th scope="row">Derived</th>
+              <td>Schema metadata, column mappings, row counts, confidence scores, conversion reports, job history</td>
+              <td>Azure Cosmos DB, UK South</td>
+              <td>Aggregates and structure. The Globe view is the rule in miniature — it asks for a <code>GROUP BY … COUNT</code> and stores the count</td>
+            </tr>
+            <tr>
+              <th scope="row">Incidental</th>
+              <td>Values that reach a driver error message, and the examples a preflight keeps</td>
+              <td>Your browser; error text also reaches our operational logs</td>
+              <td>The one place literals land. Named in full below</td>
+            </tr>
+            <tr>
+              <th scope="row">Retained by design</th>
+              <td>Nothing today</td>
+              <td>—</td>
+              <td>Data Stream is the module that would hold rows. It runs on seeded demonstration data and has no connection to a real database or broker</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="sec-cols">
+        <div class="sec-card">
+          <div class="sec-card-h">What we store</div>
+          <ul class="sec-list">
+            <li>Table, column, type and key structure</li>
+            <li>Your column mappings and transforms</li>
+            <li>Row counts, forecasts and confidence scores</li>
+            <li>Conversion reports and job history</li>
+            <li>The audit chain: who did what, where, and whether it was allowed</li>
+            <li>Connection strings for <b>scheduled</b> jobs only — see Credentials</li>
+          </ul>
+        </div>
+        <div class="sec-card">
+          <div class="sec-card-h">What we do not store</div>
+          <ul class="sec-list">
+            <li>The rows themselves, at any point after a run</li>
+            <li>The SQL text of any statement, in the audit trail or anywhere else</li>
+            <li>Sample values in a mapping, a report or an inferred relationship</li>
+            <li>Anything at all in the Data Stream store</li>
+            <li>Your Anthropic API key, which never leaves your browser</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 2. Sampling ────────────────────────────────────────────────── -->
+    <div class="reveal" style="margin-top:3rem">
+      <h3 class="sec-eyebrow">Sampling</h3>
+      <p class="sec-lede">The product reads real values in five places. This is what each one does with
+        them afterwards, including the one that keeps them.</p>
+      <ul class="flist" style="margin-top:1.25rem">
+        <li><i class="ic ic-flask"></i><span><b>Preflight keeps examples, in your browser.</b> A
+          forecast holds up to three offending values per rejecting column, each cut to 60 characters,
+          so you can see what would break rather than a count that means nothing. That report is saved
+          in your browser and is not synced to us. It is the only place in the product where a literal
+          value is deliberately retained.</span></li>
+        <li><i class="ic ic-wand"></i><span><b>AI mapping never sees a value.</b> The request goes from
+          your browser straight to Anthropic on <b>your</b> API key, and carries column names and types.
+          It does not pass through Cygenix, and no row value is in it. The scoring that <i>does</i> use
+          sampled values — containment, orphan rate, cardinality — runs on your machine.</span></li>
+        <li><i class="ic ic-chain"></i><span><b>Inferred relationships keep the arithmetic, not the
+          values.</b> Rebuilding a missing foreign key means testing whether one column's values are
+          contained in another's. What is stored is the match rate, the orphan rate and the
+          cardinality — the evidence, not the rows it was computed from.</span></li>
+        <li><i class="ic ic-doc"></i><span><b>Error messages can quote a value, and are not redacted.</b>
+          A failed type conversion usually names the value that failed. You see that text, and it
+          reaches our operational logs. There is no redaction rule today. We would rather say so than
+          have you find out from a log.</span></li>
+        <li><i class="ic ic-stream"></i><span><b>Data Stream holds nothing.</b> The module that would
+          retain a middle and a dead-letter queue runs entirely on seeded demonstration data.
+          <span class="chip chip-preview">Preview</span></span></li>
+      </ul>
+      <p class="sec-note">The rule underneath all of it: nothing finer than an aggregate reaches
+        storage unless a person asked for it — and the one place where a person did is the first item
+        on this list.</p>
+    </div>
+
+    <!-- ── 3. Credentials ─────────────────────────────────────────────── -->
+    <div class="reveal" style="margin-top:3rem">
+      <h3 class="sec-eyebrow">Credentials</h3>
+      <p class="sec-lede">The honest summary is that credential handling is the weakest part of this
+        list, and the strongest thing we can offer is a way to avoid having a credential at all.</p>
+      <ul class="flist" style="margin-top:1.25rem">
+        <li><i class="ic ic-key"></i><span><b>Use Entra ID and there is no password to hold.</b> Where
+          your databases accept Microsoft Entra authentication, Cygenix uses it and no SQL password is
+          stored anywhere — not in your browser, not by us.</span></li>
+        <li><i class="ic ic-user"></i><span><b>Otherwise the connection string stays in your browser</b>
+          — in session storage, cleared when the tab closes. It is held in plain text, which means any
+          script running on the page can read it. Treating that as solved would be untrue.</span></li>
+        <li><i class="ic ic-clock"></i><span><b>Scheduling a job is the exception, and it has to be.</b>
+          A job that runs at 2am with no browser open must read the connection string from somewhere,
+          so scheduling stores it on our side, in Cosmos DB. If that is not acceptable for a given
+          database, run it interactively or use Entra.</span></li>
+        <li><i class="ic ic-plug"></i><span><b>Connections out to your databases obey your connection
+          string.</b> Certificate validation can be turned off in it, and for a PostgreSQL host we do
+          not recognise as a managed provider the default is no TLS at all. Set <code>sslmode</code>
+          if that matters — the product will not quietly upgrade it for you.</span></li>
+        <li><i class="ic ic-lock"></i><span><b>Passwords held by a remote server are never read.</b>
+          Migrating logins moves the password <i>hash</i> and the SID, so accounts work on the target
+          without anyone ever holding the password itself. What cannot travel — credentials and Agent
+          proxies to Azure SQL Database — is refused with the reason, not silently dropped.</span></li>
+      </ul>
+    </div>
+
+    <!-- ── 4. Enforcement ─────────────────────────────────────────────── -->
+    <div class="reveal" style="margin-top:3rem">
+      <h3 class="sec-eyebrow">Enforcement</h3>
+      <p class="sec-lede">The governance controls above this section are worth one more paragraph here,
+        because the question a reviewer asks is not what they do but <i>where they run</i>. They run on
+        the server. The role matrix, the environment classification, the guardrails and the two-person
+        rule are evaluated before the statement executes, so a modified client, a direct call to the
+        API or a replayed request meets the same refusal as the button would have. An approval is bound
+        to a hash of the exact statement it approved: it cannot be replayed, pointed at another target,
+        or survive an edit to the SQL. <a href="#governance">The governance section</a> has the
+        substance.</p>
+    </div>
+
+    <!-- ── 5. The audit trail ─────────────────────────────────────────── -->
+    <div class="reveal" style="margin-top:3rem">
+      <h3 class="sec-eyebrow">Audit</h3>
+      <p class="sec-lede">Most audit trails answer "has this been tampered with?" with yes or no. This
+        one re-walks the chain and names the entry where a break starts, which is the difference between
+        knowing something is wrong and knowing where to look.</p>
+    </div>
+    <div class="container split" style="margin-top:1.5rem;padding:0">
+      <div class="mock reveal">
+        <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+          <span class="mock-title">Audit — chain verification</span></div>
+        <div class="mock-body">
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.7rem">
+            <span class="pill p-ok">Verified</span>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--text2)">chain verified · 1,204 entries intact</span>
+          </div>
+          <table>
+            <tbody>
+              <tr><td class="mono" style="font-size:10.5px">1204</td>
+                  <td class="mono" style="font-size:10.5px">sql.write</td>
+                  <td style="font-size:10.5px;color:var(--text2)">dbo.Orders · PROD</td>
+                  <td style="text-align:right"><span class="pill p-ok">allowed</span></td></tr>
+              <tr><td class="mono" style="font-size:10.5px">1203</td>
+                  <td class="mono" style="font-size:10.5px">sql.write</td>
+                  <td style="font-size:10.5px;color:var(--text2)">dbo.Orders · PROD</td>
+                  <td style="text-align:right"><span class="pill p-bad">denied</span></td></tr>
+            </tbody>
+          </table>
+          <div style="border-top:1px solid var(--border);margin-top:0.8rem;padding-top:0.7rem">
+            <div style="font-family:var(--mono);font-size:9.5px;letter-spacing:0.08em;text-transform:uppercase;
+                        color:var(--text3);margin-bottom:0.5rem">If a chain were broken</div>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">
+              <span class="pill p-bad">Break found</span>
+              <span style="font-family:var(--mono);font-size:10.5px;color:var(--text2)">broken at entry 862 · entry hash mismatch</span>
+            </div>
+            <div style="font-size:10.5px;color:var(--text2);line-height:1.6">
+              Entries 1 to 861 verify. The report names the sequence number and which of the two
+              checks failed — a previous-hash mismatch means an entry was removed, an entry-hash
+              mismatch means one was altered.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="reveal">
+        <ul class="flist" style="margin-top:0">
+          <li><i class="ic ic-chain"></i><span><b>Hash-chained and append-only.</b> Each entry carries
+            the hash of the one before it, so removing or editing an entry breaks every hash after
+            it.</span></li>
+          <li><i class="ic ic-clipboard"></i><span><b>An entry is twelve fields, and none of them is
+            your SQL.</b> Sequence, time, who, their roles, the action, the resource type, the
+            connection it touched, its environment, the outcome, a severity and a reason. The resource
+            is a server and database <i>name</i>. No statement text and no column values are written,
+            so a secret in a literal cannot land there.</span></li>
+          <li><i class="ic ic-check-circle"></i><span><b>Refusals are recorded as carefully as
+            permissions.</b> A denial carries the reason and the roles that were held at the time,
+            which is the half of an audit trail that usually goes missing.</span></li>
+          <li><i class="ic ic-shield"></i><span><b>And one limit, stated rather than buried.</b> The
+            store has no transactions, so two appends at the same instant can race for the head of the
+            chain. A retry closes the realistic window, and verification reports a break rather than
+            hiding one. We describe it as tamper-<i>evident</i>, not tamper-proof, and that word is
+            chosen.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── 6. Assurance ───────────────────────────────────────────────── -->
+    <div class="reveal" style="margin-top:3rem">
+      <h3 class="sec-eyebrow">Assurance</h3>
+      <p class="sec-lede">The block that makes the rest of this worth reading. Here is the state of
+        each control area, including the ones that are not finished.</p>
+      <div class="sec-scroll" tabindex="0" role="region" aria-label="Control areas, scrollable">
+        <table class="sec-table">
+          <caption class="sec-caption">Control areas and their current state</caption>
+          <thead>
+            <tr><th scope="col">Control area</th><th scope="col">State</th><th scope="col">What that means</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Identity</th><td><span class="pill p-ok">In place</span></td>
+              <td>Microsoft Entra External ID. Tokens verified server-side against Microsoft's published keys on every request</td></tr>
+            <tr><th scope="row">Authorisation</th><td><span class="pill p-ok">In place</span></td>
+              <td>Ten roles, a permission matrix as data, deny by default, evaluated on the server</td></tr>
+            <tr><th scope="row">Audit trail</th><td><span class="pill p-ok">In place</span></td>
+              <td>Hash-chained, append-only, with the verification endpoint above and the limit named beside it</td></tr>
+            <tr><th scope="row">Encryption at rest</th><td><span class="pill p-ok">In place</span></td>
+              <td>Azure-managed keys on Cosmos DB and Blob Storage. Customer-managed keys are not offered — there is no key vault</td></tr>
+            <tr><th scope="row">Transport to Cygenix</th><td><span class="pill p-ok">In place</span></td>
+              <td>HTTPS only, HSTS, and the usual content-type, framing and referrer headers</td></tr>
+            <tr><th scope="row">Transport to your databases</th><td><span class="pill p-warn">Your setting</span></td>
+              <td>Governed by the connection string you supply, including whether certificates are validated. See Credentials</td></tr>
+            <tr><th scope="row">Credential storage</th><td><span class="pill p-warn">Known weakness</span></td>
+              <td>Plain text in browser session storage for interactive work; server-side for scheduled jobs. Entra avoids it entirely</td></tr>
+            <tr><th scope="row">Log redaction</th><td><span class="pill p-bad">Not built</span></td>
+              <td>A driver error can quote the value that caused it, and nothing strips it today</td></tr>
+            <tr><th scope="row">Penetration test</th><td><span class="pill p-bad">Not done</span></td>
+              <td>No third party has tested this system</td></tr>
+            <tr><th scope="row">Certification</th><td><span class="pill p-bad">None held</span></td>
+              <td>No ISO 27001, no SOC 2, no Cyber Essentials — see below</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="sec-lede" style="margin-top:1.5rem"><b>Cygenix holds no security certification.</b> Not
+        ISO 27001, not SOC 2, not Cyber Essentials, and none is in progress with a date we could quote
+        you. Saying otherwise, or implying it with a badge, would be the first thing in this section
+        you could not check.</p>
+      <p class="sec-lede">What exists instead is available now: the architecture written down as built,
+        an internal audit of exactly the questions on this page, a security questionnaire completed
+        honestly rather than aspirationally, and a call with the engineer who wrote the code — which is
+        the same person either way.</p>
+      <p class="sec-note">A certificate is a statement about process, and it will come. Everything above
+        it is a mechanism, and you can check those today. <a href="/.well-known/security.txt">Reporting
+        a vulnerability</a> · <a href="mailto:security@cygenix.co.uk">security@cygenix.co.uk</a></p>
+    </div>
+  </div>
+</section>
+
+
 <!-- ══ CONFIGURATOR + PLANNER ════════════════════════════════════════════ -->
 <section class="section" id="planning">
   <div class="container">
@@ -1421,6 +1745,7 @@ footer a:hover{text-decoration:underline}
     <a href="/pricing">Pricing</a> ·
     <a href="/terms">Terms</a> ·
     <a href="/privacy">Privacy</a> ·
+    <a href="/#security">Security</a> ·
     <button type="button" class="footer-link" onclick="openAbout()">About</button> ·
     <button type="button" class="footer-link a11y-trigger" aria-label="Accessibility options" aria-expanded="false" onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">Accessibility</button>
   </div>

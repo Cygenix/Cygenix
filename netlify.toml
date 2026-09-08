@@ -46,6 +46,41 @@
 [functions."scheduled-runner"]
   schedule = "* * * * *"
 
+# ── Security headers ─────────────────────────────────────────────────────────
+# There were none of these until the security section went up, and a section
+# that talks about transport while the response carries no headers is the kind
+# of thing the reader checks first. These are the safe set — each one is a
+# statement the browser enforces, and none of them can break a page that was
+# already working:
+#
+#   HSTS                    Netlify already redirects to HTTPS; this stops the
+#                           first request of a later visit ever being plaintext.
+#                           No preload directive: preloading is close to
+#                           irreversible and is not a decision to make in a
+#                           header nobody reviewed.
+#   X-Content-Type-Options  Stop the browser guessing a type we did not send.
+#   X-Frame-Options         No page here is ever framed — there is not one
+#                           <iframe> in public/ — so DENY costs nothing and
+#                           removes clickjacking entirely.
+#   Referrer-Policy         A console URL can carry a project id. Send the
+#                           origin off-site, never the path.
+#   Permissions-Policy      Turn off the capabilities this product never uses,
+#                           so a compromised script cannot reach for them.
+#
+# NOT set, deliberately: Content-Security-Policy. Every page in public/ carries
+# inline <style> and <script> by design, so a real policy needs either
+# 'unsafe-inline' — which is a policy that permits the thing it exists to stop —
+# or a nonce on several hundred inline blocks. That is a project, not a header,
+# and shipping the weak version would be a claim without a control behind it.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+
 # ── Caching ──────────────────────────────────────────────────────────────────
 # Scripts referenced from HTML carry ?v=<content hash> (scripts/stamp-assets.js),
 # so a changed file always has a changed URL: these numbers only ever apply to a
