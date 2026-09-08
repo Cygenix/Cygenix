@@ -348,7 +348,7 @@ footer a:hover{text-decoration:underline}
       "name": "Is my data ever sent outside the UK?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. Cygenix runs in Azure UK South. Source and target connections are made directly from our UK infrastructure. Enterprise customers can additionally deploy into their own Azure subscription for full data sovereignty."
+        "text": "Your metadata — jobs, mappings, reports and job history — is stored in Azure Cosmos DB in UK South, and scheduled or long-running jobs execute in our Azure Function App in the same region. The functions that open database connections for interactive work are hosted on Netlify, whose processing is in the US, so rows read during a run pass through US infrastructure on their way to your target. They are not stored there. Enterprise customers can deploy into their own Azure subscription for full data sovereignty."
       }
     },
     {
@@ -586,7 +586,7 @@ footer a:hover{text-decoration:underline}
     <div class="trust-item">
       <div class="trust-icon">◆</div>
       <div class="trust-label">UK GDPR-aligned</div>
-      <div class="trust-sub">DATA STAYS IN UK SOUTH</div>
+      <div class="trust-sub">METADATA IN AZURE UK SOUTH</div>
     </div>
     <div class="trust-item">
       <div class="trust-icon">◆</div>
@@ -601,7 +601,7 @@ footer a:hover{text-decoration:underline}
     <div class="trust-item">
       <div class="trust-icon">◆</div>
       <div class="trust-label">Built on Azure</div>
-      <div class="trust-sub">ENTERPRISE-GRADE</div>
+      <div class="trust-sub">FUNCTIONS, COSMOS DB, STORAGE</div>
     </div>
   </div>
 </section>
@@ -655,7 +655,7 @@ footer a:hover{text-decoration:underline}
           <tr><td>Custom webhooks</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
 
           <tr class="group-header"><td colspan="5">Security &amp; compliance</td></tr>
-          <tr><td>UK data residency</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
+          <tr><td>UK metadata residency</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
           <tr><td>SSO (Microsoft / Google)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
           <tr><td>Audit logs</td><td>30 days</td><td>90 days</td><td>365 days</td><td>Unlimited</td></tr>
           <tr><td>Customer-managed keys</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
@@ -734,7 +734,7 @@ footer a:hover{text-decoration:underline}
           <span>Is my data ever sent outside the UK?</span><span class="plus">+</span>
         </button>
         <div class="faq-a">
-          <p>No. Cygenix runs in Azure UK South. Source and target connections are made directly from our UK infrastructure. Enterprise customers can additionally deploy into their own Azure subscription for full data sovereignty.</p>
+          <p>Your metadata — jobs, mappings, reports and job history — is stored in Azure Cosmos DB in UK South, and scheduled or long-running jobs execute in our Azure Function App in the same region. The functions that open database connections for interactive work are hosted on Netlify, whose processing is in the US, so rows read during a run pass through US infrastructure on their way to your target. They are not stored there. Enterprise customers can deploy into their own Azure subscription for full data sovereignty.</p>
         </div>
       </div>
 

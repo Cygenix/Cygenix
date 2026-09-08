@@ -112,7 +112,13 @@ a{color:var(--accent);text-decoration:none}
         </tbody>
       </table>
     </div>
-    <p>We do not collect the contents of the databases you connect to — only the schema metadata (table names and column names) necessary to perform migrations. Connection strings are stored locally in your browser and are never transmitted to our servers.</p>
+    <p><strong>Database contents.</strong> Migrating a database means reading it, so rows are read from your source, transformed, and written to your target. The database connections are opened by Cygenix-operated services rather than by your browser, which means those rows pass through our infrastructure during a run. We do not store them there. What we do keep is derived: schema metadata, column mappings, row counts, validation findings, conversion reports and job history.</p>
+    <p>Two exceptions are worth naming rather than leaving you to find them:</p>
+    <ul>
+      <li><strong>Preflight forecasts.</strong> A preflight keeps up to three example values from each column it expects to reject, so you can see what would break. That forecast is held in your own browser and is not sent to us.</li>
+      <li><strong>Error messages.</strong> A database driver error can quote the value that caused it — a failed type conversion is the usual case. Those messages are shown to you and may appear in our operational logs. We do not redact them today.</li>
+    </ul>
+    <p><strong>Connection strings</strong>, including any password they contain, are held in your browser's session storage for interactive work and are not sent to us. There is one exception, and it is a consequence of the feature: <strong>scheduling a job stores its source and target connection strings on our servers</strong>, in Azure Cosmos DB, because a job that runs when no browser is open has nowhere else to read them from. Use Microsoft Entra ID authentication where your databases support it and no SQL password is stored at all.</p>
 
     <h2 id="how-we-use">3. How We Use Your Data</h2>
     <p>We use the data we collect to:</p>
@@ -131,20 +137,21 @@ a{color:var(--accent);text-decoration:none}
     <p>We do not sell your personal data. We share data only with:</p>
     <ul>
       <li><strong>Microsoft Azure</strong> — cloud infrastructure and Cosmos DB storage (UK South data centre)</li>
-      <li><strong>Netlify</strong> — website hosting and user authentication (data may be processed in the US under appropriate safeguards)</li>
-      <li><strong>Anthropic</strong> — AI column mapping via the Claude API (only schema metadata, never personal data from your databases)</li>
+      <li><strong>Netlify</strong> — website hosting, and the functions that open database connections for interactive work. Rows read during a run pass through these functions, whose processing is in the US under appropriate safeguards. They are not stored there.</li>
+      <li><strong>Anthropic</strong> — AI column mapping via the Claude API. The request is sent from your browser using your own API key and carries column names and types only, never row values. It does not pass through Cygenix.</li>
       <li><strong>Stripe</strong> — payment processing (when paid plans are introduced)</li>
       <li><strong>Law enforcement</strong> — where required by applicable law</li>
     </ul>
     <p>All third-party processors are contractually required to protect your data and process it only for the purposes we specify.</p>
 
     <h2 id="storage">5. Data Storage and Security</h2>
-    <p>Your migration data is stored in Microsoft Azure Cosmos DB, located in the UK South region. We implement the following security measures:</p>
+    <p>Your migration metadata is stored in Microsoft Azure Cosmos DB in the UK South region, and scheduled or long-running jobs execute in our Azure Function App in the same region. The functions that serve interactive work are hosted on Netlify and process in the US, as described above. We implement the following security measures:</p>
     <ul>
-      <li>All data in transit is encrypted using TLS 1.2 or higher</li>
-      <li>Data at rest is encrypted using Azure-managed encryption keys</li>
-      <li>Access to databases is controlled by key-based authentication</li>
-      <li>Authentication is handled by Netlify Identity with JWT tokens</li>
+      <li>Traffic between you and Cygenix, and between Cygenix and Azure, is encrypted in transit using TLS 1.2 or higher</li>
+      <li>Data at rest in Cosmos DB and Azure Blob Storage is encrypted using Azure-managed keys</li>
+      <li>Connections out to <em>your</em> databases follow the settings in the connection string you supply. Certificate validation can be turned off there, and for PostgreSQL hosts we do not recognise as managed providers the default is no TLS at all — check the connection string if this matters to you</li>
+      <li>Sign-in is handled by Microsoft Entra External ID. Tokens are verified server-side against Microsoft's published keys on every request</li>
+      <li>Projects are held in a separate store per organisation; jobs, schedules and saved scripts are held in Cosmos DB partitioned per user</li>
     </ul>
     <p>No system is completely secure. If you believe your account has been compromised, contact us immediately at <a href="mailto:security@cygenix.co.uk">security@cygenix.co.uk</a>.</p>
 

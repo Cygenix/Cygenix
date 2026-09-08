@@ -3,8 +3,10 @@
 > AI-assisted SQL database migration platform. Maps schemas, forecasts row-level
 > failures before a run, moves server-level objects (logins, SQL Agent jobs, SSIS
 > projects, linked servers), and records every gated action in a hash-chained
-> audit trail. Runs in the browser, connects directly to your databases, hosted
-> in UK South.
+> audit trail. Driven from the browser, but the database connections are opened by
+> Cygenix: rows pass through the service during a run and are not stored there.
+> Metadata is held in Azure Cosmos DB in UK South; the functions that open the
+> connections are hosted on Netlify, which processes in the US.
 
 Cygenix Ltd is a UK company (registered in England and Wales, no. 16063342).
 It is run by Curtis Morris, who spent thirty years in data migration, eight of
