@@ -1,0 +1,26 @@
+# https://cygenix.co.uk/.well-known/security.txt
+# RFC 9116. Served as a static file from the publish directory; nothing in
+# scripts/build-routes.js touches a subdirectory, so this address is the file.
+#
+# Expires is mandatory and is deliberately close: a stale security.txt tells a
+# researcher the contact is probably stale too. Renew it, do not extend it by
+# years.
+
+Contact: mailto:security@cygenix.co.uk
+Expires: 2027-09-07T23:59:59.000Z
+Preferred-Languages: en
+Canonical: https://cygenix.co.uk/.well-known/security.txt
+
+# What to expect. Cygenix is a small company — one engineer reads this inbox,
+# and you will hear back from a person rather than a triage queue.
+#
+# There is no bug bounty and no payment. What there is: an acknowledgement,
+# and a fix or an honest reason there will not be one.
+#
+# Please do not test against a customer's databases or run anything that
+# degrades the service for other people. If you need an account to demonstrate
+# something, ask for one.
+#
+# Known and already published, so not worth your time: credentials are held in
+# browser session storage in plain text, and driver error messages are not
+# redacted. Both are documented at https://cygenix.co.uk/#security

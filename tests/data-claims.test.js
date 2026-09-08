@@ -184,10 +184,28 @@ check('COPY: the privacy policy names both mechanisms rather than saying "isolat
 // There is no ISO 27001, SOC 2 or Cyber Essentials. Nothing added while
 // correcting these claims may imply otherwise.
 
-const CERT = /ISO ?27001|SOC ?2|Cyber Essentials|enterprise-grade|bank-level|military-grade/i;
-const claimed = Object.entries(PUBLIC_COPY).filter(([, s]) => CERT.test(s)).map(([f]) => f);
-check('COPY: no page claims a certification the company does not hold',
-  claimed.length === 0, claimed.join(', '));
+// Naming a certification is not claiming it: the security section names all
+// three in order to say Cygenix holds none, which is the block that makes the
+// rest of the section believable. So the rule is not "never mention" — it is
+// that every mention sits inside a denial. Same shape as the qualifier window
+// in tests/capabilities.test.js.
+const CERTS = /ISO ?27001|SOC ?2|Cyber Essentials/gi;
+const DENIAL = /\b(no|not|none|neither|nor|without|holds no|does not hold|lacks)\b/i;
+const claimed = [];
+for (const [f, src] of Object.entries(PUBLIC_COPY)) {
+  const text = src.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  for (const m of text.matchAll(CERTS)) {
+    const before = text.slice(Math.max(0, m.index - 140), m.index);
+    if (!DENIAL.test(before)) claimed.push(f + ': …' + before.slice(-60) + '[' + m[0] + ']');
+  }
+}
+check('COPY: every mention of a certification is a denial of holding it, never a claim',
+  claimed.length === 0, claimed.slice(0, 3).join(' | '));
+// These have no honest use on a page like this. The brief bans them outright
+// and "ENTERPRISE-GRADE" was on the pricing trust strip until this work.
+const PUFF = /enterprise-grade|bank-level|military-grade|best-in-class/i;
+const puffed = Object.entries(PUBLIC_COPY).filter(([, s]) => PUFF.test(s)).map(([f]) => f);
+check('COPY: and no page substitutes an assurance adjective for one', puffed.length === 0, puffed.join(', '));
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);
