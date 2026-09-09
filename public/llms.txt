@@ -21,7 +21,7 @@ trial, or consultant-led delivery, which begins with a free schema assessment.
 
 ## Pages
 - [Platform](https://cygenix.co.uk/): mapping, preflight, schema explorer, server objects, governance, automation, reporting
-- [Pricing](https://cygenix.co.uk/pricing): Starter £99, Pro £299, Business £799 per month, Enterprise custom. No per-row charges.
+- [Pricing](https://cygenix.co.uk/pricing): Pro £299, Business £799 per month, Enterprise custom. No per-row charges. Consultant Led delivery is billed hourly at £195/hour (£1,450/day), and requires a Pro plan or above.
 - [About](https://cygenix.co.uk/about): Curtis Morris, founder, and how consultant-led engagements work
 - [Documentation](https://cygenix.co.uk/help): getting started, workflow, capability matrix
 

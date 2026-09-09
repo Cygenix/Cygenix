@@ -164,10 +164,10 @@ const blocks = (src) => [...src.matchAll(/<script type="application\/ld\+json">(
 const iLd = blocks(index), pLd = blocks(pricing), aLd = blocks(about);
 const all = [].concat(iLd, pLd, aLd);
 check('every JSON-LD block on every page is valid JSON',
-  all.length === 4 && all.every((b) => !b.parseError), all.map((b) => b.parseError).filter(Boolean).join(' | '));
-check('the homepage carries the Organization and the product; pricing the FAQ; about the consultancy',
+  all.length === 5 && all.every((b) => !b.parseError), all.map((b) => b.parseError).filter(Boolean).join(' | '));
+check('the homepage carries the Organization and the product; pricing the FAQ and the hourly service; about the consultancy',
   iLd.map((b) => b['@type']).join(',') === 'Organization,SoftwareApplication'
-  && pLd.map((b) => b['@type']).join(',') === 'FAQPage'
+  && pLd.map((b) => b['@type']).join(',') === 'FAQPage,Service'
   && aLd.map((b) => b['@type']).join(',') === 'ProfessionalService',
   [iLd, pLd, aLd].map((g) => g.map((b) => b['@type']).join(',')).join(' | '));
 
@@ -175,6 +175,7 @@ const org = iLd.find((b) => b['@type'] === 'Organization');
 const app = iLd.find((b) => b['@type'] === 'SoftwareApplication');
 const svc = aLd.find((b) => b['@type'] === 'ProfessionalService');
 const faq = pLd.find((b) => b['@type'] === 'FAQPage');
+const hourly = pLd.find((b) => b['@type'] === 'Service');
 
 // The footer is the legal statement of record. If the two ever disagree, one
 // of them is telling a machine something untrue about a registered company.
@@ -188,16 +189,43 @@ check('the Organization\'s registered particulars are the footer\'s, exactly',
 check('and its legal name is the one the footer uses', org && org.legalName === 'Cygenix Ltd' && /Cygenix Ltd/.test(index));
 
 // TIER_PRICES on the pricing page is what a visitor is actually quoted.
+//
+// The AggregateOffer describes the SUBSCRIPTIONS. Consultant Led is a fourth
+// card but not a fourth plan — it is an hourly service, it has no entry in
+// TIER_PRICES, and folding £195 into a range of monthly prices would tell a
+// machine the product starts at £195 a month. So the count here is of the
+// cards that are subscriptions, and the service is checked separately below
+// against its own Service block.
 {
   const t = /const TIER_PRICES = \{([\s\S]*?)\n\};/.exec(pricing);
   const gbp = t ? [...t[1].matchAll(/GBP:\s*\{\s*monthly:\s*(\d+)/g)].map((m) => Number(m[1])) : [];
+  const cards = (pricing.match(/<div class="tier[^"]*" data-tier="[a-z]+"/g) || []);
+  const plans = cards.filter((c) => !/\bservice\b/.test(c));
   check('the advertised price range is the pricing page\'s own monthly GBP range',
-    app && gbp.length >= 3 && Number(app.offers.lowPrice) === Math.min(...gbp)
+    app && gbp.length >= 2 && Number(app.offers.lowPrice) === Math.min(...gbp)
     && Number(app.offers.highPrice) === Math.max(...gbp),
     app ? app.offers.lowPrice + '-' + app.offers.highPrice + ' vs ' + gbp.join('/') : 'no offer');
-  check('and the tier count matches the cards on the page',
-    app && Number(app.offers.offerCount) === (pricing.match(/<div class="tier[ "]/g) || []).length,
-    app && app.offers.offerCount);
+  check('and the tier count matches the subscription cards on the page',
+    app && Number(app.offers.offerCount) === plans.length,
+    app && app.offers.offerCount + ' vs ' + plans.length + ' of ' + cards.length + ' cards');
+  check('no page still advertises the withdrawn 99 entry point',
+    !/"lowPrice": "99"/.test(index) && !/Starter/.test(index) && !/Starter £99/.test(read('llms.txt')));
+}
+
+// The hourly service, against the rate card a visitor reads. A Service entity
+// whose price has drifted from the panel above it is the same manual-action
+// risk as an FAQ answer that has: markup saying something the page does not.
+{
+  const spec = hourly && hourly.offers && hourly.offers.priceSpecification;
+  check('the Consultant Led rate is marked up per hour, not per month',
+    spec && spec.unitCode === 'HUR' && spec.priceCurrency === 'GBP', spec && JSON.stringify(spec));
+  check('and the marked-up rate is the one on the visible rate card',
+    spec && new RegExp('<div class="rate-val">£' + spec.price + ' <i>/hr</i></div>').test(pricing),
+    spec && spec.price);
+  check('the service hangs off the same Organization as the product',
+    hourly && hourly.provider['@id'] === org['@id'], hourly && JSON.stringify(hourly.provider));
+  check('and it is served at an address the site actually serves',
+    hourly && served.has(new URL(hourly.url).pathname), hourly && hourly.url);
 }
 
 // A graph, not three unrelated descriptions.

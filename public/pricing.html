@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#000000">
-<meta name="description" content="Cygenix pricing — predictable subscriptions for SQL database migration. No per-row penalties, no surprise overage. Starter, Pro, Business and Enterprise plans.">
+<meta name="description" content="Cygenix pricing — SQL database migration on Pro, Business or Enterprise, with no per-row penalties. Or consultant-led delivery at £195 an hour.">
 <meta property="og:title" content="Cygenix Pricing — Predictable SQL Migration Subscriptions">
-<meta property="og:description" content="Four tiers, transparent pricing, no per-document fees. Start free for 14 days.">
+<meta property="og:description" content="Three subscription tiers plus consultant-led delivery. Transparent pricing, no per-document fees. Start free for 14 days.">
 <meta property="og:url" content="https://cygenix.co.uk/pricing">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
@@ -15,7 +15,7 @@
      <meta property="og:image"> and set this back to summary_large_image. -->
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Cygenix Pricing — Predictable SQL Migration Subscriptions">
-<meta name="twitter:description" content="Four tiers, transparent pricing, no per-document fees. Start free for 14 days.">
+<meta name="twitter:description" content="Three subscription tiers plus consultant-led delivery. Transparent pricing, no per-document fees. Start free for 14 days.">
 <title>Pricing – Cygenix</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -52,6 +52,13 @@
   --accent-ink:#8ea0ff;--accent-ink2:#a9b6ff;
   --green:#5fd08a;--green-g:rgba(95,208,138,0.12);
   --amber:#e3a33d;--amber-g:rgba(227,163,61,0.12);
+  /* Consultant Led is the one card on this page that is not a subscription,
+     and it is amber so that a visitor can see which one that is before they
+     read a word of it. Deliberately the SAME gold as --amber rather than a
+     second one four percent away from it: two golds in one stylesheet is how
+     a palette starts to drift. --serv is the alias the tier variant uses, so
+     the intent reads at the call site — a service, not a warning. */
+  --serv:var(--amber);--serv-g:rgba(227,163,61,0.10);--serv-b:rgba(227,163,61,0.32);
   --red:#ef6f62;--red-g:rgba(239,111,98,0.12);
   --teal:#3fb5b0;--purple:#a98fd6;
   --ink:#12141c;--faint:#9aa0af;
@@ -162,7 +169,7 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
 .tier-name{font-size:13px;font-family:var(--mono);color:var(--accent-ink);letter-spacing:0.1em;text-transform:uppercase;font-weight:500;margin-bottom:0.5rem}
 .tier-tagline{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:1.5rem;min-height:40px}
 .tier-price{display:flex;align-items:baseline;gap:0.3rem;margin-bottom:0.4rem}
-.tier-price .amount{font-size:2.6rem;font-weight:700;letter-spacing:-0.03em;line-height:1}
+.tier-price .amount{font-size:2.6rem;font-weight:700;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums}
 .tier-price .currency{font-size:1.5rem;font-weight:600;color:var(--text2);line-height:1}
 .tier-price .period{font-size:13px;color:var(--text3);font-family:var(--mono)}
 .tier-price-sub{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:1.5rem;min-height:16px}
@@ -187,6 +194,69 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
 .tech-details strong{font-weight:600;font-family:var(--mono);font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;display:block;margin-bottom:0.25rem;color:var(--accent-ink)}
 .tech-details p{margin-bottom:0.6rem}
 .tech-details p:last-child{margin-bottom:0}
+/* ── Consultant Led: the card variant for a service ─────────────────────────
+   Four cards in a row read as four plans. This one is sold by the hour, and
+   the two ways a visitor gets that wrong are (a) applying the annual toggle
+   to it in their head and (b) reading the "14-day free trial" strapline above
+   the grid as its label. So it is a different colour from the brand indigo,
+   it carries its badge permanently rather than only while .featured — it is
+   never the "most popular" plan, and clicking it must not move that highlight
+   off Pro — and renderPrices() skips it on data-billing="hourly" rather than
+   by accident of a missing TIER_PRICES key. Amber on this ground measures
+   about 8.9:1, so it carries type as well as borders. */
+.tier.service{border-color:var(--serv-b);background:linear-gradient(180deg,var(--serv-g),var(--bg2) 220px);cursor:default}
+.tier.service:hover{border-color:rgba(227,163,61,0.55)}
+.tier.service .tier-badge{display:block;background:var(--serv);color:#14100a}
+.tier.service .tier-name{color:var(--serv)}
+.tier.service .tier-features li::before{color:var(--serv)}
+.tier-cta.service{background:var(--serv);color:#14100a;box-shadow:0 6px 16px -6px rgba(227,163,61,0.5)}
+.tier-cta.service:hover{filter:brightness(1.07);transform:translateY(-1px)}
+.tier-note{font-size:11px;line-height:1.65;color:var(--text3);border-top:1px solid var(--border);padding-top:0.85rem;margin-top:auto}
+.tier-note strong{color:var(--text2);font-weight:600}
+
+/* ── Panels: the shared shell for the rate card, the phases and the scope ── */
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.panel-head{font-family:var(--mono);font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;font-weight:500;color:var(--serv);padding:0.9rem 1.15rem;background:var(--bg3);border-bottom:1px solid var(--border)}
+.panel-head.included{color:var(--green)}
+.panel-head.excluded{color:var(--text3)}
+.panel-foot{padding:0.85rem 1.15rem;font-size:12px;line-height:1.65;color:var(--text3);border-top:1px solid var(--border)}
+
+/* ── Rate card ──────────────────────────────────────────────────────────── */
+.rate-wrap{display:grid;grid-template-columns:1.15fr 1fr;gap:1.25rem;align-items:start}
+.rate-row{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;padding:0.85rem 1.15rem;border-bottom:1px solid var(--border)}
+.rate-row:last-child{border-bottom:none}
+.rate-role{font-size:13.5px;color:var(--text)}
+.rate-role small{display:block;color:var(--text3);font-size:12px;line-height:1.5;margin-top:2px}
+.rate-val{font-family:var(--mono);font-size:14px;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
+.rate-val i{font-style:normal;color:var(--text3);font-size:11.5px}
+.block-row{display:grid;grid-template-columns:1fr auto;gap:0.2rem 1rem;align-items:baseline;padding:0.85rem 1.15rem;border-bottom:1px solid var(--border)}
+.block-row:last-of-type{border-bottom:none}
+.block-name{font-size:13.5px;font-weight:600;color:var(--text)}
+.block-price{font-family:var(--mono);font-size:14px;color:var(--text);white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+.block-meta{grid-column:1/2;font-size:12px;color:var(--text3)}
+.block-save{grid-column:2/3;justify-self:end;font-family:var(--mono);font-size:10.5px;color:var(--green);background:var(--green-g);border-radius:4px;padding:2px 6px;letter-spacing:0.04em}
+
+/* ── Engagement phases ──────────────────────────────────────────────────── */
+.phases{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg2)}
+.phase{padding:1.35rem 1.15rem;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:0.5rem}
+.phase:last-child{border-right:none}
+.phase-n{font-family:var(--mono);font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--serv)}
+.phase h4{font-size:14.5px;font-weight:600;letter-spacing:-0.01em}
+.phase p{font-size:12.5px;line-height:1.6;color:var(--text2)}
+.phase-dur{margin-top:auto;padding-top:0.85rem;font-family:var(--mono);font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums}
+
+/* ── What the rate covers ───────────────────────────────────────────────── */
+.scope-wrap{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;align-items:start}
+.scope-list{list-style:none;padding:1rem 1.15rem;display:flex;flex-direction:column;gap:0.6rem}
+.scope-list li{font-size:13px;line-height:1.55;color:var(--text2);padding-left:1.35rem;position:relative}
+.scope-list li::before{content:'✓';color:var(--green);font-weight:600;position:absolute;left:0;top:0}
+.scope-list.excluded li::before{content:'—';color:var(--text3);font-weight:400}
+
+/* ── Amber CTA, for the one button that books a person rather than a plan ── */
+.btn-service{background:var(--serv);color:#14100a;box-shadow:0 6px 16px -6px rgba(227,163,61,0.5)}
+.btn-service:hover{filter:brightness(1.07);transform:translateY(-1px)}
+.bottom-cta.service-cta{background:radial-gradient(700px 280px at 50% 45%,var(--serv-g),transparent 70%)}
+
 
 /* Section spacing */
 .section{padding:5rem 2rem;position:relative;z-index:1}
@@ -208,6 +278,8 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
 .compare .group-header td{background:var(--bg3);color:var(--accent-ink);font-family:var(--mono);font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;padding:0.65rem 1rem;text-align:left}
 .compare .check{color:var(--green);font-weight:600}
 .compare .dash{color:var(--text3)}
+.compare thead th.service-col{color:var(--serv)}
+.compare tbody td{font-variant-numeric:tabular-nums}
 .compare-note{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:1rem;text-align:center;letter-spacing:0.03em}
 
 /* FAQ */
@@ -269,6 +341,13 @@ footer a:hover{text-decoration:underline}
 @media(max-width:1024px){
   .pricing-grid{grid-template-columns:repeat(2,1fr)}
   .trust-grid{grid-template-columns:repeat(2,1fr)}
+  .rate-wrap,.scope-wrap{grid-template-columns:1fr}
+  /* Five phases over two columns leaves a hole in the last row unless the
+     fifth spans it. An empty bordered cell reads as a missing phase. */
+  .phases{grid-template-columns:repeat(2,1fr)}
+  .phase{border-bottom:1px solid var(--border)}
+  .phase:nth-child(2n){border-right:none}
+  .phase:nth-child(5){grid-column:1/-1;border-right:none;border-bottom:none}
 }
 @media(max-width:768px){
   .pricing-hero{padding:7rem 1.25rem 2rem}
@@ -280,6 +359,10 @@ footer a:hover{text-decoration:underline}
 @media (max-width:640px){
   .cta-btns{flex-direction:column;align-items:stretch}
   .cta-btns .btn-hero{width:100%}
+  .phases{grid-template-columns:1fr}
+  .phase{border-right:none;border-bottom:1px solid var(--border)}
+  .phase:last-child{border-bottom:none}
+  .rate-row{flex-direction:column;gap:0.35rem}
 }
 </style>
 <script src="/cygenix-region.js?v=f9955e4f0f" defer></script>
@@ -292,7 +375,7 @@ footer a:hover{text-decoration:underline}
 <link rel="canonical" href="https://cygenix.co.uk/pricing">
 <!-- Structured data. Inert JSON in a script tag the browser never executes;
      it tells machines what this page states instead of leaving them to infer
-     it from prose. The ten answers below are GENERATED from the visible
+     it from prose. The sixteen answers below are GENERATED from the visible
      accordion, and tests/seo.test.js re-derives them and fails on any drift:
      markup that does not match what a visitor reads is a manual-action risk.
      Google restricted FAQ rich results to government and health sites in
@@ -303,6 +386,22 @@ footer a:hover{text-decoration:underline}
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why has the Starter tier gone?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Starter served consultants and small teams running the odd migration. In practice those jobs needed hands-on help rather than a cheaper plan, so that demand now goes to Consultant Led, and self-serve starts at Pro. Existing Starter customers keep their price until their next renewal."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do you estimate hours before you've seen our data?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "We don't. The 45-minute scoping call is free and produces a range, not a number. The 20-hour Discovery Sprint is what turns that range into a written estimate with a defined scope — and if you go on to a Migration Block within 30 days, the Discovery hours come off the block."
+      }
+    },
     {
       "@type": "Question",
       "name": "What counts as a \"row\"?",
@@ -324,7 +423,7 @@ footer a:hover{text-decoration:underline}
       "name": "How does the 14-day free trial work?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Pick Starter or Pro, enter your card details to start, and you won't be charged for 14 days. Cancel anytime during the trial and you pay nothing. Your card is only charged on day 15 if you haven't cancelled. We'll email you on day 12 as a reminder."
+        "text": "Start on Pro, enter your card details, and you won't be charged for 14 days. Cancel anytime during the trial and you pay nothing. Your card is only charged on day 15 if you haven't cancelled. We'll email you on day 12 as a reminder. Business and Enterprise are quoted rather than self-serve, and Consultant Led is an hourly engagement with no trial period."
       }
     },
     {
@@ -364,7 +463,7 @@ footer a:hover{text-decoration:underline}
       "name": "Do you offer annual discounts?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes — pay annually and save 20% on Starter, Pro, and Business plans. Toggle \"Annual\" at the top of the page to see annual pricing. Enterprise contracts are always annual and priced per engagement."
+        "text": "Yes — pay annually and save 20% on Pro and Business plans. Toggle \"Annual\" at the top of the page to see annual pricing. Enterprise contracts are always annual and priced per engagement. Consultant Led is billed by the hour, so the toggle does not apply to it; the pre-purchased blocks are where the equivalent saving sits."
       }
     },
     {
@@ -382,8 +481,73 @@ footer a:hover{text-decoration:underline}
         "@type": "Answer",
         "text": "Yes — that's what Enterprise is for. If your needs sit between two tiers (e.g. you need Business-level concurrency but not the full row cap), get in touch and we'll work something out. We'd rather build a plan that fits than push you onto a tier you don't need."
       }
+    },
+    {
+      "@type": "Question",
+      "name": "What happens if the work runs over the estimate?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "We flag it the moment the burn-down says we will exceed 90% of the estimate, and nothing above the estimate is billed without your written approval. Change requests are quoted in hours before work starts."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do we still need a platform subscription?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — Pro or above. The consultant builds in your Cygenix tenant, not ours, so the pipelines, mappings and job history stay with you when the engagement ends. That is the whole point: you are not buying a black box you have to come back to us to change."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Who are the consultants?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Cygenix-badged data engineers and architects, UK-based, with an average of nine years on SQL Server, Azure SQL and Postgres migrations. We don't subcontract without telling you first, and you meet the named consultant before you commit."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is the rate different for the public sector or charities?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — 10% off standard rates for UK registered charities and public sector bodies, and we can contract through G-Cloud. Ask on the scoping call."
+      }
     }
   ]
+}
+</script>
+<!-- The hourly service published on this page, as its own entity rather than
+     folded into the homepage's AggregateOffer: Consultant Led is not a
+     subscription, and a machine reading "from £195" as a monthly plan price
+     is the same misreading the card variant exists to stop a human making.
+     Priced with unitCode HUR against the visible rate card. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Service",
+  "@id": "https://cygenix.co.uk/pricing#consultant-led",
+  "name": "Consultant Led Data Migration",
+  "serviceType": "SQL database migration delivery",
+  "url": "https://cygenix.co.uk/pricing",
+  "provider": {
+    "@id": "https://cygenix.co.uk/#organization"
+  },
+  "areaServed": {
+    "@type": "Country",
+    "name": "United Kingdom"
+  },
+  "offers": {
+    "@type": "Offer",
+    "availability": "https://schema.org/InStock",
+    "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": "195",
+      "priceCurrency": "GBP",
+      "unitCode": "HUR",
+      "unitText": "hour"
+    }
+  }
 }
 </script>
 </head>
@@ -434,45 +598,12 @@ footer a:hover{text-decoration:underline}
     <button id="bill-monthly" class="active" onclick="setBilling('monthly')">Monthly</button>
     <button id="bill-annual" onclick="setBilling('annual')">Annual <span class="save-pill">SAVE 20%</span></button>
   </div>
-  <div class="toggle-hint">14-DAY FREE TRIAL · CANCEL ANYTIME · NO SETUP FEES</div>
+  <div class="toggle-hint">14-DAY FREE TRIAL ON PRO · ANNUAL SAVES 20% ON PRO AND BUSINESS · CONSULTANT LED IS BILLED HOURLY</div>
 </section>
 </div>
 
 <!-- ===================== PRICING GRID ===================== -->
 <div class="pricing-grid">
-
-  <!-- ====== STARTER ====== -->
-  <div class="tier" data-tier="starter" onclick="selectTier('starter')">
-    <div class="tier-badge">SMALLER PROJECTS</div>
-    <div class="tier-name">Starter</div>
-    <div class="tier-tagline">For consultants and small teams running occasional migrations.</div>
-    <div class="tier-price">
-      <span class="currency">£</span>
-      <span class="amount">99</span>
-      <span class="period">/month</span>
-    </div>
-    <div class="tier-price-sub">Billed monthly</div>
-    <a href="#" class="tier-cta primary" onclick="startCheckout('starter');return false">Start 14-day free trial →</a>
-    <ul class="tier-features">
-      <li><strong>1 migration</strong> at a time</li>
-      <li>Up to <strong>1M rows</strong> per job</li>
-      <li><strong>30-day</strong> job history</li>
-      <li>Migrate to SQL Server &amp; Azure SQL</li>
-      <li>AI column mapping</li>
-      <li>Email support</li>
-    </ul>
-    <button class="tech-toggle" onclick="toggleTech(this)">
-      <span>Technical details</span><span class="chev">▾</span>
-    </button>
-    <div class="tech-details">
-      <strong>Isolation level</strong>
-      <p>Level 1 + soft quotas. Shared compute, shared Cosmos DB, fair-use throttling. Suitable for low-volume, non-time-critical migrations.</p>
-      <strong>Infrastructure</strong>
-      <p>Azure Functions Consumption plan, shared SQL connection pool, standard queue priority. Concurrent-job and job-size caps enforced at submission.</p>
-      <strong>Best for</strong>
-      <p>Solo consultants, small ISVs, or teams trialling Cygenix before committing to a higher tier.</p>
-    </div>
-  </div>
 
   <!-- ====== PRO (FEATURED) ====== -->
   <div class="tier featured" data-tier="pro" onclick="selectTier('pro')">
@@ -500,7 +631,7 @@ footer a:hover{text-decoration:underline}
     </button>
     <div class="tech-details">
       <strong>Isolation level</strong>
-      <p>Level 2. Shared infrastructure with hard-enforced per-tenant quotas. Priority queue allocation isolates Pro traffic from Starter-tier load.</p>
+      <p>Level 2. Shared infrastructure with hard-enforced per-tenant quotas. Priority queue allocation puts Pro traffic ahead of the shared fair-use pool.</p>
       <strong>Infrastructure</strong>
       <p>Premium-plan Azure Function instance, dedicated Cosmos DB partition with reserved RU/s, isolated SQL connection pool. Durable Functions checkpointing removes the 10-minute execution cap.</p>
       <strong>Best for</strong>
@@ -576,7 +707,190 @@ footer a:hover{text-decoration:underline}
     </div>
   </div>
 
+  <!-- ====== CONSULTANT LED ====== -->
+  <!-- Not a subscription. data-billing="hourly" is what keeps renderPrices()
+       and the monthly/annual toggle off it — see the function — and it is the
+       one card with no selectTier() handler, because the featured highlight
+       belongs to a plan a visitor can buy from this page. -->
+  <div class="tier service" data-tier="consultant" data-billing="hourly">
+    <div class="tier-badge">CONSULTANT LED</div>
+    <div class="tier-name">Consultant Led</div>
+    <div class="tier-tagline">We do the migration. Senior data specialists, billed by the hour, on your timeline.</div>
+    <div class="tier-price">
+      <span class="currency">£</span>
+      <span class="amount">195</span>
+      <span class="period">/hour</span>
+    </div>
+    <div class="tier-price-sub">£1,450 per day · invoiced monthly in arrears</div>
+    <a href="#" class="tier-cta service" onclick="openContactModal('consultant');return false">Book a scoping call →</a>
+    <ul class="tier-features">
+      <li><strong>Named consultant</strong> for the whole engagement</li>
+      <li>Source profiling &amp; data quality baseline</li>
+      <li>Schema mapping, transformation &amp; remediation</li>
+      <li>Full-volume <strong>dry run</strong> before cutover</li>
+      <li>Managed cutover with rollback plan</li>
+      <li>Validation pack, runbook &amp; handover</li>
+      <li>Delivered in <strong>your</strong> Cygenix tenant — you keep it</li>
+    </ul>
+    <p class="tier-note"><strong>10-hour minimum.</strong> Requires an active Pro plan or above. Time logged in
+      30-minute increments against an agreed estimate — you approve any overrun before we bill it.
+      Quoted in GBP only, whatever the currency selector is set to.</p>
+  </div>
+
 </div>
+
+<div class="divider"></div>
+
+<!-- ===================== CONSULTANT RATE CARD ===================== -->
+<section class="section">
+  <div class="container">
+    <div class="section-tag">RATE CARD</div>
+    <h2 class="section-title">What an hour costs, and how to buy them</h2>
+    <p class="section-sub">Every engagement starts with a scoping call — free, 45 minutes — and ends with a written estimate in hours. Buy hours as you go, or commit to a block and pay less per hour.</p>
+
+    <div class="rate-wrap">
+      <div class="panel">
+        <div class="panel-head">Standard rates</div>
+        <div class="rate-row">
+          <div class="rate-role">Migration Consultant<small>Build, mapping, dry runs, cutover execution</small></div>
+          <div class="rate-val">£195 <i>/hr</i></div>
+        </div>
+        <div class="rate-row">
+          <div class="rate-role">Senior Data Architect<small>Target design, complex remediation, performance</small></div>
+          <div class="rate-val">£245 <i>/hr</i></div>
+        </div>
+        <div class="rate-row">
+          <div class="rate-role">Programme Lead<small>Multi-workstream governance, stakeholder reporting</small></div>
+          <div class="rate-val">£275 <i>/hr</i></div>
+        </div>
+        <div class="rate-row">
+          <div class="rate-role">Day rate<small>7.5 hours, any single role — a saving on hourly</small></div>
+          <div class="rate-val">£1,450 <i>/day</i></div>
+        </div>
+        <div class="rate-row">
+          <div class="rate-role">Out-of-hours cutover<small>Weeknights after 19:00, weekends, bank holidays</small></div>
+          <div class="rate-val">1.5× <i>standard</i></div>
+        </div>
+        <div class="rate-row">
+          <div class="rate-role">On-site attendance<small>UK mainland; travel and accommodation at cost, agreed upfront</small></div>
+          <div class="rate-val">£450 <i>/day + rate</i></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">Pre-purchased blocks</div>
+        <div class="block-row">
+          <span class="block-name">Discovery Sprint</span>
+          <span class="block-price">£3,500</span>
+          <span class="block-meta">20 hours · fixed scope · 2 weeks</span>
+          <span class="block-save">SAVE 10%</span>
+        </div>
+        <div class="block-row">
+          <span class="block-name">Migration Block</span>
+          <span class="block-price">£9,950</span>
+          <span class="block-meta">60 hours · 12 months to use</span>
+          <span class="block-save">SAVE 15%</span>
+        </div>
+        <div class="block-row">
+          <span class="block-name">Programme Retainer</span>
+          <span class="block-price">£24,900</span>
+          <span class="block-meta">160 hours per quarter · named team</span>
+          <span class="block-save">SAVE 20%</span>
+        </div>
+        <div class="block-row">
+          <span class="block-name">Fixed-price delivery</span>
+          <span class="block-price">On quote</span>
+          <span class="block-meta">Scope locked after Discovery · milestone billing</span>
+        </div>
+        <div class="panel-foot">Unused block hours roll over once, for one further quarter. Blocks are invoiced on
+          signature; hourly work is invoiced monthly with a timesheet against every line.</div>
+      </div>
+    </div>
+
+    <div class="compare-note">All rates exclude VAT and are quoted in GBP. Estimates valid 30 days.
+      Consultant Led is governed by the Cygenix Professional Services terms.</div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ===================== ENGAGEMENT PHASES ===================== -->
+<section class="section">
+  <div class="container">
+    <div class="section-tag">ENGAGEMENT</div>
+    <h2 class="section-title">A typical migration, phase by phase</h2>
+    <p class="section-sub">Hours below are indicative for a single source system of roughly 20–50 tables. Your estimate after Discovery replaces them with real numbers.</p>
+
+    <div class="phases">
+      <div class="phase">
+        <span class="phase-n">Phase 01</span>
+        <h4>Discover</h4>
+        <p>Source profiling, row and object counts, data quality baseline, dependency map, risk log.</p>
+        <span class="phase-dur">16–24 hrs</span>
+      </div>
+      <div class="phase">
+        <span class="phase-n">Phase 02</span>
+        <h4>Design</h4>
+        <p>Target schema, transformation rules, AI column mapping reviewed and signed off by a human.</p>
+        <span class="phase-dur">20–32 hrs</span>
+      </div>
+      <div class="phase">
+        <span class="phase-n">Phase 03</span>
+        <h4>Build &amp; rehearse</h4>
+        <p>Pipelines built in your tenant, full-volume dry run into staging, defect log worked to zero.</p>
+        <span class="phase-dur">40–80 hrs</span>
+      </div>
+      <div class="phase">
+        <span class="phase-n">Phase 04</span>
+        <h4>Cutover</h4>
+        <p>Agreed freeze window, live run, reconciliation checks, rollback ready and rehearsed.</p>
+        <span class="phase-dur">8–16 hrs</span>
+      </div>
+      <div class="phase">
+        <span class="phase-n">Phase 05</span>
+        <h4>Handover</h4>
+        <p>Validation pack, runbook, two knowledge-transfer sessions, 14 days of hypercare included.</p>
+        <span class="phase-dur">8–12 hrs</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ===================== WHAT THE RATE COVERS ===================== -->
+<section class="section">
+  <div class="container">
+    <div class="section-tag">SCOPE</div>
+    <h2 class="section-title">What the hourly rate covers</h2>
+    <p class="section-sub">The line between what a consultant does and what stays with your team, written down before the engagement rather than argued about during it.</p>
+
+    <div class="scope-wrap">
+      <div class="panel">
+        <div class="panel-head included">Included</div>
+        <ul class="scope-list">
+          <li>All consultant time on discovery, design, build, testing and cutover</li>
+          <li>Weekly written progress note and a burn-down against your estimate</li>
+          <li>Access to Cygenix AI column mapping, validation engine and project planner</li>
+          <li>Your Cygenix platform subscription runs underneath — you own the pipelines afterwards</li>
+          <li>14 days of post-cutover hypercare at no charge</li>
+          <li>Named escalation contact and a monthly timesheet against every invoice line</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <div class="panel-head excluded">Not included</div>
+        <ul class="scope-list excluded">
+          <li>Your Cygenix subscription — Pro or above is required alongside</li>
+          <li>Third-party licences, cloud consumption and egress on your own Azure spend</li>
+          <li>Application changes outside the data layer</li>
+          <li>Business-side UAT and sign-off — we support it, your team owns it</li>
+          <li>Travel, accommodation and on-site days unless quoted</li>
+          <li>Ongoing run and support after hypercare — moves to a retainer</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
 
 <div class="divider"></div>
 
@@ -611,62 +925,83 @@ footer a:hover{text-decoration:underline}
   <div class="container">
     <div class="section-tag">FULL COMPARISON</div>
     <h2 class="section-title">Every feature, every tier</h2>
-    <p class="section-sub">No "talk to sales for a connector list". Here's exactly what's in each plan.</p>
+    <p class="section-sub">No "talk to sales for a connector list". Here's exactly what's in each plan. Consultant Led is an add-on, not a replacement — the platform tier is what the work is delivered on.</p>
 
     <div class="compare-wrap">
       <table class="compare">
         <thead>
           <tr>
             <th>Feature</th>
-            <th>Starter</th>
             <th>Pro</th>
             <th>Business</th>
             <th>Enterprise</th>
+            <th class="service-col">Consultant Led</th>
           </tr>
         </thead>
         <tbody>
+          <!-- Commercials first: the column added here is priced differently from
+               the other three, and a reader who meets "£195/hr" three groups down
+               has already assumed it is a monthly plan. -->
+          <tr class="group-header"><td colspan="5">Commercials</td></tr>
+          <tr><td>Pricing model</td><td>£299/mo</td><td>£799/mo</td><td>Custom</td><td>£195/hr</td></tr>
+          <tr><td>Minimum commitment</td><td>Monthly</td><td>Monthly</td><td>Annual</td><td>10 hours</td></tr>
+          <tr><td>Requires platform tier</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td>Pro or above</td></tr>
+
           <tr class="group-header"><td colspan="5">Capacity</td></tr>
-          <tr><td>Concurrent migrations</td><td>1</td><td>3</td><td>10</td><td>Unlimited</td></tr>
-          <tr><td>Max rows per job</td><td>1M</td><td>10M</td><td>100M</td><td>Unlimited</td></tr>
-          <tr><td>Monthly job submissions</td><td>50</td><td>500</td><td>5,000</td><td>Unlimited</td></tr>
-          <tr><td>Queue priority</td><td>Standard</td><td>Priority</td><td>Dedicated queue</td><td>Dedicated infra</td></tr>
+          <tr><td>Concurrent migrations</td><td>3</td><td>10</td><td>Unlimited</td><td>Per plan</td></tr>
+          <tr><td>Max rows per job</td><td>10M</td><td>100M</td><td>Unlimited</td><td>Per plan</td></tr>
+          <tr><td>Monthly job submissions</td><td>500</td><td>5,000</td><td>Unlimited</td><td>Per plan</td></tr>
+          <tr><td>Queue priority</td><td>Priority</td><td>Dedicated queue</td><td>Dedicated infra</td><td>Per plan</td></tr>
 
           <tr class="group-header"><td colspan="5">Sources &amp; targets</td></tr>
-          <tr><td>SQL Server (on-prem &amp; cloud)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Azure SQL Database</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>PostgreSQL</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>CSV / flat-file imports</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Custom connectors</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>MS SQL Server objects (packages, logins, objects)</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
+          <tr><td>SQL Server (on-prem &amp; cloud)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Azure SQL Database</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>PostgreSQL</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>CSV / flat-file imports</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Custom connectors</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>MS SQL Server objects (packages, logins, objects)</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+
+          <!-- The group the whole change turns on: same platform, different
+               hands on it. "Per plan" above means the subscription underneath
+               sets the limit; these rows are what the hourly rate buys. -->
+          <tr class="group-header"><td colspan="5">Who does the work</td></tr>
+          <tr><td>Named migration consultant</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+          <tr><td>Schema mapping &amp; remediation</td><td>Self-serve</td><td>Self-serve</td><td>Self-serve</td><td class="check">Done for you</td></tr>
+          <tr><td>Full-volume dry run</td><td>Self-serve</td><td>Self-serve</td><td>Self-serve</td><td class="check">Done for you</td></tr>
+          <tr><td>Managed cutover window</td><td class="dash">—</td><td class="dash">—</td><td>Custom</td><td class="check">✓</td></tr>
+          <tr><td>Rollback rehearsal</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+          <tr><td>Validation pack &amp; runbook</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
 
           <tr class="group-header"><td colspan="5">Platform features</td></tr>
-          <tr><td>AI column mapping</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Validation engine</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Project planner</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Agentive migration mode</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>BI reporting &amp; insights</td><td>Basic</td><td>Full</td><td>Full</td><td>Full + custom</td></tr>
-          <tr><td>Version control history</td><td>10 versions</td><td>50 versions</td><td>Unlimited</td><td>Unlimited</td></tr>
-          <tr><td>Job history retention</td><td>30 days</td><td>90 days</td><td>365 days</td><td>Unlimited</td></tr>
+          <tr><td>AI column mapping</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Validation engine</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Project planner</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Agentive migration mode</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>BI reporting &amp; insights</td><td>Full</td><td>Full</td><td>Full + custom</td><td>Per plan</td></tr>
+          <tr><td>Version control history</td><td>50 versions</td><td>Unlimited</td><td>Unlimited</td><td>Per plan</td></tr>
+          <tr><td>Job history retention</td><td>90 days</td><td>365 days</td><td>Unlimited</td><td>Per plan</td></tr>
 
           <tr class="group-header"><td colspan="5">Notifications</td></tr>
-          <tr><td>Email alerts</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Daily digest</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Slack integration</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Custom webhooks</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
+          <tr><td>Email alerts</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Daily digest</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Slack integration</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Custom webhooks</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
 
           <tr class="group-header"><td colspan="5">Security &amp; compliance</td></tr>
-          <tr><td>UK metadata residency</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>SSO (Microsoft / Google)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
-          <tr><td>Audit logs</td><td>30 days</td><td>90 days</td><td>365 days</td><td>Unlimited</td></tr>
-          <tr><td>Customer-managed keys</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
-          <tr><td>Private networking / VNet</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
-          <tr><td>BYO Azure subscription</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+          <tr><td>UK metadata residency</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>SSO (Microsoft / Google)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Audit logs</td><td>90 days</td><td>365 days</td><td>Unlimited</td><td>Per plan</td></tr>
+          <tr><td>Customer-managed keys</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>Private networking / VNet</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td>Per plan</td></tr>
+          <tr><td>BYO Azure subscription</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td>Per plan</td></tr>
 
           <tr class="group-header"><td colspan="5">Support</td></tr>
-          <tr><td>Email support</td><td>Standard</td><td>Priority</td><td>SLA-backed</td><td>SLA + named CSM</td></tr>
-          <tr><td>Response time SLA</td><td>Best effort</td><td>1 business day</td><td>4 hours</td><td>1 hour</td></tr>
-          <tr><td>Onboarding session</td><td class="dash">—</td><td>30 min</td><td>2 hours</td><td>Custom</td></tr>
-          <tr><td>Dedicated success manager</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+          <tr><td>Email support</td><td>Priority</td><td>SLA-backed</td><td>SLA + named CSM</td><td>Direct line</td></tr>
+          <tr><td>Response time SLA</td><td>1 business day</td><td>4 hours</td><td>1 hour</td><td>Direct line</td></tr>
+          <tr><td>Onboarding session</td><td>30 min</td><td>2 hours</td><td>Custom</td><td>Included</td></tr>
+          <tr><td>Dedicated success manager</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="dash">—</td></tr>
+          <tr><td>Post-cutover hypercare</td><td class="dash">—</td><td class="dash">—</td><td>Custom</td><td>14 days</td></tr>
+          <tr><td>Knowledge transfer sessions</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td>2 included</td></tr>
         </tbody>
       </table>
     </div>
@@ -684,6 +1019,24 @@ footer a:hover{text-decoration:underline}
     <p class="section-sub">If something's not covered here, get in touch — we'd rather answer your question now than after you've signed up.</p>
 
     <div class="faq-list">
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          <span>Why has the Starter tier gone?</span><span class="plus">+</span>
+        </button>
+        <div class="faq-a">
+          <p>Starter served consultants and small teams running the odd migration. In practice those jobs needed hands-on help rather than a cheaper plan, so that demand now goes to Consultant Led, and self-serve starts at Pro. Existing Starter customers keep their price until their next renewal.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          <span>How do you estimate hours before you've seen our data?</span><span class="plus">+</span>
+        </button>
+        <div class="faq-a">
+          <p>We don't. The 45-minute scoping call is free and produces a range, not a number. The 20-hour Discovery Sprint is what turns that range into a written estimate with a defined scope — and if you go on to a Migration Block within 30 days, the Discovery hours come off the block.</p>
+        </div>
+      </div>
+
       <div class="faq-item">
         <button class="faq-q" onclick="toggleFaq(this)">
           <span>What counts as a "row"?</span><span class="plus">+</span>
@@ -707,7 +1060,7 @@ footer a:hover{text-decoration:underline}
           <span>How does the 14-day free trial work?</span><span class="plus">+</span>
         </button>
         <div class="faq-a">
-          <p>Pick Starter or Pro, enter your card details to start, and you won't be charged for 14 days. Cancel anytime during the trial and you pay nothing. Your card is only charged on day 15 if you haven't cancelled. We'll email you on day 12 as a reminder.</p>
+          <p>Start on Pro, enter your card details, and you won't be charged for 14 days. Cancel anytime during the trial and you pay nothing. Your card is only charged on day 15 if you haven't cancelled. We'll email you on day 12 as a reminder. Business and Enterprise are quoted rather than self-serve, and Consultant Led is an hourly engagement with no trial period.</p>
         </div>
       </div>
 
@@ -752,7 +1105,7 @@ footer a:hover{text-decoration:underline}
           <span>Do you offer annual discounts?</span><span class="plus">+</span>
         </button>
         <div class="faq-a">
-          <p>Yes — pay annually and save 20% on Starter, Pro, and Business plans. Toggle "Annual" at the top of the page to see annual pricing. Enterprise contracts are always annual and priced per engagement.</p>
+          <p>Yes — pay annually and save 20% on Pro and Business plans. Toggle "Annual" at the top of the page to see annual pricing. Enterprise contracts are always annual and priced per engagement. Consultant Led is billed by the hour, so the toggle does not apply to it; the pre-purchased blocks are where the equivalent saving sits.</p>
         </div>
       </div>
 
@@ -773,6 +1126,42 @@ footer a:hover{text-decoration:underline}
           <p>Yes — that's what Enterprise is for. If your needs sit between two tiers (e.g. you need Business-level concurrency but not the full row cap), get in touch and we'll work something out. We'd rather build a plan that fits than push you onto a tier you don't need.</p>
         </div>
       </div>
+
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          <span>What happens if the work runs over the estimate?</span><span class="plus">+</span>
+        </button>
+        <div class="faq-a">
+          <p>We flag it the moment the burn-down says we will exceed 90% of the estimate, and nothing above the estimate is billed without your written approval. Change requests are quoted in hours before work starts.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          <span>Do we still need a platform subscription?</span><span class="plus">+</span>
+        </button>
+        <div class="faq-a">
+          <p>Yes — Pro or above. The consultant builds in your Cygenix tenant, not ours, so the pipelines, mappings and job history stay with you when the engagement ends. That is the whole point: you are not buying a black box you have to come back to us to change.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          <span>Who are the consultants?</span><span class="plus">+</span>
+        </button>
+        <div class="faq-a">
+          <p>Cygenix-badged data engineers and architects, UK-based, with an average of nine years on SQL Server, Azure SQL and Postgres migrations. We don't subcontract without telling you first, and you meet the named consultant before you commit.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          <span>Is the rate different for the public sector or charities?</span><span class="plus">+</span>
+        </button>
+        <div class="faq-a">
+          <p>Yes — 10% off standard rates for UK registered charities and public sector bodies, and we can contract through G-Cloud. Ask on the scoping call.</p>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -780,12 +1169,12 @@ footer a:hover{text-decoration:underline}
 <div class="divider"></div>
 
 <!-- ===================== BOTTOM CTA ===================== -->
-<section class="bottom-cta">
-  <div class="cta-title">Start migrating in minutes,<br>not months.</div>
-  <div class="cta-sub">14-day free trial on Starter and Pro. No credit card surprises. Cancel anytime.</div>
+<section class="bottom-cta service-cta">
+  <div class="cta-title">Not sure which side of<br>the line you're on?</div>
+  <div class="cta-sub">Book the scoping call. If the platform alone will do it, we'll tell you that and save you the money.</div>
   <div class="cta-btns">
-    <a href="#" class="btn-hero btn-primary" onclick="startCheckout('pro');return false">Start free trial →</a>
-    <a href="#" class="btn-hero btn-secondary" onclick="openContactModal();return false">Talk to sales</a>
+    <a href="#" class="btn-hero btn-service" onclick="openContactModal('consultant');return false">Book a scoping call →</a>
+    <a href="#" class="btn-hero btn-secondary" onclick="startCheckout('pro');return false">Start 14-day free trial</a>
   </div>
 </section>
 
@@ -838,11 +1227,15 @@ footer a:hover{text-decoration:underline}
 // annualLump = the total billed once a year (display only; Stripe charges
 //              the per-year price stored on the annual Price object).
 const TIER_PRICES = {
-  starter: {
-    GBP: { monthly: 99,  annual: 79,  annualLump: '948'   },
-    USD: { monthly: 129, annual: 103, annualLump: '1,236' },
-    EUR: { monthly: 115, annual: 92,  annualLump: '1,104' }
-  },
+  // Starter (£99) was removed from sale on this page. Its Stripe prices and
+  // its entry in cygenix-capabilities.js are deliberately untouched, so an
+  // existing Starter subscriber keeps their plan, their limits and their
+  // renewal — this object is only what the page quotes to a new visitor.
+  //
+  // Consultant Led is absent for a different reason: it is £195 an hour, it
+  // has no annual equivalent and no per-currency price, so there is nothing
+  // here for the toggle or the region selector to render. renderPrices()
+  // skips it on data-billing="hourly" rather than on this absence.
   pro: {
     GBP: { monthly: 299, annual: 239, annualLump: '2,868' },
     USD: { monthly: 389, annual: 309, annualLump: '3,708' },
@@ -874,6 +1267,13 @@ function renderPrices() {
   document.querySelectorAll('.tier[data-tier]').forEach(card => {
     const tierKey = card.dataset.tier;
     const data = TIER_PRICES[tierKey];
+    // Two cards have no price to render, for two different reasons, and both
+    // must survive a monthly/annual switch and a currency change untouched:
+    // Enterprise says "Custom", and Consultant Led says £195/hour — an hourly
+    // rate with no annual discount and no converted equivalent. The explicit
+    // data-billing test is there so that adding a TIER_PRICES entry for a
+    // service tier later cannot silently start discounting it by 20%.
+    if (card.dataset.billing === 'hourly') return;
     if (!data) return; // enterprise — leave "Custom" alone
     const prices = data[region.currency] || data.GBP;
     const amount = prices[period];
@@ -1003,6 +1403,20 @@ function toggleFaq(btn){
   }
 }
 
+// The first answer is open on load: it explains a change a returning visitor
+// will notice before they ask about it (Starter has gone), and that should not
+// need a click. Done here rather than with a second class in the markup
+// because tests/seo.test.js re-derives every question from `<button
+// class="faq-q">` exactly, and an extra class on that attribute would hide the
+// first question from the check that the structured data matches the page.
+(function openFirstFaq(){
+  var q = document.querySelector('.faq-q');
+  if (!q) return;
+  q.classList.add('open');
+  var a = q.nextElementSibling;
+  if (a && a.classList.contains('faq-a')) a.classList.add('open');
+})();
+
 // Stripe Checkout entry point. Calls our Azure Function which builds
 // a Stripe Checkout Session server-side and returns the hosted-checkout
 // URL. We never expose Stripe Price IDs in the browser — they live in
@@ -1072,6 +1486,12 @@ function openContactModal(tier){
   } else if (tier === 'enterprise') {
     title.textContent = 'Talk to us about Enterprise';
     body.textContent  = "Enterprise is bespoke — dedicated infrastructure, BYO Azure, custom SLAs. Get in touch and we'll arrange a discovery call.";
+  } else if (tier === 'consultant') {
+    // The scoping call is the first step of a Consultant Led engagement, so
+    // this modal is a booking route in everything but name until a real
+    // /contact/scoping-call page exists.
+    title.textContent = 'Book a scoping call';
+    body.textContent  = "Free, 45 minutes, no obligation. Tell us the source system, roughly how many tables and when you need to be live, and we'll come back within one business day with a range and a named consultant.";
   } else {
     title.textContent = 'Talk to us';
     body.textContent  = "Tell us about your migration and we'll come back within one business day with a tailored proposal.";
