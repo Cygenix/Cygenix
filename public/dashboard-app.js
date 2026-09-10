@@ -4375,150 +4375,65 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2500);
 }
 
+// Home is the landing page, not the analysis.
+//
+// The migration pipeline strip, the five-tile KPI row, the replication tile
+// and the job-status ring moved to /analytics. They were not deleted — the
+// arithmetic behind them is in cygenix-analytics.js and the rendering is in
+// analytics-app.js, both of which the new page loads. What was wrong with them
+// here was not that they were uninteresting; it was that TOTAL JOBS and the
+// ring were the same expression rendered twice, and that the Analysed tile
+// counted every project while the pipeline beside it counted one. Two true
+// numbers that look like one fact is worse than either number alone.
+//
+// What stays is what an operator opens Home to see: is anything broken (the
+// band), is the cutover in trouble (one readiness line), and what am I working
+// on (projects, schedules, project status).
 function renderDashboard() {
-  // The Recent Jobs table has been replaced by the Project Status panel.
-  // We still call updateStats() for the stat cards at the top.
+  // Still called for the projects card it renders; the stat cards it used to
+  // fill are gone and every write in it is null-guarded.
   updateStats();
-  renderRing();
   renderStreamBand();
-  renderMigrationPipeline();
-  renderStreamControlTile();
+  renderReadinessStrip();
   renderProjectStatus();
-  renderCutoverConfidence();
   // Schedules need a network round trip, so they fill in behind the rest
   // rather than holding the whole view up.
   loadDashboardSchedules();
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// MIGRATION PIPELINE
-// ══════════════════════════════════════════════════════════════════════════
-// Eight cards of equal weight, each true, none of them saying what today's
-// problem is. A person had to read all eight and do the joining up
-// themselves, every morning.
-//
-// This is the Flow view from the Data Stream page applied to the lifecycle:
-// six stages in a row, what is sitting at each, and at most ONE of them
-// named as the blockage — because the value of that view is that it points
-// at one thing. The sentence underneath is the whole point of the card.
-//
-// The derivation is all in cygenix-pipeline.js and is unit-tested against
-// fixtures; this function turns a PipelineModel into markup and nothing else.
+// ── Readiness, in one line ────────────────────────────────────────────────
+// The single figure that survived the move, because it is the one a person
+// opens Home to check. It calls pfConfidence() — the same function the
+// Analytics tile and the readiness breakdown call — so there is no second
+// calculation that could drift from the first. Everything else about the
+// score, including which component is costing it points, is one click away.
+function renderReadinessStrip() {
+  const host = document.getElementById('dash-readiness');
+  if (!host || typeof CygenixPreflight === 'undefined') return;
 
-/** What the pipeline model needs, read from where the console keeps it. */
-function pipelineInput(){
-  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
-  const projects = safeArr('cygenix_projects');
-  const project  = projects.find(p => p.id === activeId) || null;
-  const jobs     = project ? liveJobs(state.jobs).filter(j => j.projectId === project.id) : [];
+  let preflight = null;
+  try { preflight = CygenixPreflight.pfLoad(localStorage.getItem('cygenix_active_project_id') || 'default'); } catch {}
+  const c = CygenixPreflight.pfConfidence({ jobs: liveJobs(state.jobs), preflight });
 
-  let conns = {};
-  try {
-    const c = CygenixConnections.get();
-    conns = { source: c.srcConnString || c.srcFnUrl, target: c.tgtConnString || c.tgtFnUrl };
-  } catch {}
+  // No signals at all is not a zero — it is a project that has not started
+  // being gradeable yet, and a strip claiming "0" would be a false alarm.
+  if (!c || c.score === null) { host.style.display = 'none'; return; }
 
-  // Data quality: the same two facts the Data Quality Review card reads, so
-  // the card and the pipeline cannot disagree about whether it has ever run.
-  const rules = safeArr('cygenix_wasis_rules')
-    .filter(r => !r.projectId || (project && r.projectId === project.id));
-  const inspected = jobs.filter(j => Array.isArray(j.tables) && j.tables.some(t => Number(t.rows) > 0)).length;
-
-  let confidence = null;
-  try {
-    const preflight = CygenixPreflight.pfLoad(activeId || 'default');
-    confidence = CygenixPreflight.pfConfidence({ jobs, preflight });
-  } catch {}
-
-  return {
-    project, jobs, connections: conns,
-    quality: { rulesCount: rules.length, inspectedJobs: inspected },
-    confidence, now: Date.now(),
-  };
-}
-
-function renderMigrationPipeline(){
-  const host = document.getElementById('migration-pipeline');
-  if (!host || typeof CygenixPipeline === 'undefined') return;
-
-  const model = CygenixPipeline.toPipelineModel(pipelineInput());
-  window._cygPipeline = model;              // read by renderCutoverConfidence
-
-  const STATE_WORD = { done: '✓ done', active: 'active', attention: 'attention',
-                       blocked: 'blocked', waiting: 'not started' };
-
-  const stageHtml = model.stages.map((s, i) => {
-    const hot = model.bottleneck === s.key;
-    const chip = `
-      <a class="mp-stage is-${s.state}" href="${s.href}"
-         title="${escHtml(s.reason || s.headline)}">
-        <div class="mp-stage-key">${escHtml(s.label)}</div>
-        <div class="mp-stage-count">${escHtml(s.headline)}</div>
-        <div class="mp-stage-detail">${escHtml(s.detail || s.reason || '')}</div>
-        <span class="mp-state mp-state-${s.state}">${STATE_WORD[s.state]}</span>
-        ${hot ? `<span class="mp-bottleneck ${s.state === 'blocked' ? 'red' : 'amber'}">bottleneck</span>` : ''}
-      </a>`;
-    if (i === model.stages.length - 1) return chip;
-    // The label on the connector is the transition count, not a rate: this is
-    // a lifecycle, not a throughput.
-    const next = model.stages[i + 1];
-    const hotArrow = model.bottleneck === next.key;
-    return chip + `
-      <div class="mp-arrow${hotArrow ? ' hot' : ''}" aria-hidden="true">
-        <div class="mp-arrow-label">${next.total ? next.count + '/' + next.total : ''}</div>
-        <div class="mp-arrow-line"></div>
-      </div>`;
-  }).join('');
-
-  // The CTA goes to whatever the bottleneck is; with nothing blocked it goes
-  // to the jobs list, which is the next thing anyone wants anyway.
-  const bs = model.stages.find(s => s.key === model.bottleneck);
-  const cta = bs
-    ? { href: bs.href, label: 'Go to ' + bs.label + ' →' }
-    : { href: '/dashboard#goto=all-jobs', label: 'Open all jobs →' };
-
-  // A previously generated AI summary replaces the deterministic line when
-  // one exists. It is never fetched here: the call bills the user's own
-  // Anthropic key, and spending someone's money on every dashboard render is
-  // not a thing to do quietly. ↻ regenerates on request.
-  const ai = model.project ? readAiNarrative(model.project.id) : null;
-
+  const COLOR = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)' };
+  const LABEL = { green: 'Ready', amber: 'Caution', red: 'Not ready' };
+  host.style.display = '';
   host.innerHTML = `
-    <div class="mp-head">
-      <div>
-        <div class="mp-title">Migration pipeline</div>
-        <div class="mp-sub">connect → cutover, with what is sitting at each stage${
-          model.project ? ' · ' + escHtml(model.project.name || 'Untitled project') : ''}</div>
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div style="min-width:0">
+        <div style="font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em;color:var(--text3)">Cutover readiness</div>
+        <div style="display:flex;align-items:baseline;gap:0.5rem;margin-top:2px">
+          <span style="font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;color:${COLOR[c.grade]}">${c.score}</span>
+          <span style="font-size:12px;color:var(--text2)">${escHtml(LABEL[c.grade] || '')}</span>
+        </div>
       </div>
-      <div class="mp-asof">
-        as of ${new Date(model.asOf).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-        <button type="button" onclick="refreshPipelineNarrative()"
-          title="Rewrite the summary with Claude, using your own API key">↻</button>
-      </div>
-    </div>
-    <div class="mp-row" role="list">${stageHtml}</div>
-    <div class="mp-narrative">
-      <div>
-        <div class="mp-narrative-text" id="mp-narrative-text">${escHtml(ai ? ai.text : model.narrative)}</div>
-        ${ai ? `<div class="mp-narrative-src">Written by ${escHtml(ai.model || 'Claude')} · ${
-          new Date(ai.ts).toLocaleString('en-GB')} · ↻ to rewrite</div>` : ''}
-      </div>
-      <a class="mp-cta" href="${cta.href}">${escHtml(cta.label)}</a>
+      <a class="btn btn-ghost btn-sm" style="margin-left:auto"
+         href="/analytics?tab=delivery">Open Analytics →</a>
     </div>`;
-}
-
-function readAiNarrative(projectId){
-  try { return JSON.parse(localStorage.getItem('cygenix_ps_ai_' + projectId) || 'null'); }
-  catch { return null; }
-}
-
-/** The ↻ on the pipeline card: regenerate the AI narrative, then repaint. */
-async function refreshPipelineNarrative(){
-  const el = document.getElementById('mp-narrative-text');
-  if (el) el.textContent = 'Asking Claude…';
-  try { await generateProjectAiSummary({ silent: true }); }
-  catch (e) { if (el) el.textContent = 'Could not rewrite the summary: ' + e.message; return; }
-  renderMigrationPipeline();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -4559,94 +4474,6 @@ function renderStreamBand(){
 }
 function dsBandDismiss(){ _dashBandDismissed = true; renderStreamBand(); }
 function dsBandCycle(){ /* one band on Home; the page owns the carousel */ }
-
-function renderStreamControlTile(){
-  const host = document.getElementById('stream-control');
-  if (!host) return;
-  const st = streamState();
-  if (!st) { host.style.display = 'none'; return; }   // nothing configured; say nothing
-
-  const g = CygenixDataStream.globalPauseState(st);
-  const snap = g.snapshot;
-  const tone = g.mode === 'running' ? 'ok' : g.mode === 'paused' ? 'red' : 'amber';
-  const COLOR = { ok: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)' };
-
-  host.style.display = '';
-  host.innerHTML = `
-    <div class="sc-row">
-      <div>
-        <div class="sc-label">Replication</div>
-        <div class="sc-state" style="color:${COLOR[tone]}">${escHtml(g.label)}</div>
-        <div class="sc-sub">${escHtml(
-          snap
-            ? 'Paused globally' + (snap.reason ? ' — ' + snap.reason : '')
-              + ' · ' + snap.streams.length + ' stream' + (snap.streams.length === 1 ? '' : 's')
-              + ' will restart on resume'
-            : g.mode === 'running'
-              ? 'Every stream that is meant to be running is running.'
-              : 'Some streams are paused individually. Global resume will not restart those.')}</div>
-      </div>
-      <a class="btn btn-sm ${g.mode === 'paused' ? 'btn-primary' : ''}"
-         href="/data-stream?global=${g.mode === 'paused' ? 'resume' : 'pause'}">${
-        g.mode === 'paused' ? 'Resume streams →' : 'Pause all streams →'}</a>
-    </div>`;
-}
-
-// ── Cutover Confidence ───────────────────────────────────────────────────────
-// One honest number for the programme director: mapping confidence, the
-// latest Preflight forecast (Execute page → Preflight) and delivery
-// state, rolled up by cygenix-preflight.js. Components without data are
-// excluded and named, never faked; no data at all shows as no data.
-function renderCutoverConfidence() {
-  const val = $('stat-confidence'), sub = $('stat-confidence-sub');
-  if (!val || typeof CygenixPreflight === 'undefined') return;
-  let preflight = null;
-  try { preflight = CygenixPreflight.pfLoad(localStorage.getItem('cygenix_active_project_id') || 'default'); } catch {}
-  const c = CygenixPreflight.pfConfidence({ jobs: state.jobs || [], preflight });
-  const COLOR = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', 'no-data': 'var(--text3)' };
-  const LABEL = { green: 'Ready', amber: 'Caution', red: 'Not ready', 'no-data': 'No signals yet' };
-  val.textContent = c.score === null ? '—' : c.score;
-  val.style.color = COLOR[c.grade];
-  sub.textContent = LABEL[c.grade];
-  // The breakdown is the point of the tile: a composite number nobody can
-  // take apart is a number nobody can act on. pfConfidence is a WEIGHTED
-  // AVERAGE, not a hundred points with deductions, so what is shown is each
-  // component's weighted contribution — those really do sum to the score —
-  // and, beside it, what that component is costing against a perfect one.
-  const detail = $('confidence-detail');
-  if (detail) {
-    const drivers = typeof CygenixPipeline !== 'undefined'
-      ? CygenixPipeline.confidenceDrivers(c) : [];
-    if (!drivers.length) {
-      detail.innerHTML = '<div style="font-size:12px;color:var(--text3)">'
-        + 'No signals yet. The score appears once there is a mapping to grade, a preflight to read '
-        + 'or a job to count.</div>';
-    } else {
-      detail.innerHTML = drivers.map(d =>
-        '<div class="mp-conf-row">'
-        + '<span>' + escHtml(d.label)
-        + ' <span style="color:var(--text3)">· ' + escHtml(d.note) + '</span>'
-        + (d.hasData && d.lost > 0
-            ? '<a class="mp-conf-fix" href="' + d.href + '">Fix →</a>' : '')
-        + '</span>'
-        + '<span class="mp-conf-pts">'
-        + (d.hasData
-            ? '+' + d.points + ' of ' + (d.points + d.lost) + ' <span style="color:var(--text3)">('
-              + d.weightPct + '% weight)</span>'
-            : '<span style="color:var(--text3)">not counted</span>')
-        + '</span></div>').join('')
-        + '<div class="mp-conf-sum">'
-        + drivers.filter(d => d.hasData).map(d => '+' + d.points).join(' ')
-        + ' = ' + (c.score === null ? '—' : c.score) + '<br>'
-        + 'Weighted over the components that have data — a component with none is excluded, '
-        + 'never guessed at.</div>';
-    }
-  }
-}
-function toggleConfidenceDetail() {
-  const d = $('confidence-detail');
-  if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
-}
 
 // ══════════════════════════════════════════════════════════════════════════
 // HOME — schedules summary
@@ -4749,118 +4576,6 @@ function renderDashboardSchedules(schedules){
   list.innerHTML = '<table class="jobs-table"><thead><tr>'
     + '<th>Name / Job</th><th>Trigger</th><th>Next run</th><th>Last run</th><th>Status</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// RING CHART — job status breakdown
-// Shows proportion of jobs in each lifecycle state. Uses real data only.
-// ══════════════════════════════════════════════════════════════════════════
-function renderRing(){
-  const host = document.getElementById('dashboard-ring-wrap');
-  if (!host) return;
-  // Trashed jobs are excluded — the ring used to count them, so emptying the
-  // trash shrank the All Jobs table and left this chart showing the old total.
-  const jobs = liveJobs();
-
-  // Bucketing is shared with the stat cards and the Project Status panel via
-  // jobBucket(), so the same job can no longer be Complete in one panel and
-  // Pending in another.
-  const buckets = { complete: 0, ready: 0, failed: 0, pending: 0 };
-  jobs.forEach(j => { buckets[jobBucket(j)]++; });
-  const total = jobs.length;
-
-  const segments = [
-    { key:'complete', label:'Complete',     count: buckets.complete, color:'#22c97a' },
-    { key:'ready',    label:'SQL Ready',    count: buckets.ready,    color:'#4A5BD6' },
-    { key:'failed',   label:'Failed',       count: buckets.failed,   color:'#f04646' },
-    { key:'pending',  label:'Pending',      count: buckets.pending,  color:'#6B4E8E' },
-  ];
-
-  // Empty state — zero jobs total. Still show the ring as a muted full circle
-  // so the shape is there when the first job arrives, visually reassuring.
-  if (total === 0){
-    host.innerHTML = `
-      <div class="ring-wrap">
-        <div class="ring-svg-col">
-          ${ringSVG([], 0, 'No jobs', 'yet')}
-        </div>
-        <div class="ring-info-col">
-          <div class="ring-info-head">Job Status</div>
-          <div class="ring-info-title">No jobs yet</div>
-          <div class="ring-info-sub">Once you create a migration job, this chart tracks how jobs move through the lifecycle: pending → ready → complete.</div>
-        </div>
-      </div>`;
-    return;
-  }
-
-  const completePct = Math.round((buckets.complete / total) * 100);
-  const visibleSegs = segments.filter(s => s.count > 0);
-
-  // Legend rows — shown in the info column alongside the ring
-  const legendHTML = segments.map(s => {
-    const pct = total ? Math.round((s.count/total)*100) : 0;
-    const dim = s.count === 0;
-    return `
-      <div class="ring-leg-row" ${dim ? 'style="opacity:0.4"' : ''}>
-        <span class="ring-leg-swatch" style="background:${s.color}"></span>
-        <span class="ring-leg-label">${escP(s.label)}</span>
-        <span class="ring-leg-count">${s.count}</span>
-        <span class="ring-leg-pct">${pct}%</span>
-      </div>`;
-  }).join('');
-
-  host.innerHTML = `
-    <div class="ring-wrap">
-      <div class="ring-svg-col">
-        ${ringSVG(visibleSegs, total, String(completePct) + '%', 'complete')}
-      </div>
-      <div class="ring-info-col">
-        <div class="ring-info-head">Job Status Breakdown</div>
-        <div class="ring-info-title">${total} total job${total === 1 ? '' : 's'}</div>
-        <div class="ring-info-sub">Every job across all projects, excluding the trash. The Project Status panel below is scoped to the active project.</div>
-        <div class="ring-legend">${legendHTML}</div>
-      </div>
-    </div>`;
-}
-
-// Build an animated SVG ring with the given segments. Segments must already
-// be filtered to ones with count > 0.
-function ringSVG(segments, total, centreNum, centreLabel){
-  const size = 180;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r  = 72;
-  const circumference = 2 * Math.PI * r;
-
-  // Each segment occupies (count / total) of the circumference, drawn
-  // sequentially. We use stroke-dasharray + stroke-dashoffset to carve out
-  // each segment on one shared circle path.
-  let offsetAccum = 0;
-  const segPaths = segments.map((s, i) => {
-    const frac = total ? (s.count / total) : 0;
-    const segLen = frac * circumference;
-    // Animate each segment by revealing its stroke-dasharray over time.
-    const animStyle = `animation: ringReveal${i} 0.9s cubic-bezier(0.22, 1, 0.36, 1) ${i * 120 + 100}ms forwards;`;
-    // Inline @keyframes per segment — safe: generated once per render.
-    const kf = `@keyframes ringReveal${i}{from{stroke-dasharray:0 ${circumference};}to{stroke-dasharray:${segLen - 2} ${circumference};}}`;
-    const html = `
-      <circle class="ring-seg" cx="${cx}" cy="${cy}" r="${r}"
-              stroke="${s.color}"
-              stroke-dasharray="0 ${circumference}"
-              stroke-dashoffset="${-offsetAccum}"
-              style="${animStyle}"/>
-      <style>${kf}</style>`;
-    offsetAccum += segLen;
-    return html;
-  }).join('');
-
-  return `
-    <svg class="ring-svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <circle class="ring-bg" cx="${cx}" cy="${cy}" r="${r}"/>
-      <g transform="rotate(-90 ${cx} ${cy})">${segPaths}</g>
-      <text class="ring-centre ring-centre-num" x="${cx}" y="${cy - 6}">${escP(centreNum)}</text>
-      <text class="ring-centre ring-centre-lbl" x="${cx}" y="${cy + 18}">${escP(centreLabel)}</text>
-    </svg>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -5886,6 +5601,24 @@ async function refreshConversionReportCard(projectId){
 // card and by nothing else: it bills the caller's own Anthropic key, so it is
 // never fired on a render. Throws on failure so the caller can say what went
 // wrong; returns the text and caches it for the next page load.
+/** The ↻ Rewrite summary control on the Project Status header. The narrative it
+ *  writes is stored per project and read on /analytics beside the pipeline
+ *  card; generation stays here because it spends the user's own Anthropic key
+ *  and Analytics is read-only. */
+async function refreshProjectNarrative(){
+  const btn = document.getElementById('ps-ai-btn');
+  const was = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Asking Claude…'; }
+  try {
+    await generateProjectAiSummary({ silent: true });
+    renderProjectStatus();
+  } catch (e) {
+    alert('Could not rewrite the summary: ' + (e && e.message ? e.message : 'unknown error'));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = was; }
+  }
+}
+
 async function generateProjectAiSummary(){
   const apiKey = (typeof getApiKey === 'function' && getApiKey())
               || localStorage.getItem('cygenix_api_key')

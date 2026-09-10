@@ -23,6 +23,7 @@
 /about.html               /about                  301!
 /admin.html               /admin                  301!
 /agentive_migration.html  /agentive-migration     301!
+/analytics.html           /analytics              301!
 /assurance.html           /assurance              301!
 /balancing.html           /balancing              301!
 /connect.html             /connect                301!
@@ -86,6 +87,7 @@
 /about                    /about.html             200
 /admin                    /admin.html             200
 /agentive-migration       /agentive_migration.html 200
+/analytics                /analytics.html         200
 /assurance                /assurance.html         200
 /balancing                /balancing.html         200
 /connect                  /connect.html           200

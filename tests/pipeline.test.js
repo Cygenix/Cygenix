@@ -258,54 +258,66 @@ check('and it never mutates the jobs it was given',
     return JSON.stringify(jobs) === before;
   })());
 
-/* ── 9. Wiring ───────────────────────────────────────────────────────────── */
+/* ── 9. Wiring ─────────────────────────────────────────────────────────────
+   The card moved from Home to /analytics when Home became a landing page. What
+   is pinned here is unchanged: the model is loaded, the renderer consumes it
+   and derives nothing of its own, the narrative is read rather than generated
+   on a render, and the confidence score is taken apart with the pipeline's own
+   drivers rather than a second copy written for the UI. */
 
 const fs = require('fs');
 const path = require('path');
 const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
 const dash = read('public', 'dashboard.html');
 const app = read('public', 'dashboard-app.js');
+const page = read('public', 'analytics.html');
+const an = read('public', 'analytics-app.js');
 
-check('the dashboard loads the model', /<script src="\/cygenix-pipeline\.js/.test(dash));
-check('the card sits above the KPI tiles, not below them',
-  dash.indexOf('id="migration-pipeline"') !== -1
-  && dash.indexOf('id="migration-pipeline"') < dash.indexOf('class="stats-row"'));
-check('and renders on every dashboard paint, not on a click',
-  /renderMigrationPipeline\(\);/.test(app) && /function renderDashboard\(\)[\s\S]{0,400}renderMigrationPipeline\(\)/.test(app));
+check('the analytics page loads the model', /<script src="\/cygenix-pipeline\.js/.test(page));
+check('the card sits above the streams table, not below it',
+  an.indexOf('pipelineHtml(') !== -1
+  && an.indexOf("title: 'Pipeline stages'") < an.indexOf("title: 'Streams'"));
+check('and renders on every paint, not on a click',
+  /function renderDelivery\(s\)[\s\S]*?pipelineHtml\(/.test(an)
+  && !/onclick="[^"]*pipelineHtml/.test(an));
 check('the renderer consumes a model and derives nothing itself',
-  /CygenixPipeline\.toPipelineModel\(pipelineInput\(\)\)/.test(app)
-  && !/function renderMigrationPipeline[\s\S]{0,4000}columnMapping/.test(app),
+  /PL\.toPipelineModel\(/.test(an) && !/function pipelineHtml[\s\S]{0,4000}columnMapping/.test(an),
   'a second copy of "what counts as mapped" is how two panels start disagreeing');
 
+check('Home no longer carries the card it handed over',
+  !/id="migration-pipeline"/.test(dash) && !/renderMigrationPipeline/.test(app),
+  'two screens rendering one pipeline is the duplication this move removed');
+
 check('the opt-in AI summary button is gone',
-  !/Generate summary/.test(app) && !/id="ps-ai-btn"/.test(app),
+  !/Generate summary/.test(app),
   'a narrative behind a button at the bottom of the page is a narrative nobody reads');
-check('and no Anthropic call happens on a render',
-  !/renderMigrationPipeline[\s\S]{0,3000}api\.anthropic\.com/.test(app),
+check('and no Anthropic call happens on an analytics render',
+  !/api\.anthropic\.com/.test(an),
   'the call bills the user\'s own key — spending it on a page load is not a thing to do quietly');
 check('a cached AI narrative still replaces the deterministic line when there is one',
-  /readAiNarrative\(model\.project\.id\)/.test(app) && /ai \? ai\.text : model\.narrative/.test(app));
-check('and a regenerate control remains',
-  /refreshPipelineNarrative/.test(app) && /↻/.test(app));
+  /readAiNarrative\(model\.project\.id\)/.test(an) && /ai \? ai\.text : model\.narrative/.test(an));
+check('and a regenerate control remains, on the screen that authors it',
+  /refreshProjectNarrative/.test(app) && /id="ps-ai-btn"/.test(dash) && /↻/.test(dash),
+  'Analytics is read-only, so the key-spending control stays with Project Status');
 
 check('the confidence tile is taken apart with the pipeline\'s own drivers',
-  /CygenixPipeline\.confidenceDrivers\(c\)/.test(app),
+  /PL\.confidenceDrivers\(c\)/.test(an),
   'one scoring function, one source of truth — not a second copy for the UI');
 check('the breakdown shows the arithmetic, not just the components',
-  /drivers\.filter\(d => d\.hasData\)\.map\(d => '\+' \+ d\.points\)\.join\(' '\)/.test(app));
+  /\.map\(function \(d\) \{ return '\+' \+ d\.points; \}\)\.join\(' '\)/.test(an));
 check('and each driver offers somewhere to go and fix it',
-  /class="mp-conf-fix"/.test(app));
+  /class="mp-conf-fix"/.test(an));
 
-check('the stat tiles state which population they count',
-  (dash.match(/class="stat-scope"/g) || []).length >= 3,
-  'four tiles counting every project above a panel counting one, and neither saying so');
+check('the strip states which population it counts',
+  /analyticsScope/.test(an) && /an-scope/.test(page),
+  'a panel counting every project beside one counting the active project, and neither saying so');
 check('no headline value on the overview is left as a bare em-dash',
   !/valEl\.textContent = '—'/.test(app)
   && !/value: dqRun \? `\$\{dqPct\}%` : '—'/.test(app)
   && !/validatedJobs\.length === 0 \? '—'/.test(app));
 check('every state in the strip is a word as well as a colour',
-  /STATE_WORD = \{ done: '✓ done'/.test(app)
-  && /mp-state mp-state-\$\{s\.state\}/.test(app));
+  /STATE_WORD = \{ done: '\\u2713 done'/.test(an)
+  && /mp-state mp-state-/.test(an));
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);

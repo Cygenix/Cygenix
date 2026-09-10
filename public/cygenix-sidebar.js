@@ -175,6 +175,16 @@
       // Explorer's Data map now covers schema discovery. The page itself
       // still answers at /insights for old bookmarks.
     ]},
+    // Its own section, deliberately, and deliberately NOT called 'Analyse'.
+    // 'Analyse' is already a stage of the migration pipeline on Home — the one
+    // where a schema gets profiled — and a rail item sharing that word would
+    // read as a step in the lifecycle rather than a lens over it. Analytics
+    // reports on Connect→Cutover; it is not a phase of it. It sits after
+    // Validate and before Report & Govern for the same reason: you look at it
+    // once there is something to look at, and before you write anything down.
+    { section: 'Insight', group:'insight', items: [
+      { key:'analytics', label:'Analytics', href:'/analytics', color:'var(--accent)', icon: iconChart() },
+    ]},
     { section: 'Report & Govern', group:'govern', items: [
       { key:'reports-group', label:'Reports', icon: iconReport(), children: [
         { key:'report-builder',           label:'Report Builder',    href:'/reports',            color:'var(--amber)',  icon: iconReportBuilder() },
