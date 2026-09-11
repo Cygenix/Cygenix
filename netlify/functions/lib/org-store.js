@@ -30,9 +30,20 @@
 
 const { getStore } = require('@netlify/blobs');
 const rbac = require('./rbac');
+const schema = require('./audit-schema');
+const astate = require('./audit-state');
 
 const CACHE_TTL_MS = 30 * 1000;
 const _cache = { at: 0, users: null, assignments: null, classifications: null };
+
+// The capture configuration is read on EVERY append, so it is cached on the
+// same short window as the RBAC state. A stale read here can at worst
+// record thirty seconds of events during a pause that has just begun — the
+// opposite error, dropping events during a pause that has just ended, is
+// prevented by resolveState() interpreting the timestamp rather than
+// trusting the flag.
+const AUDIT_CONFIG_KEY = 'audit/config';
+const _auditCfg = { at: 0, value: null };
 
 function orgStore() {
   const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
@@ -124,35 +135,157 @@ async function classificationFor(store, server, database) {
   return rec ? rec.environment : rbac.DEFAULT_ENVIRONMENT;   // unclassified = PROD
 }
 
+// ── Capture configuration ─────────────────────────────────────────────────
+//
+// One record: the state (recording/paused/off) and the settings under it.
+// Held in the same blob store as the chain it governs, so there is no
+// second system that can be up while this one is down.
+async function loadAuditConfig(store, { fresh = false } = {}) {
+  if (!fresh && Date.now() - _auditCfg.at < CACHE_TTL_MS && _auditCfg.value) return _auditCfg.value;
+  const raw = await store.get(AUDIT_CONFIG_KEY, { type: 'json' }).catch(() => null);
+  const cfg = raw ? { ...astate.defaultConfig(), ...raw } : astate.defaultConfig();
+  // Re-apply the always-on lock on every read. Stored state that claims
+  // `security: false` — an older version, a bad migration, a hand-edited
+  // blob — must not be able to switch security auditing off just by
+  // existing.
+  cfg.settings = astate.normaliseSettings(cfg.settings);
+  _auditCfg.value = cfg;
+  _auditCfg.at = Date.now();
+  return cfg;
+}
+
+async function saveAuditConfig(store, cfg) {
+  const next = { ...cfg, settings: astate.normaliseSettings(cfg.settings) };
+  await store.setJSON(AUDIT_CONFIG_KEY, next);
+  _auditCfg.value = next;
+  _auditCfg.at = Date.now();
+  return next;
+}
+
+function invalidateAuditConfig() { _auditCfg.at = 0; }
+
 // ── Append-only audit (Section 10) ────────────────────────────────────────
 const pad = (n) => String(n).padStart(10, '0');
 
-async function appendAudit(store, evt) {
+// Every append also writes a compact projection into a per-month index.
+// readAudit() costs one blob GET per entry, so filtering a year of events by
+// actor and category that way is thousands of round-trips inside a
+// 26-second function. Queries read the index; only the rows actually shown
+// are fetched whole.
+//
+// The index is a cache, not the record. It is rebuilt from the chain if it
+// is ever lost, and a failure to write it never fails the append — losing
+// the search index costs a slow query, losing the entry costs the evidence.
+async function appendIndex(store, entry, seq) {
+  const key = schema.indexKeyFor(entry.occurredAt);
+  try {
+    const page = (await store.get(key, { type: 'json' })) || { rows: [] };
+    page.rows.push(schema.indexRow(entry, seq));
+    await store.setJSON(key, page);
+  } catch (e) {
+    console.error('[org-store] audit index write failed for ' + key + ': ' + e.message);
+  }
+}
+
+// `evt` may be either the flat shape every existing caller uses
+// (actorOid/actorEmail/effectiveRoles/action/…) or an entry already built by
+// audit-schema.buildEntry. Anything without an `id` is run through
+// buildEntry here, which is what gives the RBAC events that predate this
+// module their category, their index row and their redaction without a
+// single call site changing.
+//
+// Options:
+//   required   throw instead of returning null if the write is lost. Used
+//              for PROD writes, where the brief is explicit that if the
+//              audit write fails the action fails with it — an unrecorded
+//              Production change is worse than a refused one.
+//   internal   this append is itself part of resolving the capture state,
+//              so do not re-enter that resolution. Without it, writing the
+//              audit.resume that ends an expired pause would try to resolve
+//              the expired pause again, forever.
+async function appendAudit(store, evt, opts) {
+  opts = opts || {};
+  const built = evt && evt.id && evt.occurredAt
+    ? evt
+    : schema.buildEntry(
+        { ...evt, environment: evt.environment || null },
+        {
+          actor: {
+            oid: evt.actorOid || null, email: evt.actorEmail || null,
+            name: evt.actorName || null, roles: evt.effectiveRoles || [],
+          },
+          tenantId: (evt.detail && evt.detail.tenantId) || null,
+          route: (evt.detail && evt.detail.route) || null,
+          source: 'server',
+        });
+
+  if (!opts.internal) {
+    const decision = await captureDecision(store, built.category);
+    if (!decision.record) {
+      return { dropped: true, reason: decision.reason, category: built.category };
+    }
+  }
+
   for (let attempt = 0; attempt < 3; attempt++) {
     const head = (await store.get('audit/head', { type: 'json' })) || { seq: 0, hash: '' };
     const seq = head.seq + 1;
-    const entry = rbac.chainEntry(head.hash, {
-      seq, occurredAt: new Date().toISOString(),
-      actorOid: evt.actorOid || null, actorEmail: evt.actorEmail || null,
-      effectiveRoles: evt.effectiveRoles || [],
-      action: evt.action, resourceType: evt.resourceType || null,
-      resourceId: evt.resourceId || null, environment: evt.environment || null,
-      outcome: evt.outcome, severity: evt.severity || 'info',
-      detail: evt.detail || null,
-    });
+    const entry = rbac.chainEntry(head.hash, { seq, ...built });
     await store.setJSON('audit/e/' + pad(seq), entry);
     // Confirm the head has not moved beneath us before advancing it.
     const check = (await store.get('audit/head', { type: 'json' })) || { seq: 0, hash: '' };
     if (check.seq === head.seq) {
       await store.setJSON('audit/head', { seq, hash: entry.entryHash });
+      await appendIndex(store, entry, seq);
       return entry;
     }
     await store.delete('audit/e/' + pad(seq)).catch(() => {});
   }
   // Fail open on the WRITE only: a lost audit write must not block the
-  // user's action after it was authorised — but say so in the logs.
-  console.error('[org-store] audit append lost after retries');
+  // user's action after it was authorised — but say so in the logs. The one
+  // exception is a caller that passed `required`, where the whole point is
+  // that the action does not survive an unrecorded one.
+  console.error('[org-store] audit append lost after retries: ' + built.action);
+  if (opts.required) {
+    const e = new Error('the audit write failed, so the action was refused');
+    e.statusCode = 503;
+    throw e;
+  }
   return null;
+}
+
+// Resolve the capture state against the clock, persist an expired pause and
+// write its audit.resume, then decide whether this category survives.
+//
+// The resume is written here rather than by a scheduled function on
+// purpose: a scheduler is a moving part that can fail silently, and between
+// the expiry and its next tick the stored state is a lie. Resolving lazily
+// at write time (and again at read time) means there is no instant at which
+// the log believes it is paused after the pause has run out.
+async function resolveCapture(store) {
+  const cfg = await loadAuditConfig(store);
+  let resolved = astate.resolveState(cfg, Date.now());
+
+  if (resolved.expired) {
+    const saved = await saveAuditConfig(store, {
+      ...cfg, state: 'recording', pausedUntil: null,
+      reason: null, changedBy: 'system', changedAt: new Date().toISOString(),
+    });
+    await appendAudit(store, schema.buildEntry({
+      action: 'audit.resume', category: 'audit', outcome: 'allowed', severity: 'notice',
+      actorType: 'system',
+      summary: 'Capture resumed automatically — the pause expired',
+      detail: { pausedUntil: resolved.pausedUntil, pauseReason: resolved.reason,
+                pausedBy: resolved.changedBy },
+    }, { actor: { oid: 'system', email: 'system', roles: [] }, source: 'server' }),
+    { internal: true }).catch(() => null);
+    resolved = astate.resolveState(saved, Date.now());
+  }
+  return resolved;
+}
+
+async function captureDecision(store, category) {
+  const resolved = await resolveCapture(store);
+  return astate.shouldRecord(category, resolved, resolved.settings);
 }
 
 async function readAudit(store, { limit = 200, selfOid = null } = {}) {
@@ -164,6 +297,122 @@ async function readAudit(store, { limit = 200, selfOid = null } = {}) {
     .filter(Boolean);
   const filtered = selfOid ? entries.filter(e => e.actorOid === selfOid) : entries;
   return { total: head.seq, entries: filtered.slice(0, limit) };
+}
+
+// ── Filtered queries (the Events tab) ─────────────────────────────────────
+//
+// Reads the monthly index rather than the chain, then fetches whole entries
+// only for the rows actually on the page. The alternative — walking
+// audit/e/<seq> backwards and filtering in memory — is one blob GET per
+// event, which a year of events turns into an operation that cannot finish
+// inside a function timeout.
+//
+// FALLBACK: entries written before the index existed have no index rows, so
+// an empty index is not proof of an empty log. When no index page covers
+// the window, this walks the chain the old way and says so in `indexed:
+// false`, which the UI shows rather than hides — a list that silently omits
+// the first year of a deployment's history is worse than a slow one.
+
+function monthKeysBetween(fromIso, toIso, maxMonths) {
+  const start = new Date(fromIso);
+  const end = new Date(toIso);
+  const keys = [];
+  let y = start.getUTCFullYear(), m = start.getUTCMonth();
+  for (let i = 0; i < (maxMonths || 24); i++) {
+    const d = new Date(Date.UTC(y, m, 1));
+    if (d > end) break;
+    keys.push('audit/idx/' + d.toISOString().slice(0, 7));
+    m++; if (m > 11) { m = 0; y++; }
+  }
+  return keys;
+}
+
+function rowMatches(r, f) {
+  if (f.fromMs && Date.parse(r.ts) < f.fromMs) return false;
+  if (f.toMs && Date.parse(r.ts) > f.toMs) return false;
+  if (f.actor && String(r.a || '').toLowerCase() !== f.actor) return false;
+  if (f.category && r.c !== f.category) return false;
+  if (f.action && r.ac !== f.action) return false;
+  if (f.outcome && r.o !== f.outcome) return false;
+  if (f.env && r.e !== f.env) return false;
+  if (f.projectId && r.p !== f.projectId) return false;
+  if (f.q && String(r.t || '').indexOf(f.q) === -1) return false;
+  return true;
+}
+
+async function queryAudit(store, opts) {
+  const o = opts || {};
+  const limit = Math.min(200, Math.max(1, parseInt(o.limit, 10) || 50));
+  const now = Date.now();
+  const fromMs = o.from ? Date.parse(o.from) : 0;
+  const toMs = o.to ? Date.parse(o.to) : 0;
+  const f = {
+    fromMs: Number.isNaN(fromMs) ? 0 : fromMs,
+    toMs: Number.isNaN(toMs) ? 0 : toMs,
+    actor: o.actor ? String(o.actor).toLowerCase() : '',
+    category: o.category || '', action: o.action || '',
+    outcome: o.outcome || '', env: o.env || '', projectId: o.projectId || '',
+    q: o.q ? String(o.q).toLowerCase() : '',
+  };
+
+  const head = (await store.get('audit/head', { type: 'json' })) || { seq: 0 };
+  if (!head.seq) return { total: 0, entries: [], indexed: true, nextCursor: null };
+
+  const keys = monthKeysBetween(
+    new Date(f.fromMs || (now - 365 * 86400000)).toISOString(),
+    new Date(f.toMs || now).toISOString(), 24);
+  const pages = await Promise.all(keys.map(k => store.get(k, { type: 'json' }).catch(() => null)));
+  const haveIndex = pages.some(Boolean);
+
+  let rows;
+  if (haveIndex) {
+    rows = [];
+    for (const p of pages) if (p && Array.isArray(p.rows)) rows.push(...p.rows);
+    rows = rows.filter(r => rowMatches(r, f));
+  } else {
+    // Unindexed history. Bounded so it cannot run away: the most recent
+    // 1000 entries, which is what the old Users & Roles view showed anyway.
+    const scan = await readAudit(store, { limit: 1000 });
+    rows = scan.entries
+      .map((e, i) => schema.indexRow(e, e.seq != null ? e.seq : (head.seq - i)))
+      .filter(r => rowMatches(r, f));
+  }
+
+  rows.sort((a, b) => b.seq - a.seq);
+  const cursor = o.cursor ? parseInt(o.cursor, 10) : 0;
+  const startAt = cursor ? rows.findIndex(r => r.seq < cursor) : 0;
+  const slice = startAt === -1 ? [] : rows.slice(startAt, (startAt < 0 ? 0 : startAt) + limit);
+
+  const entries = (await Promise.all(
+    slice.map(r => store.get('audit/e/' + pad(r.seq), { type: 'json' }).catch(() => null))
+  )).filter(Boolean);
+
+  const consumed = startAt === -1 ? rows.length : startAt + slice.length;
+  return {
+    total: rows.length,
+    chainTotal: head.seq,
+    entries,
+    indexed: haveIndex,
+    nextCursor: consumed < rows.length && slice.length ? slice[slice.length - 1].seq : null,
+  };
+}
+
+// KPI counts for the status row. Index-only — it never fetches an entry —
+// so the four tiles cost a handful of blob reads regardless of chain size.
+async function auditStats(store, { windowMs = 24 * 3600 * 1000, now = Date.now() } = {}) {
+  const since = now - windowMs;
+  const keys = monthKeysBetween(new Date(since).toISOString(), new Date(now).toISOString(), 3);
+  const pages = await Promise.all(keys.map(k => store.get(k, { type: 'json' }).catch(() => null)));
+  const rows = [];
+  for (const p of pages) if (p && Array.isArray(p.rows)) rows.push(...p.rows);
+  const recent = rows.filter(r => Date.parse(r.ts) >= since);
+  return {
+    events: recent.length,
+    actors: new Set(recent.map(r => r.a).filter(Boolean)).size,
+    prodChanges: recent.filter(r => r.e === 'PROD' || r.c === 'prod').length,
+    deniedOrFailed: recent.filter(r => r.o === 'denied' || r.o === 'failed').length,
+    windowMs, indexed: pages.some(Boolean),
+  };
 }
 
 async function verifyChain(store, { limit = 2000 } = {}) {
@@ -192,4 +441,7 @@ async function verifyChain(store, { limit = 2000 } = {}) {
 module.exports = {
   orgStore, loadAll, invalidate, resolveActor, classificationFor,
   appendAudit, readAudit, verifyChain,
+  loadAuditConfig, saveAuditConfig, invalidateAuditConfig,
+  resolveCapture, captureDecision, queryAudit, auditStats, appendIndex,
+  AUDIT_CONFIG_KEY,
 };
