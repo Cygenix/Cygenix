@@ -88,6 +88,10 @@ const SEED = () => {
   // bounces to /login without this, independently of auth-gate.js — and the
   // tour walks through both.
   localStorage.setItem('cygenix_token', 'smoke-token');
+  // The first-run modal appears 800ms in, covers the screen and intercepts
+  // every click. It is not what this file tests, and the tour's own paths
+  // deliberately stand down while it is up.
+  localStorage.setItem('cygenix_onboarded', '1');
   localStorage.removeItem('cygenix_api_key');
   sessionStorage.removeItem('cygenix_api_key');
 };
@@ -363,6 +367,138 @@ const SEED = () => {
 
   // Every page in this app pulls fonts, MSAL and PapaParse on load; that is the
   // app, not the tour. The claim worth pinning is narrower and is the whole
+  /* ── 9. Interruption: ask a question mid-tour, then carry on ───────────── */
+  //
+  // The reported bug in one sequence. A user on a step types a question, the
+  // assistant switches into agent mode and answers, and the tour comes back
+  // with the user's place lost. Everything below is that path.
+  //
+  // The model is STUBBED. This file's whole premise is that it never reaches
+  // Anthropic, and the assertion above enforces that — so the interruption is
+  // exercised by replacing CygenixModel.mdCall with a scripted answer. What
+  // is under test is the tour's handling of an interruption, not the model.
+
+  // Jump to a step FIRST. That navigates, which reloads the page — and a
+  // reload wipes anything installed on window, which is how the first version
+  // of this test managed to assert against a stub that no longer existed.
+  await type('tour connections');
+  await page.waitForTimeout(1200);
+  await openPanel();
+
+  await page.evaluate(() => {
+    localStorage.setItem('cygenix_api_key', 'sk-ant-smoke');
+    sessionStorage.setItem('cygenix_api_key', 'sk-ant-smoke');
+    window.__asked = [];
+    window.CygenixModel.mdCall = async (req) => {
+      window.__asked.push(req);
+      return {
+        degraded: false,
+        response: { json: async () => ({ content: [{ type: 'text',
+          text: 'A connection points Cygenix at one database. You need a source and a target.' }] }) },
+      };
+    };
+  });
+
+  c = await card();
+  const atStep = c && c.count;
+  check('jumped to a known step to interrupt from', !!c && /^\d+ \/ \d+$/.test(atStep), JSON.stringify(c));
+  const stepBefore = await page.evaluate(() => window.CygenixTour.__state().stepIndex);
+  const idBefore = await page.evaluate(() => window.CygenixTour.__state().stepId);
+
+  await type('can you connect and test these connections');
+  await page.waitForTimeout(1500);
+
+  check('the question reached the model rather than being eaten as a command',
+    await page.evaluate(() => window.__asked.length === 1));
+  check('and the tour paused rather than advancing or ending',
+    await page.evaluate(() => window.CygenixTour.isPaused()));
+  check('THE STEP DID NOT MOVE — this is the 5 → 4 bug',
+    await page.evaluate(() => window.CygenixTour.__state().stepIndex) === stepBefore
+    && await page.evaluate(() => window.CygenixTour.__state().stepId) === idBefore);
+
+  // The context the brief asks for: the model must be told which step the
+  // user is on, or "tell me more about this" cannot work.
+  const sys = await page.evaluate(() => window.__asked[0].system);
+  check('the model was told which step the user is on',
+    /welcome tour/i.test(sys) && sys.indexOf(idBefore) !== -1, sys.slice(-200));
+  check('and asked to keep the answer short',
+    /concise/i.test(sys));
+  check('the answer was capped, so a curious question has a predictable cost',
+    await page.evaluate(() => window.__asked[0].max_tokens) < 2048);
+
+  const body = await page.textContent('#cygaBody');
+  check('the credits notice appeared', /use AI credits/i.test(body));
+  check('a resume prompt is offered, naming the paused step',
+    /Paused at step/.test(body) && body.indexOf(atStep) !== -1);
+
+  // Several questions in a row, which the brief calls out explicitly.
+  await type('and what about PROD?');
+  await page.waitForTimeout(1500);
+  check('a second question also works', await page.evaluate(() => window.__asked.length === 2));
+  check('and the step still has not moved',
+    await page.evaluate(() => window.CygenixTour.__state().stepIndex) === stepBefore);
+  const body2 = await page.textContent('#cygaBody');
+  check('the credits notice is shown once a session, not per question',
+    (body2.match(/use AI credits/gi) || []).length === 1);
+
+  // "no" mid-conversation must be an answer, not an exit.
+  await type('no');
+  await page.waitForTimeout(1200);
+  check('"no" while paused is a reply to the assistant, not an Exit',
+    await page.evaluate(() => window.CygenixTour.isPaused()));
+
+  await type('y');
+  await page.waitForTimeout(1400);
+  await openPanel();
+  c = await card();
+  check('RESUMING RETURNS TO THE SAME STEP', c && c.count === atStep, JSON.stringify(c));
+  check('and the tour is running again',
+    await page.evaluate(() => window.CygenixTour.isActive()));
+  check('the step index is exactly where it was',
+    await page.evaluate(() => window.CygenixTour.__state().stepIndex) === stepBefore);
+  check('resuming cost nothing — Y is local',
+    await page.evaluate(() => window.__asked.length === 3));
+
+  /* ── 10. Reloading mid-tour offers to resume, rather than relaunching ──── */
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1200);
+  await openPanel();
+  const afterReload = await page.textContent('#cygaBody');
+  check('a reload keeps the place',
+    await page.evaluate(() => window.CygenixTour.__state().stepIndex) === stepBefore);
+  check('and the tour carries on rather than starting over',
+    /\d+ \/ \d+/.test(afterReload));
+
+  // A fresh tab — no session transcript, but a durable position — is the
+  // "came back tomorrow" case, and must OFFER rather than take over.
+  await page.evaluate(() => sessionStorage.removeItem('cyg_tour'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1200);
+  await openPanel();
+  const offered = await page.textContent('#cygaBody');
+  check('coming back later offers to resume rather than relaunching',
+    /You were on step/.test(offered));
+  check('with Resume, Start over and Dismiss',
+    (await page.locator('[data-tour-act="resume"]').count()) === 1 &&
+    (await page.locator('[data-tour-act="restart"]').count()) === 1 &&
+    (await page.locator('[data-tour-act="dismiss"]').count()) === 1);
+  check('and it has NOT taken over the panel',
+    !(await page.evaluate(() => window.CygenixTour.isActive())));
+
+  await page.click('[data-tour-act="resume"]');
+  await page.waitForTimeout(1400);
+  await openPanel();
+  c = await card();
+  check('accepting the offer lands on the step they left',
+    c && c.count === atStep, JSON.stringify(c));
+
+  // Put the key back the way the rest of the file expects to find it.
+  await page.evaluate(() => {
+    localStorage.removeItem('cygenix_api_key');
+    sessionStorage.removeItem('cygenix_api_key');
+  });
+
   // design: the walkthrough never reaches for a model.
   check('the tour never called Anthropic, from first step to last',
     !offSite.some((u) => /anthropic/i.test(u)),

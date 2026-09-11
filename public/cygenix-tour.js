@@ -40,9 +40,38 @@
 
 var STEPS = (typeof window !== 'undefined' && window.CygenixTourSteps) || [];
 
-var SESSION_KEY = 'cyg_tour';            // active run — dies with the tab
-var LAST_KEY    = 'cygenix_tour_last';   // for `resume`, survives the session
+/* ── Where the tour's two halves live ──────────────────────────────────────
+   They are split deliberately, because they have different lifetimes.
+
+   SESSION_KEY holds the VISIBLE half — the transcript of cards and answers in
+   this tab — and dies with the tab. It is also the continuation marker: the
+   tour moves between steps by navigating, which reloads the page, and finding
+   this on boot is what tells the next page "you are mid-step, carry on"
+   rather than "offer to resume".
+
+   STATE_KEY holds the POSITION, per user, in localStorage, so it survives a
+   reload, a closed panel and tomorrow morning. Finding a position with no
+   session transcript means the user has come back rather than moved a step,
+   and that is the case the restore prompt is for.
+
+   TODO (cross-machine): this is localStorage only. cygenix-cosmos-sync.js
+   mirrors a declared SYNC_KEYS list to Cosmos and would carry this across
+   machines, but every key on that list is customer WORK — jobs, mappings,
+   scripts — synced on a 3s write-behind with a merge strategy per field.
+   Tour progress is neither customer work nor worth a merge strategy, so it
+   is not on that list. If it should follow a user between machines, add
+   'cygenix_tour_state' to SYNC_KEYS with a last-write-wins strategy and a
+   classification in scripts/storage-inventory.js. */
+var SESSION_KEY = 'cyg_tour';            // transcript + continuation marker
+var STATE_KEY   = 'cygenix_tour_state';  // position, per user, durable
+var LAST_KEY    = 'cygenix_tour_last';   // legacy index, read for migration only
 var SEEN_KEY    = 'cygenix_tour_offered';
+var CREDIT_KEY  = 'cygenix_tour_credit_notice';   // shown once per session
+
+/* A mid-tour answer is a sentence or two in a side panel, to somebody who is
+   usually on their first day. Capped so a curious question has a predictable
+   cost. */
+var TOUR_ANSWER_TOKENS = 700;
 
 /* The intent the brief specifies, matched before the API-key gate. Deliberately
    anchored on whole words: "detour" and "contour" are not requests for a tour. */
@@ -53,11 +82,28 @@ var REDUCED = typeof matchMedia === 'function'
 
 var A = null;                 // window.CygenixAssistant, once it exists
 var SB = null;                // window.CygenixSidebar
-var tour = null;              // { active, i, transcript:[], restore:{collapsed} }
+var T = null;                 // window.CygenixTourState — the transition rules
+
+/* tour = { st, transcript, restore }
+   `st` is the TourState: tourId, plan, stepIndex, stepId, status, updatedAt.
+   It is REPLACED by a transition, never edited in place, so a stale closure
+   holding an old one can be out of date but cannot corrupt the current one. */
+var tour = null;
+var offering = false;         // the restore prompt is up; the tour is not running
 var openedGroups = [];        // groups THIS tour expanded, to put back
 var hiToken = 0;              // guards against a slow highlight from a past step
 
 /* ── storage ────────────────────────────────────────────────────────────── */
+
+function userTag() {
+  try {
+    var raw = localStorage.getItem('cygenix_user') || sessionStorage.getItem('cygenix_user');
+    var u = raw ? JSON.parse(raw) : null;
+    var id = (u && (u.email || u.name)) || localStorage.getItem('cygenix_active_user') || '';
+    return String(id).trim().toLowerCase() || 'anon';
+  } catch (e) { return 'anon'; }
+}
+function stateKey() { return STATE_KEY + '::' + userTag() + '::' + (T ? T.TOUR_ID : 'welcome-v1'); }
 
 function readSession() {
   try {
@@ -65,18 +111,40 @@ function readSession() {
     return raw ? JSON.parse(raw) : null;
   } catch (e) { return null; }
 }
-function writeSession() {
+
+/* Called after EVERY transition, which is the brief's requirement and also
+   the only way a reload mid-tour can land on the right step. The transcript
+   goes to the tab, the position goes to the user. */
+function persist() {
+  if (!tour) return;
   try {
-    if (tour && tour.active) sessionStorage.setItem(SESSION_KEY, JSON.stringify(tour));
-    else sessionStorage.removeItem(SESSION_KEY);
-  } catch (e) { /* a private window still gets a tour, it just will not resume */ }
+    if (T.isRunnable(tour.st)) {
+      sessionStorage.setItem(SESSION_KEY,
+        JSON.stringify({ transcript: tour.transcript, restore: tour.restore }));
+    } else {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+  } catch (e) { /* a private window still gets a tour; it just will not resume */ }
+  try { localStorage.setItem(stateKey(), JSON.stringify(tour.st)); } catch (e) {}
 }
-function setLast(i) { try { localStorage.setItem(LAST_KEY, String(i)); } catch (e) {} }
-function getLast() {
+
+/* One release of the tour stored a bare index in localStorage. Reading it
+   means somebody mid-tour when this shipped keeps their place instead of
+   being sent back to the intro. */
+function getLegacyLast() {
   try {
     var v = parseInt(localStorage.getItem(LAST_KEY), 10);
     return isNaN(v) ? null : v;
   } catch (e) { return null; }
+}
+
+function readState() {
+  try {
+    var raw = localStorage.getItem(stateKey());
+    var st = raw ? JSON.parse(raw) : null;
+    if (st && st.plan && st.plan.length) return st;
+  } catch (e) {}
+  return null;
 }
 
 /* ── which steps are actually available ─────────────────────────────────────
@@ -105,10 +173,45 @@ function stepAvailable(s) {
 }
 function liveSteps() { return STEPS.filter(stepAvailable); }
 
-/* Index arithmetic runs over the LIVE list, so skipped steps never appear in
-   the counter and never need a "step 7 of 24 (some hidden)" caveat. */
-function stepAt(i) { var l = liveSteps(); return l[Math.max(0, Math.min(i, l.length - 1))]; }
-function total() { return Math.max(0, liveSteps().length - 1); }   // step 0 is the intro
+/* ── Position is an id, not an index into a live list ──────────────────────
+
+   This is the fix for the reported bug. liveSteps() queries the DOM, so the
+   list it returns changes for reasons that have nothing to do with the tour —
+   a sidebar group collapsing, the assistant's own targets appearing, a nav
+   item that shows up once the user's roles resolve. The old code stored an
+   INTEGER into that list and re-resolved it on every paint, so the itinerary
+   renumbered underneath the user and step 5 came back as step 4.
+
+   Now liveSteps() is consulted exactly once, at start(), to decide the
+   itinerary. After that the plan is frozen and a position is a step id.
+
+   A step in the plan whose target has since disappeared stays in the plan and
+   stays counted; highlight() simply draws no spotlight for it. A card
+   pointing at nothing costs the reader a shrug. Renumbering costs them their
+   place, which is what this whole change is about. */
+function stepById(id) {
+  for (var i = 0; i < STEPS.length; i++) if (STEPS[i].id === id) return STEPS[i];
+  return null;
+}
+function stepsById() {
+  var m = {};
+  STEPS.forEach(function (s) { m[s.id] = s; });
+  return m;
+}
+function stepAt(i) {
+  if (!tour || !tour.st) return null;
+  return stepById(tour.st.plan[T.clampIndex(i, tour.st.plan)]);
+}
+function total() { return tour && tour.st ? T.total(tour.st) : 0; }
+function current() { return tour && tour.st ? tour.st.stepIndex : 0; }
+
+/* `offering` is the state where a saved tour is being OFFERED but has not
+   been accepted: the card is on screen, the tour is not running. It has to
+   suppress both of these, or the panel goes into tour mode, the spotlight
+   comes back and Y starts advancing a tour the user has not agreed to
+   restart — which is the relaunch-over-your-work the brief rules out. */
+function isActive() { return !offering && !!tour && !!tour.st && tour.st.status === 'active'; }
+function isPaused() { return !offering && !!tour && !!tour.st && tour.st.status === 'paused'; }
 
 /* ── sidebar handling ───────────────────────────────────────────────────── */
 
@@ -215,6 +318,13 @@ function injectStyles() {
        you were actually on was cut in half by the input box. */
     '.cyg-tour-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;',
     '  background:var(--bg2);margin-top:4px;flex:0 0 auto}',
+    /* The resume prompt. Deliberately quieter than a step card — it is a
+       question about the tour, not a stop on it, and making it look like a
+       card would have the reader counting it as one. */
+    '.cyg-tour-resume{border:1px dashed var(--accent);border-radius:10px;padding:10px 12px;',
+    '  background:var(--accent-glow);margin-top:4px;flex:0 0 auto}',
+    '.cyg-tour-resume .tr-head{font-size:12.5px;color:var(--text);margin-bottom:8px}',
+    '.cyg-tour-resume .tr-ctl{display:flex;gap:6px;flex-wrap:wrap}',
     '.cyg-tour-card .tc-head{display:flex;align-items:center;gap:8px;padding:8px 11px;',
     '  background:var(--bg3);border-bottom:1px solid var(--border)}',
     '.cyg-tour-card .tc-sec{font-family:var(--mono,monospace);font-size:10px;letter-spacing:.08em;',
@@ -320,8 +430,8 @@ function highlight(step) {
 }
 
 function reposition() {
-  if (!tour || !tour.active) return;
-  var s = stepAt(tour.i);
+  if (!tour || !isActive()) return;
+  var s = stepAt(current());
   if (!s || !s.target) return;
   var t = document.querySelector(s.target);
   if (t && !t.closest('.cyga')) {
@@ -346,17 +456,22 @@ function reposition() {
    pushed into it would be sent to the model as a user turn on the next
    question — which is both wasteful and wrong. */
 
+/* Each card carries the number it was drawn with. The old renderer looked the
+   step up again on every paint and recomputed the denominator from the live
+   DOM, so a card already on screen could change what it said. A transcript
+   row is a record of something that was shown; re-deriving it is how it ends
+   up disagreeing with itself. */
 function pushCard(step, index) {
-  tour.transcript.push({ kind: 'step', id: step.id, i: index });
-  writeSession();
+  tour.transcript.push({ kind: 'step', id: step.id, i: index, tot: total() });
+  persist();
 }
 function pushNote(html) {
   tour.transcript.push({ kind: 'note', html: html });
-  writeSession();
+  persist();
 }
 function pushSaid(text) {
   tour.transcript.push({ kind: 'user', text: text });
-  writeSession();
+  persist();
 }
 
 function esc(s) {
@@ -365,9 +480,9 @@ function esc(s) {
   });
 }
 
-function cardHtml(step, index, isCurrent) {
+function cardHtml(step, index, isCurrent, frozenTotal) {
   var n = index;
-  var tot = total();
+  var tot = frozenTotal === undefined ? total() : frozenTotal;
   var pct = tot ? Math.round(n / tot * 100) : 0;
   var ctl;
   if (!isCurrent) ctl = '';
@@ -397,28 +512,34 @@ function cardHtml(step, index, isCurrent) {
 /* Handed to the assistant, which appends it under the conversation. */
 function renderPanel() {
   if (!tour || !tour.transcript.length) return '';
-  var live = liveSteps();
   var last = tour.transcript.length - 1;
   return tour.transcript.map(function (row, idx) {
     if (row.kind === 'user') return '<div class="cyga-msg user">' + esc(row.text) + '</div>';
     if (row.kind === 'note') return '<div class="cyga-msg assistant">' + row.html + '</div>';
-    var step = live[row.i] || STEPS.filter(function (s) { return s.id === row.id; })[0];
+    // BY ID. The old line here was `live[row.i]` — an index into a list
+    // recomputed from the DOM on every paint — and it is what showed the user
+    // step 4 when they were on step 5.
+    var step = stepById(row.id);
     if (!step) return '';
-    return cardHtml(step, row.i, tour.active && idx === last);
+    // Only the last card is live, and only while the tour is actually
+    // running. While paused for a question the controls come from the resume
+    // prompt instead, so the card below it must not also offer Y/B/Exit.
+    return cardHtml(step, row.i, isActive() && idx === last, row.tot);
   }).join('');
 }
 
 /* ── the engine ─────────────────────────────────────────────────────────── */
 
+/* Draws the CURRENT step. It does not decide which step that is — that is
+   what the transitions are for — and in particular it no longer clamps the
+   index against a DOM-derived length, which is how a re-render used to be
+   able to rewind somebody. */
 function show() {
-  var live = liveSteps();
-  if (tour.i >= live.length) tour.i = live.length - 1;
-  var s = live[tour.i];
+  var s = stepAt(current());
   if (!s) return end('done');
 
-  pushCard(s, tour.i);
-  setLast(tour.i);
-  writeSession();
+  pushCard(s, current());
+  persist();
 
   // Navigating reloads the page, so the card must be in sessionStorage before
   // we go: the next page reads it back and renders the transcript we just
@@ -434,6 +555,7 @@ function show() {
 function start(from) {
   if (!STEPS.length) return;
   injectStyles();
+  offering = false;
   // However the tour was reached — a chip, a typed sentence, the first-run
   // modal — a full-screen scrim over the thing being pointed at makes the
   // spotlight meaningless. Close it.
@@ -442,39 +564,78 @@ function start(from) {
     if (typeof window.dismissOnboarding === 'function') window.dismissOnboarding();
     else onboarding.style.display = 'none';
   }
+  /* The itinerary is decided HERE and never again. liveSteps() asks the DOM
+     which steps have a target worth pointing at; asking it once means the
+     numbering is stable for the whole run, which is the difference between a
+     tour that keeps its place and one that does not. */
   tour = {
-    active: true,
-    i: Math.max(0, Math.min(from || 0, liveSteps().length - 1)),
+    st: T.create(liveSteps().map(function (x) { return x.id; }), from || 0),
     transcript: (tour && tour.transcript) || [],
     restore: { collapsed: SB && typeof SB.isCollapsed === 'function' ? SB.isCollapsed() : false }
   };
   openedGroups = [];
   if (A) { A.open(); A.setTourMode(true); }
-  emit('tour_started', { step: tour.i });
+  persist();
+  emit('tour_started', { step: current() });
   show();
 }
 
+/* ── The transitions ───────────────────────────────────────────────────────
+   These, and only these, move the step. Each one replaces tour.st through
+   cygenix-tour-state.js and persists immediately, so a reload at any instant
+   lands on the position the user last saw. */
+
 function next() {
-  if (!tour || !tour.active) return;
-  var live = liveSteps();
-  if (tour.i < live.length - 1) { tour.i++; emit('tour_step_viewed', { step: tour.i }); show(); }
-  else end('done');
+  if (!tour || !isActive()) return;
+  if (current() >= tour.st.plan.length - 1) return end('done');
+  tour.st = T.next(tour.st);
+  persist();
+  emit('tour_step_viewed', { step: current() });
+  show();
 }
 function back() {
-  if (!tour || !tour.active || tour.i <= 0) return;
-  tour.i--;
+  if (!tour || !isActive() || current() <= 0) return;
+  tour.st = T.back(tour.st);
+  persist();
   show();
 }
 function jump(i) {
-  if (!tour || !tour.active) return start(i);
-  tour.i = i;
+  if (!tour || !T.isRunnable(tour.st)) return start(i);
+  tour.st = T.jump(tour.st, i);
+  persist();
+  show();
+}
+
+/* ── Pause and resume ──────────────────────────────────────────────────────
+   The interruption path. Pausing changes STATUS and nothing else — the whole
+   point of the bug fix — and resuming redraws the step that was paused,
+   navigating back to its page first if an agent action moved the user. */
+
+function pauseFor(reason) {
+  if (!tour || !isActive()) return;
+  tour.st = T.pause(tour.st, reason);
+  persist();
+  emit('tour_paused', { step: current(), reason: reason });
+  // The pill stays up — the tour has not gone anywhere — but the input is the
+  // assistant's while this lasts, and says so.
+  if (A) { A.setTourMode('paused'); A.refresh(); }
+}
+
+function resumeTour() {
+  if (!tour || !isPaused()) return;
+  tour.st = T.resume(tour.st);
+  persist();
+  emit('tour_resumed', { step: current() });
+  if (A) { A.open(); A.setTourMode(true); }
+  // show() redraws the current step and navigates to its page if the
+  // assistant wandered off it. It cannot advance — it has no opinion about
+  // which step is current, it only draws whichever one is.
   show();
 }
 
 function end(reason) {
   if (!tour) return;
-  var atTitle = (stepAt(tour.i) || {}).title || '';
-  setLast(tour.i);
+  var atTitle = (stepAt(current()) || {}).title || '';
   clearOverlays();
   collapseTourGroups(null);
   // Put the rail back the way it was found.
@@ -482,12 +643,18 @@ function end(reason) {
     SB.setCollapsed(true);
     document.body.classList.add('cyg-collapsed');
   }
-  tour.active = false;
+  /* Exited and completed are different endings and the brief asks for them to
+     stay different: an exited tour must not nag with a resume prompt on the
+     next load, a completed one has nothing left to resume. Both are recorded
+     rather than deleted, so "have they done the tour" is answerable. */
+  tour.st = reason === 'done' ? T.complete(tour.st) : T.exit(tour.st);
+  offering = false;
   pushNote(reason === 'done'
     ? 'Tour complete. Type <b>tour</b> any time to go round again.'
-    : 'Tour stopped at <b>' + atTitle + '</b>. Type <b>resume</b> to pick up from there, '
+    : 'Tour stopped at <b>' + esc(atTitle) + '</b>. Type <b>resume</b> to pick up from there, '
       + 'or <b>tour</b> to start over.');
-  emit(reason === 'done' ? 'tour_completed' : 'tour_exited', { step: tour.i });
+  emit(reason === 'done' ? 'tour_completed' : 'tour_exited', { step: current() });
+  persist();
   try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
   if (A) { A.setTourMode(false); A.refresh(); }
 }
@@ -500,12 +667,19 @@ function emit(name, detail) {
 
 /* ── input routing ──────────────────────────────────────────────────────── */
 
+/* "go to connections" — resolved against the RUNNING tour's frozen plan when
+   there is one, so a jump lands on the same numbering every other part of the
+   tour is using. Only when no tour is running does it fall back to the live
+   list, which is the list start() would freeze anyway. */
 function findStepIndex(term) {
   term = String(term || '').toLowerCase().trim();
   if (!term) return -1;
-  var live = liveSteps();
-  for (var i = 0; i < live.length; i++) {
-    var s = live[i];
+  var ids = (tour && tour.st && tour.st.plan && tour.st.plan.length)
+    ? tour.st.plan
+    : liveSteps().map(function (x) { return x.id; });
+  for (var i = 0; i < ids.length; i++) {
+    var s = stepById(ids[i]);
+    if (!s) continue;
     var hay = (s.title + ' ' + s.section).toLowerCase().replace(/&amp;/g, '&');
     if (hay.indexOf(term) !== -1) return i;
   }
@@ -515,35 +689,94 @@ function findStepIndex(term) {
 /* Returns true when the tour has consumed the input, so the assistant does not
    also send it to the model. Called from submit(), BEFORE the API-key gate —
    which is the whole point: the people who most need this have no key. */
+/* The resume prompt the brief specifies, shown after an answer or an action
+   finishes. Several questions in a row are expected, so this is drawn again
+   each time rather than once. */
+function resumePromptHtml() {
+  var s = stepAt(current()) || {};
+  return '<div class="cyg-tour-resume">'
+    + '<div class="tr-head">Paused at step <b>' + current() + ' / ' + total() + '</b>'
+    + ' — ' + esc(s.title || '') + '</div>'
+    + '<div class="tr-ctl">'
+    + '<button class="cyga-btn primary" data-tour-act="resume">Y · Resume tour</button>'
+    + '<button class="cyga-btn" data-tour-act="ask">Ask another question</button>'
+    + '<button class="cyga-btn" data-tour-act="exit">Exit</button>'
+    + '</div></div>';
+}
+
+/* Questions cost money; Y / B / Exit never do. Said once a session, because a
+   notice on every question is a notice nobody reads.
+
+   ── On "wire this into the credit metering" ──────────────────────────────
+   There is none, and that is deliberate rather than missing. Cygenix holds no
+   Anthropic key at all — not in an environment variable, not as a fallback —
+   and every call is billed directly to the key the operator entered in
+   Settings. tests/anthropic-billing.test.js exists to keep it that way, after
+   nine call sites were found spending a Cygenix-owned key on users' behalf.
+
+   So the single source of truth the brief asks for is the user's own
+   Anthropic account, and there is no balance this code could check without
+   inventing a ledger that would then disagree with it. What IS wired is the
+   consequence: a quota-exhausted call comes back through cygenix-model.js's
+   error mapping ("Rate limit or quota exhausted — check usage limits and
+   billing"), onTurnEnd shows that with the resume prompt, and the tour
+   carries on. The user is told the true thing by the system that actually
+   knows it. */
+function creditNoticeOnce() {
+  try {
+    if (sessionStorage.getItem(CREDIT_KEY) === '1') return;
+    sessionStorage.setItem(CREDIT_KEY, '1');
+  } catch (e) { /* private window: show it, it is only a sentence */ }
+  pushNote('Questions during the tour use AI credits. Moving through the tour '
+    + '(<kbd>Y</kbd>, <kbd>B</kbd>, Exit) does not.');
+}
+
 function handleInput(text) {
   text = String(text || '').trim();
   var low = text.toLowerCase();
 
-  if (tour && tour.active) {
-    if (/^(y|yes|next|continue|ok|go)$/.test(low) || low === '') { next(); return true; }
+  if (tour && T.isRunnable(tour.st)) {
+    var r = T.route(text, tour.st.status);
+
+    if (r.kind === 'noop') return true;
+    if (r.kind === 'resume') { pushSaid(text || 'Y'); resumeTour(); return true; }
+    if (r.kind === 'next') { next(); return true; }
+
     pushSaid(text);
-    if (/^(b|back|previous|prev)$/.test(low)) { back(); return true; }
-    if (/^(exit|quit|stop|end|x|n|no|cancel)$/.test(low)) { end('exit'); return true; }
-    var m = low.match(/^(?:go to|skip to|jump to|tour)\s+(.+)$/);
-    if (m) {
-      var k = findStepIndex(m[1]);
+    if (r.kind === 'back') { back(); return true; }
+    if (r.kind === 'exit') { end('exit'); return true; }
+    if (r.kind === 'jump') {
+      var k = findStepIndex(r.term);
       if (k >= 0) { jump(k); return true; }
     }
-    // Anything else is a real question. With a key the assistant answers it and
-    // the tour stays up; without one, say so rather than failing silently.
+
+    /* Everything else is a real question or a real request, and the tour gets
+       out of the way rather than eating it. Pausing FIRST is what makes the
+       position survive whatever the assistant does next — including an agent
+       action that navigates to another page and reloads this script. */
     if (A && A.hasKey && A.hasKey()) {
+      pauseFor('question');
+      creditNoticeOnce();
       if (A) A.refresh();
-      return false;                      // let the model answer; tour mode persists
+      return false;                      // let the model answer
     }
+    /* No key. The tour is the one thing on this screen a brand-new user can
+       actually do, so it must survive not being able to answer. */
     pushNote('I can answer questions once an API key is added in '
       + '<a href="/dashboard#goto=project-settings" style="color:var(--accent)">Settings → General</a>. '
-      + 'For now: press <kbd>Y</kbd> to continue, or type <b>Exit</b> to stop.');
+      + 'You can keep going with the tour — press <kbd>Y</kbd> to continue, or type <b>Exit</b> to stop.');
     if (A) A.refresh();
     return true;
   }
 
   if (/^resume$/.test(low)) {
-    var last = getLast();
+    /* Typed by the user, so it works on ANY saved position — including one
+       they exited. `exited` is about not nagging them with an unsolicited
+       prompt; it was never meant to refuse them when they ask. end() itself
+       tells them to type this, so refusing here would make the tour a liar. */
+    var saved = readState();
+    if (saved && saved.plan && saved.plan.length) { restore(saved); return true; }
+    var last = getLegacyLast();
     if (last !== null) { start(last); return true; }
   }
   if (INTENT.test(text)) {
@@ -558,7 +791,19 @@ function handleInput(text) {
 /* Y and B are single keys, so they must only fire on an empty box — otherwise
    nobody could type the word "yesterday". */
 function handleKey(e, inputValue) {
-  if (!tour || !tour.active) return false;
+  if (!tour) return false;
+  if (isPaused()) {
+    // While paused the single keys are dangerous: the user is mid-conversation
+    // and 'y' may be the first letter of a sentence. Only an empty box with Y
+    // resumes, and Escape still exits.
+    if (e.key === 'Escape') { e.preventDefault(); end('exit'); return true; }
+    if (inputValue !== '') return false;
+    if (e.key === 'y' || e.key === 'Y' || e.key === 'Enter') {
+      e.preventDefault(); resumeTour(); return true;
+    }
+    return false;
+  }
+  if (!isActive()) return false;
   if (e.key === 'Escape') { e.preventDefault(); end('exit'); return true; }
   if (inputValue !== '') return false;
   if (e.key === 'y' || e.key === 'Y') { e.preventDefault(); next(); return true; }
@@ -572,37 +817,189 @@ function handleAct(act) {
   else if (act === 'back') back();
   else if (act === 'exit') end('exit');
   else if (act === 'finish') end('done');
+  /* Two different resumes share this act name, and they are not the same
+     thing: accepting an OFFER restarts a tour that is not running, while
+     resuming from a question un-pauses one that is. Routing the offer's
+     button to the second did nothing at all, because the tour was not
+     paused — it was not running. */
+  else if (act === 'resume') { if (offering) restore(tour.st); else resumeTour(); }
+  else if (act === 'restart') start(0);
+  else if (act === 'dismiss') dismissOffer();
+  else if (act === 'ask') focusInput();
 }
+
+function focusInput() {
+  var box = document.getElementById('cygaInput');
+  if (box) box.focus();
+}
+
+/* ── The assistant's turn has finished ────────────────────────────────────
+   Called from the assistant's single settle() — the one place a turn ends,
+   whether it answered, errored or was broken out of. If the tour is parked,
+   this is where it puts its hand back up.
+
+   A failed call must never end or corrupt the tour, so an error gets a
+   friendly sentence and the same resume prompt as a success. */
+function onTurnEnd(status, error) {
+  if (!tour || !isPaused()) return;
+  if (status === 'error') {
+    pushNote('Ask Cygenix could not answer that'
+      + (error ? ' — ' + esc(String(error)) : '')
+      + '. You can keep going with the tour.');
+  }
+  pushNote(resumePromptHtml());
+  if (A) A.refresh();
+}
+
+/* ── Coming back to a tour that was left running ──────────────────────────
+   Shown when a durable position exists but this tab has no transcript: a
+   reload, a closed panel, or tomorrow. Deliberately an OFFER — the brief is
+   explicit that the tour must not relaunch itself over whatever the user is
+   now doing. */
+function firstRunModalUp() {
+  var m = document.getElementById('onboarding-modal');
+  return !!m && m.style.display && m.style.display !== 'none';
+}
+
+function offerRestore(saved) {
+  var res = T.resolve(saved, stepsById());
+  if (!res.ok) { clearState(); return; }
+  /* Stand down while the first-run modal is up. That modal already offers the
+     tour as its first row, and two competing offers for the same thing — one
+     of them behind a full-screen scrim — is worse than one. The saved
+     position is untouched, so the offer returns on the next load. */
+  if (firstRunModalUp()) return;
+  var step = stepById(res.stepId) || {};
+  offering = true;
+  clearOverlays();          // nothing is running, so nothing should be lit
+  tour = { st: saved, transcript: [], restore: { collapsed: false } };
+  pushNote('<div class="cyg-tour-resume"><div class="tr-head">'
+    + 'You were on step <b>' + res.index + ' / ' + T.total(saved) + '</b> — '
+    + esc(step.title || '') + '.'
+    + (res.fellBack ? ' That step has changed since; this is the nearest one.' : '')
+    + '</div><div class="tr-ctl">'
+    + '<button class="cyga-btn primary" data-tour-act="resume">Resume</button>'
+    + '<button class="cyga-btn" data-tour-act="restart">Start over</button>'
+    + '<button class="cyga-btn" data-tour-act="dismiss">Dismiss</button>'
+    + '</div></div>');
+  // The offer must not put the panel into tour mode: until they accept, the
+  // input belongs to the assistant and typing should reach the model.
+  if (A) A.refresh();
+}
+
+function dismissOffer() {
+  if (!offering) return;
+  offering = false;
+  // Dismissing is not exiting. The position stays, so `resume` still works
+  // and the offer returns next session — the user said "not now", which is a
+  // different answer from "never".
+  tour = null;
+  if (A) { A.setTourMode(false); A.refresh(); }
+}
+
+/* Accepting the offer. The saved state may be paused (interrupted last time)
+   or active (reload mid-step); either way the user asked for it now, so it
+   goes active and draws. */
+function restore(saved) {
+  var res = T.resolve(saved, stepsById());
+  if (!res.ok) { clearState(); return start(0); }
+  offering = false;
+  injectStyles();
+  tour = {
+    st: T.jump(Object.assign({}, saved, { status: 'active' }), res.index),
+    transcript: (tour && tour.transcript) || [],
+    restore: { collapsed: SB && typeof SB.isCollapsed === 'function' ? SB.isCollapsed() : false },
+  };
+  openedGroups = [];
+  if (A) { A.open(); A.setTourMode(true); }
+  persist();
+  show();
+}
+
+function clearState() { try { localStorage.removeItem(stateKey()); } catch (e) {} }
 
 /* ── boot ───────────────────────────────────────────────────────────────── */
 
 function boot() {
   SB = window.CygenixSidebar || null;
   A = window.CygenixAssistant || null;
+  T = window.CygenixTourState || null;
   if (!A || typeof A.setTourHooks !== 'function') return;   // assistant too old; stay silent
+  if (!T) return;                                            // state module missing; stay silent
 
   injectStyles();
   A.setTourHooks({
     onInput: handleInput,
     onKey: handleKey,
     onAct: handleAct,
+    onTurnEnd: onTurnEnd,
     render: renderPanel,
-    isActive: function () { return !!(tour && tour.active); },
-    onClose: function () { if (tour && tour.active) end('exit'); },
+    isActive: function () { return isActive(); },
+    // A mid-tour answer is short by design; see TOUR_ANSWER_TOKENS.
+    maxTokens: function () { return isPaused() ? TOUR_ANSWER_TOKENS : 0; },
+    onClose: function () {
+      // Closing the panel is a pause, not an exit. The user shut a drawer;
+      // they did not say they were finished, and the offer on the way back
+      // is friendlier than losing their place.
+      if (isActive() || isPaused()) {
+        if (isActive()) pauseFor('closed');
+        persist();
+      }
+    },
   });
 
+  /* The tour tells the model where the user is, so "tell me more about this"
+     works without them naming the topic. It rides the existing context
+     provider list, which buildSystemPrompt already serialises whole — no new
+     plumbing, and it disappears from the prompt the moment no tour is
+     running. */
+  if (typeof A.registerContext === 'function') {
+    A.registerContext(function () {
+      if (!tour || !T.isRunnable(tour.st)) return null;
+      var s = stepAt(current()) || {};
+      return {
+        tour: {
+          id: tour.st.tourId,
+          step: current(),
+          of: total(),
+          stepId: tour.st.stepId,
+          section: s.section || null,
+          title: s.title || null,
+          about: String(s.body || '').replace(/<[^>]*>/g, ''),
+          page: s.page || null,
+        },
+        tourGuidance:
+          'The user is on step ' + current() + ' of ' + total() + ' of the Cygenix '
+          + 'welcome tour, looking at "' + (s.title || '') + '" in the '
+          + (s.section || '') + ' section. Answer their question about this area, or '
+          + 'carry out the action they ask for, using the normal tools and guardrails. '
+          + 'Keep answers concise — two or three sentences unless they ask for more. '
+          + 'They will be offered the tour again afterwards, so do not offer to resume '
+          + 'it yourself.',
+      };
+    });
+  }
+
   var saved = readSession();
-  if (saved && saved.active) {
-    tour = saved;
+  var durable = readState();
+
+  if (saved && saved.transcript && durable && T.isRunnable(durable)) {
+    /* Same tab, mid-step: the tour navigated here itself. Carry on silently —
+       an offer here would interrupt the tour with a prompt about the tour. */
+    tour = { st: durable, transcript: saved.transcript, restore: saved.restore || {} };
     openedGroups = [];
     A.open();
-    A.setTourMode(true);
+    A.setTourMode(isActive());
     A.refresh();
     // The page we wanted is the page we are on now, so draw the step rather
     // than navigating again — otherwise a step whose page matches the current
     // one would loop.
-    var s = stepAt(tour.i);
-    if (s) requestAnimationFrame(function () { collapseTourGroups(null); highlight(s); });
+    var s = stepAt(current());
+    if (s && isActive()) requestAnimationFrame(function () { collapseTourGroups(null); highlight(s); });
+  } else if (durable && T.isRunnable(durable)) {
+    /* A position with no transcript in this tab: a reload, a closed panel, or
+       another day. Offer, never launch. */
+    offerRestore(durable);
   }
 
   window.addEventListener('resize', reposition);
@@ -612,8 +1009,12 @@ function boot() {
 
 window.CygenixTour = {
   start: start, next: next, back: back, end: end,
+  resume: resumeTour,
   handleInput: handleInput,
-  isActive: function () { return !!(tour && tour.active); },
+  isActive: function () { return isActive(); },
+  isPaused: function () { return isPaused(); },
+  // For tests and for the smoke: the state as the tour currently holds it.
+  __state: function () { return tour ? tour.st : null; },
   // For tests: the derived list, so a spec can assert what a role actually sees.
   __liveSteps: liveSteps,
   __findStepIndex: findStepIndex,

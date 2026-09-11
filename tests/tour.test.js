@@ -146,12 +146,88 @@ check('it makes no network call at all',
   !/fetch\(|XMLHttpRequest|anthropic|api\.anthropic/i.test(tourCode),
   'the whole point is that it runs with no key and no connection');
 
-check('tour state is per-tab, and the resume point outlives the tab',
+// The transcript is per-tab; the POSITION outlives the tab and the day. This
+// assertion used to pin a bare index in localStorage — that design is what
+// the 5 → 4 bug grew out of, so it now pins the replacement instead.
+check('the transcript is per-tab and the position is per-user and durable',
   /SESSION_KEY\s*=\s*'cyg_tour'/.test(tourJs)
   && /sessionStorage\.(get|set)Item\(SESSION_KEY/.test(tourJs)
-  && /LAST_KEY\s*=\s*'cygenix_tour_last'/.test(tourJs)
-  && /localStorage\.setItem\(LAST_KEY/.test(tourJs),
-  'a half-finished tour should not follow you into a new tab, but resume should still work tomorrow');
+  && /STATE_KEY\s*=\s*'cygenix_tour_state'/.test(tourJs)
+  && /localStorage\.setItem\(stateKey\(\)/.test(tourJs)
+  && /function userTag\(\)/.test(tourJs),
+  'a half-finished tour should not follow you into a new tab, but the step should survive a reload');
+check('every transition persists immediately',
+  (tourJs.match(/\bpersist\(\);/g) || []).length >= 6,
+  'a reload between a transition and its save lands on the wrong step');
+check('and the cross-machine gap is written down rather than left as a surprise',
+  /TODO \(cross-machine\)/.test(tourJs) && /SYNC_KEYS/.test(tourJs));
+
+// ── The 5 → 4 bug, asserted structurally ─────────────────────────────────
+// The behaviour is covered in tests/tour-state.test.js against the pure
+// module. What is checked HERE is that the engine actually uses it, because
+// the bug was never in the rules — it was in resolving a position against a
+// list recomputed from the DOM.
+check('the itinerary is frozen once, at start',
+  /st: T\.create\(liveSteps\(\)/.test(tourJs),
+  'if liveSteps() is consulted again for numbering, the tour can renumber underneath the user');
+// Against the comment-stripped source: the comment above the fixed line
+// quotes the broken one on purpose, so that a reader knows what changed and
+// why. Asking the raw file would fail on the explanation of the fix.
+check('the renderer resolves a card by ID, never by index into a live list',
+  /var step = stepById\(row\.id\);/.test(tourCode)
+  && !/live\[row\.i\]/.test(tourCode),
+  'live[row.i] is the exact line that showed step 4 to someone on step 5');
+check('each card carries the counter it was drawn with',
+  /kind: 'step', id: step\.id, i: index, tot: total\(\)/.test(tourJs),
+  'recomputing the denominator lets a card already on screen change what it says');
+check('show() no longer clamps the step against a DOM-derived length',
+  !/tour\.i >= live\.length/.test(tourJs) && !/tour\.i = live\.length - 1/.test(tourJs),
+  'that clamp let a re-render rewind the user');
+check('position is only ever written through the state module',
+  !/tour\.st\.stepIndex\s*=/.test(tourJs) && !/tour\.st\.stepId\s*=/.test(tourJs),
+  'a direct write is a transition nobody can find later');
+
+// ── Interruption ─────────────────────────────────────────────────────────
+check('a free-text question pauses the tour before handing over to the model',
+  /pauseFor\('question'\);[\s\S]{0,160}return false;/.test(tourJs),
+  'pausing first is what makes the position survive an agent action that navigates');
+check('and the resume prompt comes back on the assistant\'s turn ending',
+  /onTurnEnd:\s*onTurnEnd/.test(tourJs) && /resumePromptHtml\(\)/.test(tourJs));
+check('a failed answer still hands the tour back rather than killing it',
+  /status === 'error'[\s\S]{0,260}pushNote\(resumePromptHtml/.test(tourJs)
+  || /could not answer that[\s\S]{0,400}resumePromptHtml/.test(tourJs));
+check('resuming redraws the paused step and cannot advance it',
+  /function resumeTour\(\)[\s\S]{0,420}T\.resume\(tour\.st\)[\s\S]{0,420}show\(\)/.test(tourJs)
+  && !/function resumeTour\(\)[\s\S]{0,420}T\.next/.test(tourJs));
+check('mid-tour answers are capped, so a curious question has a predictable cost',
+  /TOUR_ANSWER_TOKENS\s*=\s*\d+/.test(tourJs) && /maxTokens:/.test(tourJs));
+check('the credits notice is shown once a session, not on every question',
+  /CREDIT_KEY/.test(tourJs) && /sessionStorage\.getItem\(CREDIT_KEY\) === '1'/.test(tourJs));
+check('with no API key the tour keeps working rather than failing silently',
+  /keep going with the tour/.test(tourJs));
+
+// The brief asks for these calls to be wired into "whatever credit metering
+// the assistant already uses". There is none — Cygenix holds no Anthropic key
+// and every call is billed to the operator's own, which
+// tests/anthropic-billing.test.js enforces. So the honest wiring is the
+// consequence, not an invented balance: a quota failure arrives through the
+// model's own error mapping and the tour survives it.
+check('the absence of a credit ledger is stated, not quietly worked around',
+  /credit metering/i.test(tourJs) && /anthropic-billing\.test\.js/.test(tourJs));
+check('and a failed or quota-exhausted call leaves the tour usable',
+  /could not answer that[\s\S]{0,300}keep going with the tour/.test(tourJs));
+
+// ── Coming back ──────────────────────────────────────────────────────────
+check('a saved tour is OFFERED, never relaunched over what the user is doing',
+  /function offerRestore\(/.test(tourJs)
+  && /data-tour-act="resume"[\s\S]{0,200}data-tour-act="restart"[\s\S]{0,200}data-tour-act="dismiss"/.test(tourJs));
+check('closing the panel pauses rather than exiting',
+  /onClose:[\s\S]{0,320}pauseFor\('closed'\)/.test(tourJs),
+  'shutting a drawer is not the same as saying you are finished');
+check('an exited tour does not nag — only a runnable one is offered',
+  /T\.isRunnable\(durable\)/.test(tourJs));
+check('the model is told which step the user is on, so "tell me more" works',
+  /tourGuidance/.test(tourJs) && /registerContext/.test(tourJs));
 check('a stale highlight from an earlier step cannot land',
   /hiToken/.test(tourJs) && /tok !== hiToken/.test(tourJs));
 check('reduced motion is honoured',

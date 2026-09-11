@@ -106,7 +106,7 @@ var pageKey = null;        // set by registerPage()
    all optional: with cygenix-tour.js absent every one is a no-op and the panel
    behaves exactly as it did before it existed. */
 var tourHooks = {};
-var tourMode = false;
+var tourMode = false;        // false | true (running) | 'paused' (answering)
 
 var EFFECTS = { read: 0, write: 1, destructive: 2 };
 
@@ -714,10 +714,16 @@ function render() {
 
   // While a tour runs the box says what the keys do, and a pill next to
   // Guardrails says why the box is behaving differently.
-  el.input.placeholder = tourMode
-    ? 'Press Y to continue, B to go back, or type Exit'
-    : 'Ask, or tell it what to do…';
-  el.input.classList.toggle('cyga-tourmode', tourMode);
+  /* Three states, not two. While the tour is PAUSED for a question the box
+     belongs to the assistant — B does nothing and Exit is a bigger hammer
+     than the moment calls for — so telling the user to press B would be
+     telling them about a key that is switched off. */
+  el.input.placeholder = tourMode === 'paused'
+    ? 'Ask another question, or press Y to resume the tour'
+    : tourMode
+      ? 'Press Y to continue, B to go back, or type Exit'
+      : 'Ask, or tell it what to do…';
+  el.input.classList.toggle('cyga-tourmode', !!tourMode);
   if (el.tourPill) el.tourPill.hidden = !tourMode;
 }
 
@@ -893,11 +899,31 @@ function breakOut(reason, remaining, results) {
     results.push(toolResult(tu.id, reason, true));
   });
   state.messages.push({ role: 'user', content: results.filter(Boolean), seq: nextSeq() });
-  state.status = 'stopped';
   state.pending = null;
   state.resume = null;
+  settle('stopped');
+}
+
+/* ── Where a turn ends ─────────────────────────────────────────────────────
+   A turn finishes in three places — the model answered with no tool calls,
+   the model errored, or the run was broken out of — and something needs to
+   know about all three: the guided tour, which parks itself while the
+   assistant answers a mid-tour question and has to offer its resume prompt
+   afterwards.
+
+   Hooking the three sites separately is how the fourth one gets forgotten,
+   so they all come through here. `settle` is the only thing that writes a
+   terminal status. */
+function settle(status) {
+  state.status = status;
   endBusy();
-  saveState(); render();
+  saveState();
+  if (tourHooks.onTurnEnd) {
+    // Never let the tour's follow-up throw into the agent loop: the turn is
+    // over and the user's answer is on screen either way.
+    try { tourHooks.onTurnEnd(status, state.error || null); } catch (e) {}
+  }
+  render();
 }
 
 function apiMessages() {
@@ -928,7 +954,11 @@ async function runTurn() {
     // The browser calls Anthropic directly, through the same model engine as
     // every other AI feature — retirement fallback and error mapping included.
     var out = await M.mdCall({
-      max_tokens: MAX_TOKENS,
+      // A mid-tour answer is a sentence or two in a side panel, not an essay,
+      // and the person asking it is usually on their first day. Capping it
+      // keeps the cost of a curious question predictable — the tour supplies
+      // the ceiling, because only it knows a tour is running.
+      max_tokens: (tourHooks.maxTokens && tourHooks.maxTokens()) || MAX_TOKENS,
       system: buildSystemPrompt(collectContext(), api.appMap),
       tools: tools,
       messages: messages
@@ -945,9 +975,7 @@ async function runTurn() {
 
     var toolUses = (data.content || []).filter(function (b) { return b.type === 'tool_use'; });
     if (!toolUses.length) {
-      state.status = 'idle';
-      endBusy();
-      saveState(); render();
+      settle('idle');
       return;
     }
     state.status = 'acting';
@@ -955,15 +983,16 @@ async function runTurn() {
     await executeAll(toolUses, []);
 
   } catch (err) {
-    state.status = 'error';
-    endBusy();
     // This console's user IS its operator, so the mapped admin hint (which
     // names the actual cause and where to fix it) belongs on screen, not
     // hidden behind a generic sentence.
     state.error = (err && err.mapped)
       ? err.mapped.userMessage + (err.mapped.adminHint ? ' — ' + err.mapped.adminHint : '')
       : err.message;
-    saveState(); render();
+    // Through settle, so a failed call still hands the tour back its prompt.
+    // A tour that dies because the model was unreachable is a worse failure
+    // than the unreachable model.
+    settle('error');
   }
 }
 
@@ -1262,7 +1291,7 @@ var api = {
      cygenix-tour.js registers here on load. Every hook is optional, and with
      that file absent the panel is byte-for-byte what it was. */
   setTourHooks: function (h) { tourHooks = h || {}; render(); },
-  setTourMode: function (on) { tourMode = !!on; render(); },
+  setTourMode: function (on) { tourMode = (on === 'paused') ? 'paused' : !!on; render(); },
   refresh: function () { render(); },
   hasKey: function () { return !!apiKey(); },
   suggestions: [],
