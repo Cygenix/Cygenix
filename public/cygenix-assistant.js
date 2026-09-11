@@ -333,7 +333,158 @@ function buildSystemPrompt(context, appMap) {
 JSON.stringify(context || {}, null, 2);
 }
 
-/* Same limits as the reference route — they protect the payload, not a server. */
+/* ── Making the transcript something the API will actually accept ──────────
+ *
+ * WHAT WENT WRONG
+ * A user part-way through the guided tour typed "write me a simple query" and
+ * got back "That request could not be processed — Malformed request". Not
+ * once: every message from then on, on every page, for the life of that
+ * project's conversation. The tour was fine. The panel was fine. The
+ * conversation was not: it held an assistant turn whose tool_use blocks had
+ * never been answered, and the Messages API rejects that outright with a 400.
+ *
+ * There are several ways to arrive there, and they all end the same way:
+ *
+ *   * An action was proposed and the confirm card went up. Instead of pressing
+ *     Approve or Skip, the user typed something else — which is a perfectly
+ *     reasonable thing to do, and which pushed a text turn straight after an
+ *     assistant turn full of unanswered tool calls. `state.pending` is still
+ *     parked, so healTranscript() below deliberately keeps its hands off, and
+ *     the transcript stays broken for ever.
+ *   * A navigation action moved the browser and the destination never got as
+ *     far as resumeAfterNavigation().
+ *   * An older build, a half-written blob, a quota error mid-run.
+ *
+ * The panel had no way back from any of them. `New conversation` was the only
+ * cure and nothing on screen said so.
+ *
+ * THE FIX, IN TWO PARTS
+ * ask() now answers a parked confirmation before adding the question, because
+ * typing a question instead of approving IS an answer and the transcript
+ * should say so. And every outgoing payload goes through the function below,
+ * which is the net underneath: whatever shape the stored conversation has
+ * drifted into, what LEAVES here satisfies the API's structural rules.
+ *
+ * It is pure — messages in, messages out — so the rules can be tested without
+ * a browser, and it never writes to state: the display keeps the real history
+ * and only the wire copy is repaired.
+ */
+var UNANSWERED = 'This did not finish — the page moved on before the result came back. ' +
+  'Do not assume it ran; check the current state before doing anything else.';
+
+function toBlocks(content) {
+  if (Array.isArray(content)) return content.slice();
+  var t = String(content == null ? '' : content);
+  return t.trim() ? [{ type: 'text', text: t }] : [];
+}
+
+/* Drop blocks the API refuses: a text block with nothing in it ("text content
+   blocks must contain non-whitespace text") and anything that is not a block
+   at all. A string stays a string — the common turn should go out exactly as
+   it always has. */
+function cleanContent(content, repairs) {
+  if (typeof content === 'string') return content.trim() ? content : '';
+  if (!Array.isArray(content)) return '';
+  var kept = content.filter(function (b) {
+    if (!b || typeof b !== 'object' || !b.type) return false;
+    if (b.type === 'text') return String(b.text == null ? '' : b.text).trim() !== '';
+    return true;
+  });
+  if (kept.length !== content.length) repairs.push('dropped an empty content block');
+  return kept;
+}
+
+function isEmpty(content) {
+  return typeof content === 'string' ? !content.trim() : !(content && content.length);
+}
+
+function toolUseIds(content) {
+  return (Array.isArray(content) ? content : [])
+    .filter(function (b) { return b && b.type === 'tool_use' && b.id; })
+    .map(function (b) { return b.id; });
+}
+
+function repairConversation(messages) {
+  var repairs = [];
+  var out = [];
+  var open = [];              // tool_use ids from the last assistant turn, still unanswered
+
+  function answers(ids) {
+    return ids.map(function (id) {
+      return { type: 'tool_result', tool_use_id: id, is_error: true, content: UNANSWERED };
+    });
+  }
+
+  (messages || []).forEach(function (m) {
+    if (!m) return;
+    var role = m.role === 'assistant' ? 'assistant' : 'user';
+    var content = cleanContent(m.content, repairs);
+
+    if (role === 'user') {
+      if (Array.isArray(content)) {
+        // A tool_result for something nobody asked for is rejected just as
+        // hard as a request with no result. Both halves have to line up.
+        content = content.filter(function (b) {
+          if (b.type !== 'tool_result') return true;
+          var at = open.indexOf(b.tool_use_id);
+          if (at === -1) { repairs.push('dropped an orphan tool_result'); return false; }
+          open.splice(at, 1);
+          return true;
+        });
+      }
+      // Anything still outstanding is answered FIRST, in this same turn:
+      // the API wants the results at the head of the user message that
+      // follows the request, not in a turn of their own after the user's text.
+      if (open.length) {
+        content = answers(open).concat(toBlocks(content));
+        repairs.push('answered ' + open.length + ' unfinished tool call(s)');
+        open = [];
+      }
+      if (isEmpty(content)) { repairs.push('dropped an empty user turn'); return; }
+      out.push({ role: 'user', content: content });
+      return;
+    }
+
+    // An assistant turn cannot answer tool calls, so anything still open has
+    // to be closed off with a user turn before this one goes in.
+    if (open.length) {
+      out.push({ role: 'user', content: answers(open) });
+      repairs.push('answered ' + open.length + ' unfinished tool call(s)');
+      open = [];
+    }
+    if (isEmpty(content)) { repairs.push('dropped an empty assistant turn'); return; }
+    // The conversation must open with the user. A transcript that starts with
+    // an assistant turn is one whose first user message was lost.
+    if (!out.length) { repairs.push('dropped a leading assistant turn'); return; }
+    out.push({ role: 'assistant', content: content });
+    open = toolUseIds(content);
+  });
+
+  if (open.length) {
+    out.push({ role: 'user', content: answers(open) });
+    repairs.push('answered ' + open.length + ' unfinished tool call(s)');
+  }
+
+  // Roles must alternate. Two turns from the same side are merged rather than
+  // dropped, so nothing anybody said is lost putting it right.
+  var merged = [];
+  out.forEach(function (m) {
+    var last = merged[merged.length - 1];
+    if (last && last.role === m.role) {
+      last.content = toBlocks(last.content).concat(toBlocks(m.content));
+      repairs.push('merged two consecutive ' + m.role + ' turns');
+      return;
+    }
+    merged.push(m);
+  });
+
+  return { messages: merged, repairs: repairs };
+}
+
+/* Same limits as the reference route — they protect the payload, not a server.
+   The structural half below is not a limit but a last line of defence: after
+   repairConversation() it should never fire, and if it ever does, failing here
+   with a sentence naming the problem beats a 400 that names nothing. */
 function validate(messages, tools) {
   if (!Array.isArray(messages) || !messages.length) return 'messages must be a non-empty array';
   if (messages.length > MAX_MESSAGES) {
@@ -342,11 +493,30 @@ function validate(messages, tools) {
   if (tools && (!Array.isArray(tools) || tools.length > MAX_TOOLS)) {
     return 'tools must be an array of at most ' + MAX_TOOLS + ' entries';
   }
+  var open = [];
   for (var i = 0; i < messages.length; i++) {
     var m = messages[i];
     if (!m || (m.role !== 'user' && m.role !== 'assistant')) return 'invalid message role';
     if (typeof m.content !== 'string' && !Array.isArray(m.content)) return 'invalid message content';
+    if (isEmpty(cleanContent(m.content, []))) return 'message ' + i + ' has no content';
+    if (i && m.role === messages[i - 1].role) return 'message ' + i + ' repeats the ' + m.role + ' role';
+    if (m.role === 'user') {
+      var answered = (Array.isArray(m.content) ? m.content : [])
+        .filter(function (b) { return b && b.type === 'tool_result'; })
+        .map(function (b) { return b.tool_use_id; });
+      for (var j = 0; j < open.length; j++) {
+        if (answered.indexOf(open[j]) === -1) return 'tool call ' + open[j] + ' was never answered';
+      }
+      for (var k = 0; k < answered.length; k++) {
+        if (open.indexOf(answered[k]) === -1) return 'tool result ' + answered[k] + ' answers nothing';
+      }
+      open = [];
+    } else {
+      open = toolUseIds(m.content);
+    }
   }
+  if (messages[0].role !== 'user') return 'the conversation must start with the user';
+  if (open.length) return 'tool call ' + open[0] + ' was never answered';
   if (JSON.stringify(messages).length > MAX_BODY_CHARS) {
     return 'This conversation is too large to continue. Start a new one with the New button.';
   }
@@ -873,11 +1043,47 @@ function progress(patch) {
   saveState(); render();
 }
 
+/* Close off a run that is parked — on a confirmation, or on a navigation whose
+ * destination never reported back — because the user has just said something
+ * else. Typing a question instead of pressing Approve IS an answer to the
+ * prompt, and the transcript has to record it as one: an assistant turn whose
+ * tool calls are never answered is rejected by the API, and the panel then
+ * reports "that request could not be processed" for every message afterwards.
+ *
+ * The results go into the conversation but no turn is sent. The model sees
+ * them attached to the question, which is the true order of events. */
+function closeParkedRun() {
+  var results = [];
+  var p = state.pending;
+  if (p) {
+    state.pending = null;
+    var a = actions[p.name] || {};
+    var subject = a.subject ? safe(a.subject, p.input) : null;
+    pushTrail({ name: p.name, title: subject ? 'Skipped: ' + subject : (a.title || p.name),
+      error: true, detail: 'Not approved — the user asked something else' });
+    results = (p.done || []).slice();
+    results.push(toolResult(p.toolUseId,
+      'The user asked something else instead of approving this, so it was not run. ' +
+      'Do not retry it unless they ask.', true));
+    (p.queue || []).forEach(function (tu) {
+      results.push(toolResult(tu.id, 'Not run — the user asked something else first.', true));
+    });
+  }
+  var r = state.resume;
+  if (r) {
+    state.resume = null;
+    results.push(toolResult(r.toolUseId,
+      r.result + ' The user then asked something else, so the run stopped there.'));
+  }
+  if (results.length) state.messages.push({ role: 'user', content: results, seq: nextSeq() });
+}
+
 function ask(text) {
   state.error = null;
   // The budget is per user turn: asking again is what buys the next fifteen.
   state.calls = 0;
   state.lastCall = null;
+  closeParkedRun();
   state.messages.push({ role: 'user', content: text, seq: nextSeq() });
   saveState(); render();
   runTurn();
@@ -926,9 +1132,21 @@ function settle(status) {
   render();
 }
 
+/* The wire copy: `seq` is display-only and never sent, and the structure is
+   repaired on the way out rather than in state — see repairConversation().
+   The repairs are surfaced in the trail, once, because an assistant that
+   quietly rewrites what you said is worse than one that says it had to. */
+var _saidRepaired = false;
 function apiMessages() {
-  // Strip the display-only `seq` before sending.
-  return state.messages.map(function (m) { return { role: m.role, content: m.content }; });
+  var fixed = repairConversation(state.messages.map(function (m) {
+    return { role: m.role, content: m.content };
+  }));
+  if (fixed.repairs.length && !_saidRepaired) {
+    _saidRepaired = true;
+    pushTrail({ name: 'transcript', title: 'Recovered an interrupted conversation',
+      detail: fixed.repairs.join('; ') + '. Nothing was lost from the screen.' });
+  }
+  return fixed.messages;
 }
 
 var saidDegraded = false;
@@ -1302,6 +1520,7 @@ var api = {
   __core: {
     buildSystemPrompt: buildSystemPrompt,
     validate: validate,
+    repairConversation: repairConversation,
     needsConfirmation: needsConfirmation,
     toolDefs: toolDefs,
     collectContext: collectContext,

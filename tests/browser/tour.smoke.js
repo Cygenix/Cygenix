@@ -493,6 +493,137 @@ const SEED = () => {
   check('accepting the offer lands on the step they left',
     c && c.count === atStep, JSON.stringify(c));
 
+  /* ── 11. The 400 the user actually hit ──────────────────────────────────
+   *
+   * Shipping section 9 was not enough. In production the same sequence came
+   * back "That request could not be processed — Malformed request", and kept
+   * coming back for every message afterwards. The tour was never the problem:
+   * the conversation was. An action had been proposed, the confirm card had
+   * gone up, and instead of pressing Approve or Skip the user had typed
+   * something else — which put a text turn straight after an assistant turn
+   * whose tool_use blocks nobody had answered. The Messages API rejects that
+   * outright, and because state.pending stays parked, the transcript never
+   * healed. Every question from then on, on every page, got the same 400.
+   *
+   * So this section walks the whole path for real — propose, park, interrupt
+   * — and then reads the payload that LEFT the browser and checks it against
+   * the API's own structural rules. A stub that accepts anything is exactly
+   * how this shipped broken the first time.
+   */
+  const wellFormed = (ms) => {
+    if (!Array.isArray(ms) || !ms.length) return 'no messages';
+    if (ms[0].role !== 'user') return 'starts with ' + ms[0].role;
+    let open = [];
+    for (let i = 0; i < ms.length; i++) {
+      const m = ms[i];
+      const blocks = Array.isArray(m.content) ? m.content : null;
+      if (i && ms[i - 1].role === m.role) return 'two ' + m.role + ' turns in a row at ' + i;
+      if (blocks ? !blocks.length : !String(m.content || '').trim()) return 'empty turn at ' + i;
+      if (blocks && blocks.some((b) => b.type === 'text' && !String(b.text || '').trim())) {
+        return 'empty text block at ' + i;
+      }
+      if (m.role === 'user') {
+        const got = (blocks || []).filter((b) => b.type === 'tool_result').map((b) => b.tool_use_id);
+        const missed = open.filter((id) => got.indexOf(id) === -1);
+        if (missed.length) return 'tool_use ' + missed[0] + ' never answered';
+        const orphan = got.filter((id) => open.indexOf(id) === -1);
+        if (orphan.length) return 'tool_result ' + orphan[0] + ' answers nothing';
+        open = [];
+      } else {
+        open = (blocks || []).filter((b) => b.type === 'tool_use').map((b) => b.id);
+      }
+    }
+    return open.length ? 'tool_use ' + open[0] + ' never answered' : null;
+  };
+
+  // Re-arm the stub — the reloads above wiped it — and have the first answer
+  // propose an action, so the confirm card really does go up. Accepting the
+  // restore offer navigates, so settle first: installing a stub onto a window
+  // that is about to be replaced is how the first draft of section 9 managed
+  // to assert against something that no longer existed.
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    localStorage.setItem('cygenix_api_key', 'sk-ant-smoke');
+    sessionStorage.setItem('cygenix_api_key', 'sk-ant-smoke');
+    window.__asked = [];
+    // A purpose-built action, because what is under test is the runtime's
+    // handling of an ignored confirmation — not whether some particular real
+    // action happens to ask. Destructive under the default policy always asks.
+    window.CygenixAssistant.registerAction({
+      name: 'smoke_confirmable', title: 'Smoke action', effect: 'destructive',
+      subject: function () { return 'the smoke action'; },
+      handler: async function () { return { ok: true }; },
+    });
+    let turn = 0;
+    window.CygenixModel.mdCall = async (req) => {
+      window.__asked.push(req);
+      turn++;
+      const content = turn === 1
+        ? [{ type: 'text', text: 'I can do that for you.' },
+           { type: 'tool_use', id: 'tu_smoke_1', name: 'smoke_confirmable', input: {} }]
+        : [{ type: 'text', text: 'A connection points Cygenix at one database.' }];
+      return { degraded: false, response: { json: async () => ({ content: content }) } };
+    };
+  });
+
+  await openPanel();
+  check('the stub survived long enough to be used',
+    await page.evaluate(() => Array.isArray(window.__asked)
+      && window.CygenixAssistant.hasKey() && window.CygenixTour.isActive()),
+    await page.evaluate(() => JSON.stringify({ stub: Array.isArray(window.__asked),
+      key: window.CygenixAssistant.hasKey(),
+      status: (window.CygenixTour.__state() || {}).status })));
+
+  await type('press the test button for me');
+  await page.waitForTimeout(1500);
+  check('the proposal reached the model',
+    await page.evaluate(() => (window.__asked || []).length === 1),
+    await page.evaluate(() => JSON.stringify({ asked: (window.__asked || []).length,
+      status: window.CygenixAssistant._state().status,
+      err: window.CygenixAssistant._state().error,
+      paused: window.CygenixTour.isPaused() })));
+  check('an action was proposed and is waiting for approval',
+    await page.evaluate(() => window.CygenixAssistant._state().status === 'confirm'
+      && !!window.CygenixAssistant._state().pending));
+
+  // The user does not answer the prompt. They ask something else — which is
+  // the ordinary thing to do, and the thing that broke the panel.
+  await type('write me a simple query');
+  await page.waitForTimeout(1800);
+
+  const sent = await page.evaluate(() => window.__asked[window.__asked.length - 1].messages);
+  check('THE 400: the payload sent after an ignored confirmation is well-formed',
+    wellFormed(sent) === null, wellFormed(sent) + ' :: ' + JSON.stringify(sent).slice(0, 400));
+  check('the parked tool call was answered rather than left dangling',
+    JSON.stringify(sent).indexOf('tu_smoke_1') !== -1);
+  check('and the question itself still went to the model',
+    JSON.stringify(sent).indexOf('write me a simple query') !== -1);
+  check('the confirmation is no longer parked, so it cannot break the next turn too',
+    await page.evaluate(() => !window.CygenixAssistant._state().pending));
+  check('the panel did not report a failure',
+    await page.evaluate(() => window.CygenixAssistant._state().status !== 'error'),
+    await page.evaluate(() => window.CygenixAssistant._state().error || ''));
+  check('the trail says the action was skipped rather than silently dropping it',
+    /Skipped|Not approved/i.test(await page.textContent('#cygaBody')));
+  check('the tour is still paused at the same step through all of it',
+    await page.evaluate(() => window.CygenixTour.isPaused())
+    && await page.evaluate(() => window.CygenixTour.__state().stepIndex) === stepBefore);
+
+  // A third turn, to prove the transcript is not merely valid once.
+  await type('and what does it cost?');
+  await page.waitForTimeout(1500);
+  const sent2 = await page.evaluate(() => window.__asked[window.__asked.length - 1].messages);
+  check('the conversation stays valid on the turn after the repair',
+    wellFormed(sent2) === null, wellFormed(sent2));
+
+  await type('y');
+  await page.waitForTimeout(1400);
+  await openPanel();
+  c = await card();
+  check('and the tour still resumes on the step it was paused at',
+    c && c.count === atStep, JSON.stringify(c));
+
   // Put the key back the way the rest of the file expects to find it.
   await page.evaluate(() => {
     localStorage.removeItem('cygenix_api_key');

@@ -151,9 +151,18 @@ function mdMapError(status, json, model) {
       logMessage: 'Anthropic 404: ' + msg };
   }
   if (status === 400) {
+    /* The API says exactly what is wrong with a 400 — "tool_use ids were found
+       without tool_result blocks", "messages: at least one message is
+       required", "max_tokens: must be greater than 0". Throwing that away and
+       showing a generic sentence instead cost a full day chasing a panel that
+       had stopped answering, because the one fact needed to fix it was sitting
+       in a response body nobody printed. This console's user is its operator:
+       give them the reason. */
     return { code: 'invalid_request', retryable: false,
       userMessage: 'That request could not be processed.',
-      adminHint: 'Malformed request — check max_tokens, roles and content blocks.',
+      adminHint: msg
+        ? 'The API rejected the request: ' + msg
+        : 'Malformed request — check max_tokens, roles and content blocks.',
       logMessage: 'Invalid request (400): ' + msg };
   }
   if (status === 413) {

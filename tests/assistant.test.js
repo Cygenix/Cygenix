@@ -105,6 +105,174 @@ check('an oversized payload is refused with advice, not a crash', (() => {
 })());
 check('the tool catalogue is capped at ' + core.LIMITS.MAX_TOOLS, core.LIMITS.MAX_TOOLS === 80);
 
+/* ── 3b. A transcript the API will accept ───────────────────────────────────
+ *
+ * THE BUG THIS SECTION EXISTS FOR
+ * A user part-way through the guided tour typed a question and got back "That
+ * request could not be processed — Malformed request". Then again. Then for
+ * every message afterwards, on every page, for the life of that project's
+ * conversation — because the stored conversation held an assistant turn whose
+ * tool_use blocks had never been answered, and the Messages API rejects that
+ * outright. The commonest way in: an action was proposed, the confirm card
+ * went up, and instead of pressing Approve or Skip the user typed something
+ * else. Perfectly reasonable, and it broke the panel permanently.
+ *
+ * repairConversation() is the net. It is pure, so the rules it enforces are
+ * the rules tested here, and it never touches state — the screen keeps the
+ * real history and only the wire copy is put right.
+ */
+const rc = core.repairConversation;
+const ROLES = (ms) => ms.map((m) => m.role).join(',');
+const BLOCKS = (m) => (Array.isArray(m.content) ? m.content : [{ type: 'text', text: m.content }]);
+
+check('a healthy conversation is passed through unchanged', (() => {
+  const ms = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: [{ type: 'text', text: 'hello' }] }];
+  const out = rc(ms);
+  return out.repairs.length === 0 && JSON.stringify(out.messages) === JSON.stringify(ms);
+})());
+
+check('a plain question still goes out as a plain string, not rebuilt into blocks', (() => {
+  const out = rc([{ role: 'user', content: 'write me a simple query' }]);
+  return out.messages[0].content === 'write me a simple query';
+})());
+
+// THE regression: the exact shape a parked confirmation leaves behind.
+const parked = [
+  { role: 'user', content: 'run the nightly job' },
+  { role: 'assistant', content: [{ type: 'tool_use', id: 'tu_1', name: 'job_run', input: {} }] },
+  { role: 'user', content: 'write me a simple query' },
+];
+check('an unanswered tool call is answered rather than sent as-is', (() => {
+  const out = rc(parked);
+  return core.validate(out.messages, []) === null;
+})());
+check('the answer is attached to the same turn as the question, ahead of it', (() => {
+  const last = rc(parked).messages[2];
+  const b = BLOCKS(last);
+  return b[0].type === 'tool_result' && b[0].tool_use_id === 'tu_1' && b[1].type === 'text';
+})());
+check('the synthetic result is marked as an error, not a success', (() => {
+  return BLOCKS(rc(parked).messages[2])[0].is_error === true;
+})());
+check('the user question survives the repair word for word', (() => {
+  return BLOCKS(rc(parked).messages[2]).some((b) => b.text === 'write me a simple query');
+})());
+check('the repair is reported rather than done silently',
+  rc(parked).repairs.some((r) => /unfinished tool call/.test(r)));
+
+check('a tool call left dangling at the very end is closed off', (() => {
+  const out = rc([
+    { role: 'user', content: 'go' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'tu_9', name: 'x', input: {} }] },
+  ]);
+  return core.validate(out.messages, []) === null && out.messages.length === 3
+    && BLOCKS(out.messages[2])[0].tool_use_id === 'tu_9';
+})());
+
+check('two tool calls in one turn both get an answer', (() => {
+  const out = rc([
+    { role: 'user', content: 'go' },
+    { role: 'assistant', content: [
+      { type: 'tool_use', id: 'a', name: 'x', input: {} },
+      { type: 'tool_use', id: 'b', name: 'y', input: {} }] },
+    { role: 'user', content: 'never mind' },
+  ]);
+  const ids = BLOCKS(out.messages[2]).filter((b) => b.type === 'tool_result').map((b) => b.tool_use_id);
+  return core.validate(out.messages, []) === null && ids.join(',') === 'a,b';
+})());
+
+check('a result that arrived is kept and only the missing one is invented', (() => {
+  const out = rc([
+    { role: 'user', content: 'go' },
+    { role: 'assistant', content: [
+      { type: 'tool_use', id: 'a', name: 'x', input: {} },
+      { type: 'tool_use', id: 'b', name: 'y', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'a', content: 'real answer' }] },
+  ]);
+  const b = BLOCKS(out.messages[2]);
+  return b.find((x) => x.tool_use_id === 'a').content === 'real answer'
+    && b.find((x) => x.tool_use_id === 'b').is_error === true;
+})());
+
+check('an assistant turn cannot swallow an outstanding tool call', (() => {
+  const out = rc([
+    { role: 'user', content: 'go' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'a', name: 'x', input: {} }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'anyway' }] },
+  ]);
+  return ROLES(out.messages) === 'user,assistant,user,assistant' && core.validate(out.messages, []) === null;
+})());
+
+check('a tool_result answering nothing is dropped, not forwarded', (() => {
+  const out = rc([
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'ghost', content: 'x' },
+                              { type: 'text', text: 'hello' }] },
+  ]);
+  return core.validate(out.messages, []) === null
+    && BLOCKS(out.messages[0]).every((b) => b.type !== 'tool_result')
+    && out.repairs.some((r) => /orphan/.test(r));
+})());
+
+check('an empty text block is dropped — the API refuses those too', (() => {
+  const out = rc([{ role: 'user', content: [{ type: 'text', text: '   ' }, { type: 'text', text: 'hi' }] }]);
+  return BLOCKS(out.messages[0]).length === 1;
+})());
+check('a turn left with nothing at all is dropped rather than sent empty', (() => {
+  const out = rc([{ role: 'user', content: 'hi' },
+                  { role: 'assistant', content: [] },
+                  { role: 'user', content: 'still there?' }]);
+  return core.validate(out.messages, []) === null && out.messages.length === 1
+    && BLOCKS(out.messages[0]).length === 2;      // the two user turns merged
+})());
+
+check('a transcript that opens with the assistant is trimmed back to the user', (() => {
+  const out = rc([{ role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+                  { role: 'user', content: 'hello' }]);
+  return out.messages[0].role === 'user' && out.messages.length === 1;
+})());
+
+check('consecutive turns from the same side are merged, not dropped', (() => {
+  const out = rc([{ role: 'user', content: 'one' }, { role: 'user', content: 'two' }]);
+  const b = BLOCKS(out.messages[0]);
+  return out.messages.length === 1 && b.length === 2 && b[1].text === 'two';
+})());
+
+check('an entirely empty conversation comes back empty rather than throwing',
+  rc([]).messages.length === 0 && rc(null).messages.length === 0);
+
+check('repairing is idempotent — a repaired conversation needs no second pass', (() => {
+  const once = rc(parked).messages;
+  return rc(once).repairs.length === 0;
+})());
+
+check('whatever goes in, what comes out satisfies validate()', (() => {
+  const nasty = [
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'z', name: 'x', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'nope', content: 'x' }] },
+    { role: 'user', content: '' },
+    { role: 'assistant', content: [{ type: 'text', text: '' }] },
+    { role: 'user', content: 'hello' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'q', name: 'x', input: {} }] },
+  ];
+  return core.validate(rc(nasty).messages, []) === null;
+})());
+
+// validate() is the last line of defence: after a repair it never fires, but
+// if it ever did the message has to name the problem, because the alternative
+// is a 400 that names nothing.
+check('validate refuses an unanswered tool call',
+  /never answered/.test(core.validate(parked, []) || ''));
+check('validate refuses a result that answers nothing',
+  /answers nothing/.test(core.validate([
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'ghost', content: 'x' }] }], []) || ''));
+check('validate refuses two turns from the same side',
+  /repeats the user role/.test(core.validate([
+    { role: 'user', content: 'a' }, { role: 'user', content: 'b' }], []) || ''));
+check('validate refuses a conversation that opens with the assistant',
+  !!core.validate([{ role: 'assistant', content: [{ type: 'text', text: 'hi' }] }], []));
+check('validate refuses an empty turn',
+  /no content/.test(core.validate([{ role: 'user', content: [] }], []) || ''));
+
 /* ── 4. Tool definitions ────────────────────────────────────────────────── */
 
 const defs = core.toolDefs();
