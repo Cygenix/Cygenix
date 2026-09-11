@@ -121,6 +121,19 @@ const MATRIX = {
   'governance.set-floor':  { PA: 'L', DO: 'F', AU: 'R' },
   'audit.read':            { OW: 'R', PA: 'R', ML: 'L', EN: 'L', AP: 'L', DO: 'L', VA: 'L', AU: 'F' },
   'audit.export':          { PA: 'F', AU: 'F' },
+  // Configuring the log is not the same act as reading it. Pausing capture,
+  // turning it off, disabling a category or shortening retention all reduce
+  // what the organisation can later prove, so they belong to the two roles
+  // that answer for the tenant — and NOT to the Auditor, whose independence
+  // is the point of the role: an auditor who can quieten the trail they
+  // report on is not one. AU holds R so they can SEE the configuration,
+  // because a control they cannot inspect is a control they cannot report
+  // on, and can() refuses an R grant any mutating act.
+  // Note what is still absent: there is no audit.edit and no audit.delete,
+  // for anybody, by design (SoD-5 / R-25). Retention purging goes through
+  // audit.configure and leaves a signed checkpoint behind; it is the only
+  // path by which an entry ever leaves the chain.
+  'audit.configure':       { OW: 'F', PA: 'F', AU: 'R' },
   // Administration (6.6)
   'admin.read':            { OW: 'F', PA: 'F', AU: 'R' },
   'user.manage':           { OW: 'F', PA: 'F', AU: 'R' },

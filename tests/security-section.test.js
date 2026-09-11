@@ -122,6 +122,7 @@ check('no shield iconography is used to imply one',
 const dbConnect = read('netlify', 'functions', 'db-connect.js');
 const preflight = read('public', 'cygenix-preflight.js');
 const orgStore = read('netlify', 'functions', 'lib', 'org-store.js');
+const auditSchema = read('netlify', 'functions', 'lib', 'audit-schema.js');
 const rbac = read('netlify', 'functions', 'lib', 'rbac.js');
 const tenancy = read('netlify', 'functions', 'lib', 'tenancy.js');
 const caps = require(path.join(ROOT, 'public', 'cygenix-capabilities.js'));
@@ -130,8 +131,15 @@ check('CODE+COPY: preflight keeps three examples per column, and the section say
   /f\.examples\.length < 3/.test(preflight) && /localStorage\.setItem\(STORE_KEY/.test(preflight)
   && /up to three offending values per rejecting column/.test(text)
   && /saved in your browser and is not synced to us/.test(text));
+// Entry construction moved out of org-store.js and into lib/audit-schema.js
+// when the audit log gained categories and redaction, so the claim is
+// checked where the entry is now built. The claim itself is unchanged and
+// is the one that matters: an audit entry names the ACTION, never the
+// statement. Both files are asserted, because the entry passes through both
+// and a `sql:` appearing in either would put statement text on disk.
 check('CODE+COPY: the audit entry has no SQL text, and the section makes that the point',
-  /action: evt\.action/.test(orgStore) && !/sql:/.test(orgStore)
+  /action:\s*String\(input\.action/.test(auditSchema)
+  && !/\bsql\s*:/.test(auditSchema) && !/\bsql\s*:/.test(orgStore)
   && /none of them is your SQL/.test(text)
   && /No statement text and no column values are written/.test(text));
 check('CODE+COPY: verification names where a break starts, not a boolean',

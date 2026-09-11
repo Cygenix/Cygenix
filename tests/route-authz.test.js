@@ -122,6 +122,9 @@ const ROUTE_FILES = fs.readdirSync(FN_DIR)
 // point is the status code, and a gated route must refuse before it cares
 // whether the body made sense.
 const CALL = {
+  // The events list, not the status card: reading other people's acts is
+  // the grant worth probing, and a roleless caller must not reach it.
+  'audit':       { httpMethod: 'GET',  queryStringParameters: { what: 'events' } },
   'data-proxy':  { httpMethod: 'GET',  path: '/api/data', queryStringParameters: { action: 'get-user' } },
   // A WRITE, deliberately: the interesting denial on this route is sql.write
   // against a PROD-classified target, which is where the Engineer stops.

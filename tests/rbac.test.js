@@ -108,6 +108,27 @@ check('audit export is Auditor and Platform Administrator only',
   every(['AU'], 'audit.export', {}).allow && every(['PA'], 'audit.export', {}).allow
   && ['OW','ML','EN','AP','DO','VA','MB'].every(c => !every([c], 'audit.export', {}).allow));
 
+// Configuring the log is a different act from reading it. Pausing capture,
+// turning it off, disabling a category or shortening retention all reduce
+// what the organisation can later prove — so they belong to the two roles
+// that answer for the tenant, and explicitly NOT to the Auditor. An auditor
+// who can quieten the trail they report on is not an auditor.
+check('capture configuration is the Owner\'s and the Platform Administrator\'s',
+  every(['OW'], 'audit.configure', { mutating: true }).allow &&
+  every(['PA'], 'audit.configure', { mutating: true }).allow);
+check('the Auditor may SEE the capture configuration',
+  every(['AU'], 'audit.configure', {}).allow);
+check('but may not change it (SoD: independence)',
+  !every(['AU'], 'audit.configure', { mutating: true }).allow);
+check('and no delivery role reaches it at all',
+  ['ML','EN','AP','DO','VA','MB','SP'].every(c => !every([c], 'audit.configure', {}).allow));
+// R-25 / SoD-5: the rows that would let anybody rewrite history are absent,
+// and their absence is deny-by-default rather than an oversight.
+check('there is no audit.edit or audit.delete row for any role',
+  !R.MATRIX['audit.edit'] && !R.MATRIX['audit.delete'] &&
+  R.ROLE_CODES.every(c => !every([c], 'audit.edit', { mutating: true }).allow &&
+                          !every([c], 'audit.delete', { mutating: true }).allow));
+
 // ── Role assignment rules (6.6) ───────────────────────────────────────────
 check('a PA assigns delivery roles',
   R.validateAssignmentChange({ actorRoles: ['PA'], op: 'assign', targetRole: 'EN' }).ok);
