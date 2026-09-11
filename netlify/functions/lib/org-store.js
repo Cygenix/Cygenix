@@ -45,6 +45,12 @@ const _cache = { at: 0, users: null, assignments: null, classifications: null };
 const AUDIT_CONFIG_KEY = 'audit/config';
 const _auditCfg = { at: 0, value: null };
 
+// How long a quiet period has to be before the next authenticated request
+// counts as the start of a new working session. Ten minutes is the existing
+// last-seen refresh window; reusing it means the session event costs the same
+// single write that was already happening, rather than a new one.
+const SESSION_GAP_MS = 10 * 60 * 1000;
+
 function orgStore() {
   const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
   const token  = process.env.NETLIFY_API_TOKEN;
@@ -113,9 +119,39 @@ async function resolveActor(store, authed, tokenClaims) {
   } else {
     // Refresh last-seen lazily — at most once per cache window, and never
     // as a blocking write on the request path.
-    if (!user.lastSeenAt || Date.parse(now) - Date.parse(user.lastSeenAt) > 10 * 60 * 1000) {
+    if (!user.lastSeenAt || Date.parse(now) - Date.parse(user.lastSeenAt) > SESSION_GAP_MS) {
+      const gapFrom = user.lastSeenAt || null;
       user.lastSeenAt = now;
       store.setJSON('rbac/users', { users: state.users }).catch(() => {});
+      // ── The nearest honest thing to a sign-in event ────────────────────
+      //
+      // The brief asks for sign-in, sign-out and failed sign-in in the
+      // always-on `security` category. Two of those three cannot be
+      // observed here and pretending otherwise would put a fiction in the
+      // evidence chain:
+      //
+      //   A FAILED sign-in never reaches this code. Authentication is Entra
+      //   External ID's; a caller who fails it has no token, so no function
+      //   of ours is invoked and there is nothing to record. Recording it
+      //   would need Entra's own sign-in logs, which is a different
+      //   integration, not a line of code here.
+      //
+      //   A SIGN-OUT is a client-side MSAL call plus a cleared cache. There
+      //   is no request to observe, and a browser closed mid-session makes
+      //   no call at all — so a "signed out" entry would be absent exactly
+      //   when it mattered.
+      //
+      // What IS observable is this: an authenticated request arriving after
+      // a gap, which is the first request of a working session. It is named
+      // for what it is rather than for what it resembles.
+      appendAudit(store, {
+        actorOid: oid, actorEmail: authed.email, effectiveRoles: [],
+        action: 'auth.session.start', category: 'security',
+        outcome: 'allowed', severity: 'info',
+        summary: 'First authenticated request after a gap of at least '
+                 + (SESSION_GAP_MS / 60000) + ' minutes',
+        detail: { lastSeenAt: gapFrom, derivedFrom: 'lastSeenAt gap, not an identity-provider event' },
+      }).catch(() => {});
     }
   }
 
@@ -246,8 +282,9 @@ async function appendAudit(store, evt, opts) {
   // that the action does not survive an unrecorded one.
   console.error('[org-store] audit append lost after retries: ' + built.action);
   if (opts.required) {
-    const e = new Error('the audit write failed, so the action was refused');
+    const e = new Error('the audit record could not be written, so the action was refused');
     e.statusCode = 503;
+    e.auditFailure = true;      // callers word their 503 from this
     throw e;
   }
   return null;

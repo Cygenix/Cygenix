@@ -244,6 +244,7 @@ exports.handler = async function (event) {
         if (!body.server) return fail('server is required', 400);
         const state = await org.loadAll(store);
         const key = rbac.connKey(body.server, body.database);
+        const before = state.classifications[key];
         state.classifications[key] = {
           environment: body.environment, classifiedBy: actor.oid,
           classifiedAt: new Date().toISOString(),
@@ -251,10 +252,26 @@ exports.handler = async function (event) {
         };
         await store.setJSON('rbac/classifications', { byKey: state.classifications });
         org.invalidate();
-        await audit({ action: 'connection.classify', outcome: 'allowed',
+        // Filed under `access`, not `connections`, and the difference is not
+        // cosmetic. Classification is what decides whether the Production
+        // guardrails apply to a target at all, so DOWNGRADING one from PROD
+        // to DEV is an authorisation change wearing a connection's clothes.
+        // Left in the optional `connections` category it could be dropped
+        // during a pause; `access` is always-on, so it cannot. The upgrade
+        // direction was already safe (environment PROD files it under the
+        // always-on `prod` category); this closes the other direction.
+        await audit({ action: 'connection.classify', category: 'access',
+                      outcome: 'allowed',
                       severity: body.environment === 'PROD' ? 'high' : 'notice',
                       resourceType: 'connection', resourceId: key,
-                      detail: { environment: body.environment } });
+                      summary: 'Classified ' + String(body.server).trim() +
+                               (body.database ? '/' + String(body.database).trim() : '') +
+                               ' as ' + body.environment,
+                      changes: [{ field: 'environment',
+                                  before: (before && before.environment) || '(unclassified, treated as PROD)',
+                                  after: body.environment }],
+                      detail: { environment: body.environment,
+                                previousEnvironment: (before && before.environment) || null } });
         return ok({ done: true, key });
       }
 

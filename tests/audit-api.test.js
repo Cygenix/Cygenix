@@ -33,6 +33,7 @@ const FN_DIR = path.join(__dirname, '..', 'netlify', 'functions');
 let ACTOR = { oid: 'oid-1', email: 'owner@acme.test', name: 'An Owner', roles: ['OW', 'PA'] };
 let TOKEN_OK = true;
 
+const CLASSIFICATIONS = {};
 const MEM = new Map();
 const BLOBS = {
   get: async (k) => (MEM.has(k) ? JSON.parse(MEM.get(k)) : null),
@@ -63,10 +64,14 @@ Module.prototype.require = function (id) {
         oid: ACTOR.oid, email: ACTOR.email, name: ACTOR.name,
         roles: ACTOR.roles.slice(), isActive: true, user: { isActive: true },
       }),
+      // classifications is returned BY REFERENCE so a handler writing into it
+      // (rbac-admin's classify op does) is visible on the next read. A fresh
+      // {} each call would quietly make every classification look like the
+      // first one, and the before/after this file checks would be a fiction.
       loadAll: async () => ({
         users: { [ACTOR.oid]: { email: ACTOR.email, isActive: true } },
         assignments: ACTOR.roles.map(r => ({ id: 'ra_' + r, oid: ACTOR.oid, role: r, revokedAt: null })),
-        classifications: {},
+        classifications: CLASSIFICATIONS,
       }),
       invalidate: () => {},
     });
@@ -400,6 +405,44 @@ const is2xx = (r) => r.status >= 200 && r.status < 300;
   const mine = await get({ what: 'events', actor: 'owner@acme.test' });
   check('an Engineer asking for the Owner\'s entries still gets only their own',
     mine.json.entries.every(x => x.actorEmail === 'engineer@acme.test'));
+
+  // ── The classification hole ─────────────────────────────────────────────
+  section('9. Downgrading a connection\'s classification');
+  //
+  // Classification decides whether the Production guardrails apply to a
+  // target at all, so downgrading one from PROD to DEV is an authorisation
+  // change wearing a connection's clothes. Filed under the optional
+  // `connections` category it could be dropped during a pause — which is
+  // exactly the pause somebody would take first. It belongs in always-on
+  // `access`. The upgrade direction was already safe, because environment
+  // PROD files an event under the always-on `prod` category; this is the
+  // other direction.
+  {
+    const rbacAdmin = require(path.join(FN_DIR, 'rbac-admin.js')).handler;
+    as(['OW', 'PA']);
+    const classify = (environment) => rbacAdmin({
+      httpMethod: 'POST', headers: { authorization: 'Bearer valid' },
+      queryStringParameters: {},
+      body: JSON.stringify({ op: 'classify', server: 'crm-prod', database: 'sales', environment }),
+    });
+
+    await classify('PROD');
+    // Pause capture, then downgrade. The event must survive.
+    await post({ op: 'status', state: 'paused', reason: 'checking the hole', pauseMinutes: 30 });
+    const res = await classify('DEV');
+    check('the downgrade itself is allowed for an administrator', res.statusCode === 200);
+
+    const found = await get({ what: 'events', action: 'connection.classify', limit: '20' });
+    const downgrade = found.json.entries.filter(
+      (e) => e.changes && e.changes.some((c) => c.after === 'DEV'))[0];
+    check('a downgrade taken DURING a pause is still recorded', !!downgrade);
+    check('because it is filed under the always-on access category, not connections',
+      downgrade && downgrade.category === 'access');
+    check('and it records what the classification was before',
+      downgrade && downgrade.changes.some((c) => c.field === 'environment' && c.before === 'PROD'));
+
+    await post({ op: 'status', state: 'recording' });
+  }
 
   section('8. Bad input');
   as(['OW', 'PA']);

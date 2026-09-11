@@ -137,6 +137,14 @@ exports.handler = async function (event) {
     guardrail = gate.guardrail || null;
   } catch (e) {
     // Fail closed: no policy decision, no database access (§3 principle 1).
+    // A refused Production write whose audit record could not be stored gets
+    // its own wording, because "authorisation unavailable" would send the
+    // operator to look at their roles when the roles were never the problem.
+    if (e.auditFailure) {
+      return err('Refused: ' + e.message,
+        'Production changes are not run unless they can be recorded. Retry shortly — nothing was executed.',
+        503);
+    }
     return err('Authorisation unavailable: ' + e.message, 'Retry shortly — the policy service could not be reached.', e.statusCode || 503);
   }
 
@@ -298,11 +306,23 @@ async function rbacGate(authed, action, dialect, connectionString, database, bod
       guardrail = { environment, destructive, approvalId: supplied, requirement, approved: true };
     }
 
+    // PROD fails closed. Everywhere else a lost audit write is logged and the
+    // user's work proceeds, because refusing an authorised action over a blob
+    // hiccup is the worse failure. Production is the one place where that
+    // trade flips: an unrecorded Production write is a change nobody can
+    // account for afterwards, and "we ran it but cannot tell you who or
+    // what" is not an answer an auditor accepts. So here the write is
+    // required, appendAudit throws a 503 if it cannot land it, and the
+    // statement never runs.
     await appendAudit(store, { ...base, action: policyAction, outcome: 'allowed',
       severity: decision.severity,
+      summary: (policyAction === 'sql.write' ? 'Write' : 'Statement') + ' against ' +
+               connKey(server, db) + (environment ? ' (' + environment + ')' : '') +
+               (destructive.length ? ' — ' + destructive.length + ' destructive statement(s)' : ''),
       detail: { ...base.detail, tenantId: tenant.id,
                 approvalId: guardrail && guardrail.approvalId || undefined,
-                destructive: destructive.length ? destructive : undefined } });
+                destructive: destructive.length ? destructive : undefined } },
+      { required: environment === 'PROD' });
     if (!guardrail && (environment === 'PROD' || environment === 'STAGING')) {
       // Nothing to enforce for this tenant, but the analysis is still worth
       // showing beside the result.

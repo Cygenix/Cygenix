@@ -228,6 +228,17 @@ check('non-state events are ignored entirely',
 // ── Storage: the rules above, actually applied on the way in ──────────────
 console.log('\nStorage — the drop decision applied at write time');
 
+// The session event is written without being awaited — deliberately, since it
+// must not add latency to the request path — so it is polled for.
+const until = (fn, ms) => new Promise((resolve, reject) => {
+  const t0 = Date.now();
+  (async function spin() {
+    if (await fn()) return resolve();
+    if (Date.now() - t0 > (ms || 2000)) return reject(new Error('timed out waiting'));
+    setTimeout(spin, 10);
+  })();
+});
+
 function fakeStore(seed) {
   const m = new Map(Object.entries(seed || {}));
   return {
@@ -405,6 +416,42 @@ function fakeStore(seed) {
   check('no plaintext secret reaches the blob store', stored.indexOf('hunter2') === -1);
   check('but the entry still records that a connection was edited',
     stored.indexOf('connection.edit') !== -1);
+
+  // ── The session event ──
+  //
+  // The brief asks for sign-in, sign-out and failed sign-in. Two of the three
+  // cannot be observed from here: a failed sign-in never reaches our code
+  // (Entra rejects it and no token is issued), and a sign-out is a client-side
+  // MSAL call with no request to watch. What IS observable is an
+  // authenticated request after a gap, and it is named for that rather than
+  // for what it resembles.
+  console.log('\nStorage — the session event');
+  org.invalidateAuditConfig();
+  store = fakeStore({
+    'rbac/users': { users: { 'oid-1': { email: 'a@b.c', isActive: true,
+      firstSeenAt: '2026-01-01T00:00:00.000Z',
+      lastSeenAt: new Date(Date.now() - 40 * 60000).toISOString() } } },
+    'rbac/assignments': { assignments: [{ id: 'r1', oid: 'oid-1', role: 'ML', revokedAt: null }] },
+    'rbac/classifications': { byKey: {} },
+  });
+  org.invalidate();
+  await org.resolveActor(store, { oid: 'oid-1', email: 'a@b.c' }, {});
+  await until(async () => (await org.readAudit(store, { limit: 20 })).entries
+    .some(e => e.action === 'auth.session.start'));
+  const sess = (await org.readAudit(store, { limit: 20 })).entries
+    .find(e => e.action === 'auth.session.start');
+  check('a request after a long gap records a session start', !!sess);
+  check('in the always-on security category, so a pause cannot hide it',
+    sess && sess.category === 'security');
+  check('and says it was derived rather than reported by the identity provider',
+    sess && /not an identity-provider event/.test(sess.detail.derivedFrom));
+
+  org.invalidate();
+  const beforeSecond = (await store.get('audit/head')).seq;
+  await org.resolveActor(store, { oid: 'oid-1', email: 'a@b.c' }, {});
+  await new Promise(r => setTimeout(r, 30));
+  check('a second request moments later records nothing — it is a session, not a request log',
+    (await store.get('audit/head')).seq === beforeSecond);
 
   // ── Tamper detection still works on the extended entry ──
   const e = await store.get('audit/e/0000000001');

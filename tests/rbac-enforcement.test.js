@@ -25,6 +25,7 @@ let CURRENT_USER = { email: 'en@x.y', oid: 'oid-en', sub: 'oid-en', name: 'Eng',
 let ACTOR_ROLES = ['EN'];
 const CLASSIFICATIONS = { 'prodhost|livedb': 'PROD', 'devhost|scratch': 'DEV' };
 const AUDITED = [];
+let AUDIT_FAILS = false;
 
 // In-memory stand-in for Netlify Blobs, shared by the org store and the
 // tenancy module. Tenancy is NOT mocked: the point of these cases is that
@@ -58,7 +59,20 @@ Module.prototype.require = function (id) {
     resolveActor: async () => ({ oid: CURRENT_USER.oid, email: CURRENT_USER.email, roles: ACTOR_ROLES, isActive: true }),
     classificationFor: async (_s, server, db) =>
       CLASSIFICATIONS[String(server).toLowerCase() + '|' + String(db).toLowerCase()] || 'PROD',
-    appendAudit: async (_s, evt) => { AUDITED.push(evt); return evt; },
+    // The audit mock honours `required`, because the point of the
+    // fail-closed case below is what db-connect does when the write is lost.
+    appendAudit: async (_s, evt, opts) => {
+      if (AUDIT_FAILS) {
+        if (opts && opts.required) {
+          const e = new Error('the audit record could not be written, so the action was refused');
+          e.statusCode = 503; e.auditFailure = true;
+          throw e;
+        }
+        return null;
+      }
+      AUDITED.push(Object.assign({ _opts: opts || {} }, evt));
+      return evt;
+    },
   };
   return realRequire.apply(this, arguments);
 };
@@ -144,6 +158,33 @@ const call = async (action, opts) => {
   r = await call('batch', { body: { batchSql: ['SELECT 1', 'TRUNCATE TABLE t'] } });
   check('a batch containing one write gates the whole batch as a write',
     r.status === 403);
+
+  // ── PROD fails closed on a lost audit write ─────────────────────────────
+  //
+  // Everywhere else a lost audit write is logged and the user's work
+  // proceeds — refusing an authorised action over a blob hiccup is the worse
+  // failure. Production is where that trade flips: "we ran it but cannot tell
+  // you who or what" is not an answer an auditor accepts.
+  ACTOR_ROLES = ['ML']; AUDITED.length = 0;
+  r = await call('execute', { body: { sql: 'UPDATE t SET a = 1 WHERE id = 1' } });
+  check('a Lead IS allowed to write to PROD (the control being tested is the audit, not the role)',
+    r.status !== 403, JSON.stringify(r.data));
+  const prodWrite = AUDITED.filter(e => e.outcome === 'allowed' && e.environment === 'PROD').pop();
+  check('and the allowed PROD write asks for its audit record to be required',
+    !!prodWrite && prodWrite._opts.required === true);
+
+  AUDIT_FAILS = true;
+  r = await call('execute', { body: { sql: 'UPDATE t SET a = 1 WHERE id = 1' } });
+  check('if that record cannot be written, the PROD write is refused',
+    r.status === 503 && /could not be written/.test(r.data.error), JSON.stringify(r.data));
+  check('and the message says nothing was executed, rather than blaming the caller\'s roles',
+    /nothing was executed/i.test(r.data.hint || ''), JSON.stringify(r.data));
+
+  // The same failure on a DEV target must NOT stop the work.
+  r = await call('execute', { host: 'devhost', db: 'scratch', body: { sql: 'UPDATE t SET a = 1 WHERE id = 1' } });
+  check('the same lost write on a DEV target does not block the action',
+    r.status !== 503, JSON.stringify(r.data));
+  AUDIT_FAILS = false;
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
