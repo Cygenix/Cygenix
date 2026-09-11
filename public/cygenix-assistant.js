@@ -1140,7 +1140,80 @@ function audit(tu, action, outcome, confirmed) {
     if (typeof CustomEvent !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cygenix:assistant-action', { detail: entry }));
     }
+    recordAssistantProvenance(entry, action);
   } catch (e) { /* auditing must never break a run */ }
+}
+
+/* ── AI provenance in the organisation trail ───────────────────────────────
+   The ring above is this panel's own: capped at AUDIT_CAP, held in one
+   browser's storage, and shown in the assistant's trail. Useful, and not
+   evidence.
+
+   What goes to the organisation trail is the fact the capability page has
+   been carrying a caveat about since it shipped: that an action was taken by
+   Ask Cygenix, and WHO it was taken for. Those are two fields, not one, and
+   keeping them apart is the whole point — actorEmail stays the signed-in
+   identity from the verified token, and onBehalfOf names the person who
+   asked. An assistant action recorded as though a person did it is a worse
+   record than no record at all, which is why CygenixAudit.recordAssistant()
+   exists as its own entry point: a caller cannot forget the flag.
+
+   READ-ONLY ACTIONS ARE EXCLUDED. The assistant reads the screen, lists
+   capabilities and scrolls constantly — a turn can be a dozen such calls.
+   Recording them would drown the acts that changed something, and an
+   `effect: 'read'` action has, by the module's own contract, changed
+   nothing. What it CHANGED is the auditable fact; what it looked at is not.
+
+   Actions that failed are still recorded. "Ask Cygenix tried to do this and
+   could not" is exactly the sort of thing somebody needs to find later. */
+/* Which category an assistant action belongs in — decided by what it
+   touched, not by the fact that the assistant did it. Filing every AI action
+   under one heading would mean pausing the mapping category could not
+   quieten an AI mapping run, and turning off jobs would not quieten an AI
+   job run; the category has to mean the same thing whoever performed the
+   act. Unrecognised tools fall to `settings`, matching the server's own
+   default, rather than being dropped. */
+function assistantCategory(toolName) {
+  var n = String(toolName || '');
+  if (/^sql_|mapping|schema/.test(n)) return 'mapping';
+  if (/stream|^ds_/.test(n)) return 'stream';
+  if (/^job|run_|schedule/.test(n)) return 'jobs';
+  if (/connection|connect/.test(n)) return 'connections';
+  if (/export|download/.test(n)) return 'data';
+  if (/^project/.test(n)) return 'projects';
+  return 'settings';
+}
+
+function recordAssistantProvenance(entry, action) {
+  if (!root || !root.CygenixAudit) return;
+  if (action && action.effect === 'read') return;
+  try {
+    root.CygenixAudit.recordAssistant({
+      // One action name, not one per tool. The tool is a Cygenix
+      // implementation detail that changes as the assistant grows; the
+      // auditable fact is "Ask Cygenix did something", and which tool is in
+      // the target and the detail. It also means the server's allowlist
+      // carries one entry rather than needing a new one every time a tool
+      // is added — and an allowlist that has to be edited to keep working is
+      // an allowlist that ends up with a wildcard in it.
+      action: 'assistant.action',
+      category: assistantCategory(entry.action),
+      outcome: entry.ok ? 'allowed' : 'failed',
+      target: { type: 'assistant_action', id: entry.action,
+                label: entry.title || entry.action },
+      projectId: entry.projectId || null,
+      summary: 'Ask Cygenix: ' + (entry.title || entry.action) +
+               (entry.ok ? '' : ' — failed: ' + (entry.error || 'unknown')),
+      detail: {
+        effect: entry.effect || null,
+        page: entry.page || null,
+        confirmed: !!entry.confirmed,
+        policy: entry.policy || null,
+        tookMs: entry.ms || null,
+        error: entry.error || null,
+      },
+    });
+  } catch (e) { /* provenance must never break a run either */ }
 }
 
 /* ── visual feedback — show the user what is being touched ─────────────── */

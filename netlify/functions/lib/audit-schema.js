@@ -213,6 +213,12 @@ const CLIENT_ACTIONS = {
   'project.archive':      'projects',
   'project.delete':       'projects',
   'data.export-pdf':      'data',
+  // One entry for every act Ask Cygenix takes, rather than one per tool. The
+  // tool is an implementation detail that changes as the assistant grows;
+  // the auditable fact is that the assistant did something, and which tool
+  // travels in the target. The caller passes the real category — the value
+  // here is only the fallback if it does not.
+  'assistant.action':     'settings',
 };
 
 function isClientAction(action) {

@@ -448,8 +448,85 @@ return (async function () {
     check(file + ' loads the recorder', pub(file).indexOf('/cygenix-audit.js') !== -1);
   }
 
+  // ── AI provenance ───────────────────────────────────────────────────────
+  section('6. Ask Cygenix provenance');
+  //
+  // The acceptance criterion, and the thing cygenix-capabilities.js has been
+  // carrying a caveat about since the audit trail shipped: an action taken by
+  // the assistant is stored with actor.type='assistant' and onBehalfOf.
+  //
+  // Exercised for real rather than grepped, because the failure that matters
+  // is the flag being silently absent — which a grep for the entry point
+  // would not notice.
+
+  const asstRecorded = [];
+  const asstWin = {
+    getCygenixIdToken: () => 'test-token',
+    navigator: { onLine: true },
+    console: { warn: () => {} },
+    addEventListener: () => {},
+    fetch: (url, init) => { asstRecorded.push(JSON.parse(init.body)); return respond(url, init); },
+  };
+  asstWin.window = asstWin;
+  new Function('window', 'globalThis', 'module', 'fetch', 'setTimeout', 'clearTimeout',
+    pub('cygenix-audit.js'))(asstWin, asstWin, { exports: {} }, asstWin.fetch, setTimeout, clearTimeout);
+  respond = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ recorded: true }) });
+
+  await asstWin.CygenixAudit.recordAssistant({
+    action: 'assistant.action', category: 'mapping',
+    target: { type: 'assistant_action', id: 'sql_write_editor', label: 'Write SQL' },
+    summary: 'Ask Cygenix: Write SQL',
+  });
+  check('an assistant action posts with actorType assistant',
+    asstRecorded.length === 1 && asstRecorded[0].actorType === 'assistant');
+  check('and the server fills onBehalfOf from the verified token rather than ' +
+        'the browser naming the person itself',
+    asstRecorded[0].onBehalfOf === undefined);
+
+  // The server side of the same fact.
+  const built = schema.buildEntry(
+    { action: 'assistant.action', category: 'mapping', actorType: 'assistant' },
+    { actor: { oid: 'o1', email: 'lead@acme.test', roles: ['ML'] } });
+  check('the stored entry carries actorType assistant', built.actorType === 'assistant');
+  check('and names the person it acted for', built.onBehalfOf === 'lead@acme.test');
+  check('while actorEmail stays the signed-in identity — two fields, never one',
+    built.actorEmail === 'lead@acme.test' && built.onBehalfOf === built.actorEmail
+      && Object.prototype.hasOwnProperty.call(built, 'onBehalfOf'));
+  check('a human action has no onBehalfOf at all',
+    schema.buildEntry({ action: 'jobs.reorder' },
+      { actor: { oid: 'o1', email: 'lead@acme.test' } }).onBehalfOf === null);
+
+  const asst = pub('cygenix-assistant.js');
+  check('the provenance hook hangs off the assistant\'s single audit function',
+    /function audit\(tu, action, outcome, confirmed\)[\s\S]{0,900}recordAssistantProvenance/.test(asst));
+  check('and goes through recordAssistant, so the flag cannot be forgotten',
+    /CygenixAudit\.recordAssistant\(/.test(asst) &&
+    !/CygenixAudit\.record\(\{[\s\S]{0,200}actorType/.test(asst));
+  check('read-only actions are excluded — a turn is a dozen screen reads, and ' +
+        'recording them would drown the acts that changed something',
+    /if \(action && action\.effect === 'read'\) return;/.test(asst));
+  check('but a FAILED action is still recorded',
+    /outcome: entry\.ok \? 'allowed' : 'failed'/.test(asst));
+  check('the category follows what the action touched, not the fact that AI did it',
+    /function assistantCategory\(toolName\)/.test(asst));
+  check('one allowlist entry rather than one per tool',
+    schema.isClientAction('assistant.action') && !schema.isClientAction('assistant.sql_write_editor'));
+
+  const assistantPages = pages.filter((f) => pub(f).indexOf('/cygenix-assistant.js') !== -1);
+  const noRec = assistantPages.filter((f) => pub(f).indexOf('/cygenix-audit.js') === -1);
+  check('every page with the assistant on it loads the recorder',
+    noRec.length === 0, noRec.join(', '));
+
+  // And only now does the capability claim change.
+  const caps = require(P('public', 'cygenix-capabilities.js'));
+  const trail = caps.FEATURES.filter((f) => f.id === 'audit_trail')[0];
+  check('the audit_trail capability no longer says AI provenance is unrecorded',
+    !/AI provenance is not yet recorded/i.test(trail.detail || ''));
+  check('and it still says what IS missing, rather than going quiet',
+    /retention/i.test(trail.detail || ''));
+
   // Every action these capture points assert has to be one the server accepts.
-  section('6. The new capture points are on the allowlist');
+  section('7. The new capture points are on the allowlist');
   for (const a of ['connection.create', 'connection.edit', 'connection.delete',
                    'apikey.set', 'apikey.revoke', 'settings.update', 'sysparam.update',
                    'jobs.rename', 'jobs.trash', 'jobs.restore', 'jobs.delete',

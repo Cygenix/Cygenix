@@ -226,21 +226,24 @@ var FEATURES = [
     claims: ['row-level reconciliation', 'row-by-row proof', 'reconciliation report'],
     evidence: 'none' },
 
-  // Still `beta`, deliberately, and the detail says why rather than leaving a
-  // reader to find out. The screen, the capture states, the always-on
-  // categories, redaction and the filtered read are all in; retention
-  // purging is not built, and the assistant does not yet emit its own
-  // provenance even though the schema and the recorder are ready for it. The
-  // clause about AI provenance comes out when something actually writes
-  // actorType:'assistant' — not when the field exists.
+  // The AI-provenance caveat came off when cygenix-assistant.js started
+  // actually writing actorType:'assistant' with onBehalfOf — not when the
+  // schema gained the fields. tests/audit-client.test.js exercises the write
+  // and then asserts this sentence, so the two cannot drift apart.
+  //
+  // Still `beta`, and the detail says why rather than leaving a reader to
+  // find out: retention purging is not built. The checkpoint format ships so
+  // verification will survive a purge when it lands, but nothing is being
+  // deleted today and the settings panel says so.
   { id: 'audit_trail', label: 'Tamper-evident audit trail', status: 'beta', minTier: 'business',
     detail: 'Hash-chained, append-only, with an admin screen, Recording/Paused/Off capture states, '
-      + 'four categories that cannot be switched off, secret redaction before storage and a '
-      + 'verification endpoint. Retention purging is not built yet, and AI provenance is not yet '
-      + 'recorded.',
+      + 'four categories that cannot be switched off, secret redaction before storage, a '
+      + 'verification endpoint, and AI actions recorded against the person they were taken for. '
+      + 'Retention purging is not built yet.',
     claims: ['audit trail', 'tamper-evident'],
     evidence: 'netlify/functions/lib/rbac.js — chainEntry/verifyEntries; lib/org-store.js; '
-      + 'lib/audit-schema.js; lib/audit-state.js; netlify/functions/audit.js; public/audit-app.js' },
+      + 'lib/audit-schema.js; lib/audit-state.js; netlify/functions/audit.js; public/audit-app.js; '
+      + 'public/cygenix-audit.js' },
 
   { id: 'rbac', label: 'Role-based access control', status: 'ga', minTier: 'business',
     detail: 'Ten roles, a permission matrix, separation of duties, and environment classification — '

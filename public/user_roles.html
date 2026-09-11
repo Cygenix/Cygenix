@@ -103,7 +103,7 @@ select:focus,input[type=text]:focus{border-color:var(--accent)}
 </head>
 <body>
 <div id="cyg-sidebar-mount" data-active="user-roles"></div>
-<script src="/cygenix-capabilities.js?v=74f812a617" defer></script>
+<script src="/cygenix-capabilities.js?v=6fe541c4bd" defer></script>
 <script src="/cygenix-sidebar.js?v=c451afc746" defer></script>
 
 <div class="page">
@@ -598,7 +598,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=7d9a5e0980"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=2d12c7bfab"></script>
+  <!-- The audit recorder. Ask Cygenix can act on this page, and its
+       provenance is recorded through this module. -->
+  <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
+<script src="/cygenix-assistant.js?v=073f652a05"></script>
 <script src="/cygenix-assistant-actions.js?v=b993785216"></script>
 <script src="/cygenix-tour-steps.js?v=93f2b22540"></script>
 <script src="/cygenix-tour.js?v=da83e44774"></script>
