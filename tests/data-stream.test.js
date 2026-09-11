@@ -1423,18 +1423,30 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
         fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream-page.js'), 'utf8')));
   check('a partial result is never announced as a success',
     /A partial result is not a success/.test(page) && /Retry failed/.test(page));
-  check('and Home mirrors the same state rather than keeping a second copy',
+  /* The replication summary moved off Home to /analytics when Home became a
+     landing page. The invariant did not move with it: whichever screen shows
+     replication state must READ it through the shared engine rather than keep
+     its own copy, and must not reproduce the pause confirmation. */
+  check('and Analytics mirrors the same state rather than keeping a second copy',
+    (() => {
+      const an = fs.readFileSync(path.join(__dirname, '..', 'public', 'analytics-app.js'), 'utf8');
+      return /DS\.load\(/.test(an) && /A\.deliveryModel\(/.test(an)
+        && !/globalPause\s*=/.test(an);
+    })(),
+    'a second definition of "are the streams running" is a second thing to keep in step');
+  check('neither Home nor Analytics reproduces the pause confirmation',
     (() => {
       const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8');
-      return /CygenixDataStream\.globalPauseState\(st\)/.test(app)
-        && /renderStreamControlTile/.test(app);
-    })());
-  check('Home hands the confirmation to the page that owns it',
-    (() => {
-      const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8');
-      return /data-stream\?global=/.test(app) && !/Earliest data loss/.test(app);
+      const an  = fs.readFileSync(path.join(__dirname, '..', 'public', 'analytics-app.js'), 'utf8');
+      return !/Earliest data loss/.test(app) && !/Earliest data loss/.test(an);
     })(),
     'two copies of the same warning is two things to keep in step');
+  check('and Analytics is read-only about it — no pause control, only a way in',
+    (() => {
+      const an = fs.readFileSync(path.join(__dirname, '..', 'public', 'analytics-app.js'), 'utf8');
+      return /href="\/data-stream"/.test(an) && !/global=(pause|resume)/.test(an);
+    })(),
+    'the action that stops a production system belongs on the page that owns it');
 
   /* The blocked band and the row */
   check('the band is built once and used by both screens',
@@ -1443,11 +1455,16 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
     && /CygenixDataStreamUI\.blockedBand/.test(
         fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8')),
     'two screens describing one incident differently is the bug this replaces');
-  check('it sits above the KPI tiles on both',
+  check('it sits above the numbers on every screen that shows both',
     page.indexOf('id="ds-bandhost"') < page.indexOf('id="ds-kpis"')
     && (() => {
+      // Home's numbers are now the one readiness strip; the KPI row it used to
+      // sit above moved to /analytics, where the band is rendered first inside
+      // renderDelivery() before the an-kpis block is appended.
       const dash = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
-      return dash.indexOf('id="dash-bandhost"') < dash.indexOf('class="stats-row"');
+      const an   = fs.readFileSync(path.join(__dirname, '..', 'public', 'analytics-app.js'), 'utf8');
+      return dash.indexOf('id="dash-bandhost"') < dash.indexOf('id="dash-readiness"')
+        && an.indexOf('U.blockedBand(') < an.indexOf('an-kpis');
     })(),
     'below the numbers, the numbers get read first — and they are the misleading part');
   check('the destination\'s own words are shown verbatim and are selectable',

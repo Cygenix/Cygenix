@@ -319,8 +319,14 @@ function blockedBand(DS, state, opts) {
         '<b class="ds-band-target">' + esc(target ? target.full : '') + '</b>')
     : 'No error message was recorded — the destination stopped accepting without saying why.';
 
+  /* The read-only variant (Home) offers two ways out and no controls: the
+     stream itself, for the operator who is going to fix it now, and the
+     Delivery tab, for the one who wants the lag and backlog history around it
+     before deciding. The actions that change a production system stay on the
+     page that owns them. */
   var actions = o.actions === false
     ? '<a class="btn btn-sm" href="/data-stream?stream=' + esc(s.id) + '">Open this stream →</a>'
+      + '<a class="btn btn-sm" href="/analytics?tab=delivery">View in Analytics →</a>'
     : '<a class="btn btn-sm" href="/data-stream-events'
         + DS.buildQuery({ stream: s.id, state: 'dead' }) + '">View dead letters</a>'
       + '<button class="btn btn-sm" onclick="dsBandRequeue(\'' + escArg(s.id) + '\')"'

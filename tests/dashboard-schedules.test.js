@@ -12,8 +12,14 @@ const fs = require('fs');
 const vm = require('vm');
 
 const html = (fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8'));
-const start = html.indexOf('// ══════════════════════════════════════════════════════════════════════════\n// HOME — schedules summary');
-const end   = html.indexOf('// ══════════════════════════════════════════════════════════════════════════\n// RING CHART');
+// The slice runs from the schedules banner to whatever banner comes next,
+// rather than naming the section that used to follow it. It used to end at
+// "RING CHART", which moved to /analytics with the rest of the analytical
+// panels — and a test that breaks because a NEIGHBOURING section moved is
+// testing the file's layout, not the code it is meant to pin.
+const BANNER = '// ══════════════════════════════════════════════════════════════════════════';
+const start = html.indexOf(BANNER + '\n// HOME — schedules summary');
+const end   = start < 0 ? -1 : html.indexOf(BANNER, html.indexOf('\n', start + BANNER.length + 30));
 if (start < 0 || end < 0 || end < start) {
   console.log('FAIL: could not locate the home schedules module in dashboard.html');
   process.exit(1);

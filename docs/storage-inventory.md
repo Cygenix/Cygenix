@@ -63,7 +63,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_job_scope` | Current job scope selection | recomputed | project-builder-app.js |
 | `cygenix_pending_sql` | SQL queued for the editor | transient | data-cleansing.html |
 | `cygenix_projects_migrated` | One-time migration marker | idempotent | dashboard-app.js, projects.html |
-| `cygenix_ps_ai_` | Cached AI project-summary text | regenerated | dashboard-app.js |
+| `cygenix_ps_ai_` | Cached AI project-summary text | regenerated | analytics-app.js, dashboard-app.js |
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data_stream_designer.html, data_stream_store.html |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
@@ -73,10 +73,10 @@ mechanism that stops an unclassified key being added quietly.
 |---|---|---|---|
 | `cyg_goto` | Cross-page navigation intent | — | connect.html, cygenix-sidebar.js, dashboard-app.js +2 |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
-| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, cygenix-assistant-actions.js, cygenix-assistant.js +14 |
+| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, cygenix-assistant-actions.js +15 |
 | `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-cosmos-sync.js, cygenix-sidebar.js +2 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
-| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, assurance.html +33 |
+| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +34 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |

@@ -86,10 +86,17 @@ ACCT.forEach(leafCheck);
 check('every leaf has exactly one destination', badLeaves.length === 0, badLeaves.join(', '));
 
 // 5. Lifecycle order per the review: Connect → Map & Build → Run → Validate
-//    → Report & Govern.
+//    → Insight → Report & Govern.
+//
+//    Insight holds Analytics and is named that way on purpose: 'Analyse' is
+//    already a stage of the migration pipeline, and a second thing wearing
+//    that word would read as a step in the lifecycle rather than a lens over
+//    it. It sits after Validate because there is nothing to look at until
+//    something has run, and before Report & Govern because you read the
+//    numbers before you write them down.
 const sections = NAV.map(s => s.section).filter(Boolean);
 check('sections follow the lifecycle order',
-  JSON.stringify(sections) === JSON.stringify(['Connect','Map & Build','Run','Validate','Report & Govern']),
+  JSON.stringify(sections) === JSON.stringify(['Connect','Map & Build','Run','Validate','Insight','Report & Govern']),
   'got: ' + sections.join(' → '));
 
 // 6. The renames from the review landed, and the old branded labels are gone.

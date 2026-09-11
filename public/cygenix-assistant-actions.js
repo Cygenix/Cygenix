@@ -142,6 +142,7 @@ var PAGES = [
   { key: 'data-cleansing',     label: 'Cleansing',          href: '/data-cleansing' },
   { key: 'data-enrichment',    label: 'Data Enrichment',    href: '/data-enrichment' },
   { key: 'validation',         label: 'Validation',         href: '/validation' },
+  { key: 'analytics',          label: 'Analytics',          href: '/analytics' },
   { key: 'report-builder',     label: 'Report Builder',     href: '/reports' },
   { key: 'reports',            label: 'Conversion Report',  view: 'reports' },
   { key: 'inventory',          label: 'Project Artifacts',  view: 'inventory' },
