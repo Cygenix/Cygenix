@@ -237,8 +237,61 @@ function audit(state, action, streamId, detail) {
   };
   state.audit.unshift(entry);
   state.audit = state.audit.slice(0, MAX_AUDIT);
+
+  /* ── And into the organisation trail ──────────────────────────────────
+     The list above is this module's own: capped at MAX_AUDIT, held inside
+     the stream state, and shown on the Data Stream screens. It is a
+     working record, not evidence — it rolls off, it lives in one browser's
+     storage, and nothing chains it.
+
+     The lifecycle events also belong in the organisation's trail, so they
+     are mirrored to it here. Doing it at this one function rather than at
+     the five call sites is the whole reason this function exists: the
+     comment above createStream already says that leaving it to five
+     screens would mean four of them eventually forgetting.
+
+     Only the LIFECYCLE events go across. Everything a running stream does
+     to itself — a delivery retry, a lag reading, an object resync — is
+     high-frequency machine noise that would bury every human decision in
+     the trail under thousands of rows nobody asked for. Those stay in the
+     module's own list, where they are useful and where they roll off. */
+  if (STREAM_LIFECYCLE[action] && typeof window !== 'undefined' && window.CygenixAudit) {
+    try {
+      var s = (state.streams || []).filter(function (x) { return x.id === streamId; })[0];
+      window.CygenixAudit.record({
+        action: action, category: 'stream',
+        target: { type: 'stream', id: streamId || null,
+                  label: 'Stream: ' + ((s && s.name) || (detail && detail.name) || streamId || 'unnamed') },
+        projectId: state.projectId || null,
+        summary: STREAM_LIFECYCLE[action] + ' ' + ((s && s.name) || (detail && detail.name) || streamId || 'a stream'),
+        detail: detail || null,
+      });
+    } catch (e) { /* a stream must never fail to pause because a record did */ }
+  }
   return entry;
 }
+
+/* The lifecycle events, and the sentence each one gets. Anything absent
+   from this map stays in the module's own list and does not reach the
+   organisation trail — adding a key here is a deliberate act, which is the
+   point: it is the difference between a trail of decisions and a firehose. */
+var STREAM_LIFECYCLE = {
+  'stream.created':  'Created',
+  'stream.updated':  'Edited the design of',
+  'stream.started':  'Started',
+  'stream.paused':   'Paused',
+  'stream.resumed':  'Resumed',
+  'stream.stopped':  'Stopped',
+  'stream.deleted':  'Deleted',
+  /* Three that are not lifecycle but are decisions with consequences a
+     person may later have to account for: shortening retention discards
+     records that were being kept, resetting a checkpoint throws away the
+     stream's position, and beginning a cutover is the moment a migration
+     stops being reversible. */
+  'stream.retention':        'Changed retention on',
+  'stream.checkpoint_reset': 'Reset the checkpoint on',
+  'stream.cutover_begin':    'Began cutover on',
+};
 function currentActor() {
   try {
     var u = JSON.parse(localStorage.getItem('cygenix_user') || 'null');

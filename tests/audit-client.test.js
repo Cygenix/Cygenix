@@ -346,8 +346,54 @@ return (async function () {
   check('the hook is on savedSetAll, where every write lands',
     /function savedSetAll\([\s\S]{0,400}auditSavedListChange/.test(pub('connections.js')));
 
+  const pages = fs.readdirSync(P('public')).filter((f) => f.endsWith('.html'));
+
+  // ── The Data Stream engine ──────────────────────────────────────────────
+  section('4. Streams: lifecycle reaches the trail, machine noise does not');
+  //
+  // cygenix-datastream.js keeps its own audit list — capped, in one browser's
+  // storage, unchained. That is a working record, not evidence. The
+  // LIFECYCLE events are mirrored into the organisation trail from the one
+  // function they all pass through; everything a running stream does to
+  // itself is not, because thousands of lag readings and delivery retries
+  // would bury every human decision in the log under machine noise.
+
+  const ds = pub('cygenix-datastream.js');
+  check('the mirror is at the single audit() function, not at the call sites',
+    /function audit\(state, action, streamId, detail\)[\s\S]{0,1600}window\.CygenixAudit/.test(ds));
+  check('and it is gated on an explicit lifecycle map',
+    /STREAM_LIFECYCLE\[action\] &&/.test(ds));
+
+  const lifecycle = [...ds.matchAll(/^\s*'(stream\.[a-z_]+)':\s*'/gm)].map((m) => m[1]);
+  check('the lifecycle map covers create, pause, resume and delete, as the brief asks',
+    ['stream.created', 'stream.paused', 'stream.resumed', 'stream.deleted']
+      .every((a) => lifecycle.indexOf(a) !== -1));
+  check('every mirrored stream action is on the server allowlist',
+    lifecycle.every((a) => schema.isClientAction(a)),
+    lifecycle.filter((a) => !schema.isClientAction(a)).join(', '));
+  check('and every one lands in the stream category',
+    lifecycle.every((a) => schema.CLIENT_ACTIONS[a] === 'stream'));
+
+  // The exclusions are the interesting half: these are emitted by the engine
+  // on a timer or per delivery, and must NOT reach the chain.
+  for (const noisy of ['stream.snapshot_complete', 'stream.recovered',
+                       'stream.dlq_requeue', 'stream.eviction', 'stream.resync']) {
+    check(noisy + ' stays in the module\'s own list', lifecycle.indexOf(noisy) === -1);
+  }
+  check('the engine really does emit those, so the exclusion is doing work',
+    ['stream.snapshot_complete', 'stream.recovered', 'stream.eviction']
+      .every((a) => ds.indexOf("'" + a + "'") !== -1));
+
+  check('a failed record cannot stop a stream pausing',
+    /catch \(e\) \{ \/\* a stream must never fail to pause because a record did \*\//.test(ds));
+
+  const streamPages = pages.filter((f) => pub(f).indexOf('/cygenix-datastream.js') !== -1);
+  const noRecorder = streamPages.filter((f) => pub(f).indexOf('/cygenix-audit.js') === -1);
+  check('every page that runs the stream engine loads the recorder',
+    noRecorder.length === 0, noRecorder.join(', '));
+
   // Every action these capture points assert has to be one the server accepts.
-  section('4. The new capture points are on the allowlist');
+  section('5. The new capture points are on the allowlist');
   for (const a of ['connection.create', 'connection.edit', 'connection.delete',
                    'apikey.set', 'apikey.revoke', 'settings.update', 'sysparam.update']) {
     check(a + ' is recordable from the browser', schema.isClientAction(a));
@@ -370,7 +416,6 @@ return (async function () {
     /if \(changes\.length\) \{/.test(app2));
 
   // The recorder has to be present wherever a capture point can fire.
-  const pages = fs.readdirSync(P('public')).filter((f) => f.endsWith('.html'));
   const canSaveConnections = pages.filter((f) => pub(f).indexOf('/connections.js') !== -1);
   const missing = canSaveConnections.filter((f) => pub(f).indexOf('/cygenix-audit.js') === -1);
   check('every page that can save a connection loads the recorder',

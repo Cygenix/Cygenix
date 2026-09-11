@@ -193,10 +193,20 @@ const CLIENT_ACTIONS = {
   'apikey.revoke':        'security',
   'settings.update':      'settings',
   'sysparam.update':      'settings',
-  'stream.create':        'stream',
-  'stream.pause':         'stream',
-  'stream.resume':        'stream',
-  'stream.delete':        'stream',
+  // The Data Stream engine's own action names — they are what
+  // cygenix-datastream.js already writes into its internal list, and using
+  // the same strings means one vocabulary rather than a translation layer
+  // that can drift.
+  'stream.created':          'stream',
+  'stream.updated':          'stream',
+  'stream.started':          'stream',
+  'stream.paused':           'stream',
+  'stream.resumed':          'stream',
+  'stream.stopped':          'stream',
+  'stream.deleted':          'stream',
+  'stream.retention':        'stream',
+  'stream.checkpoint_reset': 'stream',
+  'stream.cutover_begin':    'stream',
   'project.create':       'projects',
   'project.archive':      'projects',
 };
