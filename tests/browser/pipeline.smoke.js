@@ -1,14 +1,19 @@
 /* tests/browser/pipeline.smoke.js
  * ---------------------------------------------------------------------------
- * The Migration Pipeline card, on the real dashboard.
+ * The Migration Pipeline card, on the real page — which is now /analytics.
+ *
+ * The card moved off Home with the rest of the analytical panels. Everything
+ * this file asserts moved with it unchanged; only the address is different,
+ * and the two checks that were about Home's KPI tile row are now about the
+ * Analytics KPI strip that replaced it.
  *
  * tests/pipeline.test.js proves the derivation: which stage is the bottleneck,
  * what the sentence says, that the confidence arithmetic adds up. What it
  * cannot prove is that any of it reaches a screen — that the card renders
- * above the tiles, that the narrative is there at FIRST PAINT with no API call
- * and no button, that the stage chips are really links, and that none of it
- * depends on colour to be read. Those are the acceptance criteria, and they
- * are browser facts.
+ * above the streams table, that the narrative is there at FIRST PAINT with no
+ * API call and no button, that the stage chips are really links, and that none
+ * of it depends on colour to be read. Those are the acceptance criteria, and
+ * they are browser facts.
  *
  * The network is cut off at the browser: every request other than the local
  * static server is aborted. So if the narrative needed an Anthropic call to
@@ -102,7 +107,7 @@ const JOBS = [
   }, JOBS);
 
   const open = async () => {
-    await page.goto('http://localhost:' + PORT + '/dashboard', { waitUntil: 'domcontentloaded' });
+    await page.goto('http://localhost:' + PORT + '/analytics?tab=delivery', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.querySelectorAll('.mp-stage').length > 0,
       null, { timeout: 20000 });
     await page.waitForTimeout(1500);       // the delayed re-render settles
@@ -126,15 +131,18 @@ const JOBS = [
   check('all six stages render, in lifecycle order',
     st.map((s) => s.key).join(',') === 'Connect,Analyse,Map,Generate,Validate,Cutover',
     st.map((s) => s.key).join(','));
-  check('above the KPI tiles, where the overview starts',
+  check('below the KPI strip and above the streams table',
     await page.evaluate(() => {
-      const mp = document.getElementById('migration-pipeline');
-      const tiles = document.querySelector('#view-dashboard .stats-row');
-      return !!mp && !!tiles
-        && (mp.compareDocumentPosition(tiles) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      const row = document.querySelector('.mp-row');
+      const kpis = document.querySelector('#an-panel-delivery .an-kpis');
+      const panels = [...document.querySelectorAll('#an-panel-delivery .panel-title')]
+        .map((t) => t.textContent.trim());
+      return !!row && !!kpis
+        && (kpis.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+        && panels.indexOf('Pipeline stages') < panels.indexOf('Streams');
     }));
-  check('the KPI tiles are still there — this replaces nothing',
-    (await page.evaluate(() => document.querySelectorAll('#view-dashboard .stats-row .stat-card').length)) >= 5);
+  check('the KPI strip is there — this replaces nothing',
+    (await page.evaluate(() => document.querySelectorAll('#an-panel-delivery .an-kpi').length)) >= 5);
   check('every stage carries a denominator rather than a bare number',
     st.every((s) => /\bof\b/.test(s.count)), st.map((s) => s.count).join(' | '));
   check('every stage is a link to the screen that acts on it',
@@ -179,21 +187,28 @@ const JOBS = [
   check('no Anthropic call was made to produce it',
     !offSite.some((u) => /anthropic/i.test(u)), offSite.filter((u) => /anthropic/i.test(u)).join(' '));
   check('the "Generate summary" button is gone, along with the panel it sat in',
-    await page.evaluate(() => !document.getElementById('ps-ai-btn')
-      && !/Generate summary/.test(document.body.textContent)));
-  check('a regenerate control is still offered, for when a rewrite is wanted',
-    await page.evaluate(() => !!document.querySelector('.mp-asof button')));
+    await page.evaluate(() => !/Generate summary/.test(document.body.textContent)));
+  // The rewrite control deliberately did NOT come across. It spends the user's
+  // own Anthropic key, and Analytics is read-only; it lives on the Project
+  // Status panel that authors the summary. Asserting its absence here is the
+  // check that the read-only boundary held.
+  check('and Analytics offers no rewrite control — it would spend the user\'s key',
+    await page.evaluate(() => !document.querySelector('.mp-asof button')));
 
   /* ── 4. Confidence, taken apart ─────────────────────────────────────────── */
 
-  await page.evaluate(() => toggleConfidenceDetail());
-  await page.waitForTimeout(200);
+  // No click needed any more: the breakdown that was hidden behind the tile on
+  // Home is a panel of its own here, which is the point of a page whose job is
+  // explaining the number rather than reporting it.
   const conf = await page.evaluate(() => ({
-    score: document.getElementById('stat-confidence').textContent.trim(),
+    // The tile carries its unit inside the value element (80<em>/100</em>), so
+    // take the number and leave the denominator behind.
+    score: ((document.querySelector('#an-panel-delivery .an-kpi-val') || {}).textContent || '')
+      .trim().split('/')[0].trim(),
     rows: Array.from(document.querySelectorAll('.mp-conf-row')).map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
     sum: document.querySelector('.mp-conf-sum').textContent.replace(/\s+/g, ' ').trim(),
   }));
-  check('clicking the tile opens a driver breakdown', conf.rows.length >= 3, JSON.stringify(conf.rows));
+  check('the driver breakdown is on screen without a click', conf.rows.length >= 3, JSON.stringify(conf.rows));
   check('the contributions shown add up to the score displayed',
     (() => {
       const parts = (conf.sum.match(/\+\d+/g) || []).map(Number);
@@ -207,17 +222,29 @@ const JOBS = [
 
   /* ── 5. Empty states say why, not "—" ───────────────────────────────────── */
 
-  const dashes = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('#view-dashboard .stat-val, #view-dashboard .ps-card-value'))
-      .map((e) => e.textContent.trim()).filter((t) => t === '—' || t === ''));
-  check('no headline value on the overview is a bare em-dash',
-    dashes.length === 0, JSON.stringify(dashes));
-  check('the Files Processed zero says which kind of zero it is',
-    /none uploaded yet/.test(await page.evaluate(() =>
-      document.getElementById('stat-files-sub').textContent)));
-  check('the two job tiles state the population they count',
-    (await page.evaluate(() => document.querySelectorAll('#view-dashboard .stat-scope').length)) >= 3,
-    'four tiles count every project while the panel below counts one');
+  // A tile CAN read "—" here: several measures genuinely have no source yet
+  // (there is no metrics store behind apply-rate history). What must never
+  // happen is a bare dash with nothing under it saying which kind of nothing
+  // it is — that is the failure this check exists for.
+  const bareDashes = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#an-panel-delivery .an-kpi'))
+      .filter((k) => {
+        const v = (k.querySelector('.an-kpi-val') || {}).textContent.trim();
+        const sub = (k.querySelector('.an-kpi-sub') || {}).textContent.trim();
+        return (v === '—' || v === '') && sub.length < 8;
+      })
+      .map((k) => (k.querySelector('.an-kpi-label') || {}).textContent.trim()));
+  check('no tile shows a bare em-dash without saying why',
+    bareDashes.length === 0, JSON.stringify(bareDashes));
+  check('the widget with no data source names what would fill it',
+    /not retained|no streams|Needs apply-rate/i.test(await page.evaluate(() =>
+      document.querySelector('#an-panel-delivery .an-kpis').textContent)));
+  check('the page states which population it is counting',
+    (await page.evaluate(() => {
+      const s = document.getElementById('an-scope');
+      return !!s && s.options.length >= 2 && /Active project|All projects/.test(s.value + s.options[0].text);
+    })),
+    'a panel counting one project beside one counting all, and neither saying so');
 
   /* ── 6. Readable without colour, and in the dark ────────────────────────── */
 

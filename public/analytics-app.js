@@ -405,7 +405,7 @@ function pipelineHtml(model) {
 
   return '<div class="mp-row" role="list">' + stageHtml + '</div>'
     + '<div class="mp-narrative"><div>'
-    + '<div class="mp-narrative-text">' + esc(ai ? ai.text : model.narrative) + '</div>'
+    + '<div class="mp-narrative-text" id="mp-narrative-text">' + esc(ai ? ai.text : model.narrative) + '</div>'
     + (ai ? '<div class="mp-narrative-src">Written by ' + esc(ai.model || 'Claude') + ' \u00b7 '
             + esc(new Date(ai.ts).toLocaleString('en-GB')) + '</div>' : '')
     + '</div><a class="mp-cta" href="' + esc(cta.href) + '">' + esc(cta.label) + '</a></div>';
