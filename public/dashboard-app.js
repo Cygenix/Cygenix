@@ -4136,11 +4136,17 @@ function confirmRenameJob(jobId) {
   // Atomic mutation. Also updates the in-memory state.jobs for immediate
   // render, then schedules a version-create so the rename produces a
   // recoverable snapshot.
+  // Captured before the mutation — after it, the "before" is gone.
+  const prevName = (state.jobs.find(j => j.id === jobId) || {}).name || '';
   const ok = safeMutateJob(jobId, j => { j.name = newName; });
   if (ok){
     const inMem = state.jobs.find(j => j.id === jobId);
     if (inMem) inMem.name = newName;
     if (typeof scheduleAutoVersion === 'function') scheduleAutoVersion(jobId, 'renamed');
+    addAudit('Renamed job "' + prevName + '" to "' + newName + '"',
+      { action:'jobs.rename', category:'jobs',
+        target:{ type:'job', id:jobId, label:'Job: ' + newName },
+        changes:[{ field:'name', before:prevName, after:newName }] });
     showToast('Job renamed to "' + newName + '"');
   }
   renderAllJobs();
@@ -4222,6 +4228,10 @@ function deleteJob(jobId) {
   // Snapshot the deletion as a version-create so the user has a recovery
   // point if they hard-delete later and regret it.
   if (typeof scheduleAutoVersion === 'function') scheduleAutoVersion(jobId, 'soft-deleted');
+  addAudit('Moved job "' + job.name + '" to Trash',
+    { action:'jobs.trash', category:'jobs',
+      target:{ type:'job', id:jobId, label:'Job: ' + job.name },
+      changes:[{ field:'state', before:'active', after:'trashed' }] });
   state.jobs = loadPersistedJobs();
   renderAllJobs();
   renderDashboard();
@@ -4237,6 +4247,12 @@ function hardDeleteJob(jobId){
   if (!confirm('PERMANENTLY delete "' + job.name + '"? Version history in Cosmos remains, but the job will not appear in the dashboard again.')) return;
   if (!confirm('Are you sure? This cannot be undone from the UI.')) return;
   safeRemoveJob(jobId);
+  // A permanent delete is the one job event that cannot be undone from the
+  // interface, so it is recorded at high severity and names what is gone.
+  addAudit('Permanently deleted job "' + job.name + '"',
+    { action:'jobs.delete', category:'jobs',
+      target:{ type:'job', id:jobId, label:'Job: ' + job.name },
+      changes:[{ field:'state', before:'trashed', after:'deleted' }] });
   state.jobs = loadPersistedJobs();
   renderAllJobs();
   renderDashboard();
@@ -4245,7 +4261,12 @@ function hardDeleteJob(jobId){
 
 // Restore a soft-deleted job. Clears the _deleted flag.
 function restoreJob(jobId){
+  const job = state.jobs.find(j => j.id === jobId);
   safeMutateJob(jobId, j => { delete j._deleted; delete j._deletedAt; });
+  addAudit('Restored job "' + ((job && job.name) || jobId) + '" from Trash',
+    { action:'jobs.restore', category:'jobs',
+      target:{ type:'job', id:jobId, label:'Job: ' + ((job && job.name) || jobId) },
+      changes:[{ field:'state', before:'trashed', after:'active' }] });
   state.jobs = loadPersistedJobs();
   renderAllJobs();
   renderDashboard();
@@ -17730,6 +17751,11 @@ function ta_jobNameFor(jobId) {
 async function ta_toggleEnabled(id, enabled) {
   try {
     await ta_sched('toggle-enabled', { id, enabled });
+    const sch = TA.schedules.find(x => x.id === id);
+    addAudit((enabled ? 'Enabled' : 'Disabled') + ' schedule "' + ((sch && sch.name) || id) + '"',
+      { action:'schedule.enable', category:'jobs',
+        target:{ type:'schedule', id:id, label:'Schedule: ' + ((sch && sch.name) || id) },
+        changes:[{ field:'enabled', before:!enabled, after:!!enabled }] });
     ta_loadSchedules();
     if (typeof showToast === 'function') showToast(enabled ? 'Schedule enabled' : 'Schedule disabled');
   } catch (e) { alert('Could not toggle: ' + e.message); }
@@ -17740,6 +17766,9 @@ async function ta_deleteSchedule(id) {
   if (!confirm('Delete schedule "' + (s && s.name || id) + '"? Run history is kept.')) return;
   try {
     await ta_sched('delete-schedule', { id });
+    addAudit('Deleted schedule "' + ((s && s.name) || id) + '"',
+      { action:'schedule.delete', category:'jobs',
+        target:{ type:'schedule', id:id, label:'Schedule: ' + ((s && s.name) || id) } });
     ta_loadSchedules();
     if (typeof showToast === 'function') showToast('Schedule deleted');
   } catch (e) { alert('Delete failed: ' + e.message); }
@@ -17755,6 +17784,17 @@ async function ta_runNow(id, btn) {
     // get-run every 3 seconds until status flips to success/failed or 15
     // minutes elapse (matching the background function's hard cap).
     const queued = await ta_sched('run-now', { id });
+    // Recorded on acceptance, not on the click: until the backend has taken
+    // the run there is nothing to record, and a "started" for a run that
+    // never began is worse than no entry. The outcome of the run itself is
+    // the scheduler's to report, not this button's.
+    {
+      const sch = TA.schedules.find(x => x.id === id);
+      addAudit('Ran schedule "' + ((sch && sch.name) || id) + '" on demand',
+        { action:'run.execute', category:'jobs',
+          target:{ type:'schedule', id:id, label:'Schedule: ' + ((sch && sch.name) || id) },
+          changes:[{ field:'runId', before:null, after:(queued && queued.runId) || null }] });
+    }
     // Dispatched here rather than before the call: until the backend has
     // accepted the run there is nothing to announce, and a failed queueing
     // would otherwise send a "started" for a run that never began.
@@ -19017,6 +19057,16 @@ async function ta_saveSchedule() {
         name, jobId, jobVersionId, cron, timezone, chainAfter, oneShot, runOnceAt, enabled, srcConn, tgtConn,
       });
     }
+    // A schedule is a standing instruction to run work unattended, so the
+    // cron expression and the enabled flag are the fields worth reading back
+    // — "who set this running every night, and when" is the question.
+    addAudit((TA.editingScheduleId ? 'Updated' : 'Created') + ' schedule "' + name + '"',
+      { action: TA.editingScheduleId ? 'schedule.update' : 'schedule.create', category:'jobs',
+        target:{ type:'schedule', id:TA.editingScheduleId || name, label:'Schedule: ' + name },
+        changes:[{ field:'cron', before:null, after:cron || (oneShot ? 'once at ' + runOnceAt : null) },
+                 { field:'timezone', before:null, after:timezone },
+                 { field:'enabled', before:null, after:!!enabled },
+                 { field:'chainAfter', before:null, after:chainAfter || null }] });
     ta_closeScheduleModal();
     ta_loadSchedules();
     if (typeof showToast === 'function') showToast('Schedule saved');

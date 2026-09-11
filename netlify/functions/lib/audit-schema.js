@@ -163,6 +163,18 @@ const CLIENT_ACTIONS = {
   'jobs.bulk-generate':   'jobs',
   'jobs.validate':        'jobs',
   'jobs.setup-check':     'jobs',
+  'jobs.rename':          'jobs',
+  'jobs.trash':           'jobs',
+  'jobs.restore':         'jobs',
+  'jobs.delete':          'jobs',
+  'schedule.create':      'jobs',
+  'schedule.update':      'jobs',
+  'schedule.enable':      'jobs',
+  'schedule.delete':      'jobs',
+  // A run the operator started from the Task Agent. The scheduler function
+  // owns the run's OUTCOME; this records only that a person asked for it,
+  // which is the half that happens in the browser and nowhere else.
+  'run.execute':          'jobs',
   'mapping.ai-apply':     'mapping',
   'mapping.save':         'mapping',
   'sql.save':             'mapping',
