@@ -185,7 +185,7 @@ const state = {
   jobs: loadPersistedJobs(),
   files: [], parsedTables: [],
   selectedTarget: 'Microsoft SQL Server (on-premises)',
-  totalFilesProcessed: 0, auditLog: [], currentJob: null
+  totalFilesProcessed: 0, currentJob: null
 };
 
 function $(id) { return document.getElementById(id); }
@@ -1174,7 +1174,8 @@ ${buildWasisSummary(wasisRules, wasisApplicationLog)}`;
     // point from the moment it's created, not from the first edit.
     if (typeof scheduleAutoVersion === 'function') scheduleAutoVersion(job.id, 'job created');
     state.totalFilesProcessed += state.files.length;
-    addAudit(`Job "${jobName}" complete — ${allTables.length} tables, ${totalRows.toLocaleString()} rows, ${Math.ceil(migrationSQL.length/1024)}KB SQL generated`);
+    addAudit(`Job "${jobName}" complete — ${allTables.length} tables, ${totalRows.toLocaleString()} rows, ${Math.ceil(migrationSQL.length/1024)}KB SQL generated`,
+      { action:'jobs.complete', category:'jobs', target:{ type:'job', id:job.id, label:'Job: '+jobName } });
     updateStats();
     resetBtn();
 
@@ -1251,7 +1252,42 @@ function openJobModal(jobId) {
 function closeModal() { $('job-modal').classList.remove('open'); }
 
 // ── Render ────────────────────────────────────────────────────────────────────
-function addAudit(msg) { state.auditLog.unshift({ time: new Date().toLocaleTimeString(), msg }); }
+// addAudit(summary, evt) — record something that happened only in this page.
+//
+// It used to unshift { time, msg } onto an in-memory array. That array was
+// read by one renderer, on one screen, in one tab, and was gone on reload —
+// so the nine things below (an export built, a bulk generate run, a job
+// reordered) left no trace anybody could look up the next morning. They
+// were real events in a product that sells an audit trail.
+//
+// Now the summary goes to the server as a structured event and lands in the
+// same hash-chained trail as everything else. The server fills in who and
+// when from the verified token, refuses any action outside its allowlist,
+// and stamps these source:'client' — because they are things the browser
+// says happened rather than things a function watched happen, and an
+// auditor is entitled to know which is which.
+//
+// `evt` carries the structure: { action, category, target, env, changes }.
+// A caller that passes only a summary still records, under a generic
+// action — better a filed event than a lost one — but every call site in
+// this file names its action, and a new one should too.
+function addAudit(summary, evt) {
+  if (!window.CygenixAudit) return;            // script not loaded on this page
+  var e = evt || {};
+  window.CygenixAudit.record({
+    action: e.action || 'data.export-csv',
+    category: e.category || null,
+    target: e.target || null,
+    env: e.env || null,
+    changes: e.changes || null,
+    projectId: (function () {
+      // cygenix_active_project_id is the source of truth for which project
+      // is active (setActiveProject writes it); state has no copy of it.
+      try { return localStorage.getItem('cygenix_active_project_id') || null; } catch (err) { return null; }
+    })(),
+    summary: summary,
+  });
+}
 // ── Job counting — one definition, shared by every panel ──────────────────
 // The Dashboard counted jobs three different ways on a single screen:
 //
@@ -1779,7 +1815,9 @@ async function runExportScripts(){
     const body = entries.map(e => banner(e) + '\n' + e.content + '\n').join('\nGO\n\n');
     triggerDownload(header + body, `cygenix_export_${stamp}.sql`);
     if (typeof showToast === 'function') showToast(`Exported 1 combined .sql (${entries.length} script${entries.length===1?'':'s'})`);
-    if (typeof addAudit === 'function') addAudit(`Export Scripts: combined .sql with ${entries.length} script(s) from ${jobs.length} job(s)`);
+    if (typeof addAudit === 'function') addAudit(`Export Scripts: combined .sql with ${entries.length} script(s) from ${jobs.length} job(s)`,
+      { action:'data.export-scripts', category:'data',
+        target:{ type:'export', id:'scripts-sql', label:'Export Scripts (combined .sql)' } });
   } else {
     let JSZip;
     try { JSZip = await _loadJSZip(); }
@@ -1816,7 +1854,9 @@ async function runExportScripts(){
     a.download = `cygenix_export_${stamp}.zip`;
     a.click();
     if (typeof showToast === 'function') showToast(`Exported ${entries.length} script${entries.length===1?'':'s'} as ZIP`);
-    if (typeof addAudit === 'function') addAudit(`Export Scripts: ZIP with ${entries.length} script(s) from ${jobs.length} job(s)`);
+    if (typeof addAudit === 'function') addAudit(`Export Scripts: ZIP with ${entries.length} script(s) from ${jobs.length} job(s)`,
+      { action:'data.export-scripts', category:'data',
+        target:{ type:'export', id:'scripts-zip', label:'Export Scripts (ZIP)' } });
   }
 
   if (skipped > 0 && typeof showToast === 'function'){
@@ -2075,7 +2115,13 @@ async function startBulkGenerate(){
     showToast(`Bulk generate: ${okN} ok, ${failN} fail, ${skipN} skip${cancelTail}`);
   }
   if (typeof addAudit === 'function'){
-    addAudit(`Bulk Generate SQL: ${okN} succeeded, ${failN} failed, ${skipN} skipped${cancelTail}`);
+    addAudit(`Bulk Generate SQL: ${okN} succeeded, ${failN} failed, ${skipN} skipped${cancelTail}`,
+      { action:'jobs.bulk-generate', category:'jobs',
+        target:{ type:'job_batch', id:'bulk-generate', label:'Bulk Generate SQL' },
+        // An outcome is not a diff, but it is the fact worth reading back.
+        changes:[{ field:'succeeded', before:null, after:okN },
+                 { field:'failed', before:null, after:failN },
+                 { field:'skipped', before:null, after:skipN }] });
   }
 
   // Refresh the jobs table so updated SQL/badges show up
@@ -2530,7 +2576,12 @@ async function startValidate(){
   document.getElementById('validate-cancel-btn').textContent = 'Close';
 
   if (typeof showToast === 'function') showToast(`Validate: ${okN} pass, ${failN} fail, ${skipN} skip${tail}`);
-  if (typeof addAudit === 'function') addAudit(`Validate: ${okN} passed, ${failN} failed, ${skipN} skipped${tail} (sample ${sampleSize}, ${mode})`);
+  if (typeof addAudit === 'function') addAudit(`Validate: ${okN} passed, ${failN} failed, ${skipN} skipped${tail} (sample ${sampleSize}, ${mode})`,
+    { action:'jobs.validate', category:'jobs',
+      target:{ type:'validation', id:String(mode), label:'Validate (sample '+sampleSize+')' },
+      changes:[{ field:'passed', before:null, after:okN },
+               { field:'failed', before:null, after:failN },
+               { field:'skipped', before:null, after:skipN }] });
 }
 
 window.openValidateModal  = openValidateModal;
@@ -2943,7 +2994,12 @@ async function startSetupCheck(){
   document.getElementById('setup-check-export-btn').style.display = (dirtyN+errN) > 0 ? '' : 'none';
 
   if (typeof showToast === 'function') showToast(`Setup Check: ${cleanN} clean, ${dirtyN} dirty, ${errN} err${tail}`);
-  if (typeof addAudit === 'function') addAudit(`Setup Check: ${cleanN} clean, ${dirtyN} dirty, ${errN} errored${tail} across ${fields.length} setup fields`);
+  if (typeof addAudit === 'function') addAudit(`Setup Check: ${cleanN} clean, ${dirtyN} dirty, ${errN} errored${tail} across ${fields.length} setup fields`,
+    { action:'jobs.setup-check', category:'jobs',
+      target:{ type:'setup_check', id:'setup', label:'Setup Check ('+fields.length+' fields)' },
+      changes:[{ field:'clean', before:null, after:cleanN },
+               { field:'dirty', before:null, after:dirtyN },
+               { field:'errored', before:null, after:errN }] });
 }
 
 function _setupCheckUpdateRow(idx, status, message){
@@ -3840,7 +3896,9 @@ async function startExportPackage(){
   document.getElementById('pkg-start-btn').textContent = 'Done';
   document.getElementById('pkg-cancel-btn').textContent = 'Close';
   if (typeof showToast === 'function') showToast(`Package export: ${okN} built, ${failN} failed${tail}`);
-  if (typeof addAudit === 'function') addAudit(`Export Package: ${okN} built, ${failN} failed${tail} (${mode} staging)`);
+  if (typeof addAudit === 'function') addAudit(`Export Package: ${okN} built, ${failN} failed${tail} (${mode} staging)`,
+    { action:'data.export-package', category:'data',
+      target:{ type:'export', id:'package-'+mode, label:'Export Package ('+mode+' staging)' } });
 }
 
 window.openExportPackageModal  = openExportPackageModal;
@@ -4014,7 +4072,9 @@ function reorderJobsInState(sourceId, targetId){
   try { localStorage.setItem('cygenix_jobs', JSON.stringify(arr)); } catch {}
 
   if (typeof showToast === 'function') showToast('Job order updated');
-  if (typeof addAudit === 'function') addAudit(`Reordered job "${moved.name}"`);
+  if (typeof addAudit === 'function') addAudit(`Reordered job "${moved.name}"`,
+    { action:'jobs.reorder', category:'jobs',
+      target:{ type:'job', id:moved.id, label:'Job: '+moved.name } });
   renderAllJobs();
 }
 
@@ -5825,47 +5885,27 @@ function renderMigrationLibrary() {
     : '<div class="empty-state"><h3>No migration SQL yet</h3><p>Run a migration to generate INSERT statements.</p></div>';
 }
 function renderAuditLog() {
-  // Two trails. The organisation trail is server-side, append-only and
-  // hash-chained — the evidence an auditor can use. The browser trail
-  // below it is the legacy per-machine log, kept for continuity.
-  const localHtml = state.auditLog.length
-    ? '<div class="panel"><div style="font-size:12px;font-weight:600;margin-bottom:6px">This browser (legacy)</div>'
-      + '<table class="jobs-table"><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>' +
-      state.auditLog.map(e=>`<tr><td style="font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap">${e.time}</td><td style="font-size:12px;color:var(--text2)">${e.msg}</td></tr>`).join('') +
-      '</tbody></table></div>'
-    : '';
-  $('audit-log-wrap').innerHTML =
-    '<div class="panel" style="margin-bottom:1rem"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
-    + '<div style="font-size:12px;font-weight:600">Organisation audit trail <span style="font-weight:400;color:var(--text3)">server-side · append-only · hash-chained</span></div>'
-    + '<a class="btn btn-ghost btn-sm" href="/user-roles">Users &amp; Roles →</a></div>'
-    + '<div id="server-audit-body" style="font-size:12px;color:var(--text2)">Loading…</div></div>'
-    + (localHtml || '<div class="empty-state"><h3>No browser-local entries</h3><p>Server-side events appear in the organisation trail above.</p></div>');
-  fetchServerAudit();
-}
-async function fetchServerAudit() {
-  const el = $('server-audit-body');
+  // The whole screen lives in audit-app.js now.
+  //
+  // What used to be here was two tables: the last fifty server entries, and
+  // beneath them a "browser (legacy)" list that lived in state.auditLog — a
+  // JavaScript array holding a formatted time and a sentence, gone on
+  // reload. The second one is deleted rather than kept alongside, because a
+  // per-machine log that disappears when you refresh is not evidence of
+  // anything, and sitting it next to a hash-chained trail invited the reader
+  // to treat the two as equivalent. Its call sites record structured events
+  // through CygenixAudit now, and those survive a refresh.
+  //
+  // The old footer pointing at Users & Roles for "the full trail,
+  // verification and export" has gone with it. This page is the full trail.
+  const el = $('audit-log-wrap');
   if (!el) return;
-  try {
-    const token = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '';
-    if (!token) { el.textContent = 'Sign in to view the organisation trail.'; return; }
-    const r = await fetch('/.netlify/functions/rbac-admin?what=audit&limit=50', { headers: { Authorization: 'Bearer ' + token } });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
-    el.innerHTML = (d.entries && d.entries.length)
-      ? '<table class="jobs-table"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Env</th><th>Outcome</th></tr></thead><tbody>'
-        + d.entries.map(e => '<tr>'
-          + `<td style="font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap">${escHtml((e.occurredAt||'').slice(0,19).replace('T',' '))}</td>`
-          + `<td style="font-size:11.5px">${escHtml(e.actorEmail||'—')}</td>`
-          + `<td style="font-family:var(--mono);font-size:11.5px">${escHtml(e.action)}</td>`
-          + `<td style="font-size:11px;color:${e.environment==='PROD'?'var(--red)':'var(--text2)'}">${escHtml(e.environment||'')}</td>`
-          + `<td style="font-size:11.5px;color:${e.outcome==='denied'?'var(--red)':'var(--green)'}">${escHtml(e.outcome)}${e.detail&&e.detail.reason?` <span style=\"color:var(--text3)\">· ${escHtml(e.detail.reason)}</span>`:''}</td>`
-          + '</tr>').join('')
-        + '</tbody></table>'
-        + `<div style="font-size:11px;color:var(--text3);margin-top:5px">${d.total} entr${d.total===1?'y':'ies'} total · latest ${d.entries.length} shown · full trail, verification and export on the Users &amp; Roles page</div>`
-      : 'No entries yet — gated actions (role changes, classified writes, refusals) appear here as they happen.';
-  } catch (e) {
-    el.textContent = 'Organisation trail unavailable: ' + e.message;
+  if (!window.CygenixAuditView) {
+    el.innerHTML = '<div class="empty-state"><h3>Audit log unavailable</h3>' +
+      '<p>audit-app.js did not load. Reload the page; if it persists, the deploy is incomplete.</p></div>';
+    return;
   }
+  window.CygenixAuditView.render(el);
 }
 
 function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

@@ -199,7 +199,7 @@
       ]},
       { key:'inventory',        label:'Project Artifacts', view:'inventory',        icon: iconGrid() },
       { key:'privacy-security', label:'Governance',        view:'privacy-security', color:'var(--red)',   icon: iconShield() },
-      { key:'audit',            label:'Audit Log',         view:'audit',            color:'var(--text2)', icon: iconAuditLog() },
+      { key:'audit',            label:'Audit Log',         view:'audit',            color:'var(--text2)', icon: iconAuditLog(), requiresAuditRead:true },
       { key:'monitoring-group', label:'Monitoring', icon: iconChart(), children: [
         { key:'performance', label:'Performance', href:'/performance', color:'var(--teal)',  icon: iconChart() },
         { key:'diagnostics', label:'Diagnostics', view:'diagnostics',       color:'var(--text2)', icon: iconPulse() },
@@ -312,8 +312,87 @@
     }
   }
 
+  // ── Role gating for the Audit Log ───────────────────────────────────────
+  //
+  // The Audit Log shows every act in the organisation, so the roles that
+  // reach it organisation-wide are the ones that answer for it: Organisation
+  // Owner, Platform Administrator, and the Auditor — whose entire role is
+  // reading this screen. The delivery roles (Lead, Engineer, Approver, Data
+  // Owner, Validator) hold the matrix's self-only audit.read grant and still
+  // reach their own entries by direct link; the item is simply not
+  // advertised to them, because a menu entry that lands on somebody else's
+  // idea of the page is worse than no menu entry.
+  //
+  // Hiding is a courtesy and never a control. netlify/functions/audit.js
+  // refuses on the server whatever the nav shows, and a refused view is
+  // itself written to the trail as audit.view.denied. The point of hiding it
+  // is tidiness, not security.
+  //
+  // The roles arrive asynchronously, and the sidebar renders synchronously.
+  // So the default before they are known is HIDDEN rather than shown: an
+  // administrator sees the item appear a moment after first paint (and
+  // immediately on every later page, from the five-minute session cache),
+  // whereas the opposite default would flash a restricted screen at every
+  // engineer on every cold load. The one that flickers should be the one
+  // that is allowed in.
+  const AUDIT_ROLES = ['OW', 'PA', 'AU'];
+  const RBAC_CACHE_KEY = 'cygenix_rbac_me';      // written by cygenix-rbac.js
+  const RBAC_CACHE_MS = 5 * 60 * 1000;
+  let _auditVisible = null;                       // null = not yet known
+  let _auditFetching = false;
+
+  function rolesFromCache(){
+    try {
+      const raw = sessionStorage.getItem(RBAC_CACHE_KEY);
+      if (!raw) return null;
+      const rec = JSON.parse(raw);
+      if (!rec || Date.now() - rec.at > RBAC_CACHE_MS) return null;
+      return (rec.me && Array.isArray(rec.me.roles)) ? rec.me.roles : [];
+    } catch { return null; }
+  }
+
+  function resolveAuditVisibility(){
+    if (_auditVisible !== null) return _auditVisible;
+    const cached = rolesFromCache();
+    if (cached) {
+      _auditVisible = cached.some(r => AUDIT_ROLES.indexOf(r) !== -1);
+      return _auditVisible;
+    }
+    if (!_auditFetching) {
+      _auditFetching = true;
+      fetchAuditVisibility();
+    }
+    return false;
+  }
+
+  function fetchAuditVisibility(){
+    let token = '';
+    try { token = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : ''; } catch {}
+    // Signed out, or the token helper is not on this page: leave it hidden
+    // and leave _auditVisible unresolved, so a later page with a token still
+    // asks. auth-gate.js has already decided whether the page may render.
+    if (!token || typeof fetch !== 'function') { _auditFetching = false; return; }
+    fetch('/.netlify/functions/rbac-admin?what=me', { headers: { Authorization: 'Bearer ' + token } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(me => {
+        if (!me) return;
+        try { sessionStorage.setItem(RBAC_CACHE_KEY, JSON.stringify({ at: Date.now(), me })); } catch {}
+        const next = Array.isArray(me.roles) && me.roles.some(r => AUDIT_ROLES.indexOf(r) !== -1);
+        if (next === _auditVisible) return;
+        _auditVisible = next;
+        // Only rebuild when the answer actually changes the rail, which for
+        // the overwhelming majority of loads it does not.
+        if (next && window.CygenixSidebar && window.CygenixSidebar.refresh) {
+          window.CygenixSidebar.refresh();
+        }
+      })
+      .catch(() => {})
+      .then(() => { _auditFetching = false; });
+  }
+
   function isItemVisible(item){
     if (item.requiresAiEnabled && !isAiEnabled()) return false;
+    if (item.requiresAuditRead && !resolveAuditVisibility()) return false;
     return true;
   }
 

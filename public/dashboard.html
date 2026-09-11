@@ -1368,8 +1368,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        initial showView in startup code. Updated dynamically via
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
-  <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=b0aaa32996" defer></script>
+  <script src="/cygenix-capabilities.js?v=74f812a617" defer></script>
+<script src="/cygenix-sidebar.js?v=c451afc746" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
   <script src="/cygenix-datastream.js?v=e6205ed8d2" defer></script>
@@ -1386,7 +1386,16 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-analyser.js?v=28560aaae1" defer></script>
   <script src="/cygenix-analyser-widget.js?v=b79dce439d" defer></script>
   <script src="/cygenix-analyser-handoff.js?v=6cbae9a4cf" defer></script>
-  <script src="/dashboard-app.js?v=4b1fb48c31" defer></script>
+  <!-- The audit log. cygenix-audit.js is the recorder and loads BEFORE
+       dashboard-app.js, because addAudit() calls it and nine places in that
+       file call addAudit(). audit-app.js is the #view-audit screen and is
+       only touched when the view is opened, but it is a plain deferred
+       script like everything else here rather than a lazy load: it is 30KB
+       and the alternative is a screen that takes a round trip to appear the
+       first time somebody goes looking for evidence. -->
+  <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
+  <script src="/audit-app.js?v=e893e42c61" defer></script>
+  <script src="/dashboard-app.js?v=7304f1e4b3" defer></script>
 
 
   <!-- MAIN -->

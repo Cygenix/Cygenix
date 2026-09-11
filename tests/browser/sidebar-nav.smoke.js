@@ -73,6 +73,14 @@ const server = http.createServer((req, res) => {
     localStorage.setItem('acct-cygenix.ciamlogin.com-x', JSON.stringify({
       homeAccountId: 'x', environment: 'cygenix.ciamlogin.com', authorityType: 'MSSTS',
       username: 'you@example.test', localAccountId: 'x', tenantId: 'x' }));
+    // The Audit Log item is gated on holding a role that can read the
+    // organisation trail, and the sidebar reads that from the same
+    // five-minute session cache cygenix-rbac.js writes. With the network cut
+    // off there is nobody to ask, so the roles are seeded here — otherwise
+    // this file would be testing the role gate rather than the fifteen-item
+    // navigation contract it exists for.
+    sessionStorage.setItem('cygenix_rbac_me', JSON.stringify({
+      at: Date.now(), me: { oid: 'x', email: 'you@example.test', roles: ['OW', 'PA'] } }));
   });
 
   const url = (p) => 'http://localhost:' + PORT + p;
@@ -223,6 +231,29 @@ const server = http.createServer((req, res) => {
   check('and so does a second one',
     (await page.evaluate(() => location.pathname)) === '/object-mapping',
     await page.evaluate(() => location.pathname));
+
+  /* ── The Audit Log's role gate ─────────────────────────────────────────── */
+  //
+  // Everything above runs with Owner + Platform Administrator seeded, so the
+  // item is on the rail. This checks the other half: that it is NOT, for
+  // somebody whose roles do not reach the organisation trail. Hiding is only
+  // a courtesy — netlify/functions/audit.js refuses on the server regardless,
+  // and tests/audit-api.test.js is what proves that — but a menu entry
+  // leading to a refusal is a bad menu entry.
+  await page.evaluate(() => sessionStorage.setItem('cygenix_rbac_me', JSON.stringify({
+    at: Date.now(), me: { oid: 'x', email: 'you@example.test', roles: ['EN'] } })));
+  await open('/dashboard');
+  check('an Engineer does not see the Audit Log item',
+    !(await page.evaluate(() => !!document.querySelector('.cyg-nav-item[data-key="audit"]'))));
+  check('and the rest of the rail is untouched by that',
+    (await page.evaluate(() =>
+      document.querySelectorAll('.cyg-nav-item[data-key]').length)) === VIEWS.length - 1);
+
+  await page.evaluate(() => sessionStorage.setItem('cygenix_rbac_me', JSON.stringify({
+    at: Date.now(), me: { oid: 'x', email: 'you@example.test', roles: ['AU'] } })));
+  await open('/dashboard');
+  check('an Auditor does — reading this screen is the whole role',
+    await page.evaluate(() => !!document.querySelector('.cyg-nav-item[data-key="audit"]')));
 
   check('nothing threw along the way', errors.length === 0, errors.slice(0, 3).join(' | '));
   console.log('    (' + VIEWS.length + ' nav items on the rail, ' + hrefKeys.length + ' addressable)');
