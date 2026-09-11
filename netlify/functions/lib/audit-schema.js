@@ -167,6 +167,18 @@ const CLIENT_ACTIONS = {
   'mapping.save':         'mapping',
   'sql.save':             'mapping',
   'connection.test':      'connections',
+  'connection.create':    'connections',
+  'connection.edit':      'connections',
+  'connection.delete':    'connections',
+  // The API key lives only in the browser — there is no server that ever
+  // sees it, so there is no server-side place to observe it being set or
+  // cleared from. Letting the browser assert these two is a deliberate
+  // widening into an always-on category, and it is bounded the same way
+  // everything else here is: the actor comes from the token, the value is
+  // never sent, and the entry is stamped source:'client' so a reader can
+  // see it is asserted rather than observed.
+  'apikey.set':           'security',
+  'apikey.revoke':        'security',
   'settings.update':      'settings',
   'sysparam.update':      'settings',
   'stream.create':        'stream',

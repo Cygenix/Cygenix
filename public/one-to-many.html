@@ -139,7 +139,10 @@ select.map-select:focus{border-color:var(--accent)}
 .badge-amber{background:var(--amber-bg);color:var(--amber)}
 .badge-purple{background:var(--purple-bg);color:var(--purple)}
 </style>
-<script src="/connections.js?v=d199ff3358" defer></script>
+  <!-- The audit recorder. Loaded wherever a recordable action can happen,
+       which is anywhere connections can be saved, edited or deleted. -->
+  <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
+<script src="/connections.js?v=403b59bf1a" defer></script>
 <script src="/nav.js?v=50f8721bfa" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 </head>

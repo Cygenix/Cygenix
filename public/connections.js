@@ -351,10 +351,102 @@ var CygenixConnections = (function () {
     const uid = currentUserTag();
     if (!uid) return;
     const capped = Array.isArray(list) ? list.slice(0, 50) : [];
+    const before = savedGetAll();
     const blob = readBlob(LS_SAVED);
     blob[uid] = capped;
     writeBlob(LS_SAVED, blob);
+    // After the write, so a failed record cannot lose the user's connection.
+    auditSavedListChange(before, capped);
   }
+  // ── Audit ────────────────────────────────────────────────────────────────
+  //
+  // Saved connections are created, edited and deleted entirely in this file.
+  // Nothing about them reaches a Netlify function, so there is no server-side
+  // place to observe the change from and this is where the fact exists.
+  //
+  // The hook is savedSetAll and nowhere else, because savedSetAll is where
+  // every write actually lands. An earlier version hooked savedAdd /
+  // savedUpdate / savedDelete, which reads as the obvious place and is the
+  // wrong one: the dashboard's saved-connections screen builds the whole list
+  // and calls savedSetAll directly, so those three would have recorded
+  // nothing that a user ever did. Diffing the list here catches every path
+  // into the store, including ones written later that do not know this exists.
+  //
+  // WHAT IS SENT is the point. A saved-connection record carries a connection
+  // string, and sometimes a function key — the exact things that must never
+  // enter an append-only chain, because a chain is the one structure a secret
+  // cannot be removed from afterwards. So the payload is built by NAMING the
+  // fields to include rather than by excluding the dangerous ones: identity
+  // (what it points at) goes in, credentials do not. The server redacts by
+  // field name as a second line, but relying on that would be relying on a
+  // regex to save us from a design.
+  //
+  // It also means the one-shot secrets migration — which rewrites every entry
+  // to a sanitised form — records nothing, because none of the fields it
+  // touches are in the safe set. That is the right answer: moving a password
+  // out of a blob is not an edit to the connection.
+  function auditSafeFields(entry) {
+    const e = entry || {};
+    return {
+      name: e.name || null,
+      dialect: e.dialect || e.type || null,
+      server: e.server || null,
+      database: e.database || e.db || null,
+      authMode: e.mode || e.authMode || null,
+      viaFunction: !!(e.fnUrl || e.functionUrl),
+    };
+  }
+  function auditLabel(safe, id) {
+    return 'Connection: ' + (safe.name || safe.server || id || 'unnamed');
+  }
+  // Never awaited, always guarded: a page that has not loaded
+  // cygenix-audit.js must still be able to save a connection, and a failed
+  // record must never cost the user their work.
+  function auditConn(action, id, safe, summary, changes) {
+    try {
+      if (!window.CygenixAudit) return;
+      window.CygenixAudit.record({
+        action: action, category: 'connections',
+        target: { type: 'connection', id: id || null, label: auditLabel(safe, id) },
+        summary: summary, changes: changes || null, detail: safe,
+      });
+    } catch (e) { /* recording is best-effort; saving is not */ }
+  }
+  function auditSavedListChange(before, after) {
+    if (!window.CygenixAudit) return;
+    const byId = (list) => {
+      const m = {};
+      (list || []).forEach((c) => { if (c && c.id) m[c.id] = c; });
+      return m;
+    };
+    const b = byId(before), a = byId(after);
+    Object.keys(a).forEach((id) => {
+      const safe = auditSafeFields(a[id]);
+      if (!b[id]) {
+        auditConn('connection.create', id, safe,
+          'Saved a connection to ' + (safe.server || 'a database'));
+        return;
+      }
+      const was = auditSafeFields(b[id]);
+      const changes = Object.keys(safe)
+        .filter((k) => JSON.stringify(was[k]) !== JSON.stringify(safe[k]))
+        .map((k) => ({ field: k, before: was[k], after: safe[k] }));
+      if (!changes.length) return;
+      auditConn('connection.edit', id, safe,
+        'Edited ' + (safe.name || safe.server || id) + ': ' +
+        changes.map((c) => c.field).join(', '), changes);
+    });
+    Object.keys(b).forEach((id) => {
+      if (a[id]) return;
+      const safe = auditSafeFields(b[id]);
+      auditConn('connection.delete', id, safe,
+        'Deleted the saved connection ' + (safe.name || safe.server || id));
+    });
+  }
+
+  // These three are convenience wrappers over savedSetAll and carry no audit
+  // hook of their own — savedSetAll records, so hooking them too would record
+  // every change twice.
   function savedAdd(entry) {
     if (!currentUserTag()) return null;
     if (!entry || typeof entry !== 'object') return null;

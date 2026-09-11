@@ -487,7 +487,10 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-model.js?v=7d9a5e0980"></script>
 </head>
 <body>
-<script src="/connections.js?v=d199ff3358" defer></script>
+  <!-- The audit recorder. Loaded wherever a recordable action can happen,
+       which is anywhere connections can be saved, edited or deleted. -->
+  <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
+<script src="/connections.js?v=403b59bf1a" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=d7666a463b" defer></script>

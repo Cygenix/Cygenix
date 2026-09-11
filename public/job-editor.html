@@ -90,7 +90,10 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 .tx-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 4px;font-size:10px;color:var(--text2);font-family:var(--mono);outline:none}
 .tx-select:focus{border-color:var(--accent)}
 </style>
-<script src="/connections.js?v=d199ff3358" defer></script>
+  <!-- The audit recorder. Loaded wherever a recordable action can happen,
+       which is anywhere connections can be saved, edited or deleted. -->
+  <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
+<script src="/connections.js?v=403b59bf1a" defer></script>
 <script src="/nav.js?v=50f8721bfa" defer></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-icons.css">

@@ -251,6 +251,133 @@ return (async function () {
       .split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
       .replace(/box-shadow:0 1px 2px rgba[^;']*/g, '')));
 
+  // ── Half three: the connections capture point ───────────────────────────
+  section('3. Saving a connection never sends its credentials');
+  //
+  // This is the assertion this whole file exists for. A saved-connection
+  // record contains a connection string and sometimes a function key — the
+  // exact things that must never enter an append-only chain, because the
+  // chain is the one structure a secret cannot be removed from afterwards.
+  // The server redacts by field name as a second line of defence, but a
+  // regex catching a design error is not a design. connections.js builds its
+  // payload by naming what to include, and this proves it.
+
+  const store = {};
+  const conWin = {
+    localStorage: {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; },
+    },
+    sessionStorage: {
+      getItem: () => null, setItem: () => {}, removeItem: () => {},
+    },
+    CygenixAudit: { record: (e) => { conRecorded.push(e); return Promise.resolve({ ok: true }); },
+                    diff: A.diff },
+    addEventListener: () => {},
+    location: { pathname: '/dashboard' },
+  };
+  conWin.window = conWin;
+  const conRecorded = [];
+  store['cygenix_user'] = JSON.stringify({ email: 'you@example.test' });
+  store['cygenix_active_user'] = 'you@example.test';
+
+  new Function('window', 'localStorage', 'sessionStorage', 'document', 'console',
+    pub('connections.js'))(conWin, conWin.localStorage, conWin.sessionStorage,
+      { querySelector: () => null }, { warn: () => {}, error: () => {} });
+  const C = conWin.CygenixConnections;
+  check('connections.js loaded', !!C && typeof C.savedAdd === 'function');
+
+  const SECRET = 'Server=crm-prod;Database=sales;User Id=sa;Password=hunter2;';
+  // Saved through savedSetAll, which is the path the dashboard's
+  // saved-connections screen actually takes. Hooking savedAdd/savedUpdate/
+  // savedDelete instead reads as the obvious place and records nothing a
+  // user ever does — this test exists partly to keep that from coming back.
+  C.savedSetAll([{ id: 'sc1', name: 'CRM Production', dialect: 'mssql',
+                   server: 'crm-prod', database: 'sales',
+                   connString: SECRET, fnUrl: 'https://relay.example/api',
+                   fnKey: 'abc-function-key' }]);
+  check('saving a connection records an event', conRecorded.length === 1);
+  const rec = conRecorded[0];
+  check('as a connections event', rec.category === 'connections');
+  check('naming what it points at', rec.detail.server === 'crm-prod' && rec.detail.database === 'sales');
+  check('THE CONNECTION STRING IS NOT IN THE PAYLOAD',
+    JSON.stringify(rec).indexOf('hunter2') === -1);
+  check('nor the function key', JSON.stringify(rec).indexOf('abc-function-key') === -1);
+  check('nor the relay URL', JSON.stringify(rec).indexOf('relay.example') === -1);
+  check('nor the connection string under any other name',
+    JSON.stringify(rec).indexOf('User Id=sa') === -1);
+  check('but the fact that it goes via a function IS recorded',
+    rec.detail.viaFunction === true);
+
+  conRecorded.length = 0;
+  C.savedSetAll([{ id: 'sc1', name: 'CRM Production', dialect: 'mssql',
+                   server: 'crm-prod', database: 'sales_archive',
+                   connString: SECRET, fnUrl: 'https://relay.example/api' }]);
+  check('an edit diffs the safe fields',
+    conRecorded.length === 1 && conRecorded[0].action === 'connection.edit' &&
+    conRecorded[0].changes.some((c) => c.field === 'database'
+      && c.before === 'sales' && c.after === 'sales_archive'));
+
+  // The one-shot secrets migration rewrites every entry to a sanitised form.
+  // Moving a password out of a blob is not an edit to the connection, and a
+  // burst of meaningless "edited" rows would bury the ones that matter.
+  conRecorded.length = 0;
+  C.savedSetAll([{ id: 'sc1', name: 'CRM Production', dialect: 'mssql',
+                   server: 'crm-prod', database: 'sales_archive',
+                   fnUrl: 'https://relay.example/api' }]);
+  check('stripping secrets out of a stored entry records nothing — it is not an edit',
+    conRecorded.length === 0);
+
+  conRecorded.length = 0;
+  C.savedSetAll([]);
+  check('deleting records it', conRecorded.length === 1 && conRecorded[0].action === 'connection.delete');
+  check('naming the connection that is gone',
+    /CRM Production/.test(conRecorded[0].summary));
+
+  // A page without the recorder must still be able to save a connection.
+  conRecorded.length = 0;
+  delete conWin.CygenixAudit;
+  C.savedSetAll([{ id: 'sc2', name: 'No recorder here', server: 'x' }]);
+  check('a page with no recorder loaded still saves the connection',
+    C.savedGetAll().length === 1);
+  conWin.CygenixAudit = { record: (e) => { conRecorded.push(e); return Promise.resolve({}); }, diff: A.diff };
+
+  check('the hook is on savedSetAll, where every write lands',
+    /function savedSetAll\([\s\S]{0,400}auditSavedListChange/.test(pub('connections.js')));
+
+  // Every action these capture points assert has to be one the server accepts.
+  section('4. The new capture points are on the allowlist');
+  for (const a of ['connection.create', 'connection.edit', 'connection.delete',
+                   'apikey.set', 'apikey.revoke', 'settings.update', 'sysparam.update']) {
+    check(a + ' is recordable from the browser', schema.isClientAction(a));
+  }
+  check('apikey events land in the always-on security category, not settings',
+    schema.CLIENT_ACTIONS['apikey.set'] === 'security');
+
+  const app2 = pub('dashboard-app.js');
+  check('the API key event records the fact and never the key',
+    /action: 'apikey\.set'/.test(app2) &&
+    !/after: *key/.test(app2) && !/apiKey: *key/.test(app2));
+  check('system parameters are recorded on the explicit save, not the auto-save',
+    /function spConfirmSave\(\)[\s\S]{0,900}action: 'sysparam\.update'/.test(app2) &&
+    !/function spSave\(\)[\s\S]{0,400}CygenixAudit/.test(app2));
+  check('and diffed against a baseline taken when the view opened',
+    /spBaseline = spSnapshot\(\)/.test(app2));
+  check('preferences are read before they are overwritten, so the diff is real',
+    app2.indexOf('let prevPrefs') < app2.indexOf("localStorage.setItem(APP_PREFS_KEY"));
+  check('an unchanged settings save records nothing',
+    /if \(changes\.length\) \{/.test(app2));
+
+  // The recorder has to be present wherever a capture point can fire.
+  const pages = fs.readdirSync(P('public')).filter((f) => f.endsWith('.html'));
+  const canSaveConnections = pages.filter((f) => pub(f).indexOf('/connections.js') !== -1);
+  const missing = canSaveConnections.filter((f) => pub(f).indexOf('/cygenix-audit.js') === -1);
+  check('every page that can save a connection loads the recorder',
+    missing.length === 0, missing.join(', '));
+  check('and that is a real set of pages, not an empty one',
+    canSaveConnections.length > 20, String(canSaveConnections.length));
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })();

@@ -40,7 +40,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
-<script src="/connections.js?v=d199ff3358" defer></script>
+  <!-- The audit recorder. Loaded wherever a recordable action can happen,
+       which is anywhere connections can be saved, edited or deleted. -->
+  <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
+<script src="/connections.js?v=403b59bf1a" defer></script>
 <script src="/cygenix-capabilities.js?v=74f812a617" defer></script>
 <script src="/cygenix-sidebar.js?v=c451afc746" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>

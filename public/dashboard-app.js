@@ -9044,7 +9044,25 @@ function saveAppPreferences() {
     reportFormat:  get('pref-report-format') || DEFAULT_APP_PREFS.reportFormat,
     autoSnapshot:  get('pref-auto-snapshot') || DEFAULT_APP_PREFS.autoSnapshot,
   };
+  // Read the stored values BEFORE overwriting them, so the audit entry can
+  // carry a real before/after rather than only the new state. A settings
+  // event that says what a value is now, without saying what it was, cannot
+  // answer the question anybody actually asks it six months later.
+  let prevPrefs = {};
+  try { prevPrefs = { ...DEFAULT_APP_PREFS, ...JSON.parse(localStorage.getItem(APP_PREFS_KEY) || '{}') }; }
+  catch { prevPrefs = { ...DEFAULT_APP_PREFS }; }
   try { localStorage.setItem(APP_PREFS_KEY, JSON.stringify(prefs)); } catch {}
+  if (window.CygenixAudit) {
+    const changes = window.CygenixAudit.diff(prevPrefs, prefs);
+    // An unchanged save is a click, not a change. Recording it would bury
+    // the changes that matter under the ones that did not happen.
+    if (changes.length) {
+      addAudit('Changed preferences: ' + changes.map(c => c.field).join(', '),
+        { action: 'settings.update', category: 'settings',
+          target: { type: 'app_preferences', id: 'app_prefs', label: 'Settings > Preferences' },
+          changes });
+    }
+  }
   // Re-apply the theme on save. The dropdown's onchange already does live
   // preview, so this mostly matters when the user edited the value but never
   // triggered onchange (e.g. browser autofill) — and as a safety net.
@@ -9106,6 +9124,14 @@ function saveSettingsApiKey() {
     status.textContent = '✓ Key saved (' + key.slice(0,12) + '…' + key.slice(-4) + ')';
     status.style.color = 'var(--green)';
   }
+  // The fact, never the value. An Anthropic key in an append-only chain
+  // could not be taken back out — the chain is the one structure where a
+  // leaked secret is permanent — so nothing about the key itself is sent,
+  // not even the masked form shown on screen.
+  addAudit('Set the Anthropic API key',
+    { action: 'apikey.set', category: 'security',
+      target: { type: 'api_key', id: 'anthropic', label: 'Settings > Anthropic API key' },
+      changes: [{ field: 'apiKey', before: 'unset-or-previous', after: 'set' }] });
 }
 
 function clearSettingsApiKey() {
@@ -9119,6 +9145,10 @@ function clearSettingsApiKey() {
   setBadge('err');
   const status = document.getElementById('settings-key-status');
   if (status) { status.textContent = 'No key set'; status.style.color = 'var(--text3)'; }
+  addAudit('Cleared the Anthropic API key',
+    { action: 'apikey.revoke', category: 'security',
+      target: { type: 'api_key', id: 'anthropic', label: 'Settings > Anthropic API key' },
+      changes: [{ field: 'apiKey', before: 'set', after: 'cleared' }] });
 }
 
 function saveApiKeyFromSettings() {
@@ -15986,6 +16016,19 @@ function initSystemParametersView(){
 
 function spEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+// The baseline the audit diff is taken against. spSave() runs on EVERY
+// keystroke — it is an auto-save — so recording there would put one audit
+// entry per character typed into an append-only chain. The event worth
+// recording is the explicit "I'm done" (spConfirmSave), and the change worth
+// showing is everything that moved since the view was opened, which is what
+// this snapshot is for.
+let spBaseline = {};
+function spSnapshot(){
+  const m = {};
+  (spParams || []).forEach(p => { if (p && p.name) m[p.name] = String(p.value == null ? '' : p.value); });
+  return m;
+}
+
 function spLoad(){
   try { spParams = JSON.parse(localStorage.getItem('cygenix_sys_params') || '[]'); }
   catch { spParams = []; }
@@ -15997,6 +16040,7 @@ function spLoad(){
     type:        CygenixParams.typeOf(p),
     code:        CygenixParams.codeFromName(p.name || '')
   }));
+  spBaseline = spSnapshot();
   spRender();
 }
 
@@ -16018,6 +16062,22 @@ function spSave(){
 function spConfirmSave(){
   try {
     spSave();
+    if (window.CygenixAudit) {
+      const now = spSnapshot();
+      const changes = window.CygenixAudit.diff(spBaseline, now);
+      if (changes.length) {
+        addAudit('Changed ' + changes.length + ' system parameter' + (changes.length === 1 ? '' : 's') +
+                 ': ' + changes.slice(0, 4).map(c => c.field).join(', ') +
+                 (changes.length > 4 ? ' and ' + (changes.length - 4) + ' more' : ''),
+          { action: 'sysparam.update', category: 'settings',
+            target: { type: 'system_parameter', id: 'sys_params',
+                      label: 'System Parameters' },
+            changes });
+        // The save became the new baseline, so a second confirm with nothing
+        // further typed records nothing rather than repeating the same diff.
+        spBaseline = now;
+      }
+    }
     flashSaveStatus('sp-save-status', '✓ Saved ' + spParams.length + ' parameter' + (spParams.length === 1 ? '' : 's'), 'var(--green)');
   } catch (e) {
     console.error('[sp] confirm save failed', e);
