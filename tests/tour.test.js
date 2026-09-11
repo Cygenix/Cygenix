@@ -1,0 +1,180 @@
+// tests/tour.test.js — the guided tour's content and its wiring, without a browser.
+//
+// tests/browser/tour.smoke.js drives the thing end to end. What it cannot do
+// cheaply is check every step against the real nav tree, so that is here: a
+// step pointing at a data-key the sidebar does not have would spotlight
+// nothing, and the person who broke it would be whoever renamed a nav item
+// three months later with no idea this file existed.
+//
+// Plain Node, no DOM. The steps file and the sidebar's NAV are both
+// node-requirable, which is the whole reason they are shaped that way.
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+let pass = 0, fail = 0;
+const check = (label, ok, extra) => {
+  if (ok) { pass++; console.log('  PASS  ' + label); }
+  else { fail++; console.log('  FAIL  ' + label + (extra ? '  → ' + String(extra).slice(0, 300) : '')); }
+};
+const P = (...p) => path.join(__dirname, '..', ...p);
+const read = (...p) => fs.readFileSync(P(...p), 'utf8');
+
+console.log('Guided tour — every stop points at something that exists\n');
+
+const STEPS = require('../public/cygenix-tour-steps.js');
+
+/* The sidebar under a DOM stub, the same way tests/sidebar-nav.test.js does it. */
+const noopEl = () => ({ classList: { add(){}, remove(){}, toggle(){}, contains: () => false },
+  addEventListener(){}, setAttribute(){}, querySelector: () => null, querySelectorAll: () => [],
+  appendChild(){}, replaceWith(){}, style: {}, dataset: {}, textContent: '' });
+const sandbox = {
+  window: { addEventListener(){}, location: { pathname: '/x.html', origin: 'https://x' } },
+  document: { readyState: 'loading', addEventListener(){}, createElement: noopEl,
+    getElementById: () => null, querySelector: () => null, querySelectorAll: () => [],
+    head: noopEl(), body: noopEl(), documentElement: noopEl() },
+  localStorage: { getItem: () => null, setItem(){}, removeItem(){} },
+  sessionStorage: { getItem: () => null, setItem(){}, removeItem(){} },
+  console, setTimeout: () => 0, setInterval: () => 0,
+};
+sandbox.window.document = sandbox.document;
+sandbox.window.localStorage = sandbox.localStorage;
+vm.createContext(sandbox);
+vm.runInContext(read('public', 'cygenix-sidebar.js'), sandbox);
+const SB = sandbox.window.CygenixSidebar;
+
+const NAV = SB.__nav;
+const navKeys = new Set();
+const parentKeys = new Set();
+NAV.forEach((sec) => sec.items.forEach((it) => {
+  if (it.children) { parentKeys.add(it.key); it.children.forEach((c) => navKeys.add(c.key)); }
+  else navKeys.add(it.key);
+}));
+
+/* ── 1. The steps are well formed ───────────────────────────────────────── */
+
+check('there are steps, and one intro', STEPS.length > 10 && STEPS[0].section === 'Welcome', STEPS.length);
+check('every step has the whole schema',
+  STEPS.every((s) => s.id && s.section && s.title && s.body && s.page),
+  STEPS.filter((s) => !(s.id && s.section && s.title && s.body && s.page)).map((s) => s.id).join(', '));
+check('ids are unique',
+  new Set(STEPS.map((s) => s.id)).size === STEPS.length);
+check('exactly one step is final, and it is the last',
+  STEPS.filter((s) => s.final).length === 1 && !!STEPS[STEPS.length - 1].final);
+
+// The panel is narrow and the card is read, not skimmed. Three sentences was
+// the brief; four is where it stops being a caption.
+const longOnes = STEPS.filter((s) => (s.body.match(/\.\s|\.$/g) || []).length > 3);
+check('no step body runs past three sentences', longOnes.length === 0,
+  longOnes.map((s) => s.id).join(', '));
+const tagged = STEPS.filter((s) => /<(?!\/?(b|kbd)\b)[a-z]/i.test(s.body));
+check('bodies use only <b> and <kbd>', tagged.length === 0, tagged.map((s) => s.id).join(', '));
+
+/* ── 2. Every page and target resolves against the real nav tree ─────────── */
+
+const badPages = STEPS.filter((s) => !navKeys.has(s.page));
+check('every step navigates to a key the sidebar actually has',
+  badPages.length === 0,
+  badPages.map((s) => s.id + ' → ' + s.page).join(', '));
+
+const badTargets = [];
+STEPS.forEach((s) => {
+  if (!s.target) return;
+  let m = s.target.match(/^\[data-key="([^"]+)"\]$/);
+  if (m && !navKeys.has(m[1])) return badTargets.push(s.id + ' → ' + s.target);
+  m = s.target.match(/^\[data-parent="([^"]+)"\]$/);
+  if (m && !parentKeys.has(m[1])) return badTargets.push(s.id + ' → ' + s.target);
+});
+check('every sidebar target is a key or a group the sidebar emits',
+  badTargets.length === 0, badTargets.join(', '));
+
+// A parent-group step has to land on one of that group's own children, or the
+// spotlight points at a group the page has nothing to do with.
+const mismatched = [];
+STEPS.forEach((s) => {
+  const m = s.target && s.target.match(/^\[data-parent="([^"]+)"\]$/);
+  if (!m) return;
+  const group = NAV.reduce((f, sec) => f || sec.items.find((i) => i.key === m[1]), null);
+  if (!group) return;
+  if (!group.children.some((c) => c.key === s.page)) mismatched.push(s.id + ': ' + s.page + ' is not in ' + m[1]);
+});
+check('a group step navigates to one of that group\'s own children',
+  mismatched.length === 0, mismatched.join(', '));
+
+/* Non-sidebar targets are real selectors in real files, not hopeful guesses. */
+const assistantJs = read('public', 'cygenix-assistant.js');
+const sidebarJs = read('public', 'cygenix-sidebar.js');
+const dashboard = read('public', 'dashboard.html');
+const OTHER = { '.cyg-drive-btn': sidebarJs, '.cyga-foot': assistantJs };
+const missingSel = STEPS.filter((s) => s.target && OTHER[s.target] !== undefined)
+  .filter((s) => OTHER[s.target].indexOf(s.target.replace(/^\./, '')) === -1);
+check('the non-sidebar targets exist in the files that render them',
+  missingSel.length === 0, missingSel.map((s) => s.target).join(', '));
+const regions = STEPS.filter((s) => s.region);
+check('every region hook is present in the markup',
+  regions.every((s) => dashboard.indexOf(s.region.replace(/^\[|\]$/g, '')) !== -1),
+  regions.map((s) => s.region).join(', '));
+
+/* ── 3. The wiring that makes it work without a key ─────────────────────── */
+
+const tourJs = read('public', 'cygenix-tour.js');
+
+check('the tour is intercepted BEFORE the API-key gate',
+  /tourHooks\.onInput[\s\S]{0,200}ask\(text\)/.test(assistantJs)
+  && assistantJs.indexOf('tourHooks.onInput') < assistantJs.indexOf('function ask('),
+  'a new user has no key — intercepting after the gate would make the tour unreachable');
+check('and the no-key empty state offers it',
+  /No API key set[\s\S]{0,600}tourChip\(\)/.test(assistantJs));
+
+check('the engine navigates through the sidebar rather than faking clicks',
+  /SB\.navigate\(/.test(tourJs) && !/\.click\(\)/.test(tourJs),
+  'handleClick is the one place that knows a view key from a page key');
+check('and the sidebar exposes that navigation',
+  /navigate:\s*\(key\)/.test(sidebarJs));
+
+// The claim the whole design rests on: this thing cannot change anything.
+check('the engine calls no assistant action and writes no app data',
+  !/CygenixAssistantAdapters|runAction|registerAction/.test(tourJs)
+  && !/localStorage\.setItem\('cygenix_(jobs|projects|inventory)/.test(tourJs),
+  'read-only is the reason it is scripted rather than model-driven');
+// Comments are allowed to say the word "Anthropic"; code is not allowed to
+// call it. Strip the comments before asking.
+const tourCode = tourJs.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+check('it makes no network call at all',
+  !/fetch\(|XMLHttpRequest|anthropic|api\.anthropic/i.test(tourCode),
+  'the whole point is that it runs with no key and no connection');
+
+check('tour state is per-tab, and the resume point outlives the tab',
+  /SESSION_KEY\s*=\s*'cyg_tour'/.test(tourJs)
+  && /sessionStorage\.(get|set)Item\(SESSION_KEY/.test(tourJs)
+  && /LAST_KEY\s*=\s*'cygenix_tour_last'/.test(tourJs)
+  && /localStorage\.setItem\(LAST_KEY/.test(tourJs),
+  'a half-finished tour should not follow you into a new tab, but resume should still work tomorrow');
+check('a stale highlight from an earlier step cannot land',
+  /hiToken/.test(tourJs) && /tok !== hiToken/.test(tourJs));
+check('reduced motion is honoured',
+  /prefers-reduced-motion/.test(tourJs));
+check('the sidebar is put back the way it was found',
+  /restore[\s\S]{0,200}collapsed/.test(tourJs) && /collapseTourGroups/.test(tourJs));
+
+/* ── 4. Loaded everywhere the assistant is ──────────────────────────────── */
+
+const pages = fs.readdirSync(P('public')).filter((f) => f.endsWith('.html'));
+const appPages = pages.filter((f) => /cygenix-assistant-actions\.js/.test(read('public', f)));
+const noTour = appPages.filter((f) => !/cygenix-tour\.js/.test(read('public', f)));
+check('every page with the assistant also loads the tour (' + appPages.length + ' pages)',
+  noTour.length === 0, noTour.join(', '));
+const wrongOrder = appPages.filter((f) => {
+  const s = read('public', f);
+  return s.indexOf('cygenix-tour-steps.js') > s.indexOf('cygenix-tour.js');
+});
+check('and the steps load before the engine that reads them',
+  wrongOrder.length === 0, wrongOrder.join(', '));
+const marketing = pages.filter((f) => !appPages.includes(f) && /cygenix-tour\.js/.test(read('public', f)));
+check('and it is not dragged onto the marketing pages',
+  marketing.length === 0, marketing.join(', '));
+
+console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
+process.exit(fail ? 1 : 0);

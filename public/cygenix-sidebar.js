@@ -1383,6 +1383,16 @@
     mount,
     setActive: updateActive,
     isCollapsed,
+    // Navigate to a nav key exactly as clicking the item would. Exposed for
+    // the guided tour, which must not fake clicks: handleClick is the one
+    // place that knows which keys are dashboard views (stash cyg_goto, go to
+    // /dashboard#goto=…) and which are their own pages, and a second copy of
+    // that decision would drift from this one the first time a page moved.
+    navigate: (key) => {
+      const item = findItem(key);
+      if (item) handleClick(item);
+      return !!item;
+    },
     // Exposed for structural tests (tests/sidebar-nav.test.js): the nav tree
     // and footer as data, so key coverage can be asserted without a DOM.
     __nav: NAV, __accountNav: ACCOUNT_NAV, __findItem: findItem,

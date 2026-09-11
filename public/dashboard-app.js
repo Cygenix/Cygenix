@@ -8215,6 +8215,14 @@ function dismissOnboarding(){
   const modal = document.getElementById('onboarding-modal');
   if (modal) modal.style.display = 'none';
 }
+
+/** The first row of the first-run modal. Closes it before starting, because a
+ *  tour that spotlights the sidebar from underneath a full-screen scrim is
+ *  pointing at something nobody can see. */
+function startTourFromOnboarding(){
+  dismissOnboarding();
+  if (window.CygenixTour) window.CygenixTour.start(0);
+}
 function onboardGoTo(view){
   dismissOnboarding();
   if(view === 'mapper') { window.location.href='/object-mapping'; return; }

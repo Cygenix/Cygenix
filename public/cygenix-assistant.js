@@ -102,6 +102,12 @@ var actions = {};          // name -> definition
 var contextProviders = []; // () => object
 var pageKey = null;        // set by registerPage()
 
+/* The guided tour plugs in here rather than being reached into. Five hooks,
+   all optional: with cygenix-tour.js absent every one is a no-op and the panel
+   behaves exactly as it did before it existed. */
+var tourHooks = {};
+var tourMode = false;
+
 var EFFECTS = { read: 0, write: 1, destructive: 2 };
 
 /* Anthropic only accepts tool names matching this; a dotted name (app.navigate)
@@ -482,6 +488,7 @@ function injectStyles() {
     '.cyga-chip{display:inline-block;font-size:11.5px;padding:5px 10px;margin:4px 4px 0 0;',
     '  border:1px solid var(--border2);border-radius:99px;cursor:pointer;background:var(--bg);color:var(--text2)}',
     '.cyga-chip:hover{color:var(--accent);border-color:var(--accent)}',
+    '.cyga-input.cyga-tourmode{border-color:var(--accent);background:var(--accent-glow,rgba(74,91,214,.06))}',
     '.cyga-launch{position:fixed;right:18px;bottom:18px;z-index:289;border-radius:99px;',
     '  padding:9px 15px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;color:#fff;',
     '  background:var(--accent);border:none;box-shadow:0 4px 16px rgba(22,26,32,.24)}',
@@ -526,6 +533,7 @@ function buildPanel() {
           '<option value="confirm_all">Confirm every change</option>' +
           '<option value="confirm_destructive">Confirm destructive only</option>' +
         '</select>' +
+        '<span class="cyg-tour-pill" id="cygaTourPill" hidden>TOUR</span>' +
         '<span style="flex:1"></span>' +
         '<button class="cyga-iconbtn" id="cygaStop" hidden>Stop</button>' +
       '</div>' +
@@ -544,7 +552,7 @@ function buildPanel() {
     send: document.getElementById('cygaSend'), close: document.getElementById('cygaClose'),
     clear: document.getElementById('cygaClear'), launch: launch, grip: document.getElementById('cygaGrip'),
     page: document.getElementById('cygaPage'), policy: document.getElementById('cygaPolicy'),
-    stop: document.getElementById('cygaStop')
+    stop: document.getElementById('cygaStop'), tourPill: document.getElementById('cygaTourPill')
   };
   wireEvents();
 }
@@ -566,21 +574,41 @@ function renderTrail(entry) {
     (entry.detail ? ' — ' + esc(entry.detail) : '') + '</span></div>';
 }
 
+var TOUR_ASK = 'Give me a tour of what you can do';
+function tourChip() {
+  // Only offered when something can service it. The chip is in the no-key
+  // branch too, and that is the point of it: the walkthrough is scripted, needs
+  // no key and no network, so the screen that used to be a dead end for a new
+  // user now has one thing on it they can actually do.
+  if (!tourHooks.onInput) return '';
+  // ◈ rather than the mockup's ✦: tests/icons.test.js bans the sparkle's
+  // Unicode block outright, and this one is in the KEEP set — it is type, not
+  // an emoji, so it inherits the chip's colour instead of being a different
+  // typeface on every operating system.
+  return '<button class="cyga-chip" data-ask="' + esc(TOUR_ASK) + '">◈ ' + esc(TOUR_ASK) + '</button>';
+}
+
 function renderEmpty() {
   if (!apiKey()) {
     return '<div class="cyga-empty"><b>No API key set.</b><br>' +
       'The assistant runs on your own Anthropic API key, the same one every other ' +
       'AI feature here uses. Add it in <a href="/dashboard#goto=project-settings" ' +
-      'style="color:var(--accent)">Settings → General</a>, then come back.</div>';
+      'style="color:var(--accent)">Settings → General</a>, then come back.' +
+      (tourChip()
+        ? '<div style="margin-top:10px">' + tourChip() + '</div>' +
+          '<div style="margin-top:6px;font-size:11.5px;color:var(--text3)">' +
+          'The tour needs no key — it is a scripted walkthrough, not an AI one.</div>'
+        : '') +
+      '</div>';
   }
   var suggestions = (api.suggestions || []).slice(0, 4);
   return '<div class="cyga-empty">' +
     '<b>I can see this screen and act on it.</b><br>' +
     'Ask a question, or tell me what you want done — I will show you each step, ' +
     'and ask before changing anything.' +
-    (suggestions.length ? '<div style="margin-top:10px">' + suggestions.map(function (s) {
+    '<div style="margin-top:10px">' + tourChip() + suggestions.map(function (s) {
       return '<button class="cyga-chip" data-ask="' + esc(s) + '">' + esc(s) + '</button>';
-    }).join('') + '</div>' : '') +
+    }).join('') + '</div>' +
     '</div>';
 }
 
@@ -646,6 +674,11 @@ function render() {
     html += '<div class="cyga-step err"><span class="st-ic">✕</span><span>' + esc(state.error) + '</span></div>';
   }
 
+  // The tour's own transcript, appended under the conversation. It is kept out
+  // of state.messages on purpose: that array IS the Anthropic conversation, and
+  // a step card pushed into it would be replayed to the model as a user turn.
+  if (tourHooks.render) html += tourHooks.render();
+
   el.body.innerHTML = html;
   el.body.scrollTop = el.body.scrollHeight;
 
@@ -656,6 +689,14 @@ function render() {
   el.page.textContent = collectContext().page;
   el.policy.value = getPolicy();
   el.launch.classList.toggle('hidden', state.open);
+
+  // While a tour runs the box says what the keys do, and a pill next to
+  // Guardrails says why the box is behaving differently.
+  el.input.placeholder = tourMode
+    ? 'Press Y to continue, B to go back, or type Exit'
+    : 'Ask, or tell it what to do…';
+  el.input.classList.toggle('cyga-tourmode', tourMode);
+  if (el.tourPill) el.tourPill.hidden = !tourMode;
 }
 
 function setOpen(open) {
@@ -672,14 +713,24 @@ function setOpen(open) {
 
 function wireEvents() {
   el.launch.addEventListener('click', function () { setOpen(true); });
-  el.close.addEventListener('click', function () { setOpen(false); });
+  // Closing the panel or starting a new conversation ends a running tour
+  // cleanly — overlays cleared, sidebar put back — rather than leaving a
+  // spotlight burning over a page with nothing explaining it.
+  el.close.addEventListener('click', function () {
+    if (tourHooks.onClose) tourHooks.onClose();
+    setOpen(false);
+  });
   el.clear.addEventListener('click', function () {
+    if (tourHooks.onClose) tourHooks.onClose();
     state.messages = []; state.trail = []; state.pending = null; state.resume = null;
     state.calls = 0; state.lastCall = null;
     state.status = 'idle'; state.error = null; endBusy(); saveState(); render();
   });
   el.send.addEventListener('click', submit);
   el.input.addEventListener('keydown', function (e) {
+    // Y / B / Esc while a tour is running. The hook only claims them on an
+    // EMPTY box — otherwise nobody could type the word "yesterday".
+    if (tourHooks.onKey && tourHooks.onKey(e, el.input.value)) { render(); return; }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
   });
   el.input.addEventListener('input', function () {
@@ -694,6 +745,8 @@ function wireEvents() {
     saveState(); render();
   });
   el.body.addEventListener('click', function (e) {
+    var tourBtn = e.target.closest('[data-tour-act]');
+    if (tourBtn && tourHooks.onAct) { tourHooks.onAct(tourBtn.dataset.tourAct); render(); return; }
     var chip = e.target.closest('[data-ask]');
     if (chip) { el.input.value = chip.dataset.ask; submit(); return; }
     if (e.target.id === 'cygaApprove') resolveConfirmation(true);
@@ -729,6 +782,12 @@ function submit() {
   if (!text || state.status === 'thinking' || state.status === 'acting') return;
   el.input.value = '';
   el.input.style.height = 'auto';
+  // The guided tour gets first refusal, BEFORE the API-key gate below and
+  // before any model call. That ordering is the whole reason the tour exists
+  // here rather than as an action: a new user has no key, so the one moment a
+  // walkthrough is worth most is the one moment an LLM-driven one could not
+  // run. A true return means the tour consumed the input.
+  if (tourHooks.onInput && tourHooks.onInput(text)) { render(); return; }
   ask(text);
 }
 
@@ -1104,6 +1163,13 @@ var api = {
   ask: function (t) { setOpen(true); ask(t); },
   highlight: highlight,
   progress: progress,
+  /* ── guided tour ────────────────────────────────────────────────────────
+     cygenix-tour.js registers here on load. Every hook is optional, and with
+     that file absent the panel is byte-for-byte what it was. */
+  setTourHooks: function (h) { tourHooks = h || {}; render(); },
+  setTourMode: function (on) { tourMode = !!on; render(); },
+  refresh: function () { render(); },
+  hasKey: function () { return !!apiKey(); },
   suggestions: [],
   appMap: null,
   auditEntries: function () { return store(AUDIT_KEY) || []; },

@@ -1369,7 +1369,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-capabilities.js?v=d3a671a36f" defer></script>
-<script src="/cygenix-sidebar.js?v=a1aea6a442" defer></script>
+<script src="/cygenix-sidebar.js?v=b0aaa32996" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
   <script src="/cygenix-datastream.js?v=e6205ed8d2" defer></script>
@@ -1386,7 +1386,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-analyser.js?v=28560aaae1" defer></script>
   <script src="/cygenix-analyser-widget.js?v=b79dce439d" defer></script>
   <script src="/cygenix-analyser-handoff.js?v=6cbae9a4cf" defer></script>
-  <script src="/dashboard-app.js?v=b2c84087f3" defer></script>
+  <script src="/dashboard-app.js?v=4b1fb48c31" defer></script>
 
 
   <!-- MAIN -->
@@ -1402,6 +1402,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
            operator who opens Home and clicks nothing has to be able to say
            which stream is broken, that nothing is reaching the destination,
            roughly why, what is at risk and how long they have. -->
+      <!-- data-tour marks the block the guided tour draws a dashed region
+           around on its Home stop. It is the ONLY tour hook in the markup:
+           every other target the tour points at already has a stable selector
+           the sidebar or the assistant emits, and a second set of names would
+           be a second set to keep in step. -->
+      <div data-tour="home-cards">
+
       <div id="dash-bandhost"></div>
 
       <!-- The one number that stayed. The pipeline strip, the tile row and the
@@ -1485,6 +1492,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
       </div>
       <div id="dashboard-project-status" class="ps-wrap"></div>
+      </div><!-- /data-tour="home-cards" -->
     </div>
 
     <!-- NEW JOB -->
@@ -4319,6 +4327,20 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div style="padding:1.5rem">
       <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:1rem">Recommended first steps</div>
       <div style="display:flex;flex-direction:column;gap:0.6rem">
+        <!-- The guided tour is offered HERE rather than as its own first-run
+             prompt. This modal already is the first-run experience; a second
+             one appearing beside it would be two things asking a brand-new
+             user for a decision before they have seen anything. It leads the
+             list because it is the only row that needs nothing set up first —
+             the other three all assume you already know where you are going. -->
+        <div onclick="startTourFromOnboarding()" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--accent);border-radius:10px;cursor:pointer;transition:border-color 0.15s">
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-glow);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ic ic-compass"></i> </div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Take the 5-minute tour</div>
+            <div style="font-size:11px;color:var(--text3)">A guided walk round the console. Nothing gets changed, and it needs no API key.</div>
+          </div>
+          <div style="color:var(--text3);font-size:14px">›</div>
+        </div>
         <div onclick="onboardGoTo('project-settings')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
           <div style="width:36px;height:36px;border-radius:8px;background:var(--amber-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ic ic-cog"></i> </div>
           <div style="flex:1">
@@ -4373,8 +4395,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-busy.js?v=6b748aa0aa"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=82d9cb828b"></script>
+<script src="/cygenix-assistant.js?v=8f90459e68"></script>
 <script src="/cygenix-assistant-actions.js?v=b993785216"></script>
+<script src="/cygenix-tour-steps.js?v=93f2b22540"></script>
+<script src="/cygenix-tour.js?v=826a8263ad"></script>
 <script>CygenixAssistant.registerPage('dashboard');</script>
 </body>
 </html>
