@@ -210,6 +210,7 @@ exports.handler = async function (event) {
           actor: selfOnly ? actor.email : q.actor,
           category: q.category, action: q.action, outcome: q.outcome,
           env: q.env, projectId: q.projectId, q: q.q,
+          target: q.target, source: q.source,
           limit: q.limit, cursor: q.cursor,
         });
         return ok({ ...res, scope: selfOnly ? 'self' : 'organisation' });
@@ -239,9 +240,16 @@ exports.handler = async function (event) {
       if (what === 'export') {
         const de = rbac.can(actor, 'audit.export', {});
         if (!de.allow) return denied('audit.export', de);
+        // The same filters as the events list, so the export is provably the
+        // rows on screen rather than a differently-filtered approximation of
+        // them. selfOnly is honoured here too: an export is a read, and the
+        // narrower grant does not widen because the output is a file.
         const res = await org.queryAudit(store, {
-          from: q.from, to: q.to, actor: q.actor, category: q.category,
+          from: q.from, to: q.to,
+          actor: selfOnly ? actor.email : q.actor,
+          category: q.category,
           action: q.action, outcome: q.outcome, env: q.env, q: q.q,
+          target: q.target, source: q.source,
           limit: 10000,
         });
         // Exporting the record is itself part of the record: an evidence
@@ -251,10 +259,17 @@ exports.handler = async function (event) {
                       summary: 'Exported ' + res.entries.length + ' events as '
                                + (q.format === 'csv' ? 'CSV' : 'JSON'),
                       detail: { entries: res.entries.length, format: q.format || 'json',
+                                // Every filter, so somebody reading the trail
+                                // later can tell exactly which rows left the
+                                // building — an export entry that records the
+                                // count but not the selection is not evidence
+                                // of what was taken.
                                 filters: { from: q.from || null, to: q.to || null,
                                            actor: q.actor || null, category: q.category || null,
                                            action: q.action || null, outcome: q.outcome || null,
-                                           env: q.env || null, q: q.q || null } } });
+                                           env: q.env || null, target: q.target || null,
+                                           source: q.source || null, q: q.q || null,
+                                           scope: selfOnly ? 'self' : 'organisation' } } });
         const stamp = new Date().toISOString().slice(0, 10);
         if (q.format === 'csv') {
           return {

@@ -143,6 +143,7 @@ const world = {
   gaps: [{ kind: 'paused', from: iso(80), to: iso(50), open: false,
            by: 'owner@example.test', reason: 'bulk re-import, too noisy', endedBy: 'system' }],
   posts: [],
+  lastEventsUrl: '',
 };
 
 function statusBody() {
@@ -214,17 +215,37 @@ function statusBody() {
       }
       if (u.indexOf('what=events') !== -1) {
         let rows = EVENTS.slice();
-        const m = /[?&]category=([^&]*)/.exec(u);
-        if (m && m[1]) rows = rows.filter((e) => e.category === decodeURIComponent(m[1]));
-        const o = /[?&]outcome=([^&]*)/.exec(u);
-        if (o && o[1]) rows = rows.filter((e) => e.outcome === decodeURIComponent(o[1]));
-        const q = /[?&]q=([^&]*)/.exec(u);
-        if (q && q[1]) {
-          const t = decodeURIComponent(q[1]).toLowerCase();
+        const param = (k) => {
+          const m = new RegExp('[?&]' + k + '=([^&]*)').exec(u);
+          return m && m[1] ? decodeURIComponent(m[1]) : '';
+        };
+        if (param('category')) rows = rows.filter((e) => e.category === param('category'));
+        if (param('outcome')) rows = rows.filter((e) => e.outcome === param('outcome'));
+        if (param('env')) rows = rows.filter((e) => e.environment === param('env'));
+        if (param('actor')) rows = rows.filter((e) => e.actorEmail === param('actor'));
+        if (param('action')) rows = rows.filter((e) => e.action === param('action'));
+        if (param('target')) {
+          const t = param('target').toLowerCase();
+          rows = rows.filter((e) => ((e.target && e.target.label) || '').toLowerCase().indexOf(t) !== -1);
+        }
+        if (param('q')) {
+          const t = param('q').toLowerCase();
           rows = rows.filter((e) => (e.action + ' ' + (e.summary || '')).toLowerCase().indexOf(t) !== -1);
         }
-        return json(200, { total: rows.length, chainTotal: 9, entries: rows,
-                           indexed: true, nextCursor: null, scope: world.scope });
+        world.lastEventsUrl = u;
+        return json(200, {
+          total: rows.length, chainTotal: 9, entries: rows,
+          indexed: true, nextCursor: null, scope: world.scope,
+          // Facets are computed over the whole window, NOT over the filtered
+          // rows — the server does the same, so that picking a person does
+          // not empty the action list of everything they did not do.
+          facets: {
+            actors: [...new Set(EVENTS.map((e) => e.actorEmail))]
+              .map((v) => ({ value: v, count: 1 })),
+            actions: [...new Set(EVENTS.map((e) => e.action))]
+              .map((v) => ({ value: v, count: 1 })),
+          },
+        });
       }
       return json(200, statusBody());
     }
@@ -387,36 +408,115 @@ function statusBody() {
     /Migration Lead role/.test(await page.textContent('#cyg-a-dbody')));
   await page.keyboard.press('Escape');
 
-  // ── 6. Filters ──────────────────────────────────────────────────────────
+  // ── 6. Filters, in the column headers ───────────────────────────────────
   console.log('\n6. Filters');
+
+  check('there is a filter control in every column header',
+    (await page.$$('.cyg-a-filters [data-filter]')).length === 6);
+  check('and each is labelled for a screen reader',
+    await page.$$eval('.cyg-a-filters [data-filter]',
+      (els) => els.every((e) => !!e.getAttribute('aria-label'))));
+  check('the filter row is sticky, so you can still see which column it governs',
+    await page.$eval('.cyg-a-filters th',
+      (e) => getComputedStyle(e).position === 'sticky'));
+
+  await page.selectOption('[data-filter="env"]', 'PROD');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 1,
+    null, { timeout: 6000 });
+  check('the ENV header filters the list', (await page.$$('#cyg-a-rows tr.ev')).length === 1);
+  check('a set filter is visibly set, so an empty table is not mistaken for an empty log',
+    await page.$eval('[data-filter="env"]', (e) => e.classList.contains('on')));
+  check('and a Clear control appears', await page.isVisible('#cyg-a-clear'));
+
+  await page.selectOption('[data-filter="actor"]', 'lead@example.test');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 0,
+    null, { timeout: 6000 });
+  check('two header filters combine rather than replacing each other',
+    /env=PROD/.test(world.lastEventsUrl) && /actor=lead/.test(world.lastEventsUrl));
+  check('and the empty result says so rather than looking broken',
+    /No events match/.test(await page.textContent('#cyg-a-rows')));
+
+  await page.click('#cyg-a-clear');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 3,
+    null, { timeout: 6000 });
+  check('Clear resets every filter at once', (await page.$$('#cyg-a-rows tr.ev')).length === 3);
+  check('and the Clear control goes away with them',
+    (await page.$$('#cyg-a-clear')).length === 0);
+
+  // The person and action lists come from the server's facets, over the whole
+  // window — a dropdown built from the fifty rows on screen silently omits
+  // the person somebody is looking for.
+  check('the person list is built from the whole window, not the page',
+    (await page.$$('[data-filter="actor"] option')).length === 4);
+  check('the action list too', (await page.$$('[data-filter="action"] option')).length === 4);
+  check('and each option says how many events it covers',
+    /\(\d+\)/.test(await page.textContent('[data-filter="actor"]')));
+
+  await page.selectOption('[data-filter="action"]', 'sql.write');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 1,
+    null, { timeout: 6000 });
+  check('the ACTION header filter narrows to one action',
+    (await page.textContent('#cyg-a-rows')).indexOf('sql.write') !== -1);
+  check('picking a person does not empty the action list of everything else',
+    (await page.$$('[data-filter="action"] option')).length === 4);
+  await page.click('#cyg-a-clear');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 3,
+    null, { timeout: 6000 });
+
+  // TARGET had no filter at all before, which on a table this wide is the
+  // column you most want one on.
+  await page.fill('[data-filter="target"]', 'CRM');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 1,
+    null, { timeout: 6000 });
+  check('the TARGET header filter narrows on the target',
+    (await page.textContent('#cyg-a-rows')).indexOf('CRM_PROD') !== -1);
+  check('and it is sent as its own parameter, not folded into the free-text search',
+    /target=CRM/i.test(world.lastEventsUrl) && !/[?&]q=CRM/i.test(world.lastEventsUrl));
+
+  // Typing into a debounced box that rebuilds itself is where focus goes to
+  // die. page.fill() sets a value in one go and would never notice.
+  await page.click('#cyg-a-clear');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 3,
+    null, { timeout: 6000 });
+  await page.focus('[data-filter="target"]');
+  await page.keyboard.type('CR', { delay: 30 });
+  await page.waitForTimeout(700);          // past the debounce and the re-render
+  await page.keyboard.type('M', { delay: 30 });
+  await page.waitForTimeout(700);
+  check('the caret survives the re-render a debounced filter causes',
+    await page.$eval('[data-filter="target"]',
+      (e) => document.activeElement === e && e.value === 'CRM'),
+    await page.$eval('[data-filter="target"]', (e) => e.value));
+  check('and the third keystroke landed in the box, not nowhere',
+    (await page.$$('#cyg-a-rows tr.ev')).length === 1);
+
+  await page.click('#cyg-a-clear');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 3,
+    null, { timeout: 6000 });
+
+  // Free text still spans every column — the header filters narrow one
+  // column each, and neither replaces the other.
+  await page.focus('#cyg-a-q');
+  await page.keyboard.type('batch', { delay: 20 });
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 1,
+    null, { timeout: 6000 });
+  check('the free-text search still spans everything', (await page.$$('#cyg-a-rows tr.ev')).length === 1);
+  check('and typing into it keeps focus too',
+    await page.$eval('#cyg-a-q', (e) => document.activeElement === e && e.value === 'batch'));
+  await page.click('#cyg-a-clear');
+  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 3,
+    null, { timeout: 6000 });
+
   await page.click('#cyg-a-chips [data-cat="prod"]');
   await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 1,
     null, { timeout: 6000 });
-  check('a category chip filters the list', (await page.$$('#cyg-a-rows tr.ev')).length === 1);
+  check('a category chip still filters the list', (await page.$$('#cyg-a-rows tr.ev')).length === 1);
   check('and the chip reports itself pressed',
     await page.getAttribute('#cyg-a-chips [data-cat="prod"]', 'aria-pressed') === 'true');
-  check('gap rows are dropped while a category filter is on — a gap row inside ' +
-        'a filtered list would be claiming something it is not saying',
+  check('gap rows are dropped while a filter is on — a gap row inside a ' +
+        'filtered list would be claiming something it is not saying',
     (await page.$$('#cyg-a-rows tr.gap')).length === 0);
-
-  await page.click('#cyg-a-chips [data-cat=""]');
-  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 3,
-    null, { timeout: 6000 });
-  check('clearing the chip restores the list', (await page.$$('#cyg-a-rows tr.ev')).length === 3);
-
-  await page.selectOption('#cyg-a-outcome', 'denied');
-  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 1,
-    null, { timeout: 6000 });
-  check('the outcome filter narrows it', (await page.$$('#cyg-a-rows tr.ev')).length === 1);
-  await page.selectOption('#cyg-a-outcome', '');
-  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 3,
-    null, { timeout: 6000 });
-
-  await page.fill('#cyg-a-q', 'batch');
-  await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 1,
-    null, { timeout: 6000 });
-  check('search narrows it, debounced', (await page.$$('#cyg-a-rows tr.ev')).length === 1);
-  await page.fill('#cyg-a-q', '');
+  await page.click('#cyg-a-clear');
   await page.waitForFunction(() => document.querySelectorAll('#cyg-a-rows tr.ev').length === 3,
     null, { timeout: 6000 });
 
@@ -480,6 +580,10 @@ function statusBody() {
 
   // ── 8. Export ───────────────────────────────────────────────────────────
   console.log('\n8. Export');
+  check('the CSV export is the primary action on the toolbar',
+    await page.$eval('#cyg-a-csv', (e) => e.classList.contains('primary')));
+  check('and says what it does rather than showing a bare arrow',
+    /Export CSV/.test(await page.textContent('#cyg-a-csv')));
   const dl = page.waitForEvent('download', { timeout: 8000 }).catch(() => null);
   await page.click('#cyg-a-csv');
   const download = await dl;

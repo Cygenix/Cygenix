@@ -372,9 +372,39 @@ function rowMatches(r, f) {
   if (f.action && r.ac !== f.action) return false;
   if (f.outcome && r.o !== f.outcome) return false;
   if (f.env && r.e !== f.env) return false;
+  if (f.source && r.s !== f.source) return false;
   if (f.projectId && r.p !== f.projectId) return false;
+  // Target rows written before `tg` existed fall back to the general search
+  // text. That over-matches slightly on old history — a target filter could
+  // catch a row whose ACTION contained the word — and under-matching would
+  // be worse: it would make every entry from before this field look as
+  // though it had no target at all.
+  if (f.target) {
+    const hay = r.tg !== undefined ? String(r.tg) : String(r.t || '');
+    if (hay.indexOf(f.target) === -1) return false;
+  }
   if (f.q && String(r.t || '').indexOf(f.q) === -1) return false;
   return true;
+}
+
+// The values the column filters offer. Built from the rows in the current
+// WINDOW, not from the page on screen, and not from the user directory:
+// "people who appear in this trail" is the useful list, and a dropdown
+// limited to the fifty rows currently rendered silently hides the person
+// somebody is looking for. Computed from index rows that are already in
+// memory, so it costs nothing extra.
+function facetsFrom(rows) {
+  const actors = new Map(), actions = new Map();
+  for (const r of rows) {
+    if (r.a) actors.set(r.a, (actors.get(r.a) || 0) + 1);
+    if (r.ac) actions.set(r.ac, (actions.get(r.ac) || 0) + 1);
+  }
+  const top = (m, n) => [...m.entries()]
+    .sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))
+    .slice(0, n)
+    .map(([value, count]) => ({ value, count }))
+    .sort((x, y) => x.value.localeCompare(y.value));
+  return { actors: top(actors, 100), actions: top(actions, 100) };
 }
 
 async function queryAudit(store, opts) {
@@ -389,11 +419,16 @@ async function queryAudit(store, opts) {
     actor: o.actor ? String(o.actor).toLowerCase() : '',
     category: o.category || '', action: o.action || '',
     outcome: o.outcome || '', env: o.env || '', projectId: o.projectId || '',
+    source: o.source || '',
+    target: o.target ? String(o.target).toLowerCase() : '',
     q: o.q ? String(o.q).toLowerCase() : '',
   };
 
   const head = (await store.get('audit/head', { type: 'json' })) || { seq: 0 };
-  if (!head.seq) return { total: 0, entries: [], indexed: true, nextCursor: null };
+  if (!head.seq) {
+    return { total: 0, entries: [], indexed: true, nextCursor: null,
+             facets: { actors: [], actions: [] } };
+  }
 
   const keys = monthKeysBetween(
     new Date(f.fromMs || (now - 365 * 86400000)).toISOString(),
@@ -401,19 +436,26 @@ async function queryAudit(store, opts) {
   const pages = await Promise.all(keys.map(k => store.get(k, { type: 'json' }).catch(() => null)));
   const haveIndex = pages.some(Boolean);
 
-  let rows;
+  let rows, inWindow;
   if (haveIndex) {
-    rows = [];
-    for (const p of pages) if (p && Array.isArray(p.rows)) rows.push(...p.rows);
-    rows = rows.filter(r => rowMatches(r, f));
+    inWindow = [];
+    for (const p of pages) if (p && Array.isArray(p.rows)) inWindow.push(...p.rows);
   } else {
     // Unindexed history. Bounded so it cannot run away: the most recent
     // 1000 entries, which is what the old Users & Roles view showed anyway.
     const scan = await readAudit(store, { limit: 1000 });
-    rows = scan.entries
-      .map((e, i) => schema.indexRow(e, e.seq != null ? e.seq : (head.seq - i)))
-      .filter(r => rowMatches(r, f));
+    inWindow = scan.entries
+      .map((e, i) => schema.indexRow(e, e.seq != null ? e.seq : (head.seq - i)));
   }
+  rows = inWindow.filter(r => rowMatches(r, f));
+
+  // Facets come from the window BEFORE the column filters are applied, and
+  // only the date range is honoured. Otherwise picking a person would empty
+  // the action list of every action that person did not perform, and there
+  // would be no way back to the others without clearing the filter you just
+  // set — a dropdown that removes its own options as you use it.
+  const dateOnly = { fromMs: f.fromMs, toMs: f.toMs };
+  const facets = facetsFrom(inWindow.filter(r => rowMatches(r, dateOnly)));
 
   rows.sort((a, b) => b.seq - a.seq);
   const cursor = o.cursor ? parseInt(o.cursor, 10) : 0;
@@ -430,6 +472,7 @@ async function queryAudit(store, opts) {
     chainTotal: head.seq,
     entries,
     indexed: haveIndex,
+    facets,
     nextCursor: consumed < rows.length && slice.length ? slice[slice.length - 1].seq : null,
   };
 }

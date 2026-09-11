@@ -431,6 +431,14 @@ function indexRow(entry, seq) {
     t: [entry.action, entry.actorEmail, entry.summary,
         entry.target && entry.target.label, entry.target && entry.target.id]
        .filter(Boolean).join(' ').toLowerCase().slice(0, 300),
+    // Just the target, so the TARGET column's own filter narrows on the
+    // target and not on an action or an actor that happens to share a word.
+    // Rows written before this field existed do not have it; queryAudit
+    // falls back to `t` for those rather than silently matching nothing,
+    // which would make old history look like it had no targets at all.
+    tg: [entry.target && entry.target.label, entry.target && entry.target.id,
+         entry.resourceType]
+       .filter(Boolean).join(' ').toLowerCase().slice(0, 200),
   };
 }
 

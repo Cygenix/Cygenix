@@ -386,6 +386,54 @@ function fakeStore(seed) {
   check('the cursor continues rather than repeating',
     page2.entries.length === 1 && page2.entries[0].seq === 1);
 
+  // ── The column filters ──
+  //
+  // TARGET had no filter at all until the headers grew one, and it is the
+  // column you most want one on: "everything that touched CRM_PROD" is the
+  // question an incident starts with.
+  org.invalidateAuditConfig();
+  const tstore = fakeStore();
+  await org.appendAudit(tstore, { action: 'sql.write', actorEmail: 'a@b.c', outcome: 'allowed',
+    target: { type: 'connection', id: 'crm', label: 'Target: CRM_PROD' } });
+  await org.appendAudit(tstore, { action: 'jobs.reorder', actorEmail: 'd@e.f', outcome: 'allowed',
+    target: { type: 'job', id: 'j1', label: 'Job: Nightly Customers' } });
+  // The trap: an event whose ACTION contains the word but whose target does
+  // not. A target filter folded into the general search text would catch it.
+  await org.appendAudit(tstore, { action: 'crm.sync', actorEmail: 'd@e.f', outcome: 'allowed',
+    target: { type: 'job', id: 'j2', label: 'Job: Invoices' } });
+
+  check('the target filter narrows on the target',
+    (await org.queryAudit(tstore, { target: 'crm_prod' })).total === 1);
+  check('and not on an action that happens to share a word',
+    (await org.queryAudit(tstore, { target: 'crm' })).total === 1);
+  check('while the free-text search DOES span both, as it should',
+    (await org.queryAudit(tstore, { q: 'crm' })).total === 2);
+  check('the target filter is case-insensitive',
+    (await org.queryAudit(tstore, { target: 'CRM_PROD' })).total === 1);
+
+  check('the source filter separates browser claims from server observations',
+    (await org.queryAudit(tstore, { source: 'server' })).total === 3 &&
+    (await org.queryAudit(tstore, { source: 'client' })).total === 0);
+
+  // Facets drive the header dropdowns.
+  const fq = await org.queryAudit(tstore, {});
+  check('a query returns the people who appear in the window',
+    fq.facets.actors.length === 2);
+  check('with a count each, so a dropdown can say how much is behind an option',
+    fq.facets.actors.every(a => a.count > 0));
+  check('and the actions too', fq.facets.actions.length === 3);
+  check('sorted by value, so the list does not reorder itself as counts move',
+    fq.facets.actors[0].value < fq.facets.actors[1].value);
+
+  // The one that matters: a dropdown must not remove its own options as you
+  // use it, or there is no way back to the others without clearing the
+  // filter you just set.
+  const filtered = await org.queryAudit(tstore, { actor: 'd@e.f' });
+  check('filtering by a person narrows the ROWS', filtered.total === 2);
+  check('but leaves every action still offered in the dropdown',
+    filtered.facets.actions.length === 3);
+  check('and every person', filtered.facets.actors.length === 2);
+
   // Entries written before the index existed still have to be findable. An
   // empty index is not proof of an empty log.
   const idxKey = schema.indexKeyFor(new Date().toISOString());

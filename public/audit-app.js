@@ -52,8 +52,8 @@
     nextCursor: null,
     indexed: true,
     tab: 'events',
-    filters: { q: '', days: 7, actor: '', outcome: '', env: '', category: '' },
-    actors: [],
+    filters: { q: '', days: 7, actor: '', action: '', target: '', outcome: '', env: '', category: '' },
+    facets: { actors: [], actions: [] },
     selected: null,
     busy: false,
     verifying: false,
@@ -208,6 +208,17 @@
       '.cyg-a-table{width:100%;border-collapse:collapse;font-size:13px}',
       '.cyg-a-table th{text-align:left;font-size:11px;letter-spacing:.08em;color:var(--text2);font-weight:600;background:var(--bg3);padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap}',
       '.cyg-a-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}',
+      /* The filter row. Sticky is deliberate: the whole point of putting a
+         filter in a column header is that you can see which column it
+         governs, and that stops being true the moment it scrolls away. */
+      '.cyg-a-table tr.cyg-a-filters th{background:var(--bg2);padding:6px 8px;border-bottom:1px solid var(--border2);position:sticky;top:0;z-index:1}',
+      '.cyg-a-fsel,.cyg-a-fin{width:100%;min-width:104px;max-width:230px;height:30px;font:inherit;font-size:12px;' +
+        'border:1px solid var(--border2);border-radius:6px;background:var(--bg2);color:var(--text);padding:0 7px}',
+      '.cyg-a-fsel:focus-visible,.cyg-a-fin:focus-visible{outline:2px solid var(--accent);outline-offset:1px}',
+      /* A set filter is tinted, so a table that looks empty because of one is
+         visibly different from a table that is empty. */
+      '.cyg-a-fsel.on,.cyg-a-fin.on{border-color:var(--accent);background:var(--accent-glow);font-weight:600}',
+      '.cyg-a-fsel:disabled{opacity:.5;cursor:not-allowed}',
       '.cyg-a-table tr.ev{cursor:pointer}',
       '.cyg-a-table tr.ev:hover{background:var(--hover-tint)}',
       '.cyg-a-table tr.ev.sel{background:var(--accent-glow)}',
@@ -307,6 +318,8 @@
     }
     if (f.q) p.push('q=' + encodeURIComponent(f.q));
     if (f.actor) p.push('actor=' + encodeURIComponent(f.actor));
+    if (f.action) p.push('action=' + encodeURIComponent(f.action));
+    if (f.target) p.push('target=' + encodeURIComponent(f.target));
     if (f.outcome) p.push('outcome=' + encodeURIComponent(f.outcome));
     if (f.env) p.push('env=' + encodeURIComponent(f.env));
     if (f.category) p.push('category=' + encodeURIComponent(f.category));
@@ -325,20 +338,10 @@
       state.total = r[1].total || 0;
       state.nextCursor = r[1].nextCursor || null;
       state.indexed = r[1].indexed !== false;
+      state.facets = r[1].facets || { actors: [], actions: [] };
       state.loaded = true;
       state.denied = false;
       state.error = null;
-      // The person filter is built from what came back rather than from a
-      // directory call: the useful list is "people who appear in this trail",
-      // not "everyone who has ever signed in".
-      var seen = {};
-      state.events.forEach(function (e) {
-        if (e.actorEmail && !seen[e.actorEmail]) {
-          seen[e.actorEmail] = true;
-          state.actors.push({ email: e.actorEmail, name: e.actorName || e.actorEmail });
-        }
-      });
-      state.actors.sort(function (a, b) { return a.name.localeCompare(b.name); });
     }).catch(function (e) {
       state.loaded = true;
       state.denied = !!e.denied;
@@ -357,6 +360,10 @@
       state.total = d.total || 0;
       state.nextCursor = d.nextCursor || null;
       state.indexed = d.indexed !== false;
+      // Facets are computed over the date window with the column filters
+      // deliberately NOT applied, so picking a person does not empty the
+      // action list of every action that person did not perform.
+      state.facets = d.facets || state.facets;
       state.error = null;
     }).catch(function (e) {
       state.error = e.message;
@@ -524,40 +531,61 @@
 
   // ── Events tab ──────────────────────────────────────────────────────────
 
+  // Which text box had focus, and where the caret was. The panel is rebuilt
+  // from scratch on every reload, and a debounced search that rebuilds the
+  // input the user is typing into takes their focus and their caret with it —
+  // so the second word goes nowhere. Captured before the rebuild, restored
+  // after. (page.fill() in a browser test sets a value in one go and never
+  // notices this, which is why it survived the first round.)
+  function captureFocus() {
+    var a = document.activeElement;
+    if (!a || (a.tagName !== 'INPUT' && a.tagName !== 'SELECT')) return null;
+    var key = a.id || (a.dataset && a.dataset.filter ? 'filter:' + a.dataset.filter : '');
+    if (!key) return null;
+    return { key: key, start: a.selectionStart, end: a.selectionEnd };
+  }
+
+  function restoreFocus(saved) {
+    if (!saved) return;
+    var panel = document.getElementById('cyg-a-panel-events');
+    if (!panel) return;
+    var node = saved.key.indexOf('filter:') === 0
+      ? panel.querySelector('[data-filter="' + saved.key.slice(7) + '"]')
+      : document.getElementById(saved.key);
+    if (!node) return;
+    node.focus();
+    try {
+      if (saved.start != null && node.setSelectionRange) node.setSelectionRange(saved.start, saved.end);
+    } catch (e) { /* selectionRange throws on input types that have no caret */ }
+  }
+
   function renderEventsPanel() {
     var el = document.getElementById('cyg-a-panel-events');
     if (!el) return;
+    var focused = captureFocus();
     var f = state.filters;
     var st = state.status;
 
+    // The toolbar keeps only the two things that are not about one column:
+    // free text across everything, and the exports. Everything else moved
+    // into the column it filters — with six columns and rows this dense, a
+    // separate strip of unlabelled dropdowns makes the reader work out which
+    // control governs which column before they can use either.
     var toolbar = '<div class="cyg-a-toolbar">' +
-      '<input class="cyg-a-in" id="cyg-a-q" type="search" placeholder="Search person, action, target…" ' +
-        'aria-label="Search events" value="' + esc(f.q) + '">' +
-      '<select class="cyg-a-sel" id="cyg-a-range" aria-label="Date range">' +
-        [[1, 'Last 24 hours'], [7, 'Last 7 days'], [30, 'Last 30 days'], [0, 'All time']].map(function (o) {
-          return '<option value="' + o[0] + '"' + (f.days === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
-        }).join('') + '</select>' +
-      '<select class="cyg-a-sel" id="cyg-a-actor" aria-label="Person">' +
-        '<option value="">All people</option>' +
-        state.actors.map(function (a) {
-          return '<option value="' + esc(a.email) + '"' + (f.actor === a.email ? ' selected' : '') + '>' +
-            esc(a.name) + '</option>';
-        }).join('') + '</select>' +
-      '<select class="cyg-a-sel" id="cyg-a-outcome" aria-label="Outcome">' +
-        ['', 'allowed', 'denied', 'failed'].map(function (o) {
-          return '<option value="' + o + '"' + (f.outcome === o ? ' selected' : '') + '>' +
-            (o || 'Any outcome') + '</option>';
-        }).join('') + '</select>' +
-      '<select class="cyg-a-sel" id="cyg-a-env" aria-label="Environment">' +
-        ['', 'PROD', 'STAGING', 'TEST', 'DEV'].map(function (o) {
-          return '<option value="' + o + '"' + (f.env === o ? ' selected' : '') + '>' +
-            (o || 'Any environment') + '</option>';
-        }).join('') + '</select>' +
+      '<input class="cyg-a-in" id="cyg-a-q" type="search" placeholder="Search everything…" ' +
+        'aria-label="Search all columns" value="' + esc(f.q) + '">' +
+      (activeFilterCount()
+        ? '<button class="cyg-a-btn" id="cyg-a-clear" type="button">Clear ' +
+          activeFilterCount() + ' filter' + (activeFilterCount() === 1 ? '' : 's') + '</button>'
+        : '') +
       '<span class="cyg-a-sp"></span>' +
       (st.canExport
-        ? '<button class="cyg-a-btn" id="cyg-a-csv" type="button"><i class="ic ic-download ic-sm"></i>CSV</button>' +
-          '<button class="cyg-a-btn" id="cyg-a-json" type="button"><i class="ic ic-download ic-sm"></i>JSON</button>'
-        : '') +
+        ? '<button class="cyg-a-btn primary" id="cyg-a-csv" type="button">' +
+          '<i class="ic ic-download ic-sm"></i>Export CSV</button>' +
+          '<button class="cyg-a-btn" id="cyg-a-json" type="button">' +
+          '<i class="ic ic-download ic-sm"></i>JSON</button>'
+        : '<span style="font-size:12.5px;color:var(--text3)">Export needs the Platform ' +
+          'Administrator or Auditor role</span>') +
       '</div>';
 
     var chips = '<div class="cyg-a-chips" id="cyg-a-chips">' +
@@ -575,7 +603,8 @@
 
     el.innerHTML = toolbar + chips + unindexed +
       '<div class="cyg-a-card"><div class="cyg-a-tw"><table class="cyg-a-table">' +
-      '<thead><tr><th>WHEN</th><th>WHO</th><th>WHAT</th><th>TARGET</th><th>ENV</th><th>OUTCOME</th></tr></thead>' +
+      '<thead><tr><th>WHEN</th><th>WHO</th><th>WHAT</th><th>TARGET</th><th>ENV</th><th>OUTCOME</th></tr>' +
+      filterRow(f) + '</thead>' +
       '<tbody id="cyg-a-rows">' + rows + '</tbody></table></div>' +
       '<div class="cyg-a-foot"><span>' + state.events.length + ' shown of ' + state.total +
       ' matching · ' + (state.status.scope === 'self' ? 'your own entries' : 'organisation-wide') + '</span>' +
@@ -586,6 +615,66 @@
       '</span></div></div>';
 
     wireEvents();
+    restoreFocus(focused);
+  }
+
+  // How many column filters are set. Drives the Clear button, which exists
+  // because a filtered table that looks empty and a genuinely empty table
+  // look identical, and the second is a much worse thing to conclude about
+  // an audit log.
+  function activeFilterCount() {
+    var f = state.filters;
+    return (f.days !== 7 ? 1 : 0) + (f.actor ? 1 : 0) + (f.action ? 1 : 0) +
+           (f.target ? 1 : 0) + (f.env ? 1 : 0) + (f.outcome ? 1 : 0) +
+           (f.category ? 1 : 0) + (f.q ? 1 : 0);
+  }
+
+  function optionList(values, current, anyLabel) {
+    return [{ value: '', label: anyLabel }].concat(values).map(function (o) {
+      var v = o.value === undefined ? o : o.value;
+      var l = o.label === undefined ? v : o.label;
+      return '<option value="' + esc(v) + '"' + (String(current || '') === String(v) ? ' selected' : '') +
+        '>' + esc(l) + '</option>';
+    }).join('');
+  }
+
+  // One control per column, in the column. Selects where the set of values is
+  // known and bounded, a text box where it is not.
+  //
+  // The person and action lists come from the SERVER's facets, computed over
+  // the whole date window rather than over the fifty rows on screen — a
+  // dropdown built from the current page silently omits the person somebody
+  // is looking for, which on this screen is the difference between "they did
+  // nothing" and "you cannot see it from here".
+  function filterRow(f) {
+    var facets = state.facets || { actors: [], actions: [] };
+    var cell = function (inner) { return '<th class="cyg-a-fcell">' + inner + '</th>'; };
+    // `on` marks a filter that is actually set, so a table that looks empty
+    // because of one is visibly different from a table that is empty.
+    var cls = function (base, set) { return base + (set ? ' on' : ''); };
+    return '<tr class="cyg-a-filters">' +
+      cell('<select class="' + cls('cyg-a-fsel', f.days !== 7) + '" data-filter="days" aria-label="Filter by date range">' +
+        [[1, 'Last 24 hours'], [7, 'Last 7 days'], [30, 'Last 30 days'], [0, 'All time']]
+          .map(function (o) {
+            return '<option value="' + o[0] + '"' + (f.days === o[0] ? ' selected' : '') + '>' +
+              o[1] + '</option>';
+          }).join('') + '</select>') +
+      cell('<select class="' + cls('cyg-a-fsel', f.actor) + '" data-filter="actor" aria-label="Filter by person"' +
+        (state.status.scope === 'self' ? ' disabled title="You are seeing your own entries"' : '') + '>' +
+        optionList(facets.actors.map(function (a) {
+          return { value: a.value, label: a.value + ' (' + a.count + ')' };
+        }), f.actor, 'Anyone') + '</select>') +
+      cell('<select class="' + cls('cyg-a-fsel', f.action) + '" data-filter="action" aria-label="Filter by action">' +
+        optionList(facets.actions.map(function (a) {
+          return { value: a.value, label: a.value + ' (' + a.count + ')' };
+        }), f.action, 'Any action') + '</select>') +
+      cell('<input class="' + cls('cyg-a-fin', f.target) + '" data-filter="target" type="search" ' +
+        'placeholder="Any target" aria-label="Filter by target" value="' + esc(f.target) + '">') +
+      cell('<select class="' + cls('cyg-a-fsel', f.env) + '" data-filter="env" aria-label="Filter by environment">' +
+        optionList(['PROD', 'STAGING', 'TEST', 'DEV'], f.env, 'Any') + '</select>') +
+      cell('<select class="' + cls('cyg-a-fsel', f.outcome) + '" data-filter="outcome" aria-label="Filter by outcome">' +
+        optionList(['allowed', 'denied', 'failed'], f.outcome, 'Any') + '</select>') +
+      '</tr>';
   }
 
   // Gap rows are interleaved by timestamp rather than appended, so a pause
@@ -601,8 +690,11 @@
     var items = state.events.map(function (e) {
       return { ts: Date.parse(e.occurredAt), gap: null, ev: e };
     });
-    if (!state.filters.category && !state.filters.actor && !state.filters.outcome &&
-        !state.filters.env && !state.filters.q) {
+    // Gap rows only on an unfiltered list. A gap row inside a list filtered
+    // to "connections" would be claiming something about connections that it
+    // is not saying.
+    var f = state.filters;
+    if (!f.category && !f.actor && !f.action && !f.target && !f.outcome && !f.env && !f.q) {
       var oldest = items.length ? items[items.length - 1].ts : 0;
       (state.status.gaps || []).forEach(function (g) {
         var at = Date.parse(g.to || g.from);
@@ -1110,6 +1202,11 @@
     });
   }
 
+  function el2(sel) {
+    var panel = document.getElementById('cyg-a-panel-events');
+    return panel && panel.querySelector(sel);
+  }
+
   function wireEvents() {
     var q = document.getElementById('cyg-a-q');
     if (q) {
@@ -1120,18 +1217,35 @@
         searchTimer = setTimeout(reloadEvents, 350);
       });
     }
-    var bind = function (id, key, cast) {
-      var el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener('change', function (e) {
-        state.filters[key] = cast ? cast(e.target.value) : e.target.value;
+    // One delegated listener on the filter row rather than one per control,
+    // because the row is rebuilt on every reload and per-control listeners
+    // would have to be re-attached each time — the same mistake that cost the
+    // capture-state buttons their handler.
+    var frow = el2('.cyg-a-filters');
+    if (frow) {
+      frow.addEventListener('change', function (e) {
+        var key = e.target.dataset && e.target.dataset.filter;
+        if (!key) return;
+        state.filters[key] = key === 'days' ? (parseInt(e.target.value, 10) || 0) : e.target.value;
         reloadEvents();
       });
-    };
-    bind('cyg-a-range', 'days', function (v) { return parseInt(v, 10) || 0; });
-    bind('cyg-a-actor', 'actor');
-    bind('cyg-a-outcome', 'outcome');
-    bind('cyg-a-env', 'env');
+      frow.addEventListener('input', function (e) {
+        // The free-text column filter debounces; the selects do not need to.
+        if (!e.target.dataset || e.target.dataset.filter !== 'target') return;
+        state.filters.target = e.target.value;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(reloadEvents, 350);
+      });
+    }
+
+    var clear = document.getElementById('cyg-a-clear');
+    if (clear) {
+      clear.addEventListener('click', function () {
+        state.filters = { q: '', days: 7, actor: '', action: '', target: '',
+                          outcome: '', env: '', category: '' };
+        reloadEvents();
+      });
+    }
 
     var chips = document.getElementById('cyg-a-chips');
     if (chips) {
@@ -1218,7 +1332,7 @@
       injectStyles();
       mount = el;
       state.loaded = false;
-      state.actors = [];
+      state.facets = { actors: [], actions: [] };
       render();
       return load();
     },
