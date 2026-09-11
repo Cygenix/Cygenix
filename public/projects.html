@@ -333,6 +333,9 @@ body.cyg-collapsed{padding-left:54px}
 
 <div class="toast" id="toast"></div>
 
+<!-- The audit recorder. Projects are created, edited and deleted entirely
+     in this page, so this is the only place those facts exist. -->
+<script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/cygenix-capabilities.js?v=74f812a617" defer></script>
 <script src="/cygenix-sidebar.js?v=c451afc746" defer></script>
 <script>
@@ -744,6 +747,12 @@ function saveProject(){
 
   const now = new Date().toISOString();
   let savedId;
+  // Captured before the write: afterwards the previous values are gone, and
+  // a project entry that says what the scope is now, without saying what it
+  // was, cannot settle an argument about when it changed.
+  const wasProject = _editingId
+    ? JSON.parse(JSON.stringify(_projects.find(x => x.id === _editingId) || {}))
+    : null;
 
   if (_editingId) {
     const i = _projects.findIndex(x => x.id === _editingId);
@@ -780,6 +789,39 @@ function saveProject(){
     }
   }
   saveProjects();
+
+  // ── Audit ───────────────────────────────────────────────────────────────
+  // Scope is what this records. A project's dates, phase, row estimate,
+  // source and target systems and status are the terms of the engagement,
+  // and "when did the cutover date move, and who moved it" is a question
+  // that gets asked on every migration that runs late. The free-text notes
+  // and description are excluded: they are working text that changes
+  // constantly, and a diff of them would be unreadable and would copy the
+  // whole field into an append-only chain on every keystroke's worth of
+  // editing.
+  if (window.CygenixAudit) {
+    const scope = (p) => p ? {
+      name: p.name || null, client: p.client || null, type: p.type || null,
+      ref: p.ref || null, phase: p.phase || null, status: p.status || null,
+      start: p.start || null, end: p.end || null,
+      srcSystem: p.srcSystem || null, tgtSystem: p.tgtSystem || null,
+      rows: p.rows || null, analyst: p.analyst || null, pm: p.pm || null,
+    } : {};
+    const saved = _projects.find(x => x.id === savedId) || {};
+    const changes = wasProject ? window.CygenixAudit.diff(scope(wasProject), scope(saved)) : null;
+    if (!wasProject || (changes && changes.length)) {
+      window.CygenixAudit.record({
+        action: wasProject ? 'project.update' : 'project.create',
+        category: 'projects',
+        target: { type: 'project', id: savedId, label: 'Project: ' + (data.name || savedId) },
+        projectId: savedId,
+        summary: wasProject
+          ? 'Changed project "' + (data.name || savedId) + '": ' + changes.map(c => c.field).join(', ')
+          : 'Created project "' + (data.name || savedId) + '"',
+        changes: changes,
+      });
+    }
+  }
 
   // ── Legacy mirror + sessionStorage refresh ─────────────────────────────
   // Several parts of the codebase (report headers, exports, the Was/Is rule
@@ -856,6 +898,20 @@ function deleteFromModal(){
     sessionStorage.removeItem('cygenix_active_project');
   }
   saveProjects();
+  // Recorded with the count of jobs that were unassigned rather than
+  // deleted, because that is the consequence somebody will want explained
+  // when a job turns up with no project against it.
+  if (window.CygenixAudit) {
+    window.CygenixAudit.record({
+      action: 'project.delete', category: 'projects',
+      target: { type: 'project', id: _editingId, label: 'Project: ' + (p.name || _editingId) },
+      projectId: _editingId,
+      summary: 'Deleted project "' + (p.name || _editingId) + '"' +
+               (projJobs.length ? ' — ' + projJobs.length + ' job' +
+                 (projJobs.length === 1 ? '' : 's') + ' left unassigned' : ''),
+      changes: [{ field: 'jobsUnassigned', before: 0, after: projJobs.length }],
+    });
+  }
   closeProjectModal();
   renderProjects();
   toast('Project deleted.', 'success');

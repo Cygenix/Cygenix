@@ -723,6 +723,21 @@ function saveScript() {
     scripts.unshift(s);
   }
   saveScripts();
+  // The SQL itself is deliberately not sent. It can be long, it can contain
+  // literals copied out of a production table, and the script is recoverable
+  // from the library anyway — what the trail needs is that somebody saved a
+  // script, under what name, against which connection.
+  if (window.CygenixAudit) {
+    window.CygenixAudit.record({
+      action: 'sql.save', category: 'mapping',
+      target: { type: 'script', id: currentScript, label: 'Script: ' + name },
+      summary: (existing ? 'Updated' : 'Saved') + ' SQL script "' + name + '"' +
+               (conn ? ' against ' + conn : ''),
+      changes: [{ field: 'statements', before: null,
+                  after: sql.split(';').filter(function (x) { return x.trim(); }).length },
+                { field: 'connection', before: existing ? (existing.conn || null) : null, after: conn || null }],
+    });
+  }
   setEditorContext('script', currentScript, name);
   renderLibrary();
   setExecStatus('✓ Saved', 'var(--green)');
@@ -750,6 +765,13 @@ async function deleteScript(id) {
     clearResults();
   }
   renderLibrary();
+  if (window.CygenixAudit) {
+    window.CygenixAudit.record({
+      action: 'sql.delete', category: 'mapping',
+      target: { type: 'script', id: id, label: 'Script: ' + s.name },
+      summary: 'Deleted SQL script "' + s.name + '"',
+    });
+  }
   setExecStatus('Script deleted', 'var(--red)');
   setTimeout(()=>setExecStatus('',''), 2000);
 }

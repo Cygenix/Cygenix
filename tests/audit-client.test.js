@@ -392,11 +392,86 @@ return (async function () {
   check('every page that runs the stream engine loads the recorder',
     noRecorder.length === 0, noRecorder.join(', '));
 
+  // ── mapping · data · projects ───────────────────────────────────────────
+  section('5. Mapping, exports and projects');
+
+  const om = pub('object-mapping-app.js');
+  const sqle = pub('sql-editor-app.js');
+  const an = pub('analytics-app.js');
+  const pb = pub('project-builder-app.js');
+  const projPage = pub('projects.html');
+
+  // persistMappingToSavedJob() is called from several places on every small
+  // edit. One entry per call would be one entry per keystroke's worth of
+  // work, in a chain that cannot be pruned.
+  check('mapping edits are coalesced rather than recorded per write',
+    /_auditMapTimer/.test(om) && /setTimeout\(function \(\) \{/.test(om));
+  check('with a quiet period, so one editing burst makes one entry',
+    /AUDIT_MAP_QUIET_MS = \d{3,}/.test(om));
+  check('the recording hangs off the single persist function, not its six callers',
+    (om.match(/auditMappingSave\(\)/g) || []).length === 2);
+  check('and the diff is over counts and query shape, not column by column',
+    /mappedColumns:/.test(om) && /whereClause:/.test(om));
+
+  // The two places where sending the obvious thing would be the mistake.
+  // Scoped to the record payload itself: sql-editor-app.js legitimately puts
+  // `sql` into the script record a few lines above, and a file-wide grep
+  // would either miss the real thing or flag the innocent one.
+  const sqlRecord = (sqle.match(/action: 'sql\.save'[\s\S]*?\n\s*\}\);/) || [''])[0];
+  check('the SQL save record block exists', sqlRecord.length > 50);
+  check('saving a SQL script records the fact, not the SQL',
+    !/\bsql\s*[,}]/.test(sqlRecord) && !/:\s*sql\s*[,}]/.test(sqlRecord));
+  check('and counts the statements instead, which is the useful shape',
+    /field: 'statements'/.test(sqle));
+
+  check('an analytics CSV export is recorded',
+    /action: 'data\.export-csv'/.test(an));
+  check('and a PDF one', /action: 'data\.export-pdf'/.test(an));
+  check('recording the row count, not the rows — the figures are already ' +
+        'in the events the export was built from',
+    /rows\.length - 1/.test(an) && !/rows: rows\b/.test(an));
+
+  check('a project save is told apart from a project create before the write',
+    /const isNew = idx < 0;/.test(pb) && /const was = isNew \? null/.test(pb));
+  check('projects.html captures the previous values before overwriting them',
+    projPage.indexOf('const wasProject') < projPage.indexOf('_projects[i] = { ..._projects[i], ...data'));
+  check('and diffs the terms of the engagement, not the free-text notes',
+    /srcSystem: p\.srcSystem/.test(projPage) && !/notes: p\.notes/.test(projPage));
+  check('deleting a project records how many jobs it left unassigned',
+    /field: 'jobsUnassigned'/.test(projPage));
+  check('an unchanged project save records nothing',
+    /if \(!wasProject \|\| \(changes && changes\.length\)\)/.test(projPage));
+
+  for (const [file, src] of [['object_mapping.html', null], ['sql-editor.html', null],
+                             ['analytics.html', null], ['projects.html', null],
+                             ['project-builder.html', null]]) {
+    check(file + ' loads the recorder', pub(file).indexOf('/cygenix-audit.js') !== -1);
+  }
+
   // Every action these capture points assert has to be one the server accepts.
-  section('5. The new capture points are on the allowlist');
+  section('6. The new capture points are on the allowlist');
   for (const a of ['connection.create', 'connection.edit', 'connection.delete',
-                   'apikey.set', 'apikey.revoke', 'settings.update', 'sysparam.update']) {
+                   'apikey.set', 'apikey.revoke', 'settings.update', 'sysparam.update',
+                   'jobs.rename', 'jobs.trash', 'jobs.restore', 'jobs.delete',
+                   'schedule.create', 'schedule.update', 'schedule.enable', 'schedule.delete',
+                   'run.execute',
+                   'mapping.save', 'sql.save', 'sql.delete',
+                   'data.export-csv', 'data.export-pdf',
+                   'project.create', 'project.update', 'project.delete']) {
     check(a + ' is recordable from the browser', schema.isClientAction(a));
+  }
+
+  // The end of the exercise: every category the brief lists now has at least
+  // one capture point that can actually reach the trail.
+  const wiredCategories = new Set(Object.values(schema.CLIENT_ACTIONS));
+  for (const c of ['security', 'settings', 'connections', 'mapping', 'jobs',
+                   'stream', 'data', 'projects']) {
+    check('the ' + c + ' category has a browser capture point', wiredCategories.has(c));
+  }
+  // access, prod and audit are recorded server-side only, and deliberately:
+  // the browser must not be able to assert a role change or a PROD write.
+  for (const c of ['access', 'prod', 'audit']) {
+    check('the ' + c + ' category is NOT assertable from the browser', !wiredCategories.has(c));
   }
   check('apikey events land in the always-on security category, not settings',
     schema.CLIENT_ACTIONS['apikey.set'] === 'security');

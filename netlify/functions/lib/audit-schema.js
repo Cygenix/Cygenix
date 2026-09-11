@@ -178,6 +178,7 @@ const CLIENT_ACTIONS = {
   'mapping.ai-apply':     'mapping',
   'mapping.save':         'mapping',
   'sql.save':             'mapping',
+  'sql.delete':           'mapping',
   'connection.test':      'connections',
   'connection.create':    'connections',
   'connection.edit':      'connections',
@@ -208,7 +209,10 @@ const CLIENT_ACTIONS = {
   'stream.checkpoint_reset': 'stream',
   'stream.cutover_begin':    'stream',
   'project.create':       'projects',
+  'project.update':       'projects',
   'project.archive':      'projects',
+  'project.delete':       'projects',
+  'data.export-pdf':      'data',
 };
 
 function isClientAction(action) {

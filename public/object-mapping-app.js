@@ -1828,7 +1828,61 @@ function persistMappingToSavedJob(){
       const fn = (window.parent && window.parent.scheduleAutoVersion) || window.scheduleAutoVersion;
       if (typeof fn === 'function') fn(editJobId, 'mapping/SQL saved');
     } catch {}
+    auditMappingSave();
   }catch(e){ /* non-fatal */ }
+}
+
+/* ── Recording a mapping change ────────────────────────────────────────────
+   persistMappingToSavedJob() is called from six places, several of them on
+   every small edit — tick a checkbox, type a WHERE clause, remove a row. One
+   audit entry per call would be one entry per keystroke's worth of work, in
+   an append-only chain, which would make the mapping category unreadable and
+   would push everything else out of a day's view.
+
+   So the entries are coalesced: a timer restarts on every write and fires
+   once the editing stops, recording the NET change since the last entry.
+   That is the shape of the fact anyway — "Priya remapped Orders, 22 columns
+   to 36" is what happened; the thirty intermediate states on the way there
+   are not separately interesting to anyone.
+
+   The diff is over counts and the query shape, not over the mapping itself.
+   A column-by-column diff of a 300-column table produces an entry nobody
+   reads, and the mapping is recoverable from the job's own version history,
+   which is what that exists for. */
+var _auditMapTimer = null;
+var _auditMapBaseline = null;
+var AUDIT_MAP_QUIET_MS = 4000;
+
+function mappingShape(){
+  return {
+    mappedColumns: (columnMapping || []).filter(function (m) { return m.tgtCol; }).length,
+    literals: (columnMapping || []).filter(function (m) { return m.literalValue; }).length,
+    transforms: (columnMapping || []).filter(function (m) { return m.transform; }).length,
+    whereClause: (($('src-where') && $('src-where').value) || '').trim(),
+    groupBy: (($('src-groupby') && $('src-groupby').value) || '').trim(),
+  };
+}
+
+function auditMappingSave(){
+  if (!window.CygenixAudit) return;
+  if (_auditMapBaseline === null) _auditMapBaseline = mappingShape();
+  clearTimeout(_auditMapTimer);
+  _auditMapTimer = setTimeout(function () {
+    try {
+      var now = mappingShape();
+      var changes = window.CygenixAudit.diff(_auditMapBaseline, now);
+      _auditMapBaseline = now;
+      if (!changes.length) return;
+      var label = (srcTable || '?') + ' \u2192 ' + (tgtTable || '?');
+      window.CygenixAudit.record({
+        action: 'mapping.save', category: 'mapping',
+        target: { type: 'mapping', id: editJobId || label, label: 'Mapping: ' + label },
+        summary: 'Changed the mapping for ' + label + ': ' +
+                 changes.map(function (c) { return c.field; }).join(', '),
+        changes: changes,
+      });
+    } catch (e) { /* a mapping edit must not fail because a record did */ }
+  }, AUDIT_MAP_QUIET_MS);
 }
 
 function removeUnmappedCols(){

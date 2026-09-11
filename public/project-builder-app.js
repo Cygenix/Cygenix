@@ -649,6 +649,10 @@ function saveProject() {
   // Connection fields are no longer persisted per-project — they always reflect
   // the Dashboard > Connections global. We only save project metadata + steps.
   const idx = projects.findIndex(p => p.id === project.id);
+  // Captured before the list is written, so a create can be told apart from
+  // an edit. Afterwards they look identical.
+  const isNew = idx < 0;
+  const was = isNew ? null : JSON.parse(JSON.stringify(projects[idx] || {}));
   if (idx >= 0) projects[idx] = project;
   else projects.push(project);
   persistProjectsList();
@@ -656,6 +660,30 @@ function saveProject() {
   localStorage.setItem(ACTIVE_ID_KEY, project.id);
   isDirty = false;
   document.getElementById('dirty-badge').style.display = 'none';
+  if (window.CygenixAudit) {
+    // Only the fields that describe the engagement. The steps and groups are
+    // the working document and change on every save; recording a diff of
+    // them would produce an entry nobody can read and would put the project's
+    // whole contents into an append-only chain every time somebody clicks
+    // Save.
+    const shape = (p) => p ? {
+      name: p.name || null, client: p.client || null, status: p.status || null,
+      cutoverDate: p.cutoverDate || p.cutover || null,
+      groups: (p.groups || []).length, steps: (p.steps || []).length,
+    } : {};
+    const changes = isNew ? null : window.CygenixAudit.diff(shape(was), shape(project));
+    if (isNew || (changes && changes.length)) {
+      window.CygenixAudit.record({
+        action: isNew ? 'project.create' : 'project.update', category: 'projects',
+        target: { type: 'project', id: project.id, label: 'Project: ' + (project.name || project.id) },
+        projectId: project.id,
+        summary: isNew ? 'Created project "' + (project.name || project.id) + '"'
+                       : 'Changed project "' + (project.name || project.id) + '": ' +
+                         changes.map(c => c.field).join(', '),
+        changes: changes,
+      });
+    }
+  }
   showToast('Project saved');
 }
 
@@ -730,6 +758,7 @@ function deleteProjectPrompt(){
   const ok = confirm('Delete "' + (project.name||'this project') + '"?\n\nAll of its groups, jobs and mappings will be removed.\nThis cannot be undone.');
   if (!ok) return;
   const removedId = project.id;
+  const removedName = project.name || '';
   projects = projects.filter(p => p.id !== removedId);
   persistProjectsList();
   // Its saved batches go with it — they are arrangements OF this project's
@@ -742,6 +771,15 @@ function deleteProjectPrompt(){
   document.getElementById('dirty-badge').style.display = 'none';
   refreshProjectSelector();
   hydrateProjectIntoUI();
+  // Recorded against the project that is gone, not the one switched to.
+  if (window.CygenixAudit) {
+    window.CygenixAudit.record({
+      action: 'project.delete', category: 'projects',
+      target: { type: 'project', id: removedId, label: 'Project: ' + (removedName || removedId) },
+      projectId: removedId,
+      summary: 'Deleted project "' + (removedName || removedId) + '" and everything in it',
+    });
+  }
   showToast('Project deleted');
 }
 

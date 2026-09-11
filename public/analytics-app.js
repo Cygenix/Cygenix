@@ -756,6 +756,20 @@ function exportCsv() {
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  // Data leaving the product is worth a row in the trail. The row count and
+  // the tab say what left; nothing about the contents is sent, because the
+  // figures are already in the log's own events and copying them here would
+  // duplicate the data without adding a fact.
+  if (window.CygenixAudit) {
+    window.CygenixAudit.record({
+      action: 'data.export-csv', category: 'data',
+      target: { type: 'export', id: 'analytics-' + activeTab,
+                label: 'Analytics > ' + activeTab },
+      summary: 'Exported ' + (rows.length - 1) + ' row' + (rows.length === 2 ? '' : 's') +
+               ' of ' + activeTab + ' analytics as CSV',
+      projectId: (snapshot && snapshot.projectId) || null,
+    });
+  }
 }
 
 /* The client pack. jsPDF and html2canvas are lazy-loaded from CDN on click,
@@ -792,6 +806,15 @@ async function exportPdf() {
     pdf.text(new Date().toLocaleString('en-GB'), 8, 17);
     pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 8, 21, pw, ph);
     pdf.save('cygenix_analytics_' + activeTab + '_' + new Date().toISOString().slice(0, 10) + '.pdf');
+    if (window.CygenixAudit) {
+      window.CygenixAudit.record({
+        action: 'data.export-pdf', category: 'data',
+        target: { type: 'export', id: 'analytics-' + activeTab,
+                  label: 'Analytics > ' + activeTab },
+        summary: 'Exported the ' + activeTab + ' analytics tab as PDF',
+        projectId: (snapshot && snapshot.projectId) || null,
+      });
+    }
   } catch (e) {
     // The CDN is the one thing here that can fail for a reason the user can
     // act on, so say which step failed rather than "export failed".
