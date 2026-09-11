@@ -54,7 +54,16 @@
       "Bash(mv:*)",
       "Bash(for *)",
       "Bash(until *)",
-      "Bash(while *)"
+      "Bash(while *)",
+      "Bash(node scripts/stamp-assets.js)",
+      "Bash(node scripts/build-routes.js)",
+      "Bash(node scripts/build-icons.js)",
+      "Bash(node scripts/storage-inventory.js)",
+      "Bash(node scripts/check-env.js)",
+      "Bash(git ls-files:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git blame:*)",
+      "Bash(git remote:*)"
     ],
     "deny": [
       "Bash(rm -rf /*)",
