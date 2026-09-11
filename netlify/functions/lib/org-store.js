@@ -43,6 +43,9 @@ const _cache = { at: 0, users: null, assignments: null, classifications: null };
 // prevented by resolveState() interpreting the timestamp rather than
 // trusting the flag.
 const AUDIT_CONFIG_KEY = 'audit/config';
+// Written by lib/audit-retention.js. Read here so verification can start at
+// the purge boundary; requiring that module would make the two circular.
+const AUDIT_CHECKPOINT_KEY = 'audit/checkpoint';
 const _auditCfg = { at: 0, value: null };
 
 // How long a quiet period has to be before the next authenticated request
@@ -265,8 +268,26 @@ async function appendAudit(store, evt, opts) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const head = (await store.get('audit/head', { type: 'json' })) || { seq: 0, hash: '' };
     const seq = head.seq + 1;
+    const key = 'audit/e/' + pad(seq);
+
+    // ── Never write over an occupied sequence ────────────────────────────
+    //
+    // seq is derived from the head blob. If that read is stale — an
+    // eventually-consistent store, a head write that has not landed yet, a
+    // concurrent append — seq can name an entry that ALREADY EXISTS. The
+    // original loop wrote to it anyway and then, when the head check
+    // failed, deleted it: an overwrite followed by a delete of somebody
+    // else's evidence, in the one structure that is supposed to be
+    // append-only.
+    //
+    // It cost one extra read per append to close, on a path that already
+    // does six, and it is worth it. An audit chain that can silently lose
+    // an entry to a stale read is not an audit chain.
+    const occupied = await store.get(key, { type: 'json' }).catch(() => null);
+    if (occupied) continue;          // head is behind; re-read and try again
+
     const entry = rbac.chainEntry(head.hash, { seq, ...built });
-    await store.setJSON('audit/e/' + pad(seq), entry);
+    await store.setJSON(key, entry);
     // Confirm the head has not moved beneath us before advancing it.
     const check = (await store.get('audit/head', { type: 'json' })) || { seq: 0, hash: '' };
     if (check.seq === head.seq) {
@@ -274,7 +295,8 @@ async function appendAudit(store, evt, opts) {
       await appendIndex(store, entry, seq);
       return entry;
     }
-    await store.delete('audit/e/' + pad(seq)).catch(() => {});
+    // Safe to roll back: the occupancy check above proved this key was ours.
+    await store.delete(key).catch(() => {});
   }
   // Fail open on the WRITE only: a lost audit write must not block the
   // user's action after it was authorised — but say so in the logs. The one
@@ -495,27 +517,82 @@ async function auditStats(store, { windowMs = 24 * 3600 * 1000, now = Date.now()
   };
 }
 
+// Walk the chain and report the first entry that does not line up.
+//
+// Where the walk STARTS is the interesting part, because retention deletes
+// the beginning of the chain. Three cases, and they are not equivalent:
+//
+//   from sequence 1        the genuine beginning. prevHash is '' and the
+//                          walk is complete — nothing is assumed.
+//
+//   from a CHECKPOINT      retention purged everything before this entry and
+//                          left a record of its hash, inside the chain, in
+//                          the audit.retention.purge entry that follows it.
+//                          The anchor is checked against that record, so an
+//                          anchor somebody edited is caught here rather than
+//                          silently becoming the new truth.
+//
+//   from a WINDOW          a `limit` smaller than the chain. The first entry
+//                          can only be checked against itself, so the result
+//                          says partial: true. This is a display convenience,
+//                          not evidence, and it is labelled as such.
+//
+// The distinction matters: the second case is a verified start and the third
+// is an assumed one, and an earlier version of this function treated them
+// the same way — which would have let a purge boundary pass as verified when
+// nothing had actually attested it.
 async function verifyChain(store, { limit = 2000 } = {}) {
   const head = (await store.get('audit/head', { type: 'json' })) || { seq: 0 };
-  const from = Math.max(1, head.seq - limit + 1);
+  if (!head.seq) return { ok: true, count: 0, chainStartsAt: 1 };
+
+  const cp = (await store.get(AUDIT_CHECKPOINT_KEY, { type: 'json' }).catch(() => null)) || null;
+  const floor = (cp && cp.anchorSeq) ? cp.anchorSeq : 1;
+  const from = Math.max(floor, head.seq - limit + 1);
+
   const entries = [];
   for (let s = from; s <= head.seq; s++) {
     const e = await store.get('audit/e/' + pad(s), { type: 'json' }).catch(() => null);
     if (!e) return { ok: false, brokenAt: s, reason: 'entry missing' };
     entries.push(e);
   }
-  if (from > 1 && entries.length) {
-    // Partial walk: anchor on the first entry's own hash rather than ''.
-    const sub = entries.slice(1);
-    let prev = entries[0].entryHash;
-    for (const e of sub) {
-      if ((e.prevHash || '') !== prev) return { ok: false, brokenAt: e.seq, reason: 'prev-hash mismatch' };
-      if (rbac.hashEntry(e.prevHash, e) !== e.entryHash) return { ok: false, brokenAt: e.seq, reason: 'entry hash mismatch' };
-      prev = e.entryHash;
+  if (!entries.length) return { ok: true, count: 0, chainStartsAt: floor };
+
+  const total = entries.length;
+  const first = entries[0];
+  let prev = '';
+  let shape = {};
+
+  if (from === 1) {
+    prev = '';
+  } else {
+    // Whatever the reason for not starting at 1, the first entry must at
+    // least hash to itself — that catches an edit to it.
+    if (rbac.hashEntry(first.prevHash, first) !== first.entryHash) {
+      return { ok: false, brokenAt: first.seq, reason: 'entry hash mismatch' };
     }
-    return { ok: true, count: entries.length, partial: true };
+    if (cp && from === cp.anchorSeq) {
+      if (first.entryHash !== cp.anchorHash) {
+        return { ok: false, brokenAt: first.seq,
+                 reason: 'the first surviving entry does not match the retention checkpoint' };
+      }
+      shape = { anchoredOnCheckpoint: true, chainStartsAt: cp.anchorSeq,
+                purgedThroughSeq: cp.purgedThroughSeq || null,
+                purgedTotal: cp.purgedTotal || cp.purgedCount || 0 };
+    } else {
+      shape = { partial: true, chainStartsAt: from };
+    }
+    prev = first.entryHash;
+    entries.shift();
   }
-  return rbac.verifyEntries(entries);
+
+  for (const e of entries) {
+    if ((e.prevHash || '') !== prev) return { ok: false, brokenAt: e.seq, reason: 'prev-hash mismatch' };
+    if (rbac.hashEntry(e.prevHash, e) !== e.entryHash) {
+      return { ok: false, brokenAt: e.seq, reason: 'entry hash mismatch' };
+    }
+    prev = e.entryHash;
+  }
+  return Object.assign({ ok: true, count: total }, shape);
 }
 
 module.exports = {
@@ -523,5 +600,5 @@ module.exports = {
   appendAudit, readAudit, verifyChain,
   loadAuditConfig, saveAuditConfig, invalidateAuditConfig,
   resolveCapture, captureDecision, queryAudit, auditStats, appendIndex,
-  AUDIT_CONFIG_KEY,
+  AUDIT_CONFIG_KEY, AUDIT_CHECKPOINT_KEY,
 };

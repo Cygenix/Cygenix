@@ -57,6 +57,17 @@ const DEFAULT_SETTINGS = {
   storeDiffs: true,        // keep before/after values on change events
   storeIp: true,           // keep the caller's IP in context
   recordAssistant: true,   // record acts Ask Cygenix takes on someone's behalf
+  // What retention's purge is allowed to mean. True copies expired entries
+  // to audit/archive/<from>-<to> before removing them from the live chain —
+  // the organisation still holds them, they are simply off the query path.
+  // False is real erasure, for a tenant whose obligation is data
+  // minimisation rather than retention.
+  //
+  // The default is the one that destroys nothing, because an audit trail is
+  // the last thing that should be deleted by a setting somebody changed
+  // without reading it. Turning it off is itself an audited settings change,
+  // so the decision is on the record.
+  archiveBeforePurge: true,
 };
 
 const DEFAULT_STATE = {
@@ -99,6 +110,7 @@ function normaliseSettings(raw) {
     storeDiffs: r.storeDiffs !== false,
     storeIp: r.storeIp !== false,
     recordAssistant: r.recordAssistant !== false,
+    archiveBeforePurge: r.archiveBeforePurge !== false,
   };
 }
 

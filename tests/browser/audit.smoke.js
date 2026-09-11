@@ -136,7 +136,9 @@ const world = {
     categories: { security: true, access: true, prod: true, audit: true, settings: true, jobs: true },
     retentionDays: 365, pauseMaxMinutes: 240,
     storeDiffs: true, storeIp: true, recordAssistant: true,
+    archiveBeforePurge: true,
   },
+  checkpoint: { purged: false, chainStartsAt: 1 },
   // Deliberately inside the window the three events span. A gap older than
   // the oldest loaded row is correctly NOT drawn — it belongs below the page,
   // and drawing it at the bottom would put it in the wrong place in time.
@@ -154,6 +156,7 @@ function statusBody() {
     changedBy: world.state === 'recording' ? null : 'owner@example.test',
     changedAt: iso(5),
     settings: world.settings,
+    checkpoint: world.checkpoint,
     categories: CATEGORIES,
     alwaysOn: ['security', 'access', 'prod', 'audit'],
     pausePresets: [30, 60, 120, 240],
@@ -193,6 +196,16 @@ function statusBody() {
                              notify: sent.state === 'off'
                                ? { adminsEmailed: false, reason: 'no server-held SMTP credentials' } : null,
                              settings: world.settings });
+        }
+        if (sent.op === 'purge') {
+          world.checkpoint = {
+            purged: true, chainStartsAt: 5, purgedTotal: 4, archived: true,
+            anchorHash: 'a'.repeat(64), anchorAt: iso(600),
+            lastPurgeAt: iso(0), archiveKey: 'audit/archive/0000000001-0000000004',
+          };
+          return json(200, { done: true, purged: 4, deleted: 4, archived: true,
+                             archiveKey: world.checkpoint.archiveKey, retentionDays: 365,
+                             more: false, checkpoint: world.checkpoint });
         }
         if (sent.op === 'settings') {
           if (sent.categories && sent.categories.prod === false) {
@@ -350,6 +363,46 @@ function statusBody() {
     document.getElementById('cyg-a-verifyout').textContent), null, { timeout: 8000 });
   check('verifying reports the result', /9 entries/.test(await page.textContent('#cyg-a-verifyout')));
 
+  // Retention. A chain that has never been purged must say so, rather than
+  // repeating the policy back at the reader as though it had happened.
+  const integrity = () => page.textContent('#cyg-a-panel-integrity');
+  check('the Integrity tab has a retention panel', await page.isVisible('#cyg-a-purge'));
+  check('and says nothing has been purged yet',
+    /Nothing has been purged yet/.test(await integrity()));
+  check('explaining why deleting will not break verification',
+    /checkpoint/.test(await integrity()));
+  check('and claiming no signing key, because there is none',
+    /no signing key involved, and none\s+is claimed/.test((await integrity()).replace(/\s+/g, ' ')) ||
+    /none is claimed/.test(await integrity()));
+
+  page.once('dialog', (d) => d.accept());
+  await page.click('#cyg-a-purge');
+  await page.waitForFunction(() => /Purged 4/.test(
+    document.getElementById('cyg-a-purgeout') ? document.getElementById('cyg-a-purgeout').textContent : ''),
+    null, { timeout: 8000 });
+  check('running retention reports what it purged',
+    /Purged 4 entries \(archived\)/.test(await page.textContent('#cyg-a-purgeout')));
+  check('and the panel now says where the chain begins',
+    /begins at entry <?#?5|begins at entry/.test(await integrity()) &&
+    /#5/.test(await integrity()));
+  check('showing the checkpoint hash in full, not a friendly prefix',
+    (await integrity()).indexOf('a'.repeat(64)) !== -1);
+  check('and naming the archive it went to',
+    /audit\/archive\/0000000001-0000000004/.test(await integrity()));
+
+  // Erasure has to read differently from archiving, because it is different.
+  world.settings.archiveBeforePurge = false;
+  await openAudit();
+  await page.click('#cyg-a-tab-settings');
+  check('with archiving off the settings panel warns that entries are erased',
+    /permanently erased/i.test(await page.textContent('#cyg-a-panel-settings')));
+  check('and says it cannot be undone',
+    /cannot be undone/i.test(await page.textContent('#cyg-a-panel-settings')));
+  world.settings.archiveBeforePurge = true;
+  world.checkpoint = { purged: false, chainStartsAt: 1 };
+  await openAudit();
+  await page.click('#cyg-a-tab-integrity');
+
   // ── 4. Settings ─────────────────────────────────────────────────────────
   console.log('\n4. Capture settings');
   await page.click('#cyg-a-tab-settings');
@@ -368,8 +421,16 @@ function statusBody() {
   const retPost = world.posts.filter((p) => p.op === 'settings' && p.retentionDays).pop();
   check('changing retention posts it', !!retPost && retPost.retentionDays === 90);
 
-  check('the page says plainly that the purge job is not running yet',
-    /not running yet/.test(await page.textContent('#cyg-a-panel-settings')));
+  // This used to assert the opposite — that the purge job did not exist — and
+  // the assertion changing is the point: the copy has to move when the
+  // behaviour does, or the screen keeps telling a reader something that
+  // stopped being true.
+  check('the page says retention runs nightly',
+    /Runs nightly/.test(await page.textContent('#cyg-a-panel-settings')));
+  check('and no longer claims the job is unbuilt',
+    !/not running yet/.test(await page.textContent('#cyg-a-panel-settings')));
+  check('the archive-or-erase choice is offered',
+    await page.isVisible('#cyg-a-panel-settings [data-flag="archiveBeforePurge"]'));
   check('and that admins are notified in-app because there is no server mail',
     /no server-held mail credentials/.test(await page.textContent('#cyg-a-panel-settings')));
 

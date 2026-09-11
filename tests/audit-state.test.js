@@ -331,6 +331,39 @@ function fakeStore(seed) {
   check('while off, a denial is still written (it is an access event)',
     !!(await org.appendAudit(store, { action: 'role.assign', outcome: 'denied' })).entryHash);
 
+  // ── A stale head must never cost an entry ──
+  //
+  // seq comes from the head blob. If that read is stale — eventual
+  // consistency, a head write that has not landed, a concurrent append — it
+  // can name a sequence that ALREADY HAS an entry. The original loop wrote
+  // over it and then, when its head check failed, DELETED it: an overwrite
+  // followed by a delete of somebody else's evidence, in the one structure
+  // that is meant to be append-only. Found by the retention tests, because a
+  // purge is the one caller that reads a lot of old sequences and notices
+  // them going missing.
+  console.log('\nStorage — a stale head must not overwrite an entry');
+  org.invalidateAuditConfig();
+  store = fakeStore();
+  const keep1 = await org.appendAudit(store, { action: 'role.assign', outcome: 'allowed' });
+  const keep2 = await org.appendAudit(store, { action: 'auth.signin', outcome: 'allowed' });
+  check('two entries are in the chain', keep1.seq === 1 && keep2.seq === 2);
+
+  // A head permanently rewound to zero: every attempt computes seq 1, which
+  // is occupied.
+  const trueGet = store.get.bind(store);
+  store.get = async (k) => (k === 'audit/head' ? { seq: 0, hash: '' } : trueGet(k));
+  const lostToStaleHead = await org.appendAudit(store, { action: 'jobs.reorder', outcome: 'allowed' });
+  store.get = trueGet;
+
+  check('an append against a rewound head gives up rather than overwriting',
+    lostToStaleHead === null);
+  check('and entry 1 is still the entry it was',
+    (await store.get('audit/e/0000000001')).entryHash === keep1.entryHash);
+  check('entry 2 too',
+    (await store.get('audit/e/0000000002')).entryHash === keep2.entryHash);
+  check('the chain still verifies — nothing was lost to the stale read',
+    (await org.verifyChain(store, {})).ok);
+
   // ── Fail closed ──
   org.invalidateAuditConfig();
   const brokenStore = fakeStore();

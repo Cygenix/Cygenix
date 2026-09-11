@@ -113,8 +113,21 @@ Netlify Blobs has no transactions, so a simultaneous append can race the head. A
 retry closes the realistic window and `verifyChain` reports a break rather than hiding
 it — state that in any evidence pack rather than claiming unqualified tamper-evidence.
 
-Missing coverage: no AI-provenance fields, no shared redactor, no PDF export, and the
-mapping/conversion/reconciliation/server-object event categories are not yet emitted.
+Extended (Sep 2026) into the full Audit Log at `#view-audit`: eleven categories, four of
+which (`security`, `access`, `prod`, `audit`) cannot be switched off; Recording / Paused /
+Off capture states with lazy expiry; redaction before hashing; a per-month index so the
+Events tab can filter without one blob read per entry; and nightly retention that purges
+behind a checkpoint so everything kept still verifies.
+
+- `lib/audit-schema.js` — the event shape, categories, redaction, the client allowlist
+- `lib/audit-state.js` — capture state, the always-on lock, gap windows
+- `lib/audit-retention.js` — the purge, the checkpoint, archive-or-erase
+- `netlify/functions/audit.js` — the API; `audit-retention.js` — the nightly job
+- `public/audit-app.js` — the screen; `public/cygenix-audit.js` — the browser recorder
+
+Client-recorded events are stamped `source:'client'` and bounded by an allowlist, because
+a great deal happens only in the browser. Still missing: no shared redactor with the rest
+of the product, no PDF export of the trail, and no reconciliation/server-object events.
 
 ## Running, testing, deploying
 

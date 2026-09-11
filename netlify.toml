@@ -46,6 +46,14 @@
 [functions."scheduled-runner"]
   schedule = "* * * * *"
 
+# Audit retention. Nightly, deliberately not on the hour: retention is
+# measured in days so the exact minute is irrelevant, and a run that collided
+# with the scheduler's busiest tick would contend for the same blob store for
+# no reason. Each run is budgeted and idempotent — a backlog is worked down
+# over successive nights, not attempted in one pass.
+[functions."audit-retention"]
+  schedule = "17 3 * * *"
+
 # ── Security headers ─────────────────────────────────────────────────────────
 # There were none of these until the security section went up, and a section
 # that talks about transport while the response carries no headers is the kind

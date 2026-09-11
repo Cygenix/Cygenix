@@ -522,8 +522,16 @@ return (async function () {
   const trail = caps.FEATURES.filter((f) => f.id === 'audit_trail')[0];
   check('the audit_trail capability no longer says AI provenance is unrecorded',
     !/AI provenance is not yet recorded/i.test(trail.detail || ''));
-  check('and it still says what IS missing, rather than going quiet',
+  check('nor that retention is unbuilt — the nightly purge ships',
+    !/not built/i.test(trail.detail || ''));
+  check('it names retention as something that WORKS',
     /retention/i.test(trail.detail || ''));
+  // The caveat that must never come off, because it is still true and
+  // CLAUDE.md requires it wherever tamper-evidence is claimed.
+  check('and it still says tamper-evident rather than tamper-proof',
+    /tamper-evident rather than tamper-proof/i.test(trail.detail || ''));
+  check('naming the reason — the blob store has no transactions',
+    /no transactions/i.test(trail.detail || ''));
 
   // Every action these capture points assert has to be one the server accepts.
   section('7. The new capture points are on the allowlist');

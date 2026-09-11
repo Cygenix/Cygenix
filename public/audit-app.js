@@ -58,6 +58,8 @@
     busy: false,
     verifying: false,
     verifyResult: null,
+    purging: false,
+    purgeResult: null,
   };
 
   var mount = null;
@@ -894,8 +896,16 @@
       '<p>Older events are archived and then purged. A purge writes its own entry and leaves a signed ' +
       'checkpoint, so verification still works across the boundary.</p>' +
       '<div class="cyg-a-radio" id="cyg-a-ret">' + retention + '</div>' +
-      '<div class="cyg-a-note">The purge job is not running yet. Nothing is being deleted, whatever this ' +
-      'is set to — the setting is stored and will apply when it lands.</div></div>' +
+      flag('archiveBeforePurge', 'Archive before purging',
+           'On: expired entries are copied to an archive and removed from the live log — ' +
+           'the organisation still holds them. Off: they are permanently erased.') +
+      '<div class="cyg-a-note">Runs nightly. ' +
+      (cfg.archiveBeforePurge
+        ? 'Nothing is destroyed: expired entries move to an archive and out of the live log.'
+        : '<b>Archiving is off, so expired entries are permanently erased.</b> That is real ' +
+          'deletion and cannot be undone.') +
+      ' Every purge writes its own entry and leaves a checkpoint, so verification still ' +
+      'works across the boundary.</div></div>' +
       '<div class="cyg-a-card cyg-a-pad"><h3>Pause ceiling</h3>' +
       '<p>A pause always has an end, so nobody can forget to switch it back on.</p>' +
       '<div class="cyg-a-radio" id="cyg-a-pmax">' + pauseMax + '</div>' +
@@ -942,7 +952,8 @@
               esc(state.verifyResult.brokenAt) + ' — ' + esc(state.verifyResult.reason))
         : 'Not verified in this session.';
 
-    el.innerHTML = '<div class="cyg-a-card cyg-a-pad">' +
+    el.innerHTML = retentionHtml() +
+      '<div class="cyg-a-card cyg-a-pad">' +
       '<h3><i class="ic ic-chain ic-sm"></i> Hash chain</h3>' +
       '<p>Every entry stores the SHA-256 of the one before it, so editing or removing any past row ' +
       'breaks every hash after it. Verification walks the chain and names the first entry that does ' +
@@ -962,6 +973,77 @@
 
     var vb = document.getElementById('cyg-a-verify');
     if (vb) vb.addEventListener('click', runVerify);
+    var pb = document.getElementById('cyg-a-purge');
+    if (pb) pb.addEventListener('click', runPurge);
+  }
+
+  // What retention has actually DONE, which is a different question from what
+  // it is set to. A chain that starts at sequence 1 has never been purged,
+  // and saying so is more use to a reader than repeating the policy at them.
+  function retentionHtml() {
+    var cp = state.status.checkpoint || { purged: false, chainStartsAt: 1 };
+    var days = state.status.settings.retentionDays;
+    var label = days === 2555 ? '7 years' : days === 90 ? '90 days' : '1 year';
+    var canRun = state.status.canConfigure;
+
+    var body = cp.purged
+      ? '<p>Retention has run. The chain now begins at entry <b>#' + esc(cp.chainStartsAt) +
+        '</b>; <b>' + esc(cp.purgedTotal) + '</b> older ' +
+        (cp.purgedTotal === 1 ? 'entry has' : 'entries have') + ' been ' +
+        (cp.archived ? 'archived and removed from the live log' : '<b>erased</b>') + '. ' +
+        'Verification starts from the checkpoint left at that boundary, so everything ' +
+        'kept is still verifiable.</p>' +
+        '<div class="cyg-a-hash">checkpoint&nbsp;&nbsp;<b>' + esc(cp.anchorHash || '—') + '</b><br>' +
+        'anchored at entry #' + esc(cp.chainStartsAt) +
+        (cp.anchorAt ? ', ' + esc(fmt(cp.anchorAt)) : '') + '<br>' +
+        'last purge ' + (cp.lastPurgeAt ? esc(fmt(cp.lastPurgeAt)) : '—') +
+        (cp.archiveKey ? '<br>archive ' + esc(cp.archiveKey) : '') + '</div>'
+      : '<p>Nothing has been purged yet. The chain still begins at its first entry, so ' +
+        'verification walks the whole of it. Events older than <b>' + esc(label) +
+        '</b> are purged nightly once any exist.</p>';
+
+    return '<div class="cyg-a-card cyg-a-pad" style="margin-bottom:16px">' +
+      '<h3><i class="ic ic-clock ic-sm"></i> Retention</h3>' + body +
+      '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">' +
+      (canRun
+        ? '<button class="cyg-a-btn" id="cyg-a-purge" type="button"' +
+          (state.purging ? ' disabled' : '') + '>' +
+          (state.purging ? 'Running…' : 'Run retention now') + '</button>'
+        : '') +
+      '<span id="cyg-a-purgeout" style="font-size:13px;color:var(--text2)">' +
+      (state.purgeResult || 'Runs nightly. Each run is budgeted, so a large backlog is ' +
+       'worked down over successive nights rather than in one pass.') +
+      '</span></div>' +
+      '<div class="cyg-a-note" style="margin-top:14px"><b>Why deleting does not break ' +
+      'verification.</b> Every purge writes its own entry into the chain first, carrying a ' +
+      'checkpoint of the first surviving entry\'s hash — so the checkpoint is attested by the ' +
+      'chain that continues after it. Altering the checkpoint makes it disagree with that entry; ' +
+      'altering the entry breaks every hash after it. There is no signing key involved, and none ' +
+      'is claimed.</div></div>';
+  }
+
+  function runPurge() {
+    if (!confirm('Run retention now?\n\nEvents older than the retention period are ' +
+        (state.status.settings.archiveBeforePurge
+          ? 'archived and then removed from the live log.'
+          : 'PERMANENTLY ERASED — archiving is switched off.'))) return;
+    state.purging = true;
+    state.purgeResult = null;
+    renderIntegrityPanel();
+    post({ op: 'purge' }).then(function (d) {
+      state.purgeResult = d.purged
+        ? 'Purged ' + d.purged + ' entr' + (d.purged === 1 ? 'y' : 'ies') +
+          (d.archived ? ' (archived)' : ' (erased)') +
+          (d.more ? ' — more remaining, the next run continues' : '')
+        : 'Nothing to purge — ' + esc(d.reason || 'no entry has aged out');
+      toast(d.purged ? 'Purged ' + d.purged : 'Nothing to purge');
+      return load();
+    }).catch(function (e) {
+      state.purgeResult = 'Failed: ' + esc(e.message);
+      toast('Retention run failed: ' + e.message);
+      state.purging = false;
+      renderIntegrityPanel();
+    }).then(function () { state.purging = false; });
   }
 
   function runVerify() {

@@ -19,6 +19,7 @@
 //   POST { op:'record', … }              append one event
 //   POST { op:'status', state, … }       pause / resume / disable / enable
 //   POST|PUT { op:'settings', … }        category toggles, retention, flags
+//   POST { op:'purge' }                  run retention now (audit.configure)
 //
 // ── Who may do what ───────────────────────────────────────────────────────
 //
@@ -72,6 +73,7 @@ const rbac   = require('./lib/rbac');
 const org    = require('./lib/org-store');
 const schema = require('./lib/audit-schema');
 const astate = require('./lib/audit-state');
+const retention = require('./lib/audit-retention');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -180,6 +182,11 @@ exports.handler = async function (event) {
         // resolution and writes the audit.resume.
         const resolved = await org.resolveCapture(store);
         const stats = selfOnly ? null : await org.auditStats(store, {});
+        // What retention has actually done, rather than what it is set to.
+        // The Integrity tab needs the difference: a chain that starts at
+        // sequence 1 has never been purged, and saying so is more useful
+        // than repeating the policy back at the reader.
+        const checkpoint = await retention.checkpointStatus(store);
         const recent = await org.queryAudit(store, { category: 'audit', limit: 100 });
         return ok({
           state: resolved.state,
@@ -194,6 +201,7 @@ exports.handler = async function (event) {
           pauseMaxOptions: astate.PAUSE_MAX_OPTIONS_MIN,
           retentionOptions: astate.RETENTION_OPTIONS_DAYS,
           stats,
+          checkpoint,
           gaps: astate.gapWindows(recent.entries, Date.now()),
           scope: selfOnly ? 'self' : 'organisation',
           canConfigure: rbac.can(actor, 'audit.configure', { mutating: true }).allow,
@@ -428,6 +436,46 @@ exports.handler = async function (event) {
                       summary: 'Changed audit settings: ' + v.changes.map(c => c.field).join(', '),
                       changes: v.changes, detail: { fields: v.changes.map(c => c.field) } });
         return ok({ done: true, settings: saved.settings, changes: v.changes });
+      }
+
+      if (op === 'purge') {
+        // The same job the nightly cron runs, on demand. It exists because
+        // without it the only way to find out whether retention works in a
+        // given deployment is to wait a day and read the function logs —
+        // and because a tenant that has just shortened its retention period
+        // reasonably expects that to take effect before tomorrow.
+        //
+        // Gated on audit.configure, not on audit.read: this is the one
+        // operation in the product that removes entries from the chain, so
+        // it belongs to the roles that answer for the tenant.
+        const d = rbac.can(actor, 'audit.configure', { mutating: true });
+        if (!d.allow) return denied('audit.configure', d);
+
+        const before = await retention.checkpointStatus(store);
+        let result;
+        try {
+          result = await retention.runRetention(store, {});
+        } catch (e) {
+          // The fail-closed path: the purge entry could not be written, so
+          // nothing was deleted. Say that plainly — "failed" on its own
+          // would leave the caller wondering what state the chain is in.
+          return fail(e.auditFailure
+            ? 'Nothing was purged: the record of the purge could not be written'
+            : 'Retention run failed: ' + e.message, e.statusCode || 500);
+        }
+        return ok({
+          done: true,
+          purged: result.purged || 0,
+          deleted: result.deleted || 0,
+          archived: !!result.archived,
+          archiveKey: result.archiveKey || null,
+          retentionDays: result.retentionDays || null,
+          more: !!result.more,
+          reason: result.reason || null,
+          refused: !!result.error,
+          checkpointBefore: before,
+          checkpoint: await retention.checkpointStatus(store),
+        });
       }
 
       return fail('Unknown op: ' + (op || '(none)'), 400);

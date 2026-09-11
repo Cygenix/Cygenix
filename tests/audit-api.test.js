@@ -444,6 +444,45 @@ const is2xx = (r) => r.status >= 200 && r.status < 300;
     await post({ op: 'status', state: 'recording' });
   }
 
+  // ── Retention through the endpoint ──────────────────────────────────────
+  section('10. Running retention on demand');
+  //
+  // The nightly job is tested against a real chain in audit-retention.test.js.
+  // What matters HERE is the door: who may open it, and what the caller is
+  // told.
+  as(['AU']);
+  check('an Auditor may not purge — it is the one operation that removes ' +
+        'entries, so it belongs to the roles that answer for the tenant',
+    (await post({ op: 'purge' })).status === 403);
+  as(['EN']);
+  check('nor a delivery role', (await post({ op: 'purge' })).status === 403);
+  as([]);
+  check('nor a caller with no role at all', (await post({ op: 'purge' })).status === 403);
+
+  as(['OW', 'PA']);
+  const purge = await post({ op: 'purge' });
+  check('an Owner may run it', is2xx(purge));
+  check('and on a chain with nothing aged out it purges nothing rather than erroring',
+    purge.json.purged === 0);
+  check('saying why', /aged out|empty|only remaining/.test(purge.json.reason || ''));
+  check('and reporting the checkpoint state before and after',
+    !!purge.json.checkpointBefore && !!purge.json.checkpoint);
+  check('a chain that has never been purged says so',
+    purge.json.checkpoint.purged === false && purge.json.checkpoint.chainStartsAt === 1);
+
+  check('the status card carries the checkpoint, so the screen can say what ' +
+        'retention has DONE rather than what it is set to',
+    (await get({ what: 'status' })).json.checkpoint.purged === false);
+
+  check('the archive-before-purge choice is a stored setting',
+    (await get({ what: 'status' })).json.settings.archiveBeforePurge === true);
+  const erase = await post({ op: 'settings', archiveBeforePurge: false });
+  check('and switching to outright erasure is accepted', is2xx(erase));
+  check('recorded as a settings change, so the decision is on the record',
+    (await get({ what: 'events', action: 'audit.settings' })).json.entries
+      .some((e) => (e.changes || []).some((c) => c.field === 'archiveBeforePurge')));
+  await post({ op: 'settings', archiveBeforePurge: true });
+
   section('8. Bad input');
   as(['OW', 'PA']);
   check('an unknown query is a 400, not a 500',

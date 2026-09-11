@@ -34,6 +34,14 @@ const PUBLIC_ROUTES = {
   // Invoked by Netlify cron, not by a URL. It authenticates to the services
   // it calls with server-held credentials and reads no caller input.
   'scheduled-runner': 'Netlify scheduled function. No HTTP route; triggered by the platform cron.',
+  // Same shape as scheduled-runner: invoked by the platform cron, not by a
+  // URL, so there is no caller to authenticate. It reads no request input at
+  // all — the retention period comes from the organisation's own stored
+  // settings — and it fails closed, refusing to purge anything it cannot
+  // first record. An administrator who wants to run it on demand goes
+  // through audit.js, which IS gated.
+  'audit-retention': 'Netlify scheduled function. No HTTP route; triggered by the platform cron. ' +
+                     'Reads no caller input and refuses to purge what it cannot first record.',
 };
 
 class AuthzError extends Error {

@@ -226,24 +226,32 @@ var FEATURES = [
     claims: ['row-level reconciliation', 'row-by-row proof', 'reconciliation report'],
     evidence: 'none' },
 
-  // The AI-provenance caveat came off when cygenix-assistant.js started
-  // actually writing actorType:'assistant' with onBehalfOf — not when the
-  // schema gained the fields. tests/audit-client.test.js exercises the write
-  // and then asserts this sentence, so the two cannot drift apart.
+  // Each caveat came off only when something actually did the thing: the
+  // AI-provenance clause when cygenix-assistant.js started writing
+  // actorType:'assistant' with onBehalfOf, and the retention clause when the
+  // nightly purge shipped. tests/audit-client.test.js and
+  // tests/audit-retention.test.js exercise the behaviour and then assert
+  // this sentence, so the claim and the code cannot drift apart.
   //
-  // Still `beta`, and the detail says why rather than leaving a reader to
-  // find out: retention purging is not built. The checkpoint format ships so
-  // verification will survive a purge when it lands, but nothing is being
-  // deleted today and the settings panel says so.
-  { id: 'audit_trail', label: 'Tamper-evident audit trail', status: 'beta', minTier: 'business',
-    detail: 'Hash-chained, append-only, with an admin screen, Recording/Paused/Off capture states, '
-      + 'four categories that cannot be switched off, secret redaction before storage, a '
-      + 'verification endpoint, and AI actions recorded against the person they were taken for. '
-      + 'Retention purging is not built yet.',
+  // `ga`, finally. Every part of the brief this was built against is in and
+  // covered: the states, the always-on lock, redaction, the filtered read,
+  // the export, verification, AI provenance, and retention that purges
+  // without breaking the chain. What remains is the honest limit, and it
+  // stays in the sentence rather than being quietly dropped: Netlify Blobs
+  // has no transactions, so this is tamper-EVIDENT, not tamper-proof.
+  { id: 'audit_trail', label: 'Tamper-evident audit trail', status: 'ga', minTier: 'business',
+    detail: 'Hash-chained and append-only, with an admin screen, Recording/Paused/Off capture '
+      + 'states, four categories that cannot be switched off, secret redaction before storage, '
+      + 'a verification endpoint, AI actions recorded against the person they were taken for, '
+      + 'and nightly retention that leaves a checkpoint so everything kept stays verifiable. '
+      + 'Tamper-evident rather than tamper-proof: the blob store has no transactions, so a '
+      + 'simultaneous append can race the head, and verification reports a break rather than '
+      + 'hiding it.',
     claims: ['audit trail', 'tamper-evident'],
     evidence: 'netlify/functions/lib/rbac.js — chainEntry/verifyEntries; lib/org-store.js; '
-      + 'lib/audit-schema.js; lib/audit-state.js; netlify/functions/audit.js; public/audit-app.js; '
-      + 'public/cygenix-audit.js' },
+      + 'lib/audit-schema.js; lib/audit-state.js; lib/audit-retention.js; '
+      + 'netlify/functions/audit.js; netlify/functions/audit-retention.js; '
+      + 'public/audit-app.js; public/cygenix-audit.js' },
 
   { id: 'rbac', label: 'Role-based access control', status: 'ga', minTier: 'business',
     detail: 'Ten roles, a permission matrix, separation of duties, and environment classification — '
