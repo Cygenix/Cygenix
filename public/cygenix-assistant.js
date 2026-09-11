@@ -680,7 +680,29 @@ function render() {
   if (tourHooks.render) html += tourHooks.render();
 
   el.body.innerHTML = html;
-  el.body.scrollTop = el.body.scrollHeight;
+
+  // Normally the newest thing is at the bottom, so scrolling to the bottom is
+  // right. A tour step is different: it is a card you READ, and scrolling to
+  // the bottom pins its last line against the input box with the title already
+  // gone off the top. So when a step is current, its TOP goes to the top.
+  //
+  // That needs somewhere to scroll TO: the card is the last thing in the
+  // scroller, so without room beneath it the scroll clamps at the end and the
+  // card stays at the bottom. The padding is sized to exactly the gap the card
+  // leaves — enough to lift it, never a screenful of blank.
+  var curStep = el.body.querySelector('.cyga-body .cyg-tour-card:not(.past)')
+    || el.body.querySelector('.cyg-tour-card:not(.past)');
+  if (curStep) {
+    el.body.style.paddingBottom =
+      Math.max(0, el.body.clientHeight - curStep.offsetHeight - 24) + 'px';
+    // Measured, not computed from offsetTop: the card's offsetParent is not
+    // the scroller, so offsetTop answers a question about a different box.
+    el.body.scrollTop += curStep.getBoundingClientRect().top
+      - el.body.getBoundingClientRect().top - 8;
+  } else {
+    el.body.style.paddingBottom = '';
+    el.body.scrollTop = el.body.scrollHeight;
+  }
 
   var busy = state.status === 'thinking' || state.status === 'acting';
   el.send.disabled = busy;

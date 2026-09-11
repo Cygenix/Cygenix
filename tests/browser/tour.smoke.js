@@ -196,6 +196,15 @@ const SEED = () => {
       return first.classList.contains('past') && !first.querySelector('[data-tour-act]');
     }),
     'the transcript should read as history, not as five live control panels');
+  check('the step offers Continue, Back and Exit, each naming its key',
+    await page.evaluate(() => {
+      const cur = [...document.querySelectorAll('.cyg-tour-card')].pop();
+      return [...cur.querySelectorAll('[data-tour-act]')].map((b) => b.textContent.trim()).join('|');
+    }) === 'Y · Continue|B · Back|Exit',
+    await page.evaluate(() => {
+      const cur = [...document.querySelectorAll('.cyg-tour-card')].pop();
+      return [...cur.querySelectorAll('[data-tour-act]')].map((b) => b.textContent.trim()).join('|');
+    }));
 
   await key('y');   // Files
   cov = await spotCovers('.cyg-drive-btn');
@@ -227,6 +236,41 @@ const SEED = () => {
   await type('back');
   c = await card();
   check('typing "back" also reverses', c && /Home/.test(c.title), c && c.title);
+
+  /* ── 3b. The card you are reading is whole, and near the top ─────────────
+     Both of these were real bugs. The cards are flex items in a column flex
+     container, so without flex:0 0 auto they SHRINK once the transcript is
+     taller than the panel — and being overflow:hidden, they clip their own
+     text mid-sentence. Eight stops in, every card was a bare header strip and
+     the step you were on was cut in half by the input box. */
+
+  for (let i = 0; i < 4; i++) { await key('y'); }          // build up a transcript
+  await page.waitForTimeout(1200);
+  await openPanel();
+  await page.waitForTimeout(900);                           // the scroll animates
+
+  const layout = await page.evaluate(() => {
+    const body = document.getElementById('cygaBody');
+    const cards = [...document.querySelectorAll('.cyg-tour-card')];
+    const cur = cards[cards.length - 1];
+    const br = body.getBoundingClientRect(), cr = cur.getBoundingClientRect();
+    return {
+      cards: cards.length,
+      // A card is clipped when its own content is taller than the box it is in.
+      clipped: cards.filter((c) => c.scrollHeight > c.clientHeight + 1).length,
+      everyPastHasItsText: cards.slice(0, -1).every((c) => {
+        const p = c.querySelector('.tc-body p');
+        return p && p.textContent.trim().length > 20;
+      }),
+      currentWhollyVisible: cr.top >= br.top - 1 && cr.bottom <= br.bottom + 1,
+      // "Near the top" — within a third of the panel, not pinned to the input.
+      currentNearTop: (cr.top - br.top) < br.height / 3,
+    };
+  });
+  check('no card is clipped, however long the transcript gets',
+    layout.clipped === 0 && layout.everyPastHasItsText, JSON.stringify(layout));
+  check('and the step you are reading is whole and near the top of the panel',
+    layout.currentWhollyVisible && layout.currentNearTop, JSON.stringify(layout));
 
   /* ── 4. Navigation to another page, and surviving the load ──────────────── */
 

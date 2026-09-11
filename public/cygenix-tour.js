@@ -207,8 +207,14 @@ function injectStyles() {
        the dimming layer, so a spotlight there would cut a hole in nothing. */
     '.cyg-tour-outline{outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px}',
     /* Step card */
+    /* flex:0 0 auto is load-bearing. The assistant body is a column flex
+       container, so by default every card is a flex ITEM and shrinks once the
+       transcript is taller than the panel — and because the card is
+       overflow:hidden, shrinking clips its own text mid-sentence. Eight stops
+       in, the cards had been squeezed down to their header bars and the step
+       you were actually on was cut in half by the input box. */
     '.cyg-tour-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;',
-    '  background:var(--bg2);margin-top:4px}',
+    '  background:var(--bg2);margin-top:4px;flex:0 0 auto}',
     '.cyg-tour-card .tc-head{display:flex;align-items:center;gap:8px;padding:8px 11px;',
     '  background:var(--bg3);border-bottom:1px solid var(--border)}',
     '.cyg-tour-card .tc-sec{font-family:var(--mono,monospace);font-size:10px;letter-spacing:.08em;',
@@ -367,14 +373,17 @@ function cardHtml(step, index, isCurrent) {
   if (!isCurrent) ctl = '';
   else if (step.final) {
     ctl = '<button class="cyga-btn primary" data-tour-act="finish">Finish tour</button>'
-        + '<button class="cyga-btn" data-tour-act="back">Back</button>';
+        + '<button class="cyga-btn" data-tour-act="back">B · Back</button>';
   } else {
     ctl = '<div class="tc-prompt">'
         + (n === 0 ? 'Press <kbd>Y</kbd> to start, or type <b>Exit</b> to stop.'
                    : 'Press <kbd>Y</kbd> to continue, <kbd>B</kbd> to go back, or type <b>Exit</b> to stop.')
         + '</div>'
         + '<button class="cyga-btn primary" data-tour-act="next">' + (n === 0 ? 'Y · Start' : 'Y · Continue') + '</button>'
-        + '<button class="cyga-btn" data-tour-act="back"' + (n === 0 ? ' disabled' : '') + '>Back</button>'
+        // Labelled with its key, like Continue: a button that says only "Back"
+        // does not tell you B works, and the keyboard route is the faster one
+        // once someone has done two stops.
+        + '<button class="cyga-btn" data-tour-act="back"' + (n === 0 ? ' disabled' : '') + '>B · Back</button>'
         + '<button class="cyga-btn" data-tour-act="exit">Exit</button>';
   }
   return '<div class="cyg-tour-card' + (isCurrent ? '' : ' past') + '">'
