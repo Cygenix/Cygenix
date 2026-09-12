@@ -73,7 +73,13 @@ it. Extensionless URLs (`/dashboard`, not `/dashboard.html`) are the public form
 
 **Browser storage is load-bearing and partly authoritative.**
 `public/cygenix-cosmos-sync.js` mirrors a declared `SYNC_KEYS` list to Cosmos on a 3s
-write-behind, triggered by a monkey-patch on `localStorage.setItem`. Every key is
+write-behind, triggered by a monkey-patch on `localStorage.setItem`. The contract is
+"cloud wins on page load, local wins on save" for every key but one: connection
+profiles (`cygenix_profiles_v1` → `connection_profiles`) are **merged** on both ends —
+`public/cygenix-profile-merge.js` in the browser at init, and the byte-identical
+`azure-function/src/profile-merge.js` on every save — because a profile made on one
+machine must survive another machine's autosave. `tests/profile-sync.test.js` keeps
+the two copies identical. Every key is
 classified in `docs/storage-inventory.md`, which is **generated** by
 `scripts/storage-inventory.js`; `tests/storage-inventory.test.js` fails if a key is
 added without a classification. Seven keys are classed **S — Secret**, including

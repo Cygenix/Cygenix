@@ -107,6 +107,10 @@ function cpSetConnMeta(store, connId, meta, user, now) {
     systemDomain: (meta.systemDomain != null ? meta.systemDomain : m.systemDomain) || '',
     owner: (meta.owner != null ? meta.owner : m.owner) || '',
     approver: (meta.approver != null ? meta.approver : m.approver) || '',
+    /* Every record that can be written on two machines carries the time it
+       was last written, because that is what the sync merge decides by —
+       see cygenix-profile-merge.js. A record without one counts as oldest. */
+    updatedAt: now || 0,
   };
   cpEvent(store, { type: 'conn.meta', connId: connId, envClass: store.connMeta[connId].envClass, by: user }, now);
   return store.connMeta[connId];
@@ -188,7 +192,7 @@ function cpSaveProfile(store, draft, savedConns, user, now) {
       + 'supersedesProfileId), so every artifact that ran under it keeps its meaning.');
   }
   if (existing) {
-    Object.assign(existing, draft, { id: existing.id, status: existing.status });
+    Object.assign(existing, draft, { id: existing.id, status: existing.status, updatedAt: now || 0 });
     cpEvent(store, { type: 'profile.updated', profileId: existing.id, by: user }, now);
     return existing;
   }
@@ -197,7 +201,7 @@ function cpSaveProfile(store, draft, savedConns, user, now) {
     srcConnId: null, tgtConnId: null,
     credentialRef: '', projectId: null, owner: user || '', approver: '',
     status: 'draft', effectiveFrom: null, retiredAt: null, supersedesProfileId: null,
-    createdAt: now || 0, createdBy: user || '',
+    createdAt: now || 0, createdBy: user || '', updatedAt: now || 0,
   }, draft);
   store.profiles.push(p);
   cpEvent(store, { type: 'profile.created', profileId: p.id, by: user }, now);
@@ -211,6 +215,7 @@ function cpActivateProfile(store, id, savedConns, user, now) {
   if (errors.length) throw new Error('Profile cannot activate: ' + errors.join(' '));
   p.status = 'active';
   p.effectiveFrom = p.effectiveFrom || (now || 0);
+  p.updatedAt = now || 0;
   cpEvent(store, { type: 'profile.activated', profileId: id, by: user }, now);
   return p;
 }
@@ -220,9 +225,27 @@ function cpRetireProfile(store, id, user, now) {
   if (!p) throw new Error('No profile ' + id);
   p.status = 'retired';
   p.retiredAt = now || 0;
-  if (store.settings.activeProfileId === id) store.settings.activeProfileId = null;
+  p.updatedAt = now || 0;
+  if (store.settings.activeProfileId === id) cpSelectProfile(store, null, user, now);
   cpEvent(store, { type: 'profile.retired', profileId: id, by: user }, now);
   return p;
+}
+
+/* The SELECTED profile — the one this account is working in — as distinct
+   from an ACTIVE one, which is a lifecycle state several profiles can share.
+   One transition writes it, and it stamps selectedAt, because the selection
+   syncs across machines and "which choice is newer" is how two machines
+   that disagree are settled: the person who chose most recently wins. */
+function cpSelectProfile(store, id, user, now) {
+  if (id) {
+    var p = profileOf(store, id);
+    if (!p) throw new Error('No profile ' + id);
+    if (p.status !== 'active') throw new Error('Profile ' + id + ' is ' + p.status + ' — only an active profile can be selected.');
+  }
+  store.settings.activeProfileId = id || null;
+  store.settings.selectedAt = now || 0;
+  cpEvent(store, { type: id ? 'profile.selected' : 'profile.deselected', profileId: id || null, by: user }, now);
+  return store.settings;
 }
 
 /* =======================================================================
@@ -245,6 +268,8 @@ function cpBind(store, artifactType, artifactId, profileId, user, now) {
   }
   var b = { artifactType: artifactType, artifactId: artifactId, profileId: profileId,
     boundAt: now || 0, boundBy: user || '', lastVerifiedAt: null };
+  /* boundAt doubles as the merge timestamp for bindings — a rebind above
+     refreshes it, so the newer binding wins across machines. */
   store.bindings.push(b);
   cpEvent(store, { type: 'binding.created', artifactType: artifactType, artifactId: artifactId,
     profileId: profileId, by: user }, now);
@@ -650,6 +675,7 @@ return {
   cpSaveProfile: cpSaveProfile,
   cpActivateProfile: cpActivateProfile,
   cpRetireProfile: cpRetireProfile,
+  cpSelectProfile: cpSelectProfile,
 
   cpBind: cpBind,
   cpBindingOf: cpBindingOf,

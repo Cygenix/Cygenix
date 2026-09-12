@@ -77,6 +77,11 @@ const CORS = {
 // ── Token-based auth (see entra-auth.js for the rollout plan) ────────────────
 const { enforceAuth, logWarn, logErr } = require('./entra-auth');
 
+// Connection profiles are merged on save, not replaced — the only synced
+// field treated that way. Same bytes as public/cygenix-profile-merge.js;
+// tests/profile-sync.test.js keeps the two identical.
+const { mergeProfileStores } = require('./profile-merge');
+
 // Every Anthropic key used anywhere in this app comes from the caller, through
 // this one door. process.env.ANTHROPIC_API_KEY was removed on 2026-08-28.
 const { userAnthropicKey } = require('./user-anthropic-key');
@@ -1026,14 +1031,40 @@ app.http('data', {
             // jobs did. See the 25-May-2026 debugging session for context.
             'conv_project',     // singular active project blob (cygenix_conv_project)
             'last_snapshots',   // project history array (cygenix_last_snapshots)
+            // Connection profiles (cygenix_profiles_v1). Added Sep-2026. The
+            // ONE field that is merged rather than replaced — see below.
+            'connection_profiles',
           ];
 
-          // Only overwrite fields explicitly present in the payload
+          // Only overwrite fields explicitly present in the payload.
+          //
+          // Except connection profiles. Every other field is "the sender's
+          // copy replaces ours", which is the right contract for a job list
+          // one person is editing and the wrong one for profiles: a profile
+          // created on the laptop while the desktop tab was still open would
+          // vanish the moment the desktop autosaved. Profiles are never
+          // deleted (only retired), so a union loses nothing; the merge in
+          // profile-merge.js decides per record which copy is newer. A body
+          // value of null is the one way to wipe the field — that is what
+          // the console nuke() sends, and nothing else does.
+          //
+          // The merge is wrapped: if it ever throws, the save must still
+          // land rather than 500 the whole sync, so it falls back to the
+          // sender's copy and says so in the log.
           const merged = { ...existing };
           const touched = [];
           for (const key of SYNCABLE) {
             if (Object.prototype.hasOwnProperty.call(body, key)) {
-              merged[key] = body[key];
+              if (key === 'connection_profiles' && body[key] && existing[key]) {
+                try {
+                  merged[key] = mergeProfileStores(existing[key], body[key]);
+                } catch (e) {
+                  ctx.log('connection_profiles merge failed — using the sender\'s copy:', e.message, e.stack);
+                  merged[key] = body[key];
+                }
+              } else {
+                merged[key] = body[key];
+              }
               touched.push(key);
             }
           }

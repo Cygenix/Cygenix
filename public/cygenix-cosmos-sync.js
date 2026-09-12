@@ -45,6 +45,12 @@ const CygenixSync = (() => {
     // via 'replace' strategy below so deletions/trims propagate. Same fix
     // batch as cygenix_conv_project — previously local-only.
     'cygenix_last_snapshots',
+    // Connection profiles — the whole store: profiles, bindings, connection
+    // classifications, run records, and WHICH profile is selected. Added
+    // Sep-2026; until then a profile lived in one browser and nothing else
+    // knew it existed. The one key that is MERGED rather than replaced, on
+    // both sides of the wire — see mergeProfilesIntoCloud() below.
+    'cygenix_profiles_v1',
   ];
 
   const FIELD_MAP = {
@@ -63,7 +69,13 @@ const CygenixSync = (() => {
     // round-trip back on load, the backend needs a matching schema update.
     conv_project:   'cygenix_conv_project',
     last_snapshots: 'cygenix_last_snapshots',
+    // Named for what it is, not `profiles`: the Function App already has a
+    // `profile-*` family of actions for DATA profiling, and a field called
+    // `profiles` in the same document would be read as that.
+    connection_profiles: 'cygenix_profiles_v1',
   };
+  const PROFILES_FIELD = 'connection_profiles';
+  const PROFILES_KEY = 'cygenix_profiles_v1';
 
   // Per-field merge strategy. Two options:
   //
@@ -713,6 +725,53 @@ const CygenixSync = (() => {
     return { ok: true, verified: true, applied: res.applied, skipped: res.skipped, refused: res.refused };
   }
 
+  /* ── Connection profiles: the one field that is merged ────────────────────
+
+     Everything else in this file follows "cloud wins on load, local wins on
+     save". Applied to profiles that contract loses work: a profile created
+     on the laptop while the desktop tab was open disappears when the
+     desktop autosaves, and a profile created before this key was synced is
+     overwritten by an empty cloud copy the first time the page loads. The
+     brief that asked for persistence names both cases.
+
+     So on init the cloud's copy and this browser's copy are UNIONED (the
+     rules are in cygenix-profile-merge.js — the same file the Function App
+     runs on every save) and the union is what gets applied. If the union
+     holds anything the cloud did not, the key is marked dirty and the
+     normal debounced save carries it up; the server merges again, so two
+     machines doing this at once cannot undo each other.
+
+     `cloud` is the load response, mutated in place so applyCloud() applies
+     the union; null means the cloud has nothing for this account yet.
+     Returns true when a save was scheduled.
+
+     The merge module is loaded by a separate <script> so this file has no
+     dependency it cannot check for: without it, profiles fall back to the
+     plain contract, loudly. */
+  function mergeProfilesIntoCloud(cloud) {
+    const M = (typeof window !== 'undefined') && window.CygenixProfileMerge;
+    if (!M) {
+      console.warn('[CygenixSync] cygenix-profile-merge.js is not loaded on this page — '
+        + 'profiles will follow cloud-wins on this load.');
+      return false;
+    }
+    let local = null;
+    try { local = JSON.parse(localStorage.getItem(PROFILES_KEY) || 'null'); } catch { local = null; }
+    const remote = cloud ? cloud[PROFILES_FIELD] : null;
+    if (!local || M.isEmptyStore(local)) return false;          // nothing here to keep
+    const union = remote ? M.mergeProfileStores(remote, local) : local;
+    if (cloud) cloud[PROFILES_FIELD] = union;
+    if (remote && M.storesEqual(union, remote)) return false;   // cloud already has it all
+    // Not localStorage.setItem: applyCloud() writes the union to local a
+    // moment later, and the point here is only to queue the upload.
+    _dirtyKeys.add(PROFILES_KEY);
+    setHealth({ pendingSaves: _dirtyKeys.size });
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(save, 3000);
+    console.log('[CygenixSync] profiles: this browser holds records the cloud lacks — upload queued');
+    return true;
+  }
+
   async function ensureUser() {
     const userId = getUserId(); if (!userId) return null;
     let name = '';
@@ -1052,6 +1111,10 @@ const CygenixSync = (() => {
       projects:           projectsList,
       conv_project:       projectRecord,
       last_snapshots:     {},
+      // null, not an empty store: the server MERGES this field, and an empty
+      // store merged with the existing one is the existing one. null is the
+      // one value it treats as "wipe".
+      connection_profiles: null,
     };
 
     const r = await callApi('save', 'POST', cleanPayload);
@@ -1064,10 +1127,13 @@ const CygenixSync = (() => {
     // Also reset local on this machine so the UI updates immediately.
     for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
       const v = cleanPayload[cloudField];
-      if (v !== undefined) {
+      if (v !== undefined && v !== null) {
         try { _orig(localKey, JSON.stringify(v)); } catch {}
       }
     }
+    // The profile store starts again as a fresh, empty store — not the
+    // string "null", which cpLoad() would hand back as a null store.
+    try { localStorage.removeItem(PROFILES_KEY); } catch {}
     _orig('cygenix_active_project_id', projectRecord.id);
 
     try {
@@ -1190,9 +1256,18 @@ const CygenixSync = (() => {
       console.log('[CygenixSync] init: cloud is empty for this account (verified)');
       _health.lastLoadAt = new Date().toISOString();
       setHealth({ verified: true, degraded: false, reason: '' });
+      // First sign-in from a browser that already holds profiles — the
+      // pre-sync build kept them here and nowhere else. Adopt them.
+      mergeProfilesIntoCloud(null);
     } else {
+      // Profiles are the exception to cloud-authoritative: what is applied
+      // is the UNION of the cloud copy and whatever this browser holds, and
+      // if that union is more than the cloud had, the cloud is brought up
+      // to it. Done before the apply, because the apply overwrites local.
+      const uploaded = mergeProfilesIntoCloud(r.data);
       const res = applyCloud(r.data, 'init-v1.4');
-      console.log('[CygenixSync] Loaded', res.applied, 'keys from Cosmos DB (cloud-authoritative)');
+      console.log('[CygenixSync] Loaded', res.applied, 'keys from Cosmos DB (cloud-authoritative'
+        + (uploaded ? ', profiles merged' : '') + ')');
     }
 
     // Anything already queued from a previous page — the dirty set survives

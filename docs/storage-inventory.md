@@ -44,7 +44,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_inventory` | Project artifact inventory | synced (SYNC_KEYS) | dashboard-app.js, projects.html, report.html +1 |
 | `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +14 |
 | `cygenix_objmap_wip_` | Object-mapping work in progress | NOT SYNCED — WI-1 | schema_explorer.html |
-| `cygenix_profiles_v1` | Connection profiles | NOT SYNCED — WI-1 | cygenix-sidebar.js |
+| `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-sidebar.js |
 | `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_project_settings` | Per-project settings | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, cygenix-integrations.js, cygenix-schema-graph.js +5 |

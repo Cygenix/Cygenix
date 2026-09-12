@@ -80,7 +80,9 @@ for (const c of ['A', 'B', 'C']) {
   // strip comment lines before reading the keys out of it.
   const block = ((sync.match(/const SYNC_KEYS = \[([\s\S]*?)\];/) || [])[1] || '')
     .split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
-  const declared = new Set([...block.matchAll(/'(cygenix_[a-z_]+)'/g)].map(m => m[1]));
+  // Digits allowed: versioned keys (cygenix_profiles_v1) were silently
+  // invisible to this check before, which is the drift it exists to catch.
+  const declared = new Set([...block.matchAll(/'(cygenix_[a-z0-9_]+)'/g)].map(m => m[1]));
   check('the sync engine declares a key list', declared.size > 10, String(declared.size));
 
   // Read from the classification table, not from the scan: several synced keys

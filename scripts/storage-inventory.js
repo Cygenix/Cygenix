@@ -64,7 +64,7 @@ const CLASSES = {
   'cygenix_objmap_wip_*':        ['A', 'Object-mapping work in progress', 'NOT SYNCED — WI-1'],
   'cygenix_batches_v1':          ['A', 'Saved batch arrangements', 'NOT SYNCED — WI-1'],
   'cygenix_effort_estimates_v1': ['A', 'Saved Configurator estimates', 'NOT SYNCED — WI-1'],
-  'cygenix_profiles_v1':         ['A', 'Connection profiles', 'NOT SYNCED — WI-1'],
+  'cygenix_profiles_v1':         ['A', 'Connection profiles', 'synced (SYNC_KEYS)'],
   'cygenix_report':              ['A', 'Generated conversion report', 'NOT SYNCED — WI-1'],
   'cygenix_report_config':       ['A', 'Report configuration', 'NOT SYNCED — WI-1'],
   'cygenix_backup_history':      ['A', 'Restore-module backup history', 'NOT SYNCED — WI-1'],

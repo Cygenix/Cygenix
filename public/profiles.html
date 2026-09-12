@@ -218,10 +218,11 @@ select.inp{cursor:pointer}
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/connections.js?v=403b59bf1a" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
-<script src="/cygenix-cosmos-sync.js?v=d7666a463b" defer></script>
+<script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=c62d183795" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=7e0395ba10" defer></script>
-<script src="/cygenix-profiles.js?v=252aa713a8" defer></script>
+<script src="/cygenix-profiles.js?v=75a8690045" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-sidebar.js?v=c451afc746" defer></script>
 
@@ -394,8 +395,8 @@ function cpRetire(id){
   saveStore(); renderAll();
 }
 function cpSelectActive(id){
-  store.settings.activeProfileId = id;
-  P.cpEvent(store, { type: 'profile.selected', profileId: id, by: userName() }, Date.now());
+  try { P.cpSelectProfile(store, id, userName(), Date.now()); }
+  catch (e) { alert(String(e.message || e)); return; }
   saveStore(); renderAll();
 }
 
