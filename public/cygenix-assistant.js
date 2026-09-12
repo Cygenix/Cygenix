@@ -782,9 +782,36 @@ function renderEmpty() {
     '</div>';
 }
 
+function textOf(content) {
+  if (typeof content === 'string') return content;
+  return (content || []).filter(function (b) { return b && b.type === 'text'; })
+    .map(function (b) { return b.text; }).join('\n').trim();
+}
+
+/* ── Where things are drawn, and why the panel looked dead ─────────────────
+ *
+ * The panel body is two lists: this conversation, then the tour's own
+ * transcript appended underneath through tourHooks.render(). That is right
+ * when the tour is the only thing on screen and wrong the moment somebody
+ * asks a question part-way through it — because the ANSWER goes into the
+ * conversation, which is drawn ABOVE every tour card shown so far. Ten steps
+ * in that is a screen and a half out of view. A user asked three questions,
+ * saw their own words echoed at the bottom and nothing after them, and
+ * reported that the assistant had stopped reacting to messages. It had
+ * answered all three, a very long way up.
+ *
+ * Two changes put that right. The tour now shows the answer inside its own
+ * transcript, directly under the question — see onTurnEnd in cygenix-tour.js
+ * — and says so by returning true, which is what marks the message here so it
+ * is not also drawn in the conversation above. And the LIVE chrome below
+ * (thinking, error, the approval card) is emitted after the tour block rather
+ * than before it, because "Thinking…" drawn where you cannot see it is the
+ * same bug wearing a different hat.
+ */
 function render() {
   if (!el.body) return;
   var html = '';
+  var tourHtml = tourHooks.render ? tourHooks.render() : '';
 
   if (!state.messages.length && !state.trail.length) {
     html += renderEmpty();
@@ -793,9 +820,12 @@ function render() {
   // Interleave conversation and action trail in the order things happened.
   var items = [];
   state.messages.forEach(function (m, i) {
-    var text = typeof m.content === 'string' ? m.content
-      : (m.content || []).filter(function (b) { return b.type === 'text'; })
-          .map(function (b) { return b.text; }).join('\n').trim();
+    // Claimed by the tour and already on screen inside its transcript. Only
+    // while that transcript is actually being drawn: a new tab has the
+    // conversation but not the tour's session transcript, and hiding the
+    // answer there would lose it altogether.
+    if (m.shownByTour && tourHtml) return;
+    var text = textOf(m.content);
     if (text) items.push({ seq: m.seq == null ? i : m.seq, kind: 'msg', role: m.role, text: text });
   });
   state.trail.forEach(function (t) { items.push({ seq: t.seq, kind: 'step', entry: t }); });
@@ -809,6 +839,12 @@ function render() {
     }
   });
 
+  // Everything from here to the end of the function is LIVE chrome — what is
+  // happening right now, and what needs answering right now. It is collected
+  // separately so it can be emitted after the tour transcript: see the note
+  // above render().
+  var live = '';
+
   if (state.status === 'confirm' && state.pending) {
     var a = actions[state.pending.name] || {};
     var preview = '';
@@ -818,7 +854,7 @@ function render() {
     // action?", because it names the thing that is about to happen.
     var heading = '';
     try { heading = a.confirmTitle ? a.confirmTitle(state.pending.input) : ''; } catch (e) { heading = ''; }
-    html += '<div class="cyga-confirm">' +
+    live += '<div class="cyga-confirm">' +
       '<h4>' + esc(heading || ('Approve this ' + (a.effect === 'destructive' ? 'destructive ' : '') + 'action?')) + '</h4>' +
       '<div>' + esc(a.title || state.pending.name) + '</div>' +
       '<pre>' + esc(preview || JSON.stringify(state.pending.input, null, 2)) + '</pre>' +
@@ -837,17 +873,22 @@ function render() {
       ? ' · ' + root.CygenixBusy.__core.formatElapsed(since) : '';
     var what = state.status === 'thinking' ? 'Thinking…'
       : (_busyAction ? _busyAction + '…' : 'Working…');
-    html += '<div class="cyga-step"><span class="cyga-dots"><span></span><span></span><span></span></span>' +
+    live += '<div class="cyga-step"><span class="cyga-dots"><span></span><span></span><span></span></span>' +
       '<span>' + esc(what) + esc(elapsed) + '</span></div>';
   }
   if (state.status === 'error' && state.error) {
-    html += '<div class="cyga-step err"><span class="st-ic">✕</span><span>' + esc(state.error) + '</span></div>';
+    live += '<div class="cyga-step err"><span class="st-ic">✕</span><span>' + esc(state.error) + '</span></div>';
   }
 
   // The tour's own transcript, appended under the conversation. It is kept out
   // of state.messages on purpose: that array IS the Anthropic conversation, and
   // a step card pushed into it would be replayed to the model as a user turn.
-  if (tourHooks.render) html += tourHooks.render();
+  html += tourHtml;
+
+  // ...and the live chrome last of all, so the thing happening right now is at
+  // the bottom of the panel, which is where the panel scrolls to and where the
+  // user is looking. Above a tour transcript it is simply not on screen.
+  html += live;
 
   el.body.innerHTML = html;
 
@@ -986,7 +1027,12 @@ function submit() {
   // walkthrough is worth most is the one moment an LLM-driven one could not
   // run. A true return means the tour consumed the input.
   if (tourHooks.onInput && tourHooks.onInput(text)) { render(); return; }
-  ask(text);
+  // A question asked mid-tour has already been echoed into the tour's own
+  // transcript — pausing is what the tour does when it hands one over, so a
+  // paused tour here means it took a copy. Without this the same sentence
+  // appears twice: once at the bottom where the tour put it, and once at the
+  // top of the panel where the conversation is drawn.
+  ask(text, tourMode === 'paused');
 }
 
 /* ── the agent loop ────────────────────────────────────────────────────── */
@@ -1078,13 +1124,14 @@ function closeParkedRun() {
   if (results.length) state.messages.push({ role: 'user', content: results, seq: nextSeq() });
 }
 
-function ask(text) {
+function ask(text, shownByTour) {
   state.error = null;
   // The budget is per user turn: asking again is what buys the next fifteen.
   state.calls = 0;
   state.lastCall = null;
   closeParkedRun();
-  state.messages.push({ role: 'user', content: text, seq: nextSeq() });
+  state.messages.push({ role: 'user', content: text, seq: nextSeq(),
+    shownByTour: !!shownByTour });
   saveState(); render();
   runTurn();
 }
@@ -1127,7 +1174,19 @@ function settle(status) {
   if (tourHooks.onTurnEnd) {
     // Never let the tour's follow-up throw into the agent loop: the turn is
     // over and the user's answer is on screen either way.
-    try { tourHooks.onTurnEnd(status, state.error || null); } catch (e) {}
+    try {
+      var last = state.messages[state.messages.length - 1];
+      var answer = (last && last.role === 'assistant') ? textOf(last.content) : '';
+      // The tour shows the answer in its own transcript, under the question
+      // that asked it, and returns true to say so. Drawing it a second time in
+      // the conversation would put a copy above every tour card on screen —
+      // which is where the only copy used to go, and why the panel looked like
+      // it was ignoring people. See the note above render().
+      if (tourHooks.onTurnEnd(status, state.error || null, answer) === true && last) {
+        last.shownByTour = true;
+        saveState();
+      }
+    } catch (e) {}
   }
   render();
 }

@@ -122,7 +122,7 @@ check('every region hook is present in the markup',
 const tourJs = read('public', 'cygenix-tour.js');
 
 check('the tour is intercepted BEFORE the API-key gate',
-  /tourHooks\.onInput[\s\S]{0,200}ask\(text\)/.test(assistantJs)
+  /tourHooks\.onInput[\s\S]{0,500}ask\(text,/.test(assistantJs)
   && assistantJs.indexOf('tourHooks.onInput') < assistantJs.indexOf('function ask('),
   'a new user has no key — intercepting after the gate would make the tour unreachable');
 check('and the no-key empty state offers it',
@@ -194,8 +194,28 @@ check('a free-text question pauses the tour before handing over to the model',
 check('and the resume prompt comes back on the assistant\'s turn ending',
   /onTurnEnd:\s*onTurnEnd/.test(tourJs) && /resumePromptHtml\(\)/.test(tourJs));
 check('a failed answer still hands the tour back rather than killing it',
-  /status === 'error'[\s\S]{0,260}pushNote\(resumePromptHtml/.test(tourJs)
-  || /could not answer that[\s\S]{0,400}resumePromptHtml/.test(tourJs));
+  /could not answer that[\s\S]{0,700}pushNote\(resumePromptHtml/.test(tourJs));
+
+/* The answer has to land in THIS transcript, under the question. The panel
+   draws the conversation above the tour, so an answer left there sits above
+   every card shown so far — ten steps in, off the top of a panel that scrolls
+   to the bottom. Three questions, three answers, and a user who reported that
+   nothing was responding. */
+check('the answer is shown in the tour transcript, not left in the conversation',
+  /function onTurnEnd\(status, error, answer\)/.test(tourJs)
+  && /pushNote\(esc\(text\)\)/.test(tourJs),
+  'onTurnEnd must take the answer and push it into the transcript');
+check('and it tells the assistant so, to stop a second copy being drawn above',
+  /shown = true;[\s\S]{0,600}return shown;/.test(tourJs));
+check('a turn that wrote nothing still says something rather than going silent',
+  /finished without a written answer/.test(tourJs));
+check('the assistant only hides a message the tour actually claimed',
+  /=== true && last\)[\s\S]{0,120}shownByTour = true/.test(assistantJs)
+  && /m\.shownByTour && tourHtml/.test(assistantJs),
+  'hiding it with no tour transcript on screen would lose the answer entirely');
+check('the live rows — thinking, error, the approval card — are drawn below the tour',
+  /html \+= tourHtml;[\s\S]{0,400}html \+= live;/.test(assistantJs),
+  '"Thinking…" rendered where nobody can see it is the same bug in a hat');
 check('resuming redraws the paused step and cannot advance it',
   /function resumeTour\(\)[\s\S]{0,420}T\.resume\(tour\.st\)[\s\S]{0,420}show\(\)/.test(tourJs)
   && !/function resumeTour\(\)[\s\S]{0,420}T\.next/.test(tourJs));

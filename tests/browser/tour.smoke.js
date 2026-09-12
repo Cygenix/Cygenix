@@ -431,6 +431,46 @@ const SEED = () => {
   check('a resume prompt is offered, naming the paused step',
     /Paused at step/.test(body) && body.indexOf(atStep) !== -1);
 
+  /* THE ANSWER HAS TO BE WHERE THE QUESTION WAS.
+   * The panel draws the conversation first and the tour transcript under it,
+   * so an answer left in the conversation lands above every card shown so far
+   * — ten steps in that is off the top of a panel that scrolls to the bottom.
+   * A user asked three questions, saw their words echoed and nothing after
+   * them, and reported that the assistant had stopped responding. Position on
+   * screen is the assertion; "the text is somewhere in the DOM" is what
+   * passed while the bug was live. */
+  check('the answer is on screen at all', /points Cygenix at one database/.test(body));
+  const order = await page.evaluate(() => {
+    const b = document.getElementById('cygaBody');
+    const nodes = [...b.children];
+    const at = (pred) => nodes.findIndex(pred);
+    return {
+      question: at((n) => /can you connect and test/.test(n.textContent)),
+      answer: at((n) => /points Cygenix at one database/.test(n.textContent)),
+      prompt: at((n) => /Paused at step/.test(n.textContent)),
+      copies: nodes.filter((n) => /points Cygenix at one database/.test(n.textContent)).length,
+      qCopies: nodes.filter((n) => /can you connect and test/.test(n.textContent)).length,
+      cards: nodes.filter((n) => n.classList.contains('cyg-tour-card')).length,
+    };
+  });
+  check('the question is echoed once, not once by the tour and once above it',
+    order.qCopies === 1, JSON.stringify(order));
+  check('the answer comes AFTER the question that asked it, not above the tour',
+    order.answer > order.question && order.question > order.cards,
+    JSON.stringify(order));
+  check('and before the resume prompt, so the two read as one exchange',
+    order.answer < order.prompt, JSON.stringify(order));
+  check('it is drawn once, not once here and once up in the conversation',
+    order.copies === 1, JSON.stringify(order));
+  check('the answer is visible without scrolling up, where the panel already is',
+    await page.evaluate(() => {
+      const b = document.getElementById('cygaBody');
+      const a = [...b.children].find((n) => /points Cygenix at one database/.test(n.textContent));
+      if (!a) return false;
+      const br = b.getBoundingClientRect(), ar = a.getBoundingClientRect();
+      return ar.bottom > br.top && ar.top < br.bottom;
+    }));
+
   // Several questions in a row, which the brief calls out explicitly.
   await type('and what about PROD?');
   await page.waitForTimeout(1500);

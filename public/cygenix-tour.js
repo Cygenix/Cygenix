@@ -839,16 +839,41 @@ function focusInput() {
    this is where it puts its hand back up.
 
    A failed call must never end or corrupt the tour, so an error gets a
-   friendly sentence and the same resume prompt as a success. */
-function onTurnEnd(status, error) {
-  if (!tour || !isPaused()) return;
+   friendly sentence and the same resume prompt as a success.
+
+   THE ANSWER IS SHOWN HERE, NOT IN THE CONVERSATION
+   The panel draws the conversation first and this transcript underneath it.
+   That is fine until somebody asks a question ten steps in: the answer goes
+   into the conversation, which means ABOVE ten tour cards — a screen and a
+   half out of view, while the panel scrolls to the bottom. A user asked three
+   questions in a row, saw their own words echoed and nothing after them, and
+   reported that the assistant had stopped responding. It had answered all
+   three, a very long way up.
+
+   So the answer is pushed into this transcript, directly under the question,
+   and returning true tells the assistant it is on screen and must not draw a
+   second copy above. */
+function onTurnEnd(status, error, answer) {
+  if (!tour || !isPaused()) return false;
+  var shown = false;
+  var text = String(answer == null ? '' : answer).trim();
   if (status === 'error') {
     pushNote('Ask Cygenix could not answer that'
       + (error ? ' — ' + esc(String(error)) : '')
       + '. You can keep going with the tour.');
+  } else if (text) {
+    pushNote(esc(text));
+    shown = true;
+  } else {
+    /* A turn that did something but wrote nothing. The steps it took are in
+       the assistant's own trail; saying so beats leaving a question that
+       visibly went nowhere. */
+    pushNote('Ask Cygenix finished without a written answer — anything it did '
+      + 'is listed in the steps above.');
   }
   pushNote(resumePromptHtml());
   if (A) A.refresh();
+  return shown;
 }
 
 /* ── Coming back to a tour that was left running ──────────────────────────
