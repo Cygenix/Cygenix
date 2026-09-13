@@ -230,14 +230,22 @@ check('report names lead with the profile id — a governance record names its d
 const PAGE = fs.existsSync(__dirname + '/../public/profiles.html')
   ? fs.readFileSync(__dirname + '/../public/profiles.html', 'utf8') : '';
 const SIDE = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
+const HAIRLINE = fs.readFileSync(__dirname + '/../public/cygenix-status-hairline.js', 'utf8');
 const DASH = fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8');
 const DQ = fs.readFileSync(__dirname + '/../public/data-quality.html', 'utf8');
 const DG = fs.readFileSync(__dirname + '/../public/data-generator.html', 'utf8');
 
 check('the Profiles page exists, loads the engine and mounts the sidebar',
   /cygenix-profiles\.js/.test(PAGE) && /data-active="profiles"/.test(PAGE));
-check('the sidebar offers Profiles beside Connections and renders the environment banner',
-  /key:'profiles'/.test(SIDE) && /cyg-envbar/.test(SIDE) && /cygenix_profiles_v1/.test(SIDE));
+check('the sidebar offers Profiles beside Connections', /key:'profiles'/.test(SIDE));
+// The environment indicator moved out of the sidebar in Sep-2026 — it is the
+// status hairline now, in its own module, because as a 22px bar at z-index
+// 2000 it painted over the assistant panel's header. What matters here is only
+// that the product still tells you which profile governs the session, and that
+// there is exactly one implementation of it. See tests/status-hairline.test.js.
+check('and the environment indicator still exists, in one place',
+  /cyg-envbar/.test(HAIRLINE) && /cygenix_profiles_v1/.test(HAIRLINE)
+  && !/#cyg-envbar\{position:fixed/.test(SIDE));
 check('Save as… asks for the environment class and stores connection meta',
   /cpSetConnMeta|envClass/.test(DASH) && /UNKNOWN/.test(DASH));
 check('locked connections refuse rename and delete',

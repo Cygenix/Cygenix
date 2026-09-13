@@ -255,6 +255,194 @@ const server = http.createServer((req, res) => {
   check('an Auditor does — reading this screen is the whole role',
     await page.evaluate(() => !!document.querySelector('.cyg-nav-item[data-key="audit"]')));
 
+  /* ── The status hairline ────────────────────────────────────────────────
+   *
+   * THE BUG IT REPLACED
+   * #cyg-envbar was a fixed 22px bar at z-index 2000. The Ask Cygenix panel
+   * is also fixed at top 0, at z-index 290, so the bar painted over its
+   * header: the New and ✕ buttons start at y=12, which put the top 10px of
+   * both under the bar. A click there navigated to /profiles instead of
+   * pressing the button.
+   *
+   * That is not something a source test can see. What matters is what is at
+   * a point on the screen, so every check below asks the browser what it
+   * would hit — elementFromPoint — rather than what the CSS says.
+   */
+  const seedProfiles = (envClass, activeId) => page.evaluate(([env, id]) => {
+    localStorage.setItem('cygenix_profiles_v1', JSON.stringify({
+      v: 1, profiles: [{ id: 'FIN-DEV-01', name: 'Conv_DM to Azure', envClass: env, status: 'active' }],
+      bindings: [], connMeta: {}, runRecords: [], events: [],
+      settings: { envClasses: [], activeProfileId: id, selectedAt: 1 },
+    }));
+  }, [envClass, activeId]);
+
+  const barBox = () => page.evaluate(() => {
+    const b = document.getElementById('cyg-envbar');
+    return b ? b.getBoundingClientRect().height : null;
+  });
+  const hitAt = (x, y) => page.evaluate(([px, py]) => {
+    const n = document.elementFromPoint(px, py);
+    return n ? (n.id || n.className || n.tagName) : null;
+  }, [x, y]);
+
+  await seedProfiles('DEV', 'FIN-DEV-01');
+  await open('/dashboard');
+  await page.waitForTimeout(400);
+
+  check('the hairline renders once a profile exists',
+    (await page.evaluate(() => !!document.getElementById('cyg-envbar'))));
+  check('and rests at 2px, not the old 22', (await barBox()) === 2, await barBox());
+  check('reserving only those 2px of the page',
+    (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '2px');
+
+  // 1. The assistant panel's buttons are clickable to their topmost pixel.
+  await page.evaluate(() => window.CygenixAssistant && window.CygenixAssistant.open());
+  await page.waitForSelector('#cygaClose', { state: 'visible', timeout: 5000 });
+  // The panel slides in over .22s; a rect read mid-flight is off-screen and
+  // elementFromPoint answers null, which would read as a pass-shaped failure.
+  await page.waitForTimeout(500);
+  const btnTops = await page.evaluate(() => ['cygaClose', 'cygaClear'].map((id) => {
+    const r = document.getElementById(id).getBoundingClientRect();
+    return { id, x: Math.round(r.left + r.width / 2), y: Math.round(r.top) + 1 };
+  }));
+  check('the assistant panel is actually on screen to be tested',
+    btnTops.every((b) => b.x > 0 && b.x < 1440 && b.y > 0), JSON.stringify(btnTops));
+  for (const b of btnTops) {
+    const who = await hitAt(b.x, b.y);
+    check('the assistant\'s ' + b.id + ' button is hittable at its very top pixel', who === b.id,
+      'got ' + who + ' — this is the bug the hairline exists to fix');
+  }
+
+  // 3. Crossing the top edge quickly must not open it.
+  await page.mouse.move(700, 1);
+  await page.waitForTimeout(60);
+  await page.mouse.move(700, 400);
+  await page.waitForTimeout(500);
+  check('sweeping across the top edge does NOT open the line — the 140ms delay holds',
+    (await barBox()) === 2, await barBox());
+
+  // 2. Hovering and leaving moves nothing on the page.
+  const yBefore = await page.evaluate(() => {
+    const n = document.querySelector('.page, main, #cyg-sidebar-mount + *') || document.body.children[1];
+    return n ? n.getBoundingClientRect().top : 0;
+  });
+  await page.mouse.move(700, 3);
+  await page.waitForTimeout(350);
+  check('holding the pointer at the top edge opens it to 22px', (await barBox()) === 22, await barBox());
+  check('and the text becomes readable',
+    /FIN-DEV-01/.test(await page.textContent('#cyg-envbar')));
+  const yDuring = await page.evaluate(() => {
+    const n = document.querySelector('.page, main, #cyg-sidebar-mount + *') || document.body.children[1];
+    return n ? n.getBoundingClientRect().top : 0;
+  });
+  check('expanding overlays the page rather than pushing it — NO vertical movement',
+    Math.abs(yDuring - yBefore) < 0.5, yBefore + ' -> ' + yDuring);
+
+  await page.mouse.move(700, 500);
+  await page.waitForTimeout(600);
+  check('and it settles back to a hairline when the pointer leaves', (await barBox()) === 2, await barBox());
+
+  // The collapsed line must not intercept a click meant for the page.
+  check('a click at the very top edge does not land on the profile link while collapsed',
+    (await hitAt(700, 1)) === 'cyg-envbar-hit');
+  check('and the collapsed line itself takes no pointer events',
+    (await page.evaluate(() => getComputedStyle(document.getElementById('cyg-envbar')).pointerEvents)) === 'none');
+
+  // 6. The busy bar still wins the strip.
+  check('the busy bar still sits above the hairline',
+    await page.evaluate(() => {
+      const b = document.querySelector('.cygbusy'), h = document.getElementById('cyg-envbar');
+      if (!b || !h) return false;
+      return Number(getComputedStyle(b).zIndex) > Number(getComputedStyle(h).zIndex);
+    }));
+
+  // 5. Keyboard.
+  await page.evaluate(() => document.getElementById('cyg-envbar').focus());
+  await page.waitForTimeout(400);          // the 180ms height transition, with room
+  check('focusing the profile link expands it, so tabbing does not land on an invisible link',
+    (await barBox()) === 22, await barBox());
+  await page.evaluate(() => document.getElementById('cyg-envbar').blur());
+  await page.waitForTimeout(120);
+
+  // 4. Red locks open, pushes the page down, and moves the assistant below it.
+  await seedProfiles('PRD', 'FIN-DEV-01');
+  await open('/dashboard');
+  await page.waitForTimeout(400);
+  check('a PRD profile locks the bar open at 22px', (await barBox()) === 22, await barBox());
+  check('the page concedes the space — production owns it',
+    (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '22px');
+  check('and the assistant panel starts BELOW the bar rather than under it',
+    (await page.evaluate(() => getComputedStyle(document.querySelector('.cyga')).top)) === '22px');
+  await page.mouse.move(700, 3); await page.waitForTimeout(350);
+  check('hover does nothing to a locked bar', (await barBox()) === 22);
+  await page.mouse.move(700, 500);
+
+  // Red also covers a session with nothing selected — every write is blocked.
+  await seedProfiles('DEV', null);
+  await open('/dashboard');
+  await page.waitForTimeout(400);
+  check('no profile selected is red and locked too', (await barBox()) === 22, await barBox());
+  check('and says why', /writes are blocked/i.test(await page.textContent('#cyg-envbar')));
+
+  // Before the first profile exists, nothing changes anywhere.
+  await page.evaluate(() => localStorage.removeItem('cygenix_profiles_v1'));
+  await open('/dashboard');
+  await page.waitForTimeout(400);
+  check('with no profiles at all there is no bar and no reserved space',
+    !(await page.evaluate(() => !!document.getElementById('cyg-envbar')))
+    && (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '0px');
+
+  // 8. Touch: no hover, so tap must open it.
+  {
+    const tctx = await browser.newContext({ viewport: { width: 900, height: 800 }, hasTouch: true });
+    // Both init scripts go on the CONTEXT, before any page exists, or the
+    // first navigation runs without them and the auth gate bounces the page.
+    await tctx.addInitScript(() => {
+      const exp = String(Date.now() + 3600e3);
+      for (const s of [localStorage, sessionStorage]) {
+        s.setItem('cygenix_token', 'smoke'); s.setItem('cygenix_expires', exp);
+      }
+      localStorage.setItem('cygenix_onboarded', '1');
+      localStorage.setItem('cygenix_user', JSON.stringify({ email: 'you@example.test', name: 'You' }));
+      localStorage.setItem('cygenix_tier', 'pro');
+      localStorage.setItem('cygenix_cookie_consent', 'all');
+      // The MSAL account record: without it auth-gate.js bounces the page to
+      // /login?reason=protected and the hairline never gets to render.
+      localStorage.setItem('acct-cygenix.ciamlogin.com-x', JSON.stringify({
+        homeAccountId: 'x', environment: 'cygenix.ciamlogin.com', authorityType: 'MSSTS',
+        username: 'you@example.test', localAccountId: 'x', tenantId: 'x' }));
+      localStorage.setItem('cygenix_profiles_v1', JSON.stringify({
+        v: 1, profiles: [{ id: 'FIN-DEV-01', name: 'Conv_DM', envClass: 'DEV', status: 'active' }],
+        bindings: [], connMeta: {}, runRecords: [], events: [],
+        settings: { envClasses: [], activeProfileId: 'FIN-DEV-01', selectedAt: 1 } }));
+      // A touch context still reports hover:hover in headless Chromium, so
+      // the query is forced. What is under test is the tap path, not
+      // Chromium's idea of the device.
+      const real = window.matchMedia.bind(window);
+      window.matchMedia = (q) => (q === '(hover: none)'
+        ? { matches: true, media: q, addEventListener() {}, addListener() {}, removeEventListener() {} }
+        : real(q));
+    });
+    const tpage = await tctx.newPage();
+    await tpage.route('**/*', (r) =>
+      r.request().url().startsWith('http://localhost:' + PORT) ? r.continue() : r.abort());
+    await tpage.goto('http://localhost:' + PORT + '/dashboard', { waitUntil: 'domcontentloaded' });
+    await tpage.waitForSelector('#cyg-envbar-hit', { timeout: 15000 });
+    await tpage.waitForTimeout(400);
+    const th = () => tpage.evaluate(() => {
+      const b = document.getElementById('cyg-envbar');
+      return b ? b.getBoundingClientRect().height : null;
+    });
+    check('on a touch device the line still rests as a hairline', (await th()) === 2, await th());
+    await tpage.tap('#cyg-envbar-hit');
+    await tpage.waitForTimeout(200);
+    check('and a tap opens it, because there is no hover to wait for', (await th()) === 22, await th());
+    await tpage.tap('body', { position: { x: 400, y: 500 } });
+    await tpage.waitForTimeout(200);
+    check('a tap elsewhere closes it again', (await th()) === 2, await th());
+    await tctx.close();
+  }
+
   check('nothing threw along the way', errors.length === 0, errors.slice(0, 3).join(' | '));
   console.log('    (' + VIEWS.length + ' nav items on the rail, ' + hrefKeys.length + ' addressable)');
 

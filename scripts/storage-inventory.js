@@ -93,6 +93,7 @@ const CLASSES = {
   'cygenix_job_sort':                  ['C', 'Job list sort order', ''],
   'cygenix_schemaexp_atlas_smfilters': ['C', 'Schema Explorer filter state', ''],
   'cygenix_onboarded':                 ['C', 'Onboarding completed', ''],
+  'cygenix_hairline_level':            ['C', 'Last status level announced by the hairline (sessionStorage)', ''],
   'cygenix_cookie_consent':            ['C', 'Cookie consent record', ''],
   'cygenix_active_project_id':         ['C', 'Which project is open', 'a pointer, not the data'],
   'cygenix_current_project_id':        ['C', 'Legacy project pointer', ''],

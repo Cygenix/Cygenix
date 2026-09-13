@@ -42,9 +42,9 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_conv_project` | The currently-open project blob | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, cygenix-schema-graph.js |
 | `cygenix_effort_estimates_v1` | Saved Configurator estimates | NOT SYNCED — WI-1 | project_plan.html |
 | `cygenix_inventory` | Project artifact inventory | synced (SYNC_KEYS) | dashboard-app.js, projects.html, report.html +1 |
-| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +14 |
+| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +15 |
 | `cygenix_objmap_wip_` | Object-mapping work in progress | NOT SYNCED — WI-1 | schema_explorer.html |
-| `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-sidebar.js |
+| `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js |
 | `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_project_settings` | Per-project settings | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, cygenix-integrations.js, cygenix-schema-graph.js +5 |
@@ -67,7 +67,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data_stream_designer.html, data_stream_store.html |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
-## C — Preference — per-viewer convenience (26)
+## C — Preference — per-viewer convenience (27)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
@@ -83,6 +83,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_entra_account` | MSAL account record | — | agentive_migration.html, connections.js, cygenix-api.js +11 |
 | `cygenix_expires` | Session expiry marker | — | cygenix-auth-token.js, login.html, project-manager.js |
 | `cygenix_fn_url` | Function URL (not the key) | — | connect.html, project-builder-app.js |
+| `cygenix_hairline_level` | Last status level announced by the hairline (sessionStorage) | — | cygenix-status-hairline.js |
 | `cygenix_job_sort` | Job list sort order | — | project-builder-app.js |
 | `cygenix_jobs_panel_collapsed` | Jobs panel collapsed | — | project-builder-app.js |
 | `cygenix_just_signed_out` | Sign-out flag | — | auth-gate.js, cygenix-sidebar.js, dashboard-app.js +6 |
@@ -100,4 +101,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_56 classified key(s) across `public/`._
+_57 classified key(s) across `public/`._
