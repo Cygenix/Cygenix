@@ -669,7 +669,11 @@
         transition:background 0.15s,border-color 0.15s;
       }
       .cyg-prof-chip:hover{ background:rgba(255,255,255,0.10);border-color:rgba(255,255,255,0.22); }
-      .cyg-prof-dot{ flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--green,#3F7D4E); }
+      /* The status colours come from the hairline, which sets them inline on
+         the root element — this page's own --green is a different green (26
+         of the 27 pages redefine it, and they disagree). The dot and the line
+         must always mean the same thing. */
+      .cyg-prof-dot{ flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--cyg-status-green,#3F7D4E); }
       .cyg-prof-id{ flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600; }
       .cyg-prof-env{
         flex:0 0 auto;padding:1px 6px;border-radius:6px;font-size:9.5px;font-weight:600;
@@ -677,11 +681,11 @@
       }
       /* The level, in one place: the dot and the environment badge. Red also
          brightens the border, because a red dot on a dark rail is small. */
-      .cyg-prof-chip.lv-green .cyg-prof-dot{ background:var(--green,#3F7D4E); }
-      .cyg-prof-chip.lv-amber .cyg-prof-dot{ background:var(--amber,#B26A00); }
-      .cyg-prof-chip.lv-red   .cyg-prof-dot{ background:var(--red,#C0392B); }
-      .cyg-prof-chip.lv-amber .cyg-prof-env{ background:var(--amber,#B26A00);color:#fff; }
-      .cyg-prof-chip.lv-red   .cyg-prof-env{ background:var(--red,#C0392B);color:#fff; }
+      .cyg-prof-chip.lv-green .cyg-prof-dot{ background:var(--cyg-status-green,#3F7D4E); }
+      .cyg-prof-chip.lv-amber .cyg-prof-dot{ background:var(--cyg-status-amber,#B26A00); }
+      .cyg-prof-chip.lv-red   .cyg-prof-dot{ background:var(--cyg-status-red,#C0392B); }
+      .cyg-prof-chip.lv-amber .cyg-prof-env{ background:var(--cyg-status-amber,#B26A00);color:#fff; }
+      .cyg-prof-chip.lv-red   .cyg-prof-env{ background:var(--cyg-status-red,#C0392B);color:#fff; }
       .cyg-prof-chip.lv-red{ border-color:rgba(192,57,43,0.55);background:rgba(192,57,43,0.12); }
       /* Collapsed rail: the dot alone. 54px has no room for a name, and the
          one bit that has to survive is whether this is production. */

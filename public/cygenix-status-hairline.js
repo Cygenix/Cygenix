@@ -98,6 +98,24 @@
   var Z_BAR = 55;
   var Z_HIT = 54;
 
+  /* ── The status palette is OURS, not the page's ─────────────────────────
+     These were var(--green)/var(--amber)/var(--red) — the console's design
+     tokens — which was wrong, and visibly so. 26 of the 27 pages carrying
+     this bar redefine those three tokens in their own inline :root, and they
+     do not agree: three different greens (#22c97a, #22c55e, #3F7D4E), three
+     ambers and three reds. So the bar rendered bright mint on the dashboard
+     and forest green on Reports, and amber on one page was very nearly the
+     green of another.
+
+     For a colour whose whole job is to be recognised at a glance, on any
+     screen, that is a defect rather than a theme. The three values below are
+     the console's own tokens from cygenix-theme.css, pinned here so no
+     page's style block can reach them, and applied through custom properties
+     set INLINE on the root element — an inline declaration beats any
+     stylesheet :root rule, including one loaded after us. The rail's profile
+     chip reads the same three, so the dot and the line can never disagree. */
+  var PALETTE = { green: '#3F7D4E', amber: '#B26A00', red: '#C0392B' };
+
   /* Read through the literal below, not through this constant: the storage
      inventory scanner (scripts/storage-inventory.js) matches a literal inside
      a getItem/setItem call, so a key reached only through a variable drops
@@ -232,7 +250,7 @@
       '  text-decoration:none;color:#fff;pointer-events:none;',
       '  transition:height .18s cubic-bezier(.4,0,.2,1)}',
       '#cyg-envbar .cyg-envbar-txt{opacity:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;',
-      '  padding:0 12px;max-width:100%;transition:opacity .12s ease;',
+      '  padding:0 8px 0 12px;min-width:0;transition:opacity .12s ease;',
       '  font:600 10.5px/1 var(--mono,"IBM Plex Mono",ui-monospace,monospace);letter-spacing:0.06em}',
 
       /* Open — by hover, by focus, by tap, or permanently when locked. The
@@ -242,9 +260,28 @@
       '#cyg-envbar.is-open .cyg-envbar-txt,#cyg-envbar.is-locked .cyg-envbar-txt{opacity:1}',
       '#cyg-envbar:focus-visible{outline:2px solid #fff;outline-offset:-3px}',
 
-      '#cyg-envbar.lv-green{background:var(--green,#3F7D4E)}',
-      '#cyg-envbar.lv-amber{background:var(--amber,#B26A00)}',
-      '#cyg-envbar.lv-red{background:var(--red,#C0392B)}',
+      /* --cyg-status-* are set inline on the root element by render(), so a
+         page's own :root cannot reach them. See PALETTE above. */
+      '#cyg-envbar.lv-green{background:var(--cyg-status-green,' + PALETTE.green + ')}',
+      '#cyg-envbar.lv-amber{background:var(--cyg-status-amber,' + PALETTE.amber + ')}',
+      '#cyg-envbar.lv-red{background:var(--cyg-status-red,' + PALETTE.red + ')}',
+
+      /* Dismiss. There is no button while collapsed — there is nothing to
+         dismiss — and none while locked, because production owns that space
+         and must not be closable. It earns its place on touch, where moving
+         the pointer away is not a gesture that exists. */
+      /* Beside the text, in flow, NOT pinned to the right edge. Pinned right
+         it lands under the Ask Cygenix panel whenever that is open — 420px
+         of z-index 290 over a bar at 55 — and pinned left it lands under the
+         sidebar. The bar's content is centred, so the middle is the one
+         strip of it that nothing else covers. */
+      '#cyg-envbar .cyg-envbar-x{display:none;flex:0 0 auto;align-items:center;',
+      '  height:100%;padding:0 4px 0 2px;margin-left:-4px;border:0;background:none;cursor:pointer;',
+      '  color:rgba(255,255,255,.72);font:600 12px/1 var(--mono,monospace);}',
+      '#cyg-envbar .cyg-envbar-x:hover{color:#fff}',
+      '#cyg-envbar.is-open .cyg-envbar-x{display:flex}',
+      '#cyg-envbar.is-locked .cyg-envbar-x{display:none}',
+      '#cyg-envbar .cyg-envbar-x:focus-visible{outline:2px solid #fff;outline-offset:-3px}',
 
       '#cyg-envbar-hit{position:fixed;top:0;left:0;right:0;height:' + HIT_H + 'px;',
       '  z-index:' + Z_HIT + ';pointer-events:auto;background:transparent}',
@@ -290,6 +327,16 @@
     txt.className = 'cyg-envbar-txt';
     bar.appendChild(txt);
 
+    /* Inside the anchor, so it sits at the bar's right edge — but it is a
+       real <button>, and its click never reaches the link. */
+    var x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'cyg-envbar-x';
+    x.setAttribute('aria-label', 'Collapse the status bar');
+    x.title = 'Collapse';
+    x.textContent = '✕';
+    bar.appendChild(x);
+
     var live = document.createElement('div');
     live.className = 'cyg-envbar-live';
     live.setAttribute('aria-live', 'polite');
@@ -297,7 +344,7 @@
     document.body.appendChild(hit);
     document.body.appendChild(bar);
     document.body.appendChild(live);
-    el = { bar: bar, hit: hit, txt: txt, live: live };
+    el = { bar: bar, hit: hit, txt: txt, live: live, x: x };
 
     wire();
   }
@@ -379,8 +426,29 @@
     /* Keyboard. The anchor stays in the tab order at 2px — pointer-events
        does not affect focusability — so focusing it must show what it says,
        or tabbing lands on an invisible link to nowhere. */
-    el.bar.addEventListener('focus', function () { clearTimers(); setOpen(true); });
-    el.bar.addEventListener('blur', function () { setOpen(false); });
+    /* Dismiss. preventDefault as well as stopPropagation: the button is
+       inside the anchor, so without both a click on it would also navigate
+       to /profiles — which is the opposite of "put this away". The pointer
+       is still over the bar afterwards, so the hover timers are cleared too;
+       otherwise nothing would re-open it until the pointer left and came
+       back, which reads as the control having jammed. */
+    el.x.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      clearTimers();
+      setOpen(false);
+      el.x.blur();
+    });
+
+    /* focusin/focusout rather than focus/blur: the dismiss button lives
+       INSIDE the anchor, so tabbing from one to the other fires blur on the
+       anchor — which under a plain blur handler collapsed the bar and took
+       the button out of the document mid-tab. focusout carries where focus
+       went, so leaving for somewhere still inside the bar is not leaving. */
+    el.bar.addEventListener('focusin', function () { clearTimers(); setOpen(true); });
+    el.bar.addEventListener('focusout', function (e) {
+      if (e.relatedTarget && el.bar.contains(e.relatedTarget)) return;
+      setOpen(false);
+    });
     el.bar.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { setOpen(false); el.bar.blur(); }
     });
@@ -428,6 +496,11 @@
     var root = document.documentElement;
     root.style.setProperty('--cyg-hairline-rest', s.restHeight + 'px');
     root.style.setProperty('--cyg-hairline-h', s.restHeight + 'px');
+    /* Set inline, every render, so a page whose own :root declares --green
+       cannot change what a status level looks like. See PALETTE. */
+    root.style.setProperty('--cyg-status-green', PALETTE.green);
+    root.style.setProperty('--cyg-status-amber', PALETTE.amber);
+    root.style.setProperty('--cyg-status-red', PALETTE.red);
     document.body.classList.add('cyg-envbar-pad');
     document.body.classList.toggle('cyg-envbar-locked', !!s.locked);
 

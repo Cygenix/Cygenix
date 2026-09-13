@@ -237,7 +237,7 @@ check('touch devices get tap-to-open, because there is no hover to wait for',
 check('and a tap anywhere else closes it',
   /document\.addEventListener\('click'[\s\S]{0,300}setOpen\(false\)/.test(SRC));
 check('the profile link stays keyboard-reachable and focusing it opens the line',
-  /addEventListener\('focus', function \(\) \{ clearTimers\(\); setOpen\(true\)/.test(SRC));
+  /addEventListener\('focusin', function \(\) \{ clearTimers\(\); setOpen\(true\)/.test(SRC));
 check('reduced motion snaps instead of animating',
   /@media \(prefers-reduced-motion: reduce\)/.test(SRC));
 check('escalation is announced through an aria-live region',
@@ -245,10 +245,69 @@ check('escalation is announced through an aria-live region',
 check('and only on the transition, not on every page load',
   /if \(s\.level !== prev\)/.test(SRC));
 
-check('colours come from the theme tokens, not from hex literals',
-  /var\(--green,/.test(SRC) && /var\(--amber,/.test(SRC) && /var\(--red,/.test(SRC)
-  && !/#1f7a4d/i.test(SRC) && !/#c23636/i.test(SRC),
-  'the old bar hard-coded #1f7a4d, which no theme could reach');
+/* ── 4c. The status colours are the same on every screen ──────────────────── */
+section('4c. A level must look identical wherever you see it');
+//
+// This shipped wrong. The bar used var(--green)/var(--amber)/var(--red) — the
+// console's design tokens — and 26 of the 27 pages that carry it redefine
+// those three in their own inline :root, disagreeing with each other: three
+// greens, three ambers, three reds. The same DEV profile rendered bright mint
+// on the dashboard and forest green on Reports. For a colour whose entire job
+// is to be recognised at a glance on any screen, that is a defect.
+{
+  const SIDE = read('public', 'cygenix-sidebar.js');
+  const pages = fs.readdirSync(PUB).filter((f) => f.endsWith('.html'))
+    .filter((f) => /cygenix-status-hairline\.js/.test(read('public', f)));
+  const greens = new Set(), ambers = new Set(), reds = new Set();
+  pages.forEach((f) => {
+    const src = read('public', f);
+    const g = src.match(/--green:\s*(#[0-9a-fA-F]+)/); if (g) greens.add(g[1].toLowerCase());
+    const a = src.match(/--amber:\s*(#[0-9a-fA-F]+)/); if (a) ambers.add(a[1].toLowerCase());
+    const r = src.match(/--red:\s*(#[0-9a-fA-F]+)/);   if (r) reds.add(r[1].toLowerCase());
+  });
+  check('the pages really do disagree about --green, so this cannot be left to them',
+    greens.size > 1, [...greens].join(', ') + ' across ' + pages.length + ' pages');
+
+  // Only the declarations matter; the comment above PALETTE names the old
+  // tokens on purpose, to say what was wrong.
+  const DECLS = SRC.replace(/\/\*[\s\S]*?\*\//g, '');
+  check('the bar does NOT read the page\'s status tokens',
+    !/background:\s*var\(--green/.test(DECLS) && !/background:\s*var\(--amber/.test(DECLS)
+    && !/background:\s*var\(--red/.test(DECLS),
+    'a page style block must not be able to change what a level looks like');
+  check('it carries its own palette instead',
+    /var PALETTE = \{ green: '#3F7D4E', amber: '#B26A00', red: '#C0392B' \};/.test(SRC));
+  check('applied INLINE on the root element, which outranks any stylesheet :root',
+    /root\.style\.setProperty\('--cyg-status-green', PALETTE\.green\)/.test(SRC));
+  check('and the bar paints from those, not from the page\'s',
+    /#cyg-envbar\.lv-red\{background:var\(--cyg-status-red/.test(SRC.replace(/'\s*\+\s*PALETTE\.\w+\s*\+\s*'/g, 'X').replace(/\s+/g, '')));
+  check('the rail chip reads the same three, so the dot and the line cannot disagree',
+    /--cyg-status-green/.test(SIDE) && /--cyg-status-amber/.test(SIDE) && /--cyg-status-red/.test(SIDE)
+    && !/\.cyg-prof-dot\{[^}]*var\(--green/.test(SIDE));
+  check('and the old hard-coded bar colours are gone for good',
+    !/#1f7a4d/i.test(SRC) && !/#c23636/i.test(SRC),
+    'the old bar hard-coded #1f7a4d, which no theme could reach');
+}
+
+/* ── 4d. Putting it away ──────────────────────────────────────────────────── */
+section('4d. An expanded bar can be dismissed');
+//
+// Reported: "I can't see the collapse button on the green status bar." There
+// was none — moving the pointer away was the only way, which is no way at all
+// on a touch device, and is not discoverable anywhere.
+check('the expanded bar carries a dismiss button',
+  /x\.className = 'cyg-envbar-x';/.test(SRC)
+  && /setAttribute\('aria-label', 'Collapse the status bar'\)/.test(SRC));
+check('which does not exist while collapsed — there is nothing to dismiss',
+  /#cyg-envbar \.cyg-envbar-x\{display:none/.test(SRC.replace(/\s+/g, ' ')));
+check('and is withheld while locked — production owns that space',
+  /#cyg-envbar\.is-locked \.cyg-envbar-x\{display:none\}/.test(SRC.replace(/',\s*'/g, '').replace(/\s+/g, ' ')));
+check('clicking it does not also follow the link it sits inside',
+  /e\.preventDefault\(\); e\.stopPropagation\(\);\s*clearTimers\(\);\s*setOpen\(false\)/.test(SRC),
+  'the button is inside the anchor; without both it would navigate to /profiles');
+check('and tabbing between the link and the button does not collapse the bar mid-tab',
+  /focusout/.test(SRC) && /el\.bar\.contains\(e\.relatedTarget\)/.test(SRC),
+  'a plain blur handler took the button out of the document while focus was moving to it');
 
 /* ── 4b. The rail's profile chip ──────────────────────────────────────────── */
 section('4b. Something legible always says which database this is');
@@ -272,8 +331,8 @@ section('4b. Something legible always says which database this is');
   check('and the rail both takes the current value and subscribes — script order is not guaranteed',
     /H\.current\(\)\)/.test(SIDE) && /addEventListener\('cygenix:profile-status'/.test(SIDE));
   check('the level colours the dot and the environment badge',
-    /\.cyg-prof-chip\.lv-red\s+\.cyg-prof-dot\{background:var\(--red/.test(SIDE.replace(/\{\s+/g, '{'))
-    && /\.cyg-prof-chip\.lv-amber\s+\.cyg-prof-env\{background:var\(--amber/.test(SIDE.replace(/\{\s+/g, '{')));
+    /\.cyg-prof-chip\.lv-red\s+\.cyg-prof-dot\{background:var\(--cyg-status-red/.test(SIDE.replace(/\{\s+/g, '{'))
+    && /\.cyg-prof-chip\.lv-amber\s+\.cyg-prof-env\{background:var\(--cyg-status-amber/.test(SIDE.replace(/\{\s+/g, '{')));
   check('the collapsed rail keeps the dot — 54px has no room for a name, but PRD must still show',
     /\.cyg-sidebar\.collapsed \.cyg-prof-id,\s*\.cyg-sidebar\.collapsed \.cyg-prof-env\{ display:none/.test(SIDE)
     && !/\.cyg-sidebar\.collapsed \.cyg-prof-dot\{ display:none/.test(SIDE));

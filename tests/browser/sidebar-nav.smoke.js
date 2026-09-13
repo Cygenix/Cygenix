@@ -361,9 +361,58 @@ const server = http.createServer((req, res) => {
   check('expanding overlays the page rather than pushing it — NO vertical movement',
     Math.abs(yDuring - yBefore) < 0.5, yBefore + ' -> ' + yDuring);
 
+  // Reported: "I can't see the collapse button on the green status bar."
+  // There was none — moving the pointer away was the only way out, which is
+  // not a gesture that exists on a touch device.
+  check('the expanded bar offers a way to put it away',
+    await page.evaluate(() => {
+      const x = document.querySelector('#cyg-envbar .cyg-envbar-x');
+      return !!x && x.getBoundingClientRect().width > 0;
+    }));
+  // With the assistant panel still open, which is the case that caught the
+  // first version of this: pinned to the right edge, the button sat under
+  // 420px of panel at z-index 290 and could not be pressed at all.
+  check('and it is the button that is actually under the pointer there',
+    await page.evaluate(() => {
+      const x = document.querySelector('#cyg-envbar .cyg-envbar-x');
+      const r = x.getBoundingClientRect();
+      return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === x;
+    }),
+    'pinned right it lands under the assistant panel; pinned left, under the rail');
+  await page.click('#cyg-envbar .cyg-envbar-x');
+  await page.waitForTimeout(400);
+  check('and pressing it collapses the bar', (await barBox()) === 2, await barBox());
+  check('without navigating to /profiles — the button sits inside that link',
+    /\/dashboard$/.test(page.url()), page.url());
+
   await page.mouse.move(700, 500);
   await page.waitForTimeout(600);
   check('and it settles back to a hairline when the pointer leaves', (await barBox()) === 2, await barBox());
+
+  /* The status colour must mean the same thing on every screen. It did not:
+     the bar read var(--green), and 26 of the 27 pages carrying it redefine
+     that in their own inline :root, disagreeing with each other. The same DEV
+     profile was bright mint on the dashboard and forest green on Reports. */
+  const barColour = () => page.evaluate(() => {
+    const b = document.getElementById('cyg-envbar');
+    return b ? getComputedStyle(b).backgroundColor : null;
+  });
+  const onDash = await barColour();
+  check('the dashboard paints the green level from the fixed status palette',
+    onDash === 'rgb(63, 125, 78)', onDash);
+  await open('/profiles');
+  await page.waitForTimeout(400);
+  const onProf = await barColour();
+  check('and Profiles — whose own --green is a completely different green — paints it identically',
+    onProf === onDash, onProf + ' vs ' + onDash);
+  check('the rail chip agrees with the bar, on both pages',
+    await page.evaluate(() => {
+      const d = document.querySelector('.cyg-prof-dot');
+      const b = document.getElementById('cyg-envbar');
+      return !!d && !!b && getComputedStyle(d).backgroundColor === getComputedStyle(b).backgroundColor;
+    }));
+  await open('/dashboard');
+  await page.waitForTimeout(300);
 
   // The collapsed line must not intercept a click meant for the page.
   check('a click at the very top edge does not land on the profile link while collapsed',
