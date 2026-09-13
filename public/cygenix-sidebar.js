@@ -658,6 +658,38 @@
          wrapper alive for the chip alone, and hide its nav rows. */
       .cyg-sidebar.collapsed .cyg-nav-children[data-children="project-group"]{ display:block !important; }
       .cyg-sidebar.collapsed .cyg-nav-children[data-children="project-group"] .cyg-nav-item{ display:none; }
+      /* Profile chip — pinned, never inside a collapsible group. */
+      .cyg-prof-area{ flex-shrink:0;padding:2px 12px 4px; }
+      .cyg-prof-chip{
+        display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;
+        padding:7px 10px;border-radius:9px;text-decoration:none;
+        background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);
+        font-family:var(--mono,'IBM Plex Mono',ui-monospace,monospace);
+        font-size:11px;letter-spacing:0.04em;color:var(--cyg-fg-strong,#fff);
+        transition:background 0.15s,border-color 0.15s;
+      }
+      .cyg-prof-chip:hover{ background:rgba(255,255,255,0.10);border-color:rgba(255,255,255,0.22); }
+      .cyg-prof-dot{ flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--green,#3F7D4E); }
+      .cyg-prof-id{ flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600; }
+      .cyg-prof-env{
+        flex:0 0 auto;padding:1px 6px;border-radius:6px;font-size:9.5px;font-weight:600;
+        letter-spacing:0.08em;background:rgba(255,255,255,0.10);color:rgba(255,255,255,0.82);
+      }
+      /* The level, in one place: the dot and the environment badge. Red also
+         brightens the border, because a red dot on a dark rail is small. */
+      .cyg-prof-chip.lv-green .cyg-prof-dot{ background:var(--green,#3F7D4E); }
+      .cyg-prof-chip.lv-amber .cyg-prof-dot{ background:var(--amber,#B26A00); }
+      .cyg-prof-chip.lv-red   .cyg-prof-dot{ background:var(--red,#C0392B); }
+      .cyg-prof-chip.lv-amber .cyg-prof-env{ background:var(--amber,#B26A00);color:#fff; }
+      .cyg-prof-chip.lv-red   .cyg-prof-env{ background:var(--red,#C0392B);color:#fff; }
+      .cyg-prof-chip.lv-red{ border-color:rgba(192,57,43,0.55);background:rgba(192,57,43,0.12); }
+      /* Collapsed rail: the dot alone. 54px has no room for a name, and the
+         one bit that has to survive is whether this is production. */
+      .cyg-sidebar.collapsed .cyg-prof-area{ padding:2px 6px 4px; }
+      .cyg-sidebar.collapsed .cyg-prof-chip{ justify-content:center;padding:8px 0;gap:0; }
+      .cyg-sidebar.collapsed .cyg-prof-id,
+      .cyg-sidebar.collapsed .cyg-prof-env{ display:none; }
+      .cyg-sidebar.collapsed .cyg-prof-dot{ width:9px;height:9px; }
       .cyg-drive-area{ flex-shrink:0;padding:6px 12px 2px; }
       .cyg-drive-btn{
         display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;
@@ -854,8 +886,66 @@
     // The project switcher is no longer pinned above the scroll area — it is
     // rendered inside the Project group (see buildParent), which also gives
     // the nav list back that vertical space.
-    return head + buildDriveButton()
+    return head + buildProfilePill() + buildDriveButton()
       + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter(activeKey);
+  }
+
+  /* ── Which databases is this session pointed at ─────────────────────────
+     The status hairline at the top of the window is 2px most of the time,
+     and a 2px green line and a line that failed to render look identical.
+     So the fact itself lives here as well, in words, permanently: profile
+     id, environment class, and a dot carrying the same level the hairline
+     is showing.
+
+     PINNED ABOVE THE SCROLL AREA, deliberately. The project switcher sits
+     inside the Project nav group, which a user can collapse — fine for a
+     project name, not for the thing that says which database a run will
+     touch. This sits between the brand and the Drive button, where nothing
+     can fold it away, and it survives the collapsed rail as the dot alone.
+
+     It renders from CygenixStatusHairline's one state function rather than
+     reading the profile store a second time: two implementations of "what
+     environment am I in" is how one of them ends up wrong. */
+  function buildProfilePill(){
+    return `<div class="cyg-prof-area" id="cyg-prof-area" hidden>
+      <a class="cyg-prof-chip" id="cyg-prof-chip" href="/profiles"
+         title="The connection profile governing this session. Click to manage profiles.">
+        <span class="cyg-prof-dot" aria-hidden="true"></span>
+        <span class="cyg-prof-id" id="cyg-prof-id"></span>
+        <span class="cyg-prof-env" id="cyg-prof-env"></span>
+      </a>
+    </div>`;
+  }
+
+  function paintProfilePill(root, s){
+    const area = (root || document).querySelector('#cyg-prof-area');
+    if (!area) return;
+    // 'off' is the pre-adoption state: no profiles defined anywhere, and the
+    // console behaves exactly as it did before profiles existed — including
+    // showing nothing here.
+    if (!s || s.level === 'off'){ area.hidden = true; return; }
+    area.hidden = false;
+    const chip = area.querySelector('#cyg-prof-chip');
+    const id   = area.querySelector('#cyg-prof-id');
+    const env  = area.querySelector('#cyg-prof-env');
+    // The label is "ID · ENV · name"; the chip wants the first two apart so
+    // the environment can carry the colour on its own.
+    const bits = String(s.label || '').split(' · ');
+    const envText = (bits[1] || '').trim();
+    chip.className = 'cyg-prof-chip lv-' + s.level;
+    id.textContent = bits[0] || '';
+    env.textContent = envText;
+    env.hidden = !envText;
+    chip.setAttribute('aria-label', 'Connection profile: ' + (s.text || s.label) + '. Open the Profiles page.');
+    chip.title = (s.text || s.label) + ' — click to manage profiles.';
+  }
+
+  function wireProfilePill(root){
+    const H = window.CygenixStatusHairline;
+    // Script order is not guaranteed across 27 pages, so take whatever has
+    // been resolved already AND subscribe for the next one.
+    if (H && typeof H.current === 'function') paintProfilePill(root, H.current());
+    window.addEventListener('cygenix:profile-status', (e) => paintProfilePill(null, e.detail));
   }
 
   // Read the signed-in user (stored by auth flow as cygenix_user) and fill the
@@ -1396,6 +1486,7 @@
     wireUserChip(aside);
     wireDriveButton(aside);
     wireProjectSwitcher(aside);
+    wireProfilePill(aside);
     hideTopbarUserPill();
     ensureA11y();
     wireMobileDrawer(aside);

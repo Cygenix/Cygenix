@@ -313,6 +313,29 @@ const server = http.createServer((req, res) => {
       'got ' + who + ' — this is the bug the hairline exists to fix');
   }
 
+  /* The rail's profile chip. A 2px green line and a line that failed to
+   * render look identical, so the fact lives in words as well, permanently
+   * — and it must never be inside something a user can fold away. */
+  const chip = () => page.evaluate(() => {
+    const a = document.getElementById('cyg-prof-area');
+    const c = document.getElementById('cyg-prof-chip');
+    if (!a || !c) return null;
+    return {
+      hidden: a.hidden, cls: c.className,
+      id: (document.getElementById('cyg-prof-id') || {}).textContent,
+      env: (document.getElementById('cyg-prof-env') || {}).textContent,
+      visible: c.getBoundingClientRect().height > 0,
+      dot: getComputedStyle(c.querySelector('.cyg-prof-dot')).backgroundColor,
+    };
+  });
+  {
+    const c = await chip();
+    check('the rail names the profile in words', c && c.id === 'FIN-DEV-01', JSON.stringify(c));
+    check('and its environment class', c && c.env === 'DEV', JSON.stringify(c));
+    check('and it is actually on screen, not merely in the DOM', c && c.visible && !c.hidden);
+    check('carrying the same level as the hairline', c && /lv-green/.test(c.cls), c && c.cls);
+  }
+
   // 3. Crossing the top edge quickly must not open it.
   await page.mouse.move(700, 1);
   await page.waitForTimeout(60);
@@ -373,6 +396,21 @@ const server = http.createServer((req, res) => {
     (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '22px');
   check('and the assistant panel starts BELOW the bar rather than under it',
     (await page.evaluate(() => getComputedStyle(document.querySelector('.cyga')).top)) === '22px');
+  {
+    const c = await chip();
+    check('the rail chip turns red with it', c && /lv-red/.test(c.cls), c && c.cls);
+    check('and still names the profile', c && c.id === 'FIN-DEV-01' && c.env === 'PRD', JSON.stringify(c));
+  }
+  // Collapsing the rail must not lose the one bit that matters.
+  await page.evaluate(() => document.getElementById('cyg-sidebar-toggle').click());
+  await page.waitForTimeout(400);
+  check('collapsing the rail keeps the dot — 54px has no room for a name, but PRD must still show',
+    await page.evaluate(() => {
+      const d = document.querySelector('.cyg-prof-dot');
+      return !!d && d.getBoundingClientRect().width > 0;
+    }));
+  await page.evaluate(() => document.getElementById('cyg-sidebar-toggle').click());
+  await page.waitForTimeout(400);
   await page.mouse.move(700, 3); await page.waitForTimeout(350);
   check('hover does nothing to a locked bar', (await barBox()) === 22);
   await page.mouse.move(700, 500);
@@ -391,6 +429,8 @@ const server = http.createServer((req, res) => {
   check('with no profiles at all there is no bar and no reserved space',
     !(await page.evaluate(() => !!document.getElementById('cyg-envbar')))
     && (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '0px');
+  check('and no chip either — before adoption the console looks exactly as it did',
+    (await chip()).hidden === true, JSON.stringify(await chip()));
 
   // 8. Touch: no hover, so tap must open it.
   {

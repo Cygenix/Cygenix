@@ -446,6 +446,14 @@
         rememberAnnounced(s.level);
       }
     }
+
+    /* The rail's profile chip renders from this, so there is one state
+       function and not two. Published as an event rather than a call into
+       the sidebar, because this file must not know whether a sidebar
+       exists — half the console's pages mount one and the rest do not. */
+    try {
+      window.dispatchEvent(new CustomEvent('cygenix:profile-status', { detail: s }));
+    } catch (e) { /* a listener throwing must not stop the bar rendering */ }
     return s;
   }
 
@@ -496,6 +504,9 @@
     resolveStatus: resolveStatus,
     render: render,
     report: report,
+    /* The last resolved state, for anything that mounts after this file has
+       already rendered — the sidebar, which cannot rely on script order. */
+    current: function () { return _state; },
     /* for the tests and the console */
     __dom: function () { return el; },
     __isOpen: function () { return _open; },

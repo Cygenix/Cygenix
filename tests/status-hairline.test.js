@@ -250,6 +250,37 @@ check('colours come from the theme tokens, not from hex literals',
   && !/#1f7a4d/i.test(SRC) && !/#c23636/i.test(SRC),
   'the old bar hard-coded #1f7a4d, which no theme could reach');
 
+/* ── 4b. The rail's profile chip ──────────────────────────────────────────── */
+section('4b. Something legible always says which database this is');
+
+// A 2px green line and a line that failed to render look identical. The chip
+// is the readable half of the same fact — and it must be ONE fact: two
+// implementations of "what environment am I in" is how one of them ends up
+// wrong, on the screen that matters.
+{
+  const SIDE = read('public', 'cygenix-sidebar.js');
+  check('the rail carries a profile chip', /id="cyg-prof-chip"/.test(SIDE));
+  check('it is pinned above the scroll area, not inside a collapsible group',
+    /return head \+ buildProfilePill\(\) \+ buildDriveButton\(\)/.test(SIDE),
+    'the Project group can be folded away; the database a run will touch cannot be');
+  check('it links to the Profiles page', /class="cyg-prof-chip" id="cyg-prof-chip"\s*href="\/profiles"/.test(SIDE.replace(/\s+/g, ' ')));
+  check('it renders from the hairline\'s state function, not from a second read of the store',
+    /CygenixStatusHairline/.test(SIDE) && !/cygenix_profiles_v1/.test(SIDE),
+    'the sidebar must not parse the profile store itself');
+  check('the hairline publishes that state as an event',
+    /cygenix:profile-status/.test(SRC) && typeof H.current === 'function');
+  check('and the rail both takes the current value and subscribes — script order is not guaranteed',
+    /H\.current\(\)\)/.test(SIDE) && /addEventListener\('cygenix:profile-status'/.test(SIDE));
+  check('the level colours the dot and the environment badge',
+    /\.cyg-prof-chip\.lv-red\s+\.cyg-prof-dot\{background:var\(--red/.test(SIDE.replace(/\{\s+/g, '{'))
+    && /\.cyg-prof-chip\.lv-amber\s+\.cyg-prof-env\{background:var\(--amber/.test(SIDE.replace(/\{\s+/g, '{')));
+  check('the collapsed rail keeps the dot — 54px has no room for a name, but PRD must still show',
+    /\.cyg-sidebar\.collapsed \.cyg-prof-id,\s*\.cyg-sidebar\.collapsed \.cyg-prof-env\{ display:none/.test(SIDE)
+    && !/\.cyg-sidebar\.collapsed \.cyg-prof-dot\{ display:none/.test(SIDE));
+  check('and before any profile exists the chip is hidden, like everything else about profiles',
+    /if \(!s \|\| s\.level === 'off'\)\{ area\.hidden = true; return; \}/.test(SIDE));
+}
+
 /* ── 5. Coverage ──────────────────────────────────────────────────────────── */
 section('5. Every page that had the old bar has the new one');
 
