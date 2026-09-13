@@ -148,6 +148,33 @@ function cpIsConnLocked(store, connId) {
   });
 }
 
+/* Which connections is this session actually pointed at RIGHT NOW.
+   Reported: the register lists every saved connection and the only marker on
+   it was `locked`, which means "referenced by SOME non-retired profile" - a
+   draft nobody has activated locks a connection exactly as hard as the one
+   every write is going through. So on a register of six there was no way to
+   tell which two the banner meant, and the profile NAME does not help: it is
+   free text ("Conv_DM to Azure") and need not resemble the connections it
+   pairs.
+   This is the narrower question, and it has one answer at a time: the source
+   and the target of the SELECTED profile.
+   Status is checked rather than assumed. cpSelectProfile refuses to select a
+   non-active profile, but a selected profile can be retired afterwards -
+   cpGuardWrite then blocks every write, so nothing is in use and this must
+   not still be claiming otherwise. `locked` rides along so a caller can draw
+   both marks without asking twice and risking two different answers. */
+function cpConnUse(store, connId) {
+  var id = store && store.settings ? store.settings.activeProfileId : null;
+  var p = id ? profileOf(store, id) : null;
+  var side = null;
+  if (p && p.status === 'active') {
+    if (p.srcConnId === connId) side = 'SRC';
+    else if (p.tgtConnId === connId) side = 'TGT';
+  }
+  return { inUse: !!side, side: side, profileId: side ? p.id : null,
+    locked: cpIsConnLocked(store, connId) };
+}
+
 /* =======================================================================
    Profiles — draft → active → retired. Never edited into a new meaning.
    ======================================================================= */
@@ -670,6 +697,7 @@ return {
   cpDatabaseOf: cpDatabaseOf,
   cpStandardName: cpStandardName,
   cpIsConnLocked: cpIsConnLocked,
+  cpConnUse: cpConnUse,
 
   cpValidateProfile: cpValidateProfile,
   cpSaveProfile: cpSaveProfile,

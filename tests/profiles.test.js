@@ -226,7 +226,53 @@ check('report names lead with the profile id — a governance record names its d
   P.cpReportName(store, 'Source DB', new Date(Date.UTC(2026, 7, 23, 9, 58))).startsWith('FIN-PRD-01_2026-08-23_')
   && P.cpReportName(P.cpNewStore(now), 'Source DB', new Date(Date.UTC(2026, 7, 23, 9, 58))).startsWith('Source DB_'));
 
-// ── 9. Wiring ───────────────────────────────────────────────────────────────
+// ── 9. What is in use RIGHT NOW ─────────────────────────────────────────────
+//
+// Reported from the live register: six saved connections, and the only marker
+// on them was `locked`. Locked means "referenced by some non-retired profile",
+// so a draft nobody has activated marks its two connections exactly as hard as
+// the pair every write is going through — and the profile name is free text
+// ("Conv_DM to Azure") that need not resemble either connection. There was no
+// way to read which two the banner meant.
+//
+// cpConnUse answers the narrower question. The trap it exists to avoid is the
+// page computing this itself from store.settings: two implementations of "what
+// am I pointed at" is how one of them ends up wrong, on the screen where being
+// wrong means writing to the wrong database. Same lesson as the environment
+// indicator in tests/status-hairline.test.js.
+const use = (() => {
+  const s = P.cpNewStore(now);
+  for (const c of CONNS) P.cpSetConnMeta(s, c.id, { envClass: 'DEV' }, 'u', now);
+  P.cpSaveProfile(s, { id: 'SEL', envClass: 'DEV', srcConnId: 'sc_src_dev', tgtConnId: 'sc_tgt_dev' }, CONNS, 'u', now);
+  P.cpActivateProfile(s, 'SEL', CONNS, 'u', now);
+  P.cpSaveProfile(s, { id: 'DRAFT', envClass: 'DEV', srcConnId: 'sc_src_prd', tgtConnId: 'sc_tgt_prd' }, CONNS, 'u', now);
+  P.cpSelectProfile(s, 'SEL', 'u', now);
+  return s;
+})();
+check('the selected profile\'s source and target are in use, and say which side they are',
+  P.cpConnUse(use, 'sc_src_dev').side === 'SRC' && P.cpConnUse(use, 'sc_tgt_dev').side === 'TGT'
+  && P.cpConnUse(use, 'sc_src_dev').profileId === 'SEL',
+  JSON.stringify(P.cpConnUse(use, 'sc_src_dev')));
+check('a DRAFT profile\'s connections are locked but NOT in use — the distinction the mark exists for',
+  P.cpConnUse(use, 'sc_src_prd').locked === true && P.cpConnUse(use, 'sc_src_prd').inUse === false);
+check('a connection no profile references is neither',
+  (() => { const u = P.cpConnUse(use, 'sc_nobody'); return !u.inUse && !u.locked && u.side === null; })());
+// cpSelectProfile refuses to select a non-active profile, so this state can
+// only be reached by retiring the one already selected. cpGuardWrite blocks
+// every write from that moment, so nothing is in use and the tick must go.
+check('retiring the selected profile withdraws the mark — a blocked write is not a use',
+  (() => { const s = JSON.parse(JSON.stringify(use));
+    P.cpRetireProfile(s, 'SEL', 'u', now);
+    return P.cpConnUse(s, 'sc_src_dev').inUse === false; })());
+check('before any profile exists nothing is in use, and it does not throw',
+  (() => { const u = P.cpConnUse(P.cpNewStore(now), 'sc_src_dev'); return !u.inUse && !u.locked; })());
+check('adopted with nothing selected: still no mark, because writes are blocked',
+  (() => { const s = P.cpNewStore(now);
+    P.cpSaveProfile(s, { id: 'X', envClass: 'DEV', srcConnId: 'sc_src_dev', tgtConnId: 'sc_tgt_dev' }, CONNS, 'u', now);
+    const u = P.cpConnUse(s, 'sc_src_dev');
+    return u.inUse === false && u.locked === true; })());
+
+// ── 10. Wiring ──────────────────────────────────────────────────────────────
 const PAGE = fs.existsSync(__dirname + '/../public/profiles.html')
   ? fs.readFileSync(__dirname + '/../public/profiles.html', 'utf8') : '';
 const SIDE = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
@@ -259,6 +305,28 @@ check('quality review names reports by profile and records expected-vs-actual id
   /cpReportName/.test(DQ) && /cpRecordRun/.test(DQ) && /cpClassifySentinel|cpSentinelReadSql/.test(DQ));
 check('the data generator refuses unclassified writes and PRD without typed confirmation',
   /cpPageGuardWrite\(/.test(DG));
+// The register's mark, pinned to the page as well as the engine — a helper
+// nothing renders is not a feature.
+check('the register asks the engine which connections are in use, rather than reading settings itself',
+  /P\.cpConnUse\(store, c\.id\)/.test(PAGE)
+  && !/renderConns[\s\S]{0,900}activeProfileId/.test(PAGE),
+  'if the page starts deriving this itself there are two answers to one question');
+check('an in-use connection gets the tick and its row is tinted',
+  /class="cp-inuse"/.test(PAGE) && /ic ic-check/.test(PAGE) && /cp-inuse-row/.test(PAGE));
+// A green tick and nothing is the same to a reader who cannot see the green,
+// and title= is not reliably announced. Shape carries it on screen; the
+// off-screen sentence carries it to a screen reader.
+const MARKFN = PAGE.slice(PAGE.indexOf('function inUseMark'), PAGE.indexOf('function renderConns'));
+check('the mark is never colour alone — it says which side, and names the profile',
+  MARKFN.length > 100 && /'source'/.test(MARKFN) && /'target'/.test(MARKFN)
+  && /use\.profileId/.test(MARKFN) && /class="cp-sr"/.test(MARKFN)
+  && /\.cp-sr\{position:absolute/.test(PAGE),
+  'inUseMark: ' + MARKFN.length + ' chars');
+check('it is the shared mask icon, not a typed check mark that no theme can reach',
+  !/[✓✔✅]/.test(PAGE));
+check('the note tells the reader the tick is narrower than locked',
+  /in use now<\/b><\/span> marks the source/.test(PAGE)
+  && /narrower thing than <b>locked<\/b>/.test(PAGE));
 check('nothing on the profiles read path writes to the connections stores',
   !/setItem\('cygenix_project_connections'/.test(PAGE)
   && !/setItem\('cygenix_saved_connections'/.test(PAGE));

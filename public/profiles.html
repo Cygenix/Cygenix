@@ -86,6 +86,18 @@ select.inp{cursor:pointer}
 .callout b{font-size:12.5px}
 .callout p{font-size:11.5px;color:var(--text2)}
 .empty{padding:1.4rem;text-align:center;color:var(--text2);font-size:12.5px;line-height:1.7}
+/* The "in use now" mark on the connection register. Shape first, colour
+   second: the tick is legible to a reader who cannot see the green, and the
+   row tint alone would be. The tint is what makes the pair findable without
+   reading eight columns — it is the whole point of the mark. */
+.cp-inuse{display:inline-flex;align-items:center;color:var(--green);margin-left:6px;vertical-align:middle}
+tr.cp-inuse-row td{background:var(--green-bg)}
+/* Available to a screen reader, never on screen: the tick has a title for the
+   pointer, and a title attribute is not reliably announced. */
+.cp-sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+.legend{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.legend .ic{color:var(--green)}
 </style>
 </head>
 <body>
@@ -113,7 +125,10 @@ select.inp{cursor:pointer}
       <tr><th>Saved connection</th><th>Role</th><th>Type</th><th>Env class</th><th>System / domain</th>
         <th>Standard name</th><th>Owner</th><th></th></tr>
     </thead><tbody></tbody></table></div>
-    <div class="note">Connections referenced by a non-retired profile are <b>locked</b> — rename and delete are
+    <div class="note"><span class="legend"><i class="ic ic-check"></i> <b>in use now</b></span> marks the source
+      and target of the <b>selected</b> profile — the two databases every write in this session goes to. It is
+      a narrower thing than <b>locked</b>: a draft nobody has activated locks its connections just as hard.<br>
+      Connections referenced by a non-retired profile are <b>locked</b> — rename and delete are
       refused on the Connections page, because editing in place would rewrite the meaning of every artifact
       that ever ran under them. A changed endpoint is a new saved connection and a new profile.</div>
   </div>
@@ -222,7 +237,7 @@ select.inp{cursor:pointer}
 <script src="/cygenix-cosmos-sync.js?v=c62d183795" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=7e0395ba10" defer></script>
-<script src="/cygenix-profiles.js?v=75a8690045" defer></script>
+<script src="/cygenix-profiles.js?v=cf4e02a1a3" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=73f52fed9d" defer></script>
 <script src="/cygenix-sidebar.js?v=82754419cc" defer></script>
@@ -288,14 +303,26 @@ function renderAdoption(){
   }
 }
 
+/* The tick beside a connection that the SELECTED profile is pointed at.
+   It says which side, because "in use" without source-or-target still leaves
+   you counting columns, and it names the profile, because the register does
+   not otherwise mention which one is selected. */
+function inUseMark(use){
+  const label = 'In use now — ' + (use.side === 'SRC' ? 'source' : 'target')
+    + ' of the selected profile ' + use.profileId;
+  return '<span class="cp-inuse" title="' + esc(label) + '"><i class="ic ic-check"></i>'
+    + '<span class="cp-sr">' + esc(label) + '</span></span>';
+}
+
 function renderConns(){
   const tb = $('cp-conns').querySelector('tbody');
   const list = savedConns();
   tb.innerHTML = list.length ? list.map(c => {
     const meta = P.cpConnMeta(store, c.id);
-    const locked = P.cpIsConnLocked(store, c.id);
-    return '<tr>'
-      + '<td><b>' + esc(c.name) + '</b></td>'
+    const use = P.cpConnUse(store, c.id);
+    const locked = use.locked;
+    return '<tr' + (use.inUse ? ' class="cp-inuse-row"' : '') + '>'
+      + '<td><b>' + esc(c.name) + '</b>' + (use.inUse ? inUseMark(use) : '') + '</td>'
       + '<td class="mono">' + esc((c.side || '').toUpperCase()) + '</td>'
       + '<td class="mono">' + esc(c.mode === 'azure' ? 'AZUREFUNC' : 'DIRECT') + '</td>'
       + '<td><select class="inp mini" onchange="cpMetaEdit(\'' + c.id + '\',\'envClass\',this.value)">'
