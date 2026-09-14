@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Set before first paint: the sign-in card starts in its busy state in the
+     MARKUP, so the spinner is on screen from the first frame rather than
+     after the inline script at the end of <body> runs. Gated on .js so a
+     visitor with scripting off never sees a spinner that cannot finish. -->
+<script>document.documentElement.className += ' js';</script>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>Cygenix – Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -57,9 +62,30 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border2)}
 .alert{padding:0.7rem 1rem;border-radius:var(--r);font-size:13px;margin-bottom:1rem}
 .alert-error{background:rgba(224,72,77,0.08);border:1px solid rgba(224,72,77,0.28);color:#b23640}
-.spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite}
+/* The spinner was white-on-white: border rgba(255,255,255,.3) with a #fff
+   top edge, drawn on #loading's var(--panel) background, which is #ffffff. It
+   was invisible on the one surface it is used on. Accent on the panel border
+   is the same shape, actually visible. */
+.spinner{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--accent);
+  border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 0.85rem}
 @keyframes spin{to{transform:rotate(360deg)}}
-#loading{border:1px solid var(--border2);border-radius:var(--r);background:var(--panel)}
+/* Reduced motion slows it rather than stopping it. A frozen ring beside
+   "Checking your session…" says hung, which is the exact impression this
+   whole block exists to remove — and the elapsed counter beside it keeps
+   ticking either way, which is the part that really proves life. */
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.6s}}
+#loading{border:1px solid var(--border2);border-radius:var(--r);background:var(--panel);
+  text-align:center;padding:2.1rem 1.5rem}
+#loading-msg{font-size:13.5px;color:var(--text2);font-weight:500}
+#loading-hint{font-size:12px;color:var(--faint);margin-top:5px}
+/* The busy state is keyed off .js, set by an inline script in <head>. With
+   scripting off nothing here can ever resolve, so the visitor gets the card
+   and the <noscript> notice rather than a spinner that turns forever. */
+#loading{display:none}
+.js #main-card.is-busy #signin-ui{display:none}
+.js #main-card.is-busy #loading{display:block}
+.noscript-note{padding:0.7rem 1rem;border-radius:var(--r);font-size:13px;margin-bottom:1rem;
+  background:rgba(224,72,77,0.08);border:1px solid rgba(224,72,77,0.28);color:#b23640}
 .switch{margin-top:26px;text-align:center;font-size:13px;color:var(--text3)}
 .switch a{color:var(--accent);text-decoration:none;font-weight:600}
 .switch a:hover{color:var(--accent2)}
@@ -107,7 +133,13 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 
   <!-- FORM PANEL -->
   <div class="form-panel">
-    <div class="card" id="main-card">
+    <div class="card is-busy" id="main-card">
+      <!-- Everything the visitor can ACT on lives in here, so the busy state
+           can take it away in one move. Before this, startup hid #main-card
+           itself - and #loading was inside it, so the spinner it was setting
+           to display:block had a hidden ancestor and never rendered. The
+           panel was blank for the whole wait on Entra. -->
+      <div id="signin-ui">
       <h2>Welcome back</h2>
       <div class="sub">Sign in to your migration console.</div>
 
@@ -124,12 +156,16 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
         Sign in with email &amp; password<span class="msr" style="font-size:19px">arrow_forward</span>
       </button>
 
-      <div id="loading" style="display:none;text-align:center;padding:2rem">
-        <div class="spinner" style="margin:0 auto 1rem"></div>
-        <div style="font-size:13px;color:var(--text2)" id="loading-msg">Signing in…</div>
-      </div>
-
       <div class="switch">New to Cygenix? <a href="/register">Create an account</a></div>
+      </div><!-- /#signin-ui -->
+
+      <!-- role=status + aria-live: the whole point is that something is
+           happening, and a visitor using a screen reader gets no spinner. -->
+      <div id="loading" role="status" aria-live="polite">
+        <div class="spinner"></div>
+        <div id="loading-msg">Checking your session…</div>
+        <div id="loading-hint">Asking Microsoft Entra whether you are already signed in.</div>
+      </div>
 
       <div class="footer">
         <a href="/">← Back to cygenix.co.uk</a> &nbsp;·&nbsp;
@@ -140,8 +176,18 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   </div>
 </div>
 
+<noscript>
+  <div class="noscript-note" style="max-width:400px;margin:0 auto 1rem">Sign-in needs JavaScript.
+    Enable it for cygenix.co.uk and reload.</div>
+</noscript>
+
 <!-- MSAL.js from CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js" defer></script>
+<!-- The console's shared busy indicator. Used here for the thin bar across
+     the top of the window and for formatElapsed, so the counter on this page
+     reads exactly like every other wait in the product. Every use is guarded:
+     if it fails to load, the card's own spinner still says what is happening. -->
+<script src="/cygenix-busy.js?v=5b8f3d8384" defer></script>
 <script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script>
@@ -219,16 +265,73 @@ async function init() {
   showCard();
 }
 
+/* ── Saying "this is working" ────────────────────────────────────────────────
+   Reported: the sign-in page "looks like it is broken with no activity".
+   It did. Two faults stacked. #loading sat INSIDE #main-card, and startup hid
+   #main-card, so setting #loading to display:block could never show it — a
+   hidden ancestor wins. And the spinner was white on the card's white
+   background, so it would have been invisible even if it had rendered. The
+   form panel was empty for the whole wait: MSAL from a CDN, then
+   handleRedirectPromise, then possibly a silent token refresh against
+   cygenix.ciamlogin.com, which is several seconds on a cold visit.
+
+   Three signals now, because a spinner alone stops being reassuring after
+   about twenty seconds:
+     a spinner and a sentence   — something is happening, and what
+     an elapsed counter at 2.5s — it is still happening (the shared
+                                  CygenixBusy.formatElapsed, so it reads the
+                                  same as every other wait in the console)
+     a changed sentence at 6s   — this is slower than usual, still not stuck
+   Plus the shared thin bar across the top of the window, which is how the
+   rest of the product says the same thing. */
+const BUSY_MSG  = 'Checking your session…';
+const BUSY_HINT = 'Asking Microsoft Entra whether you are already signed in.';
+const SLOW_MSG  = 'Still checking with Microsoft Entra…';
+const SLOW_AFTER_MS = 6000;
+let busyTok = null, busyTimer = null, busyStart = 0, busyBase = BUSY_MSG;
+
+function startBusy(msg, hint) {
+  busyStart = Date.now();
+  busyBase = msg || BUSY_MSG;
+  const card = document.getElementById('main-card');
+  document.getElementById('loading-msg').textContent = busyBase;
+  document.getElementById('loading-hint').textContent = hint || BUSY_HINT;
+  card.classList.add('is-busy');
+  if (!busyTimer) busyTimer = setInterval(tickBusy, 500);
+  tickBusy();
+}
+
+function tickBusy() {
+  const ms = Date.now() - busyStart;
+  /* cygenix-busy.js is deferred, so it does not exist on the first call —
+     this is the retry. The top bar appearing a beat late is fine; the card's
+     own spinner has been turning since the first frame. */
+  if (!busyTok && window.CygenixBusy) {
+    try { busyTok = window.CygenixBusy.start(busyBase); } catch (e) {}
+  }
+  const base = (ms >= SLOW_AFTER_MS && busyBase === BUSY_MSG) ? SLOW_MSG : busyBase;
+  const el = document.getElementById('loading-msg');
+  /* The elapsed suffix comes from the shared module when it is there. If it
+     is not, the sentence still changes at 6s — the counter is the nicety, the
+     sentence is the part that must not depend on another file loading. */
+  el.textContent = (window.CygenixBusy && window.CygenixBusy.busyLabel)
+    ? window.CygenixBusy.busyLabel(base, ms, true) : base;
+}
+
+function stopBusy() {
+  if (busyTimer) { clearInterval(busyTimer); busyTimer = null; }
+  if (busyTok) { try { busyTok.done(); } catch (e) {} busyTok = null; }
+}
+
 function showCard() {
-  document.getElementById('main-card').style.display = '';
-  document.getElementById('loading').style.display = 'none';
+  stopBusy();
+  document.getElementById('main-card').classList.remove('is-busy');
 }
 
 function showLoading(msg) {
-  document.getElementById('loading').style.display = 'block';
-  document.getElementById('loading-msg').textContent = msg || 'Signing in…';
-  document.getElementById('google-btn').style.display = 'none';
-  document.getElementById('email-btn').style.display = 'none';
+  /* A redirect to Entra is imminent, so the 6s escalation is not wanted here
+     — tickBusy only swaps the sentence when the base is still BUSY_MSG. */
+  startBusy(msg || 'Signing in…', 'Taking you to the Microsoft sign-in page.');
 }
 
 function showError(msg) {
@@ -337,9 +440,9 @@ function redirectAfterLogin() {
 }
 
 // ── Start — wait for MSAL CDN to load then initialise ───────────────────────
-document.getElementById('main-card').style.display = 'none';
-document.getElementById('loading').style.display = 'block';
-document.getElementById('loading-msg').textContent = 'Checking session…';
+// The card is already in its busy state from the markup, so this only starts
+// the counter and the top bar; there is no moment where the panel is blank.
+startBusy(BUSY_MSG);
 
 function startMsal() {
   try {

@@ -344,6 +344,16 @@ return {
   clearAll: clearAll,
   isBusy: function () { return liveCount() > 0; },
   count: liveCount,
+  /* How long something has been running, said the one way. Promoted out of
+     __core (which is the test seam, not an API) for surfaces that show their
+     own status line rather than a busy button — the sign-in page waits on
+     Entra with no button to put a spinner on. Exported rather than copied so
+     there is one answer to "how does elapsed time read here": a second
+     implementation would drift into "7.4 seconds" or "00:07" and the console
+     would time things two ways. */
+  formatElapsed: formatElapsed,
+  busyLabel: busyLabel,
+  ELAPSED_AFTER_MS: ELAPSED_AFTER_MS,
   /* pure helpers, exported for the tests */
   __core: {
     formatElapsed: formatElapsed,

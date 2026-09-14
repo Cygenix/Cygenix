@@ -232,7 +232,19 @@ const outOfOrder = appPages.filter((f) => {
 });
 check('the busy module loads before the assistant that uses it',
   outOfOrder.length === 0, outOfOrder.join(', '));
-for (const f of ['login.html', 'index.html', 'pricing.html']) {
+// The signed-out pages were all excluded here, on the reading that a visitor's
+// first load should not carry a module nothing on the page uses. index and
+// pricing still qualify: they have no operation long enough to report on.
+//
+// login.html stopped qualifying in Sep-2026. It now has THE long wait — MSAL
+// from a CDN, then handleRedirectPromise, then possibly a silent token refresh
+// against cygenix.ciamlogin.com — and it was reported as looking broken during
+// it. The rule this section states is "loaded where it is needed, and only
+// there", not "signed-out pages stay lean", and the sign-in page is now a
+// place it is needed. See tests/login-busy.test.js.
+check('login.html carries it, because the wait on Entra is exactly what it is for',
+  /<script src="\/cygenix-busy\.js/.test(read('public', 'login.html')));
+for (const f of ['index.html', 'pricing.html']) {
   check(f + ' does not carry it', !/cygenix-busy\.js/.test(read('public', f)));
 }
 // Every call site guards on the global, so a page that forgets the script
