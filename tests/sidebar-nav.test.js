@@ -174,40 +174,58 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
     kids.includes('project-settings') && kids.includes('system-parameters'), kids.join(','));
 }
 
-// 10. Object Mapping became an expander holding Mapping and Schema Explorer.
-//     The risk of this change is the `object-mapping` key: pages mount with
-//     data-active="object-mapping" and dashboard deep links use it, so it has
-//     to stay on the leaf that opens object_mapping.html rather than moving
-//     up to the expander.
+// 10. The Schema Explorer sits in Insight, not under Object Mapping.
+//
+//     It was a child of an `objmap-group` expander, on the reading that you
+//     explore a schema in order to map it. Moved on request (Sep-2026): it
+//     reads a database and shows what is in it, which is a lens over an
+//     estate rather than a step in building a mapping. The product already
+//     agreed — cygenix-pipeline.js sends Home's ANALYSE stage there — and so
+//     did the nav's own history: the 'Data Insights' item removed in Aug-2026
+//     was dropped because "the Schema Explorer's Data map now covers schema
+//     discovery", and Insight is where that item had been.
+//
+//     Two things this must not break, and they are why the checks below are
+//     about keys rather than about position:
+//
+//       * `object-mapping` is mounted as data-active on object_mapping.html
+//         and used by dashboard deep links. It was deliberately put on the
+//         CHILD rather than the expander so the group could be dissolved
+//         without touching a link, and dissolving it is exactly what happened.
+//       * a one-child expander earns nothing but an extra click, so
+//         objmap-group is gone rather than left holding Mapping alone — the
+//         same call made when Project Planner left Planner & Schedules.
 {
-  const group = SB.__findItem('objmap-group');
-  check('Object Mapping is a group', !!group && Array.isArray(group.children));
-  const kids = ((group && group.children) || []).map(c => c.key);
-  check('with Mapping and Schema Explorer as its children',
-    JSON.stringify(kids) === JSON.stringify(['object-mapping', 'schema-explorer']), kids.join(','));
+  check('the objmap-group expander is gone, not left wrapping a single child',
+    SB.__findItem('objmap-group') === null || SB.__findItem('objmap-group') === undefined);
 
   const mapping = SB.__findItem('object-mapping');
   check('the object-mapping key still resolves, so no page loses its highlight',
     !!mapping && mapping.href === '/object-mapping', mapping && mapping.href);
-  check('and it is the child, not the expander — the expander has no destination',
-    !!group && !group.href && !group.view);
-  check('Mapping is relabelled now that it sits under a group named for it',
-    mapping && mapping.label === 'Mapping', mapping && mapping.label);
+  check('and it is named for what it is again, now that nothing sits above it',
+    mapping && mapping.label === 'Object Mapping', mapping && mapping.label);
+
+  const build = NAV.find(s => s.section === 'Map & Build');
+  check('Map & Build is three flat items, in order',
+    JSON.stringify(build.items.map(i => i.key)) ===
+      JSON.stringify(['object-mapping', 'sql-editor', 'agentive-migration']),
+    build.items.map(i => i.key).join(','));
+  check('and none of them is an expander any more',
+    build.items.every(i => !i.children));
+
+  const insight = NAV.find(s => s.section === 'Insight');
+  check('Insight leads with the Schema Explorer, then Analytics',
+    JSON.stringify(insight.items.map(i => i.key)) ===
+      JSON.stringify(['schema-explorer', 'analytics']),
+    insight.items.map(i => i.key).join(','));
 
   const se = SB.__findItem('schema-explorer');
-  check('Schema Explorer resolves', !!se);
-  check('it points at the Schema Explorer, matching its neighbour\'s naming',
+  check('the schema-explorer key and href are unchanged by the move',
     se && se.href === '/schema-explorer', se && se.href);
-  check('it has its own icon rather than reusing the mapping arrows',
-    se && mapping && se.icon !== mapping.icon);
-
-  // The section around it must be untouched.
-  const build = NAV.find(s => s.section === 'Map & Build');
-  // AI Workspace left this section when the docked Assistant replaced it.
-  check('Map & Build holds the other three items in order, without AI Workspace',
-    JSON.stringify(build.items.map(i => i.key)) ===
-      JSON.stringify(['objmap-group', 'sql-editor', 'agentive-migration']),
-    build.items.map(i => i.key).join(','));
+  check('it keeps its own icon rather than inheriting Analytics\' chart',
+    se && se.icon !== SB.__findItem('analytics').icon);
+  check('and it is a flat item, not a submenu of one',
+    se && !se.children);
 }
 
 // ── Search order + sidebar favourites ───────────────────────────────────────

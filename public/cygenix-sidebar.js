@@ -94,14 +94,21 @@
       ]},
     ]},
     { section: 'Map & Build', group:'build', items: [
-      // The `object-mapping` key stays on the Mapping child, not the parent:
-      // pages mount with data-active="object-mapping" and deep links use it,
-      // so moving it to the expander would break the active highlight and
-      // every existing link.
-      { key:'objmap-group', label:'Object Mapping', icon: iconArrows(), children: [
-        { key:'object-mapping',  label:'Mapping',         href:'/object-mapping',  color:'var(--teal)',   icon: iconArrows() },
-        { key:'schema-explorer', label:'Schema Explorer', href:'/schema-explorer', color:'var(--purple)', icon: iconGraph() },
-      ]},
+      // The Schema Explorer moved to Insight (Sep-2026, on request). It reads
+      // a schema and shows what is there — including relationships it infers
+      // rather than reads — which is a lens over a database, not a step in
+      // building a mapping. The Home pipeline already treated it that way:
+      // cygenix-pipeline.js sends the ANALYSE stage to /schema-explorer.
+      //
+      // That left `objmap-group` holding one child, and a one-child expander
+      // earns nothing but a click — the same reason Planner & Schedules was
+      // flattened when Project Planner went. So it is a plain item again.
+      //
+      // The key is `object-mapping`, as it has always been: pages mount with
+      // data-active="object-mapping" and dashboard deep links use it. It sat
+      // on the child rather than the expander precisely so this could happen
+      // without breaking a single link.
+      { key:'object-mapping', label:'Object Mapping', href:'/object-mapping', color:'var(--teal)', icon: iconArrows() },
       { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor',         color:'var(--teal)',   icon: iconCode() },
       { key:'agentive-migration', label:'AI Assist',      href:'/agentive-migration', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
       // AI Workspace (coworker.html) was replaced by the docked Assistant
@@ -183,6 +190,14 @@
     // Validate and before Report & Govern for the same reason: you look at it
     // once there is something to look at, and before you write anything down.
     { section: 'Insight', group:'insight', items: [
+      // Schema Explorer first, because the two answer the same kind of
+      // question at different ends of a migration and that is the order you
+      // ask them in: what is in these databases, then what happened when we
+      // moved them. Moving it here also un-splits schema discovery — the
+      // 'Data Insights' item removed in Aug-2026 was dropped on the grounds
+      // that the Schema Explorer's Data map covers it, and this is where that
+      // item used to be pointed.
+      { key:'schema-explorer', label:'Schema Explorer', href:'/schema-explorer', color:'var(--purple)', icon: iconGraph() },
       { key:'analytics', label:'Analytics', href:'/analytics', color:'var(--accent)', icon: iconChart() },
     ]},
     { section: 'Report & Govern', group:'govern', items: [

@@ -84,11 +84,13 @@ return [
     body: "<b>General</b> is where you add your Anthropic API key — that one field switches on me and "
         + "every other AI feature. Also here: Notifications, System Parameters, and Users &amp; Roles." },
 
+  // Was a group step pointing at objmap-group, and described the Schema
+  // Explorer as its neighbour. The Explorer moved to Insight and the expander
+  // was flattened, so this is a plain key step about mapping alone.
   { id: 'mapping', section: 'Map &amp; Build', title: 'Object Mapping', page: 'object-mapping',
-    target: '[data-parent="objmap-group"]',
-    body: "<b>Mapping</b> is where source columns are matched to target columns, with a confidence "
-        + "score on each match. <b>Schema Explorer</b> browses both schemas side by side, including "
-        + "relationships it infers rather than reads." },
+    target: '[data-key="object-mapping"]',
+    body: "Where source columns are matched to target columns, with a confidence score on each "
+        + "match. Review what the AI drafted before anything runs." },
 
   { id: 'sql', section: 'Map &amp; Build', title: 'SQL Editor', page: 'sql-editor', target: '[data-key="sql-editor"]',
     body: "Write and run queries against any connection you have registered — handy for checking data "
@@ -123,6 +125,11 @@ return [
     body: "Proving the data arrived intact. <b>Assurance</b> turns validation rules into checks that "
         + "keep running; <b>Quality Review</b> and <b>Validation</b> are the one-off passes; "
         + "<b>Cleansing</b> and <b>Enrichment</b> fix and fill records on the way through." },
+
+  { id: 'schema-explorer', section: 'Insight', title: 'Schema Explorer', page: 'schema-explorer',
+    target: '[data-key="schema-explorer"]',
+    body: "Browses both schemas side by side, including relationships it infers rather than reads. "
+        + "Start here when you do not yet know what is in a database." },
 
   { id: 'analytics', section: 'Insight', title: 'Analytics', page: 'analytics', target: '[data-key="analytics"]',
     body: "Delivery, quality and portfolio metrics across every job, stream and project. It is "
