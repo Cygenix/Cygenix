@@ -266,6 +266,44 @@ body.cyg-collapsed{padding-left:54px}
 .sm-section:first-child{margin-top:0}
 .btn-badge{display:inline-block;min-width:15px;padding:0 4px;margin-left:4px;border-radius:100px;background:var(--accent);color:#fff;font-size:9px;font-family:var(--mono);line-height:14px;text-align:center}
 
+/* Export dialog. Each format is a full-width button with its own sentence:
+   "CSV" and "SVG" beside each other tell you the file extension and nothing
+   about which one answers your question. */
+.sm-export-scope{font-size:11px;color:var(--text3);line-height:1.5;padding:0 0 0.5rem;
+  border-bottom:0.5px solid var(--border);margin-bottom:0.4rem}
+.sm-export-group{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;
+  letter-spacing:0.06em;margin:0.7rem 0 0.35rem}
+.sm-export-group:first-of-type{margin-top:0.2rem}
+.sm-export-item{display:block;width:100%;text-align:left;padding:0.5rem 0.6rem;margin-bottom:0.3rem;
+  white-space:normal;line-height:1.45}
+.sm-export-item b{display:block;font-size:12px;color:var(--text)}
+.sm-export-item span{display:block;font-size:10.5px;color:var(--text3);margin-top:2px}
+.sm-export-item:hover b{color:var(--accent)}
+.sm-export-note{font-size:10.5px;color:var(--text3);line-height:1.45;margin:0 0 0.4rem}
+
+/* ── Print ────────────────────────────────────────────────────────────────
+   The diagram cannot be printed where it lives. #sm-viewport is
+   height:calc(100vh - 132px) with overflow:hidden, and the boxes sit under a
+   CSS transform carrying the current pan and zoom — so printing the page
+   gives you a crop of the diagram at whatever scale the last scroll left it,
+   which is not an export of anything.
+   smExportRun('print') builds the same standalone SVG the SVG download
+   produces, drops it in #se-print, and prints THAT. The SVG carries its own
+   viewBox over the full content bounds, so the page fits the whole diagram
+   however large it is, and it is vector, so it stays sharp when it does. */
+#se-print{display:none}
+@media print{
+  /* Belt and braces: hide by rule as well as by tree position, because the
+     sidebar, the assistant panel, the cookie banner and the status hairline
+     are all position:fixed and a fixed element repeats on every printed page
+     if it is merely off-screen. */
+  body > *{display:none !important}
+  body.se-printing #se-print{display:block !important}
+  body{padding-left:0 !important;background:#fff !important}
+  #se-print svg{width:100%;height:auto;max-width:100%}
+  @page{size:landscape;margin:10mm}
+}
+
 /* ⌘K palette */
 .se-palette{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:none;align-items:flex-start;justify-content:center;z-index:900;padding-top:12vh}
 .se-palette.show{display:flex}
@@ -601,6 +639,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-api.js?v=f33c20a068" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
 <script src="/cygenix-schema-graph.js?v=545d83f459" defer></script>
+<script src="/cygenix-schema-export.js?v=f47f585b8f" defer></script>
 <script src="/cygenix-subject-map.js?v=dbc44c8eb3" defer></script>
 <script src="/cygenix-subject-harvest.js?v=223a1d8144" defer></script>
 <script src="/cygenix-subject-triage.js?v=da00f1f118" defer></script>
@@ -679,6 +718,9 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
                     aria-controls="sm-filters" title="Hide tables you do not want on the diagram">Filters</button>
             <button class="btn" id="sm-infer-btn" onclick="smInferOpen()" aria-controls="sm-infer"
                     title="Rebuild missing relationships from code and data evidence — for databases that declare no foreign keys">Infer</button>
+            <button class="btn" id="sm-export-btn" onclick="smExportToggle()" aria-expanded="false"
+                    aria-controls="sm-export"
+                    title="Print the diagram, or download it and its tables and columns">⤓ Export</button>
             <span class="sm-toolbar-sep"></span>
             <button class="btn" id="sm-tree-btn" onclick="smTogglePanel('tree')"
                     title="Bring the table list back" style="display:none">Show list</button>
@@ -733,6 +775,45 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
             </div>
             <div class="sm-filters-body" id="sm-infer-body"></div>
             <div class="sm-filters-foot" id="sm-infer-foot"></div>
+          </div>
+
+          <!-- Export. Scoped to the diagram, and it says so: the report that
+               prompted this was taken with 12,216 tables hidden by filters and
+               28 on the canvas, so a file called "the schema" would have been
+               wrong by three orders of magnitude. -->
+          <div class="sm-filters" id="sm-export" role="dialog" aria-label="Export the diagram">
+            <div class="sm-filters-head">
+              <div class="panel-title">Export</div>
+              <span class="sm-filters-count" id="sm-export-count"></span>
+              <button class="btn" onclick="smExportToggle()" aria-label="Close">✕</button>
+            </div>
+            <div class="sm-filters-body">
+              <div class="sm-export-scope" id="sm-export-scope"></div>
+              <div class="sm-export-group">The diagram</div>
+              <button class="btn sm-export-item" onclick="smExportRun('print')">
+                <b>Print / save as PDF</b><span>Opens your print dialog — choose "Save as PDF" as the
+                destination. The whole diagram, not the part on screen.</span></button>
+              <button class="btn sm-export-item" onclick="smExportRun('svg')">
+                <b>SVG</b><span>A vector file that stays sharp at any size and can be edited in
+                Illustrator, Inkscape or Visio.</span></button>
+              <div class="sm-export-group">Tables and columns</div>
+              <div class="sm-export-note">Each CSV opens with five commented lines naming the
+                database, the date and what was left out — delete them if your spreadsheet wants
+                the header on row one.</div>
+              <button class="btn sm-export-item" onclick="smExportRun('columns')">
+                <b>Columns · CSV</b><span>One row per column — type, nullability, keys and what each
+                foreign key points at. Opens in Excel.</span></button>
+              <button class="btn sm-export-item" onclick="smExportRun('tables')">
+                <b>Tables · CSV</b><span>One row per table, with row counts and how many
+                relationships run in and out.</span></button>
+              <button class="btn sm-export-item" onclick="smExportRun('rels')">
+                <b>Relationships · CSV</b><span>Every foreign key on the diagram. Inferred ones are
+                marked as such rather than mixed in.</span></button>
+              <button class="btn sm-export-item" onclick="smExportRun('markdown')">
+                <b>Data dictionary · Markdown</b><span>The readable version, for a handover document
+                or a pull request.</span></button>
+              <div class="sm-filters-warn" id="sm-export-warn"></div>
+            </div>
           </div>
           <div class="sm-viewport" id="sm-viewport" tabindex="0" role="application"
                aria-label="Schema diagram. Use the toolbar buttons to zoom, fit and lay out; use the tree or search to select a table.">
@@ -1794,6 +1875,186 @@ function smAnchor(key, colName){
   if (i >= 0) y = p.y + HEAD_H + i * ROW_H + ROW_H/2;
   else y = p.y + boxHeight(node)/2;
   return { x: p.x + BOX_W/2, y };
+}
+
+/* ── Export ───────────────────────────────────────────────────────────────
+   The formats live in cygenix-schema-export.js, which is pure and tested in
+   plain Node. This half owns three things that file cannot: assembling the
+   POSITIONED model, fetching the columns an export needs, and the browser
+   work — a download, or a print.
+
+   The model carries geometry rather than letting the export file recompute
+   it. smAnchor already decides that an edge meets the row for its column when
+   that row is drawn and the box's centre when it is not, and smShownCols
+   already decides which nine of forty columns are above the fold. Deriving
+   either a second time is how an exported diagram quietly stops matching the
+   one on screen, so the answers are handed over, not the rules. */
+
+function smExportToggle(){
+  const el = $('sm-export'), btn = $('sm-export-btn'), bar = document.querySelector('.sm-toolbar');
+  if (!el) return;
+  const open = !el.classList.contains('show');
+  // All three panels are absolutely positioned at the same spot, so opening
+  // one has to close the others or they stack invisibly.
+  if (open){
+    const f = $('sm-filters'); if (f && f.classList.contains('show')) smFiltersToggle();
+    smInferClose();
+    // Same reason as smFiltersToggle: the toolbar wraps to two or three rows
+    // at narrow widths, and a fixed offset lands the panel on the buttons.
+    if (bar) el.style.top = (bar.offsetHeight + 12) + 'px';
+  }
+  el.classList.toggle('show', open);
+  btn.setAttribute('aria-expanded', String(open));
+  btn.classList.toggle('on', open);
+  if (open) smExportSync();
+}
+function smExportClose(){
+  const el = $('sm-export');
+  if (!el || !el.classList.contains('show')) return;
+  el.classList.remove('show');
+  $('sm-export-btn').setAttribute('aria-expanded', 'false');
+  $('sm-export-btn').classList.remove('on');
+}
+
+/* What the reader is about to get, before they pick a format. The hidden
+   count is the important half: on the database this was reported from it is
+   12,216, and an export that did not mention it would read as the estate. */
+function smExportSync(){
+  const tables = smTables();
+  const hidden = smHiddenCount();
+  const g = SM.graph;
+  $('sm-export-count').textContent = tables.length + (tables.length === 1 ? ' table' : ' tables');
+  $('sm-export-scope').innerHTML =
+    'Everything below covers the <b>' + num(tables.length) + '</b> '
+    + (tables.length === 1 ? 'table' : 'tables') + ' on the diagram'
+    + (hidden ? ', not the ' + num(hidden) + ' hidden by your filters' : '')
+    + (SM.focusDepth ? ', focused to ' + SM.focusDepth + ' hop' + (SM.focusDepth === 1 ? '' : 's') : '')
+    + '. Database: <b>' + esc((g && g.database) || 'unknown') + '</b>.';
+  const warn = $('sm-export-warn');
+  const missing = tables.filter(t => !t.columns).length;
+  warn.textContent = missing
+    ? missing + ' of these tables have not had their columns loaded yet. The three '
+      + 'column exports will fetch them first, which takes a moment on a wide schema.'
+    : '';
+}
+
+/* Columns are lazy — smEnsureLoaded prefetches the first 60 and the rest
+   arrive when a box needs them. An export that skipped the rest would produce
+   a dictionary with holes in it and no indication which rows were missing
+   because of the schema and which because of the fetch, so it waits. */
+async function smExportEnsureColumns(tables){
+  const need = tables.filter(t => !t.columns).map(t => t.key);
+  if (!need.length) return;
+  let done = 0;
+  const tok = window.CygenixBusy
+    ? window.CygenixBusy.start('Reading columns', { total: need.length }) : null;
+  smStatus('Reading columns for ' + need.length + ' tables…');
+  try {
+    await CygenixSchemaGraph.columnsFor(SM.side, need, () => {
+      done++;
+      if (tok) tok.progress(done);
+      if (done % 10 === 0) smStatus('Reading columns… ' + done + '/' + need.length);
+    });
+  } finally {
+    if (tok) tok.done();
+    smStatus('');
+  }
+}
+
+/* The positioned model. Edge anchors come from smAnchor, so the exported
+   picture uses the same geometry as the drawn one; the edge set is the same
+   filter smRenderCanvas applies, minus the trace and selection rules, which
+   are about what you are looking at rather than what the diagram contains. */
+function smExportModel(){
+  const g = SM.graph;
+  const tables = smTables();
+  const shown = new Set(tables.map(t => t.key));
+  const pos = {};
+  const modelTables = tables.map(t => {
+    pos[t.key] = SM.pos[t.key] || { x: 0, y: 0 };
+    const cols = t.columns || [];
+    const pks = t.primaryKeys || [];
+    return {
+      schema: t.schema, name: t.name, key: t.key, kind: t.kind, rowCount: t.rowCount,
+      columns: t.columns, primaryKeys: pks, columnsError: t.columnsError,
+      colour: schemaColour(t.schema),
+      shownColumns: smShownCols(t).map(c => ({
+        name: c.name, type: c.type || '',
+        pk: pks.indexOf(c.name) >= 0, fk: t.fkColumns.indexOf(c.name) >= 0 })),
+      moreCount: cols.length > MAX_ROWS ? cols.length - MAX_ROWS : 0,
+    };
+  });
+  const edges = [];
+  for (const e of (g ? g.edges : []).concat(SM.infEdges || [])){
+    if (e.self || !shown.has(e.from) || !shown.has(e.to)) continue;
+    const a = smAnchor(e.from, e.fromColumn), b = smAnchor(e.to, e.toColumn);
+    edges.push({ from: e.from, to: e.to, fromColumn: e.fromColumn, toColumn: e.toColumn,
+      name: e.name || '', inferred: !!e.inferred, tier: e.tier, confidence: e.confidence,
+      orphanRate: e.orphanRate, a, b });
+  }
+  return {
+    database: (g && g.database) || '', side: SM.side, generatedAt: Date.now(),
+    tables: modelTables, edges, pos,
+    geom: { boxW: BOX_W, rowH: ROW_H, headH: HEAD_H, maxRows: MAX_ROWS },
+    hiddenCount: smHiddenCount(), focusDepth: SM.focusDepth,
+  };
+}
+
+function smDownload(text, name, mime){
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 2000);
+}
+
+const SM_EXPORTS = {
+  svg:      { ext:'svg', mime:'image/svg+xml',  what:'diagram',      cols:false, make:(X,m) => X.diagramSvg(m) },
+  columns:  { ext:'csv', mime:'text/csv',       what:'columns',      cols:true,  make:(X,m) => X.columnsCsv(m) },
+  tables:   { ext:'csv', mime:'text/csv',       what:'tables',       cols:true,  make:(X,m) => X.tablesCsv(m) },
+  rels:     { ext:'csv', mime:'text/csv',       what:'relationships',cols:false, make:(X,m) => X.relationshipsCsv(m) },
+  markdown: { ext:'md',  mime:'text/markdown',  what:'dictionary',   cols:true,  make:(X,m) => X.dictionaryMarkdown(m) },
+};
+
+async function smExportRun(kind){
+  const X = window.CygenixSchemaExport;
+  if (!X){ smStatus('Export module not loaded — reload the page.'); return; }
+  const tables = smTables();
+  if (!tables.length){ smStatus('Nothing on the diagram to export.'); return; }
+
+  // The diagram exports draw the boxes as they are drawn on screen, which
+  // needs no extra fetch; the three data exports are about the columns
+  // themselves and are worth the wait.
+  const spec = kind === 'print' ? null : SM_EXPORTS[kind];
+  if (spec && spec.cols) await smExportEnsureColumns(tables);
+
+  const model = smExportModel();
+  if (kind === 'print'){ smPrintDiagram(model); smExportClose(); return; }
+  smDownload(spec.make(X, model), X.fileName(model, spec.what, spec.ext), spec.mime);
+  smStatus('Exported ' + spec.what + '.');
+  smExportClose();
+}
+
+/* Print. The SVG goes into #se-print, body gets .se-printing, and the print
+   stylesheet does the rest. Cleared on afterprint rather than straight after
+   print() returns: in some browsers print() is asynchronous and returns while
+   the preview is still open, and tearing the SVG out from under it prints a
+   blank page. The onafterprint handler is removed each time so a second
+   export does not stack listeners. */
+function smPrintDiagram(model){
+  const host = $('se-print');
+  if (!host) return;
+  host.innerHTML = window.CygenixSchemaExport.diagramSvg(model);
+  document.body.classList.add('se-printing');
+  const cleanup = () => {
+    document.body.classList.remove('se-printing');
+    host.innerHTML = '';
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  try { window.print(); }
+  catch (e) { cleanup(); smStatus('Could not open the print dialog.'); }
 }
 
 function smEdgeOnPath(e){
@@ -5620,5 +5881,8 @@ Object.assign(window.CygenixAssistantAdapters = window.CygenixAssistantAdapters 
   },
 });
 </script>
+<!-- Where the print rendering goes. A direct child of body, because the print
+     stylesheet hides body's children and un-hides this one. -->
+<div id="se-print" aria-hidden="true"></div>
 </body>
 </html>
