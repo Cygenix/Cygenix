@@ -1377,12 +1377,88 @@ function smHidden(t, rules){
 // excepted — it is the anchor of the question), and the status line says how
 // many referencing tables the rules removed, so nothing vanishes silently.
 //
+// TWO KINDS OF QUESTION, ONE BOX. Reported: typing a TABLE name answered "No
+// foreign key references a field matching MattBillingContact" and left the
+// diagram alone, while the inspector was showing that table's three foreign
+// keys at the same moment. The box only ever looked at column names, so a
+// table name matched nothing — which is a worse answer than no answer,
+// because it says the relationships do not exist.
+//
+//   TABLE mode   the query is EXACTLY a table name: show that table and
+//                everything it is joined to, its own FKs going out and the
+//                FKs pointing in.
+//   FIELD mode   anything else: the original behaviour, unchanged.
+//
+// Exact table names only, never a contains match. A schema of this shape
+// carries MattBillingContact, MattBillingContact_draft and
+// MattBillingContact_audit, and "show me the table" turning into "show me
+// four tables and their neighbours" is not the question that was asked. The
+// field path keeps its contains fallback, where a partial name is how you
+// find a column you half-remember.
+//
+// Both modes return the same shape, so the canvas, the tree, the exclusion
+// rules and the column promotion are untouched — `owners` is the anchor the
+// diagram outlines in amber and the one table the rules may not hide, which
+// in table mode is the table you asked about.
+//
 // Pure function so the tests run the shipped logic directly. Accepts a bare
 // field name or table.field to disambiguate; exact (case-insensitive) match
 // first, contains as a fallback.
 function smComputeTrace(graph, query){
   const q = String(query || '').trim().toLowerCase();
   if (!q || !graph || !graph.ok) return null;
+
+  const owners = new Set(), members = new Set(), edgeKeys = new Set();
+  const colHits = new Map();
+  const addCol = (key, col) => {
+    if (!colHits.has(key)) colHits.set(key, new Set());
+    colHits.get(key).add(col);
+  };
+  const collect = (hits) => {
+    for (const e of hits){
+      members.add(e.to); members.add(e.from);
+      edgeKeys.add(e.from + '|' + e.fromColumn + '|' + e.to + '|' + e.toColumn);
+      addCol(e.to, e.toColumn);
+      addCol(e.from, e.fromColumn);
+    }
+  };
+
+  // Every table key the graph knows, lowercased. byKey and tables come from
+  // the real graph; the edge fallback is for callers that pass edges alone,
+  // and costs only that a table with no foreign keys either way cannot be
+  // recognised — which is the one case where table mode has nothing to draw.
+  const keyFor = (want) => {
+    const seen = [];
+    if (graph.byKey) for (const k in graph.byKey) seen.push(k);
+    else if (graph.tables) for (const t of graph.tables) seen.push(t.key);
+    else for (const e of graph.edges){ seen.push(e.from); seen.push(e.to); }
+    for (const k of seen){
+      const lk = k.toLowerCase();
+      // Either the whole key (dbo.matter) or the name after the schema
+      // (matter) — nobody types the schema when there is only one.
+      if (lk === want || lk.endsWith('.' + want)) return k;
+    }
+    return null;
+  };
+
+  // TABLE mode. Only a bare name: a dot means table.field, which is the
+  // field path's own syntax and must keep working (see the fallback below
+  // for the fully-qualified case).
+  if (!q.includes('.')){
+    const tableKey = keyFor(q);
+    if (tableKey){
+      const hits = graph.edges.filter(e => !e.self && (e.from === tableKey || e.to === tableKey));
+      if (!hits.length) return { q, mode: 'table', table: tableKey, empty: true };
+      collect(hits);
+      // The table asked about is the anchor, whichever end of each edge it
+      // sits on — unlike field mode, where the anchor is the referenced side.
+      owners.add(tableKey);
+      members.add(tableKey);
+      return { q, mode: 'table', table: tableKey, empty: false, owners, members, edgeKeys, colHits };
+    }
+  }
+
+  // FIELD mode — unchanged.
   let tableQ = '', fieldQ = q;
   if (q.includes('.')){
     const at = q.lastIndexOf('.');
@@ -1398,22 +1474,26 @@ function smComputeTrace(graph, query){
     && ((test(e.toColumn) && tableMatches(e.to)) || (test(e.fromColumn) && tableMatches(e.from))));
   let hits = pick(c => String(c || '').toLowerCase() === fieldQ);
   if (!hits.length) hits = pick(c => String(c || '').toLowerCase().includes(fieldQ));
-  if (!hits.length) return { q, empty: true };
-
-  const owners = new Set(), members = new Set(), edgeKeys = new Set();
-  const colHits = new Map();
-  const addCol = (key, col) => {
-    if (!colHits.has(key)) colHits.set(key, new Set());
-    colHits.get(key).add(col);
-  };
-  for (const e of hits){
-    owners.add(e.to);
-    members.add(e.to); members.add(e.from);
-    edgeKeys.add(e.from + '|' + e.fromColumn + '|' + e.to + '|' + e.toColumn);
-    addCol(e.to, e.toColumn);
-    addCol(e.from, e.fromColumn);
+  if (!hits.length){
+    // The fully-qualified case. "dbo.MattBillingContact" is schema.table to a
+    // reader and table.field to the parser above, so it finds no column and
+    // would report that no foreign key matches — the exact wrong answer this
+    // whole change exists to remove, reintroduced one dot later. Only reached
+    // when the field search found nothing, so it cannot alter a field trace.
+    const whole = keyFor(q);
+    if (whole){
+      const th = graph.edges.filter(e => !e.self && (e.from === whole || e.to === whole));
+      if (!th.length) return { q, mode: 'table', table: whole, empty: true };
+      collect(th);
+      owners.add(whole); members.add(whole);
+      return { q, mode: 'table', table: whole, empty: false, owners, members, edgeKeys, colHits };
+    }
+    return { q, mode: 'field', empty: true };
   }
-  return { q, empty: false, owners, members, edgeKeys, colHits };
+
+  collect(hits);
+  for (const e of hits) owners.add(e.to);
+  return { q, mode: 'field', empty: false, owners, members, edgeKeys, colHits };
 }
 
 let _traceTimer = null;
@@ -1426,14 +1506,20 @@ function smTraceApply(){
   const q = el ? el.value : '';
   // The trace answers from every edge on the diagram — inferred ones
   // included, since on a FK-less database they are the only edges there are.
+  // byKey rides along so table mode can recognise a table that declares no
+  // foreign keys at all, and answer "no foreign keys" rather than "no such
+  // thing"; the edges alone could not tell those two apart.
   const t = smComputeTrace(SM.graph && SM.graph.ok
-    ? { ok: true, edges: SM.graph.edges.concat(SM.infEdges || []) }
+    ? { ok: true, edges: SM.graph.edges.concat(SM.infEdges || []), byKey: SM.graph.byKey }
     : SM.graph, q);
   if (t && t.empty){
     // Nothing matched: say so and leave the diagram alone rather than
-    // blanking it under the user's cursor.
+    // blanking it under the user's cursor. A named table with no foreign keys
+    // is a different fact from an unrecognised name, and says so.
     SM.trace = null;
-    smStatus('No foreign key references a field matching “' + q.trim() + '”');
+    smStatus(t.mode === 'table'
+      ? t.table + ' has no foreign keys in or out'
+      : 'No foreign key references a field matching “' + q.trim() + '”');
   } else {
     SM.trace = t;
     smTraceStatus();
@@ -1458,14 +1544,33 @@ function smTraceClear(){
 function smTraceStatus(){
   const t = SM.trace;
   if (!t){ smStatus(''); return; }
-  const refs = t.members.size - t.owners.size;
   const hiddenByRules = t.members.size - smTables().length;
+  const hidden = hiddenByRules > 0 ? ' · ' + hiddenByRules + ' hidden by your filters' : '';
+
+  // Table mode counts the two directions separately, because they are two
+  // different facts about a table: what it depends on, and what depends on
+  // it. The parenthesis is how many distinct tables the incoming keys come
+  // FROM — several foreign keys often arrive from the same table, and
+  // "9 incoming (2 tables)" is the number you act on.
+  if (t.mode === 'table'){
+    let out = 0, inc = 0;
+    const incFrom = new Set();
+    for (const k of t.edgeKeys){
+      const p = k.split('|');
+      if (p[0] === t.table) out++;
+      if (p[2] === t.table){ inc++; incFrom.add(p[0]); }
+    }
+    smStatus(t.table + ' · ' + out + ' outgoing FK' + (out === 1 ? '' : 's')
+      + ' · ' + inc + ' incoming (' + incFrom.size + ' table' + (incFrom.size === 1 ? '' : 's') + ')'
+      + hidden);
+    return;
+  }
+
+  const refs = t.members.size - t.owners.size;
   const ownerNames = [...t.owners].sort();
   smStatus('“' + t.q + '” · owner ' + ownerNames.join(', ')
     + ' · ' + refs + ' referencing table' + (refs === 1 ? '' : 's')
-    + (hiddenByRules > 0
-      ? ' · ' + hiddenByRules + ' hidden by your filters'
-      : ''));
+    + hidden);
 }
 
 // The columns a box actually shows. With a trace active the hit columns are
@@ -1493,7 +1598,12 @@ let _filterCache = null;
 function smTables(){
   const g = SM.graph;
   if (!g || !g.ok) return [];
-  const traceSig = SM.trace ? '|trace:' + SM.trace.q + ':' + SM.trace.members.size : '';
+  // The mode is part of the signature: the same word can be a table name and
+  // a column substring, and the two traces can hold the same NUMBER of
+  // members while holding different ones. Without it the cache would serve
+  // one mode's table list to the other.
+  const traceSig = SM.trace
+    ? '|trace:' + SM.trace.mode + ':' + SM.trace.q + ':' + SM.trace.members.size : '';
   const sig = JSON.stringify(SM.filters) + '|' + SM.side + '|' + g.tables.length + traceSig;
   if (_filterCache && _filterCache.sig === sig) return _filterCache.tables;
   let tables;

@@ -227,9 +227,117 @@ console.log('Schema Explorer — coverage view and page wiring\n');
       trace('zzz').empty === true);
     check('an empty query means no trace', trace('') === null);
     check('a self-referencing edge is ignored', trace('NoteId').empty === true);
+    check('every field answer is labelled as one, so the status line can tell them apart',
+      trace('CustomerId').mode === 'field' && trace('zzz').mode === 'field');
+
+    /* ── Table mode ──────────────────────────────────────────────────────
+       Reported: typing a TABLE name answered "No foreign key references a
+       field matching MattBillingContact" and left the diagram alone, while
+       the inspector was showing that same table's three foreign keys. The
+       box only looked at column names — so a table name matched nothing,
+       which is a worse answer than none: it says the relationships are not
+       there.
+
+       The fixture is the reported schema, because the bug was reported
+       against these exact names and the shapes matter: MattBillingContact
+       declares three keys and receives none; BillingContactType receives two
+       and declares none; and BillingContactType is BOTH a table name and a
+       column name, which is what makes the precedence rule a decision rather
+       than an accident. */
+    const H = {
+      ok: true,
+      byKey: { 'dbo.MattBillingContact': 1, 'dbo.CliBillingContact': 1, 'dbo.BillingContactType': 1,
+        'dbo.Entity': 1, 'dbo.Matter': 1, 'dbo.Lonely': 1, 'dbo.MattBillingContact_draft': 1 },
+      edges: [
+        E('dbo.MattBillingContact', 'BillingContactType', 'dbo.BillingContactType', 'Code'),
+        E('dbo.MattBillingContact', 'EntityPerson', 'dbo.Entity', 'EntIndex'),
+        E('dbo.MattBillingContact', 'Matter', 'dbo.Matter', 'MattIndex'),
+        E('dbo.CliBillingContact', 'BillingContactType', 'dbo.BillingContactType', 'Code'),
+      ],
+    };
+    const tr = (q) => vm.runInContext('smComputeTrace', sb2)(H, q);
+
+    let x = tr('MattBillingContact');
+    check('a table name is answered with that table\'s relationships, not with "no match"',
+      x && !x.empty && x.mode === 'table' && x.table === 'dbo.MattBillingContact',
+      JSON.stringify(x && { m: x.mode, e: x.empty }));
+    check('all three of its declared foreign keys are traced',
+      x.edgeKeys.size === 3 && [...x.members].sort().join() ===
+        'dbo.BillingContactType,dbo.Entity,dbo.MattBillingContact,dbo.Matter',
+      [...x.members].sort().join());
+    // In field mode the anchor is the REFERENCED side; here it has to be the
+    // table asked about, whichever end of each edge it sits on — it is what
+    // the diagram outlines and the one table the exclusion rules may not hide.
+    check('the table asked about is the anchor, though it is the referencing side of every edge',
+      [...x.owners].join() === 'dbo.MattBillingContact');
+    check('the columns on both ends of each key are marked, so the boxes show them',
+      [...x.colHits.get('dbo.MattBillingContact')].sort().join() === 'BillingContactType,EntityPerson,Matter'
+      && x.colHits.get('dbo.Matter').has('MattIndex'),
+      [...x.colHits.get('dbo.MattBillingContact')].sort().join());
+
+    x = tr('BillingContactType');
+    check('a table that only RECEIVES keys traces its incoming ones',
+      x.mode === 'table' && x.edgeKeys.size === 2
+      && [...x.members].sort().join() ===
+        'dbo.BillingContactType,dbo.CliBillingContact,dbo.MattBillingContact',
+      [...x.members].sort().join());
+    // BillingContactType is also the name of a column on two tables. The
+    // table reading wins because an exact table name is a precise request,
+    // where a column name is matched loosely and would have answered a
+    // narrower question than the one asked.
+    check('a name that is both a table and a column is read as the table',
+      x.mode === 'table' && x.table === 'dbo.BillingContactType');
+
+    check('a table name matches without its schema, and without its case',
+      tr('mattbillingcontact').table === 'dbo.MattBillingContact'
+      && tr('dbo.matter').table === 'dbo.Matter');
+    // The contains fallback belongs to the field path only. This schema also
+    // holds MattBillingContact_draft; "show me the table" must not become
+    // "show me two tables and everything they touch".
+    check('only an EXACT table name triggers table mode — no contains match on tables',
+      tr('BillingContact').mode === 'field',
+      JSON.stringify({ mode: tr('BillingContact').mode, table: tr('BillingContact').table }));
+    // A table with no keys either way is a different fact from a name nobody
+    // recognises, and the status line says which.
+    check('a known table with no foreign keys reports empty AS A TABLE, so it can say so',
+      tr('Lonely').empty === true && tr('Lonely').mode === 'table'
+      && tr('Lonely').table === 'dbo.Lonely');
+    check('an unknown name is still an empty FIELD answer',
+      tr('zzz').empty === true && tr('zzz').mode === 'field');
+
+    check('table.field still traces the one field, unchanged',
+      tr('MattBillingContact.Matter').mode === 'field'
+      && tr('MattBillingContact.Matter').edgeKeys.size === 1
+      && [...tr('MattBillingContact.Matter').owners].join() === 'dbo.Matter');
+    check('and a column-only name still traces the field',
+      tr('EntityPerson').mode === 'field'
+      && [...tr('EntityPerson').owners].join() === 'dbo.Entity');
+    // "dbo.MattBillingContact" is schema.table to a reader and table.field to
+    // the parser. Left alone it finds no column and reports that no foreign
+    // key matches — the exact wrong answer this change exists to remove,
+    // one dot later. Only reached when the field search found nothing.
+    check('a fully-qualified table name falls through to table mode rather than reporting no match',
+      tr('dbo.MattBillingContact').mode === 'table'
+      && tr('dbo.MattBillingContact').edgeKeys.size === 3);
   }
 
   check('the trace input is in the toolbar', /id="sm-trace"/.test(html));
+  // Table mode has to be able to tell "this table declares no keys" from
+  // "no such table", and the edge list alone cannot: a table with no keys
+  // appears in no edge. byKey is what carries the difference.
+  check('the page hands the trace its table list, not only its edges',
+    /smComputeTrace\(SM\.graph && SM\.graph\.ok\s*\n?\s*\? \{ ok: true, edges: SM\.graph\.edges\.concat\(SM\.infEdges \|\| \[\]\), byKey: SM\.graph\.byKey \}/.test(html));
+  check('a named table with no foreign keys says exactly that, rather than "no match"',
+    /t\.mode === 'table'\s*\n?\s*\? t\.table \+ ' has no foreign keys in or out'/.test(html));
+  check('and an unmatched field keeps the message it had',
+    /No foreign key references a field matching/.test(html));
+  check('the table headline counts the two directions separately',
+    /outgoing FK/.test(html) && /incoming \(/.test(html)
+    && /if \(p\[0\] === t\.table\) out\+\+/.test(html));
+  // The same word can be a table name and a column substring, and the two
+  // traces can hold the same NUMBER of members while holding different ones.
+  check('the filter memo is keyed on the mode as well as the query, or it would serve the wrong tables',
+    /'\|trace:' \+ SM\.trace\.mode \+ ':' \+ SM\.trace\.q/.test(html));
   check('the owner is visibly distinct — different border, declared after .sel so it wins',
     html.indexOf('.sm-box.sel{') < html.indexOf('.sm-box.owner{')
     && /\.sm-box\.owner\{border:2px solid var\(--amber\)/.test(html));
