@@ -103,6 +103,27 @@ STEPS.forEach((s) => {
 check('a group step navigates to one of that group\'s own children',
   mismatched.length === 0, mismatched.join(', '));
 
+// The tour spotlights one rail item after another. If its sections run in a
+// different order from the rail's, the highlight walks two thirds of the way
+// down the sidebar and then jumps back up, which is how a tour reads as
+// broken rather than guided. This nearly happened when Insight moved above
+// Map & Build in Sep-2026 and the two Insight steps stayed where they were.
+// Steps outside the rail — Welcome, Start here, Finish — are not sections.
+const navSections = NAV.map((s) => s.section).filter(Boolean);
+const stepSections = [];
+STEPS.forEach((s) => {
+  const name = String(s.section || '').replace(/&amp;/g, '&');
+  if (navSections.indexOf(name) < 0) return;
+  if (stepSections[stepSections.length - 1] !== name) stepSections.push(name);
+});
+check('the tour walks the rail in rail order, never back up it',
+  JSON.stringify(stepSections) === JSON.stringify(navSections.filter((n) => stepSections.indexOf(n) >= 0)),
+  'steps: ' + stepSections.join(' → ') + '  |  rail: ' + navSections.join(' → '));
+// A section appearing twice means its steps are split by another section's,
+// which the comparison above cannot see on its own.
+check('and visits each section once, rather than returning to it later',
+  new Set(stepSections).size === stepSections.length, stepSections.join(' → '));
+
 /* Non-sidebar targets are real selectors in real files, not hopeful guesses. */
 const assistantJs = read('public', 'cygenix-assistant.js');
 const sidebarJs = read('public', 'cygenix-sidebar.js');

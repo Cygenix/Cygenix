@@ -93,6 +93,34 @@
         { key:'user-roles',        label:'Users & Roles',     href:'/user-roles',  color:'var(--accent)', icon: iconUsers() },
       ]},
     ]},
+    // Its own section, deliberately, and deliberately NOT called 'Analyse'.
+    // 'Analyse' is already a stage of the migration pipeline on Home — the one
+    // where a schema gets profiled — and a rail item sharing that word would
+    // read as a step in the lifecycle rather than a lens over it.
+    //
+    // MOVED UP (Sep-2026, on request) from between Validate and Report &
+    // Govern. It sat there when it held Analytics alone, on the reading that
+    // there is nothing to look at until something has run. The Schema
+    // Explorer arriving changed what the section is: its first item is the
+    // screen you open before you map anything, to find out what is in the
+    // databases you just connected. Connect → look at what you connected →
+    // map it is the order the work actually happens in, and a section whose
+    // first item belongs at the start does not belong two thirds of the way
+    // down the rail.
+    //
+    // Analytics is the awkward half — it reports on runs, so it genuinely
+    // belongs late — but it is one item, it is the SECOND item, and nobody
+    // hunts for a dashboard by position. Splitting Insight in two to place
+    // them separately would cost a rail section to save a scroll.
+    { section: 'Insight', group:'insight', items: [
+      // Schema Explorer first: the two answer the same kind of question at
+      // opposite ends of a migration, and this is the order you ask them in —
+      // what is in these databases, then what happened when we moved them.
+      // Its being first is also what justifies the section's new position, so
+      // the two decisions have to move together.
+      { key:'schema-explorer', label:'Schema Explorer', href:'/schema-explorer', color:'var(--purple)', icon: iconGraph() },
+      { key:'analytics', label:'Analytics', href:'/analytics', color:'var(--accent)', icon: iconChart() },
+    ]},
     { section: 'Map & Build', group:'build', items: [
       // The Schema Explorer moved to Insight (Sep-2026, on request). It reads
       // a schema and shows what is there — including relationships it infers
@@ -181,24 +209,6 @@
       // 'Data Insights' was removed on request (16-Aug-2026): the Schema
       // Explorer's Data map now covers schema discovery. The page itself
       // still answers at /insights for old bookmarks.
-    ]},
-    // Its own section, deliberately, and deliberately NOT called 'Analyse'.
-    // 'Analyse' is already a stage of the migration pipeline on Home — the one
-    // where a schema gets profiled — and a rail item sharing that word would
-    // read as a step in the lifecycle rather than a lens over it. Analytics
-    // reports on Connect→Cutover; it is not a phase of it. It sits after
-    // Validate and before Report & Govern for the same reason: you look at it
-    // once there is something to look at, and before you write anything down.
-    { section: 'Insight', group:'insight', items: [
-      // Schema Explorer first, because the two answer the same kind of
-      // question at different ends of a migration and that is the order you
-      // ask them in: what is in these databases, then what happened when we
-      // moved them. Moving it here also un-splits schema discovery — the
-      // 'Data Insights' item removed in Aug-2026 was dropped on the grounds
-      // that the Schema Explorer's Data map covers it, and this is where that
-      // item used to be pointed.
-      { key:'schema-explorer', label:'Schema Explorer', href:'/schema-explorer', color:'var(--purple)', icon: iconGraph() },
-      { key:'analytics', label:'Analytics', href:'/analytics', color:'var(--accent)', icon: iconChart() },
     ]},
     { section: 'Report & Govern', group:'govern', items: [
       { key:'reports-group', label:'Reports', icon: iconReport(), children: [

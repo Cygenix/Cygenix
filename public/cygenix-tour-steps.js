@@ -84,6 +84,19 @@ return [
     body: "<b>General</b> is where you add your Anthropic API key — that one field switches on me and "
         + "every other AI feature. Also here: Notifications, System Parameters, and Users &amp; Roles." },
 
+  // Insight moved above Map & Build on the rail (Sep-2026), so these two moved
+  // with it. The tour spotlights one item after another down the rail; leaving
+  // them between Validate and Report would have sent the highlight two thirds
+  // of the way down the sidebar and then back up to the top.
+  { id: 'schema-explorer', section: 'Insight', title: 'Schema Explorer', page: 'schema-explorer',
+    target: '[data-key="schema-explorer"]',
+    body: "Browses both schemas side by side, including relationships it infers rather than reads. "
+        + "Start here when you do not yet know what is in a database." },
+
+  { id: 'analytics', section: 'Insight', title: 'Analytics', page: 'analytics', target: '[data-key="analytics"]',
+    body: "Delivery, quality and portfolio metrics across every job, stream and project. It is "
+        + "read-only: every figure links through to the screen that can act on it." },
+
   // Was a group step pointing at objmap-group, and described the Schema
   // Explorer as its neighbour. The Explorer moved to Insight and the expander
   // was flattened, so this is a plain key step about mapping alone.
@@ -125,15 +138,6 @@ return [
     body: "Proving the data arrived intact. <b>Assurance</b> turns validation rules into checks that "
         + "keep running; <b>Quality Review</b> and <b>Validation</b> are the one-off passes; "
         + "<b>Cleansing</b> and <b>Enrichment</b> fix and fill records on the way through." },
-
-  { id: 'schema-explorer', section: 'Insight', title: 'Schema Explorer', page: 'schema-explorer',
-    target: '[data-key="schema-explorer"]',
-    body: "Browses both schemas side by side, including relationships it infers rather than reads. "
-        + "Start here when you do not yet know what is in a database." },
-
-  { id: 'analytics', section: 'Insight', title: 'Analytics', page: 'analytics', target: '[data-key="analytics"]',
-    body: "Delivery, quality and portfolio metrics across every job, stream and project. It is "
-        + "read-only: every figure links through to the screen that can act on it." },
 
   { id: 'reports', section: 'Report &amp; Govern', title: 'Reports', page: 'report-builder',
     target: '[data-parent="reports-group"]',

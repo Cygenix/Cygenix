@@ -85,19 +85,34 @@ for (const sec of NAV) for (const it of sec.items) {
 ACCT.forEach(leafCheck);
 check('every leaf has exactly one destination', badLeaves.length === 0, badLeaves.join(', '));
 
-// 5. Lifecycle order per the review: Connect → Map & Build → Run → Validate
-//    → Insight → Report & Govern.
+// 5. Lifecycle order: Connect → Insight → Map & Build → Run → Validate
+//    → Report & Govern.
 //
-//    Insight holds Analytics and is named that way on purpose: 'Analyse' is
-//    already a stage of the migration pipeline, and a second thing wearing
-//    that word would read as a step in the lifecycle rather than a lens over
-//    it. It sits after Validate because there is nothing to look at until
-//    something has run, and before Report & Govern because you read the
-//    numbers before you write them down.
+//    Insight is named that way on purpose: 'Analyse' is already a stage of
+//    the migration pipeline, and a second thing wearing that word would read
+//    as a step in the lifecycle rather than a lens over it.
+//
+//    It used to sit between Validate and Report & Govern, because when it
+//    held Analytics alone there was nothing to look at until something had
+//    run. It moved up in Sep-2026 (on request) when the Schema Explorer
+//    joined it: that is the screen you open BEFORE you map anything, to find
+//    out what is in the databases you have just connected. Connect → look at
+//    what you connected → map it.
+//
+//    Analytics is the half that still belongs late. It stays here because it
+//    is one item, it is the second item, and splitting the section in two to
+//    place them separately would spend a rail heading to save a scroll.
 const sections = NAV.map(s => s.section).filter(Boolean);
 check('sections follow the lifecycle order',
-  JSON.stringify(sections) === JSON.stringify(['Connect','Map & Build','Run','Validate','Insight','Report & Govern']),
+  JSON.stringify(sections) === JSON.stringify(['Connect','Insight','Map & Build','Run','Validate','Report & Govern']),
   'got: ' + sections.join(' → '));
+// The move is only defensible while the Explorer leads the section — see the
+// comment above the section in cygenix-sidebar.js. If Analytics ever came
+// first, Insight would be sitting between Connect and Map & Build opening on
+// a dashboard of runs that have not happened yet.
+check('and Insight still leads with the Schema Explorer, which is what justifies its position',
+  NAV.find(s => s.section === 'Insight').items[0].key === 'schema-explorer',
+  NAV.find(s => s.section === 'Insight').items.map(i => i.key).join(','));
 
 // 6. The renames from the review landed, and the old branded labels are gone.
 const labels = [];
