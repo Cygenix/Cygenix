@@ -139,7 +139,7 @@
     var sourceRef = SOURCE_PREFIX + name;
     var id = 'job_' + (o.now ? Date.parse(o.now) : Date.now());
 
-    return {
+    var job = {
       id: id,
       name: name + ' → (choose a target)',
       jobType: 'simple-map',
@@ -176,6 +176,13 @@
       fromAnalyser: true,
       warnings: warnings,
     };
+    /* Profile stamp. This builder is the creation point — the callers in the
+       dashboard, Object Mapping and Project Builder only persist what comes
+       back — so the stamp belongs here, where the job is made, rather than in
+       three places that would each have to remember. */
+    try { if (typeof window !== 'undefined' && window.CygenixJobProfile) CygenixJobProfile.stamp(job); }
+    catch (e) { /* a job must be created whether or not a profile can be read */ }
+    return job;
   }
 
   function isFileJob(job) {

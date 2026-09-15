@@ -1167,6 +1167,12 @@ ${buildWasisSummary(wasisRules, wasisApplicationLog)}`;
       warnings: wasisCount > 0 ? [`Was/Is mapping applied: ${wasisCount.toLocaleString()} value substitutions across ${wasisRules.length} rules`] : [],
     };
 
+    // Which connection profile this job belongs to — stamped from the one the
+    // sidebar pill is showing. A new job every time here, so attach() always
+    // takes the stamping path; state.jobs is passed for the same reason it is
+    // everywhere else, so every call site reads identically.
+    try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, state.jobs); }
+    catch(e){ console.warn('[job-profile]', e); }
     state.jobs.unshift(job);
     persistJobs();
     // Schedule the first auto-version snapshot. This produces the v1
@@ -3932,11 +3938,36 @@ function jobsTableHTML(jobs) {
     return '<span style="font-size:10px;color:var(--text3)">' + d.toLocaleDateString('en-GB') + '</span>';
   }
 
+  // The Profile cell. One store read per render rather than one per row —
+  // this runs for every job on every redraw, and a hundred rows is a hundred
+  // JSON.parses of the profile store otherwise.
+  const _profStore = (window.CygenixJobProfile && CygenixJobProfile.load()) || null;
+  function jobProfilePill(j){
+    let p = null;
+    try { p = window.CygenixJobProfile ? CygenixJobProfile.of(j, _profStore) : null; }
+    catch(e){ p = null; }
+    // An old job has none, and that is not an error — it predates the field.
+    if (!p) return '<span style="color:var(--text3);font-size:11px">—</span>';
+    // Bound on the Profiles page beats stamped at creation; a profile that has
+    // since been deleted still shows the name it ran under, dimmed, because
+    // the alternative is a blank where a real fact used to be.
+    const stale = p.source === 'stale';
+    const title = (p.source === 'binding' ? 'Bound to this profile on the Profiles page'
+      : stale ? 'This profile no longer exists — showing the name the job was created under'
+      : 'Created under this profile')
+      + (p.envClass ? ' · ' + p.envClass : '');
+    return '<span title="' + escapeAttr(title) + '" style="font-size:10px;padding:1px 7px;border-radius:9px;'
+      + 'font-family:var(--mono);white-space:nowrap;'
+      + (stale ? 'background:var(--bg3);color:var(--text3);border:0.5px dashed var(--border2)'
+               : 'background:var(--accent-glow);color:var(--accent)')
+      + '">' + escapeHtml(p.name) + '</span>';
+  }
+
   return '<table class="jobs-table"><thead><tr>' +
     '<th style="width:22px" title="Drag rows to reorder"></th>' +
     '<th style="width:28px"><input type="checkbox" id="jobs-select-all" onchange="toggleAllJobsSelection(this.checked)" style="cursor:pointer"></th>' +
     '<th style="width:40px">#</th>' +
-    '<th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th>' +
+    '<th>Job Name</th><th>Profile</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th>' +
     '<th>Exec Status</th><th>Last Run</th><th>Actions</th>' +
     '</tr></thead><tbody>' +
     jobs.map((j, idx) => {
@@ -3979,6 +4010,7 @@ function jobsTableHTML(jobs) {
         ${isDel ? ` <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--red-bg);color:var(--red);font-family:var(--mono)" title="Deleted ${j._deletedAt? new Date(j._deletedAt).toLocaleString('en-GB'):''}">DELETED</span>` : ''}
         <span class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</span>
       </td>
+      <td>${jobProfilePill(j)}</td>
       <td><span class="job-source" id="job-source-${j.id}" ondblclick="startEditSource('${j.id}')" style="font-size:11px;color:var(--text3);font-family:var(--mono);cursor:text" title="${escapeAttr(j.sourceTable||j.source||'')} — double-click to edit source table">${j.sourceTable||j.source||'—'}</span></td>
       <td><span style="font-size:12px;color:var(--text2)">${j.target||'—'}</span></td>
       <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.tables?.length||j.files?.length||'—'}</span></td>

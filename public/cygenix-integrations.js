@@ -319,14 +319,24 @@
         newProjectId = activeId;
         // Remove any existing jobs for this project to avoid duplicates
         const remaining = jobs.filter(j => j.projectId !== activeId);
-        const importedJobs = (bundle.jobs||[]).map(j => ({ ...j, projectId: activeId, id: j.id || ('job_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)) }));
+        // Profile stamp. An imported job keeps the profile it arrived with —
+        // that is a real record of where it was built — and only one that
+        // carries none is stamped with the profile importing it.
+        const importedJobs = (bundle.jobs||[]).map(j => ({ ...j, projectId: activeId, id: j.id || ('job_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)) }))
+          .map(j => { try { return window.CygenixJobProfile ? CygenixJobProfile.attach(j, jobs) : j; }
+                      catch(e){ console.warn('[job-profile]', e); return j; } });
         localStorage.setItem('cygenix_jobs', JSON.stringify([...importedJobs, ...remaining]));
       } else {
         // Create a new project with a fresh id
         newProjectId = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
         const newProject = { ...imported, id: newProjectId, name: (imported.name||'Imported project') + ' (imported)', createdAt: new Date().toISOString() };
         projects.push(newProject);
-        const importedJobs = (bundle.jobs||[]).map(j => ({ ...j, projectId: newProjectId, id: ('job_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)) }));
+        // Same rule as above: keep an imported job's own profile, stamp one
+        // that has none. The id is always fresh here, so attach() cannot
+        // find a previous copy and falls through to the active profile.
+        const importedJobs = (bundle.jobs||[]).map(j => ({ ...j, projectId: newProjectId, id: ('job_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)) }))
+          .map(j => { try { return window.CygenixJobProfile ? CygenixJobProfile.attach(j, jobs) : j; }
+                      catch(e){ console.warn('[job-profile]', e); return j; } });
         localStorage.setItem('cygenix_jobs', JSON.stringify([...importedJobs, ...jobs]));
       }
 

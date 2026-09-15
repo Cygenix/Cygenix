@@ -2116,6 +2116,34 @@ async function saveProposedJobs(userId, proposedJobs, run, projectId, ctx) {
   const jobs = Array.isArray(existing.jobs) ? existing.jobs : [];
   const newIds = [];
 
+  // Which connection profile these jobs belong to. The browser stamps this
+  // from the profile the sidebar pill is showing; here there is no browser, so
+  // it is read from the same place the browser syncs it TO — the
+  // connection_profiles field on this very document, which was already loaded
+  // above. Same rules as public/cygenix-job-profile.js: the selected profile,
+  // and only if it is still active, because a job stamped with a retired
+  // profile records a link that could never run.
+  //
+  // Read-only, and nothing below writes to connection_profiles. That field is
+  // the one the sync endpoint MERGES rather than replaces (see index.js), and
+  // a wholesale write from here would undo somebody else's profile.
+  let activeProfile = null;
+  try {
+    const store = existing.connection_profiles;
+    const wantId = store && store.settings ? store.settings.activeProfileId : null;
+    if (wantId && Array.isArray(store.profiles)) {
+      const p = store.profiles.find(x => x && x.id === wantId);
+      if (p && p.status === 'active') activeProfile = p;
+    }
+    if (!activeProfile && wantId) {
+      ctx.log(`[agent] active profile ${wantId} is not active — jobs saved without a profile`);
+    } else if (!wantId) {
+      ctx.log('[agent] no active connection profile — jobs saved without one');
+    }
+  } catch (e) {
+    ctx.log('[agent] could not read the profile store:', e.message);
+  }
+
   for (const proposal of proposedJobs) {
     const jobId = `job_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
     // Job name: prefer the agent-supplied proposal.name, fall back to a
@@ -2162,6 +2190,14 @@ async function saveProposedJobs(userId, proposedJobs, run, projectId, ctx) {
       reasoning: proposal.reasoning || '',
       confidence: proposal.confidence || 'MEDIUM',
     };
+    // Two fields ADDED to the new job. Spread rather than assigned
+    // unconditionally, so a run with no active profile leaves them off
+    // entirely — an absent field reads as "before profiles", an empty string
+    // reads as "we tried and failed", and only one of those is true.
+    if (activeProfile) {
+      job.profileId = activeProfile.id;
+      job.profileName = activeProfile.name || activeProfile.id;
+    }
     jobs.unshift(job);  // newest first, matches existing convention
     newIds.push(jobId);
   }

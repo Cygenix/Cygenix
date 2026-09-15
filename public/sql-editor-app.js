@@ -3265,6 +3265,9 @@ async function promoteSQLToJob(opts) {
   // Write flat index
   try {
     const flat = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    // Profile stamp: new job gets the active one, an existing id keeps its own.
+    try { if (window.CygenixJobProfile) CygenixJobProfile.attach(jobRecord, flat); }
+    catch(e){ console.warn('[job-profile]', e); }
     flat.unshift(jobRecord);
     localStorage.setItem('cygenix_jobs', JSON.stringify(flat.slice(0, 200)));
   } catch(e) { alert('Could not update jobs index: ' + e.message); return { ok:false, reason:'flat-write-failed' }; }

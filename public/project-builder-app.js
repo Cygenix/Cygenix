@@ -1682,6 +1682,11 @@ async function confirmBulkImport(){
         imported: true,
         originalFilename: file.name
       };
+      // Profile stamp. An imported file brings no profile, so this is the
+      // active one — the import happened under a profile and that is the
+      // honest record of what it was built against.
+      try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
+      catch(e){ console.warn('[job-profile]', e); }
       jobs.unshift(job);
       added++;
     } catch(e){
@@ -5899,6 +5904,11 @@ function confirmCreateTask(){
     groupCount
   };
 
+  // Profile stamp. A composite already snapshots srcConn/tgtConn above, which
+  // is the connection; this is the profile those connections were governed by,
+  // and it is the one the jobs list shows.
+  try { if (window.CygenixJobProfile) CygenixJobProfile.attach(compositeJob, existingJobs); }
+  catch(e){ console.warn('[job-profile]', e); }
   // Prepend so the new task surfaces at the top of the Task Agent's Job dropdown
   // (which is rendered in array order from cygenix_jobs).
   existingJobs.unshift(compositeJob);

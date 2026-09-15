@@ -626,6 +626,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .am-xp-chip.on{border-color:var(--accent)}
 @media(max-width:820px){.am-step b{flex-basis:100px}.am-cand-top{max-width:120px}.am-xp-cols{grid-template-columns:1fr !important}}
 </style>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 </head>
 <body>
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
@@ -5913,6 +5914,9 @@ function cvSaveComposite(){
       + (job.childStepCount === 1 ? '' : 's') + ' across ' + job.groupCount + ' wave'
       + (job.groupCount === 1 ? '' : 's') + '?\n\nIt will appear under Jobs → All Jobs and can be scheduled from the Task Manager.')) return;
 
+  // Profile stamp — always a new job on this path.
+  try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
+  catch(e){ console.warn('[job-profile]', e); }
   jobs.unshift(job);
   try { localStorage.setItem('cygenix_jobs', JSON.stringify(jobs)); }
   catch (e) { return alert('Could not save: ' + (e && e.message || 'storage full')); }

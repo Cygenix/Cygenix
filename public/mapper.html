@@ -192,6 +192,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 /* Edit job banner */
 .edit-banner{padding:0.625rem 1rem;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);font-size:12px;color:var(--amber);margin-bottom:1rem;display:flex;align-items:center;gap:0.75rem}
 </style>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 </head>
 <body>
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
@@ -1682,6 +1683,10 @@ function saveAsJob(){
       created: new Date().toISOString(),
       warnings: _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen)
     };
+    // Profile stamp: new job gets the active one, an edit keeps the one it
+    // already had (this handler rebuilds the job from the form).
+    try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
+    catch(e){ console.warn('[job-profile]', e); }
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
@@ -1711,6 +1716,10 @@ function saveAsJob(){
       created: new Date().toISOString(),
       warnings: _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen)
     };
+    // Profile stamp: new job gets the active one, an edit keeps the one it
+    // already had (this handler rebuilds the job from the form).
+    try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
+    catch(e){ console.warn('[job-profile]', e); }
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));

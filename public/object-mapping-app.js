@@ -4517,6 +4517,12 @@ function saveAsJob(){
         warnings: (_fileSourceJob.warnings || []).concat(job.warnings || []),
       });
     }
+    // Which connection profile this job belongs to. attach() stamps a NEW job
+    // with the active profile and carries the stored one forward on an edit —
+    // this handler rebuilds the job from the form, so without that an edit
+    // would silently re-stamp an old job with today's profile.
+    try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
+    catch(e){ console.warn('[job-profile]', e); }
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
@@ -4594,6 +4600,12 @@ function saveAsJob(){
         warnings: (_fileSourceJob.warnings || []).concat(job.warnings || []),
       });
     }
+    // Which connection profile this job belongs to. attach() stamps a NEW job
+    // with the active profile and carries the stored one forward on an edit —
+    // this handler rebuilds the job from the form, so without that an edit
+    // would silently re-stamp an old job with today's profile.
+    try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
+    catch(e){ console.warn('[job-profile]', e); }
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));

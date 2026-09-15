@@ -292,6 +292,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 <script src="/connections.js?v=403b59bf1a" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 </head>
 <body>
 
@@ -1873,6 +1874,9 @@ function saveJobFromMapping(mi){
     if (alreadyExists) {
       if (!confirm(`A job for ${m.sourceTable} → ${m.targetTable} already exists. Save another copy?`)) return;
     }
+    // Profile stamp — always a new job on this path.
+    try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, existing); }
+    catch(e){ console.warn('[job-profile]', e); }
     existing.unshift(job);
     localStorage.setItem('cygenix_jobs', JSON.stringify(existing.slice(0, 50)));
 
@@ -2701,6 +2705,9 @@ async function dpCreateTask(role) {
   if (existingJobs.some(j => (j.name || '').trim().toLowerCase() === name.toLowerCase())) {
     if (!confirm('A job called "' + name + '" already exists. Save this one anyway?')) return;
   }
+  // Profile stamp — always a new job on this path.
+  try { if (window.CygenixJobProfile) CygenixJobProfile.attach(newJob, existingJobs); }
+  catch(e){ console.warn('[job-profile]', e); }
   existingJobs.unshift(newJob);
   try {
     localStorage.setItem('cygenix_jobs', JSON.stringify(existingJobs));

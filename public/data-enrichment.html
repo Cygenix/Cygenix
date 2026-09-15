@@ -158,6 +158,7 @@ tr.decided td{opacity:0.55}
 .cb-note b{color:var(--text);font-weight:500}
 .cb-hint{font-size:10.5px;color:var(--text2);margin-top:3px}
 </style>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 </head>
 <body>
 <div id="cyg-sidebar-mount" data-active="data-enrichment"></div>
@@ -1367,6 +1368,12 @@ function enRegisterJobs(quiet){
   });
   const applyJob = mk('apply', E.enApplySql(accepted, opts));
   const rollbackJob = mk('rollback', E.enRollbackSql(accepted, opts));
+  // Profile stamp. Two jobs, both new, both stamped with the profile the
+  // enrichment ran under — the rollback has to name the same one as the
+  // apply or the pair could not be read as a pair.
+  try { if (window.CygenixJobProfile){ CygenixJobProfile.attach(applyJob, jobs);
+    CygenixJobProfile.attach(rollbackJob, jobs); } }
+  catch(e){ console.warn('[job-profile]', e); }
   jobs.push(applyJob, rollbackJob);
   localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
   E.enEvent(store, { type: 'apply.registered', runId: currentRun.runId,

@@ -145,6 +145,7 @@ select.map-select:focus{border-color:var(--accent)}
 <script src="/connections.js?v=403b59bf1a" defer></script>
 <script src="/nav.js?v=50f8721bfa" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 </head>
 <body>
 
@@ -1331,6 +1332,9 @@ function saveAsJob(){
   };
   try{
     const jobs=JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    // Profile stamp: new job gets the active one, an edit keeps its own.
+    try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
+    catch(e){ console.warn('[job-profile]', e); }
     const existIdx = jobs.findIndex(j=>j.id===job.id);
     if (existIdx>=0) { jobs[existIdx]={...jobs[existIdx],...job}; }
     else { jobs.unshift(job); }
