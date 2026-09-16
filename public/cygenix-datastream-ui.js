@@ -88,6 +88,41 @@ function unassignedBadge() {
   return '<span class="ds-unassigned" title="Not assigned to a connection profile — assign one from the row menu">UNASSIGNED</span>';
 }
 
+/* ── Production (Phase 2) ────────────────────────────────────────────────
+   The environment bar locks red for a PRD profile. A stream under one shows
+   the same word in the same red on its row, in the inspector and in the
+   Designer, so the fact is visible where the Start button is, not only at
+   the top of the page. */
+function isProd(p) { return !!p && String(p.envClass || '').toUpperCase() === 'PRD'; }
+function prodMarker(p) {
+  if (!isProd(p)) return '';
+  return '<span class="ds-prd" title="Production profile ' + esc(p.id)
+    + ' — starting, resuming and log-based capture need the profile id typed">PRD</span>';
+}
+
+/* The typed confirmation. The page asks; the engine decides — this returns
+   what was typed (or null for Cancel) and the caller hands it to the engine
+   as confirmedProfileId, which compares and audits. Kept here so the three
+   guarded acts on two screens ask in the same words as the dashboard's
+   production tools do. Browser-only by nature; a Node caller gets null. */
+function promptProdConfirm(profile, sentence) {
+  if (!profile || typeof window === 'undefined' || typeof window.prompt !== 'function') return null;
+  var typed = window.prompt('This is a PRD profile (' + profile.id + ').\n' + (sentence || '')
+    + '\n\nType the profile id to continue:');
+  return typed == null ? null : String(typed);
+}
+
+/* Where a destination lives. A saved destination is looked up by id; an
+   inline one is typed onto the stream — and, for the kinds the store can
+   hold, can be converted. Pass the engine's resolveDestination() result. */
+function destTag(res) {
+  if (!res) return '';
+  if (res.saved && res.missing) return ' <span class="ds-tag inline" title="' + esc(res.reason || '') + '">missing</span>';
+  if (res.saved) return ' <span class="ds-tag saved" title="A saved connection — the endpoint and its credential live in Connections, not on the stream">saved</span>';
+  if (res.inline && res.convertible) return ' <span class="ds-tag inline" title="Typed on the stream itself. Convert it to a saved connection from the Designer or the inspector">inline</span>';
+  return '';
+}
+
 /* The pill in the Profile column. The stream's own snapshot of the name is
    the fallback when the profile has gone, dimmed so it reads as history. */
 function profilePill(stream, store) {
@@ -96,8 +131,10 @@ function profilePill(stream, store) {
   var list = (store && store.profiles) || [];
   for (var i = 0; i < list.length; i++) if (list[i] && list[i].id === stream.profileId) { live = list[i]; break; }
   if (live) {
-    return '<span class="ds-profile" title="' + esc(live.name || live.id)
-      + (live.envClass ? ' · ' + esc(live.envClass) : '') + '">' + esc(live.id) + '</span>';
+    return '<span class="ds-profile' + (isProd(live) ? ' prd' : '') + '" title="' + esc(live.name || live.id)
+      + (live.envClass ? ' · ' + esc(live.envClass) : '')
+      + (isProd(live) ? ' — production: start, resume and log capture need the profile id typed' : '')
+      + '">' + esc(live.id) + '</span>';
   }
   return '<span class="ds-profile stale" title="This profile no longer exists — showing the name the stream was assigned under">'
     + esc(stream.profileName || stream.profileId) + '</span>';
@@ -296,7 +333,8 @@ function confirmText(kind, detail) {
     case 'start':
       return 'Start "' + d.name + '"?\n\nThis begins reading ' + d.connection
         + ' continuously and delivering changes to ' + d.destination + '.'
-        + (d.snapshotNote ? '\n\n' + d.snapshotNote : '');
+        + (d.snapshotNote ? '\n\n' + d.snapshotNote : '')
+        + (d.prodProfileId ? '\n\nProfile ' + d.prodProfileId + ' is PRODUCTION. You will be asked to type its id next.' : '');
     case 'pause':
       return 'Pause "' + d.name + '"?\n\nCapture stops. The '
         + Number(d.pending || 0).toLocaleString() + ' record(s) already in the Stream Store are kept, '
@@ -429,6 +467,7 @@ return {
   esc: esc, escArg: escArg, blockedBand: blockedBand,
   profileLabel: profileLabel, scopeToggle: scopeToggle, unassignedBadge: unassignedBadge,
   profilePill: profilePill, scopeWords: scopeWords,
+  isProd: isProd, prodMarker: prodMarker, promptProdConfirm: promptProdConfirm, destTag: destTag,
   statusPill: statusPill, sideBadge: sideBadge, lagCell: lagCell,
   opBadge: opBadge, deliveryPill: deliveryPill,
   sparkline: sparkline, lineChart: lineChart, barChart: barChart,

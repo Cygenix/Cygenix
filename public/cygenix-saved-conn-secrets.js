@@ -31,6 +31,15 @@
 //   { fnKey } (the fnUrl itself is NOT a secret on its own — it's
 //   just an HTTPS endpoint URL — so it stays in the synced blob).
 //
+//   Stream destinations (Sep-2026, side 'dest' — see
+//   cygenix-stream-destinations.js) add a third secret field, `secret`:
+//   a webhook signing secret, a broker SASL password or connection
+//   string, or a landing zone's SAS token. One generic name rather than
+//   one per kind, so this file has exactly three field names to strip
+//   and cannot fall behind a new destination kind. The endpoint itself
+//   (URL, topic, location, server) stays in the synced blob, as fnUrl
+//   does.
+//
 // Cross-browser behaviour:
 //   On a new browser, the synced blob arrives from Cosmos but the
 //   secrets store is empty. The user sees their saved connections by
@@ -113,6 +122,7 @@
       if (!sec) continue;
       if (sec.connString && !e.connString) e.connString = sec.connString;
       if (sec.fnKey      && !e.fnKey)      e.fnKey      = sec.fnKey;
+      if (sec.secret     && !e.secret)     e.secret     = sec.secret;
     }
     return entries;
   }
@@ -132,6 +142,10 @@
       if (sanitised.fnKey) secrets.fnKey = sanitised.fnKey;
       delete sanitised.fnKey;
     }
+    if ('secret' in sanitised) {
+      if (sanitised.secret) secrets.secret = sanitised.secret;
+      delete sanitised.secret;
+    }
     return {
       sanitised,
       secrets: Object.keys(secrets).length ? secrets : null,
@@ -143,7 +157,7 @@
   function hasSecret(id) {
     if (!id) return false;
     const s = readAll()[id];
-    return !!(s && (s.connString || s.fnKey));
+    return !!(s && (s.connString || s.fnKey || s.secret));
   }
 
   window.CygenixSavedConnSecrets = {

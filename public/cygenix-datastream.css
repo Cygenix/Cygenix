@@ -218,6 +218,18 @@
 .ds-profile { display:inline-block; font-size:10px; padding:1px 7px; border-radius:9px;
   font-family:var(--mono); color:var(--accent); background:var(--accent-glow); white-space:nowrap; }
 .ds-profile.stale { color:var(--text3); background:var(--bg3,transparent); border:0.5px dashed var(--border2); }
+/* Production. The same red the environment bar locks to (--cyg-status-red
+   is set on :root by cygenix-status-hairline.js; the fallback is its own
+   palette value, so the two cannot drift even on a page without the bar).
+   The pill turns that red for a PRD profile, and the marker beside a row's
+   name says PRD in it — the bar's word, not a new one. */
+.ds-profile.prd { color:#fff; background:var(--cyg-status-red, #C0392B); }
+.ds-prd { display:inline-block; font-size:9px; font-weight:600; letter-spacing:0.08em; padding:1px 5px;
+  border-radius:3px; color:#fff; background:var(--cyg-status-red, #C0392B); font-family:var(--mono);
+  vertical-align:middle; margin-left:0.35rem; white-space:nowrap; }
+/* Where a destination lives: on the stream itself, or in the saved store. */
+.ds-tag.inline { color:var(--amber); border-color:rgba(245,158,11,0.4); }
+.ds-tag.saved { color:var(--accent); border-color:rgba(74,91,214,0.4); }
 /* This profile / All profiles. A segmented pair, not two chips, so it reads
    as one control with two states. */
 .ds-scope { display:inline-flex; border:0.5px solid var(--border2); border-radius:6px; overflow:hidden; }

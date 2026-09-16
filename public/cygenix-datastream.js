@@ -300,6 +300,15 @@ var STREAM_LIFECYCLE = {
   'stream.assigned':         'Assigned a profile to',
   'stream.needs_attention':  'Stopped, needs attention:',
   'stream.attention_cleared':'Cleared needs-attention on',
+  /* Phase 2 (Sep-2026). Converting moves an endpoint that was typed onto a
+     stream into the central saved-connection store — a decision about where
+     a credential lives. The production guard is the engine refusing, or
+     accepting, a start / resume / log-capture switch on a PRD profile
+     against a typed confirmation; both outcomes are recorded, because a
+     refused start on production is exactly the kind of thing an auditor
+     asks about later. */
+  'stream.destination_converted': 'Converted the destination of',
+  'stream.prod_guard':            'Production guard on',
   'stream.retention':        'Changed retention on',
   'stream.checkpoint_reset': 'Reset the checkpoint on',
   'stream.cutover_begin':    'Began cutover on',
@@ -1955,7 +1964,10 @@ function blankDraft(projectId) {
     capture: { side: 'source', connectionId: null, connectionLabel: '', method: 'log',
       methodLabel: '', snapshot: 'initial-then-stream', feedName: '', feedShape: '', feedKeyPath: '',
       position: { lsn: null, capturedAt: null } },
-    destination: { kind: 'database', connectionId: null, label: '', writeMode: 'upsert',
+    // savedId (Phase 2): the saved destination this delivers to, looked up
+    // by id when it runs. null means the endpoint is typed on the stream
+    // itself ("inline"), which every pre-Phase-2 stream is.
+    destination: { kind: 'database', connectionId: null, savedId: null, label: '', writeMode: 'upsert',
       objectPrefix: 'stg_', schemaOverride: '', mappingId: null, overrides: {} },
     objects: [],
     delivery: { batchSize: 500, maxIntervalMs: 2000, ordering: 'per-key', retries: 5,
@@ -2096,13 +2108,69 @@ function resolveCapture(stream, store, savedConns) {
   return resolveSide(p, readsFromSide(stream), savedConns);
 }
 
-/* Where it delivers. A "Project target" destination is the profile's OTHER
-   side, resolved the same way; every other kind keeps its inline settings
-   until Phase 2 moves them to saved connections. */
+/* ── Saved destinations (Phase 2) ──────────────────────────────────────
+   A Broker topic, Webhook, File landing zone or external Database can be a
+   SAVED CONNECTION — an entry in the same per-user saved-connection store
+   the migration connections live in, with side 'dest' and a kind — and a
+   stream then names it by id (destination.savedId) exactly as it names its
+   profile. The endpoint and its credential live once, centrally; the stream
+   carries a pointer and a display label.
+
+   Why the saved-connection store and not Integrations: that store already
+   has per-user keying, cloud sync of the NAMES, a local-only secret half
+   (cygenix-saved-conn-secrets.js) so a credential never reaches Cosmos, an
+   audit hook on every write, and it is what the profile engine already reads.
+   Integrations holds one configuration per connector, not a list of named
+   endpoints, and its whole blob is browser-local.
+
+   INLINE destinations — the endpoint typed straight onto the stream, which
+   is every stream that existed before this — keep working unchanged. Nothing
+   is removed or renamed: connectionId and label stay; savedId is added
+   beside them and is null for an inline destination. The demo world's
+   destination.connectionId values ('conn_dest_N') never matched a saved
+   connection, so "savedId is set" is the ONE test for "this is a saved
+   destination"; connectionId is not read for that purpose.
+
+   A saved destination that no longer exists is a stream that cannot
+   deliver, and it is treated the way a vanished profile is: the stream
+   cannot start, and a running one is parked as needs-attention by the same
+   check, with the same wording style. Deleting a destination a stream still
+   uses is refused in the store (see cygenix-stream-destinations.js), so this
+   only happens when a sync from another machine removed it. */
+var DEST_SAVED_KINDS = ['database', 'broker', 'webhook', 'file'];
+
+function isSavedDestination(s) {
+  return !!(s && s.destination && s.destination.savedId);
+}
+function isInlineDestination(s) {
+  var d = (s && s.destination) || {};
+  return d.kind !== 'cygenix-target' && !d.savedId;
+}
+/* Whether the "Convert to saved connection" prompt applies: inline, and of a
+   kind the store knows how to hold. */
+function isConvertibleDestination(s) {
+  var d = (s && s.destination) || {};
+  return isInlineDestination(s) && DEST_SAVED_KINDS.indexOf(d.kind) !== -1;
+}
+
+/* Where it delivers. Three answers: a saved destination looked up by id; the
+   profile's OTHER side for "Project target"; or the stream's own inline
+   settings. The caller can tell which from the flags. */
 function resolveDestination(stream, store, savedConns) {
   var d = (stream && stream.destination) || {};
+  if (d.savedId) {
+    var c = connById(savedConns, d.savedId);
+    if (!c) {
+      return { ok: false, saved: true, missing: true, kind: d.kind, label: d.label || '',
+        reason: 'Saved destination "' + (d.label || d.savedId) + '" (' + d.savedId
+          + ') no longer exists in the saved connections.' };
+    }
+    return { ok: true, saved: true, kind: c.kind || d.kind, conn: c, connId: c.id,
+      label: connLabelOf(c), reason: null };
+  }
   if (d.kind !== 'cygenix-target') {
-    return { ok: true, inline: true, kind: d.kind, label: d.label || '', reason: null };
+    return { ok: true, inline: true, kind: d.kind, label: d.label || '', reason: null,
+      convertible: isConvertibleDestination(stream) };
   }
   if (isUnassigned(stream)) {
     return { ok: false, unassigned: true, kind: d.kind, label: d.label || '',
@@ -2130,7 +2198,57 @@ function cannotRunReason(stream, store, savedConns) {
     var r = resolveCapture(stream, store, savedConns);
     if (!r.ok) return r.reason;
   }
+  // And the saved destination only when the caller supplied the list it
+  // would be looked up in — same reasoning.
+  if (Array.isArray(savedConns) && isSavedDestination(stream)) {
+    var dr = resolveDestination(stream, store, savedConns);
+    if (!dr.ok) return dr.reason;
+  }
   return null;
+}
+
+/* ── The production guard (Phase 2) ──────────────────────────────────────
+   If the stream's profile is PRD, starting it, resuming it, or switching it
+   to log-based capture needs the profile id TYPED — the same rule, and the
+   same wording, as every other write to production in the console
+   (cpGuardWrite's requiresTypedConfirm, honoured by the dashboard's tools).
+
+   The prompt is the page's job; the DECISION is the engine's. The page
+   passes whatever was typed as opts.confirmedProfileId and the engine
+   compares it, so a screen cannot forget to ask and a test can prove the
+   refusal without a browser. Both outcomes are audited, under one action,
+   because a refused start on production is a fact somebody may later need.
+
+   Checked only when the caller supplied the profile store, for the same
+   reason as cannotRunReason: a bare engine test is not asking about
+   environments. */
+function isProductionProfile(p) {
+  return !!p && String(p.envClass || '').toUpperCase() === 'PRD';
+}
+/* What the guard would require of this stream right now. `required` is
+   false for an unassigned stream and for one whose profile has gone — those
+   cannot run at all, which is the earlier, stronger refusal. */
+function prodGuard(stream, store) {
+  if (!stream || isUnassigned(stream) || !store) return { required: false, profile: null };
+  var p = profileById(store, stream.profileId);
+  if (!isProductionProfile(p)) return { required: false, profile: p };
+  return { required: true, profile: p, profileId: p.id, envClass: 'PRD' };
+}
+function requireProdConfirm(state, stream, opts, what) {
+  var o = opts || {};
+  var g = prodGuard(stream, o.profileStore);
+  if (!g.required) return g;
+  var typed = o.confirmedProfileId;
+  var ok = typeof typed === 'string' && typed.trim() === g.profileId;
+  audit(state, 'stream.prod_guard', stream.id, {
+    name: stream.name, what: what, profileId: g.profileId, envClass: 'PRD',
+    outcome: ok ? 'confirmed' : 'refused — typed confirmation did not match',
+  });
+  if (!ok) {
+    throw new Error('Cannot ' + what + ' ' + (stream.name || stream.id) + ': profile ' + g.profileId
+      + ' is production (PRD). Type the profile id to confirm.');
+  }
+  return g;
 }
 function canRun(stream, store, savedConns) {
   var why = cannotRunReason(stream, store, savedConns);
@@ -2196,6 +2314,13 @@ function attentionCheck(state, store, savedConns) {
   (state.streams || []).forEach(function (s) {
     if (isUnassigned(s)) return;
     var r = resolveCapture(s, store, savedConns);
+    // A saved destination that has gone is the same fault on the other end
+    // of the pipe, and gets the same treatment — but only judged when the
+    // caller gave us the list it would be found in.
+    if (r.ok && Array.isArray(savedConns) && isSavedDestination(s)) {
+      var dr = resolveDestination(s, store, savedConns);
+      if (!dr.ok) r = dr;
+    }
     if (!r.ok && s.status !== STATUS_ATTENTION) {
       s.attention = { reason: r.reason, since: nowIso(state), priorStatus: s.status };
       s.status = STATUS_ATTENTION;
@@ -2259,15 +2384,24 @@ function createStream(state, draft, opts) {
 
   state.streams.push(s);
   audit(state, 'stream.created', s.id, { name: s.name, side: s.capture.side,
-    method: s.capture.method, destination: s.destination.kind, objects: s.objects.length });
-  if (o.start) startStream(state, s.id);
+    method: s.capture.method, destination: s.destination.kind,
+    savedDestination: s.destination.savedId || null, objects: s.objects.length });
+  // The same opts go to the start, so a "Create & start" on a PRD profile
+  // meets the production guard exactly as a Start from the list would.
+  if (o.start) startStream(state, s.id, o);
   return s;
 }
 
-function updateStream(state, id, draft) {
+function updateStream(state, id, draft, opts) {
   var i = state.streams.findIndex(function (s) { return s.id === id; });
   if (i < 0) throw new Error('No stream with id ' + id + '.');
   var was = state.streams[i];
+  // Turning log-based capture ON for a production profile is one of the
+  // three guarded acts. Only the switch is guarded — an edit that leaves a
+  // log-capture stream on log capture is not "turning it on".
+  var turningOnLog = draft && draft.capture && draft.capture.method === 'log'
+    && !(was.capture && was.capture.method === 'log');
+  if (turningOnLog) requireProdConfirm(state, was, opts, 'enable log-based capture on');
   var next = JSON.parse(JSON.stringify(draft));
   // Identity, history and live counters belong to the stream, not the draft.
   next.id = was.id;
@@ -2296,6 +2430,7 @@ function getStream(state, id) {
 function startStream(state, id, opts) {
   var s = mustGet(state, id);
   refuseIfCannotRun(s, opts);
+  requireProdConfirm(state, s, opts, 'start');
   var snapshotting = s.capture.snapshot === 'initial-then-stream' || s.capture.snapshot === 'snapshot-only';
   s.status = snapshotting ? 'snapshotting' : 'running';
   s.snapshotDone = 0;
@@ -2316,6 +2451,7 @@ function pauseStream(state, id) {
 function resumeStream(state, id, opts) {
   var s = mustGet(state, id);
   refuseIfCannotRun(s, opts);
+  requireProdConfirm(state, s, opts, 'resume');
   s.status = 'running';
   s.objects.forEach(function (o) { o.state = 'streaming'; });
   audit(state, 'stream.resumed', id, { pendingInStore: s.metrics.pendingInStore });
@@ -2344,6 +2480,36 @@ function duplicateStream(state, id) {
   copy.name = s.name + ' (copy)';
   copy.status = 'draft';
   return copy;
+}
+
+/* Point a draft's destination at a saved destination entry. Pure — the
+   Designer calls it on its draft; convertDestination calls it on a stored
+   stream. connectionId is set too, for anything that still reads it, and
+   the label becomes the entry's NAME: the stream shows what the store calls
+   it, never the endpoint, never a credential. */
+function attachSavedDestination(draft, entry) {
+  if (!draft || !entry || !entry.id) throw new Error('Pick a saved destination.');
+  draft.destination = draft.destination || {};
+  draft.destination.savedId = entry.id;
+  draft.destination.connectionId = entry.id;
+  draft.destination.label = connLabelOf(entry);
+  if (entry.kind && DEST_SAVED_KINDS.indexOf(entry.kind) !== -1) draft.destination.kind = entry.kind;
+  return draft;
+}
+/* Convert an existing stream's inline destination to a saved one. The
+   entry is already in the store (the page saved it first, with its secret
+   half where secrets go); this records the pointer and the decision. */
+function convertDestination(state, id, entry) {
+  var s = mustGet(state, id);
+  if (!isConvertibleDestination(s)) {
+    throw new Error((s.name || id) + ' does not have an inline destination to convert.');
+  }
+  var from = s.destination.label || '';
+  attachSavedDestination(s, entry);
+  audit(state, 'stream.destination_converted', id, {
+    name: s.name, from: from, savedId: entry.id, savedName: connLabelOf(entry), kind: s.destination.kind,
+  });
+  return s;
 }
 
 /* Resync one object: re-snapshot that table without disturbing the others.
@@ -2740,6 +2906,12 @@ return {
   canRun: canRun, cannotRunReason: cannotRunReason,
   assignProfile: assignProfile, attentionCheck: attentionCheck,
   scopeStreams: scopeStreams, unassignedCount: unassignedCount, connLabelOf: connLabelOf,
+  // saved destinations and the production guard (Phase 2)
+  DEST_SAVED_KINDS: DEST_SAVED_KINDS,
+  isSavedDestination: isSavedDestination, isInlineDestination: isInlineDestination,
+  isConvertibleDestination: isConvertibleDestination,
+  attachSavedDestination: attachSavedDestination, convertDestination: convertDestination,
+  isProductionProfile: isProductionProfile, prodGuard: prodGuard,
 
   // designer
   blankDraft: blankDraft, validateDesign: validateDesign, reviewSentence: reviewSentence,

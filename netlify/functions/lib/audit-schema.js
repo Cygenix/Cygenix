@@ -210,6 +210,8 @@ const CLIENT_ACTIONS = {
   'stream.assigned':         'stream',
   'stream.needs_attention':  'stream',
   'stream.attention_cleared':'stream',
+  'stream.destination_converted': 'stream',
+  'stream.prod_guard':       'stream',
   'stream.retention':        'stream',
   'stream.checkpoint_reset': 'stream',
   'stream.cutover_begin':    'stream',

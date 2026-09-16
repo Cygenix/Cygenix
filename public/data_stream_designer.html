@@ -108,9 +108,15 @@ select.ds-input{cursor:pointer}
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/connections.js?v=403b59bf1a"></script>
+<!-- Saved destinations (Phase 2): the secret half of a saved connection
+     lives in cygenix-saved-conn-secrets.js and never syncs; the destination
+     store refuses to save a credential when that module is absent, so it is
+     loaded here, before it, and not deferred. -->
+<script src="/cygenix-saved-conn-secrets.js?v=42c16863e0"></script>
+<script src="/cygenix-stream-destinations.js?v=ecc5fb8edf"></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
-<script src="/cygenix-datastream.js?v=b98f6bf9d1"></script>
-<script src="/cygenix-datastream-ui.js?v=53a3df8423"></script>
+<script src="/cygenix-datastream.js?v=cf1b2702f0"></script>
+<script src="/cygenix-datastream-ui.js?v=a0e01de431"></script>
 <script src="/cygenix-datastream-page.js?v=2c3f580800"></script>
 <script>
 'use strict';
@@ -123,6 +129,10 @@ let step = 1;
 let editingId = null;      // set when editing an existing stream (not a clone)
 let dirty = false;
 let capability = null;     // the last capability check result
+// The profile id typed to confirm turning on log-based capture under a PRD
+// profile (Phase 2). Carried into the save so the engine, which makes the
+// decision, sees the same confirmation the person gave on this screen.
+let prodConfirmedId = null;
 
 const STEPS = [
   { n: 1, t: 'Source of change',     s: 'which side, and how' },
@@ -453,9 +463,12 @@ function step1() {
   const profileRow = linked
     ? '<div class="ds-field"><label class="lbl">Profile</label>'
       + '<div class="ds-note" style="display:flex;align-items:center;gap:0.5rem"><i class="ic ic-shield"></i> '
-      + (prof ? 'Profile: ' + U.profileLabel(prof)
+      + (prof ? 'Profile: ' + U.profileLabel(prof) + U.prodMarker(prof)
               : '<span style="color:var(--amber)">Profile ' + U.esc(draft.profileId) + ' no longer exists</span>')
-      + '</div></div>'
+      + '</div>'
+      + (U.isProd(prof) ? '<div class="hint">Production: starting this stream, resuming it, or switching it to '
+          + 'log-based capture will ask for the profile id typed.</div>' : '')
+      + '</div>'
     : '';
   const connRow = linked
     ? '<div class="ds-field"><label class="lbl">Connection</label>'
@@ -533,8 +546,26 @@ function confirmKeepObjects() {
     + 'Keep them? Cancel clears the selection so you can pick from the new side.');
 }
 function setMethod(m) {
+  // Turning log-based capture ON under a PRD profile is one of the three
+  // guarded acts: it reads the production transaction log. The id is asked
+  // for here, where the choice is made, and carried into the save so the
+  // engine sees the same confirmation. A wrong answer leaves the method as
+  // it was and re-ticks the radio.
+  if (m === 'log' && draft.capture.method !== 'log') {
+    const g = DS.prodGuard(draft, P.profileStore());
+    if (g.required) {
+      const typed = U.promptProdConfirm(g.profile, 'Switching "' + (draft.name || 'this stream')
+        + '" to log-based capture reads the production transaction log.');
+      if (typed === null || typed.trim() !== g.profileId) {
+        if (typed !== null) alert('Confirmation did not match ' + g.profileId + ' — capture method unchanged.');
+        render();
+        return;
+      }
+      prodConfirmedId = g.profileId;
+    }
+  }
   draft.capture.method = m;
-  draft.capture.methodLabel = DS.methodLabel(m, draft.capture.connectionLabel);
+  draft.capture.methodLabel = DS.methodLabel(m, draft.profileId ? draftConnLabel() : draft.capture.connectionLabel);
   capability = null;
   touch();
 }
@@ -802,24 +833,21 @@ function destBlurb(k) {
     file: 'A landing zone — files dropped for something else to pick up.',
     'cygenix-target': 'This project’s own migration target. The cutover shape.' }[k] || '';
 }
+/* ── Destination picker (Phase 2) ──────────────────────────────────────
+   A Broker topic, Webhook, File landing zone or Database is picked BY NAME
+   from the saved destinations (CygenixStreamDestinations — the same store
+   the migration connections live in, secret half local-only), or created
+   here with "New destination…". The stream then stores the entry's id and
+   looks it up when it runs; no endpoint and no credential is ever on the
+   stream or in this page's markup.
+
+   An INLINE destination — typed onto the stream, which is every stream from
+   before this — still works exactly as before, and gets a "Convert to saved
+   connection" prompt. Nothing about the old fields changed; savedId was
+   added beside them. */
+function destStore() { return window.CygenixStreamDestinations || null; }
 function destPicker() {
   const k = draft.destination.kind;
-  if (k === 'database' || k === 'broker') {
-    const conns = savedConnections();
-    return '<select id="ds-dest" class="ds-input" onchange="setDestConn(this.value)">'
-      + '<option value="">Choose…</option>'
-      + conns.map(c => '<option value="' + U.esc(c.id) + '"'
-          + (draft.destination.connectionId === c.id ? ' selected' : '') + '>'
-          + U.esc(connLabel(c)) + '</option>').join('')
-      + '</select>'
-      + '<div style="margin-top:0.4rem"><a class="btn" href="/dashboard#goto=connections">'
-      + '<i class="ic ic-plus"></i> New connection</a></div>'
-      + (conns.length ? '' : '<div class="ds-note warn" style="margin-top:0.4rem">No saved connections. '
-          + 'Add one in Connect → Connections, or name the destination by hand below.</div>')
-      + '<input class="ds-input" style="margin-top:0.4rem" placeholder="…or name it, e.g. SNOWFLAKE-EU · RAW_LEGACY"'
-      + ' value="' + U.esc(draft.destination.label || '') + '"'
-      + ' oninput="draft.destination.label=this.value;touch()">';
-  }
   if (k === 'cygenix-target') {
     return '<div class="ds-note info">Delivers into this project’s own target connection — the shape you '
       + 'want at cutover, where batches move the bulk and the stream trickles the changes since.</div>'
@@ -827,20 +855,109 @@ function destPicker() {
       + U.esc(draft.destination.label || 'Project target connection') + '"'
       + ' oninput="draft.destination.label=this.value;touch()">';
   }
-  return '<input id="ds-dest" class="ds-input" style="font-family:var(--mono)" value="'
-    + U.esc(draft.destination.label || '') + '" oninput="draft.destination.label=this.value;touch()"'
-    + ' placeholder="' + (k === 'webhook' ? 'https://example.internal/hooks/cygenix' : 'adls://bucket/landing') + '">';
+  const SD = destStore();
+  const choices = SD ? SD.forKind(k) : [];
+  const savedId = draft.destination.savedId || null;
+  const saved = savedId ? choices.filter(c => c.id === savedId)[0] : null;
+  const missing = !!savedId && !saved;
+  const kindWord = (DS.DEST_KIND_LABEL[k] || k).toLowerCase();
+
+  let html = '<select id="ds-dest" class="ds-input" onchange="setDestSaved(this.value)">'
+    + '<option value="">' + (choices.length ? 'Choose a saved ' + kindWord + '…' : 'No saved ' + kindWord + ' yet') + '</option>'
+    + choices.map(c => '<option value="' + U.esc(c.id) + '"' + (savedId === c.id ? ' selected' : '') + '>'
+        + U.esc(connLabel(c)) + (c.migration ? ' (migration connection)' : '')
+        + (SD && SD.endpointOf(c) ? ' — ' + U.esc(SD.endpointOf(c)) : '') + '</option>').join('')
+    + '</select>'
+    + '<div style="margin-top:0.4rem;display:flex;gap:0.4rem;flex-wrap:wrap">'
+    + '<button type="button" class="btn" onclick="dsNewDestination()"' + (SD ? '' : ' disabled title="Saved destinations are unavailable on this page"') + '>'
+      + '<i class="ic ic-plus"></i> New destination…</button>'
+    + (saved && !saved.migration ? '<button type="button" class="btn" onclick="dsEditDestination()"><i class="ic ic-edit"></i> Edit…</button>' : '')
+    + '</div>';
+
+  if (saved) {
+    html += '<div class="ds-note info" style="margin-top:0.5rem">Delivers to <b>' + U.esc(connLabel(saved)) + '</b>'
+      + (SD.endpointOf(saved) ? ' — <code>' + U.esc(SD.endpointOf(saved)) + '</code>' : '')
+      + ' <span class="ds-tag saved">saved</span> Looked up from Connections when the stream runs; the stream stores '
+      + 'no endpoint or credential of its own.'
+      + (saved.migration || SD.hasSecret(saved.id) ? '' : ' No credential is stored on this browser for it yet.')
+      + '</div>';
+  } else if (missing) {
+    html += '<div class="ds-note warn" style="margin-top:0.5rem">Saved destination "' + U.esc(draft.destination.label || savedId)
+      + '" no longer exists in the saved connections. Pick another, or create it again.</div>';
+  } else {
+    html += '<div class="ds-field" style="margin-top:0.6rem"><label class="lbl" for="ds-dest-inline">…or type it on the stream</label>'
+      + '<input id="ds-dest-inline" class="ds-input" style="font-family:var(--mono)" value="' + U.esc(draft.destination.label || '') + '"'
+      + ' oninput="draft.destination.label=this.value;touch()" placeholder="'
+      + ({ webhook: 'https://example.internal/hooks/cygenix', file: 'adls://bucket/landing',
+           broker: 'events.legacy.cdc', database: 'SNOWFLAKE-EU · RAW_LEGACY' }[k] || '') + '">'
+      + (draft.destination.label
+          ? '<div class="ds-note warn" style="margin-top:0.4rem">This endpoint is saved on the stream itself '
+            + '<span class="ds-tag inline">inline</span>. '
+            + '<button type="button" class="btn" style="margin:0 0.3rem" onclick="dsConvertDestination()"' + (SD ? '' : ' disabled') + '>'
+            + '<i class="ic ic-save"></i> Convert to saved connection</button> '
+            + 'The endpoint and its credential then live once, in Connections, and other streams can pick it by name.</div>'
+          : '<div class="hint">A saved destination keeps the endpoint and credential in one place. An inline one lives only on this stream.</div>')
+      + '</div>';
+  }
+  return html;
 }
 function setDestKind(k) {
+  if (draft.destination.kind !== k && draft.destination.savedId) {
+    // A saved destination is of one kind; changing kind un-picks it.
+    draft.destination.savedId = null;
+    draft.destination.connectionId = null;
+    draft.destination.label = '';
+  }
   draft.destination.kind = k;
   if (k === 'cygenix-target' && !draft.destination.label) draft.destination.label = 'Project target connection';
   touch();
 }
-function setDestConn(id) {
-  const c = savedConnections().filter(x => x.id === id)[0];
-  draft.destination.connectionId = id || null;
-  if (c) draft.destination.label = connLabel(c);
+function setDestSaved(id) {
+  if (!id) {
+    draft.destination.savedId = null;
+    draft.destination.connectionId = null;
+    draft.destination.label = '';
+    touch();
+    return;
+  }
+  const SD = destStore();
+  const entry = SD ? SD.forKind(draft.destination.kind).filter(c => c.id === id)[0] : null;
+  if (!entry) { touch(); return; }
+  DS.attachSavedDestination(draft, entry);
   touch();
+}
+function dsNewDestination() {
+  const SD = destStore(); if (!SD) return;
+  SD.openEditor({ kind: draft.destination.kind, lockKind: true, onSaved: (e) => {
+    DS.attachSavedDestination(draft, e);
+    P.announce('Destination "' + e.name + '" saved to Connections.');
+    touch();
+  } });
+}
+function dsEditDestination() {
+  const SD = destStore(); if (!SD) return;
+  const entry = SD.byId(draft.destination.savedId); if (!entry) return;
+  SD.openEditor({ entry: entry, onSaved: (e) => { draft.destination.label = e.name; touch(); } });
+}
+/* Convert: save the inline endpoint as a destination, then point the
+   stream at it. For a stored stream the engine records the conversion at
+   once (audited), so the pointer is on the record even if this edit is
+   abandoned; for a new draft it is simply the draft that changes. */
+function dsConvertDestination() {
+  const SD = destStore(); if (!SD) return;
+  SD.openEditor({ kind: draft.destination.kind, lockKind: true,
+    prefill: SD.prefillFromInline(draft.destination),
+    onSaved: (e) => {
+      if (editingId && DS.isConvertibleDestination(DS.getStream(P.state, editingId))) {
+        DS.convertDestination(P.state, editingId, e);
+        P.persist();
+        draft.destination = JSON.parse(JSON.stringify(DS.getStream(P.state, editingId).destination));
+      } else {
+        DS.attachSavedDestination(draft, e);
+      }
+      P.announce('Destination converted to a saved connection.');
+      touch();
+    } });
 }
 function setWriteMode(m) { draft.destination.writeMode = m; touch(); }
 function capitalise(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -1012,7 +1129,7 @@ function renderSummary(v) {
   document.getElementById('ds-summary').innerHTML =
       '<div class="ds-kv"><b>Name</b><span>' + U.esc(draft.name || '—') + '</span></div>'
     + '<div class="ds-kv"><b>Reads from</b><span>' + U.sideBadge(draft.capture.side) + '</span></div>'
-    + (draft.profileId ? '<div class="ds-kv"><b>Profile</b><span>' + U.esc(draft.profileId) + '</span></div>' : '')
+    + (draft.profileId ? '<div class="ds-kv"><b>Profile</b><span>' + U.esc(draft.profileId) + U.prodMarker(draftProfile()) + '</span></div>' : '')
     + '<div class="ds-kv"><b>Connection</b><span>' + U.esc(draftConnLabel() || '—')
       + (draft.profileId ? ' <span class="ds-tag">from profile</span>' : '') + '</span></div>'
     + '<div class="ds-kv"><b>Capture</b><span>' + U.esc(DS.METHOD_LABEL[draft.capture.method] || '—') + '</span></div>'
@@ -1052,8 +1169,19 @@ function dsCreate() {
     return;
   }
   const est = DS.snapshotEstimate(draft);
+  // The production guard (Phase 2). The engine decides; this screen asks.
+  const g = DS.prodGuard(draft, P.profileStore());
+  const opts = () => ({ profileStore: P.profileStore(), savedConns: P.savedConns(), confirmedProfileId: prodConfirmedId });
   if (editingId) {
-    DS.updateStream(P.state, editingId, draft);
+    const was = DS.getStream(P.state, editingId);
+    const turningOnLog = draft.capture.method === 'log' && !(was && was.capture && was.capture.method === 'log');
+    if (turningOnLog && g.required && !prodConfirmedId) {
+      const typed = U.promptProdConfirm(g.profile, 'Saving turns on log-based capture for "' + draft.name + '".');
+      if (typed === null) return;
+      prodConfirmedId = typed;
+    }
+    try { DS.updateStream(P.state, editingId, draft, opts()); }
+    catch (e) { P.persist(); alert(e.message); P.announce(e.message); return; }
     P.persist();
     DS.wipClear(P.projectId);
     dirty = false;
@@ -1062,11 +1190,25 @@ function dsCreate() {
   }
   if (!confirm(U.confirmText('start', {
         name: draft.name, connection: draftConnLabel(),
-        destination: draft.destination.label, snapshotNote: est.note }))) return;
-  const created = DS.createStream(P.state, draft, { start: true });
+        destination: draft.destination.label, snapshotNote: est.note,
+        prodProfileId: g.required ? g.profileId : null }))) return;
+  if (g.required) {
+    const typed = U.promptProdConfirm(g.profile, 'Starting "' + draft.name + '" reads production continuously.');
+    if (typed === null) return;
+    prodConfirmedId = typed;
+  }
+  // Create, then start, as two steps: if the start is refused (a wrong
+  // confirmation, a destination that vanished) the stream still exists as a
+  // draft and the person lands on it, rather than being left on this screen
+  // with a second Create that would make a duplicate.
+  const created = DS.createStream(P.state, draft, { start: false });
+  let refusal = null;
+  try { DS.startStream(P.state, created.id, opts()); }
+  catch (e) { refusal = e.message; }
   P.persist();
   DS.wipClear(P.projectId);
   dirty = false;
+  if (refusal) alert(refusal + '\n\nThe stream was saved as a draft.');
   location.href = '/data-stream' + DS.buildQuery({ stream: created.id });
 }
 

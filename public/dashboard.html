@@ -1291,7 +1291,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 </style>
 <script src="/connections.js?v=403b59bf1a" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
-<script src="/cygenix-saved-conn-secrets.js?v=7e0395ba10" defer></script>
+<script src="/cygenix-saved-conn-secrets.js?v=42c16863e0" defer></script>
+<script src="/cygenix-stream-destinations.js?v=ecc5fb8edf" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=c62d183795" defer></script>
@@ -1375,8 +1376,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-sidebar.js?v=7e99032d53" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
-  <script src="/cygenix-datastream.js?v=b98f6bf9d1" defer></script>
-  <script src="/cygenix-datastream-ui.js?v=53a3df8423" defer></script>
+  <script src="/cygenix-datastream.js?v=cf1b2702f0" defer></script>
+  <script src="/cygenix-datastream-ui.js?v=a0e01de431" defer></script>
   <script src="/cygenix-preflight.js?v=b84fe6bfb2" defer></script>
   <script src="/cygenix-profiles.js?v=cf4e02a1a3" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
@@ -1398,7 +1399,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=519f4c989c" defer></script>
-  <script src="/dashboard-app.js?v=aaf65e21b8" defer></script>
+  <script src="/dashboard-app.js?v=e026e5cbb1" defer></script>
 
 
   <!-- MAIN -->
@@ -2808,6 +2809,21 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                 Saved target connections <span id="sconn-tgt-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">0</span>
               </div>
               <div id="sconn-tgt-list" style="display:flex;flex-wrap:wrap;gap:0.4rem;min-height:20px"></div>
+            </div>
+
+            <!-- Saved stream destinations (Phase 2 of the Data Stream profile
+                 work). Broker topics, webhooks, file landing zones and
+                 external databases a stream delivers to, held in the SAME
+                 saved-connection store as the two lists above (side 'dest'),
+                 so a credential takes the same local-only path and the same
+                 audit hook. Rendered by cygenix-stream-destinations.js. -->
+            <div id="sdst-panel" style="margin-top:0.875rem;padding-top:0.875rem;border-top:0.5px solid var(--border)">
+              <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
+                Saved stream destinations <span id="sdst-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">0</span>
+                <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="sdstNew()" title="Save a broker topic, webhook, file landing zone or database that streams deliver to"><i class="ic ic-plus"></i> New destination…</button>
+              </div>
+              <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem;max-width:80ch">Where a data stream delivers. Picked by name in the Data Stream Designer; the endpoint syncs between your browsers, the credential stays in this one.</div>
+              <div id="sdst-list" style="display:flex;flex-wrap:wrap;gap:0.4rem;min-height:20px"></div>
             </div>
           </div>
         </div>

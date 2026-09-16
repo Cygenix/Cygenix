@@ -315,7 +315,9 @@ check('New stream is disabled without an active profile, with the reason on it',
   /btn\.title = p \? 'Create a stream under ' \+ p\.id : 'Select a profile to create a stream\.'/.test(PAGE)
   && /Select a profile to create a stream\./.test(DESIGN));
 check('the engine is handed the store when a stream is started from the page',
-  /DS\.startStream\(P\.state, id, \{ profileStore: P\.profileStore\(\), savedConns: P\.savedConns\(\) \}\)/.test(PAGE));
+  // Phase 2 builds the same two into an opts object (the production guard
+  // adds confirmedProfileId to it), so the shape is checked, not the literal.
+  /const opts = \{ profileStore: store, savedConns: conns \};[\s\S]{0,600}DS\.startStream\(P\.state, id, opts\)/.test(PAGE));
 check('the Designer stamps a NEW draft with the shared helper and drops the connection fields',
   /CygenixJobProfile\.stamp\(draft\)/.test(DESIGN)
   && /if \(draft\.profileId\) \{ draft\.capture\.connectionId = null; draft\.capture\.connectionLabel = ''; \}/.test(DESIGN));

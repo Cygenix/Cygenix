@@ -217,8 +217,8 @@ body.cyg-collapsed{padding-left:54px}
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 <script src="/connections.js?v=403b59bf1a" defer></script>
-<script src="/cygenix-datastream.js?v=b98f6bf9d1"></script>
-<script src="/cygenix-datastream-ui.js?v=53a3df8423"></script>
+<script src="/cygenix-datastream.js?v=cf1b2702f0"></script>
+<script src="/cygenix-datastream-ui.js?v=a0e01de431"></script>
 <script src="/cygenix-datastream-page.js?v=2c3f580800"></script>
 <script>
 'use strict';
@@ -819,14 +819,16 @@ function rowHtml(r) {
   const cls = [r.id === selectedId ? 'sel' : '', b ? 'blocked-' + b.level : ''].filter(Boolean).join(' ');
   const store = P.profileStore(), conns = P.savedConns();
   const cap = DS.resolveCapture(r, store, conns);
+  const dest = DS.resolveDestination(r, store, conns);
   const unassigned = DS.isUnassigned(r);
   const attention = r.status === DS.STATUS_ATTENTION && r.attention ? r.attention.reason : '';
   return '<tr data-id="' + U.esc(r.id) + '"' + (cls ? ' class="' + cls + '"' : '') + '>'
     + '<td data-c="status">' + statusOrPending(r) + '</td>'
     // The Unassigned badge lives in the Profile column (All-profiles view) and
     // the inspector; an unassigned stream is never in This-profile view, so a
-    // second copy beside the name only ever doubled the first.
-    + '<td><div class="ds-cell-name">' + U.esc(r.name) + '</div>'
+    // second copy beside the name only ever doubled the first. The PRD marker
+    // (Phase 2) is the environment bar's red, beside the name, in every view.
+    + '<td><div class="ds-cell-name">' + U.esc(r.name) + U.prodMarker(cap.profile) + '</div>'
       + (attention ? '<div class="ds-rowreason degraded" title="' + U.esc(attention) + '">' + U.esc(attention) + '</div>' : '')
       + (b ? '<div class="ds-rowreason ' + b.level + '" title="' + U.esc(blockedReasonFull(r, b)) + '">'
              + U.esc(blockedReasonShort(r, b)) + '</div>' : '')
@@ -842,7 +844,7 @@ function rowHtml(r) {
          : U.esc(cap.reason)) + '</div></td>'
     + '<td><div class="ds-num">' + U.esc(r.capture.methodLabel) + cdc + '</div></td>'
     + '<td><div class="ds-num"><i class="ic ic-' + destIcon(r.destination.kind) + '"></i> '
-      + U.esc(r.destination.label) + '</div>'
+      + U.esc(dest.ok ? dest.label : r.destination.label) + U.destTag(dest) + '</div>'
       + '<div class="ds-cell-sub">' + U.esc(r.destination.writeMode) + '</div>'
       + consumersLine(r) + '</td>'
     + '<td data-c="spark" class="ds-nowrap ds-right">' + captureCell(r) + '</td>'
@@ -1005,7 +1007,9 @@ function inspSummary(s, st) {
   const uptime = started ? DS.relativeTime(s.startedAt, st.clockNow).replace(' ago', '') : '—';
   return U.flowDiagram(s)
     + '<div style="height:0.7rem"></div>'
-    + kv('Profile', s.profileId ? U.profilePill(s, P.profileStore()) : U.unassignedBadge())
+    + kv('Profile', (s.profileId ? U.profilePill(s, P.profileStore()) : U.unassignedBadge())
+        + (() => { const g = DS.prodGuard(s, P.profileStore());
+            return g.required ? ' <span class="ds-dim">production — start, resume and log capture need the id typed</span>' : ''; })())
     + kv('Reads from', U.sideBadge(DS.readsFromSide(s)) + ' ' + (() => {
         const cap = DS.resolveCapture(s, P.profileStore(), P.savedConns());
         return cap.ok ? U.esc(cap.label)
@@ -1015,7 +1019,15 @@ function inspSummary(s, st) {
     + kv('Capture', U.esc(s.capture.methodLabel))
     + kv('Starting point', U.esc(s.capture.snapshot))
     + kv('Position', U.monoCopy(s.capture.position.lsn, { max: 20 }))
-    + kv('Feeds', U.esc(s.destination.label))
+    + kv('Feeds', (() => {
+        const d = DS.resolveDestination(s, P.profileStore(), P.savedConns());
+        return U.esc(d.ok ? d.label : s.destination.label) + U.destTag(d)
+          + (d.inline && d.convertible
+              ? ' <button class="btn btn-sm" style="margin-left:0.4rem" onclick="dsConvertDest(\'' + U.escArg(s.id) + '\')"'
+                + ' title="Move this endpoint and its credential into Connections, where other streams can pick it by name">'
+                + '<i class="ic ic-save"></i> Convert to saved connection</button>' : '')
+          + (d.saved && d.missing ? ' <span style="color:var(--amber)">' + U.esc(d.reason) + '</span>' : '');
+      })())
     + kv('Write mode', U.esc(s.destination.writeMode) + ' — ' + U.esc(DS.WRITE_MODE_BLURB[s.destination.writeMode] || ''))
     + kv('Ordering', U.esc(s.delivery.ordering))
     + kv('On schema drift', U.esc(s.delivery.onSchemaDrift))
@@ -1208,10 +1220,23 @@ function dsRowMenu(anchor, id) {
 function dsStart(id) {
   const s = DS.getStream(P.state, id);
   const est = DS.snapshotEstimate(s);
-  if (!confirm(U.confirmText('start', { name: s.name, connection: s.capture.connectionLabel,
-      destination: s.destination.label, snapshotNote: est.note }))) return;
-  try { DS.startStream(P.state, id, { profileStore: P.profileStore(), savedConns: P.savedConns() }); }
-  catch (e) { alert(e.message); P.announce(e.message); return; }
+  const store = P.profileStore(), conns = P.savedConns();
+  const cap = DS.resolveCapture(s, store, conns);
+  // Production (Phase 2): the ordinary confirm says it is coming, then the
+  // profile id is asked for. Whatever was typed goes to the engine, which
+  // compares it and records the outcome either way.
+  const g = DS.prodGuard(s, store);
+  if (!confirm(U.confirmText('start', { name: s.name, connection: cap.ok ? cap.label : s.capture.connectionLabel,
+      destination: s.destination.label, snapshotNote: est.note,
+      prodProfileId: g.required ? g.profileId : null }))) return;
+  const opts = { profileStore: store, savedConns: conns };
+  if (g.required) {
+    const typed = U.promptProdConfirm(g.profile, 'Starting "' + s.name + '" reads production continuously.');
+    if (typed === null) return;
+    opts.confirmedProfileId = typed;
+  }
+  try { DS.startStream(P.state, id, opts); }
+  catch (e) { P.persist(); paint(); alert(e.message); P.announce(e.message); return; }
   P.persist(); paint();
   P.announce(s.name + ' started.');
 }
@@ -1223,8 +1248,17 @@ function dsPause(id) {
   P.announce(s.name + ' paused.');
 }
 function dsResume(id) {
-  try { DS.resumeStream(P.state, id, { profileStore: P.profileStore(), savedConns: P.savedConns() }); }
-  catch (e) { alert(e.message); P.announce(e.message); return; }
+  const s = DS.getStream(P.state, id);
+  const store = P.profileStore();
+  const opts = { profileStore: store, savedConns: P.savedConns() };
+  const g = DS.prodGuard(s, store);
+  if (g.required) {
+    const typed = U.promptProdConfirm(g.profile, 'Resuming "' + s.name + '" reads production again.');
+    if (typed === null) return;
+    opts.confirmedProfileId = typed;
+  }
+  try { DS.resumeStream(P.state, id, opts); }
+  catch (e) { P.persist(); paint(); alert(e.message); P.announce(e.message); return; }
   P.persist(); paint();
   P.announce('Resumed.');
 }
@@ -1248,6 +1282,11 @@ function dsDuplicate(id) {
 }
 function dsEdit(id) {
   location.href = '/data-stream-designer' + DS.buildQuery({ stream: id });
+}
+/* Convert lives in the Designer's destination step, which has the form and
+   the store; this just opens it there. */
+function dsConvertDest(id) {
+  location.href = '/data-stream-designer' + DS.buildQuery({ stream: id, step: '3' });
 }
 function dsNewStream() {
   if (!P.activeProfile()) { alert('Select a profile to create a stream.'); return; }

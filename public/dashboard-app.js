@@ -9724,6 +9724,10 @@ function initConnectionsView() {
   // Render saved-connection chips for both sides
   sconnRender('src');
   sconnRender('tgt');
+  // And the stream destinations (side 'dest'), which share the store but
+  // not the chip renderer: theirs never shows an endpoint's credential
+  // because the entry it reads has already had the secret half stripped.
+  sdstRender();
   // Re-mask on every visit. Revealing is a per-visit decision, so leaving
   // the view and coming back never leaves a password on screen — and the
   // fields have only just been populated, so the summaries are computed
@@ -10678,6 +10682,28 @@ function sconnDelete(id){
   sconnSetAll(next);
   sconnRender(entry.side);
 }
+
+// ── Saved stream destinations (Phase 2 of the Data Stream profile work) ──
+// Same store as the chips above (side 'dest'); the list, the editor and the
+// delete lock all live in cygenix-stream-destinations.js so the Designer and
+// this page cannot disagree about what a destination is. Guarded: the
+// Connections view must still render if that module failed to load.
+function sdstRender(){
+  try {
+    const SD = window.CygenixStreamDestinations;
+    if (!SD) return;
+    SD.renderChips('sdst-list', 'sdst-count');
+  } catch (e) { console.warn('[sdst] render', e); }
+}
+function sdstNew(){
+  try {
+    const SD = window.CygenixStreamDestinations;
+    if (!SD) { alert('Saved destinations are unavailable on this page.'); return; }
+    SD.openEditor({ onSaved: () => sdstRender() });
+  } catch (e) { alert(e.message || String(e)); }
+}
+window.sdstRender = sdstRender;
+window.sdstNew = sdstNew;
 
 // ══════════════════════════════════════════════════════════════════════════
 // LINKED SERVERS — draft + run SQL Server sp_addlinkedserver setup against
