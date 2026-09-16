@@ -58,6 +58,58 @@ function sideBadge(side) {
     + (src ? 'SOURCE' : 'TARGET') + '</span>';
 }
 
+/* ── Profile ownership ───────────────────────────────────────────────────
+   Shared by all four screens, so the toggle, the badge and the pill cannot
+   drift between them. */
+
+/* "Profile: FIN_3E_UAT · UAT" — the id, then the environment. The name is
+   free text and can be long; the id is what the top bar shows. */
+function profileLabel(p) {
+  if (!p) return '';
+  return esc(p.id) + (p.envClass ? ' · ' + esc(p.envClass) : '');
+}
+
+/* The This profile / All profiles control. `onchange` is the global handler
+   name the page exposes; the pages already wire filters this way. */
+function scopeToggle(mode, activeP, opts) {
+  var o = opts || {};
+  var fn = o.onchange || 'dsScope';
+  var thisLabel = activeP ? 'This profile' : 'This profile (none active)';
+  return '<div class="ds-scope" role="group" aria-label="Which profiles to show">'
+    + '<button type="button"' + (mode !== 'all' ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"')
+      + ' onclick="' + fn + '(\'this\')" title="' + (activeP ? 'Streams belonging to ' + esc(activeP.id) : 'No profile is active') + '">'
+      + thisLabel + '</button>'
+    + '<button type="button"' + (mode === 'all' ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"')
+      + ' onclick="' + fn + '(\'all\')" title="Every stream in this project, whichever profile it belongs to">'
+      + 'All profiles</button></div>';
+}
+
+function unassignedBadge() {
+  return '<span class="ds-unassigned" title="Not assigned to a connection profile — assign one from the row menu">UNASSIGNED</span>';
+}
+
+/* The pill in the Profile column. The stream's own snapshot of the name is
+   the fallback when the profile has gone, dimmed so it reads as history. */
+function profilePill(stream, store) {
+  if (!stream || !stream.profileId) return unassignedBadge();
+  var live = null;
+  var list = (store && store.profiles) || [];
+  for (var i = 0; i < list.length; i++) if (list[i] && list[i].id === stream.profileId) { live = list[i]; break; }
+  if (live) {
+    return '<span class="ds-profile" title="' + esc(live.name || live.id)
+      + (live.envClass ? ' · ' + esc(live.envClass) : '') + '">' + esc(live.id) + '</span>';
+  }
+  return '<span class="ds-profile stale" title="This profile no longer exists — showing the name the stream was assigned under">'
+    + esc(stream.profileName || stream.profileId) + '</span>';
+}
+
+/* The KPI context line: "2 of 6 · this profile". The count is of the streams
+   in view and the label says which view, so a tile can never be read as a
+   figure about the whole estate when it is not. */
+function scopeWords(mode, activeP) {
+  return mode === 'all' ? 'all profiles' : (activeP ? 'this profile' : 'no profile active');
+}
+
 /* ── Lag ─────────────────────────────────────────────────────────────────
    Mono, right aligned, and coloured against the STREAM's own threshold. */
 function lagCell(stream) {
@@ -375,6 +427,8 @@ function blockedBand(DS, state, opts) {
 
 return {
   esc: esc, escArg: escArg, blockedBand: blockedBand,
+  profileLabel: profileLabel, scopeToggle: scopeToggle, unassignedBadge: unassignedBadge,
+  profilePill: profilePill, scopeWords: scopeWords,
   statusPill: statusPill, sideBadge: sideBadge, lagCell: lagCell,
   opBadge: opBadge, deliveryPill: deliveryPill,
   sparkline: sparkline, lineChart: lineChart, barChart: barChart,

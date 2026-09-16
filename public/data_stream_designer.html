@@ -108,9 +108,10 @@ select.ds-input{cursor:pointer}
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/connections.js?v=403b59bf1a"></script>
-<script src="/cygenix-datastream.js?v=0ec11f7d0e"></script>
-<script src="/cygenix-datastream-ui.js?v=cfc8290e58"></script>
-<script src="/cygenix-datastream-page.js?v=d0766024f4"></script>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
+<script src="/cygenix-datastream.js?v=b98f6bf9d1"></script>
+<script src="/cygenix-datastream-ui.js?v=53a3df8423"></script>
+<script src="/cygenix-datastream-page.js?v=2c3f580800"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -146,6 +147,10 @@ document.addEventListener('DOMContentLoaded', () => {
       editingId = existing.id;
     }
   } else {
+    // A new stream belongs to the ACTIVE profile, and there has to be one:
+    // the Streams page disables New stream without it, but a bookmark or a
+    // Schema Explorer hand-off can still arrive here.
+    if (!P.activeProfile()) { showNoProfile(); return; }
     // An abandoned draft is offered back rather than silently resumed or
     // silently binned — either would be a decision made on the user's behalf.
     const wip = DS.wipLoad(P.projectId);
@@ -157,6 +162,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (wip) DS.wipClear(P.projectId);
     }
     seedFromQuery(q);
+  }
+
+  // Stamp the profile onto a NEW draft the same way a new job is stamped —
+  // same helper, same two fields — and never re-stamp one that has it. A
+  // profile-linked stream carries no connection of its own; the side is what
+  // it stores, and the connection is looked up from the profile when it runs.
+  if (!editingId && !draft.profileId) {
+    try { if (window.CygenixJobProfile) CygenixJobProfile.stamp(draft); } catch (e) { /* engine says why */ }
+    if (draft.profileId) { draft.capture.connectionId = null; draft.capture.connectionLabel = ''; }
   }
 
   const wanted = parseInt(q.step, 10);
@@ -193,6 +207,20 @@ function seedFromQuery(q) {
   }
 }
 
+function showNoProfile() {
+  document.getElementById('ds-designer').style.display = 'none';
+  const el = document.getElementById('ds-notfound');
+  el.style.display = 'block';
+  el.innerHTML = '<div class="panel">' + U.emptyState({
+    icon: 'shield', title: 'Select a profile to create a stream.',
+    bodyHtml: 'A stream belongs to a connection profile and reads one side of it. '
+      + 'Select a profile on <a href="/profiles">Profiles</a> and come back.',
+    actionHtml: '<a class="btn btn-primary" href="/profiles">Open Profiles</a> '
+      + '<a class="btn" href="/data-stream">Back to Streams</a>',
+  }) + '</div>';
+  document.getElementById('ds-create').disabled = true;
+}
+
 function showNotFound(id) {
   document.getElementById('ds-designer').style.display = 'none';
   const el = document.getElementById('ds-notfound');
@@ -219,6 +247,33 @@ function savedConnection(id) { return savedConnections().filter(c => c.id === id
    URL, or the draft that gets saved to localStorage. */
 function connLabel(c) { return String(c.name || c.id || 'connection'); }
 
+/* ── The profile this stream belongs to ────────────────────────────────
+   Looked up, never copied. What the stream reads is the profile's connection
+   for the chosen side, resolved by the engine — the same function the Streams
+   page and the runner use, so the Designer cannot show one server while the
+   row shows another. */
+function draftProfile() {
+  const store = P.profileStore();
+  return ((store && store.profiles) || []).filter(p => p.id === draft.profileId)[0] || null;
+}
+function draftResolved(side) {
+  return DS.resolveSide(draftProfile(), side || draft.capture.side, P.savedConns());
+}
+/* The connection's name for the review, the confirm and the capability
+   check: resolved from the profile when there is one, the stream's own label
+   when there is not. One helper, so those three never disagree. */
+function draftConnLabel() {
+  if (!draft.profileId) return draft.capture.connectionLabel || '';
+  const r = draftResolved();
+  return r.ok ? r.label : '';
+}
+/* The saved connection a profile side resolves to, as the capability check
+   and the table pool need it: the saved entry itself. */
+function draftConnection() {
+  const r = draftResolved();
+  return r.ok ? r.conn : null;
+}
+
 /* The project's own two connections, first, because those are what a stream
    almost always reads from. */
 function projectConnections() {
@@ -236,10 +291,23 @@ function projectConnections() {
    would be worse than saying where they came from. */
 function availableTables() {
   const out = [];
+  // A profile-linked stream lists the tables of the schema cached for the
+  // profile's chosen side — the Schema Explorer keys its cache by the
+  // connection VALUE, and CygenixSchemaGraph.cacheKeyFor is that key. Only
+  // when the stream has no profile does every cached schema qualify.
+  let want = null;
+  try {
+    const c = draft.profileId ? draftConnection() : null;
+    if (c && window.CygenixSchemaGraph && CygenixSchemaGraph.cacheKeyFor) {
+      const value = (c.mode === 'azure' && c.fnUrl) ? c.fnUrl : (c.connString || '');
+      if (value) want = CygenixSchemaGraph.cacheKeyFor(value);
+    }
+  } catch (e) { want = null; }
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key || key.indexOf('cygenix_schema_') !== 0) continue;
+      if (want && key !== want) continue;
       const doc = JSON.parse(localStorage.getItem(key) || 'null');
       const g = doc && doc.graph;
       (g && g.tables || []).forEach(t => {
@@ -375,25 +443,51 @@ function step1() {
     + U.esc(draft.capture.feedKeyPath || '') + '" oninput="draft.capture.feedKeyPath=this.value;touch()"'
     + ' placeholder="$.eventId"><div class="hint">Which field identifies the record, for ordering and upserts.</div></div>';
 
-  return '<h3>Step 1 — Source of change</h3>'
-    + '<p class="lead">A stream reads one side of this project. Which side it reads is the first thing '
-      + 'anyone looking at it will want to know, so it is the first thing you pick.</p>'
-
-    + '<div class="ds-field"><label class="lbl">Read from</label><div class="ds-cards">'
-      + card('source', 'Source connection', 'Feed a downstream system while the migration is still being built, '
-          + 'or close the delta window at cutover.')
-      + card('target', 'Target connection', 'Feed legacy or satellite systems that have not been retired yet.')
+  // The profile-linked form. The profile is a fact, shown read-only; the
+  // side is the choice; the connection is what that side RESOLVES to and is
+  // shown, not chosen — change the profile on the Profiles page and every
+  // stream reading that side follows.
+  const prof = draftProfile();
+  const linked = !!draft.profileId;
+  const res = linked ? draftResolved() : null;
+  const profileRow = linked
+    ? '<div class="ds-field"><label class="lbl">Profile</label>'
+      + '<div class="ds-note" style="display:flex;align-items:center;gap:0.5rem"><i class="ic ic-shield"></i> '
+      + (prof ? 'Profile: ' + U.profileLabel(prof)
+              : '<span style="color:var(--amber)">Profile ' + U.esc(draft.profileId) + ' no longer exists</span>')
       + '</div></div>'
-
-    + '<div class="ds-field"><label class="lbl" for="ds-conn">Connection</label>'
+    : '';
+  const connRow = linked
+    ? '<div class="ds-field"><label class="lbl">Connection</label>'
+      + '<div class="ds-note' + (res && res.ok ? '' : ' warn') + '">'
+      + (res && res.ok
+          ? 'Reads from <b>' + U.esc(res.label) + '</b> — the ' + U.esc(draft.capture.side)
+            + ' connection of ' + U.esc(draft.profileId) + '. Looked up from the profile when the stream runs; '
+            + 'the stream stores no connection of its own.'
+          : U.esc((res && res.reason) || 'This side does not resolve to a connection.'))
+      + '</div></div>'
+    : '<div class="ds-field"><label class="lbl" for="ds-conn">Connection</label>'
       + '<select id="ds-conn" class="ds-input" onchange="setConnection(this.value)">'
       + '<option value="">Choose a connection…</option>'
       + conns.map(c => '<option value="' + U.esc(c.id) + '"'
           + (draft.capture.connectionId === c.id ? ' selected' : '') + '>'
           + U.esc(connLabel(c)) + (c.project ? '' : ' (saved)') + '</option>').join('')
-      + '</select><div class="hint">Connections come from '
-      + '<a href="/dashboard#goto=connections" style="color:var(--accent)">Connect → Connections</a>. '
-      + 'A stream stores the connection’s id, never its credentials.</div></div>'
+      + '</select><div class="hint">This stream is not assigned to a profile, so it names its own connection. '
+      + 'Assign it to a profile from the Streams page and the connection will come from there instead.</div></div>';
+
+  return '<h3>Step 1 — Source of change</h3>'
+    + '<p class="lead">A stream reads one side of its profile. Which side it reads is the first thing '
+      + 'anyone looking at it will want to know, so it is the first thing you pick.</p>'
+    + profileRow
+    + '<div class="ds-field"><label class="lbl">Read from</label><div class="ds-cards">'
+      + card('source', 'Source', linked && prof
+          ? ('Resolves to ' + (draftResolved('source').ok ? U.esc(draftResolved('source').label) : 'nothing yet') + '.')
+          : 'Feed a downstream system while the migration is still being built, or close the delta window at cutover.')
+      + card('target', 'Target', linked && prof
+          ? ('Resolves to ' + (draftResolved('target').ok ? U.esc(draftResolved('target').label) : 'nothing yet') + '.')
+          : 'Feed legacy or satellite systems that have not been retired yet.')
+      + '</div></div>'
+    + connRow
 
     + '<div class="ds-field"><label class="lbl">Capture method</label>' + methods + '</div>'
     + feedFields
@@ -418,11 +512,17 @@ function step1() {
 }
 
 function supportsLog() {
-  const c = savedConnection(draft.capture.connectionId) || {};
+  const c = (draft.profileId ? draftConnection() : savedConnection(draft.capture.connectionId)) || {};
   return !!c.cdcEnabled || draft.capture.connectionId === 'conn_tgt_01';
 }
 function setSide(s) {
   draft.capture.side = s;
+  // A linked stream's method label names the connection that side resolves to.
+  if (draft.profileId) {
+    const r = draftResolved(s);
+    draft.capture.methodLabel = DS.methodLabel(draft.capture.method, r.ok ? r.label : '');
+    capability = null;
+  }
   // The objects belong to the side that was chosen; keeping them across a
   // side switch would leave source tables on a target stream.
   if (draft.objects.length && !confirmKeepObjects()) draft.objects = [];
@@ -469,9 +569,10 @@ function capabilityHtml() {
   return html;
 }
 function runCapability() {
-  const c = savedConnection(draft.capture.connectionId)
+  const c = (draft.profileId ? draftConnection() : null)
+    || savedConnection(draft.capture.connectionId)
     || projectConnections().filter(x => x.id === draft.capture.connectionId)[0]
-    || { name: draft.capture.connectionLabel };
+    || { name: draftConnLabel() };
   capability = DS.capabilityCheck({ label: connLabel(c), cdcEnabled: !!c.cdcEnabled }, draft.capture.method);
   document.getElementById('ds-cap').innerHTML = capabilityHtml();
   P.announce(capability.ok ? 'Capability check passed.' : 'Capability check found a problem.');
@@ -479,7 +580,8 @@ function runCapability() {
 /* The remedy writes the script into the SQL Editor. It never executes it —
    enabling CDC is a sysadmin-level change and belongs in front of a human. */
 function sendCdcSqlToEditor() {
-  const c = savedConnection(draft.capture.connectionId) || { name: draft.capture.connectionLabel };
+  const c = (draft.profileId ? draftConnection() : null)
+    || savedConnection(draft.capture.connectionId) || { name: draftConnLabel() };
   const engine = /postgres/i.test(connLabel(c)) ? 'postgres' : /mysql/i.test(connLabel(c)) ? 'mysql' : 'mssql';
   try { localStorage.setItem('cygenix_sql_editor_draft', DS.enableCdcSql(engine)); } catch (e) { /* storage full */ }
   DS.wipSave(P.projectId, draft);
@@ -910,7 +1012,9 @@ function renderSummary(v) {
   document.getElementById('ds-summary').innerHTML =
       '<div class="ds-kv"><b>Name</b><span>' + U.esc(draft.name || '—') + '</span></div>'
     + '<div class="ds-kv"><b>Reads from</b><span>' + U.sideBadge(draft.capture.side) + '</span></div>'
-    + '<div class="ds-kv"><b>Connection</b><span>' + U.esc(draft.capture.connectionLabel || '—') + '</span></div>'
+    + (draft.profileId ? '<div class="ds-kv"><b>Profile</b><span>' + U.esc(draft.profileId) + '</span></div>' : '')
+    + '<div class="ds-kv"><b>Connection</b><span>' + U.esc(draftConnLabel() || '—')
+      + (draft.profileId ? ' <span class="ds-tag">from profile</span>' : '') + '</span></div>'
     + '<div class="ds-kv"><b>Capture</b><span>' + U.esc(DS.METHOD_LABEL[draft.capture.method] || '—') + '</span></div>'
     + '<div class="ds-kv"><b>Objects</b><span>' + tables + '</span></div>'
     + '<div class="ds-kv"><b>Masked columns</b><span>' + masked + '</span></div>'
@@ -957,7 +1061,7 @@ function dsCreate() {
     return;
   }
   if (!confirm(U.confirmText('start', {
-        name: draft.name, connection: draft.capture.connectionLabel,
+        name: draft.name, connection: draftConnLabel(),
         destination: draft.destination.label, snapshotNote: est.note }))) return;
   const created = DS.createStream(P.state, draft, { start: true });
   P.persist();

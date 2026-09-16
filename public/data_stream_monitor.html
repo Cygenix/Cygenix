@@ -92,6 +92,7 @@ body.cyg-collapsed{padding-left:54px}
         one of them goes wrong.</div>
     </div>
     <div class="ds-head-actions">
+      <span id="ds-scope-host"></span>
       <div id="mon-range"></div>
       <a class="btn" href="/performance"><i class="ic ic-monitor"></i> Performance</a>
     </div>
@@ -159,9 +160,11 @@ body.cyg-collapsed{padding-left:54px}
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which on these pages is every stream lifecycle change. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/cygenix-datastream.js?v=0ec11f7d0e"></script>
-<script src="/cygenix-datastream-ui.js?v=cfc8290e58"></script>
-<script src="/cygenix-datastream-page.js?v=d0766024f4"></script>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
+<script src="/connections.js?v=403b59bf1a" defer></script>
+<script src="/cygenix-datastream.js?v=b98f6bf9d1"></script>
+<script src="/cygenix-datastream-ui.js?v=53a3df8423"></script>
+<script src="/cygenix-datastream-page.js?v=2c3f580800"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -205,15 +208,33 @@ function byTick(s, pick) {
 }
 
 function paint(state) {
-  const s = state || P.state;
-  if (!s) return;
+  const s0 = state || P.state;
+  if (!s0) return;
+  paintScope();
+  // Everything on this screen is about the streams in scope, so the charts,
+  // the heat map and the alerts read a view of the state narrowed to them.
+  // The module's own audit list stays whole: it is a record, not a view.
+  const s = scoped(s0);
   paintRange();
   paintKpis(s);
   paintCharts(s);
   paintHeat(s);
   paintAlerts(s);
-  paintAudit(s);
+  paintAudit(s0);
 }
+function scoped(s) {
+  const ids = P.visibleIds(s);
+  return Object.assign({}, s, {
+    streams: P.visible(s),
+    events: (s.events || []).filter(e => ids[e.streamId]),
+    points: (s.points || []).filter(p => ids[p.streamId]),
+  });
+}
+function paintScope() {
+  const host = document.getElementById('ds-scope-host');
+  if (host) host.innerHTML = U.scopeToggle(P.scope(), P.activeProfile());
+}
+function dsScope(mode) { P.setScope(mode); paint(); P.announce(mode === 'all' ? 'Showing every profile.' : 'Showing this profile only.'); }
 
 function paintRange() {
   document.getElementById('mon-range').innerHTML =
@@ -229,14 +250,15 @@ function setRange(r) {
 
 function paintKpis(s) {
   const k = DS.kpis(s);
+  const words = U.scopeWords(P.scope(), P.activeProfile());
   const tile = (label, figure, cls, context) =>
     '<div class="ds-kpi" role="group"><div class="ds-kpi-label">' + label + '</div>'
     + '<div class="ds-kpi-figure' + (cls ? ' ' + cls : '') + '">' + figure + '</div>'
     + '<div class="ds-kpi-context">' + context + '</div></div>';
   const level = DS.lagLevel(k.maxLagSeconds, 30);
   document.getElementById('ds-kpis').innerHTML =
-      tile('Streams running', k.running + ' of ' + k.total, '', k.paused + ' paused · ' + k.failed + ' failed')
-    + tile('Events / min', DS.formatCount(k.eventsPerMin), '', 'captured across every running stream')
+      tile('Streams running', k.running + ' of ' + k.total, '', k.paused + ' paused · ' + k.failed + ' failed · ' + words)
+    + tile('Events / min', DS.formatCount(k.eventsPerMin), '', 'captured across running streams · ' + words)
     + tile('Max lag', DS.formatLag(k.maxLagSeconds),
         level === 'red' ? 'bad' : level === 'amber' ? 'warn' : '',
         k.worstStream ? U.esc(k.worstStream) : 'no stream is behind')

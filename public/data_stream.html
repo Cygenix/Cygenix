@@ -104,7 +104,7 @@ body.cyg-collapsed{padding-left:54px}
            work out which way "on" points. The label states the real state,
            including a mixed one — see dsPaintGlobalSwitch(). -->
       <div class="ds-globalswitch" id="ds-globalswitch"></div>
-      <button class="btn btn-primary" onclick="dsNewStream()"><i class="ic ic-plus"></i> New stream</button>
+      <button class="btn btn-primary" id="ds-new" onclick="dsNewStream()"><i class="ic ic-plus"></i> New stream</button>
       <button class="btn" onclick="dsRefresh()" title="Re-read the streams for this project"><i class="ic ic-sync"></i> Refresh</button>
       <button class="btn" onclick="CygenixDataStreamPage.paletteOpen()" title="Search streams and tables">
         <i class="ic ic-search"></i> Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
@@ -114,6 +114,9 @@ body.cyg-collapsed{padding-left:54px}
   <!-- Blocked streams, in plain sentences, above everything. A stream that
        is not delivering must not be able to look like one that is. -->
   <div id="ds-bandhost"></div>
+  <!-- Unassigned streams, one line, in This-profile view only. A pointer to
+       the streams the view is not showing, not an alarm. -->
+  <div id="ds-slimhost"></div>
 
   <!-- KPI strip. Each tile is a filter, because a figure you cannot act on
        is decoration. -->
@@ -164,6 +167,22 @@ body.cyg-collapsed{padding-left:54px}
   </div>
 </div>
 
+<!-- Assign to profile. A stream belongs to exactly one profile and reads one
+     side of it; this is where an existing (unassigned) stream is given both.
+     A mismatch between the server the stream was saved against and the
+     profile's connection is WARNED, not refused — the person can see both
+     names and the engine cannot know which is right. -->
+<div class="ds-modal" id="ds-assign" role="dialog" aria-modal="true" aria-labelledby="ds-assign-title">
+  <div class="ds-modal-card">
+    <div class="ds-modal-head" id="ds-assign-title">Assign to profile</div>
+    <div class="ds-modal-body" id="ds-assign-body"></div>
+    <div class="ds-modal-foot">
+      <button class="btn" onclick="dsCloseAssign()">Cancel</button>
+      <button class="btn btn-primary" id="ds-assign-go" onclick="dsDoAssign()">Assign</button>
+    </div>
+  </div>
+</div>
+
 <!-- Global pause. The dialog is the feature: pausing replication is not
      free, and the cost is a deadline nobody was shown. -->
 <div class="ds-modal" id="ds-pauseall" role="dialog" aria-modal="true" aria-labelledby="ds-pauseall-title">
@@ -196,9 +215,11 @@ body.cyg-collapsed{padding-left:54px}
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which on these pages is every stream lifecycle change. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/cygenix-datastream.js?v=0ec11f7d0e"></script>
-<script src="/cygenix-datastream-ui.js?v=cfc8290e58"></script>
-<script src="/cygenix-datastream-page.js?v=d0766024f4"></script>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
+<script src="/connections.js?v=403b59bf1a" defer></script>
+<script src="/cygenix-datastream.js?v=b98f6bf9d1"></script>
+<script src="/cygenix-datastream-ui.js?v=53a3df8423"></script>
+<script src="/cygenix-datastream-page.js?v=2c3f580800"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -211,7 +232,7 @@ let view = 'table';
 let selectedId = null;
 let inspTab = 'summary';
 let inspOpen = true;
-let filter = { status: 'all', side: 'any', destKind: 'any', text: '', errorsOnly: false };
+let filter = { status: 'all', side: 'any', destKind: 'any', text: '', errorsOnly: false, unassigned: false };
 
 document.addEventListener('DOMContentLoaded', () => {
   P.boot();
@@ -243,9 +264,15 @@ function paint(state) {
   if (!s) return;
   dsPaintGlobalSwitch();
   paintBand(s);
-  paintKpis(s);
+  // Everything below the band is about the streams IN VIEW: the active
+  // profile's by default, everybody's when the toggle says so. The KPI tiles
+  // count the same list the table shows, and say which list that is.
+  const inView = P.visible(s);
+  paintSlim(s, inView);
+  paintKpis(s, inView);
   paintFilters(s);
-  const rows = DS.sortStreams(DS.filterStreams(s.streams, filter), s.clockNow, s);
+  paintNewGate();
+  const rows = DS.sortStreams(DS.filterStreams(inView, filter), s.clockNow, s);
   if (view === 'flow') paintFlow(rows, s);
   else if (view === 'store') paintStoreView(rows, s);
   else paintTable(rows, s);
@@ -304,8 +331,9 @@ function dsCopyFallback(text, done) {
   ta.remove();
 }
 
-function paintKpis(s) {
-  const k = DS.kpis(s);
+function paintKpis(s, inView) {
+  const k = DS.kpis(s, inView);
+  const words = U.scopeWords(P.scope(), P.activeProfile());
   const el = document.getElementById('ds-kpis');
 
   const tile = (o) => {
@@ -336,11 +364,11 @@ function paintKpis(s) {
   const lagLevel = DS.lagLevel(k.maxLagSeconds, 30);
   el.innerHTML =
       tile({ id: 'running', label: 'Streams running', figure: k.running + ' of ' + k.total,
-        context: k.paused + ' paused · ' + k.failed + ' failed',
+        context: k.paused + ' paused · ' + k.failed + ' failed · ' + words,
         series: DS.kpiSeries(s, 'running'), higherIsBetter: true, unitWord: 'streams',
         on: filter.status === 'running' })
     + tile({ id: 'rate', label: 'Events / min', figure: DS.formatCount(k.eventsPerMin),
-        context: 'across every running stream',
+        context: 'across running streams · ' + words,
         series: DS.kpiSeries(s, 'eventsPerMin'), higherIsBetter: true, unitWord: 'per minute' })
     + tile({ id: 'lag', label: 'Max lag', figure: DS.formatLag(k.maxLagSeconds),
         cls: lagLevel === 'red' ? 'bad' : lagLevel === 'amber' ? 'warn' : '',
@@ -394,9 +422,16 @@ function paintFilters(s) {
   const chips = [['all', 'All'], ['running', 'Running'], ['lagging', 'Lagging'],
                  ['paused', 'Paused'], ['failed', 'Failed'], ['draft', 'Draft']];
   const kinds = ['any'].concat(DS.ENUMS.destKind);
-  let html = chips.map(([v, label]) =>
+  let html = U.scopeToggle(P.scope(), P.activeProfile()) + '<span class="ds-sep"></span>';
+  html += chips.map(([v, label]) =>
     '<button class="ds-chip' + (filter.status === v ? ' on' : '') + '" type="button"'
     + ' onclick="dsFilter(\'status\',\'' + v + '\')">' + label + '</button>').join('');
+  // Unassigned is only a meaningful filter when the view can contain them.
+  if (P.scope() === 'all') {
+    html += '<button class="ds-chip' + (filter.unassigned ? ' on' : '') + '" type="button"'
+      + ' onclick="dsFilter(\'unassigned\',' + (filter.unassigned ? 'false' : 'true') + ')"'
+      + ' title="Streams not assigned to any profile">Unassigned</button>';
+  }
   html += '<span class="ds-sep"></span>';
   html += ['any', 'source', 'target'].map(v =>
     '<button class="ds-chip' + (filter.side === v ? ' on' : '') + '" type="button"'
@@ -669,10 +704,13 @@ function dsRetryFailedGlobal() {
 function paintTable(rows, s) {
   const main = document.getElementById('ds-main');
   document.getElementById('ds-main-title').textContent = 'Streams';
+  const inView = P.visible(s);
   document.getElementById('ds-main-sub').textContent =
-    rows.length + ' of ' + s.streams.length + ' · sorted by what needs attention first';
+    rows.length + ' of ' + inView.length + ' · ' + U.scopeWords(P.scope(), P.activeProfile())
+    + ' · sorted by what needs attention first';
 
   if (!s.streams.length) { main.innerHTML = emptyForNoStreams(); return; }
+  if (!inView.length) { main.innerHTML = emptyForScope(s); return; }
   if (!rows.length) {
     main.innerHTML = U.emptyState({ icon: 'search', title: 'No stream matches those filters',
       body: 'Clear a filter above, or create a stream that does.',
@@ -681,10 +719,13 @@ function paintTable(rows, s) {
   }
 
   const existing = main.querySelector('table');
-  if (!existing || existing.dataset.ids !== rows.map(r => r.id).join(',')) {
+  // The scope is part of the identity: All-profiles view has a column This-profile does not.
+  const key = P.scope() + '|' + rows.map(r => r.id).join(',');
+  const profCol = P.scope() === 'all';
+  if (!existing || existing.dataset.ids !== key) {
     main.innerHTML = '<div class="ds-tablewrap"><table class="ds-table" data-ids="'
-      + rows.map(r => r.id).join(',') + '">'
-      + '<thead><tr><th>Status</th><th>Name</th><th>Reads from</th><th>Capture</th>'
+      + U.esc(key) + '">'
+      + '<thead><tr><th>Status</th><th>Name</th>' + (profCol ? '<th>Profile</th>' : '') + '<th>Reads from</th><th>Capture</th>'
       + '<th>Feeds</th><th class="ds-right">Capture/min</th><th class="ds-right">Deliver/min</th>'
       + '<th class="ds-right">Lag</th><th>Last delivered</th><th></th></tr></thead>'
       + '<tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
@@ -776,15 +817,29 @@ function rowHtml(r) {
     ? ' <span class="ds-tag">CDC</span>' : '';
   const b = DS.blockedState(P.state, r);
   const cls = [r.id === selectedId ? 'sel' : '', b ? 'blocked-' + b.level : ''].filter(Boolean).join(' ');
+  const store = P.profileStore(), conns = P.savedConns();
+  const cap = DS.resolveCapture(r, store, conns);
+  const unassigned = DS.isUnassigned(r);
+  const attention = r.status === DS.STATUS_ATTENTION && r.attention ? r.attention.reason : '';
   return '<tr data-id="' + U.esc(r.id) + '"' + (cls ? ' class="' + cls + '"' : '') + '>'
     + '<td data-c="status">' + statusOrPending(r) + '</td>'
+    // The Unassigned badge lives in the Profile column (All-profiles view) and
+    // the inspector; an unassigned stream is never in This-profile view, so a
+    // second copy beside the name only ever doubled the first.
     + '<td><div class="ds-cell-name">' + U.esc(r.name) + '</div>'
+      + (attention ? '<div class="ds-rowreason degraded" title="' + U.esc(attention) + '">' + U.esc(attention) + '</div>' : '')
       + (b ? '<div class="ds-rowreason ' + b.level + '" title="' + U.esc(blockedReasonFull(r, b)) + '">'
              + U.esc(blockedReasonShort(r, b)) + '</div>' : '')
       + '<div class="ds-cell-sub">' + tables + ' table' + (tables === 1 ? '' : 's')
       + ' · created ' + created + ' by ' + U.esc(shortActor(r.createdBy)) + '</div></td>'
-    + '<td class="ds-nowrap">' + U.sideBadge(r.capture.side)
-      + '<div class="ds-cell-sub">' + U.esc(r.capture.connectionLabel) + '</div></td>'
+    + (P.scope() === 'all' ? '<td>' + U.profilePill(r, store) + '</td>' : '')
+    + '<td class="ds-nowrap">' + U.sideBadge(DS.readsFromSide(r))
+      // Looked up from the profile, never copied onto the stream. An
+      // unassigned stream shows the server it was saved against, marked so.
+      + '<div class="ds-cell-sub"' + (cap.ok ? '' : ' style="color:var(--amber)"') + '>'
+      + (cap.ok ? U.esc(cap.label)
+         : unassigned ? U.esc(r.capture.connectionLabel || '—') + ' <span class="ds-tag" title="Saved on the stream before it was assigned to a profile">saved on stream</span>'
+         : U.esc(cap.reason)) + '</div></td>'
     + '<td><div class="ds-num">' + U.esc(r.capture.methodLabel) + cdc + '</div></td>'
     + '<td><div class="ds-num"><i class="ic ic-' + destIcon(r.destination.kind) + '"></i> '
       + U.esc(r.destination.label) + '</div>'
@@ -950,7 +1005,13 @@ function inspSummary(s, st) {
   const uptime = started ? DS.relativeTime(s.startedAt, st.clockNow).replace(' ago', '') : '—';
   return U.flowDiagram(s)
     + '<div style="height:0.7rem"></div>'
-    + kv('Reads from', U.sideBadge(s.capture.side) + ' ' + U.esc(s.capture.connectionLabel))
+    + kv('Profile', s.profileId ? U.profilePill(s, P.profileStore()) : U.unassignedBadge())
+    + kv('Reads from', U.sideBadge(DS.readsFromSide(s)) + ' ' + (() => {
+        const cap = DS.resolveCapture(s, P.profileStore(), P.savedConns());
+        return cap.ok ? U.esc(cap.label)
+          : DS.isUnassigned(s) ? U.esc(s.capture.connectionLabel) + ' <span class="ds-tag">saved on stream</span>'
+          : '<span style="color:var(--amber)">' + U.esc(cap.reason) + '</span>';
+      })())
     + kv('Capture', U.esc(s.capture.methodLabel))
     + kv('Starting point', U.esc(s.capture.snapshot))
     + kv('Position', U.monoCopy(s.capture.position.lsn, { max: 20 }))
@@ -1116,13 +1177,19 @@ function dsRowMenu(anchor, id) {
   const s = DS.getStream(P.state, id);
   if (!s) return;
   const live = DS.isLive(s.status);
+  // Why it cannot run, or null — the same rule the engine enforces, so a
+  // disabled item and a refused call can never disagree.
+  const why = DS.cannotRunReason(s, P.profileStore(), P.savedConns());
   const items = [
     { label: 'Open', icon: 'eye', run: () => dsSelect(id) },
     { label: 'Edit', icon: 'edit', run: () => dsEdit(id) },
   ];
-  if (s.status === 'draft' || s.status === 'stopped') items.push({ label: 'Start', icon: 'play', run: () => dsStart(id) });
+  if (s.status === 'draft' || s.status === 'stopped' || s.status === DS.STATUS_ATTENTION) {
+    items.push({ label: 'Start', icon: 'play', run: () => dsStart(id), disabled: !!why, title: why || '' });
+  }
   else if (live) items.push({ label: 'Pause', icon: 'pause', run: () => dsPause(id) });
-  else items.push({ label: 'Resume', icon: 'play', run: () => dsResume(id) });
+  else items.push({ label: 'Resume', icon: 'play', run: () => dsResume(id), disabled: !!why, title: why || '' });
+  items.push({ label: DS.isUnassigned(s) ? 'Assign to profile…' : 'Reassign profile…', icon: 'shield', run: () => dsOpenAssign(id) });
   if (live) items.push({ label: 'Stop', icon: 'stop', run: () => dsStop(id) });
   items.push('-');
   items.push({ label: 'Resync object…', icon: 'sync', run: () => dsResync(id) });
@@ -1143,7 +1210,8 @@ function dsStart(id) {
   const est = DS.snapshotEstimate(s);
   if (!confirm(U.confirmText('start', { name: s.name, connection: s.capture.connectionLabel,
       destination: s.destination.label, snapshotNote: est.note }))) return;
-  DS.startStream(P.state, id);
+  try { DS.startStream(P.state, id, { profileStore: P.profileStore(), savedConns: P.savedConns() }); }
+  catch (e) { alert(e.message); P.announce(e.message); return; }
   P.persist(); paint();
   P.announce(s.name + ' started.');
 }
@@ -1155,7 +1223,8 @@ function dsPause(id) {
   P.announce(s.name + ' paused.');
 }
 function dsResume(id) {
-  DS.resumeStream(P.state, id);
+  try { DS.resumeStream(P.state, id, { profileStore: P.profileStore(), savedConns: P.savedConns() }); }
+  catch (e) { alert(e.message); P.announce(e.message); return; }
   P.persist(); paint();
   P.announce('Resumed.');
 }
@@ -1180,13 +1249,147 @@ function dsDuplicate(id) {
 function dsEdit(id) {
   location.href = '/data-stream-designer' + DS.buildQuery({ stream: id });
 }
-function dsNewStream() { location.href = '/data-stream-designer'; }
+function dsNewStream() {
+  if (!P.activeProfile()) { alert('Select a profile to create a stream.'); return; }
+  location.href = '/data-stream-designer';
+}
+/* ── Profile scope ───────────────────────────────────────────────────── */
+function dsScope(mode) {
+  P.setScope(mode);
+  if (mode !== 'all') filter.unassigned = false;   // the chip does not exist in this view
+  paint();
+  P.announce(mode === 'all' ? 'Showing every profile.' : 'Showing this profile only.');
+}
+/* The slim banner's link: switch to All profiles, filtered to Unassigned. */
+function dsViewUnassigned() {
+  P.setScope('all');
+  filter.unassigned = true;
+  paint();
+  P.announce('Showing unassigned streams.');
+}
+function paintSlim(s, inView) {
+  const host = document.getElementById('ds-slimhost');
+  if (!host) return;
+  const n = DS.unassignedCount(s.streams);
+  if (P.scope() === 'all' || !n) { host.innerHTML = ''; return; }
+  host.innerHTML = '<div class="ds-slim" role="status"><i class="ic ic-info"></i> '
+    + n + ' stream' + (n === 1 ? ' isn’t' : 's aren’t') + ' assigned to a profile. '
+    + '<a href="#" onclick="dsViewUnassigned();return false">View ' + (n === 1 ? 'it' : 'them') + '</a></div>';
+}
+/* New stream needs a profile to belong to. Disabled with the reason on it. */
+function paintNewGate() {
+  const btn = document.getElementById('ds-new');
+  if (!btn) return;
+  const p = P.activeProfile();
+  btn.disabled = !p;
+  btn.title = p ? 'Create a stream under ' + p.id : 'Select a profile to create a stream.';
+}
+function emptyForScope(s) {
+  const p = P.activeProfile();
+  const n = DS.unassignedCount(s.streams);
+  if (!p) {
+    return U.emptyState({ icon: 'shield', title: 'No profile is active',
+      bodyHtml: 'Streams belong to a connection profile, and this view shows the active one’s. '
+        + 'Select a profile on <a href="/profiles">Profiles</a>, or switch to All profiles.',
+      actionHtml: '<button class="btn" onclick="dsScope(\'all\')">Show all profiles</button>' });
+  }
+  return U.emptyState({ icon: 'stream', title: 'No streams belong to ' + U.esc(p.id) + ' yet',
+    bodyHtml: (n ? n + ' stream' + (n === 1 ? '' : 's') + ' in this project ' + (n === 1 ? 'is' : 'are')
+      + ' not assigned to any profile. ' : '')
+      + 'Create a stream under this profile, or assign an existing one from its row menu.',
+    actionHtml: (n ? '<button class="btn" onclick="dsViewUnassigned()">View unassigned</button> ' : '')
+      + '<button class="btn btn-primary" onclick="dsNewStream()">New stream</button>' });
+}
+
+/* ── Assign to profile ───────────────────────────────────────────────── */
+let assignId = null;
+function dsOpenAssign(id) {
+  assignId = id;
+  const s = DS.getStream(P.state, id);
+  const store = P.profileStore();
+  const profiles = ((store && store.profiles) || []).filter(p => p.status === 'active');
+  const active = P.activeProfile();
+  const body = document.getElementById('ds-assign-body');
+  if (!profiles.length) {
+    body.innerHTML = '<p>There are no active connection profiles to assign. Create and activate one on '
+      + '<a href="/profiles">Profiles</a> first.</p>';
+    document.getElementById('ds-assign-go').disabled = true;
+  } else {
+    body.innerHTML =
+        '<p style="margin-bottom:0.7rem"><b>' + U.esc(s.name) + '</b>'
+      + (s.capture.connectionLabel ? ' was saved against <b>' + U.esc(s.capture.connectionLabel) + '</b>.' : '.')
+      + ' A stream belongs to exactly one profile and reads one side of it.</p>'
+      + '<label class="lbl" for="ds-as-profile" style="display:block;font-size:11px;margin-bottom:3px">Profile</label>'
+      + '<select id="ds-as-profile" class="ds-input" style="width:100%" onchange="dsAssignPreview()">'
+      + profiles.map(p => '<option value="' + U.esc(p.id) + '"'
+          + ((active && active.id === p.id) || (s.profileId === p.id) ? ' selected' : '') + '>'
+          + U.esc(p.id) + ' · ' + U.esc(p.envClass || 'UNKNOWN') + (p.name && p.name !== p.id ? ' — ' + U.esc(p.name) : '')
+          + '</option>').join('')
+      + '</select>'
+      + '<div style="height:0.6rem"></div>'
+      + '<label class="lbl" style="display:block;font-size:11px;margin-bottom:3px">Reads from</label>'
+      + ['source', 'target'].map(v => '<label class="ds-radio"><input type="radio" name="ds-as-side" value="' + v + '"'
+          + (DS.readsFromSide(s) === v ? ' checked' : '') + ' onchange="dsAssignPreview()">'
+          + '<span>' + (v === 'source' ? 'Source' : 'Target') + ' side of the profile'
+          + '<span class="b" id="ds-as-' + v + '"></span></span></label>').join('')
+      + '<div class="ds-note" id="ds-as-preview" style="margin-top:0.7rem"></div>';
+    document.getElementById('ds-assign-go').disabled = false;
+  }
+  document.getElementById('ds-assign').classList.add('open');
+  dsAssignPreview();
+}
+function dsAssignChoice() {
+  const sel = document.getElementById('ds-as-profile');
+  const sideEl = document.querySelector('input[name="ds-as-side"]:checked');
+  const store = P.profileStore();
+  const profile = ((store && store.profiles) || []).filter(p => p.id === (sel ? sel.value : ''))[0] || null;
+  return { profile, side: sideEl ? sideEl.value : 'source' };
+}
+function dsAssignPreview() {
+  const c = dsAssignChoice();
+  if (!c.profile) return;
+  const conns = P.savedConns();
+  const s = DS.getStream(P.state, assignId);
+  ['source', 'target'].forEach(side => {
+    const r = DS.resolveSide(c.profile, side, conns);
+    const el = document.getElementById('ds-as-' + side);
+    if (el) el.textContent = r.ok ? 'resolves to ' + r.label : r.reason;
+  });
+  const r = DS.resolveSide(c.profile, c.side, conns);
+  const note = document.getElementById('ds-as-preview');
+  if (!r.ok) {
+    note.className = 'ds-note warn';
+    note.textContent = r.reason + ' The stream will be assigned but will need attention before it can run.';
+  } else if (s.capture.connectionLabel && s.capture.connectionLabel !== r.label) {
+    note.className = 'ds-note warn';
+    note.textContent = 'This stream was saved against "' + s.capture.connectionLabel + '", but ' + c.profile.id
+      + ' reads its ' + c.side + ' from "' + r.label + '". You can still assign it — check that is the database you mean.';
+  } else {
+    note.className = 'ds-note';
+    note.textContent = 'Will read from ' + r.label + ' via profile ' + c.profile.id + '.';
+  }
+}
+function dsDoAssign() {
+  const c = dsAssignChoice();
+  if (!c.profile) return;
+  const s = DS.getStream(P.state, assignId);
+  let r;
+  try { r = DS.assignProfile(P.state, assignId, c.profile, c.side, { savedConns: P.savedConns() }); }
+  catch (e) { alert(e.message); return; }
+  P.persist();
+  P.checkAttention(); P.persist();
+  dsCloseAssign();
+  paint();
+  P.announce(s.name + ' assigned to ' + c.profile.id + (r.mismatch ? ' — with a connection mismatch noted.' : '.'));
+}
+function dsCloseAssign() { document.getElementById('ds-assign').classList.remove('open'); assignId = null; }
+
 function dsRefresh() {
   P.boot(); paint();
   P.announce('Refreshed.');
 }
 function dsClearFilters() {
-  filter = { status: 'all', side: 'any', destKind: 'any', text: '', errorsOnly: false };
+  filter = { status: 'all', side: 'any', destKind: 'any', text: '', errorsOnly: false, unassigned: false };
   paint();
 }
 

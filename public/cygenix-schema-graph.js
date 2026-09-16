@@ -632,6 +632,11 @@
     savedMaps, activeProjectId, activeProjectName,
     loadOrder, joinPath, joinSql, neighbourhood,
     hasConnection: (side) => !!connFor(side),
+    // The localStorage key a given connection VALUE caches under. The Stream
+    // Designer lists tables from the schema of the profile's chosen side, and
+    // that schema is keyed by this hash — exported so it does not have to be
+    // recomputed elsewhere and drift.
+    cacheKeyFor: (connValue) => cacheKey(connValue),
     // Exported for tests and for the views' own bookkeeping.
     _internals: { key, splitKey, connHash, buildGraph, literalOf, isFixed, isMapped, findCycles },
   };

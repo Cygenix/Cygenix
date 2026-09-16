@@ -46,6 +46,11 @@
       state = DS.seedDemo(projectId);
       DS.save(state);
     }
+    // First observation of the active profile, so a later change is a change
+    // and not the first reading. Then park anything already broken.
+    var p0 = activeProfile();
+    lastProfileId = p0 ? p0.id : null;
+    if (checkAttention()) DS.save(state);
     return state;
   }
 
@@ -63,6 +68,9 @@
     if (state) { DS.rebaseToNow(state); persist(); }
     timer = setInterval(function () {
       if (!state) return;
+      // Before the tick, not after: a stream whose profile has gone must not
+      // get one more tick of pretend capture before it is parked.
+      checkAttention();
       DS.tick(state);
       persist();
       emit();
@@ -149,6 +157,8 @@
       b.querySelector('span').textContent = it.label;   // label is text, never markup
       if (it.danger) b.className = 'danger';
       if (it.disabled) b.disabled = true;
+      // The reason a disabled item is disabled, where the pointer already is.
+      if (it.title) b.title = it.title;
       b.addEventListener('click', function (ev) {
         ev.stopPropagation();
         closeMenu();
@@ -249,6 +259,91 @@
     }
   });
 
+  /* ── Profile ownership ──────────────────────────────────────────────────
+     Every screen scopes what it shows to the ACTIVE profile by default — the
+     one the top bar names — with a "This profile / All profiles" toggle that
+     is remembered per user and reset to "This profile" whenever the active
+     profile changes. The rules live in the engine (DS.scopeStreams,
+     DS.attentionCheck); this half supplies the two things the engine cannot
+     read for itself — the profile store and the saved connections — and
+     listens for the profile changing.
+
+     Listening, not polling, and no flag is reset by its own callback: the
+     hairline broadcasts cygenix:profile-status on every change it renders,
+     the Profiles page dispatches cygenix:profiles-changed, and another tab's
+     change arrives as a storage event. All three land in onProfileEvent(),
+     which compares the active profile's id with the last one it saw. That
+     comparison IS the state; there is no one-shot to arm. */
+  var SCOPE_KEY = 'cygenix_datastream_scope';
+  var scopeMode = null;          // 'this' | 'all', lazily read
+  var lastProfileId = undefined; // undefined = not yet observed
+
+  function profileStore() {
+    try { return (root.CygenixJobProfile && root.CygenixJobProfile.load()) || null; }
+    catch (e) { return null; }
+  }
+  function activeProfile() {
+    try { return root.CygenixJobProfile ? root.CygenixJobProfile.activeProfile(profileStore()) : null; }
+    catch (e) { return null; }
+  }
+  function savedConns() {
+    try {
+      if (root.CygenixConnections && root.CygenixConnections.savedGetAll) {
+        return root.CygenixConnections.savedGetAll() || [];
+      }
+    } catch (e) { /* module absent on this page */ }
+    return [];
+  }
+  /* Per user: two people sharing a browser profile is rare, but the choice is
+     a preference and preferences are personal. */
+  function scopeKey() {
+    var who = '';
+    try { var u = JSON.parse(localStorage.getItem('cygenix_user') || 'null'); who = (u && u.email) || ''; }
+    catch (e) { /* unknown user */ }
+    return SCOPE_KEY + (who ? '::' + who : '');
+  }
+  function scope() {
+    if (scopeMode) return scopeMode;
+    try { scopeMode = localStorage.getItem(scopeKey()) === 'all' ? 'all' : 'this'; }
+    catch (e) { scopeMode = 'this'; }
+    return scopeMode;
+  }
+  function setScope(mode) {
+    scopeMode = mode === 'all' ? 'all' : 'this';
+    try { localStorage.setItem(scopeKey(), scopeMode); } catch (e) { /* preference only */ }
+    return scopeMode;
+  }
+  /* The streams a screen shows. */
+  function visible(st) {
+    var s = st || state;
+    if (!s) return [];
+    var p = activeProfile();
+    return DS.scopeStreams(s.streams, { mode: scope(), profileId: p ? p.id : null });
+  }
+  /* The ids of those streams, for screens that filter events/points. */
+  function visibleIds(st) {
+    var ids = {};
+    visible(st).forEach(function (x) { ids[x.id] = true; });
+    return ids;
+  }
+  function checkAttention() {
+    if (!state) return false;
+    var changed = DS.attentionCheck(state, profileStore(), savedConns());
+    return changed.length > 0;
+  }
+  function onProfileEvent() {
+    var p = activeProfile();
+    var id = p ? p.id : null;
+    var switched = lastProfileId !== undefined && id !== lastProfileId;
+    lastProfileId = id;
+    if (switched) setScope('this');
+    var parked = checkAttention();
+    if (parked) persist();
+    if (switched || parked) emit();
+  }
+  root.addEventListener('cygenix:profile-status', onProfileEvent);
+  root.addEventListener('cygenix:profiles-changed', onProfileEvent);
+
   /* ── Cross-tab ──────────────────────────────────────────────────────────
      Another tab paused a stream; this one should show that, not its own stale
      copy. Reload the state rather than trying to merge — the writer's copy is
@@ -261,6 +356,8 @@
     } else if (e.key === 'cygenix_active_project_id') {
       boot();
       emit();
+    } else if (e.key === 'cygenix_profiles_v1' || e.key === 'cygenix_saved_connections') {
+      onProfileEvent();
     }
   });
 
@@ -290,6 +387,10 @@
     paletteKey: paletteKey,
     get state() { return state; },
     get projectId() { return projectId; },
+    // profile ownership
+    profileStore: profileStore, activeProfile: activeProfile, savedConns: savedConns,
+    scope: scope, setScope: setScope, visible: visible, visibleIds: visibleIds,
+    checkAttention: checkAttention,
     setPaused: function (v) { paused = !!v; if (paused) stop(); else start(); },
     isPaused: function () { return paused; },
   };

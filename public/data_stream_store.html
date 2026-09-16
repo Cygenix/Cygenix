@@ -78,6 +78,7 @@ body.cyg-collapsed{padding-left:54px}
         passes through between capture and delivery. Query it while the data is still arriving.</div>
     </div>
     <div class="ds-head-actions">
+      <span id="ds-scope-host"></span>
       <a class="btn" href="/data-stream"><i class="ic ic-stream"></i> Streams</a>
       <button class="btn" onclick="CygenixDataStreamPage.paletteOpen()" title="Search streams and tables">
         <i class="ic ic-search"></i> Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
@@ -145,9 +146,11 @@ body.cyg-collapsed{padding-left:54px}
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which on these pages is every stream lifecycle change. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/cygenix-datastream.js?v=0ec11f7d0e"></script>
-<script src="/cygenix-datastream-ui.js?v=cfc8290e58"></script>
-<script src="/cygenix-datastream-page.js?v=d0766024f4"></script>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
+<script src="/connections.js?v=403b59bf1a" defer></script>
+<script src="/cygenix-datastream.js?v=b98f6bf9d1"></script>
+<script src="/cygenix-datastream-ui.js?v=53a3df8423"></script>
+<script src="/cygenix-datastream-page.js?v=2c3f580800"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -170,14 +173,24 @@ document.addEventListener('DOMContentLoaded', () => {
 function paint(state) {
   const s = state || P.state;
   if (!s) return;
+  paintScope();
   paintKpis(s);
   paintTopics(s);
   paintQuery(s);
   paintRetention(s);
 }
 
+/* This profile / All profiles. The Store is a view over the streams in
+   scope, so the same toggle as the Streams page, and the same reset rule. */
+function paintScope() {
+  const host = document.getElementById('ds-scope-host');
+  if (host) host.innerHTML = U.scopeToggle(P.scope(), P.activeProfile());
+}
+function dsScope(mode) { P.setScope(mode); paint(); P.announce(mode === 'all' ? 'Showing every profile.' : 'Showing this profile only.'); }
+
 function paintKpis(s) {
-  const t = DS.storeTotals(s);
+  const t = DS.storeTotals(s, P.visible(s));
+  const words = U.scopeWords(P.scope(), P.activeProfile());
   const tile = (label, figure, context) =>
     '<div class="ds-kpi" role="group"><div class="ds-kpi-label">' + label + '</div>'
     + '<div class="ds-kpi-figure">' + figure + '</div>'
@@ -186,7 +199,7 @@ function paintKpis(s) {
     ? t.maxRetentionHours + 'h'
     : t.minRetentionHours + '–' + t.maxRetentionHours + 'h';
   document.getElementById('ds-kpis').innerHTML =
-      tile('Records retained', DS.formatCount(t.records), t.topics + ' topic(s) across every stream')
+      tile('Records retained', DS.formatCount(t.records), t.topics + ' topic(s) · ' + words)
     + tile('Store size', DS.formatBytes(t.bytes), 'change records, not table data')
     + tile('Retention window', window_, 'how far back a replay can reach')
     + tile('Oldest record', t.oldestRecordAt ? DS.relativeTime(t.oldestRecordAt, s.clockNow) : '—',
@@ -194,9 +207,10 @@ function paintKpis(s) {
 }
 
 function paintTopics(s) {
-  const topics = DS.topicsOf(s);
+  const topics = DS.topicsOf(s, P.visible(s));
   const el = document.getElementById('st-topics');
-  document.getElementById('st-sub').textContent = topics.length + ' topic(s), one per streamed object';
+  document.getElementById('st-sub').textContent = topics.length + ' topic(s), one per streamed object · '
+    + U.scopeWords(P.scope(), P.activeProfile());
   if (!topics.length) {
     el.innerHTML = U.emptyState({ icon: 'database', title: 'The Stream Store is empty',
       body: 'Every captured change is written here before it is delivered, and kept for the stream’s '

@@ -70,6 +70,7 @@ const CLASSES = {
   'cygenix_backup_history':      ['A', 'Restore-module backup history', 'NOT SYNCED — WI-1'],
   'cygenix_datastream_v1::*':    ['A', 'Data Stream configuration and state', 'demo-only in v1'],
   'cygenix_datastream_wip_*':    ['A', 'Stream Designer draft', 'draft only; discardable'],
+  'cygenix_datastream_scope*':   ['A', 'Data Stream: this-profile / all-profiles view choice', 'preference; reset when the active profile changes'],
 
   // ── B — cache. Derived; safe to lose. ────────────────────────────────────
   'cygenix_schema_*':            ['B', 'Cached database schema', 're-read from the database'],

@@ -55,9 +55,19 @@ global.localStorage = {
 const DS = require('../public/cygenix-datastream.js');
 const U  = require('../public/cygenix-datastream-ui.js');
 
+/* Since Sep-2026 a stream belongs to a profile and an unassigned one cannot
+   start or resume — that rule has its own file, tests/data-stream-profiles.test.js.
+   The pause-all / resume-all sections below are about the MECHANICS of a
+   global pause, so their demo worlds are given a profile first. */
+const TEST_PROFILE = { id: 'P_TEST', name: 'Test profile', envClass: 'TEST', status: 'active', srcConnId: 'a', tgtConnId: 'b' };
+function assignAll(st) { st.streams.forEach(x => DS.assignProfile(st, x.id, TEST_PROFILE, x.capture.side)); return st; }
+
+
 /* ══ 1. Determinism ══════════════════════════════════════════════════════ */
 
-check('the engine loads and exports its enums', !!(DS && DS.ENUMS && DS.ENUMS.status.length === 7));
+// Eight since Sep-2026: 'needs-attention' joined for a stream whose profile
+// stopped resolving — see tests/data-stream-profiles.test.js.
+check('the engine loads and exports its enums', !!(DS && DS.ENUMS && DS.ENUMS.status.length === 8));
 
 {
   const a = DS.seedDemo('proj_t', { now: Date.parse('2026-08-24T09:41:07Z') });
@@ -197,6 +207,11 @@ check('the engine loads and exports its enums', !!(DS && DS.ENUMS && DS.ENUMS.st
   const draftStream = s.streams.filter(x => x.status === 'draft')[0];
   check('the demo includes a draft — created but deliberately not started',
     !!draftStream && !draftStream.startedAt);
+
+  // Since Sep-2026 a stream belongs to a profile and an unassigned one cannot
+  // start — that rule has its own tests. These are about what starting DOES,
+  // so the demo streams are given a profile first.
+  assignAll(s);
 
   DS.startStream(s, draftStream.id);
   check('starting a draft with no snapshot goes straight to running, with a start time',
@@ -1186,7 +1201,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
 {
   /* Mixed state */
   {
-    const st = DS.seedDemo('mixed');
+    const st = DS.seedDemo('mixed'); assignAll(st);
     const g = DS.globalPauseState(st);
     check('the switch reports a mixed state rather than forcing a binary',
       g.mode === 'mixed' && /Partially paused — \d of \d running/.test(g.label), g.label);
@@ -1195,13 +1210,13 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
       g.total + ' vs ' + st.streams.length + ' — a draft has never started, so it is not "not running"');
     check('all running reads as all running',
       (() => {
-        const s2 = DS.seedDemo('allrun');
+        const s2 = DS.seedDemo('allrun'); assignAll(s2);
         s2.streams.forEach((x) => { if (x.status !== 'draft') x.status = 'running'; });
         return DS.globalPauseState(s2).label === 'All streams running';
       })());
     check('all paused reads as all paused',
       (() => {
-        const s3 = DS.seedDemo('allpaused');
+        const s3 = DS.seedDemo('allpaused'); assignAll(s3);
         s3.streams.forEach((x) => { if (x.status !== 'draft') x.status = 'paused'; });
         return DS.globalPauseState(s3).label === 'All streams paused';
       })());
@@ -1209,7 +1224,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
 
   /* Scope */
   {
-    const st = DS.seedDemo('scope');
+    const st = DS.seedDemo('scope'); assignAll(st);
     const draftBefore = st.streams.filter((s) => s.status === 'draft').map((s) => s.status);
     const pausedBefore = st.streams.filter((s) => s.status === 'paused').map((s) => s.id);
     const r = DS.pauseAll(st, { reason: 'maintenance' });
@@ -1239,7 +1254,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
 
   /* The failed opt-in */
   {
-    const st = DS.seedDemo('failed');
+    const st = DS.seedDemo('failed'); assignAll(st);
     DS.pauseAll(st, {});
     const pv = DS.resumeAllPreview(st);
     check('a stream that was failing with a dead-letter queue is listed separately',
@@ -1265,7 +1280,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
 
   /* Partial failure */
   {
-    const st = DS.seedDemo('partial');
+    const st = DS.seedDemo('partial'); assignAll(st);
     const targets = DS.pauseAllPlan(st).map((t) => t.id);
     const doomed = targets[1];
     const r = DS.pauseAll(st, { apply: (state, id) => {
@@ -1286,7 +1301,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
 
   /* The deadline the dialog is for */
   {
-    const st = DS.seedDemo('deadline');
+    const st = DS.seedDemo('deadline'); assignAll(st);
     DS.rebaseToNow(st);
     const pv = DS.pauseAllPreview(st, st.clockNow);
     check('every affected stream is costed from its OWN retention window',
@@ -1298,7 +1313,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
       pv.streams.every((x) => x.deadline.secondsRemaining >= pv.soonest.deadline.secondsRemaining));
     check('a stream that is already past its window says so instead of a countdown',
       (() => {
-        const s2 = DS.seedDemo('expired');
+        const s2 = DS.seedDemo('expired'); assignAll(s2);
         const one = s2.streams[0];
         one.metrics.pendingInStore = 5000;
         one.oldestPendingAt = new Date(Date.parse(s2.clockNow ? new Date(s2.clockNow).toISOString() : new Date().toISOString()) - 100 * 3600000).toISOString();
@@ -1307,7 +1322,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
       })());
     check('an empty store is not given a backlog it does not have',
       (() => {
-        const s3 = DS.seedDemo('empty');
+        const s3 = DS.seedDemo('empty'); assignAll(s3);
         const one = s3.streams[0];
         one.metrics.pendingInStore = 0; one.oldestPendingAt = null;
         const d = DS.retentionDeadline(one, s3.clockNow);
@@ -1333,7 +1348,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
       global.localStorage = { _d: {}, getItem(k) { return this._d[k] || null; },
         setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } };
     }
-    const st = DS.seedDemo('persist');
+    const st = DS.seedDemo('persist'); assignAll(st);
     st.projectId = 'persist';
     DS.pauseAll(st, { reason: 'cutover window' });
     DS.save(st);
@@ -1355,7 +1370,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
 
   /* Audit */
   {
-    const st = DS.seedDemo('audit2');
+    const st = DS.seedDemo('audit2'); assignAll(st);
     DS.pauseAll(st, { reason: 'incident 4412' });
     const entries = st.audit.filter((a) => a.action === 'streams.pause_all');
     check('one audit entry per global action, not one per stream',

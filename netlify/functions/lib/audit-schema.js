@@ -205,6 +205,11 @@ const CLIENT_ACTIONS = {
   'stream.resumed':          'stream',
   'stream.stopped':          'stream',
   'stream.deleted':          'stream',
+  // Profile ownership (Sep-2026): a person assigning a stream to a profile,
+  // and the engine parking one whose profile stopped resolving.
+  'stream.assigned':         'stream',
+  'stream.needs_attention':  'stream',
+  'stream.attention_cleared':'stream',
   'stream.retention':        'stream',
   'stream.checkpoint_reset': 'stream',
   'stream.cutover_begin':    'stream',

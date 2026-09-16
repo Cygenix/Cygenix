@@ -72,7 +72,12 @@ var SEED         = 'cygenix-data-stream-v1';
 
 /* ── Enums. The UI never invents a status string; it asks here. ──────────── */
 var ENUMS = {
-  status:      ['draft', 'snapshotting', 'running', 'lagging', 'paused', 'failed', 'stopped'],
+  // 'needs-attention' (Sep-2026): the stream's profile, or the connection on
+  // the side it reads, no longer resolves. It is a status rather than a flag
+  // because the one thing it must do is stop the stream running, and the
+  // tick already asks isLive(status) — a flag beside the status would be a
+  // second place the tick had to remember to look.
+  status:      ['draft', 'snapshotting', 'running', 'lagging', 'paused', 'failed', 'stopped', 'needs-attention'],
   side:        ['source', 'target'],
   method:      ['log', 'poll', 'trigger', 'feed'],
   snapshot:    ['none', 'initial-then-stream', 'snapshot-only'],
@@ -288,6 +293,13 @@ var STREAM_LIFECYCLE = {
      records that were being kept, resetting a checkpoint throws away the
      stream's position, and beginning a cutover is the moment a migration
      stops being reversible. */
+  /* Profile ownership (Sep-2026). Assigning is a person deciding which
+     databases a stream may read; needs-attention is the engine refusing to
+     run one whose profile no longer resolves. Both are things somebody may
+     later have to account for, so both reach the organisation trail. */
+  'stream.assigned':         'Assigned a profile to',
+  'stream.needs_attention':  'Stopped, needs attention:',
+  'stream.attention_cleared':'Cleared needs-attention on',
   'stream.retention':        'Changed retention on',
   'stream.checkpoint_reset': 'Reset the checkpoint on',
   'stream.cutover_begin':    'Began cutover on',
@@ -766,8 +778,11 @@ function sampleRow(s, obj, n, i, which) {
 
 /* The KPI strip. `errorsLastHour` counts what actually failed rather than
    how many streams are unwell — an operator needs the record count. */
-function kpis(state) {
-  var streams = state.streams || [];
+/* `list` is the streams IN VIEW. The tiles count what the list below them
+   shows — a tile saying "6 running" over a list of two is a tile about some
+   other screen. Callers that pass nothing get every stream, as before. */
+function kpis(state, list) {
+  var streams = Array.isArray(list) ? list : (state.streams || []);
   var live = streams.filter(function (s) { return isLive(s.status); });
   var paused = streams.filter(function (s) { return s.status === 'paused'; });
   var failed = streams.filter(function (s) { return s.status === 'failed'; });
@@ -1548,7 +1563,10 @@ function durationWords(seconds) {
 
 /* Sort by how much attention a stream needs, then by lag. A screen that
    sorted alphabetically would bury the failed stream. */
-var SEVERITY = { failed: 0, lagging: 1, snapshotting: 2, running: 3, paused: 4, stopped: 5, draft: 6 };
+// needs-attention sits between failed and lagging: it is not delivering and
+// will not until a person acts, which is worse than lagging and only better
+// than failed in that nothing is being lost.
+var SEVERITY = { failed: 0, 'needs-attention': 0.5, lagging: 1, snapshotting: 2, running: 3, paused: 4, stopped: 5, draft: 6 };
 /**
  * Sorted by what needs attention first — and now that is a fact about the
  * numbers rather than about the status label. Pass `state` and a blocked
@@ -1587,11 +1605,15 @@ function filterStreams(list, f) {
       if (q.status === 'running' && !isLive(s.status)) return false;
       if (q.status !== 'running' && s.status !== q.status) return false;
     }
-    if (q.side && q.side !== 'any' && s.capture.side !== q.side) return false;
+    // 'side' means readsFromSide — which side of the profile the stream
+    // captures from. capture.side is where that fact is stored.
+    if (q.side && q.side !== 'any' && readsFromSide(s) !== q.side) return false;
+    if (q.profileId && s.profileId !== q.profileId) return false;
+    if (q.unassigned && !isUnassigned(s)) return false;
     if (q.destKind && q.destKind !== 'any' && s.destination.kind !== q.destKind) return false;
     if (q.errorsOnly && !(s.metrics.failedToday > 0 || s.status === 'failed')) return false;
     if (text) {
-      var hay = [s.name, s.capture.connectionLabel, s.destination.label]
+      var hay = [s.name, s.capture.connectionLabel, s.destination.label, s.profileName || '', s.profileId || '']
         .concat((s.objects || []).map(function (o) { return o.table; }))
         .join(' ').toLowerCase();
       if (hay.indexOf(text) === -1) return false;
@@ -1644,9 +1666,9 @@ function flowOf(s) {
    would both be called src.dbo.customers, and a topic name would no longer
    identify a checkpoint, a consumer or a retention window. A real broker
    namespaces per connector for the same reason. */
-function topicsOf(state) {
+function topicsOf(state, list) {
   var out = [];
-  (state.streams || []).forEach(function (s) {
+  (Array.isArray(list) ? list : (state.streams || [])).forEach(function (s) {
     var prefix = (s.capture.side === 'source' ? 'src' : 'tgt')
       + '.' + String(s.id).replace(/^str_/, '');
     var share = s.objects.length || 1;
@@ -1675,8 +1697,8 @@ function topicsOf(state) {
   return out;
 }
 
-function storeTotals(state) {
-  var topics = topicsOf(state);
+function storeTotals(state, list) {
+  var topics = topicsOf(state, list);
   var records = topics.reduce(function (a, t) { return a + t.records; }, 0);
   var bytes = topics.reduce(function (a, t) { return a + t.bytes; }, 0);
   var retentions = topics.map(function (t) { return t.retentionHours; });
@@ -1707,11 +1729,12 @@ var ALERT_RULES = [
   { id: 'drift', label: 'Schema drift detected',
     test: function (s) { return !!s.schemaDrift; } },
 ];
-function alertsOf(state, now) {
+function alertsOf(state, now, list) {
   var t = now || state.clockNow || Date.now();
   var out = [];
+  var pool = Array.isArray(list) ? list : (state.streams || []);
   ALERT_RULES.forEach(function (rule) {
-    var firing = (state.streams || []).filter(function (s) { return rule.test(s, t); });
+    var firing = pool.filter(function (s) { return rule.test(s, t); });
     out.push({
       id: rule.id,
       label: rule.label,
@@ -1869,7 +1892,13 @@ function validateDesign(d) {
   if (!d) return { errors: steps, warnings: warn, valid: false, firstInvalidStep: 1 };
 
   // 1 — source of change
-  if (!d.capture || !d.capture.connectionId) steps[0].push('Pick the connection to read changes from.');
+  // A stream that belongs to a profile reads the connection the profile
+  // holds for its side, looked up when it runs — it carries none of its own.
+  // Only a stream with no profile still has to name one.
+  if (!d.profileId && (!d.capture || !d.capture.connectionId)) steps[0].push('Pick the connection to read changes from.');
+  if (d.profileId && (!d.capture || (d.capture.side !== 'source' && d.capture.side !== 'target'))) {
+    steps[0].push('Pick which side of the profile to read from.');
+  }
   if (!d.capture || !d.capture.method) steps[0].push('Pick a capture method.');
   if (d.capture && d.capture.method === 'feed' && !d.capture.feedName) {
     steps[0].push('Name the external feed.');
@@ -1952,6 +1981,254 @@ function resolveObjectName(d, table) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   Profile ownership
+   ══════════════════════════════════════════════════════════════════════════
+   Requested (Sep-2026): make the Data Stream profile-aware. A stream belongs
+   to exactly ONE connection profile, reads one SIDE of it, and looks the
+   connection up from the profile when it runs rather than carrying a copy.
+
+   THE FIELDS. The same two the jobs list uses, set by the same helper
+   (cygenix-job-profile.js), so "which profile is this?" has one answer across
+   the product:
+
+     profileId     the link. A profile's id is immutable; cpSaveProfile
+                   refuses to change it, so this survives a rename.
+     profileName   a snapshot for display, so a deleted profile still leaves
+                   the row saying what it was built against.
+
+   readsFromSide is NOT a third stored field. Every stream already carries
+   capture.side, which is exactly that fact, and a second copy that has to
+   agree with the first is a drift waiting to happen — the brief's name is
+   honoured as the ACCESSOR, readsFromSide(), which reads capture.side.
+
+   RESOLUTION, NOT COPYING. resolveCapture() answers "which saved connection
+   does this stream read right now" from the profile's srcConnId/tgtConnId.
+   Change the profile's source connection on the Profiles page and every
+   stream reading that side follows, with no edit to the stream — which is
+   the whole point of the link. The old capture.connectionId/connectionLabel
+   fields are left on every record and shown read-only for streams that have
+   no profile; nothing is removed or renamed.
+
+   UNASSIGNED. A record with no profileId. Every demo stream is one, and
+   nothing guesses a profile for it: an operator assigns it, on the row menu,
+   choosing the side, and the assignment is audited. An unassigned stream
+   cannot be started or resumed — refuseIfCannotRun() is the one place that
+   rule is enforced, and the UI disables the buttons for the same reason.
+
+   NEEDS ATTENTION. attentionCheck() runs on every tick. A stream whose
+   profile or side-connection no longer resolves is moved to the
+   'needs-attention' status with the reason written on it, its objects
+   paused, and it does not tick — isLive() is false for it, which is why it
+   is a status and not a flag. When the profile resolves again it comes back
+   as PAUSED, not running: a stream that stopped because its database went
+   away should not start reading a database again without a person saying so.
+
+   Everything here takes the profile store and the saved-connection list AS
+   ARGUMENTS. The engine is Node-testable and must stay so; the page supplies
+   both (see cygenix-datastream-page.js), and a caller that passes neither
+   gets the checks that need neither — unassigned is unassigned regardless.
+   ══════════════════════════════════════════════════════════════════════════ */
+var STATUS_ATTENTION = 'needs-attention';
+
+function readsFromSide(s) {
+  return (s && s.capture && s.capture.side === 'target') ? 'target' : 'source';
+}
+function isUnassigned(s) { return !(s && s.profileId); }
+
+function profileById(store, id) {
+  var list = (store && Array.isArray(store.profiles)) ? store.profiles : [];
+  for (var i = 0; i < list.length; i++) if (list[i] && list[i].id === id) return list[i];
+  return null;
+}
+function connById(savedConns, id) {
+  var list = Array.isArray(savedConns) ? savedConns : [];
+  for (var i = 0; i < list.length; i++) if (list[i] && list[i].id === id) return list[i];
+  return null;
+}
+/* A saved connection's display name. Names only, never a string: this is
+   what reaches the row and the Designer. */
+function connLabelOf(c) {
+  if (!c) return '';
+  return String(c.name || c.id || 'connection');
+}
+
+/* Which saved connection a profile holds for a side, and whether it exists.
+   Every "cannot run" reason the UI ever shows for a profile problem comes
+   from here, so the wording cannot differ between the row, the Designer and
+   the audit entry. */
+function resolveSide(profile, side, savedConns) {
+  if (!profile) return { ok: false, side: side, reason: 'No profile.' };
+  var connId = side === 'target' ? profile.tgtConnId : profile.srcConnId;
+  if (!connId) {
+    return { ok: false, side: side, profile: profile, connId: null, conn: null, label: '',
+      reason: 'Profile ' + profile.id + ' has no ' + side + ' connection.' };
+  }
+  var conn = connById(savedConns, connId);
+  if (!conn) {
+    return { ok: false, side: side, profile: profile, connId: connId, conn: null, label: '',
+      reason: 'The ' + side + ' connection of profile ' + profile.id + ' (' + connId
+        + ') no longer exists in the saved connections.' };
+  }
+  return { ok: true, side: side, profile: profile, connId: connId, conn: conn,
+    label: connLabelOf(conn), reason: null };
+}
+
+/* What this stream reads. For an unassigned stream, the record's own legacy
+   fields — read-only, and honestly labelled as such by the caller. */
+function resolveCapture(stream, store, savedConns) {
+  if (!stream) return { ok: false, reason: 'No stream.' };
+  if (isUnassigned(stream)) {
+    return { ok: false, unassigned: true, side: readsFromSide(stream),
+      profile: null, connId: stream.capture ? stream.capture.connectionId : null, conn: null,
+      label: (stream.capture && stream.capture.connectionLabel) || '',
+      reason: 'This stream is not assigned to a connection profile.' };
+  }
+  var p = profileById(store, stream.profileId);
+  if (!p) {
+    return { ok: false, side: readsFromSide(stream), profile: null, connId: null, conn: null, label: '',
+      reason: 'Profile ' + stream.profileId + (stream.profileName ? ' (' + stream.profileName + ')' : '')
+        + ' no longer exists.' };
+  }
+  if (p.status === 'retired') {
+    return { ok: false, side: readsFromSide(stream), profile: p, connId: null, conn: null, label: '',
+      reason: 'Profile ' + p.id + ' is retired. Assign the stream to the profile that superseded it.' };
+  }
+  return resolveSide(p, readsFromSide(stream), savedConns);
+}
+
+/* Where it delivers. A "Project target" destination is the profile's OTHER
+   side, resolved the same way; every other kind keeps its inline settings
+   until Phase 2 moves them to saved connections. */
+function resolveDestination(stream, store, savedConns) {
+  var d = (stream && stream.destination) || {};
+  if (d.kind !== 'cygenix-target') {
+    return { ok: true, inline: true, kind: d.kind, label: d.label || '', reason: null };
+  }
+  if (isUnassigned(stream)) {
+    return { ok: false, unassigned: true, kind: d.kind, label: d.label || '',
+      reason: 'This stream is not assigned to a connection profile.' };
+  }
+  var p = profileById(store, stream.profileId);
+  if (!p) return { ok: false, kind: d.kind, label: '', reason: 'Profile ' + stream.profileId + ' no longer exists.' };
+  var other = readsFromSide(stream) === 'target' ? 'source' : 'target';
+  var r = resolveSide(p, other, savedConns);
+  r.kind = d.kind;
+  return r;
+}
+
+/* Why a stream may not run, or null. The rule the start/resume buttons and
+   the engine's own refusal both read. */
+function cannotRunReason(stream, store, savedConns) {
+  if (!stream) return 'No stream.';
+  if (isUnassigned(stream)) return 'Not assigned to a connection profile — assign one from the row menu.';
+  if (stream.status === STATUS_ATTENTION) {
+    return (stream.attention && stream.attention.reason) || 'The stream needs attention before it can run.';
+  }
+  // Only checked when the caller supplied the store: a test that builds a
+  // bare state and starts an assigned stream is not asking about profiles.
+  if (store) {
+    var r = resolveCapture(stream, store, savedConns);
+    if (!r.ok) return r.reason;
+  }
+  return null;
+}
+function canRun(stream, store, savedConns) {
+  var why = cannotRunReason(stream, store, savedConns);
+  return { ok: !why, reason: why };
+}
+function refuseIfCannotRun(stream, opts) {
+  var o = opts || {};
+  var why = cannotRunReason(stream, o.profileStore, o.savedConns);
+  if (why) throw new Error('Cannot start ' + (stream.name || stream.id) + ': ' + why);
+}
+
+/* Assign a stream to a profile and a side. `profile` is the profile object
+   (id, name, envClass); `side` is which side of it the stream reads.
+
+   The saved server is compared with the profile's connection on that side
+   and a mismatch is RECORDED, not refused: the brief says warn and allow,
+   because the person assigning can see the two names and the engine cannot
+   know which of them is right. The warning travels into the audit entry so
+   the decision is on the record either way. */
+function assignProfile(state, id, profile, side, opts) {
+  var o = opts || {};
+  var s = mustGet(state, id);
+  if (!profile || !profile.id) throw new Error('Pick a profile.');
+  if (side !== 'source' && side !== 'target') throw new Error('Pick a side: source or target.');
+
+  var before = { profileId: s.profileId || null, side: readsFromSide(s) };
+  var target = resolveSide(profile, side, o.savedConns);
+  var mismatch = null;
+  if (target.ok && s.capture && s.capture.connectionLabel
+      && s.capture.connectionLabel !== target.label) {
+    mismatch = 'Stream was saved against "' + s.capture.connectionLabel
+      + '"; profile ' + profile.id + ' reads its ' + side + ' from "' + target.label + '".';
+  }
+
+  s.profileId = profile.id;
+  s.profileName = profile.name || profile.id;
+  s.capture = s.capture || {};
+  s.capture.side = side;
+  // methodLabel names the connection; it follows the profile from now on.
+  if (target.ok) s.capture.methodLabel = methodLabel(s.capture.method, target.label);
+
+  // A stream that was parked for a broken profile and has just been given a
+  // working one comes back PAUSED — see the section comment.
+  if (s.status === STATUS_ATTENTION && target.ok) {
+    s.status = 'paused';
+    s.attention = null;
+  }
+
+  audit(state, 'stream.assigned', id, {
+    name: s.name, profileId: profile.id, profileName: s.profileName, side: side,
+    from: before, mismatch: mismatch,
+  });
+  return { stream: s, mismatch: mismatch, resolved: target };
+}
+
+/* Run on every tick and on every profile change. Moves a stream whose
+   profile no longer resolves into needs-attention, and brings one whose
+   profile resolves again back to paused. Returns what changed so the caller
+   knows whether to persist. Never touches an unassigned stream: unassigned
+   is its own state, with its own badge, and is not a fault. */
+function attentionCheck(state, store, savedConns) {
+  var changed = [];
+  (state.streams || []).forEach(function (s) {
+    if (isUnassigned(s)) return;
+    var r = resolveCapture(s, store, savedConns);
+    if (!r.ok && s.status !== STATUS_ATTENTION) {
+      s.attention = { reason: r.reason, since: nowIso(state), priorStatus: s.status };
+      s.status = STATUS_ATTENTION;
+      if (s.metrics) s.metrics.eventsPerMin = 0;
+      (s.objects || []).forEach(function (ob) { ob.state = 'paused'; });
+      audit(state, 'stream.needs_attention', s.id, { name: s.name, reason: r.reason, profileId: s.profileId });
+      changed.push({ id: s.id, to: STATUS_ATTENTION, reason: r.reason });
+    } else if (r.ok && s.status === STATUS_ATTENTION) {
+      s.status = 'paused';
+      var why = s.attention && s.attention.reason;
+      s.attention = null;
+      audit(state, 'stream.attention_cleared', s.id, { name: s.name, was: why, profileId: s.profileId });
+      changed.push({ id: s.id, to: 'paused', reason: null });
+    }
+  });
+  return changed;
+}
+
+/* The list a screen shows. mode 'this' is the active profile's streams;
+   'all' is everything. An active profile that is null with mode 'this'
+   shows nothing — there is no profile to be "this" — and the page says why. */
+function scopeStreams(list, o) {
+  var opt = o || {};
+  var mode = opt.mode === 'all' ? 'all' : 'this';
+  if (mode === 'all') return (list || []).slice();
+  var pid = opt.profileId || null;
+  return (list || []).filter(function (s) { return !!pid && s.profileId === pid; });
+}
+function unassignedCount(list) {
+  return (list || []).filter(isUnassigned).length;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    Actions — every one of them audited
    ══════════════════════════════════════════════════════════════════════════
    These are the only functions that change a stream. Confirmation is the
@@ -2016,8 +2293,9 @@ function getStream(state, id) {
   return (state.streams || []).filter(function (s) { return s.id === id; })[0] || null;
 }
 
-function startStream(state, id) {
+function startStream(state, id, opts) {
   var s = mustGet(state, id);
+  refuseIfCannotRun(s, opts);
   var snapshotting = s.capture.snapshot === 'initial-then-stream' || s.capture.snapshot === 'snapshot-only';
   s.status = snapshotting ? 'snapshotting' : 'running';
   s.snapshotDone = 0;
@@ -2035,8 +2313,9 @@ function pauseStream(state, id) {
   audit(state, 'stream.paused', id, { pendingInStore: s.metrics.pendingInStore });
   return s;
 }
-function resumeStream(state, id) {
+function resumeStream(state, id, opts) {
   var s = mustGet(state, id);
+  refuseIfCannotRun(s, opts);
   s.status = 'running';
   s.objects.forEach(function (o) { o.state = 'streaming'; });
   audit(state, 'stream.resumed', id, { pendingInStore: s.metrics.pendingInStore });
@@ -2413,7 +2692,8 @@ function statusLabel(s, stream) {
   }
   if (s === 'lagging' && stream) return 'Lagging ' + formatLag(stream.metrics.lagSeconds);
   return { running: 'Running', paused: 'Paused', failed: 'Failed',
-           stopped: 'Stopped', draft: 'Draft', snapshotting: 'Snapshotting' }[s] || s;
+           stopped: 'Stopped', draft: 'Draft', snapshotting: 'Snapshotting',
+           'needs-attention': 'Needs attention' }[s] || s;
 }
 
 return {
@@ -2452,6 +2732,14 @@ return {
   KPI_HISTORY: KPI_HISTORY,
   topicsOf: topicsOf, storeTotals: storeTotals, alertsOf: alertsOf, heatGrid: heatGrid,
   getStream: getStream, streamsForTable: streamsForTable,
+
+  // profile ownership
+  STATUS_ATTENTION: STATUS_ATTENTION,
+  readsFromSide: readsFromSide, isUnassigned: isUnassigned,
+  resolveCapture: resolveCapture, resolveDestination: resolveDestination, resolveSide: resolveSide,
+  canRun: canRun, cannotRunReason: cannotRunReason,
+  assignProfile: assignProfile, attentionCheck: attentionCheck,
+  scopeStreams: scopeStreams, unassignedCount: unassignedCount, connLabelOf: connLabelOf,
 
   // designer
   blankDraft: blankDraft, validateDesign: validateDesign, reviewSentence: reviewSentence,

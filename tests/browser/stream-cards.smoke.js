@@ -80,12 +80,38 @@ const server = http.createServer((req, res) => {
     localStorage.setItem('acct-cygenix.ciamlogin.com-x', JSON.stringify({
       homeAccountId: 'x', environment: 'cygenix.ciamlogin.com', authorityType: 'MSSTS',
       username: 'you@example.test', localAccountId: 'x', tenantId: 'x' }));
+    // Since Sep-2026 a stream belongs to a connection profile and the page
+    // shows the ACTIVE profile's streams by default — with no profile the
+    // list is deliberately empty. This smoke is about the rows and tiles, so
+    // it seeds a profile with two saved connections; open() then assigns the
+    // demo streams to it. The profile rules have their own coverage in
+    // tests/data-stream-profiles.test.js.
+    const U = 'you@example.test';
+    const blob = {}; blob[U] = [
+      { id: 'c_src', side: 'src', mode: 'direct', name: 'LEGACY-SQL01', connString: 'mssql://u:p@h/a' },
+      { id: 'c_tgt', side: 'tgt', mode: 'direct', name: 'AZSQL-TARGET', connString: 'mssql://u:p@h/b' }];
+    localStorage.setItem('cygenix_saved_connections', JSON.stringify(blob));
+    localStorage.setItem('cygenix_profiles_v1', JSON.stringify({ v: 1,
+      profiles: [{ id: 'SMOKE_UAT', name: 'Smoke UAT', envClass: 'UAT', status: 'active', srcConnId: 'c_src', tgtConnId: 'c_tgt' }],
+      bindings: [], connMeta: {}, runRecords: [], events: [],
+      settings: { envClasses: ['DEV', 'TEST', 'UAT', 'PRD'], activeProfileId: 'SMOKE_UAT', selectedAt: 1 } }));
   });
 
   const open = async () => {
     await page.goto('http://localhost:' + PORT + '/data-stream', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.querySelectorAll('.ds-kpi').length > 0,
       null, { timeout: 20000 });
+    // Give every unassigned demo stream to the smoke profile, so the rows
+    // this file is about are in the default view. Idempotent across reloads.
+    await page.evaluate(() => {
+      const P = window.CygenixDataStreamPage, DS = window.CygenixDataStream;
+      const prof = P.activeProfile();
+      let changed = false;
+      P.state.streams.forEach((s) => {
+        if (DS.isUnassigned(s)) { DS.assignProfile(P.state, s.id, prof, s.capture.side, { savedConns: P.savedConns() }); changed = true; }
+      });
+      if (changed) { P.persist(); if (typeof paint === 'function') paint(); }
+    });
     await page.waitForTimeout(900);
   };
   const tiles = () => page.evaluate(() =>

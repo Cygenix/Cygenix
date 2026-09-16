@@ -96,7 +96,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_src_conn_mode` | Source connection mode | — | connect.html |
 | `cygenix_src_fn_url` | Source function URL | — | connect.html |
 | `cygenix_token` | Session marker | MSAL holds the real token | admin.html, agentive_migration.html, connect.html +18 |
-| `cygenix_user` | Signed-in user (email, name) | — | agentive_migration.html, assurance.html, connect.html +16 |
+| `cygenix_user` | Signed-in user (email, name) | — | agentive_migration.html, assurance.html, connect.html +17 |
 | `cygenix_user_email` | Signed-in email | — | validation.html |
 
 ---

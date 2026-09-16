@@ -147,9 +147,11 @@ body.cyg-collapsed{padding-left:54px}
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which on these pages is every stream lifecycle change. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/cygenix-datastream.js?v=0ec11f7d0e"></script>
-<script src="/cygenix-datastream-ui.js?v=cfc8290e58"></script>
-<script src="/cygenix-datastream-page.js?v=d0766024f4"></script>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
+<script src="/connections.js?v=403b59bf1a" defer></script>
+<script src="/cygenix-datastream.js?v=b98f6bf9d1"></script>
+<script src="/cygenix-datastream-ui.js?v=53a3df8423"></script>
+<script src="/cygenix-datastream-page.js?v=2c3f580800"></script>
 <script>
 'use strict';
 const DS = window.CygenixDataStream;
@@ -181,7 +183,10 @@ document.addEventListener('DOMContentLoaded', () => {
 function visible(state) {
   const now = state.clockNow || Date.now();
   const windowMs = { live: null, '15m': 900000, '1h': 3600000 }[f.range] || null;
+  // Only events from streams in the current profile scope.
+  const inScope = P.visibleIds(state);
   return (state.events || []).filter(e => {
+    if (!inScope[e.streamId]) return false;
     if (f.stream && e.streamId !== f.stream) return false;
     if (f.table && e.table !== f.table) return false;
     if (f.ops.length && f.ops.indexOf(e.op) === -1) return false;
@@ -258,14 +263,18 @@ function keyText(e) {
 }
 
 /* ── Filters ────────────────────────────────────────────────────────────── */
+function dsScope(mode) { P.setScope(mode); paint(); P.announce(mode === 'all' ? 'Showing every profile.' : 'Showing this profile only.'); }
+
 function paintFilters(s) {
-  const streams = s.streams || [];
+  // The stream and table pickers offer what is in scope, not everything.
+  const streams = P.visible(s);
   const tables = [];
   streams.forEach(st => (st.objects || []).forEach(o => {
     if (tables.indexOf(o.table) === -1) tables.push(o.table);
   }));
 
-  let html = '<label class="sr-only" for="ds-f-stream">Stream</label>'
+  let html = U.scopeToggle(P.scope(), P.activeProfile()) + '<span class="ds-sep"></span>'
+    + '<label class="sr-only" for="ds-f-stream">Stream</label>'
     + '<select id="ds-f-stream" class="ds-input" onchange="setF(\'stream\', this.value)">'
     + '<option value="">Every stream</option>'
     + streams.map(st => '<option value="' + U.esc(st.id) + '"' + (f.stream === st.id ? ' selected' : '') + '>'
