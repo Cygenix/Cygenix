@@ -929,10 +929,16 @@ function render() {
      belongs to the assistant — B does nothing and Exit is a bigger hammer
      than the moment calls for — so telling the user to press B would be
      telling them about a key that is switched off. */
+  /* The box leads with the thing the CARD does not say. The card above it
+     already lists Y, B and Exit on every stop, so repeating all three here
+     spent the one line of prompt the user actually reads on something they
+     could already see — and left the one capability nothing advertised, that
+     the box still takes questions, invisible. Y stays in both, because it is
+     the way back and that is the half people get stuck on. */
   el.input.placeholder = tourMode === 'paused'
-    ? 'Ask another question, or press Y to resume the tour'
+    ? 'Ask me more, or press Y to go back to the demo'
     : tourMode
-      ? 'Press Y to continue, B to go back, or type Exit'
+      ? 'Ask me more about this, or press Y to continue'
       : 'Ask, or tell it what to do…';
   el.input.classList.toggle('cyga-tourmode', !!tourMode);
   if (el.tourPill) el.tourPill.hidden = !tourMode;

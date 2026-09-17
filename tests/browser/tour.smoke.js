@@ -172,8 +172,17 @@ const SEED = () => {
   check('the intro card is labelled Intro, not 0 / n', c && c.count === 'Intro', c && c.count);
   check('the TOUR pill is showing',
     await page.evaluate(() => { const p = document.getElementById('cygaTourPill'); return !!p && !p.hidden; }));
-  check('and the placeholder explains the keys',
-    /Press Y to continue/.test(await page.getAttribute('#cygaInput', 'placeholder')));
+  /* The box used to repeat the card's three keys back at the user and say
+     nothing about the one thing the card does not mention — that it still
+     takes questions. It now leads with that. */
+  check('the placeholder says questions are welcome, and keeps the way onward',
+    /Ask me more about this, or press Y to continue/
+      .test(await page.getAttribute('#cygaInput', 'placeholder')));
+  check('and the live card carries the same invitation, naming Y as the way back',
+    await page.evaluate(() => {
+      const live = document.querySelector('.cyg-tour-card:not(.past) .tc-ask');
+      return !!live && /just ask me/i.test(live.textContent) && /brings it back/i.test(live.textContent);
+    }));
   // The page itself reaches for fonts, MSAL and PapaParse on load; those are
   // the app, not the tour. What matters is that STARTING the tour adds none.
   const offSiteAtStart = offSite.length;
@@ -430,6 +439,23 @@ const SEED = () => {
   check('the credits notice appeared', /use AI credits/i.test(body));
   check('a resume prompt is offered, naming the paused step',
     /Paused at step/.test(body) && body.indexOf(atStep) !== -1);
+
+  /* Both halves of "you may keep asking, and here is the door back" — and
+     which door Exit is, since Exit is the word people reach for when they
+     mean "leave the questions", and here it leaves the tour. */
+  check('the paused prompt invites more questions and names the way back to the demo',
+    /Ask me as many questions as you like/.test(body) && /pick the demo back up/.test(body));
+  check('it says what Exit does, so nobody uses it as the way back',
+    /Exit stops it altogether/.test(body)
+    && /Exit the tour/.test(await page.textContent('.cyg-tour-resume .tr-ctl')));
+  check('the primary button is labelled for the demo, not for the machine state',
+    /Back to the demo/.test(await page.textContent('.cyg-tour-resume .tr-ctl')));
+  check('and the box now offers more questions rather than the tour keys',
+    /Ask me more, or press Y to go back to the demo/
+      .test(await page.getAttribute('#cygaInput', 'placeholder')));
+  check('typing the words for it — not just Y — goes back to the demo',
+    await page.evaluate(() => window.CygenixTourState.route('back to the demo', 'paused').kind === 'resume'
+      && window.CygenixTourState.route('what is the demo for?', 'paused').kind === 'ask'));
 
   /* THE ANSWER HAS TO BE WHERE THE QUESTION WAS.
    * The panel draws the conversation first and the tour transcript under it,

@@ -217,6 +217,55 @@ check('and the resume prompt comes back on the assistant\'s turn ending',
 check('a failed answer still hands the tour back rather than killing it',
   /could not answer that[\s\S]{0,700}pushNote\(resumePromptHtml/.test(tourJs));
 
+/* ── Saying that questions are allowed ───────────────────────────────────
+   Asking mid-tour has always worked; nothing on screen said so. The card and
+   the box both listed the same three keys, so the only reasonable reading was
+   that the box took commands and nothing else. These checks are about the
+   telling, not the capability — the capability has its own checks above. */
+check('every live step card says you can just ask, and names the way back',
+  /class="tc-ask"/.test(tourJs) && /just ask me about what you are seeing/.test(tourJs)
+  && /<kbd>Y<\/kbd> brings it back/.test(tourJs),
+  'the line has to name Y as well: "you may ask" without "and here is how you get back" is half of it');
+check('the hint is on the final card too — the last stop is not the one place questions stop',
+  /ctl = askHint[\s\S]{0,140}data-tour-act="finish"/.test(tourJs));
+check('and it is only on the LIVE card, never on a past one',
+  /if \(!isCurrent\) ctl = '';/.test(tourJs),
+  'a dimmed card inviting questions is an invitation to type at something that is no longer listening');
+
+check('the paused prompt says questions are unlimited and how to get back to the demo',
+  /Ask me as many questions as you like/.test(tourJs)
+  && /to pick the demo back up/.test(tourJs));
+check('…and says plainly that Exit stops the tour rather than leaving the questions',
+  /<b>Exit<\/b> stops it altogether/.test(tourJs)
+  && /data-tour-act="exit">Exit the tour</.test(tourJs),
+  'Exit is the word people reach for meaning "go back"; the wording is what stops that being a wrong door');
+check('the resume button is labelled for what it does, not for the machine state',
+  /data-tour-act="resume">Y · Back to the demo</.test(tourJs)
+  && !/Y · Resume tour</.test(tourJs));
+
+const stateJs = read('public', 'cygenix-tour-state.js');
+const T = require('../public/cygenix-tour-state.js');
+check('the words people actually type to get back are treated as resume',
+  ['demo', 'back to the demo', 'Back To Demo', 'return to the tour', 'resume the demo',
+   'carry on', 'keep going'].every((t) => T.route(t, 'paused').kind === 'resume'),
+  'after a conversation nobody thinks to press a single letter');
+check('but a question that merely mentions the demo is still a question',
+  ['what does the demo do?', 'tell me more about demos', 'is the demo recorded']
+    .every((t) => T.route(t, 'paused').kind === 'ask'),
+  'these are whole-string matches for exactly that reason');
+check('exit still means stop while paused — one word, one meaning, in all three places',
+  T.route('exit', 'paused').kind === 'exit' && T.route('exit', 'active').kind === 'exit'
+  && /PAUSED_EXIT = \/\^\(exit\|quit\|stop\|end\)\$\//.test(stateJs));
+
+check('the box leads with the question, because the card already carries the keys',
+  /'Ask me more about this, or press Y to continue'/.test(assistantJs)
+  && /'Ask me more, or press Y to go back to the demo'/.test(assistantJs));
+check('…and neither placeholder outgrows the one the box was sized for',
+  ['Ask me more about this, or press Y to continue',
+   'Ask me more, or press Y to go back to the demo']
+    .every((s) => s.length <= 48),
+  'a truncated placeholder teaches nothing');
+
 /* The answer has to land in THIS transcript, under the question. The panel
    draws the conversation above the tour, so an answer left there sits above
    every card shown so far — ten steps in, off the top of a panel that scrolls

@@ -187,7 +187,26 @@
   var ACTIVE_EXIT = /^(exit|quit|stop|end|x|n|no|cancel)$/;
   var JUMP = /^(?:go to|skip to|jump to|tour)\s+(.+)$/;
 
-  var PAUSED_RESUME = /^(y|yes|resume|continue|next|ok|go)$/;
+  /* While paused, the way BACK to the demo is the thing people type in words
+     rather than pressing a key — they have just been having a conversation,
+     so a bare "y" does not occur to them. These are the phrases that mean
+     nothing else in this state; every one is a whole-string match, so "what
+     does the demo actually do?" is still a question and still gets answered.
+
+     "exit" is NOT one of them, deliberately. It is the word somebody reaches
+     for when they mean "leave this side-conversation and go back", and it is
+     also the word for "stop the tour" — in the box, on the Exit button and on
+     the Escape key. One word cannot mean both, and the two readings are
+     opposites, so the wording says which it is rather than the code guessing.
+     A wrong guess here is recoverable (end() tells them to type `resume`) but
+     it still takes the spotlight down in front of them. */
+  var PAUSED_RESUME = new RegExp('^(?:'
+    + 'y|yes|resume|continue|next|ok|go|demo|tour'
+    + '|back to (?:the )?(?:demo|tour)'
+    + '|return to (?:the )?(?:demo|tour)'
+    + '|(?:resume|restart|continue) (?:the )?(?:demo|tour)'
+    + '|back to it|carry on|keep going'
+    + ')$');
   var PAUSED_EXIT = /^(exit|quit|stop|end)$/;
 
   /**

@@ -338,6 +338,12 @@ function injectStyles() {
     '.cyg-tour-card p{margin:0;font-size:13px;line-height:1.6;color:var(--text2)}',
     '.cyg-tour-card .tc-ctl{display:flex;gap:7px;align-items:center;padding:0 11px 11px;flex-wrap:wrap}',
     '.cyg-tour-card .tc-prompt{width:100%;font-size:11.5px;color:var(--text3);margin-bottom:2px}',
+    /* The "you can just ask" line. Quieter than the key prompt above it and
+       set off by a rule, because it is an alternative to the three buttons
+       rather than a fourth instruction about them. */
+    '.cyg-tour-card .tc-ask{width:100%;font-size:11.5px;color:var(--text3);font-style:italic;',
+    '  border-top:1px dashed var(--border);padding-top:7px;margin-bottom:7px}',
+    '.cyg-tour-resume .tr-note{font-size:11.5px;color:var(--text2);margin:-4px 0 8px}',
     '.cyg-tour-card.past{opacity:.5}',
     '.cyg-tour-card.past .tc-ctl{display:none}',
     '.cyg-tour-pill{background:var(--accent);color:#fff;border-radius:10px;padding:1px 8px;',
@@ -485,15 +491,27 @@ function cardHtml(step, index, isCurrent, frozenTotal) {
   var tot = frozenTotal === undefined ? total() : frozenTotal;
   var pct = tot ? Math.round(n / tot * 100) : 0;
   var ctl;
+  /* Asking mid-tour has worked since the tour shipped, and nothing on screen
+     said so — the card listed three keys and the box listed the same three,
+     so the only reasonable reading was that the box took commands and nothing
+     else. People sat through stops they had a question about. One quiet line,
+     on every live card, because the moment somebody wants to ask is the
+     moment they are reading a card, not the moment they started the tour. It
+     also names the way back, which is the half of it that is easy to get
+     wrong: the demo holds its place and Y returns to it. */
+  var askHint = '<div class="tc-ask">Or just ask me about what you are seeing — '
+    + 'the demo holds its place, and <kbd>Y</kbd> brings it back.</div>';
   if (!isCurrent) ctl = '';
   else if (step.final) {
-    ctl = '<button class="cyga-btn primary" data-tour-act="finish">Finish tour</button>'
+    ctl = askHint
+        + '<button class="cyga-btn primary" data-tour-act="finish">Finish tour</button>'
         + '<button class="cyga-btn" data-tour-act="back">B · Back</button>';
   } else {
     ctl = '<div class="tc-prompt">'
         + (n === 0 ? 'Press <kbd>Y</kbd> to start, or type <b>Exit</b> to stop.'
                    : 'Press <kbd>Y</kbd> to continue, <kbd>B</kbd> to go back, or type <b>Exit</b> to stop.')
         + '</div>'
+        + askHint
         + '<button class="cyga-btn primary" data-tour-act="next">' + (n === 0 ? 'Y · Start' : 'Y · Continue') + '</button>'
         // Labelled with its key, like Continue: a button that says only "Back"
         // does not tell you B works, and the keyboard route is the faster one
@@ -697,10 +715,18 @@ function resumePromptHtml() {
   return '<div class="cyg-tour-resume">'
     + '<div class="tr-head">Paused at step <b>' + current() + ' / ' + total() + '</b>'
     + ' — ' + esc(s.title || '') + '</div>'
+    /* Both facts, in the order they get asked: how many more questions am I
+       allowed, and how do I get back. The second one has to name Exit as
+       well, because Exit is the word people reach for when they mean "leave
+       this side-conversation" — and here it means leave the tour. Saying so
+       costs a clause and saves somebody the wrong door. */
+    + '<div class="tr-note">Ask me as many questions as you like. '
+    + 'Press <kbd>Y</kbd> — or type <b>demo</b> — to pick the demo back up; '
+    + '<b>Exit</b> stops it altogether.</div>'
     + '<div class="tr-ctl">'
-    + '<button class="cyga-btn primary" data-tour-act="resume">Y · Resume tour</button>'
+    + '<button class="cyga-btn primary" data-tour-act="resume">Y · Back to the demo</button>'
     + '<button class="cyga-btn" data-tour-act="ask">Ask another question</button>'
-    + '<button class="cyga-btn" data-tour-act="exit">Exit</button>'
+    + '<button class="cyga-btn" data-tour-act="exit">Exit the tour</button>'
     + '</div></div>';
 }
 
