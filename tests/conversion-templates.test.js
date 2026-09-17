@@ -151,8 +151,11 @@ const estimate = (ticks) => ({
     /CygenixSchemaGraph\.load\('tgt'\)/.test(page) && /if \(CT\.graph && CT\.graph\.ok\) return CT\.graph;/.test(page)
     && /hits\.slice\(0, 200\)/.test(page) && !/schema-tables/.test(page));
   check('…with a typed-name fallback when the target is unavailable', /ctPickManual/.test(page) && /Type the table name below instead/.test(page));
-  check('save, publish and delete are audited on the mapping category',
-    ['template.save', 'template.publish', 'template.delete'].every(a => page.indexOf("audit('" + a + "'") !== -1) && /category: 'mapping'/.test(page));
+  // Phase 2 made the category follow the action — the specification and DDL
+  // exports are Data out, the rest stay Mapping & SQL.
+  check('save, publish and delete are audited, on the mapping category',
+    ['template.save', 'template.publish', 'template.delete'].every(a => page.indexOf("audit('" + a + "'") !== -1)
+    && /function auditCategory\(action\)/.test(page) && /: 'mapping'; \}/.test(page));
   check('no one-shot flag is reset inside its own callback; nothing writes the estimate store',
     !/ES_STORE, /.test(page) && !/setItem\(ES_STORE/.test(page) && /addEventListener\('storage'/.test(page));
   check('no Function App key and no hardcoded endpoint', !/code=/.test(page) && !/azurewebsites\.net/.test(page));

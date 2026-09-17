@@ -469,11 +469,19 @@ async function handleMssql(action, connectionString, database, body) {
               SELECT c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH,
                 c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.IS_NULLABLE,
                 c.COLUMN_DEFAULT, c.ORDINAL_POSITION,
-                CAST(COALESCE(sc.is_identity, 0) AS INT) AS is_identity
+                CAST(COALESCE(sc.is_identity, 0) AS INT) AS is_identity,
+                -- is_computed (Sep-2026): the Conversion Template's staging
+                -- DDL and client specification both have to omit computed
+                -- columns — a client cannot supply one, and CREATE TABLE
+                -- would reject the value. Read from sys.computed_columns
+                -- rather than guessed from the default, which is a different
+                -- thing entirely.
+                CAST(CASE WHEN cc.object_id IS NULL THEN 0 ELSE 1 END AS INT) AS is_computed
               FROM INFORMATION_SCHEMA.COLUMNS c
               LEFT JOIN sys.schemas ss ON ss.name = c.TABLE_SCHEMA
               LEFT JOIN sys.tables  so ON so.name = c.TABLE_NAME AND so.schema_id = ss.schema_id
               LEFT JOIN sys.columns sc ON sc.object_id = so.object_id AND sc.name = c.COLUMN_NAME
+              LEFT JOIN sys.computed_columns cc ON cc.object_id = so.object_id AND cc.name = c.COLUMN_NAME
               WHERE c.TABLE_SCHEMA = @s AND c.TABLE_NAME = @t
               ORDER BY c.ORDINAL_POSITION`),
           pool.request()
@@ -504,7 +512,15 @@ async function handleMssql(action, connectionString, database, body) {
           if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
           else if (typeNeedsPrecisionScale(type) && c.NUMERIC_PRECISION!=null && c.NUMERIC_SCALE!=null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
           else if (typeNeedsPrecisionOnly(type) && c.NUMERIC_PRECISION!=null) type += `(${c.NUMERIC_PRECISION})`;
-          return { name: c.COLUMN_NAME, type, nullable: c.IS_NULLABLE==='YES', default: c.COLUMN_DEFAULT, isIdentity: c.is_identity===1, ordinal: c.ORDINAL_POSITION };
+          // The parts as well as the assembled type. `type` stays exactly as
+          // it was — the column-mapping UI and the staging-area code read it
+          // — and the raw pieces are ADDED beside it, because a specification
+          // sheet shows length, precision and scale in their own columns and
+          // cannot pick them back out of a formatted string reliably.
+          return { name: c.COLUMN_NAME, type, nullable: c.IS_NULLABLE==='YES', default: c.COLUMN_DEFAULT,
+            isIdentity: c.is_identity===1, isComputed: c.is_computed===1, ordinal: c.ORDINAL_POSITION,
+            baseType: String(c.DATA_TYPE || '').toLowerCase(), maxLength: c.CHARACTER_MAXIMUM_LENGTH,
+            precision: c.NUMERIC_PRECISION, scale: c.NUMERIC_SCALE };
         });
         result = {
           success: true,
@@ -900,7 +916,10 @@ async function handlePostgres(action, connectionString, database, body) {
             SELECT c.column_name, c.data_type, c.character_maximum_length,
                    c.numeric_precision, c.numeric_scale,
                    c.is_nullable, c.column_default, c.ordinal_position,
-                   (c.is_identity = 'YES' OR c.column_default LIKE 'nextval%') AS is_identity
+                   (c.is_identity = 'YES' OR c.column_default LIKE 'nextval%') AS is_identity,
+                   -- Postgres calls them generated columns; same meaning for
+                   -- a specification: the client cannot supply the value.
+                   (c.is_generated = 'ALWAYS') AS is_computed
             FROM   information_schema.columns c
             WHERE  c.table_schema = $1 AND c.table_name = $2
             ORDER  BY c.ordinal_position
@@ -931,7 +950,10 @@ async function handlePostgres(action, connectionString, database, body) {
           if (c.character_maximum_length) type += `(${c.character_maximum_length})`;
           else if (typeNeedsPrecisionScale(type) && c.numeric_precision != null && c.numeric_scale != null) type += `(${c.numeric_precision},${c.numeric_scale})`;
           else if (typeNeedsPrecisionOnly(type) && c.numeric_precision != null) type += `(${c.numeric_precision})`;
-          return { name: c.column_name, type, nullable: c.is_nullable === 'YES', default: c.column_default, isIdentity: c.is_identity === true, ordinal: c.ordinal_position };
+          return { name: c.column_name, type, nullable: c.is_nullable === 'YES', default: c.column_default,
+            isIdentity: c.is_identity === true, isComputed: c.is_computed === true, ordinal: c.ordinal_position,
+            baseType: String(c.data_type || '').toLowerCase(), maxLength: c.character_maximum_length,
+            precision: c.numeric_precision, scale: c.numeric_scale };
         });
         result = {
           success: true,

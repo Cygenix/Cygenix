@@ -599,6 +599,48 @@ A.registerActions([
  * SQL Editor
  * ================================================================ */
 
+/* ── Conversion Templates (Phase 2) ──────────────────────────────────────
+   Both are READS against the target — one fetches column detail, the other
+   writes a file to the user's disk — so neither needs a destructive
+   confirmation under either guardrail level. Both are page-scoped: the
+   functions they call live in the page's own script block, which only
+   exists on /conversion-templates. */
+A.registerActions([
+  {
+    name: 'template_refresh_columns',
+    title: 'Read the target columns for this template',
+    effect: 'read', page: 'conversion-templates',
+    description: 'Read every in-scope table\'s columns from the target database and store them ' +
+      'with the template, so the client specification can be generated. Changes the draft, ' +
+      'which the user still has to Save.',
+    input_schema: { type: 'object', properties: {} },
+    handler: async function () {
+      if (typeof window.ctRefreshColumns !== 'function') throw new Error('Open the Conversion Templates page first.');
+      await window.ctRefreshColumns();
+      var TM = window.CygenixTemplateModel, CT = window.CT;
+      var cov = (TM && CT && CT.tpl) ? TM.tmColumnCoverage(CT.tpl) : null;
+      return cov
+        ? { ok: true, tablesInScope: cov.tablesInScope, tablesWithColumns: cov.tablesWithColumns,
+            totalColumns: cov.totalColumns, tablesMissing: cov.tablesMissing.length,
+            note: 'Columns read. The draft is unsaved until the user presses Save.' }
+        : { ok: true, note: 'Columns read.' };
+    }
+  },
+  {
+    name: 'template_export_spec',
+    title: 'Generate the client specification workbook',
+    effect: 'read', page: 'conversion-templates',
+    description: 'Open the client specification dialog for the current template, so the user ' +
+      'can choose the version and the sheet options and download the workbook.',
+    input_schema: { type: 'object', properties: {} },
+    handler: async function () {
+      if (typeof window.ctOpenSpec !== 'function') throw new Error('Open the Conversion Templates page first.');
+      await window.ctOpenSpec();
+      return { ok: true, note: 'The specification dialog is open; the user chooses the version and presses Generate.' };
+    }
+  }
+]);
+
 A.registerActions([
   {
     name: 'sql_read_editor',

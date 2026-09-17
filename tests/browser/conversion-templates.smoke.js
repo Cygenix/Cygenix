@@ -64,6 +64,7 @@ const U = 'you@example.test';
   const store = new Map();
   const calls = [];
   let schemaCalls = 0;
+  const colCalls = [];
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', (route) => {
     const u = route.request().url();
@@ -101,6 +102,15 @@ const U = 'you@example.test';
         { schema: 'dbo', name: 'VchrDetail', kind: 'table' }, { schema: 'dbo', name: 'Vchr', kind: 'table' },
         { schema: 'dbo', name: 'Matter', kind: 'table' }, { schema: 'dbo', name: 'MattDate', kind: 'table' }] });
       if (body.action === 'schema-fks') return json(route, { foreignKeys: [] });
+      if (body.action === 'schema-columns') {
+        colCalls.push(body.tableName);
+        return json(route, { table: { schema: 'dbo', name: body.tableName, primaryKeys: ['Id'], columns: [
+          { name: 'Id', ordinal: 1, baseType: 'int', type: 'INT', nullable: false, isIdentity: true },
+          { name: 'Descr', ordinal: 2, baseType: 'nvarchar', maxLength: 128, nullable: true },
+          { name: 'Body', ordinal: 3, baseType: 'nvarchar', maxLength: -1, nullable: true },
+          { name: 'Amount', ordinal: 4, baseType: 'decimal', precision: 18, scale: 2, nullable: false },
+          { name: 'Calc', ordinal: 5, baseType: 'decimal', precision: 18, scale: 2, nullable: true, isComputed: true } ] } });
+      }
       return json(route, {});
     }
     if (/data-proxy|netlify\/functions|\/api\//.test(u)) return json(route, {});
@@ -322,6 +332,103 @@ const U = 'you@example.test';
   await page.evaluate(() => ctExport('xlsx'));
   await page.waitForFunction(() => /CSV/.test(document.getElementById('ct-note').textContent), null, { timeout: 10000 });
   check('when the sheet library cannot load, the error says so and offers CSV', (await page.evaluate(() => CT.xlsx)) === 'failed' && /could not be loaded/.test(await noteText()));
+
+
+  /* ── 10. Phase 2: columns, the specification workbook and the DDL ──────── */
+  await page.click('#ct-load');
+  await page.waitForSelector('#ct-load-modal.open');
+  await page.click('#ct-load-list li:has-text("draft")');
+  await page.waitForFunction(() => CT.tpl && CT.tpl.status === 'draft', null, { timeout: 10000 });
+  await page.waitForTimeout(300);
+
+  // A schema-1 draft, exactly as the live one is, must open unchanged.
+  const v1ok = await page.evaluate(() => {
+    const before = JSON.parse(JSON.stringify(CT.tpl));
+    before.schema = 1;
+    before.modules.forEach((m) => m.tables.forEach((t) => { delete t.columns; }));
+    const after = CygenixTemplateModel.tmMigrate(JSON.parse(JSON.stringify(before)));
+    return after.schema === 2 && after.modules.every((m) => m.tables.every((t) => Array.isArray(t.columns)))
+      && CygenixTemplateModel.tmSummary(after).tableCount === CygenixTemplateModel.tmSummary(CT.tpl).tableCount;
+  });
+  check('a schema-1 draft forward-migrates and still summarises the same', v1ok);
+
+  colCalls.length = 0;
+  await page.click('#ct-refresh-cols');
+  await page.waitForFunction(() => /Columns read for/.test(document.getElementById('ct-note').textContent), null, { timeout: 20000 });
+  const cols = await page.evaluate(() => {
+    const cov = CygenixTemplateModel.tmColumnCoverage(CT.tpl);
+    const stored = JSON.parse(localStorage.getItem('cygenix_template_draft_v1::p1') || 'null');
+    const oos = CT.tpl.modules.filter((m) => m.inScope === false);
+    return { note: document.getElementById('ct-note').textContent, cov,
+      storedHasColumns: !!stored && stored.modules.some((m) => m.tables.some((t) => (t.columns || []).length)),
+      stamped: CT.tpl.modules.some((m) => m.tables.some((t) => !!t.columnsFetchedAt)),
+      oosUntouched: oos.every((m) => m.tables.every((t) => !(t.columns || []).length)),
+      header: document.getElementById('ct-badges').textContent };
+  });
+  check('Refresh columns reads the in-scope tables and says how many',
+    /Columns read for \d+ of \d+/.test(cols.note) && cols.cov.tablesWithColumns > 0, cols.note);
+  check('the snapshot is written to the template and stamped, and the local mirror has it',
+    cols.stamped && cols.storedHasColumns);
+  check('out-of-scope modules are untouched', cols.oosUntouched);
+  check('the header line shows column coverage', /columns read for/.test(cols.header), cols.header);
+  check('one request per in-scope table, no repeats', colCalls.length === new Set(colCalls).size, colCalls.join(','));
+
+  // The guards: a second click inside three seconds does nothing.
+  const before2 = colCalls.length;
+  await page.click('#ct-refresh-cols');
+  await page.waitForTimeout(600);
+  check('a second Refresh columns inside three seconds is refused, with no extra requests',
+    colCalls.length === before2 && /wait a moment/i.test(await noteText()), await noteText());
+
+  // The specification workbook, built in the page from the real snapshot.
+  const spec = await page.evaluate(() => {
+    const S = window.CygenixTemplateSpec;
+    const rows = S.buildSpecRows(CT.tpl, {});
+    const fake = { utils: { aoa_to_sheet: (a) => ({ aoa: a }), book_new: () => ({ SheetNames: [], Sheets: {} }),
+      book_append_sheet: (wb, ws, n) => { wb.SheetNames.push(n); wb.Sheets[n] = ws; } } };
+    const wb = S.buildSpecWorkbook(fake, CT.tpl, {});
+    const colSheet = wb.Sheets['Columns'].aoa;
+    const firstPop = wb.SheetNames[4];
+    return { sheets: wb.SheetNames.length, fixed: wb.SheetNames.slice(0, 4),
+      allShort: wb.SheetNames.every((n) => n.length <= 31),
+      unique: new Set(wb.SheetNames.map((n) => n.toLowerCase())).size === wb.SheetNames.length,
+      columnRows: colSheet.length - 1, tablesSum: rows.tables.reduce((n, t) => n + t.columnCount, 0),
+      hasMax: colSheet.some((r) => r[5] === 'nvarchar(max)'), hasDec: colSheet.some((r) => r[5] === 'decimal(18,2)'),
+      identityVerdict: (colSheet.find((r) => r[4] === 'Id') || [])[14],
+      computedVerdict: (colSheet.find((r) => r[4] === 'Calc') || [])[14],
+      popHead: wb.Sheets[firstPop].aoa[0], popHint: wb.Sheets[firstPop].aoa[1],
+      fileName: S.specFileName(CT.tpl, 'xlsx') };
+  });
+  check('the workbook has the four fixed sheets plus one per table, all names legal and unique',
+    spec.fixed.join('|') === 'Read Me|Tables|Columns|Load Order' && spec.allShort && spec.unique && spec.sheets > 4, JSON.stringify(spec.fixed));
+  check('the Columns row count equals the sum of the per-table counts in Tables',
+    spec.columnRows === spec.tablesSum && spec.columnRows > 0, spec.columnRows + ' vs ' + spec.tablesSum);
+  check('nvarchar(max) and decimal(18,2) render correctly', spec.hasMax && spec.hasDec);
+  check('the identity column says do-not-populate and the computed one too',
+    spec.identityVerdict === 'No — identity' && spec.computedVerdict === 'No — computed', spec.identityVerdict + ' / ' + spec.computedVerdict);
+  check('the populate sheet omits the computed column and marks the identity one',
+    !spec.popHead.some((h) => /Calc/.test(h)) && /Id \(do not populate\)/.test(spec.popHead[0]) && /identity/.test(spec.popHint[0]), spec.popHead.join(' | '));
+  check('the file name carries the profile, the template and the version',
+    /^FIN_3E_UAT-.*-v\d+-spec\.xlsx$/.test(spec.fileName), spec.fileName);
+
+  // The DDL.
+  const ddl = await page.evaluate(() => window.CygenixTemplateSpec.buildStagingDdl(CT.tpl, {}));
+  const stmts = ddl.replace(/\/\*[\s\S]*?\*\//g, '');
+  check('the DDL creates every table idempotently, every column nullable, no identity, no computed',
+    /IF OBJECT_ID\(N'dbo\./.test(stmts) && !/NOT NULL/.test(stmts) && !/IDENTITY/i.test(stmts) && !/Calc/.test(stmts)
+    && /\[Body\] nvarchar\(max\) NULL/.test(stmts) && /\[Amount\] decimal\(18,2\) NULL/.test(stmts), stmts.slice(0, 200));
+
+  // Published versions are frozen: change the draft, the published spec is unmoved.
+  const pubBefore = await page.evaluate(() => {
+    const S = window.CygenixTemplateSpec;
+    const r = S.buildSpecRows(CT.tpl, {});
+    return r.tables.map((t) => t.stagingTable).join(',');
+  });
+  await page.evaluate(() => { const m = CT.tpl.modules.find((x) => x.inScope !== false && x.tables.length);
+    CygenixTemplateModel.tmUpdateTable(CT.tpl, m.module, m.tables[0].id, { stagingTable: 'STG_RENAMED' }, 'me'); });
+  const pubAfter = await page.evaluate(() => window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.map((t) => t.stagingTable).join(','));
+  check('renaming a staging table changes the draft\'s spec — proving the spec follows the document it is given',
+    pubAfter !== pubBefore && /STG_RENAMED/.test(pubAfter));
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 

@@ -157,6 +157,9 @@ table.ct{border-collapse:collapse;width:100%;font-size:12px}
 .ct-menu.open{display:block}
 .ct-menu button{display:block;width:100%;text-align:left;background:none;border:none;font:inherit;font-size:12px;color:var(--text);padding:6px 10px;border-radius:6px;cursor:pointer}
 .ct-menu button:hover{background:var(--bg3)}
+.ct-menu-sep{height:1px;background:var(--border);margin:4px 6px}
+.ct-check{display:flex;align-items:center;gap:0.5rem;font-size:12px;padding:0.3rem 0;cursor:pointer}
+.ct-field{margin-bottom:0.7rem}
 /* A flagged row: red left edge and a warning mark with the reason on it.
    Colour and a symbol both, so the flag is readable without the colour. */
 .ct tr.flagged td:first-child{border-left:3px solid var(--red)}
@@ -195,6 +198,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
       <button class="btn btn-sm btn-primary" id="ct-save" onclick="ctSave()"><i class="ic ic-save"></i> Save</button>
       <button class="btn btn-sm" id="ct-publish" onclick="ctPublish()"><i class="ic ic-upload"></i> Publish</button>
       <button class="btn btn-sm" id="ct-refresh" onclick="ctRefreshScope(false)" title="Re-read the Configurator estimate and bring the module list into line"><i class="ic ic-sync"></i> Refresh scope</button>
+      <button class="btn btn-sm" id="ct-refresh-cols" onclick="ctRefreshColumns()" title="Read each in-scope table's columns from the target database and store them with the template"><i class="ic ic-database"></i> Refresh columns</button>
       <!-- Import / export of the mapping (Sep-2026). Front-end only: the file
            becomes rows in the grid, and Save is still the only thing that
            writes. -->
@@ -203,6 +207,9 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
         <div class="ct-menu" id="ct-export-menu" role="menu">
           <button type="button" role="menuitem" onclick="ctExport('xlsx')">Export as Excel (.xlsx)</button>
           <button type="button" role="menuitem" onclick="ctExport('csv')">Export as CSV</button>
+          <div class="ct-menu-sep"></div>
+          <button type="button" role="menuitem" onclick="ctOpenSpec()">Client specification workbook (.xlsx)</button>
+          <button type="button" role="menuitem" onclick="ctExportDdl()">Staging DDL (.sql)</button>
         </div>
       </span>
       <button class="btn btn-sm" id="ct-import" onclick="ctImportPick()" title="Add rows from a spreadsheet or CSV — nothing is removed or overwritten"><i class="ic ic-upload"></i> Import…</button>
@@ -275,6 +282,26 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
   </div>
 </div>
 
+<!-- Client specification workbook options -->
+<div class="ct-modal" id="ct-spec-modal" role="dialog" aria-modal="true" aria-label="Client specification workbook">
+  <div class="ct-modal-card">
+    <div class="ct-modal-head">Client specification workbook</div>
+    <div class="ct-modal-body">
+      <p style="margin-bottom:0.7rem">The document the client builds their staging database from: what to create, column by column, with a sheet per table for them to populate.</p>
+      <div class="ct-field"><label class="form-label" for="ct-spec-version">Version</label>
+        <select id="ct-spec-version" class="form-input" style="width:100%" onchange="ctSpecPreview()"></select>
+        <div class="muted" style="font-size:11px;margin-top:0.2rem">A published version is generated from the columns stored when it was published, so it never changes.</div></div>
+      <label class="ct-check"><input type="checkbox" id="ct-spec-sheets" checked onchange="ctSpecPreview()"> Include one populate sheet per table</label>
+      <label class="ct-check"><input type="checkbox" id="ct-spec-required" onchange="ctSpecPreview()"> Required tables only</label>
+      <div id="ct-spec-summary" class="ct-note" style="margin-top:0.7rem"></div>
+    </div>
+    <div class="ct-modal-foot">
+      <button class="btn btn-sm" onclick="ctCloseSpec()">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="ct-spec-go" onclick="ctExportSpec()">Generate workbook</button>
+    </div>
+  </div>
+</div>
+
 <!-- Import preview: nothing changes until Import is pressed -->
 <div class="ct-modal" id="ct-import-modal" role="dialog" aria-modal="true" aria-label="Import preview">
   <div class="ct-modal-card" style="width:min(860px,96vw)">
@@ -341,10 +368,14 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- The target's table list, read the way the Schema Explorer reads it:
      one fetch per connection, cached, filtered in memory. -->
 <script src="/cygenix-schema-graph.js?v=6b69c34d3d" defer></script>
-<script src="/cygenix-template-model.js?v=6fa974d000" defer></script>
+<script src="/cygenix-template-model.js?v=edec78eebf" defer></script>
 <!-- Import / export rules (pure; the sheet library itself is fetched only
      when Import or Excel export is first used). -->
-<script src="/cygenix-template-io.js?v=b4107a6b5c" defer></script>
+<script src="/cygenix-template-io.js?v=d1247c68f8" defer></script>
+<!-- The client specification workbook and the staging DDL (Phase 2). Pure
+     builders plus the guarded schema read; the sheet library is the same
+     lazily-loaded one the export menu already uses. -->
+<script src="/cygenix-template-spec.js?v=9d0f992d45" defer></script>
 <script>
 'use strict';
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -464,10 +495,14 @@ function mirrorRead(){ try { return JSON.parse(localStorage.getItem(TPL_MIRROR +
 function mirrorClear(){ try { localStorage.removeItem(TPL_MIRROR + projectId()); } catch (e) {} }
 function lastMap(){ try { return JSON.parse(localStorage.getItem(TPL_LAST) || '{}') || {}; } catch (e) { return {}; } }
 function touchDirty(){ CT.dirty = true; mirrorWrite(); renderButtons(); }
+/* The category follows the action, because the server's allowlist decides
+   it: save/publish/delete are Mapping & SQL, and the two exports are Data
+   out — they put the target's structure in a file that leaves the product. */
+function auditCategory(action){ return /^template\.export-/.test(action) ? 'data' : 'mapping'; }
 function audit(action, summary, detail){
   try {
     if (!window.CygenixAudit || !CT.tpl) return;
-    CygenixAudit.record({ action: action, category: 'mapping',
+    CygenixAudit.record({ action: action, category: auditCategory(action),
       target: { type: 'template', id: CT.tpl.id, label: 'Template: ' + (CT.tpl.name || CT.tpl.id) },
       projectId: projectId(), summary: summary, detail: detail || null });
   } catch (e) { /* recording is best-effort; the save is not */ }
@@ -490,7 +525,7 @@ async function boot(){
   if (wantId) opened = await openTemplate(wantId, true);
   if (!opened) {
     const mirror = mirrorRead();
-    if (mirror && mirror.id) { CT.tpl = mirror; CT.kind = 'draft'; opened = true; note('Showing the local copy of "' + (mirror.name || '') + '" — the cloud copy could not be fetched.', 'warn'); }
+    if (mirror && mirror.id) { CT.tpl = TM.tmMigrate(mirror); CT.kind = 'draft'; opened = true; note('Showing the local copy of "' + (mirror.name || '') + '" — the cloud copy could not be fetched.', 'warn'); }
   }
   if (!opened) {
     const draft = CT.list.find(t => t.kind === 'draft');
@@ -529,7 +564,12 @@ async function openTemplate(id, quiet){
     if (!quiet) note('Could not open that template: ' + ((r && r.detail) || 'not found'), 'crit');
     return false;
   }
-  CT.tpl = r.data.template; CT.kind = r.data.kind || 'draft'; CT.selected = null; CT.dirty = false;
+  // Forward-migrate on the way in: a draft written before column snapshots
+  // existed (schema 1) opens unchanged, with an empty columns array on each
+  // table and no fetch stamp. Never on the way out — a published document is
+  // what it was when it was frozen.
+  CT.tpl = (r.data.kind === 'published') ? r.data.template : TM.tmMigrate(r.data.template);
+  CT.kind = r.data.kind || 'draft'; CT.selected = null; CT.dirty = false;
   mirrorWrite();
   return true;
 }
@@ -577,8 +617,15 @@ async function ctPublish(){
   const issues = allIssues();
   if (issues.some(i => i.level === 'error')) { renderIssues(); note('Publish is blocked — see "Ready to publish?" below for what is missing.', 'crit'); return; }
   const s = TM.tmSummary(CT.tpl);
-  if (!confirm('Publish "' + CT.tpl.name + '" as version ' + CT.tpl.version + '?\n\n' + s.moduleCount + ' modules, ' + s.tableCount + ' tables. '
-    + 'The published copy is frozen; your working draft continues as version ' + (CT.tpl.version + 1) + '.')) return;
+  // Missing column detail WARNS and does not block: a template is a list of
+  // tables first, and a client can be sent one before the columns are read.
+  // The publish freezes whatever snapshot exists, so the warning says what
+  // the specification will be missing rather than refusing the publish.
+  const warnings = TM.tmPublishWarnings ? TM.tmPublishWarnings(CT.tpl) : [];
+  if (!confirm('Publish "' + CT.tpl.name + '" as version ' + CT.tpl.version + '?\n\n' + s.moduleCount + ' modules, ' + s.tableCount + ' tables, '
+    + s.totalColumns + ' columns. '
+    + (warnings.length ? '\n\n' + warnings.map(w => w.message).join('\n') + '\n' : '')
+    + '\nThe published copy is frozen, columns included; your working draft continues as version ' + (CT.tpl.version + 1) + '.')) return;
   if (CT.dirty) { await ctSave(); if (CT.dirty) return; }     // a publish of unsaved work publishes what nobody can see
   const frozen = TM.tmPublish(CT.tpl, userName());
   if (!frozen) { note('The template is not ready to publish.', 'crit'); return; }
@@ -811,7 +858,12 @@ function renderBadges(){
   $('ct-badges').innerHTML = '<span class="chip info">v' + esc(s.version) + '</span>'
     + '<span class="chip ' + (s.status === 'published' ? 'ok' : 'warn') + '">' + (s.status === 'published' ? 'Published' : 'Draft') + '</span>'
     + '<span class="muted" style="font-size:11px">' + s.moduleCount + ' module' + (s.moduleCount === 1 ? '' : 's') + ' · ' + s.tableCount + ' table' + (s.tableCount === 1 ? '' : 's')
-    + (s.outOfScopeCount ? ' · ' + s.outOfScopeCount + ' out of scope' : '') + '</span>'
+    + (s.outOfScopeCount ? ' · ' + s.outOfScopeCount + ' out of scope' : '')
+    // Column coverage: the client specification is only as complete as this.
+    + (s.tableCount ? ' · ' + (s.tablesWithColumns === s.tableCount
+        ? 'columns read for all ' + s.tableCount
+        : 'columns read for ' + s.tablesWithColumns + ' of ' + s.tableCount) : '')
+    + '</span>'
     + (CT.dirty && !isReadOnly() ? '<span class="chip crit">unsaved</span>' : '')
     + (isReadOnly() ? ' <button class="btn btn-sm" onclick="ctNewDraftFromPublished()">New draft from this</button>' : '')
     + ' <button class="btn btn-sm btn-danger" onclick="ctDelete()" title="Delete this template">Delete</button>';
@@ -887,6 +939,14 @@ function renderButtons(){
   $('ct-refresh').disabled = ro || !!CT.inflight;
   $('ct-import').disabled = ro || !!CT.inflight || !!CT.importing;
   $('ct-export').disabled = !!CT.inflight;
+  // Reading the target's columns changes the draft, so a published version
+  // is read-only here too: its snapshot is the record of what was asked for.
+  const rc = $('ct-refresh-cols');
+  if (rc) {
+    rc.disabled = ro || !!CT.inflight || !!CT.readingColumns;
+    rc.title = ro ? 'A published version keeps the columns stored when it was published'
+      : 'Read each in-scope table’s columns from the target database and store them with the template';
+  }
 }
 
 /* ── Import / export (Sep-2026) ─────────────────────────────────────────
@@ -1063,6 +1123,139 @@ function ctImportCommit(){
   note('Imported from ' + pi.fileName + ': ' + bits.join(', ') + '. Press Save to keep it.', c.unknownTable || c.outOfScope || c.notValidated ? 'warn' : 'ok');
 }
 
+/* ── Client specification workbook and staging DDL (Phase 2) ────────────
+   The builders are in cygenix-template-spec.js; this is the dialog, the
+   downloads and the schema read's progress. Both artefacts come from the
+   stored column snapshot, never from a live read at generation time — which
+   is what makes a published version reproducible.
+
+   Every one of these functions lives in the same script block as the
+   toolbar's onclick handlers, because functions do not hoist across block
+   boundaries and a handler that cannot find its function fails silently. */
+CT.readingColumns = false;
+CT.published = null;          // { id, version, doc } while the spec dialog is open
+
+async function ctRefreshColumns(){
+  if (!CT.tpl || isReadOnly()) return;
+  const SPEC = window.CygenixTemplateSpec;
+  if (!SPEC) { note('The specification module is not loaded on this page.', 'crit'); return; }
+  if (CT.readingColumns) { note('Already reading the target schema — one moment.', 'warn'); return; }
+  // The in-flight flag is set HERE and cleared in the finally of this same
+  // call. Nothing in the progress callback touches it.
+  CT.readingColumns = true;
+  renderButtons();
+  let busy = null;
+  try { if (window.CygenixBusy) busy = CygenixBusy.start('Reading the target schema', { button: '#ct-refresh-cols' }); } catch (e) { busy = null; }
+  try {
+    const r = await SPEC.fetchColumns(CT.tpl, {
+      TM, by: userName(),
+      onProgress: (p) => {
+        try { if (busy && busy.progress) busy.progress(p.done, p.total); } catch (e) { /* the read matters, the bar does not */ }
+        try { note('Reading the target schema — ' + p.done + ' of ' + p.total + '…', 'ok'); } catch (e) {}
+      },
+    });
+    if (!r.ok) { note(r.reason, 'warn'); return; }
+    touchDirty(); render();
+    const bits = ['Columns read for ' + r.read + ' of ' + r.total + ' table' + (r.total === 1 ? '' : 's')];
+    if (r.failed.length) bits.push(r.failed.length + ' not found in target (' + r.failed.slice(0, 5).map(f => f.targetTable).join(', ') + (r.failed.length > 5 ? ', …' : '') + ')');
+    note(bits.join(' · ') + '. Press Save to keep the snapshot.', r.failed.length ? 'warn' : 'ok');
+  } catch (e) {
+    note('The schema could not be read: ' + (e && e.message ? e.message : e), 'crit');
+  } finally {
+    CT.readingColumns = false;
+    try { if (busy && busy.done) busy.done(); } catch (e) {}
+    renderButtons();
+  }
+}
+
+/* The dialog. Its version list offers the draft and any published version
+   of this template, defaulting to the newest published one — the published
+   version is what a client should be working to. */
+async function ctOpenSpec(){
+  ctToggleExportMenu(false);
+  if (!CT.tpl) return;
+  const sel = $('ct-spec-version');
+  await refreshList(true);
+  const pubs = CT.list.filter(t => t.kind === 'published' && t.templateId === CT.tpl.id)
+    .sort((a, b) => (b.version || 0) - (a.version || 0));
+  sel.innerHTML = pubs.map(p => '<option value="' + escArg(p.id) + '">Published v' + esc(p.version) + '</option>').join('')
+    + '<option value="">This ' + (isReadOnly() ? 'version' : 'draft') + ' (v' + esc(CT.tpl.version) + ')</option>';
+  sel.value = pubs.length ? pubs[0].id : '';
+  CT.published = null;
+  $('ct-spec-modal').classList.add('open');
+  ctSpecPreview();
+}
+function ctCloseSpec(){ $('ct-spec-modal').classList.remove('open'); CT.published = null; }
+
+/* Which document the dialog is about: the working draft, or a published
+   copy fetched once and held while the dialog is open. */
+async function ctSpecDoc(){
+  const id = $('ct-spec-version').value;
+  if (!id) return CT.tpl;
+  if (CT.published && CT.published.id === id) return CT.published.doc;
+  const r = await api('template-get', { query: { id, projectId: projectId() } }, { minInterval: 0 });
+  if (!r || !r.ok || !r.data || !r.data.template) { note('That published version could not be opened.', 'crit'); return null; }
+  CT.published = { id, doc: r.data.template };
+  return CT.published.doc;
+}
+async function ctSpecPreview(){
+  const box = $('ct-spec-summary');
+  const doc = await ctSpecDoc();
+  if (!doc) { box.textContent = ''; return; }
+  const SPEC = window.CygenixTemplateSpec;
+  const opts = { perTableSheets: $('ct-spec-sheets').checked, requiredOnly: $('ct-spec-required').checked };
+  const rows = SPEC.buildSpecRows(doc, opts);
+  const sheets = 4 + (opts.perTableSheets ? rows.tables.filter(t => t.columnCount).length : 0);
+  box.className = 'ct-note' + (rows.missing.length ? ' warn' : ' ok');
+  box.textContent = rows.tables.length + ' table' + (rows.tables.length === 1 ? '' : 's') + ' · '
+    + rows.columns.length + ' column' + (rows.columns.length === 1 ? '' : 's') + ' · ' + sheets + ' sheet' + (sheets === 1 ? '' : 's')
+    + (rows.missing.length ? ' · ' + rows.missing.length + ' table' + (rows.missing.length === 1 ? '' : 's')
+        + ' with no column detail, listed in Read Me as unresolved' + (isReadOnly() ? '' : ' — run Refresh columns first if the client needs them') : '');
+}
+async function ctExportSpec(){
+  const SPEC = window.CygenixTemplateSpec;
+  const doc = await ctSpecDoc();
+  if (!doc || !SPEC) return;
+  let XL;
+  try { XL = await loadXlsx(); }
+  catch (e) { note(e.message + ' The staging DDL is a plain .sql file and needs no library.', 'crit'); return; }
+  const opts = { perTableSheets: $('ct-spec-sheets').checked, requiredOnly: $('ct-spec-required').checked, by: userName(), now: new Date() };
+  const rows = SPEC.buildSpecRows(doc, opts);
+  const wb = SPEC.buildSpecWorkbook(XL, doc, opts);
+  const name = SPEC.specFileName(doc, 'xlsx');
+  XL.writeFile(wb, name);
+  ctCloseSpec();
+  audit('template.export-spec', 'Exported the client specification for "' + doc.name + '" v' + doc.version,
+    { version: doc.version, status: doc.status, tables: rows.tables.length, columns: rows.columns.length,
+      unresolved: rows.missing.length, perTableSheets: opts.perTableSheets, requiredOnly: opts.requiredOnly });
+  note('Specification workbook for v' + doc.version + ': ' + rows.tables.length + ' tables, ' + rows.columns.length + ' columns'
+    + (rows.missing.length ? ', ' + rows.missing.length + ' unresolved' : '') + '.', rows.missing.length ? 'warn' : 'ok');
+}
+async function ctExportDdl(){
+  ctToggleExportMenu(false);
+  const SPEC = window.CygenixTemplateSpec;
+  if (!CT.tpl || !SPEC) return;
+  const opts = { by: userName(), now: new Date() };
+  const rows = SPEC.buildSpecRows(CT.tpl, opts);
+  const made = rows.tables.filter(t => t.columnCount).length;
+  if (!made) { note('No column detail yet — run Refresh columns first, or there is nothing to create.', 'warn'); return; }
+  const sql = SPEC.buildStagingDdl(CT.tpl, opts);
+  downloadBlob(new Blob([sql], { type: 'text/plain;charset=utf-8' }), SPEC.specFileName(CT.tpl, 'sql'));
+  audit('template.export-ddl', 'Exported the staging DDL for "' + CT.tpl.name + '" v' + CT.tpl.version,
+    { version: CT.tpl.version, tables: made, unresolved: rows.missing.length });
+  note('Staging DDL for ' + made + ' table' + (made === 1 ? '' : 's')
+    + (rows.missing.length ? ' · ' + rows.missing.length + ' skipped with no column detail' : '') + '.', rows.missing.length ? 'warn' : 'ok');
+}
+
+/* The assistant's actions call these by name. Everything else on this page
+   is reached from an inline onclick in the same block, which needs no
+   export; these two are called from cygenix-assistant-actions.js, a
+   different file, so they are put where it can find them. CT goes with them
+   so the action can report the coverage it just changed. */
+window.ctRefreshColumns = ctRefreshColumns;
+window.ctOpenSpec = ctOpenSpec;
+window.CT = CT;
+
 document.addEventListener('DOMContentLoaded', () => { boot(); });
 window.addEventListener('beforeunload', (e) => {
   if (!CT.dirty || isReadOnly()) return;
@@ -1079,7 +1272,7 @@ window.addEventListener('storage', (e) => { if (e && e.key === ES_STORE && CT.tp
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
-<script src="/cygenix-assistant-actions.js?v=b50ca6db27"></script>
+<script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=f90de981cf"></script>
 <script src="/cygenix-tour.js?v=936b3fb471"></script>

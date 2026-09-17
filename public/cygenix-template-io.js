@@ -377,5 +377,10 @@ return {
   hasFlagErrors: hasFlagErrors, moduleImportedOutOfScope: moduleImportedOutOfScope,
   exportRows: exportRows, csvField: csvField, toCsv: toCsv, parseCsv: parseCsv,
   slug: slug, fileName: fileName, buildWorkbook: buildWorkbook, rowsFromWorkbook: rowsFromWorkbook,
+  // The specification builder (cygenix-template-spec.js) reuses these rather
+  // than growing its own copies: one CSV quoter, one slug, one sheet
+  // library. The LOADER itself stays on the page, which owns the script tag
+  // and the failure message — see loadXlsx there.
+  SHEET_LIBRARY: 'xlsx',
 };
 });

@@ -479,7 +479,11 @@ app.http('db', {
             pool.request()
               .input('schema', sql.NVarChar(128), schemaName)
               .input('table',  sql.NVarChar(128), tableName)
-              .query(`SELECT c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.IS_NULLABLE, c.ORDINAL_POSITION, COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME),c.COLUMN_NAME,'IsIdentity') AS is_identity FROM INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA=@schema AND c.TABLE_NAME=@table ORDER BY c.ORDINAL_POSITION`),
+              // is_computed and COLUMN_DEFAULT added Sep-2026: the Conversion
+              // Template's client specification and staging DDL must omit a
+              // computed column (nobody can supply one) and show the default
+              // as information. COLUMNPROPERTY answers both without a join.
+              .query(`SELECT c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.IS_NULLABLE, c.COLUMN_DEFAULT, c.ORDINAL_POSITION, COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME),c.COLUMN_NAME,'IsIdentity') AS is_identity, COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME),c.COLUMN_NAME,'IsComputed') AS is_computed FROM INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA=@schema AND c.TABLE_NAME=@table ORDER BY c.ORDINAL_POSITION`),
             pool.request()
               .input('schema', sql.NVarChar(128), schemaName)
               .input('table',  sql.NVarChar(128), tableName)
@@ -506,7 +510,17 @@ app.http('db', {
               type,
               nullable:   c.IS_NULLABLE === 'YES',
               isIdentity: c.is_identity === 1,
-              ordinal:    c.ORDINAL_POSITION
+              isComputed: c.is_computed === 1,
+              ordinal:    c.ORDINAL_POSITION,
+              // The parts as well as the assembled type: a specification
+              // sheet shows length, precision and scale in their own columns
+              // and must not have to unpick a formatted string. `type` is
+              // unchanged — several callers already read it.
+              baseType:   String(c.DATA_TYPE || '').toLowerCase(),
+              maxLength:  c.CHARACTER_MAXIMUM_LENGTH,
+              precision:  c.NUMERIC_PRECISION,
+              scale:      c.NUMERIC_SCALE,
+              default:    c.COLUMN_DEFAULT
             };
           });
 

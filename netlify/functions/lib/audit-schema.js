@@ -183,6 +183,10 @@ const CLIENT_ACTIONS = {
   'template.save':        'mapping',
   'template.publish':     'mapping',
   'template.delete':      'mapping',
+  // Phase 2: the two client-facing artefacts. Both leave the product with
+  // the target's structure in them, so both are worth a trail entry.
+  'template.export-spec': 'data',
+  'template.export-ddl':  'data',
   'sql.save':             'mapping',
   'sql.delete':           'mapping',
   'connection.test':      'connections',

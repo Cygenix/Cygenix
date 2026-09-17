@@ -29,7 +29,20 @@
 
   // Bump only when the stored document shape changes in a way that needs
   // migrating. This is NOT the user-facing template version number.
-  var TM_SCHEMA_VERSION = 1;
+  //
+  // 2 (Sep-2026): every table row may carry `columns` (the target's column
+  // detail, as read from the target database) and `columnsFetchedAt`. A v1
+  // document is forward-migrated by tmMigrate: `columns` was already on the
+  // shape and already `[]`, so the migration adds nothing to a table — it
+  // only stamps the schema number. Nothing is required, so a v1 draft that
+  // has never been near this code loads and renders exactly as before.
+  var TM_SCHEMA_VERSION = 2;
+
+  // The persisted column record. Named here so the page, the specification
+  // builder and the tests agree on one shape, and so a reader can see what a
+  // stored snapshot contains without opening the spec builder.
+  var TM_COLUMN_FIELDS = ['name', 'ordinal', 'dataType', 'maxLength', 'precision', 'scale',
+    'isNullable', 'isIdentity', 'isComputed', 'isPrimaryKey', 'defaultDefinition'];
 
   var TM_TARGET_TYPES = ['Elite 3E'];
 
@@ -277,6 +290,130 @@
     return true;
   }
 
+  /* --------------------------------------------------------------------
+     Column detail (schema 2)
+
+     A table's `columns` is a SNAPSHOT of the target's shape, taken when
+     somebody pressed Refresh columns or published. It is stored rather than
+     re-read on demand for one reason: regenerating the specification for a
+     published version next year has to produce THAT version's schema, not
+     whatever the target looks like by then. A published document is the
+     record of what the client was asked to build.
+
+     Everything here is normalisation and counting. Reading the target is the
+     page's job (cygenix-template-spec.js); nothing in this file touches a
+     network or a DOM.
+     ------------------------------------------------------------------ */
+
+  /* One column, from whatever the schema reader handed back, in the shape
+     TM_COLUMN_FIELDS describes. The reader's own field names differ between
+     backends and have grown over time, so every one of them is accepted and
+     the record written here is the single shape everything downstream reads. */
+  function tmNormaliseColumn(raw, index, primaryKeys) {
+    var c = raw || {};
+    var pk = Array.isArray(primaryKeys) ? primaryKeys : [];
+    var name = tmTrim(c.name || c.COLUMN_NAME || c.column_name);
+    var base = tmTrim(c.baseType || c.dataType || c.type || c.DATA_TYPE).toLowerCase();
+    // `type` arrives assembled — NVARCHAR(64) — and baseType is the bare
+    // word. When only the assembled form is present, the bare word is
+    // whatever precedes the bracket; the parts stay null rather than being
+    // guessed out of the string.
+    var bare = base.indexOf('(') > 0 ? base.slice(0, base.indexOf('(')) : base;
+    var num = function (v) { return (v === null || v === undefined || v === '') ? null : Number(v); };
+    return {
+      name: name,
+      ordinal: typeof c.ordinal === 'number' ? c.ordinal : (typeof c.ORDINAL_POSITION === 'number' ? c.ORDINAL_POSITION : index + 1),
+      dataType: bare,
+      maxLength: num(c.maxLength !== undefined ? c.maxLength : c.CHARACTER_MAXIMUM_LENGTH),
+      precision: num(c.precision !== undefined ? c.precision : c.NUMERIC_PRECISION),
+      scale: num(c.scale !== undefined ? c.scale : c.NUMERIC_SCALE),
+      // nullable is the reader's word; isNullable is ours. Absent means
+      // nullable, which is the permissive answer and the safe one for a
+      // specification: it never tells a client a column is optional when the
+      // target says otherwise, because the target said nothing.
+      isNullable: c.isNullable !== undefined ? !!c.isNullable : (c.nullable !== undefined ? !!c.nullable : true),
+      isIdentity: !!(c.isIdentity || c.is_identity),
+      isComputed: !!(c.isComputed || c.is_computed),
+      isPrimaryKey: c.isPrimaryKey !== undefined ? !!c.isPrimaryKey
+        : pk.some(function (k) { return tmSameName(k, name); }),
+      defaultDefinition: tmTrim(c.defaultDefinition !== undefined ? c.defaultDefinition : c['default']),
+    };
+  }
+
+  /* Replace a table's column snapshot. Sorted by ordinal, stamped, touched.
+     An empty array is a legitimate answer — a table that exists with no
+     readable columns — and is stored as such; `columnsFetchedAt` is what
+     says whether anybody has looked. */
+  function tmSetTableColumns(tpl, moduleName, tableId, columns, opts) {
+    var o = opts || {};
+    var mod = tmFindModule(tpl, moduleName);
+    if (!mod) return null;
+    for (var i = 0; i < mod.tables.length; i++) {
+      if (mod.tables[i].id !== tableId) continue;
+      var t = mod.tables[i];
+      var list = (Array.isArray(columns) ? columns : [])
+        .map(function (c, ix) { return tmNormaliseColumn(c, ix, o.primaryKeys); })
+        .filter(function (c) { return !!c.name; });
+      list.sort(function (a, b) { return (a.ordinal || 0) - (b.ordinal || 0); });
+      t.columns = list;
+      t.columnsFetchedAt = o.at || tmNow();
+      tmTouch(tpl, o.by);
+      return t;
+    }
+    return null;
+  }
+
+  function tmTableHasColumns(t) {
+    return !!(t && Array.isArray(t.columns) && t.columns.length);
+  }
+
+  /* How much of the in-scope template has column detail. The header line and
+     the publish warning both read this, so they cannot disagree. */
+  function tmColumnCoverage(tpl) {
+    var inScope = ((tpl && tpl.modules) || []).filter(function (m) { return m.inScope !== false; });
+    var tablesInScope = 0, tablesWithColumns = 0, totalColumns = 0;
+    var missing = [];
+    inScope.forEach(function (m) {
+      (m.tables || []).forEach(function (t) {
+        tablesInScope++;
+        if (tmTableHasColumns(t)) { tablesWithColumns++; totalColumns += t.columns.length; }
+        else missing.push({ module: m.module, targetTable: t.targetTable });
+      });
+    });
+    return { tablesInScope: tablesInScope, tablesWithColumns: tablesWithColumns,
+      tablesMissing: missing, totalColumns: totalColumns };
+  }
+
+  /* Non-blocking warnings for a publish. Deliberately NOT folded into
+     tmCanPublish: that returns a boolean, tmPublish branches on it, and the
+     page and three tests read it — an array there would be truthy and would
+     silently turn "cannot publish" into "publish". The blocking rule is
+     unchanged; this is the second question, asked separately. */
+  function tmPublishWarnings(tpl) {
+    var out = [];
+    var cov = tmColumnCoverage(tpl);
+    if (cov.tablesMissing.length) {
+      out.push({ level: 'warning', module: '', code: 'no-columns',
+        message: cov.tablesMissing.length + ' table' + (cov.tablesMissing.length === 1 ? ' has' : 's have')
+          + ' no column detail; the specification workbook will list ' + (cov.tablesMissing.length === 1 ? 'it' : 'them')
+          + ' as unresolved. Read the columns first if the client needs them.' });
+    }
+    return out;
+  }
+
+  /* Forward migration. Called by anything that loads a stored document, so a
+     v1 draft written before column snapshots existed opens unchanged. */
+  function tmMigrate(tpl) {
+    if (!tpl || typeof tpl !== 'object') return tpl;
+    (tpl.modules || []).forEach(function (m) {
+      (m.tables || []).forEach(function (t) {
+        if (!Array.isArray(t.columns)) t.columns = [];
+      });
+    });
+    tpl.schema = TM_SCHEMA_VERSION;
+    return tpl;
+  }
+
   function tmSetModuleNotes(tpl, moduleName, notes, who) {
     var mod = tmFindModule(tpl, moduleName);
     if (!mod) return false;
@@ -387,6 +524,7 @@
     var tables = 0;
     inScope.forEach(function (m) { tables += (m.tables || []).length; });
     var empty = inScope.filter(function (m) { return !(m.tables || []).length; }).length;
+    var cov = tmColumnCoverage(tpl);
     return {
       name: (tpl && tpl.name) || '',
       version: (tpl && tpl.version) || 0,
@@ -394,7 +532,11 @@
       moduleCount: inScope.length,
       tableCount: tables,
       modulesWithoutTables: empty,
-      outOfScopeCount: mods.length - inScope.length
+      outOfScopeCount: mods.length - inScope.length,
+      // Added with schema 2; a v1 document reports 0 and 0, which is true.
+      totalColumns: cov.totalColumns,
+      tablesWithColumns: cov.tablesWithColumns,
+      tablesMissingColumns: cov.tablesMissing.length
     };
   }
 
@@ -404,6 +546,7 @@
 
   var api = {
     TM_SCHEMA_VERSION: TM_SCHEMA_VERSION,
+    TM_COLUMN_FIELDS: TM_COLUMN_FIELDS,
     TM_TARGET_TYPES: TM_TARGET_TYPES,
     TM_SCOPE_MODES: TM_SCOPE_MODES,
     TM_DEFAULT_SCOPE_MODE: TM_DEFAULT_SCOPE_MODE,
@@ -423,6 +566,12 @@
     tmUpdateTable: tmUpdateTable,
     tmRemoveTable: tmRemoveTable,
     tmSetModuleNotes: tmSetModuleNotes,
+    tmNormaliseColumn: tmNormaliseColumn,
+    tmSetTableColumns: tmSetTableColumns,
+    tmTableHasColumns: tmTableHasColumns,
+    tmColumnCoverage: tmColumnCoverage,
+    tmPublishWarnings: tmPublishWarnings,
+    tmMigrate: tmMigrate,
     tmValidate: tmValidate,
     tmCanPublish: tmCanPublish,
     tmPublish: tmPublish,
