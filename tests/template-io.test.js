@@ -75,7 +75,16 @@ const tpl = () => {
   check('missing Module is refused, naming what was found', !bad.ok && bad.missing[0] === 'module' && bad.seen.join(',') === 'Name,Owner,Target' && bad.map.targetTable === 2);
   const fh = IO.findHeader([['', ''], ['Some title'], ['Module', 'Table'], ['AP', 'Vchr']]);
   check('the header can sit below a title or blank lines', fh.index === 2);
-  check('with no header anywhere the index is -1', IO.findHeader([['AP', 'Vchr'], ['WIP', 'TimeCard']]).index === -1);
+  // A query result pasted straight out of a database tool: two columns, no
+  // header, data from line 1. That is the file people actually have.
+  const raw = IO.findHeader([['AP', 'Vchr'], ['AR', 'NULL'], ['WIP', 'TimeCard']]);
+  check('a two-column file with no header is read as Module, Target Table, and says it assumed so',
+    raw.index === -1 && raw.assumed === true && raw.headers.ok && raw.headers.map.module === 0 && raw.headers.map.targetTable === 1);
+  const rawRecs = IO.normaliseRows([['AP', 'Vchr'], ['AR', 'NULL'], ['WIP', 'TimeCard']], raw.headers.map, -1);
+  check('…and every line, including the first, is a row; NULL is still blank',
+    rawRecs.length === 3 && rawRecs[0].module === 'AP' && rawRecs[0].targetTable === 'Vchr' && rawRecs[0].rowNo === 1 && rawRecs[1].targetTable === '');
+  const wide = IO.findHeader([['AP', 'Vchr', 'x', 'y', 'z'], ['WIP', 'TimeCard', 'a', 'b', 'c']]);
+  check('a wider file with no header is still refused — no way to know which column is the table', wide.index === -1 && !wide.assumed);
 }
 
 /* ── 3. Values ──────────────────────────────────────────────────────────── */

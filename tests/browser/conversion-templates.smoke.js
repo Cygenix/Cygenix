@@ -307,6 +307,17 @@ const U = 'you@example.test';
     /Unknown target table/.test(after9.issues) && /Module out of scope/.test(after9.issues) && after9.publishDisabled, after9.issues.slice(0, 200));
   check('nothing was saved by the import', !calls.slice(calls.lastIndexOf('template-get') + 1).includes('template-save'));
 
+
+  // The file people actually have: two columns, no header, straight from a
+  // database tool. Read as Module, Target Table; the preview says so.
+  await page.setInputFiles('#ct-import-file', tmpFile('raw.csv', 'AP,VchrDetail\r\nAR,NULL\r\nAR,ChrgCard\r\n'));
+  await page.waitForSelector('#ct-import-modal.open', { timeout: 15000 });
+  t9 = await tiles();
+  const rawWarn = await page.evaluate(() => document.getElementById('ct-import-warn').textContent);
+  check('a headerless two-column file is read as Module, Target Table and the preview says so',
+    /No header row found/.test(rawWarn) && t9['rows to add'] === 1 && t9['already present'] === 1 && t9['blank rows skipped'] === 1, JSON.stringify(t9) + ' ' + rawWarn);
+  await page.click('#ct-import-modal button:has-text("Cancel")');
+
   // Excel export with the CDN blocked: a clear error, CSV offered.
   await page.evaluate(() => ctExport('xlsx'));
   await page.waitForFunction(() => /CSV/.test(document.getElementById('ct-note').textContent), null, { timeout: 10000 });

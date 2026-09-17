@@ -344,7 +344,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <script src="/cygenix-template-model.js?v=6fa974d000" defer></script>
 <!-- Import / export rules (pure; the sheet library itself is fetched only
      when Import or Excel export is first used). -->
-<script src="/cygenix-template-io.js?v=b56ccbe077" defer></script>
+<script src="/cygenix-template-io.js?v=b4107a6b5c" defer></script>
 <script>
 'use strict';
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -992,12 +992,14 @@ async function ctImportFile(file){
     } else { note('That file is not a .csv, .xlsx or .xls.', 'crit'); return; }
 
     const h = IO.findHeader(rows);
-    if (h.index < 0) {
+    if (h.index < 0 && !h.assumed) {
       note('No usable header row. Both Module (or Entity) and Target Table (or Production Table, Table, Target) are needed'
         + (h.headers.seen.length ? '; the first row has: ' + h.headers.seen.join(', ') : '; the file has no header row') + '. Nothing was changed.', 'crit');
       return;
     }
-    const records = IO.normaliseRows(rows, h.headers.map, h.index);
+    // A two-column file with no header (a query result pasted from a
+    // database tool) is read as Module, Target Table; the preview says so.
+    const records = IO.normaliseRows(rows, h.headers.map, h.assumed ? -1 : h.index);
 
     // One schema read for the whole import. ensureGraph() is single-flight
     // and cached, so a picker that already loaded it costs nothing here.
@@ -1005,7 +1007,7 @@ async function ctImportFile(file){
     const tables = (g && g.ok) ? g.tables.map(t => t.name) : null;
     const scope = CT.tpl.modules.filter(m => m.inScope !== false).map(m => m.module);
     const p = IO.plan(CT.tpl, records, { scope, tables });
-    CT.pendingImport = { plan: p, fileName: file.name, validated: tables !== null, reason: (g && !g.ok) ? g.reason : '' };
+    CT.pendingImport = { plan: p, fileName: file.name, validated: tables !== null, reason: (g && !g.ok) ? g.reason : '', assumedHeader: !!h.assumed };
     renderImportPreview();
   } catch (e) {
     note('Import failed: ' + (e && e.message ? e.message : e) + '. Nothing was changed.', 'crit');
@@ -1022,8 +1024,11 @@ function renderImportPreview(){
     + tile('duplicate in file', c.duplicateInFile) + tile('flagged — unknown target table', c.unknownTable, true)
     + tile('flagged — module out of scope', c.outOfScope, true) + (c.noModule ? tile('no module named', c.noModule, true) : '');
   const warn = $('ct-import-warn');
-  if (!pi.validated) { warn.style.display = 'block'; warn.textContent = 'The target schema could not be read' + (pi.reason ? ' (' + pi.reason + ')' : '') + '. Every row will be imported and marked "Not validated"; re-import or correct the rows once the target is reachable.'; }
-  else { warn.style.display = 'none'; warn.textContent = ''; }
+  const lines = [];
+  if (pi.assumedHeader) lines.push('No header row found: column 1 was read as Module and column 2 as Target Table. Check the rows below before pressing Import.');
+  if (!pi.validated) lines.push('The target schema could not be read' + (pi.reason ? ' (' + pi.reason + ')' : '') + '. Every row will be imported and marked "Not validated"; re-import or correct the rows once the target is reachable.');
+  warn.style.display = lines.length ? 'block' : 'none';
+  warn.textContent = lines.join(' ');
   const tb = $('ct-import-rows').querySelector('tbody');
   tb.innerHTML = pi.plan.add.length ? pi.plan.add.map(r => '<tr' + (r.flags.length ? ' class="flagged"' : '') + '>'
     + '<td class="mono">' + r.rowNo + '</td><td>' + esc(r.module) + '</td><td class="mono">' + esc(r.targetTable) + '</td>'

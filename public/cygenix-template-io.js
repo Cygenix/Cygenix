@@ -102,10 +102,24 @@ function findHeader(rows, maxScan) {
   var n = Math.min(rows.length, maxScan || 10);
   for (var i = 0; i < n; i++) {
     var h = mapHeaders(rows[i]);
-    if (h.ok) return { index: i, headers: h };
+    if (h.ok) return { index: i, headers: h, assumed: false };
   }
   var first = rows.length ? mapHeaders(rows[0]) : mapHeaders([]);
-  return { index: -1, headers: first };
+  /* No header anywhere. A query result pasted straight out of a database
+     tool has none — two columns, module then table, from the first line.
+     When EVERY row has at most two filled cells and at least one has two,
+     that is what the file is, and it is read as Module, Target Table with
+     `assumed` set so the page can say so in the preview. A file with more
+     columns and no header is still refused: there is no way to know which
+     of five columns is the table. */
+  var twoCol = rows.length > 0 && rows.every(function (r) {
+    return (r || []).filter(function (c) { return trim(c) !== ''; }).length <= 2;
+  }) && rows.some(function (r) { return (r || []).filter(function (c) { return trim(c) !== ''; }).length === 2; });
+  if (twoCol) {
+    return { index: -1, assumed: true,
+      headers: { ok: true, map: { module: 0, targetTable: 1 }, found: [], missing: [], seen: first.seen } };
+  }
+  return { index: -1, assumed: false, headers: first };
 }
 
 /* ── Values ────────────────────────────────────────────────────────────── */
