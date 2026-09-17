@@ -111,6 +111,8 @@ const CLASSES = {
   'cygenix_just_signed_out':           ['C', 'Sign-out flag', ''],
   'cygenix_whoami_ok':                 ['C', 'Tier-gate pass cache (sessionStorage)', ''],
   'cyg_goto':                          ['C', 'Cross-page navigation intent', ''],
+  'cygenix_profile_apply_seen':        ['C', 'Profile load-check stamp: which selection was already checked this session (sessionStorage)', ''],
+  'cygenix_profile_finish':            ['C', 'Which saved connection the Connections page should open on to finish a missing credential (sessionStorage; names only)', ''],
 
   // ── Session/identity. Held by MSAL and the auth layer. ───────────────────
   'cygenix_token':          ['C', 'Session marker', 'MSAL holds the real token'],

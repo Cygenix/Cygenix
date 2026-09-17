@@ -115,6 +115,9 @@ tr.cp-inuse-row td{background:var(--green-bg)}
   </div>
 
   <div class="callout" id="cp-adoption"></div>
+  <!-- What the last selection loaded into the live connections, by name.
+       Filled by cpSelectActive; never holds a connection value. -->
+  <div id="cp-apply-msg" role="status" style="display:none;margin:-0.4rem 0 0.9rem;padding:0.55rem 0.75rem;border-radius:8px;font-size:12px;line-height:1.6;border:0.5px solid var(--border2);background:var(--bg2)"></div>
 
   <!-- 1. Connection register -->
   <div class="panel">
@@ -231,13 +234,14 @@ tr.cp-inuse-row td{background:var(--green-bg)}
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/connections.js?v=403b59bf1a" defer></script>
+<script src="/connections.js?v=375b15ec07" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=c62d183795" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=42c16863e0" defer></script>
 <script src="/cygenix-profiles.js?v=cf4e02a1a3" defer></script>
+<script src="/cygenix-profile-apply.js?v=fbedee4630" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=73f52fed9d" defer></script>
 <script src="/cygenix-sidebar.js?v=7e99032d53" defer></script>
@@ -422,10 +426,40 @@ function cpRetire(id){
   P.cpRetireProfile(store, id, userName(), Date.now());
   saveStore(); renderAll();
 }
+/* Selecting a profile LOADS it (Sep-2026): its saved source and target are
+   copied into the live connections every tool reads, through
+   cygenix-profile-apply.js — which also refuses while a job is running, asks
+   for a PRD profile's id typed, and names any credential this browser does
+   not hold. The module saves the store itself, so it is re-read here rather
+   than saved again (a second save would be a second sync write). Without
+   the module the old behaviour stands: select, and load nothing. */
 function cpSelectActive(id){
-  try { P.cpSelectProfile(store, id, userName(), Date.now()); }
-  catch (e) { alert(String(e.message || e)); return; }
-  saveStore(); renderAll();
+  const A = window.CygenixProfileApply;
+  if (!A) {
+    try { P.cpSelectProfile(store, id, userName(), Date.now()); }
+    catch (e) { alert(String(e.message || e)); return; }
+    saveStore(); renderAll();
+    return;
+  }
+  const r = A.select(id);
+  store = P.cpLoad();
+  renderAll();                       // puts the radio back if the switch was refused
+  const box = $('cp-apply-msg');
+  if (!box) { if (!r.ok) alert(r.reason); return; }
+  box.style.display = 'block';
+  if (!r.ok) {
+    box.style.borderColor = 'rgba(240,70,70,0.4)';
+    box.innerHTML = '<b>Not switched.</b> ' + esc(r.reason);
+    return;
+  }
+  const missing = r.missing || '';
+  box.style.borderColor = missing ? 'rgba(245,158,11,0.5)' : 'rgba(63,125,78,0.5)';
+  box.innerHTML = '<b>' + esc(r.message) + '</b>'
+    + (missing
+        ? '<div style="margin-top:0.3rem;color:var(--amber)">' + esc(missing)
+          + ' <a href="/dashboard#goto=connections" style="color:var(--accent);font-weight:600">Open Connections</a></div>'
+        : '<div class="muted" style="margin-top:0.2rem">Every tool now reads these. '
+          + '<a href="/dashboard#goto=connections" style="color:var(--accent)">Check them on Connections</a></div>');
 }
 
 function artifactName(type, id){

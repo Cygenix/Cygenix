@@ -257,20 +257,44 @@ var CygenixConnections = (function () {
   // Write the full active pair. Preferred API going forward — dashboard
   // should call setActive({...}) rather than writing sessionStorage keys
   // directly.
+  // ── Shape, not mode ──────────────────────────────────────────────────────
+  // A connection string was observed filed under the function-URL field with
+  // mode 'azure' — the Connections form's mode toggle said "azure" while the
+  // box held mssql://…, and the legacy save() below copies the flat
+  // cygenix_fn_url key into tgtFnUrl without looking at it. impGetConn's
+  // isHttpUrl guard was added to survive that; nothing stopped the misfiling
+  // itself. This is where every write lands, so this is where the value is
+  // put in the field its SHAPE says it belongs in: https:// is a Function
+  // URL, anything else is a connection string, and the mode follows the
+  // field that ended up populated. A caller's stated mode is honoured only
+  // when the values do not contradict it.
+  function normaliseSide(cs, mode, url, key) {
+    cs = String(cs || '').trim(); url = String(url || '').trim(); key = String(key || '');
+    const http = (s) => /^https?:\/\//i.test(s);
+    if (url && !http(url)) {            // a connection string in the URL box
+      if (!cs) cs = url;
+      url = '';
+    }
+    if (cs && http(cs)) {               // a Function URL in the string box
+      if (!url) url = cs;
+      cs = '';
+    }
+    let m = mode === 'azure' ? 'azure' : 'direct';
+    if (url && !cs) m = 'azure';
+    else if (cs && !url) m = 'direct';
+    return { cs, mode: m, url, key: url ? key : key };
+  }
+
   function setActive(fields) {
     const uid = currentUserTag();
     if (!uid) return false;
     if (!fields || typeof fields !== 'object') return false;
     const blob = readBlob(LS_ACTIVE);
+    const s = normaliseSide(fields.srcConnString, fields.srcConnMode, fields.srcFnUrl, fields.srcFnKey);
+    const t = normaliseSide(fields.tgtConnString, fields.tgtConnMode, fields.tgtFnUrl, fields.tgtFnKey);
     blob[uid] = {
-      srcConnString: String(fields.srcConnString || ''),
-      srcConnMode  : fields.srcConnMode === 'azure' ? 'azure' : 'direct',
-      srcFnUrl     : String(fields.srcFnUrl || ''),
-      srcFnKey     : String(fields.srcFnKey || ''),
-      tgtConnString: String(fields.tgtConnString || ''),
-      tgtConnMode  : fields.tgtConnMode   === 'azure' ? 'azure' : 'direct',
-      tgtFnUrl     : String(fields.tgtFnUrl || ''),
-      tgtFnKey     : String(fields.tgtFnKey || ''),
+      srcConnString: s.cs,  srcConnMode: s.mode, srcFnUrl: s.url, srcFnKey: s.key,
+      tgtConnString: t.cs,  tgtConnMode: t.mode, tgtFnUrl: t.url, tgtFnKey: t.key,
     };
     writeBlob(LS_ACTIVE, blob);
     return true;

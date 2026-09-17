@@ -183,6 +183,10 @@ const CLIENT_ACTIONS = {
   'connection.create':    'connections',
   'connection.edit':      'connections',
   'connection.delete':    'connections',
+  // Selecting a profile copies its saved source and target into the live
+  // settings (cygenix-profile-apply.js). Names only in the detail — never a
+  // value — which is why it can go in a chain.
+  'profile.applied':      'connections',
   // The API key lives only in the browser — there is no server that ever
   // sees it, so there is no server-side place to observe it being set or
   // cleared from. Letting the browser assert these two is a deliberate

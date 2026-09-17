@@ -9544,6 +9544,30 @@ function connHide(side){
 window.connReveal = connReveal;
 window.connHide   = connHide;
 
+/* The live values can change under this view without anyone touching the
+   form: a profile selected on /profiles in THIS tab (the applied event) or
+   in ANOTHER tab (the storage event on the live-connections key). Either way
+   the fields are refilled from the store, but only while the view is
+   actually showing — refilling a hidden view is work nobody sees, and the
+   next open runs initConnectionsView anyway. Nothing here writes, so nothing
+   here can loop: a refill reads, and reading dispatches no event. */
+(function(){
+  function refillIfShowing(){
+    try {
+      const v = document.getElementById('view-connections');
+      if (!v || v.style.display === 'none' || v.offsetParent === null) return;
+      if (typeof initConnectionsView === 'function') initConnectionsView();
+    } catch (e) { /* the view will refill on its next open */ }
+  }
+  // tests/connection-masking.test.js runs this region of the file in a bare
+  // sandbox whose window has no event API; listening is optional there.
+  if (typeof window.addEventListener !== 'function') return;
+  window.addEventListener('cygenix:connections-applied', refillIfShowing);
+  window.addEventListener('storage', function (e) {
+    if (e && e.key === 'cygenix_project_connections') refillIfShowing();
+  });
+})();
+
 /* ── Connection entry: paste a string, or build one ────────────────────────
  *
  * Two ways in, ONE field of record. Whichever the user picks, the string in
@@ -9735,6 +9759,43 @@ function initConnectionsView() {
   connRevealed.src = connRevealed.tgt = false;
   renderConnLock('src');
   renderConnLock('tgt');
+  connProfileLines();
+}
+
+/* ── Where the live values came from (Sep-2026) ───────────────────────────
+   Selecting a profile on /profiles loads its saved source and target into
+   the live settings (cygenix-profile-apply.js). This view says so, by name,
+   in each side's result line — and when the load found a credential this
+   browser does not hold, it opens that side for editing with the field named,
+   so the person types it once and finishOnce() keeps it. Guarded: the view
+   must render without the module. */
+function connProfileLines(){
+  try {
+    const A = window.CygenixProfileApply, CP = window.CygenixProfiles;
+    if (!A || !CP) return;
+    const store = CP.cpLoad();
+    const id = store && store.settings && store.settings.activeProfileId;
+    if (!id) return;
+    const d = A.drift(store, A.loadSavedConns(), CygenixConnections.get());
+    if (!d.plan || !d.plan.ok) return;
+    const pending = A.pendingFinish();
+    const items = (pending && pending.profileId === id && pending.items) || [];
+    ['src', 'tgt'].forEach((side) => {
+      const el = document.getElementById(side + '-conn-result');
+      if (!el) return;
+      const name = d.plan[side].name;
+      const miss = items.filter((m) => m.side === side && m.hard)[0]
+        || d.plan.missing.filter((m) => m.side === side && m.hard)[0];
+      if (miss) {
+        el.textContent = 'Finish "' + name + '" for profile ' + id + ': enter the ' + miss.label + ' and Save. It is kept on this browser after that.';
+        el.style.color = 'var(--amber)';
+        if (typeof connReveal === 'function') connReveal(side);
+      } else if (!d.drifted) {
+        el.textContent = 'From profile ' + id + ' · ' + name;
+        el.style.color = 'var(--text3)';
+      }
+    });
+  } catch (e) { /* a note, never a reason the view fails */ }
 }
 
 function updateConnDots() {
@@ -9860,6 +9921,20 @@ function saveProjectConnections() {
   renderConnLock('tgt');
   const ind = document.getElementById('conn-save-indicator');
   if (ind) { ind.style.display = 'block'; setTimeout(() => ind.style.display = 'none', 2500); }
+  // A credential typed to finish the selected profile's connection is kept
+  // on this browser, so it is never asked for again here (a copy into the
+  // local secret store; the synced, locked entry is untouched).
+  try {
+    const A = window.CygenixProfileApply;
+    const kept = A ? A.finishOnce(fields) : [];
+    if (typeof connProfileLines === 'function') connProfileLines();
+    kept.forEach((k) => {
+      const el = document.getElementById(k.side + '-conn-result');
+      if (!el) return;
+      el.textContent = 'Kept for "' + k.name + '" on this browser — it will not be asked for again.';
+      el.style.color = 'var(--green)';
+    });
+  } catch (e) { /* saving succeeded; the note is optional */ }
 }
 
 function clearProjectConnections() {
