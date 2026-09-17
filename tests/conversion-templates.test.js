@@ -136,7 +136,11 @@ const estimate = (ticks) => ({
   check('publish freezes with tmPublish, bumps with tmNewDraftFrom, and only removes the old draft after the new one is stored',
     /TM\.tmPublish\(CT\.tpl, userName\(\)\)/.test(page) && /TM\.tmNewDraftFrom\(frozen, userName\(\)\)/.test(page)
     && page.indexOf("api('template-save', { method: 'POST', body: { template: next") < page.indexOf("api('template-delete', { method: 'POST', body: { id: oldId"));
-  check('publish is refused in the page while any error is present', /issues\.some\(i => i\.level === 'error'\)/.test(page) && /\$\('ct-publish'\)\.disabled = ro \|\| !!CT\.inflight \|\| !TM\.tmCanPublish/.test(page));
+  // The gate reads the merged list (the model's checks plus import flags)
+  // since the import/export work — see tests/template-io.test.js.
+  check('publish is refused in the page while any error is present', /issues\.some\(i => i\.level === 'error'\)/.test(page)
+    && /const okToPublish = canPublishNow\(\);/.test(page) && /\$\('ct-publish'\)\.disabled = ro \|\| !!CT\.inflight \|\| !okToPublish/.test(page)
+    && /return TM\.tmValidate\(CT\.tpl\)\.concat\(IO \? IO\.flagIssues\(CT\.tpl\) : \[\]\)/.test(page));
   check('scope is re-read with tmScopeFromEstimate then tmSyncScope, on load and on Refresh scope',
     /TM\.tmScopeFromEstimate\(e\.doc, CT\.tpl\.scopeMode\)/.test(page) && /TM\.tmSyncScope\(CT\.tpl, scope, userName\(\)\)/.test(page)
     && /ctRefreshScope\(true\);\s*\n\s*render\(\);/.test(page) && /onclick="ctRefreshScope\(false\)"/.test(page));

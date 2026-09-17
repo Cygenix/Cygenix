@@ -63,6 +63,7 @@ const U = 'you@example.test';
   // The stub Cosmos: one envelope per id, exactly what the Function App does.
   const store = new Map();
   const calls = [];
+  let schemaCalls = 0;
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', (route) => {
     const u = route.request().url();
@@ -95,6 +96,7 @@ const U = 'you@example.test';
     // The target's schema, as db-connect answers it: three tables, no keys.
     if (/db-connect/.test(u)) {
       const body = (() => { try { return JSON.parse(route.request().postData() || '{}'); } catch (e) { return {}; } })();
+      if (body.action === 'schema-tables') schemaCalls++;
       if (body.action === 'schema-tables') return json(route, { database: 'ELITE3E', tables: [
         { schema: 'dbo', name: 'VchrDetail', kind: 'table' }, { schema: 'dbo', name: 'Vchr', kind: 'table' },
         { schema: 'dbo', name: 'Matter', kind: 'table' }, { schema: 'dbo', name: 'MattDate', kind: 'table' }] });
@@ -250,6 +252,65 @@ const U = 'you@example.test';
   await page.waitForFunction(() => CT.tpl && CT.tpl.status === 'published', null, { timeout: 10000 });
   const ro = await page.evaluate(() => ({ nameDisabled: document.getElementById('ct-name').disabled, saveDisabled: document.getElementById('ct-save').disabled, addDisabled: document.getElementById('ct-add').disabled }));
   check('a published version opens frozen: no editing, no save, no add', ro.nameDisabled && ro.saveDisabled && ro.addDisabled, JSON.stringify(ro));
+
+
+  /* ── 9. Import / export of the mapping ─────────────────────────────────── */
+  const os = require('os');
+  const tmpFile = (name, text) => { const f = path.join(os.tmpdir(), 'cyg-' + Date.now() + '-' + name); fs.writeFileSync(f, text); return f; };
+  await page.click('#ct-load');
+  await page.waitForSelector('#ct-load-modal.open');
+  await page.click('#ct-load-list li:has-text("draft")');
+  await page.waitForFunction(() => CT.tpl && CT.tpl.status === 'draft', null, { timeout: 10000 });
+  await page.waitForTimeout(300);
+  const exp = await page.evaluate(() => ({ rows: exportRowsNow(), csv: CygenixTemplateIO.toCsv(exportRowsNow()), name: exportFileName('csv') }));
+  const tableTotal = await page.evaluate(() => CT.tpl.modules.filter((m) => m.inScope !== false).reduce((n, m) => n + m.tables.length, 0));
+  const emptyMods = await page.evaluate(() => CT.tpl.modules.filter((m) => m.inScope !== false && !m.tables.length).length);
+  check('export: header plus one row per table plus one blank row per empty module',
+    exp.rows[0].join('|') === 'Module|Target Table|Staging Table|Required|Load Order|Notes' && exp.rows.length - 1 === tableTotal + emptyMods, exp.rows.length + ' rows for ' + tableTotal + '+' + emptyMods);
+  check('the CSV carries a BOM and the file name follows the pattern', exp.csv.charCodeAt(0) === 0xFEFF && /^cygenix-template-Conversion-Template-FIN-3E-UAT-\d{8}\.csv$/.test(exp.name), exp.name);
+
+  // Re-import the exact export: nothing to add, nothing changed.
+  const beforeImport = await page.evaluate(() => JSON.stringify(CT.tpl));
+  await page.evaluate(() => { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.indexOf('cygenix_schema_') === 0) localStorage.removeItem(k); } });
+  schemaCalls = 0;
+  await page.setInputFiles('#ct-import-file', tmpFile('export.csv', exp.csv));
+  await page.waitForSelector('#ct-import-modal.open', { timeout: 15000 });
+  const tiles = () => page.evaluate(() => Array.from(document.querySelectorAll('#ct-import-counts .ct-count')).reduce((o, el) => { o[el.querySelector('.k').textContent] = Number(el.querySelector('.v').textContent); return o; }, {}));
+  let t9 = await tiles();
+  check('re-importing the export previews 0 rows to add, the rest already present or blank',
+    t9['rows to add'] === 0 && t9['already present'] === tableTotal && t9['blank rows skipped'] === emptyMods && (await page.evaluate(() => document.getElementById('ct-import-go').disabled)), JSON.stringify(t9));
+  check('the import read the target schema exactly once', schemaCalls === 1, 'calls=' + schemaCalls);
+  await page.click('#ct-import-modal button:has-text("Cancel")');
+  check('Cancel leaves the template byte-for-byte unchanged', (await page.evaluate(() => JSON.stringify(CT.tpl))) === beforeImport && /nothing was changed/.test(await noteText()));
+
+  // A two-column SSMS-style file with a NULL, an unknown table and an out-of-scope module.
+  await page.setInputFiles('#ct-import-file', tmpFile('two.csv', 'entity,production_table\r\nAP,MattDate\r\nAP,NULL\r\nWIP,Ghost\r\nTrust,Matter\r\n'));
+  await page.waitForSelector('#ct-import-modal.open', { timeout: 15000 });
+  t9 = await tiles();
+  check('a two-column file previews: 3 to add, 1 blank (NULL) skipped, 1 unknown table, 1 out of scope',
+    t9['rows to add'] === 3 && t9['blank rows skipped'] === 1 && t9['flagged — unknown target table'] === 1 && t9['flagged — module out of scope'] === 1, JSON.stringify(t9));
+  check('and no second schema read for the second import', schemaCalls === 1, 'calls=' + schemaCalls);
+  await page.click('#ct-import-go');
+  await page.waitForTimeout(300);
+  const after9 = await page.evaluate(() => {
+    ctSelect('WIP');
+    const row = Array.from(document.querySelectorAll('#ct-tables tbody tr')).find((tr) => /Ghost/.test(tr.querySelector('input').value));
+    return { note: document.getElementById('ct-note').textContent, unsaved: /unsaved/.test(document.getElementById('ct-badges').textContent),
+      flaggedRow: !!row && row.classList.contains('flagged') && /Unknown target table/.test(row.textContent),
+      mods: Array.from(document.querySelectorAll('#ct-mods li')).map((li) => li.textContent.replace(/\s+/g, ' ').trim()),
+      issues: document.getElementById('ct-issues').textContent, publishDisabled: document.getElementById('ct-publish').disabled };
+  });
+  check('after Import the template is unsaved and the summary says what happened', after9.unsaved && /3 rows added/.test(after9.note) && /Press Save/.test(after9.note), after9.note);
+  check('the unknown table is flagged in the grid', after9.flaggedRow);
+  check('the out-of-scope module shows its badge', after9.mods.some((t) => /^Trust/.test(t) && /out of scope/.test(t)), after9.mods.join(' | '));
+  check('both flags are errors in Ready to publish, and Publish is disabled',
+    /Unknown target table/.test(after9.issues) && /Module out of scope/.test(after9.issues) && after9.publishDisabled, after9.issues.slice(0, 200));
+  check('nothing was saved by the import', !calls.slice(calls.lastIndexOf('template-get') + 1).includes('template-save'));
+
+  // Excel export with the CDN blocked: a clear error, CSV offered.
+  await page.evaluate(() => ctExport('xlsx'));
+  await page.waitForFunction(() => /CSV/.test(document.getElementById('ct-note').textContent), null, { timeout: 10000 });
+  check('when the sheet library cannot load, the error says so and offers CSV', (await page.evaluate(() => CT.xlsx)) === 'failed' && /could not be loaded/.test(await noteText()));
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 
