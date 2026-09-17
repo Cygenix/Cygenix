@@ -27,6 +27,7 @@
 /assurance.html           /assurance              301!
 /balancing.html           /balancing              301!
 /connect.html             /connect                301!
+/conversion-templates.html /conversion-templates   301!
 /coworker.html            /coworker               301!
 /dashboard.html           /dashboard              301!
 /data-cleansing.html      /data-cleansing         301!
@@ -91,6 +92,7 @@
 /assurance                /assurance.html         200
 /balancing                /balancing.html         200
 /connect                  /connect.html           200
+/conversion-templates     /conversion-templates.html 200
 /coworker                 /coworker.html          200
 /dashboard                /dashboard.html         200
 /data-cleansing           /data-cleansing.html    200

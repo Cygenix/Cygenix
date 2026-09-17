@@ -411,11 +411,15 @@ tr.decided td{opacity:0.55}
 <script src="/cygenix-cosmos-sync.js?v=c62d183795" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
 <script src="/cygenix-profiles.js?v=cf4e02a1a3" defer></script>
+<!-- The local secret half of a saved connection. The profile load-check
+     reads it to know whether a credential is on this browser; without it
+     every direct connection would look unfinished here. -->
+<script src="/cygenix-saved-conn-secrets.js?v=42c16863e0" defer></script>
 <script src="/cygenix-profile-apply.js?v=fbedee4630" defer></script>
 <script src="/cygenix-enrichment.js?v=024cc71acc" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=73f52fed9d" defer></script>
-<script src="/cygenix-sidebar.js?v=7e99032d53" defer></script>
+<script src="/cygenix-sidebar.js?v=cd02f9a4e8" defer></script>
 
 <script>
 'use strict';
@@ -1511,7 +1515,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
-<script src="/cygenix-assistant-actions.js?v=b993785216"></script>
+<script src="/cygenix-assistant-actions.js?v=b50ca6db27"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=f90de981cf"></script>
 <script src="/cygenix-tour.js?v=936b3fb471"></script>

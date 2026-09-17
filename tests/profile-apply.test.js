@@ -333,13 +333,23 @@ const seedWorld = (st, list, secretsFor) => {
     && /e\.key === 'cygenix_project_connections'\) refillIfShowing/.test(dash)
     && /offsetParent === null\) return;/.test(dash));
 
-  const pages = ['dashboard.html', 'profiles.html', 'data-enrichment.html', 'data-generator.html', 'data-quality.html'];
+  const pages = ['dashboard.html', 'profiles.html', 'data-enrichment.html', 'data-generator.html', 'data-quality.html',
+    'conversion-templates.html'];
   const bad = pages.filter((f) => {
     const s = read('public', f);
     return !/cygenix-profile-apply\.js/.test(s) || s.indexOf('cygenix-profile-apply.js') < s.indexOf('cygenix-profiles.js')
       || s.indexOf('cygenix-profile-apply.js') < s.indexOf('connections.js');
   });
   check('every page that carries profiles loads the module, after connections.js and the engine', bad.length === 0, bad.join(', '));
+  // Without the local secret store the plan cannot see a connection string
+  // that IS on this browser, and every direct connection reads as
+  // unfinished — a false warning on every load, found on the Conversion
+  // Templates page the day it was built.
+  const noSecrets = pages.filter((f) => {
+    const s = read('public', f);
+    return !/cygenix-saved-conn-secrets\.js/.test(s) || s.indexOf('cygenix-saved-conn-secrets.js') > s.indexOf('cygenix-profile-apply.js');
+  });
+  check('…and each of them loads the local secret store before it, so a stored credential is seen', noSecrets.length === 0, noSecrets.join(', '));
   const others = fs.readdirSync(path.join(ROOT, 'public')).filter((f) => f.endsWith('.html') && !pages.includes(f)
     && /cygenix-profile-apply\.js/.test(read('public', f)));
   check('and no page without the engine loads it', others.length === 0, others.join(', '));

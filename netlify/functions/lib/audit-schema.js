@@ -177,6 +177,12 @@ const CLIENT_ACTIONS = {
   'run.execute':          'jobs',
   'mapping.ai-apply':     'mapping',
   'mapping.save':         'mapping',
+  // Conversion templates (Sep-2026): the table list a client builds a
+  // staging database to. Saving, publishing and deleting one are decisions
+  // about the shape of a conversion; the detail carries names and counts.
+  'template.save':        'mapping',
+  'template.publish':     'mapping',
+  'template.delete':      'mapping',
   'sql.save':             'mapping',
   'sql.delete':           'mapping',
   'connection.test':      'connections',

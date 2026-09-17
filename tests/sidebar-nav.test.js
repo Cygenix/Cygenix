@@ -221,10 +221,15 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
     mapping && mapping.label === 'Object Mapping', mapping && mapping.label);
 
   const build = NAV.find(s => s.section === 'Map & Build');
-  check('Map & Build is three flat items, in order',
+  // Conversion Templates (Sep-2026) leads the group: the template decides
+  // which tables exist to be mapped, so it comes before the mapping.
+  check('Map & Build is four flat items, in order, Conversion Templates directly above Object Mapping',
     JSON.stringify(build.items.map(i => i.key)) ===
-      JSON.stringify(['object-mapping', 'sql-editor', 'agentive-migration']),
+      JSON.stringify(['conversion-templates', 'object-mapping', 'sql-editor', 'agentive-migration']),
     build.items.map(i => i.key).join(','));
+  const ct = SB.__findItem('conversion-templates');
+  check('Conversion Templates opens its clean address and is labelled for people',
+    !!ct && ct.href === '/conversion-templates' && ct.label === 'Conversion Templates', ct && ct.href);
   check('and none of them is an expander any more',
     build.items.every(i => !i.children));
 

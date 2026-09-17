@@ -136,6 +136,12 @@
       // data-active="object-mapping" and dashboard deep links use it. It sat
       // on the child rather than the expander precisely so this could happen
       // without breaking a single link.
+      // Conversion Templates (Sep-2026): the cut-down copy of the target
+      // schema a client builds a staging database to. It sits ABOVE Object
+      // Mapping because it is decided before any mapping is drawn — the
+      // template says which tables exist to be mapped to. Same colour as
+      // its neighbours: it is a Map & Build step, not a new kind of thing.
+      { key:'conversion-templates', label:'Conversion Templates', href:'/conversion-templates', color:'var(--teal)', icon: iconGrid() },
       { key:'object-mapping', label:'Object Mapping', href:'/object-mapping', color:'var(--teal)', icon: iconArrows() },
       { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor',         color:'var(--teal)',   icon: iconCode() },
       { key:'agentive-migration', label:'AI Assist',      href:'/agentive-migration', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },

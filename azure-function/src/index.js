@@ -3332,8 +3332,156 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           return ok({ renamed: true, blobName: from.name, newName: to.name });
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // CONVERSION TEMPLATES (Phase 1, Sep-2026) — one document per template.
+        //
+        // Storage:
+        //   Container `conversion_templates`     partition key /projectId
+        //   Must exist in Cosmos before these endpoints will work — the same
+        //   way quality_reports and inferred_relationships do. Nothing here
+        //   creates it; a missing container comes back as a 500 whose message
+        //   names it, so the Portal step is obvious rather than silent.
+        //
+        // The document shape is fixed by public/cygenix-template-model.js and
+        // is NOT restated here: what is stored is an ENVELOPE around it —
+        //   { id, projectId, kind: 'draft'|'published', templateId, name,
+        //     version, status, profileId, estimateId, updatedAt, publishedAt,
+        //     userId, doc }
+        // — so the list can be served from the summary fields without opening
+        // every document, and the template itself round-trips byte-for-byte.
+        //
+        // A draft's envelope id is the template's own id. A published copy is
+        // a SEPARATE document, id 'pub_<templateId>_v<version>', because the
+        // model's tmPublish() keeps the id and two documents cannot share one.
+        // The draft is left exactly as it was: publishing never touches it.
+        //
+        // Every write is a single-document upsert. Nothing here ever reads a
+        // list, edits it and writes it back — that is the pattern that lost
+        // a user's jobs, and a template is worth days of somebody's work.
+        //
+        // The 500 here carries the message AND the stack, on purpose: there
+        // is no Application Insights or Kudu on this plan, and a "Cosmos
+        // error" with no location is a bug nobody can find.
+        // ─────────────────────────────────────────────────────────────────────
+        case 'template-list':
+        case 'template-get':
+        case 'template-save':
+        case 'template-delete':
+        case 'template-publish': {
+          const TEMPLATES = 'conversion_templates';
+          const envelopeOf = (doc, kind, who) => ({
+            id: kind === 'published' ? 'pub_' + String(doc.id) + '_v' + (Number(doc.version) || 1) : String(doc.id),
+            projectId:   String(doc.projectId),
+            kind:        kind,
+            templateId:  String(doc.id),
+            name:        String(doc.name || 'Conversion Template'),
+            version:     Number(doc.version) || 1,
+            status:      String(doc.status || (kind === 'published' ? 'published' : 'draft')),
+            profileId:   String(doc.profileId || ''),
+            estimateId:  String(doc.estimateId || ''),
+            targetType:  String(doc.targetType || ''),
+            moduleCount: Array.isArray(doc.modules) ? doc.modules.filter(m => m && m.inScope !== false).length : 0,
+            tableCount:  Array.isArray(doc.modules) ? doc.modules.reduce((n, m) => n + ((m && m.inScope !== false && Array.isArray(m.tables)) ? m.tables.length : 0), 0) : 0,
+            updatedAt:   String(doc.updatedAt || new Date().toISOString()),
+            publishedAt: String(doc.publishedAt || ''),
+            userId:      String(who || userId),
+            doc:         doc,
+          });
+          // A template is a plain object with an id and a projectId; the
+          // rest of its shape is the model's business, not the server's.
+          const validDoc = (d) => d && typeof d === 'object' && !Array.isArray(d)
+            && typeof d.id === 'string' && /^tpl_[A-Za-z0-9_]+$/.test(d.id)
+            && typeof d.projectId === 'string' && d.projectId.trim();
+          try {
+            if (action === 'template-list') {
+              const projectId = req.query.get('projectId');
+              const profileId = req.query.get('profileId') || '';
+              if (!projectId) return err(400, 'projectId query param is required');
+              const params = [{ name: '@projectId', value: projectId }];
+              let where = 'c.projectId = @projectId';
+              if (profileId) { where += ' AND c.profileId = @profileId'; params.push({ name: '@profileId', value: profileId }); }
+              const { resources } = await getCosmosContainer(TEMPLATES).items
+                .query({
+                  query: 'SELECT c.id, c.projectId, c.kind, c.templateId, c.name, c.version, c.status, ' +
+                         'c.profileId, c.estimateId, c.targetType, c.moduleCount, c.tableCount, ' +
+                         'c.updatedAt, c.publishedAt, c.userId FROM c WHERE ' + where + ' ORDER BY c.updatedAt DESC',
+                  parameters: params,
+                }, { partitionKey: projectId })
+                .fetchAll();
+              return ok({ templates: resources || [] });
+            }
+
+            if (action === 'template-get') {
+              const id = req.query.get('id');
+              const projectId = req.query.get('projectId');
+              if (!id || !projectId) return err(400, 'id and projectId query params are required');
+              try {
+                const { resource } = await getCosmosContainer(TEMPLATES).item(id, projectId).read();
+                if (!resource) return err(404, 'Template not found');
+                return ok({ template: resource.doc, kind: resource.kind, envelope: Object.assign({}, resource, { doc: undefined }) });
+              } catch (e) {
+                if (e.code === 404) return err(404, 'Template not found');
+                throw e;
+              }
+            }
+
+            if (action === 'template-save') {
+              const body = await req.json().catch(() => null);
+              if (!body || !validDoc(body.template)) return err(400, 'template with an id (tpl_…) and a projectId is required');
+              const doc = body.template;
+              if (doc.status === 'published') return err(400, 'A published template is frozen — start a new draft from it instead.');
+              const env = envelopeOf(doc, 'draft', body.userId);
+              await getCosmosContainer(TEMPLATES).items.upsert(env);
+              ctx.log(`Saved conversion template ${env.id} v${env.version} for project ${env.projectId}`);
+              return ok({ saved: true, id: env.id, version: env.version, updatedAt: env.updatedAt });
+            }
+
+            if (action === 'template-publish') {
+              const body = await req.json().catch(() => null);
+              if (!body || !validDoc(body.template)) return err(400, 'template with an id (tpl_…) and a projectId is required');
+              const doc = body.template;
+              if (doc.status !== 'published' || !doc.publishedAt) {
+                return err(400, 'Publish expects the frozen copy tmPublish() returns (status published, publishedAt set).');
+              }
+              const env = envelopeOf(doc, 'published', body.userId);
+              await getCosmosContainer(TEMPLATES).items.upsert(env);
+              ctx.log(`Published conversion template ${env.templateId} as ${env.id} for project ${env.projectId}`);
+              return ok({ published: true, id: env.id, templateId: env.templateId, version: env.version, publishedAt: env.publishedAt });
+            }
+
+            // template-delete: id + projectId in the query, or in the body
+            // for callers that prefer POST (the Netlify proxy drops a DELETE
+            // body, so the page posts).
+            let id = req.query.get('id');
+            let projectId = req.query.get('projectId');
+            if (!id || !projectId) {
+              const body = await req.json().catch(() => null);
+              id = id || (body && body.id);
+              projectId = projectId || (body && body.projectId);
+            }
+            if (!id || !projectId) return err(400, 'id and projectId are required');
+            try {
+              await getCosmosContainer(TEMPLATES).item(String(id), String(projectId)).delete();
+              ctx.log(`Deleted conversion template ${id} for project ${projectId}`);
+              return ok({ deleted: true });
+            } catch (e) {
+              if (e.code === 404) return ok({ deleted: false, reason: 'not found' });
+              throw e;
+            }
+          } catch (e) {
+            const missing = e && e.code === 404 && /Resource Not Found|Owner resource does not exist/i.test(String(e.message || ''));
+            const msg = (missing ? `Cosmos container "${TEMPLATES}" (partition key /projectId) does not exist — create it in the Portal. ` : '')
+              + (e && e.message ? e.message : String(e));
+            logErr(ctx, 'conversion-templates error:', msg, e && e.code, e && e.stack ? e.stack.split('\n').slice(0, 5).join(' | ') : '');
+            return {
+              status: 500, headers: CORS,
+              body: JSON.stringify({ error: msg, code: e && e.code, stack: e && e.stack ? String(e.stack) : null, action }),
+            };
+          }
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects, blob-list, blob-download, blob-upload, blob-delete, blob-rename`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects, blob-list, blob-download, blob-upload, blob-delete, blob-rename, template-list, template-get, template-save, template-delete, template-publish`);
       }
 
     } catch (e) {

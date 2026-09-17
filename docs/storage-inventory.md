@@ -47,7 +47,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js |
 | `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_project_settings` | Per-project settings | synced (SYNC_KEYS) | dashboard-app.js |
-| `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, cygenix-integrations.js, cygenix-schema-graph.js +5 |
+| `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, conversion-templates.html, cygenix-integrations.js +6 |
 | `cygenix_report` | Generated conversion report | NOT SYNCED — WI-1 | connect.html, dashboard-app.js, project-builder-app.js +2 |
 | `cygenix_report_config` | Report configuration | NOT SYNCED — WI-1 | report.html, report_settings.html |
 | `cygenix_sys_params` | System parameters | synced (SYNC_KEYS) | dashboard-app.js, system-parameters.html |
@@ -73,10 +73,10 @@ mechanism that stops an unclassified key being added quietly.
 |---|---|---|---|
 | `cyg_goto` | Cross-page navigation intent | — | connect.html, cygenix-sidebar.js, dashboard-app.js +2 |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
-| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, cygenix-assistant-actions.js +15 |
+| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +16 |
 | `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-cosmos-sync.js, cygenix-sidebar.js +3 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
-| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +34 |
+| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +35 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |
@@ -96,7 +96,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_src_conn_mode` | Source connection mode | — | connect.html |
 | `cygenix_src_fn_url` | Source function URL | — | connect.html |
 | `cygenix_token` | Session marker | MSAL holds the real token | admin.html, agentive_migration.html, connect.html +18 |
-| `cygenix_user` | Signed-in user (email, name) | — | agentive_migration.html, assurance.html, connect.html +17 |
+| `cygenix_user` | Signed-in user (email, name) | — | agentive_migration.html, assurance.html, connect.html +18 |
 | `cygenix_user_email` | Signed-in email | — | validation.html |
 
 ---

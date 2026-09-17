@@ -103,6 +103,8 @@ const ALLOWED = new Set([
   'quality-get-report', 'quality-list-reports', 'quality-save-report',
   'quality-rename-report', 'quality-delete-report',
   'quality-load-scope', 'quality-save-scope', 'quality-group', 'quality-review',
+  // Conversion templates (Phase 1) — one document per template, by projectId
+  'template-list', 'template-get', 'template-save', 'template-delete', 'template-publish',
   // Administration — gated again on the Function App by requireAdmin, which
   // is only trustworthy now that the identity reaching it is a verified one.
   'admin-users', 'extend-membership', 'delete-account',

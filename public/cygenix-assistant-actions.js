@@ -125,6 +125,7 @@ var PAGES = [
   { key: 'notifications',      label: 'Notifications',      view: 'notifications' },
   { key: 'system-parameters',  label: 'System Parameters',  view: 'system-parameters' },
   { key: 'user-roles',         label: 'Users & Roles',      href: '/user-roles' },
+  { key: 'conversion-templates', label: 'Conversion Templates', href: '/conversion-templates' },
   { key: 'object-mapping',     label: 'Object Mapping',     href: '/object-mapping' },
   { key: 'schema-explorer',    label: 'Schema Explorer',    href: '/schema-explorer' },
   { key: 'sql-editor',         label: 'SQL Editor',         href: '/sql-editor' },

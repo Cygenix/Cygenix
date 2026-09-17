@@ -113,6 +113,8 @@ const CLASSES = {
   'cyg_goto':                          ['C', 'Cross-page navigation intent', ''],
   'cygenix_profile_apply_seen':        ['C', 'Profile load-check stamp: which selection was already checked this session (sessionStorage)', ''],
   'cygenix_profile_finish':            ['C', 'Which saved connection the Connections page should open on to finish a missing credential (sessionStorage; names only)', ''],
+  'cygenix_template_last_v1':          ['C', 'Conversion Templates: which template was open last, per project', 'a pointer, not the data'],
+  'cygenix_template_draft_v1::*':      ['B', 'Conversion Templates: local mirror of the working draft', 'Cosmos conversion_templates is the truth; the mirror survives a reload before Save'],
 
   // ── Session/identity. Held by MSAL and the auth layer. ───────────────────
   'cygenix_token':          ['C', 'Session marker', 'MSAL holds the real token'],
