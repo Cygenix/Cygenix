@@ -141,7 +141,10 @@ function parseDbName(cs){
 function showStatus(msg, type='info'){
   const el=$('status-bar');
   el.textContent=msg; el.className='status-bar visible status-'+type;
-  if(type!=='err') setTimeout(()=>{el.className='status-bar';}, 4000);
+  // 'warn' stays put like an error does. It is used for the thing the user
+  // has to act on before saving — a note that vanishes after four seconds
+  // while they are still reading the grid is a note nobody ever saw.
+  if(type!=='err' && type!=='warn') setTimeout(()=>{el.className='status-bar';}, 4000);
 }
 function todayStr(){ return new Date().toLocaleDateString('en-GB'); }
 
@@ -1685,6 +1688,62 @@ async function remapWithClaude(){
   finally { if (remapBusy) remapBusy.done(); }
 }
 
+/* ── Reading a reply that might not be a reply ─────────────────────────────
+   `await res.json()` on a response with an empty or non-JSON body throws
+   "Unexpected end of JSON input" — and it throws BEFORE the `res.ok` check,
+   so the HTTP status that would have explained it is never looked at. A 502
+   from a proxy, a blocked request, a cut connection: all of them reached the
+   user as that one sentence, which says nothing and suggests nothing.
+
+   So the body is read as text and parsed defensively. If it is not JSON, the
+   status line is the error, because the status line is the thing that
+   actually happened. */
+async function readApiJson(res){
+  let text = '';
+  try { text = await res.text(); }
+  catch(e){ throw new Error('The connection to Claude was cut off before a reply arrived.'); }
+  if(!text.trim()){
+    throw new Error('Claude returned an empty reply (HTTP '+res.status+' '+res.statusText+').');
+  }
+  try { return JSON.parse(text); }
+  catch(e){
+    throw new Error('Claude returned something that is not JSON (HTTP '+res.status+' '
+      + res.statusText+'): '+text.slice(0,140));
+  }
+}
+
+/* ── Salvaging a reply that stopped mid-sentence ───────────────────────────
+   The other half of the same error. When the model hits its output limit the
+   text ends part-way through an object, JSON.parse throws, and the whole
+   remap fails — discarding the sixty columns it HAD matched to punish it for
+   the one it did not finish.
+
+   Cutting back to the last complete object and closing the array keeps those
+   sixty. ensureAllTargetCols then puts the rest back as unmapped rows, so
+   nothing is lost and nothing is invented. Only ever a salvage: if the text
+   is not a truncated array of objects, the original error stands. */
+function parseMappingArray(raw, stopReason){
+  try { return { rows: JSON.parse(raw), truncated: false }; }
+  catch(e){
+    const cut = raw.lastIndexOf('}');
+    if(raw.trim().charAt(0) === '[' && cut > 0){
+      try {
+        const rows = JSON.parse(raw.slice(0, cut+1) + ']');
+        if(Array.isArray(rows) && rows.length) return { rows: rows, truncated: true };
+      } catch {}
+    }
+    /* Deliberately NOT `e.message`. The parser's own words are "Unexpected
+       end of JSON input", which is the sentence this whole fix exists to get
+       off the screen: it describes the parser's difficulty, not the user's,
+       and it suggests nothing. What the reply actually looked like does. */
+    if(!raw.trim()) throw new Error('Claude returned no mapping at all — the reply was empty.');
+    throw new Error(stopReason === 'max_tokens'
+      ? 'Claude\'s reply was cut off by its length limit and could not be read. '
+        + 'Try re-mapping, or map this table in smaller pieces.'
+      : 'Claude\'s reply was not a JSON array. It began: '+raw.slice(0,120));
+  }
+}
+
 async function askClaudeForMapping(src, tgt, apiKey){
   // Privacy: check mode + filter out excluded columns before sending schema to Claude
   const P = window.CygenixPrivacy;
@@ -1715,17 +1774,30 @@ async function askClaudeForMapping(src, tgt, apiKey){
     const res = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:CygenixModel.primary(),max_tokens:4096,messages:[{role:'user',content:prompt}]})
+      // 4096 was not enough. One entry per target column, each carrying a
+      // note, against a wide table runs past it — and the reply then stops
+      // mid-object, which is one of the two ways this used to fail with
+      // "Unexpected end of JSON input" and no clue which.
+      body:JSON.stringify({model:CygenixModel.primary(),max_tokens:8192,messages:[{role:'user',content:prompt}]})
     });
-    const data = await res.json();
+    const data = await readApiJson(res);
     // Retry on overload
     if(res.status===529 || data.error?.type==='overloaded_error'){
       if(attempt<3){ showStatus('Claude busy — retrying ('+attempt+'/3)…','info'); await new Promise(r=>setTimeout(r,2000*attempt)); continue; }
       throw new Error('Claude is overloaded — try again in a moment');
     }
-    if(!res.ok) throw new Error(data.error?.message||res.statusText);
+    if(!res.ok) throw new Error(data.error?.message||('Claude returned HTTP '+res.status+' '+res.statusText));
     const raw = (data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
-    const arr = JSON.parse(raw);
+    const parsed = parseMappingArray(raw, data.stop_reason);
+    const arr = parsed.rows;
+    if(parsed.truncated){
+      // Not fatal. ensureAllTargetCols puts the columns Claude never reached
+      // back as unmapped rows, so a cut-off reply degrades to "some matched,
+      // the rest blank" — which is worth saying out loud, because otherwise
+      // it looks like Claude simply could not match them.
+      showStatus('Claude\'s reply was cut short — '+arr.length+' column(s) matched, '
+        + 'the rest are left blank. Re-map to try again.','warn');
+    }
     // Log the AI access — schema only, no row data
     P?.logAIAccess('column-mapping', {
       sourceTable: src.fullName,
@@ -4781,6 +4853,9 @@ async function checkEditMode(){
 }
 
 async function restoreJobMapping(job,isOTM){
+  // What to say at the end instead of the generic "Editing:" line, when the
+  // restore did something the user needs to know about.
+  let _restoreNote = null;
   // ── Restore WHERE clause ──────────────────────────────────────────────────
   // Put it back in the input BEFORE we regenerate SQL — both branches below
   // call tryAutoGenSQL / generateOTMSQL which read #src-where. Without this
@@ -4846,11 +4921,43 @@ async function restoreJobMapping(job,isOTM){
       renderMappingTable();
       tryAutoGenSQL();
       setTimeout(()=>$('mapping-wrap')?.scrollIntoView({behavior:'smooth',block:'start'}),200);
+    } else if(tgtTable){
+      /* A saved map with NO column mapping is not a broken map — it is a
+         DRAFT, and since Conversion Templates learned to send a whole module
+         across, most new maps start life as one: the template knows which
+         staging table feeds which target table and nothing at all about the
+         columns, which is the work the user came here to do.
+
+         This used to say "No column mapping found in this job" and stop,
+         which left both tables loaded, the grid hidden and nothing on screen
+         to edit. The map looked like it had failed to open. It had opened;
+         there was simply nothing in it.
+
+         So a draft opens on a name-matched starting grid — the same one
+         picking a target by hand produces. Name matching only, never a call
+         to Claude: opening a saved map should not spend somebody's API
+         credit or stall for ten seconds without being asked. Re-map is right
+         there for anyone who wants the AI pass. Nothing is written back
+         until Save as job. */
+      columnMapping = ensureAllTargetCols(autoMap(srcTable, tgtTable), tgtTable);
+      $('mapping-wrap').style.display='block';
+      $('single-empty').style.display='none';
+      renderMappingTable();
+      renderSrcColList();
+      tryAutoGenSQL();
+      setTimeout(()=>$('mapping-wrap')?.scrollIntoView({behavior:'smooth',block:'start'}),200);
+      _restoreNote = 'This map had no columns mapped yet — matched '
+        + columnMapping.filter(m=>m.tgtCol&&(m.srcCol||m.literalValue)).length + ' of '
+        + columnMapping.filter(m=>m.tgtCol).length
+        + ' target columns by name. Check them, then Save as job.';
     } else {
-      showStatus('No column mapping found in this job','err');
+      _restoreNote = 'No column mapping in this job, and no target table to build one from.';
     }
   }
-  showStatus('Editing: "'+job.name+'" — change anything then save','info');
+  // The draft note explains what the user is looking at, so it is not thrown
+  // away by the generic one a line later.
+  showStatus(_restoreNote || ('Editing: "'+job.name+'" — change anything then save'),
+    _restoreNote ? 'warn' : 'info');
   // Snapshot the just-restored state so "Cancel edit" can tell whether the
   // user actually changed anything. Without this we'd either nag on every
   // cancel or silently discard real work.

@@ -368,6 +368,9 @@ body.cyg-collapsed{padding-left:54px}
 .status-ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
 .status-err{background:var(--red-bg);border-color:rgba(240,70,70,0.25);color:var(--red)}
 .status-info{background:var(--accent-glow);border-color:rgba(74,91,214,0.2);color:var(--accent)}
+/* Not an error and not a nicety — "this needs your eye before you save it".
+   A draft map opened on a name-matched grid says so here. */
+.status-warn{background:var(--amber-bg);border-color:rgba(245,158,11,0.3);color:var(--amber)}
 
 /* ── Size buttons ── */
 .size-btn{background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer}
@@ -515,7 +518,7 @@ body.cyg-collapsed{padding-left:54px}
 <!-- Map groups: the rules about the group list. Pure, no DOM, no network;
      loaded before the app so the app can rely on it. -->
 <script src="/cygenix-map-groups.js?v=08330317a2" defer></script>
-<script src="/object-mapping-app.js?v=12d9e8e56e" defer></script>
+<script src="/object-mapping-app.js?v=ea2a39ef03" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=4b4a09f18f" defer></script>
