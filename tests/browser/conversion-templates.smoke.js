@@ -451,9 +451,9 @@ const U = 'you@example.test';
   check('renaming a staging table changes the draft\'s spec — proving the spec follows the document it is given',
     pubAfter !== pubBefore && /STG_RENAMED/.test(pubAfter));
 
-  /* ── 9. Exclude from publishing (Sep-2026) ─────────────────────────────── */
-  // Put the renamed table back first, so what follows is about exclusion and
-  // nothing else.
+  /* ── 9. Include in publishing (Sep-2026) ──────────────────────────────── */
+  // Put the renamed table back first, so what follows is about the Include
+  // tick and nothing else.
   await page.evaluate(() => { const m = CT.tpl.modules.find((x) => x.tables.some((t) => t.stagingTable === 'STG_RENAMED'));
     const t = m.tables.find((x) => x.stagingTable === 'STG_RENAMED');
     CygenixTemplateModel.tmUpdateTable(CT.tpl, m.module, t.id, { stagingTable: 'STG_' + t.targetTable }, 'me'); render(); });
@@ -461,6 +461,13 @@ const U = 'you@example.test';
   const exModule = await page.evaluate(() => CT.tpl.modules.find((m) => m.inScope !== false && m.tables.length).module);
   const specBefore = await page.evaluate(() => window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.length);
   const readyBefore = await page.evaluate(() => canPublishNow());
+  // Both columns read the same way round, but they START differently and must:
+  // Map is off until somebody asks for it, Include is on until somebody says
+  // otherwise. A template that opened with nothing included would be one that
+  // publishes nothing until every box is ticked.
+  const startTicked = await page.evaluate(() => Array.from(document.querySelectorAll('#ct-mods li:not(.out):not(.ct-sep)'))
+    .filter((li) => li.querySelectorAll('.tk input').length === 2)
+    .every((li) => li.querySelectorAll('.tk input')[1].checked && !li.querySelectorAll('.tk input')[0].checked));
   await page.evaluate((mod) => {
     const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
     li.querySelectorAll('.tk input')[1].click();
@@ -470,7 +477,7 @@ const U = 'you@example.test';
     const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
     return {
       greyed: li.classList.contains('ex'),
-      label: /excluded/.test(li.textContent),
+      label: /not included/.test(li.textContent),
       ticked: li.querySelectorAll('.tk input')[1].checked,
       sub: document.getElementById('ct-mods-sub').textContent,
       badges: document.getElementById('ct-badges').textContent,
@@ -483,23 +490,25 @@ const U = 'you@example.test';
       tablesKept: CygenixTemplateModel.tmFindModule(CT.tpl, mod).tables.length,
     };
   }, exModule);
-  check('an excluded module is greyed and labelled, and the tick stays on',
-    ex.greyed && ex.label && ex.ticked, JSON.stringify({ g: ex.greyed, l: ex.label, t: ex.ticked }));
-  check('the summary lines count it — "N in scope · 1 excluded" and "… · 1 excluded from publishing"',
-    /1 excluded/.test(ex.sub) && /1 excluded from publishing/.test(ex.badges), ex.sub + ' || ' + ex.badges);
+  check('Include starts TICKED on every module in scope — nothing is left out by default',
+    startTicked === true, String(startTicked));
+  check('un-ticking Include greys the module and labels it, and the box stays clear',
+    ex.greyed && ex.label && ex.ticked === false, JSON.stringify({ g: ex.greyed, l: ex.label, t: ex.ticked }));
+  check('the summary lines count it — "N in scope · 1 not included" and "… · 1 not included in the publish"',
+    /1 not included/.test(ex.sub) && /1 not included in the publish/.test(ex.badges), ex.sub + ' || ' + ex.badges);
   check('it keeps its tables', ex.tablesKept > 0);
   check('the workbook, the staging DDL and Create staging tables all skip it',
     ex.specTables < specBefore && !ex.specHasModule && !ex.ddlHasModule && !ex.stagingHasModule,
     JSON.stringify({ before: specBefore, after: ex.specTables }));
   check('the readiness check ignores it, and says so as a warning rather than a problem',
-    readyBefore === true && ex.ready === true && /excluded from publishing/.test(ex.issues));
+    readyBefore === true && ex.ready === true && /not included in the publish/.test(ex.issues));
   // Back in.
   await page.evaluate((mod) => {
     const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
     li.querySelectorAll('.tk input')[1].click();
   }, exModule);
   await page.waitForTimeout(200);
-  check('unticking puts it straight back into the publish',
+  check('ticking Include again puts it straight back into the publish',
     await page.evaluate(() => window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.length) === specBefore);
 
   /* ── 10. Object Mapping ────────────────────────────────────────────────── */
@@ -619,12 +628,12 @@ const U = 'you@example.test';
     const m = CygenixTemplateModel.tmFindModule(CT.tpl, mod);
     const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
     return { excluded: m.excluded, mapped: m.mapped,
-      mapBox: li.querySelectorAll('.tk input')[0].checked, exBox: li.querySelectorAll('.tk input')[1].checked,
+      mapBox: li.querySelectorAll('.tk input')[0].checked, incBox: li.querySelectorAll('.tk input')[1].checked,
       greyed: li.classList.contains('ex') };
   }, exModule);
-  check('both ticks are stored with the template and are still set after a reload',
+  check('both ticks are stored with the template and are exactly as they were after a reload',
     afterReload.excluded === true && afterReload.mapped === true
-    && afterReload.mapBox === true && afterReload.exBox === true && afterReload.greyed, JSON.stringify(afterReload));
+    && afterReload.mapBox === true && afterReload.incBox === false && afterReload.greyed, JSON.stringify(afterReload));
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 

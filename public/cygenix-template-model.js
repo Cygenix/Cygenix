@@ -157,6 +157,11 @@
            excluded  in scope, tables kept, but left out of Publish, the
                      specification workbook, the staging DDL and the
                      readiness check. "Not this time", not "not at all".
+                     The screen shows this as an INCLUDE tick, ticked by
+                     default; the flag stays named for the exception because
+                     a document that says nothing has to mean "published",
+                     and an `included` flag would make silence mean the
+                     opposite. The inversion lives in the page, once.
            mapped    this module's staging→target pairs have been sent to
                      Object Mapping as draft jobs. The flag is the record of
                      the decision; the jobs themselves live in cygenix_jobs
@@ -521,7 +526,7 @@
     if (inScope.length && !active.length) {
       issues.push({
         level: 'error', module: '',
-        message: 'Every module in scope is excluded from publishing. Untick at least one.'
+        message: 'No module in scope is included in the publish. Tick Include on at least one.'
       });
     }
 
@@ -563,7 +568,7 @@
       issues.push({
         level: 'warning', module: '',
         message: excluded.length + ' module' + (excluded.length === 1 ? ' is' : 's are')
-          + ' excluded from publishing and will be left out of the workbook, the staging DDL and this publish: '
+          + ' not included in the publish and will be left out of the workbook, the staging DDL and this publish: '
           + excluded.join(', ') + '.'
       });
     }

@@ -1,11 +1,13 @@
 // tests/template-controls.test.js — Conversion Templates: the three module
 // controls added Sep-2026.
 //
-//   Exclude from publishing   the module stays, its tables stay, and Publish,
-//                             the specification workbook, the staging DDL and
-//                             Create staging tables all skip it. The
-//                             readiness check ignores it. Existing templates
-//                             load with nothing excluded.
+//   Include in publishing     a tick per module, TICKED by default. Untick it
+//                             and the module stays, its tables stay, and
+//                             Publish, the specification workbook, the staging
+//                             DDL and Create staging tables all skip it. The
+//                             readiness check ignores it. The stored flag is
+//                             still `excluded`, so a template written before
+//                             any of this loads with everything included.
 //   Object Mapping            a module's staging → target pairs go to Object
 //                             Mapping as tagged DRAFT jobs. Unticking removes
 //                             ONLY those. A mapping built by hand is never
@@ -38,7 +40,7 @@ const check = (label, ok, extra) => {
 const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 
-console.log('Conversion Templates — Map, Exclude and Create staging tables\n');
+console.log('Conversion Templates — Map, Include and Create staging tables\n');
 
 /* ── A template with three in-scope modules, one dropped ─────────────────── */
 const COLS = [
@@ -110,19 +112,19 @@ check('the readiness check ignores an excluded module — even one with no table
     return before === false && TM.tmCanPublish(t) === true;
   })());
 
-check('…but excluding EVERY module in scope blocks the publish, rather than publishing nothing',
+check('…but un-ticking Include on EVERY module blocks the publish, rather than publishing nothing',
   (() => {
     const t = tpl();
     ['AP', 'Matters', 'WIP'].forEach(m => TM.tmSetModuleExcluded(t, m, true, 'me'));
     return TM.tmCanPublish(t) === false
-      && TM.tmValidate(t).some(i => i.level === 'error' && /every module in scope is excluded/i.test(i.message));
+      && TM.tmValidate(t).some(i => i.level === 'error' && /no module in scope is included/i.test(i.message));
   })());
 
-check('the exclusion is a warning on the readiness panel, named not just counted',
+check('a module left out is a warning on the readiness panel, named not just counted',
   (() => {
     const t = tpl();
     TM.tmSetModuleExcluded(t, 'WIP', true, 'me');
-    const w = TM.tmValidate(t).filter(i => i.level === 'warning' && /excluded from publishing/.test(i.message));
+    const w = TM.tmValidate(t).filter(i => i.level === 'warning' && /not included in the publish/.test(i.message));
     return w.length === 1 && /WIP/.test(w[0].message);
   })());
 
@@ -517,13 +519,20 @@ const page = read('public', 'conversion-templates.html');
 check('the two new modules are loaded on the page',
   /cygenix-template-staging\.js\?v=/.test(page) && /cygenix-template-mapping\.js\?v=/.test(page));
 
-check('both tick boxes are on the right of the row, under headings that say Map and Exclude',
-  /class="ct-modhead"/.test(page) && />Map<\/span>/.test(page) && />Exclude<\/span>/.test(page)
+check('both tick boxes are on the right of the row, under headings that say Map and Include',
+  /class="ct-modhead"/.test(page) && />Map<\/span>/.test(page) && />Include<\/span>/.test(page)
   && /\.ct-mods li \.tk\{/.test(page) && /\.ct-modhead \.tk\{/.test(page));
+
+/* Both columns read the same way round: a tick means yes. The stored flag is
+   still the exception, so that a template with no flag at all is published. */
+check('Include is TICKED when the module is not excluded, and stores the opposite',
+  /tick\(m, 'inc', !m\.excluded,/.test(page)
+  && /function ctToggleInclude\(moduleName, on\)\{[\s\S]{0,200}tmSetModuleExcluded\(CT\.tpl, moduleName, !on,/.test(page)
+  && !/ctToggleExclude/.test(page));
 
 check('each tick box explains itself on hover',
   /title="Send this module’s staging → target table pairs to Object Mapping/.test(page)
-  && /title="Keep this module and its tables, but leave it out of Publish/.test(page));
+  && /Ticked: this module is published\. Untick to keep/.test(page));
 
 check('a module no longer in scope gets no tick boxes, but keeps the row aligned',
   /cls === 'out'\s*\n?\s*\? '<span class="tk none"><\/span><span class="tk none"><\/span>'/.test(page)
@@ -532,15 +541,15 @@ check('a module no longer in scope gets no tick boxes, but keeps the row aligned
 check('ticking a box does not also change which module is selected',
   /onclick="event\.stopPropagation\(\)"/.test(page));
 
-check('an excluded row is greyed AND labelled — colour alone is not a label',
+check('a row left out is greyed AND labelled — colour alone is not a label',
   /\.ct-mods li\.ex\{opacity/.test(page) && /class="chip exc"/.test(page)
-  && />excluded<\/span>/.test(page));
+  && />not included<\/span>/.test(page));
 
 check('the greying uses theme tokens, so it works in dark and light alike',
   /\.ct-mods li \.chip\.exc\{background:var\(--amber-bg\);color:var\(--amber\)/.test(page));
 
-check('the summary line says how many are excluded, without changing the module count',
-  /excludedCount \? ' · ' \+ s\.excludedCount \+ ' excluded from publishing'/.test(page));
+check('the summary line says how many are left out, without changing the module count',
+  /excludedCount \? ' · ' \+ s\.excludedCount \+ ' not included in the publish'/.test(page));
 
 check('Tick all / Untick all are in the section header, with the count beside them',
   /id="ct-map-all"[^>]*onclick="ctMapAll\(true\)"/.test(page)
