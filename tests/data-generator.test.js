@@ -790,8 +790,8 @@ check('the key the page reads is the key the constant names, and it is classifie
   && /localStorage\.getItem\('cygenix_datagen_selection'\)/.test(page)
   && /cygenix_datagen_selection/.test(read('docs', 'storage-inventory.md')));
 
-check('the row-count presets and the batch estimate are untouched',
-  /const PRESETS = \[10, 100, 1000, 10000, 100000\]/.test(page) && /function estimateFor/.test(page));
+check('the row-count presets gained 50 for bench testing, and the estimate is untouched',
+  /const PRESETS = \[10, 50, 100, 1000, 10000, 100000\]/.test(page) && /function estimateFor/.test(page));
 
 check('the existing generators are reused rather than copied — the model is handed them',
   /const GENERATORS = \{/.test(page) && /dgValueForColumn/.test(page)
@@ -818,6 +818,165 @@ check('…and it reassembles a composite key, which needs the constraint name',
 
 check('both new reads are gated as schema reads, like every other introspection call',
   /'schema-fks': 'schema.read'/.test(db) && /'schema-columns': 'schema.read'/.test(db));
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE DATE BUG — reported from a real run, Sep 2026
+   ══════════════════════════════════════════════════════════════════════════
+   One table out of twelve failed every batch with
+
+     The conversion of a varchar data type to a datetime data type resulted
+     in an out-of-range value.
+
+   Two separate faults produce exactly that message, and both were present.
+
+   ONE. The literal dropped the T: 'YYYY-MM-DD hh:mm:ss' is NOT ISO to SQL
+   Server, which reads it through the session's DATEFORMAT. On a British
+   English connection that is dmy, so the 18th of September is read as month
+   18. Every row with a day past the 12th fails, which is most of them.
+
+   TWO. The generator was chosen by the column NAME. A datetime column whose
+   name looks like an amount or a reference got a NUMBER, and `new Date("999")`
+   is the year 999 — before `datetime` begins — while `new Date("150000")` is
+   the year 150000, outside every SQL date type there is.
+*/
+
+const dtCol = (type) => ({ name: 'C', type: type, baseType: type });
+
+check('a generated datetime keeps the T, because without it the server may read the month as the day',
+  (() => {
+    const v = DG.dgCoerce(new Date('2026-09-18T16:32:13.500Z'), dtCol('datetime'));
+    return v === '2026-09-18T16:32:13.500' && v.indexOf(' ') === -1;
+  })(), DG.dgCoerce(new Date('2026-09-18T16:32:13.500Z'), dtCol('datetime')));
+
+check('…and so does a datetime2, a datetimeoffset and a Postgres timestamp',
+  ['datetime2', 'datetimeoffset', 'timestamp without time zone'].every(t =>
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(DG.dgCoerce(new Date('2026-09-18T16:32:13Z'), dtCol(t)))));
+
+check('a date column still gets a date and a time column still gets a time',
+  DG.dgCoerce(new Date('2026-09-18T16:32:13Z'), dtCol('date')) === '2026-09-18'
+  && DG.dgCoerce(new Date('2026-09-18T16:32:13Z'), dtCol('time')) === '16:32:13');
+
+check('a year before 1753 is clamped into what a datetime can hold, not sent and refused',
+  DG.dgCoerce(new Date('1500-01-01T00:00:00Z'), dtCol('datetime')) === '1753-01-01T00:00:00.000');
+
+check('a smalldatetime is held inside 1900 to June 2079, and given no seconds to round up',
+  DG.dgCoerce(new Date('1850-01-01T00:00:00Z'), dtCol('smalldatetime')) === '1900-01-01T00:00:00'
+  && DG.dgCoerce(new Date('2200-01-01T00:00:00Z'), dtCol('smalldatetime')) === '2079-06-05T23:59:00'
+  && /T\d{2}:\d{2}:00$/.test(DG.dgCoerce(new Date('2026-09-18T16:32:13Z'), dtCol('smalldatetime'))));
+
+check('a bare number is spent as an offset, not read as a year — 999 is not the year 999',
+  (() => {
+    const now = Date.UTC(2026, 8, 18);
+    const three = 1095 * 86400000;
+    return ['999', '150000', '42', 0, 7].every(n => {
+      const d = DG.dgToDate(n, now);
+      return d && d.getTime() <= now && d.getTime() > now - three - 86400000;
+    });
+  })());
+
+check('…and the same number always gives the same date, so a rerun is a rerun',
+  DG.dgDateFromSeed('150000', 1758153600000).toISOString()
+  === DG.dgDateFromSeed('150000', 1758153600000).toISOString());
+
+check('nothing a generator can produce leaves the range a datetime will take',
+  (() => {
+    const junk = ['150000', '999', '0', 'OFF-0001', 'AB12 3CD', 'Jane Smith', 42, 200000, ''];
+    return junk.every(v => {
+      const out = DG.dgCoerce(v, dtCol('datetime'));
+      if (out === null) return true;
+      const ms = Date.parse(out + 'Z');
+      return isFinite(ms) && ms >= Date.parse('1753-01-01T00:00:00Z')
+        && ms <= Date.parse('9999-12-31T23:59:59Z');
+    });
+  })());
+
+check('a value that is no kind of date at all is still null rather than a guess',
+  DG.dgCoerce('AB12 3CD', dtCol('datetime')) === null);
+
+/* ── The type has the last word over the name ───────────────────────────── */
+const dtPlan = (colName, type, extra) => DG.dgPlanTable(
+  { schema: 'dbo', name: 'T', primaryKeys: ['Id'], columns: [
+    { name: 'Id', type: 'int', baseType: 'int', isIdentity: true, ordinal: 1 },
+    Object.assign({ name: colName, type: type, baseType: type, nullable: true, ordinal: 2 }, extra || {}),
+  ] },
+  // The page's own rules, in miniature: a name that reads as a date already
+  // infers a date generator, a name that reads as money infers money, and
+  // everything else falls back to text. The point of the checks below is what
+  // happens when that guess and the column's real type disagree.
+  { dialect: 'mssql', inferColumnMeta: (n) => (
+      /date|_at$|time/i.test(n) ? { type: 'DATETIME', gen: 'datetime' }
+      : /amount|total|fee/i.test(n) ? { type: 'INT', gen: 'moneyPence' }
+      : { type: 'NVARCHAR(100)', gen: 'shortText' }) });
+
+check('a datetime column whose NAME says money is generated as a date anyway',
+  (() => {
+    const c = dtPlan('FeeAmount', 'datetime').columns[1];
+    return c.generator === 'datetime' && c.generatorSource === 'inferred from the type';
+  })(), JSON.stringify(dtPlan('FeeAmount', 'datetime').columns[1]));
+
+check('…and so is one whose name means nothing at all',
+  dtPlan('Xref9', 'smalldatetime').columns[1].generator === 'datetime');
+
+check('a name that was already right is left alone — the source still says it was the name',
+  (() => {
+    const c = dtPlan('OpenDate', 'date').columns[1];
+    return c.generator === 'datetime' && c.generatorSource === 'inferred from the name';
+  })(), JSON.stringify(dtPlan('OpenDate', 'date').columns[1]));
+
+check('…and a column that is not a date is not interfered with at all',
+  dtPlan('FeeAmount', 'int').columns[1].generator === 'moneyPence'
+  && dtPlan('Notes', 'nvarchar').columns[1].generator === 'shortText');
+
+check('an explicit override is a choice, not a guess, so the type does not overrule it',
+  (() => {
+    const p = DG.dgPlanTable(
+      { schema: 'dbo', name: 'T', primaryKeys: [], columns: [
+        { name: 'Opened', type: 'datetime', baseType: 'datetime', nullable: true, ordinal: 1 }] },
+      { dialect: 'mssql', overrides: { opened: { mode: 'shortText' } },
+        inferColumnMeta: () => ({ gen: 'shortText' }) });
+    return p.columns[0].generator === 'shortText' && p.columns[0].generatorSource === 'override';
+  })());
+
+check('a date column with a default and no better guess is still left to the database',
+  (() => {
+    const c = dtPlan('Xref9', 'datetime', { default: '(getdate())' }).columns[1];
+    return c.write === false && c.generator === null;
+  })());
+
+check('the server message that started this is classified as a date fault, not "other"',
+  DG.dgClassifyError('Query error: The conversion of a varchar data type to a datetime '
+    + 'data type resulted in an out-of-range value.').kind === 'date'
+  && DG.dgClassifyError('date/time field value out of range: "2026-18-09"').kind === 'date'
+  && DG.dgClassifyError('Cannot insert the value NULL into column').kind === 'null');
+
+check('…and the page says which columns to look at, because the server names none',
+  /cls\.kind === 'date'/.test(page) && /dgWantsDate/.test(page));
+
+/* ── One row count for the whole selection ──────────────────────────────── */
+check('every table can be set to one row count in a single click',
+  /function dgSetAllRowCounts\(/.test(page)
+  && /window\.dgSetAllRowCounts = dgSetAllRowCounts/.test(page)
+  && /id="dg-allrows"/.test(page));
+
+check('it writes through the per-table setter rather than straight to the counts',
+  (() => {
+    const m = page.match(/function dgSetAllRowCounts\(n\)\{[\s\S]*?\n\}/);
+    return !!m && /dgSetRowCount\(k, clean\)/.test(m[0]) && !/ROW_COUNTS\[/.test(m[0]);
+  })());
+
+check('the strip is hidden when nothing is selected, and lit only when every table agrees',
+  (() => {
+    const m = page.match(/function dgRenderAllRows\(\)\{[\s\S]*?\n\}/);
+    return !!m && /if \(!keys\.length\)\{ wrap\.style\.display = 'none'; return; \}/.test(m[0])
+      && /counts\.every\(c => c === counts\[0\]\)/.test(m[0]);
+  })());
+
+check('it changes nothing in the database — it sets a number and says so',
+  (() => {
+    const m = page.match(/function dgSetAllRowCounts\(n\)\{[\s\S]*?\n\}/);
+    return !!m && /Nothing is written until you press Generate/.test(m[0])
+      && !/dgQuery|INSERT|DELETE/.test(m[0]);
+  })());
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

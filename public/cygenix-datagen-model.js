@@ -324,6 +324,23 @@ function dgPlanTable(meta, opts) {
       && source === 'inferred from the name' && gen === 'shortText';
     if (leaveToDefault) { source = 'left to the column default'; gen = null; }
 
+    /* The TYPE has the last word over the NAME. Inferring from the column
+       name is the only thing that can tell an `Email` from a `Postcode`, and
+       it is right far more often than not — but it cannot know that
+       `ClientRef` is a datetime, and it does not look at the type at all. A
+       name-pattern generator pointed at a date column is how an entire
+       table's insert fails at batch one: the generator hands over a postcode
+       or an amount, and whatever dgCoerce can salvage from that is not a date
+       anybody asked for. Where the two disagree about a DATE, the database
+       wins, because the database is the one that will refuse the row. A user
+       override is left alone — that is a choice, not a guess — and dgCoerce
+       still clamps whatever it produces. */
+    if (gen && gen !== 'fk' && source !== 'override' && gen !== 'datetime'
+        && dgWantsDate(c.baseType || c.type)) {
+      gen = 'datetime';
+      source = 'inferred from the type';
+    }
+
     if (!skip && !leaveToDefault && c.nullable === false && trim(c.default) === '' && gen === null) {
       warnings.push(name + ' is NOT NULL with no default and nothing to generate.');
     }
@@ -373,6 +390,71 @@ var BOOL_TYPES = ['bit', 'boolean', 'bool'];
 var DATE_TYPES = ['date', 'datetime', 'datetime2', 'smalldatetime', 'datetimeoffset',
   'timestamp without time zone', 'timestamp with time zone', 'timestamptz',
   'time', 'time without time zone'];
+
+/* ── Dates, and the two ways a generated one is rejected ──────────────────
+   Both of these killed a real run against a real database, both with the
+   same unhelpful message, so both are defended here rather than at the four
+   places that build a statement.
+
+   ONE — THE LITERAL IS NOT ISO UNLESS IT KEEPS THE 'T'. SQL Server reads
+   'YYYY-MM-DD hh:mm:ss' into a `datetime` or a `smalldatetime` through the
+   session's DATEFORMAT, NOT as ISO 8601. On a connection whose language is
+   British English — which a UK-hosted server very often is — DATEFORMAT is
+   dmy, so '2026-09-18 16:32:13' is read as day 09 of month 18, and the
+   insert dies with "the conversion of a varchar data type to a datetime data
+   type resulted in an out-of-range value". Every row whose day is past the
+   12th fails, so a batch of a hundred fails as a batch and the table is
+   skipped. 'YYYY-MM-DDThh:mm:ss.mmm' — the same string with the T left in —
+   is read as ISO whatever the session language, on every version, and
+   Postgres takes it too. That single character is the whole fix.
+
+   TWO — THE RANGE IS NARROWER THAN JAVASCRIPT'S. `datetime` starts in 1753
+   and `smalldatetime` runs only from 1900 to 6 June 2079, while a JS Date
+   spans ±275,000 years. A value that arrived as a bare number, or a date
+   typed into an AI pool, lands outside either and earns the same error.
+   Clamping is the right answer for generated data: the row is invented, and
+   a date a day off the edge it asked for is better than a run that dies
+   part-way through a table. */
+var DATE_LIMITS = {};
+[['datetime', '1753-01-01T00:00:00.000Z', '9999-12-31T23:59:59.997Z'],
+ ['smalldatetime', '1900-01-01T00:00:00.000Z', '2079-06-05T23:59:00.000Z'],
+ ['*', '0001-01-01T00:00:00.000Z', '9999-12-31T23:59:59.999Z']]
+  .forEach(function (r) { DATE_LIMITS[r[0]] = { min: Date.parse(r[1]), max: Date.parse(r[2]) }; });
+
+/* A number is not a date, however willingly JavaScript pretends otherwise.
+   `new Date("150000")` is the year 150000 and `new Date("999")` is the year
+   999 — one is outside any SQL date type and the other is before `datetime`
+   begins, and neither is remotely what was meant. A bare number reaching a
+   date column means a name-pattern generator for an id or an amount was
+   pointed at one, so the number is spent as an offset inside the last three
+   years instead: still derived from the value, so the same input always
+   gives the same date, and always a date the column can hold. */
+function dgDateFromSeed(n, now) {
+  var base = now == null ? Date.now() : Number(now);
+  var seed = Math.abs(Math.floor(Number(n) || 0));
+  return new Date(base - (seed % 1095) * 86400000 - (seed * 37) % 86400000);
+}
+
+function dgToDate(value, now) {
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+  var s = trim(str(value));
+  if (s === '') return null;
+  if (/^-?\d+(\.\d+)?$/.test(s)) return dgDateFromSeed(s, now);
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/* Does this column want a date? Asked when choosing a generator, because a
+   date column is the only one where the name guessing it wrong is fatal: a
+   string in a `bit` coerces to 0 and a number in an `nvarchar` stringifies,
+   but a postcode in a `datetime` fails the insert and takes the batch with
+   it. */
+function dgWantsDate(type) {
+  var t = lower(type);
+  var p = t.indexOf('(');
+  if (p > 0) t = t.slice(0, p).trim();
+  return DATE_TYPES.indexOf(t) !== -1;
+}
 
 /* A GUID derived from whatever we were handed, so the same input always gives
    the same GUID. Not cryptographic and not trying to be — it exists so a
@@ -428,14 +510,23 @@ function dgCoerce(value, col) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(g) ? g.toLowerCase() : dgGuidFrom(g);
   }
   if (DATE_TYPES.indexOf(t) !== -1) {
-    var d = value instanceof Date ? value : new Date(str(value));
-    if (isNaN(d.getTime())) return null;
+    var d = dgToDate(value);
+    if (!d) return null;
+    var lim = DATE_LIMITS[t] || DATE_LIMITS['*'];
+    var ms = d.getTime();
+    if (ms < lim.min) d = new Date(lim.min);
+    else if (ms > lim.max) d = new Date(lim.max);
     var iso = d.toISOString();
     // A DATE column rejects a time; a time column wants only one. Sending the
     // whole ISO string to either is the commonest way a generated row bounces.
     if (t === 'date') return iso.slice(0, 10);
     if (t === 'time' || t === 'time without time zone') return iso.slice(11, 19);
-    return iso.slice(0, 23).replace('T', ' ');
+    // A smalldatetime has no seconds — it rounds to the nearest minute, and a
+    // value that rounds UP is out of range again at the very top of its range.
+    if (t === 'smalldatetime') return iso.slice(0, 16) + ':00';
+    // The T stays. See DATE_LIMITS above: without it this is not ISO and the
+    // server is free to read the month as the day.
+    return iso.slice(0, 23);
   }
   if (TEXT_TYPES.indexOf(t) !== -1) {
     var s = str(value);
@@ -722,6 +813,12 @@ function dgClassifyError(message) {
   if (/Cannot insert the value NULL|null value in column/i.test(m)) {
     return { kind: 'null', constraint: dgConstraintName(m) };
   }
+  /* Worth a kind of its own rather than "other": this one was reported from
+     a real run and the message names neither the column nor the value, so
+     "[other]" left nothing to act on. See DATE_LIMITS for what causes it. */
+  if (/out-of-range value|conversion of a \w+ data type to a \w+ data type|date\/time field value out of range|invalid input syntax for type (date|time|timestamp)/i.test(m)) {
+    return { kind: 'date', constraint: dgConstraintName(m) };
+  }
   return { kind: 'other', constraint: dgConstraintName(m) };
 }
 function dgConstraintName(message) {
@@ -953,5 +1050,6 @@ return {
   dgBareStatement: dgBareStatement, dgAssertOnly: dgAssertOnly,
   dgBuildDeleteByKeys: dgBuildDeleteByKeys, dgBuildEmpty: dgBuildEmpty,
   dgReverseOrder: dgReverseOrder, dgRunSummary: dgRunSummary,
+  dgToDate: dgToDate, dgDateFromSeed: dgDateFromSeed, dgWantsDate: dgWantsDate,
 };
 });

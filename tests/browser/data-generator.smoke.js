@@ -51,7 +51,11 @@ const COLS={
  'dbo.Matter':{schema:'dbo',name:'Matter',primaryKeys:['Id'],uniques:[],foreignKeys:[],columns:[
    {name:'Id',type:'INT',baseType:'int',nullable:false,isIdentity:true,ordinal:1},
    {name:'ClientId',type:'INT',baseType:'int',nullable:false,ordinal:2},
-   {name:'Title',type:'NVARCHAR(200)',baseType:'nvarchar',maxLength:200,nullable:true,ordinal:3}]},
+   {name:'Title',type:'NVARCHAR(200)',baseType:'nvarchar',maxLength:200,nullable:true,ordinal:3},
+   // The column that broke a real run, in the shape it had there: a datetime
+   // whose NAME reads as money, so the name-pattern rules hand it a number.
+   // `new Date("150000")` is the year 150000 and SQL Server will not take it.
+   {name:'FeeAmount',type:'DATETIME',baseType:'datetime',nullable:false,ordinal:4}]},
  'fin.Ledger':{schema:'fin',name:'Ledger',primaryKeys:['Id'],uniques:[],foreignKeys:[],columns:[
    {name:'Id',type:'INT',baseType:'int',nullable:false,isIdentity:true,ordinal:1},
    {name:'Amount',type:'DECIMAL(9,2)',baseType:'decimal',precision:9,scale:2,nullable:false,ordinal:2}]},
@@ -215,6 +219,34 @@ const COLS={
  check('reading and planning wrote nothing',
    CALLS.every(c=>['test','schema-tables','schema-fks','schema-columns'].indexOf(c)>=0),CALLS.join(','));
 
+ /* ── One row count for the whole selection ────────────────────────────
+    Bench testing means running the same job at 50 rows and then at 1,000.
+    Setting each table by hand between the two is how somebody ends up timing
+    a different shape than they meant to. */
+ const allRows=await page.evaluate(()=>{
+   const before=dgState().tables.map(t=>t.rows);
+   const strip=document.getElementById('dg-allrows');
+   const shown=strip && strip.style.display!=='none';
+   const btn=Array.from(document.querySelectorAll('#dg-allrows-presets .preset'))
+     .find(b=>b.textContent.trim()==='50');
+   if(btn) btn.click();
+   return {before, shown, has50:!!btn,
+     after:dgState().tables.map(t=>t.rows),
+     note:(document.getElementById('dg-allrows-note')||{}).textContent||'',
+     lit:Array.from(document.querySelectorAll('#dg-allrows-presets .preset.active')).map(b=>b.textContent.trim()),
+     perTable:Array.from(document.querySelectorAll('#dg-body-dbo\\.client .preset')).map(b=>b.textContent.trim())};
+ });
+ check('the selection can be set to one row count in a single click, and 50 is offered',
+   allRows.shown && allRows.has50 && allRows.after.every(n=>n===50)
+   && allRows.before.join(',')!=='50,50', JSON.stringify(allRows));
+ check('…and the strip then says so, with that number lit',
+   /2 tables at 50/.test(allRows.note) && allRows.lit.join(',')==='50', allRows.note);
+ check('50 is on the per-table control too, so the two offer the same numbers',
+   allRows.perTable.join(',')==='10,50,100,1,000,10,000,100,000', allRows.perTable.join(','));
+ check('setting them all wrote nothing to the database',
+   SQL.filter(q=>/INSERT|UPDATE|DELETE/i.test(q)).length===0,
+   SQL.filter(q=>/INSERT|UPDATE|DELETE/i.test(q))[0]||'');
+
  /* ── Phase 2: an actual run ─────────────────────────────────────────── */
  // Small numbers, so the assertions are about behaviour rather than volume.
  await page.evaluate(()=>{dgSetRowCount('dbo.client',6);dgSetRowCount('dbo.matter',12);});
@@ -257,6 +289,40 @@ const COLS={
 
  check('the computed column is never written',
    inserts.every(q=>!/\[Display\]/.test(q)));
+
+ /* ── The date bug, end to end ──────────────────────────────────────────
+    FeeAmount is a datetime with a money-shaped name. Before the fix it was
+    handed a number, `new Date("150000")` made that the year 150000, and the
+    literal went out as 'YYYY-MM-DD hh:mm:ss' — which SQL Server reads
+    through the session's DATEFORMAT, not as ISO. On a British-English
+    connection that is dmy, so any day past the 12th is read as a month and
+    the whole batch dies with "out-of-range value". */
+ const dates=(ROWS['dbo.Matter']||[]).map(r=>r.FeeAmount);
+ check('a datetime column with a money-shaped name gets a date, not a number',
+   dates.length===12 && dates.every(d=>/^\d{4}-\d{2}-\d{2}T/.test(String(d))),
+   JSON.stringify(dates.slice(0,3)));
+
+ check('every date is inside what a SQL Server datetime will hold',
+   dates.every(d=>{const ms=Date.parse(String(d)+'Z');
+     return isFinite(ms) && ms>=Date.parse('1753-01-01T00:00:00Z') && ms<=Date.parse('9999-12-31T23:59:59Z');}),
+   JSON.stringify(dates.slice(0,3)));
+
+ check('the literal that goes to the server keeps its T, so the month cannot be read as the day',
+   (()=>{const m=inserts.filter(q=>/\[Matter\]/.test(q));
+     return m.length>0 && m.every(q=>!/'\d{4}-\d{2}-\d{2} \d{2}:/.test(q))
+       && m.some(q=>/'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(q));})(),
+   (inserts.find(q=>/\[Matter\]/.test(q))||'').slice(0,240));
+
+ check('and the page says so — the generator came from the type, not the name',
+   await page.evaluate(async()=>{
+     dgToggleTable('dbo.matter');
+     await new Promise(r=>setTimeout(r,150));
+     const el=document.getElementById('dg-body-dbo.matter');
+     if(!el) return false;
+     const row=Array.from(el.querySelectorAll('.dg-cols tbody tr'))
+       .find(tr=>/FeeAmount/.test(tr.textContent));
+     return !!row && /datetime — inferred from the type/.test(row.textContent);
+   }));
 
  check('NOTHING was created, dropped, truncated or deleted — every statement was an insert or a link',
    SQL.every(q=>!/\b(CREATE|DROP|TRUNCATE|ALTER|DELETE|MERGE)\b/i.test(
