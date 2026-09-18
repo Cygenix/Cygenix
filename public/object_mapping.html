@@ -194,7 +194,9 @@ body.cyg-collapsed{padding-left:54px}
 .mg-btn .mg-caret{color:var(--text3);font-size:9px;margin-left:1px}
 .mg-dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px;display:inline-block;
   box-shadow:0 0 0 1px rgba(0,0,0,0.10) inset}
-.mg-menu{position:absolute;top:calc(100% + 5px);right:0;z-index:2200;display:none;min-width:236px;max-width:300px;
+/* Wide enough for ten swatches on a row, so twenty colours are two tidy rows
+   rather than three ragged ones. */
+.mg-menu{position:absolute;top:calc(100% + 5px);right:0;z-index:2200;display:none;min-width:236px;max-width:322px;
   background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;
   box-shadow:0 14px 36px rgba(0,0,0,0.22);padding:5px}
 .mg-menu.open{display:block}
@@ -212,8 +214,8 @@ body.cyg-collapsed{padding-left:54px}
 .mg-panel input[type=text]{flex:1;min-width:0;padding:5px 8px;border:0.5px solid var(--border2);border-radius:7px;
   background:var(--bg3);color:var(--text);font-family:var(--serif);font-size:12px;outline:none}
 .mg-panel input[type=text]:focus{border-color:var(--accent)}
-.mg-swatches{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
-.mg-sw{width:20px;height:20px;border-radius:6px;border:1.5px solid transparent;cursor:pointer;padding:0;
+.mg-swatches{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-bottom:8px}
+.mg-sw{width:100%;aspect-ratio:1;border-radius:6px;border:1.5px solid transparent;cursor:pointer;padding:0;
   box-shadow:0 0 0 1px var(--border) inset}
 .mg-sw[aria-pressed="true"]{border-color:var(--text);box-shadow:0 0 0 1px var(--bg2) inset}
 .mg-custom{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text3);cursor:pointer}
@@ -512,8 +514,8 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-analyser-handoff.js?v=0bea095948" defer></script>
 <!-- Map groups: the rules about the group list. Pure, no DOM, no network;
      loaded before the app so the app can rely on it. -->
-<script src="/cygenix-map-groups.js?v=b049a2e6a7" defer></script>
-<script src="/object-mapping-app.js?v=93bfee20da" defer></script>
+<script src="/cygenix-map-groups.js?v=08330317a2" defer></script>
+<script src="/object-mapping-app.js?v=09299e95cc" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=bce1e6453b" defer></script>

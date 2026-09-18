@@ -6679,9 +6679,21 @@ function mgCardBits(job){
 // Close on an outside click or Esc, and move through the menu with the arrow
 // keys. The button itself is a <button>, so Tab reaches it and Enter or Space
 // opens it with no help from here.
+//
+// CAPTURE PHASE, and that is the whole point of this listener working at all.
+// On the bubble phase this runs AFTER the inline onclick that was clicked —
+// and "+ New group…" replaces the menu's innerHTML, which detaches the very
+// button that was clicked. By the time the event reached document, e.target
+// was an orphan, `closest('#mg-wrap')` found nothing because an orphan has no
+// ancestors, and the menu closed itself the instant it opened: from the
+// outside, the New group and Edit groups items did nothing at all.
+//
+// Capturing runs this first, while the target is still in the tree, so the
+// question "was this click inside the menu?" gets the answer the user would
+// give. An outside click still closes; an inside one is left to its handler.
 document.addEventListener('click', (e) => {
   if (!e.target.closest || !e.target.closest('#mg-wrap')) mgCloseMenu();
-});
+}, true);
 document.addEventListener('keydown', (e) => {
   const menu = $('mg-menu');
   if (!menu || !menu.classList.contains('open')) return;

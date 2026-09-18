@@ -50,7 +50,7 @@ console.log('— the store —');
 check('an account with no list gets the four starter groups, in order',
   (() => {
     const s = MG.mgLoad(fakeStorage());
-    return s.version === 1 && s.groups.length === 4
+    return s.version === MG.MG_VERSION && s.groups.length === 4
       && s.groups.map(g => g.name).join(',') === 'Master data,Transactional,Reference,Configuration'
       && s.groups.every((g, i) => g.order === i && /^#[0-9A-F]{6}$/.test(g.color));
   })());
@@ -89,10 +89,80 @@ check('a write that cannot land is reported, not swallowed — the user was told
     return r.ok === false && /Quota/.test(r.reason);
   })());
 
-check('every starter colour is in the palette, and the palette is ten named colours',
-  MG.PALETTE.length === 10
+check('every starter colour is in the palette, and the palette is twenty named colours',
+  MG.PALETTE.length === 20
   && MG.PALETTE.every(c => c.name && /^#[0-9A-F]{6}$/.test(c.hex))
   && MG.STARTER_GROUPS.every(g => MG.PALETTE.some(c => c.hex === g.color)));
+
+check('no two palette colours are the same, and no two names are',
+  new Set(MG.PALETTE.map(c => c.hex)).size === 20
+  && new Set(MG.PALETTE.map(c => c.name.toLowerCase())).size === 20);
+
+/* The complaint that produced the wider palette: four dots that had to be
+   compared with each other to be told apart, and a grey Configuration that
+   read as the same dot as Ungrouped. Distance is measured in plain RGB, which
+   is crude but is the thing being judged — two hex values a person is looking
+   at side by side. */
+const rgb = (h) => [1,3,5].map(i => parseInt(h.slice(i, i+2), 16));
+const dist = (a, b) => Math.sqrt(rgb(a).reduce((n, v, i) => n + (v - rgb(b)[i]) ** 2, 0));
+check('the four starter colours are clearly apart from each other',
+  (() => {
+    const cs = MG.STARTER_GROUPS.map(g => g.color);
+    let min = Infinity;
+    for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) min = Math.min(min, dist(cs[i], cs[j]));
+    return min > 120;
+  })(), 'closest starter pair');
+
+check('…and none of them is mistakable for the Ungrouped grey',
+  MG.STARTER_GROUPS.every(g => dist(g.color, MG.UNGROUPED_COLOR) > 100));
+
+check('every palette colour is distinguishable from the Ungrouped grey too',
+  MG.PALETTE.every(c => dist(c.hex, MG.UNGROUPED_COLOR) > 60));
+
+/* ── The version-1 → 2 migration ───────────────────────────────────
+   The first four starter colours were too close together. Version 2 moves
+   them apart — but only where nobody has chosen otherwise. */
+const v1 = () => ({ version: 1, groups: [
+  { id: 'grp_master', name: 'Master data',   color: '#E4579A', order: 0 },
+  { id: 'grp_txn',    name: 'Transactional', color: '#D64545', order: 1 },
+  { id: 'grp_ref',    name: 'Reference',     color: '#3B7DD8', order: 2 },
+  { id: 'grp_config', name: 'Configuration', color: '#6B7785', order: 3 },
+] });
+
+check('an untouched version-1 list is moved to the new starter colours',
+  (() => {
+    const s = MG.mgNormalise(v1());
+    return s.version === 2
+      && s.groups.map(g => g.color).join(',') === MG.STARTER_GROUPS.map(g => g.color).join(',');
+  })());
+
+check('a starter colour somebody CHANGED is left exactly as they set it',
+  (() => {
+    const doc = v1();
+    doc.groups[1].color = '#8E5BC7';          // chosen by hand
+    const s = MG.mgNormalise(doc);
+    return s.groups[1].color === '#8E5BC7' && s.groups[3].color === '#3B62D8';
+  })());
+
+check('a group the user created is never touched, whatever colour it holds',
+  (() => {
+    const doc = v1();
+    doc.groups.push({ id: 'grp_mine', name: 'Balances', color: '#D64545', order: 4 });
+    const s = MG.mgNormalise(doc);
+    return s.groups[4].color === '#D64545' && s.groups[4].name === 'Balances';
+  })());
+
+check('running it twice changes nothing the second time',
+  (() => {
+    const once = MG.mgNormalise(v1());
+    return JSON.stringify(MG.mgNormalise(once)) === JSON.stringify(once);
+  })());
+
+check('a version-2 list is left alone even if it holds an old colour',
+  (() => {
+    const doc = v1(); doc.version = 2;
+    return MG.mgNormalise(doc).groups[1].color === '#D64545';
+  })());
 
 /* ════════════════════════════════════════════════════════════════════════
    2. Names and colours
@@ -250,6 +320,16 @@ check('it starts disabled, and says why',
 check('it is a real button with the menu wired to it, so Tab and Enter need no help',
   /<button type="button" class="mg-btn" id="mg-btn"[\s\S]{0,200}aria-haspopup="true"[\s\S]{0,80}aria-expanded="false"/.test(html)
   && /role="menu"/.test(html));
+
+/* The bug this replaced: on the bubble phase the outside-click handler ran
+   AFTER the inline onclick, which had already replaced the menu's innerHTML
+   and detached the clicked button. An orphan has no ancestors, so closest()
+   found nothing, the handler decided the click was outside, and the panel shut
+   the instant it opened — "+ New group…" and "Edit groups…" appeared to do
+   nothing at all. Capturing asks the question while the target is still in the
+   tree. */
+check('the outside-click handler CAPTURES, so opening a panel does not close the menu',
+  /document\.addEventListener\('click', \(e\) => \{\s*\n\s*if \(!e\.target\.closest \|\| !e\.target\.closest\('#mg-wrap'\)\) mgCloseMenu\(\);\s*\n\s*\}, true\);/.test(app));
 
 check('Esc closes it and the arrows move through it',
   /if \(e\.key === 'Escape'\)\{[\s\S]{0,120}mgCloseMenu\(\)/.test(app)

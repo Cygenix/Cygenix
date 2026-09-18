@@ -34,37 +34,74 @@
 'use strict';
 
 var MG_KEY = 'cygenix_map_groups';
-var MG_VERSION = 1;
+// 2 (Sep-2026): the palette was widened from ten colours to twenty, and the
+// four starter colours moved apart. Version 1 lists are migrated — carefully:
+// see mgMigrate.
+var MG_VERSION = 2;
 var MG_NAME_MAX = 40;
 
-/* ── The palette ──────────────────────────────────────────────────────────
-   Ten colours, offered before the custom picker, chosen to stay legible as a
-   4px stripe, a 8px dot and a tinted pill on BOTH themes. That rules out the
-   two ends: a pastel disappears into the light theme's white, and a near-
-   black disappears into the dark theme's. Everything here sits in the middle
-   of the range, which is where a colour can do both jobs. */
+/* ── The palette ──────────────────────────────────────────
+   Twenty colours, offered before the custom picker. The first ten were too
+   few and too close together: pink beside red, and a grey for Configuration
+   that read as the same dot as Ungrouped. A category colour that has to be
+   compared with its neighbour to be identified is not doing the job.
+
+   So these are spread around the wheel at roughly even intervals — about 24°
+   between neighbours — rather than picked one at a time. Adjacent entries are
+   still the closest pair in the set, but nothing else is, and a group picked
+   from opposite ends is unmistakable.
+
+   All of them sit in the middle of the lightness range, which is what lets one
+   value work as a 4px stripe, a 9px dot and a tinted pill on BOTH themes: a
+   pastel disappears into the light theme's white and a near-black into the
+   dark theme's. Brown and Slate at the end are for the categories that
+   genuinely are background — and both are darker than the Ungrouped grey, so
+   a group is never mistaken for the absence of one. */
 var PALETTE = [
-  { name: 'Pink',   hex: '#E4579A' },
-  { name: 'Red',    hex: '#D64545' },
-  { name: 'Orange', hex: '#E07B39' },
-  { name: 'Amber',  hex: '#D4A017' },
-  { name: 'Green',  hex: '#3A9E5F' },
-  { name: 'Teal',   hex: '#2A9D9A' },
-  { name: 'Blue',   hex: '#3B7DD8' },
-  { name: 'Indigo', hex: '#5B5FC7' },
-  { name: 'Purple', hex: '#8E5BC7' },
-  { name: 'Slate',  hex: '#6B7785' },
+  { name: 'Red',     hex: '#D64545' },
+  { name: 'Coral',   hex: '#E2673C' },
+  { name: 'Orange',  hex: '#E08A2E' },
+  { name: 'Amber',   hex: '#D4A017' },
+  { name: 'Olive',   hex: '#97A22B' },
+  { name: 'Lime',    hex: '#6FA62E' },
+  { name: 'Green',   hex: '#3C9E45' },
+  { name: 'Emerald', hex: '#219E6C' },
+  { name: 'Teal',    hex: '#189B95' },
+  { name: 'Cyan',    hex: '#1C93B8' },
+  { name: 'Sky',     hex: '#2F86DB' },
+  { name: 'Blue',    hex: '#3B62D8' },
+  { name: 'Indigo',  hex: '#5B5FC7' },
+  { name: 'Violet',  hex: '#8250C9' },
+  { name: 'Purple',  hex: '#A548C4' },
+  { name: 'Magenta', hex: '#CE4295' },
+  { name: 'Pink',    hex: '#E4579A' },
+  { name: 'Crimson', hex: '#B32D4E' },
+  { name: 'Brown',   hex: '#8A6240' },
+  { name: 'Slate',   hex: '#6B7785' },
 ];
 
 /* The four an account starts with. Seeded once, on the first read, and
    editable and deletable from that moment on — they are a starting point,
-   not a fixed vocabulary. */
+   not a fixed vocabulary.
+
+   Their colours are picked to be far apart from EACH OTHER and from the
+   Ungrouped grey, not just to look pleasant in a list. The first set was
+   pink, red, blue and grey: pink beside red, and a grey that read as the same
+   dot as Ungrouped. These four are roughly a quarter-turn apart, and a test
+   holds them that way rather than leaving it to whoever edits this next. */
 var STARTER_GROUPS = [
   { id: 'grp_master', name: 'Master data',   color: '#E4579A', order: 0 },
-  { id: 'grp_txn',    name: 'Transactional', color: '#D64545', order: 1 },
-  { id: 'grp_ref',    name: 'Reference',     color: '#3B7DD8', order: 2 },
-  { id: 'grp_config', name: 'Configuration', color: '#6B7785', order: 3 },
+  { id: 'grp_txn',    name: 'Transactional', color: '#D4A017', order: 1 },
+  { id: 'grp_ref',    name: 'Reference',     color: '#3C9E45', order: 2 },
+  { id: 'grp_config', name: 'Configuration', color: '#3B62D8', order: 3 },
 ];
+
+/* What the four started out as, before the palette was widened. Kept only so
+   the migration below can tell an untouched default from a colour somebody
+   chose — and for no other purpose, which is why it is not exported. */
+var LEGACY_STARTER_COLORS = {
+  grp_master: '#E4579A', grp_txn: '#D64545', grp_ref: '#3B7DD8', grp_config: '#6B7785',
+};
 
 // The grey a map with no group wears. A theme variable would be better, but
 // this value is handed to inline styles and SVG alike, so it is a colour.
@@ -151,6 +188,32 @@ function mgNormalise(raw) {
   if (!groups.length) return mgNewStore();
   groups.sort(function (a, b) { return a.order - b.order; });
   groups.forEach(function (g, i) { g.order = i; });
+  return mgMigrate({ version: Number(doc.version) || 1, groups: groups });
+}
+
+/* ── Migration ────────────────────────────────────────────
+   Version 1 seeded four groups whose colours turned out to be too close to
+   each other, and one of which — a grey Configuration — read as the same dot
+   as Ungrouped. Version 2 moves them apart.
+
+   The migration touches a starter group ONLY while it still has the exact
+   colour it was seeded with. That is the test for "nobody has chosen this":
+   a colour somebody picked, even if they picked the old default from the
+   palette by hand, is a decision and is left alone. Groups the user created
+   are never touched, and neither is anything already on version 2.
+
+   A colour is not data the user would miss being corrected, but it is data
+   they might have set, so the line is drawn at untouched. */
+function mgMigrate(store) {
+  if (!store || Number(store.version) >= MG_VERSION) {
+    return { version: MG_VERSION, groups: (store && store.groups) || [] };
+  }
+  var groups = (store.groups || []).map(function (g) {
+    var was = LEGACY_STARTER_COLORS[g.id];
+    if (!was || g.color !== was) return g;
+    var now = STARTER_GROUPS.find(function (d) { return d.id === g.id; });
+    return now ? Object.assign({}, g, { color: now.color }) : g;
+  });
   return { version: MG_VERSION, groups: groups };
 }
 
@@ -257,7 +320,7 @@ return {
   MG_KEY: MG_KEY, MG_VERSION: MG_VERSION, MG_NAME_MAX: MG_NAME_MAX,
   PALETTE: PALETTE, STARTER_GROUPS: STARTER_GROUPS,
   UNGROUPED_COLOR: UNGROUPED_COLOR, UNGROUPED_LABEL: UNGROUPED_LABEL,
-  mgId: mgId, mgNewStore: mgNewStore, mgNormalise: mgNormalise,
+  mgId: mgId, mgNewStore: mgNewStore, mgNormalise: mgNormalise, mgMigrate: mgMigrate,
   mgValidateColor: mgValidateColor, mgValidateName: mgValidateName, mgTint: mgTint,
   mgLoad: mgLoad, mgSave: mgSave,
   mgOrdered: mgOrdered, mgById: mgById, mgGroupOf: mgGroupOf,

@@ -116,6 +116,68 @@ const U='you@example.test';
   check('Ungrouped shows the ungrouped maps, dangling group included',
     await page.evaluate(()=>{const t=$('load-map-list').textContent;return /Customers/.test(t)&&/Orphan/.test(t)&&!/Invoices/.test(t);}));
 
+  // ── New group / Edit groups actually open and stay open ───────────────
+  // The bug: the outside-click handler ran on the bubble phase, after the
+  // inline onclick had replaced the menu's innerHTML and detached the button
+  // that was clicked. An orphan has no ancestors, closest() found nothing, the
+  // click was judged to be outside, and the panel shut the instant it opened.
+  await page.evaluate(()=>mgSetFilter('__all__'));
+  await page.evaluate(()=>{$('load-map-modal').classList.remove('open');});
+  // A map has to be open for the dropdown to be enabled, so put one there.
+  await page.evaluate(()=>{ editJobId='j1'; mgRenderButton(); });
+  await page.waitForTimeout(150);
+  check('with a map open the dropdown is enabled',
+    await page.evaluate(()=>!$('mg-btn').disabled));
+  await page.click('#mg-btn');
+  await page.waitForTimeout(150);
+  check('the menu opens',await page.evaluate(()=>$('mg-menu').classList.contains('open')));
+
+  await page.click('#mg-menu .mg-item:has-text("New group")');
+  await page.waitForTimeout(200);
+  const np=await page.evaluate(()=>({open:$('mg-menu').classList.contains('open'),
+    name:!!$('mg-new-name'),sw:document.querySelectorAll('#mg-menu .mg-sw').length}));
+  check('+ New group opens a panel AND the menu stays open',np.open&&np.name,JSON.stringify(np));
+  check('the palette offers twenty swatches plus a custom picker',
+    np.sw===20&&await page.evaluate(()=>!!$('mg-color')),np.sw);
+
+  await page.fill('#mg-new-name','Balances');
+  await page.evaluate(()=>mgPickColor('#8250C9'));
+  await page.click('#mg-menu button:has-text("Save")');
+  await page.waitForTimeout(250);
+  const made=await page.evaluate(()=>{
+    const g=mgStore().groups.find(x=>x.name==='Balances');
+    return {made:!!g,color:g&&g.color,onMap:_getAllSavedJobs().find(j=>j.id==='j1').groupId===(g&&g.id)};});
+  check('saving creates the group in the chosen colour and applies it to the open map',
+    made.made&&made.color==='#8250C9'&&made.onMap,JSON.stringify(made));
+
+  await page.click('#mg-btn');
+  await page.waitForTimeout(120);
+  await page.click('#mg-menu .mg-item:has-text("Edit groups")');
+  await page.waitForTimeout(200);
+  const ep=await page.evaluate(()=>({open:$('mg-menu').classList.contains('open'),
+    rows:document.querySelectorAll('#mg-menu .mg-edit-row').length}));
+  check('Edit groups opens a list of every group, and the menu stays open',
+    ep.open&&ep.rows===5,JSON.stringify(ep));
+
+  await page.evaluate(()=>{const r=document.querySelectorAll('#mg-menu .mg-edit-row input[type=text]')[0];
+    r.value='Core data';r.dispatchEvent(new Event('change'));});
+  await page.waitForTimeout(200);
+  check('renaming from the editor sticks',
+    await page.evaluate(()=>!!mgStore().groups.find(g=>g.name==='Core data')));
+
+  check('an outside click still closes the menu',
+    await page.evaluate(async()=>{document.body.click();await new Promise(r=>setTimeout(r,80));
+      return !$('mg-menu').classList.contains('open');}));
+
+  check('the starter colours are far enough apart to tell at a glance',
+    await page.evaluate(()=>{
+      const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+      const d=(a,b)=>Math.sqrt(rgb(a).reduce((n,v,i)=>n+(v-rgb(b)[i])**2,0));
+      const cs=CygenixMapGroups.STARTER_GROUPS.map(g=>g.color);
+      let min=Infinity;
+      for(let i=0;i<cs.length;i++)for(let j=i+1;j<cs.length;j++)min=Math.min(min,d(cs[i],cs[j]));
+      return min>120;}));
+
   check('no page errors',errs.length===0,errs.join(' | '));
   await b.close();server.close();
   console.log('\n'+pass+' passed, '+fail+' failed');
