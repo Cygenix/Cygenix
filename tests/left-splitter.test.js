@@ -184,5 +184,42 @@ check('a touch drag persists on release', t.store['cygenix_om_left_width'] === '
     dupes.size === 0, [...dupes].join(', '));
 }
 
+// ── The Generated SQL panel does not repeat the toolbar ──────────────────
+// On a long mapping the toolbar and the Generated SQL panel are both on
+// screen, a screen apart, and the panel used to carry its own Save to Drive,
+// Download, History and Save as job. The same button twice, far enough apart
+// to read as two different things that might do two different things.
+//
+// Save to Drive and Download existed ONLY in the panel, so they moved up
+// rather than going — deleting them would have removed the only way to get
+// the SQL out of this page as a file. History and Save as job were true
+// duplicates and are gone. "Back to top" replaces them, because the reason to
+// want them down there was never wanting them down there.
+{
+  const panel = html.slice(html.indexOf('id="sql-panel"'), html.indexOf('id="sql-output"'));
+  check('the Generated SQL panel no longer repeats the toolbar',
+    !/saveAsJob\(\)/.test(panel) && !/CygenixHistory\.open/.test(panel)
+    && !/saveScriptToDrive\(\)/.test(panel) && !/downloadSQL\(\)/.test(panel));
+  check('it keeps what belongs to the SQL itself',
+    /removeUnmappedCols\(\)/.test(panel) && /copySQL\(\)/.test(panel)
+    && /undoRemoveUnmappedCols\(\)/.test(panel));
+  check('and it offers the ride back up',
+    /onclick="backToTop\(\)"/.test(panel) && />\s*Back to top\s*</.test(panel));
+
+  const bar = html.slice(html.indexOf('id="mode-toggle"'), html.indexOf('id="save-job-btn"'));
+  check('Save to Drive and Download moved to the toolbar rather than being deleted',
+    /saveScriptToDrive\(\)/.test(bar) && /downloadSQL\(\)/.test(bar));
+  // Counted as HANDLERS, not as text: each of these also appears once as its
+  // own function definition, which is not a second button.
+  check('each of the four actions is now wired to exactly one button',
+    [/onclick="saveScriptToDrive\(\)"/g, /onclick="downloadSQL\(\)"/g,
+     /onclick="saveAsJob\(\)"/g, /CygenixHistory\.open\(editJobId\)/g]
+      .every(re => (html.match(re) || []).length === 1));
+  check('nothing still reaches for the button that was removed',
+    !/sql-save-btn'\)/.test(html) || !/\$\('sql-save-btn'\)\s*;?\s*if\(sb\)/.test(html));
+  check('backToTop honours a reduced-motion preference',
+    /prefers-reduced-motion: reduce/.test(html) && /function backToTop\(\)/.test(html));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

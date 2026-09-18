@@ -178,6 +178,42 @@ const U='you@example.test';
       for(let i=0;i<cs.length;i++)for(let j=i+1;j<cs.length;j++)min=Math.min(min,d(cs[i],cs[j]));
       return min>120;}));
 
+  // ── The Generated SQL panel's own row ──────────────────────────────────
+  // It used to repeat four of the toolbar's buttons a screen further down.
+  await page.evaluate(()=>{
+    $('sql-panel').style.display='';
+    $('sql-output').textContent='SELECT 1';
+    // Make the page genuinely long, so scrolling to the top is a real move
+    // rather than a no-op on a page that already fits.
+    const filler=document.createElement('div');
+    filler.id='mg-smoke-filler'; filler.style.height='2400px';
+    $('sql-panel').parentNode.insertBefore(filler,$('sql-panel'));
+  });
+  await page.waitForTimeout(150);
+  const row=await page.evaluate(()=>{
+    const head=$('sql-panel').querySelector('.panel-head');
+    return Array.from(head.querySelectorAll('button')).map(b=>b.textContent.trim());});
+  check('the panel no longer repeats Save to Drive, Download, History or Save as job',
+    !row.some(t=>/Save to Drive|Download|History|Save as job/.test(t)),JSON.stringify(row));
+  check('it keeps Remove unused and Copy, and gains Back to top',
+    row.some(t=>/Remove unused/.test(t))&&row.some(t=>/^Copy$/.test(t))
+    &&row.some(t=>/Back to top/.test(t)),JSON.stringify(row));
+  check('Save to Drive and Download are in the toolbar instead — not lost',
+    await page.evaluate(()=>{
+      const bar=$('save-job-btn').parentElement.textContent;
+      return /Save to Drive/.test(bar)&&/Download/.test(bar);}));
+
+  await page.evaluate(()=>$('sql-panel').scrollIntoView());
+  await page.waitForTimeout(250);
+  const scrolled=await page.evaluate(()=>window.scrollY);
+  check('the page really is scrolled down before the click',scrolled>400,scrolled);
+  await page.evaluate(()=>{const b=Array.from($('sql-panel').querySelectorAll('button'))
+    .find(x=>/Back to top/.test(x.textContent)); b.click();});
+  await page.waitForTimeout(900);
+  check('Back to top takes you back to the top',
+    await page.evaluate(()=>window.scrollY<5),await page.evaluate(()=>window.scrollY));
+  await page.evaluate(()=>{const f=$('mg-smoke-filler'); if(f) f.remove(); $('sql-panel').style.display='none';});
+
   check('no page errors',errs.length===0,errs.join(' | '));
   await b.close();server.close();
   console.log('\n'+pass+' passed, '+fail+' failed');

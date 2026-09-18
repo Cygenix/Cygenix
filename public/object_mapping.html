@@ -515,7 +515,7 @@ body.cyg-collapsed{padding-left:54px}
 <!-- Map groups: the rules about the group list. Pure, no DOM, no network;
      loaded before the app so the app can rely on it. -->
 <script src="/cygenix-map-groups.js?v=08330317a2" defer></script>
-<script src="/object-mapping-app.js?v=09299e95cc" defer></script>
+<script src="/object-mapping-app.js?v=12d9e8e56e" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=bce1e6453b" defer></script>
@@ -575,6 +575,15 @@ document.addEventListener('DOMContentLoaded', function(){
       <button class="btn btn-green btn-sm" onclick="newMap()" title="Start a new map (will prompt to save current work)"><i class="ic ic-sparkle"></i> New map</button>
       <button class="btn btn-teal btn-sm" onclick="openLoadMapModal()" title="Load an existing saved map"><i class="ic ic-folder-open"></i> Load map</button>
       <button class="btn btn-ghost btn-sm" onclick="openScriptFromDrive()" title="Open a saved SQL script from the Drive"><i class="ic ic-archive"></i> Open from Drive</button>
+      <!-- These two came up from the Generated SQL panel. History and Save as
+           job were genuinely duplicated there — the same buttons twice, a
+           screen apart — but Save to Drive and Download existed ONLY down
+           there, so deleting them would have quietly removed the only way to
+           get the SQL out of this page as a file. They are the other half of
+           "Open from Drive", so they sit next to it. Both already refuse with
+           "Generate SQL first" when there is nothing to save. -->
+      <button class="btn btn-ghost btn-sm" onclick="saveScriptToDrive()" title="Save the generated SQL as a script in the Drive"><i class="ic ic-save"></i> Save to Drive</button>
+      <button class="btn btn-ghost btn-sm" onclick="downloadSQL()" title="Download the generated SQL as a .sql file"><i class="ic ic-download"></i> Download</button>
       <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
       <input id="job-name-input" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Job name (optional)" maxlength="120" />
       <button class="btn btn-ghost btn-sm" id="open-history-btn" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">History</button>
@@ -949,14 +958,19 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="panel" id="sql-panel" style="display:none">
         <div class="panel-head">
           <div class="panel-title"><i class="ic ic-bolt"></i> Generated SQL</div>
+          <!-- Only what belongs to the SQL itself: trim the mapping, copy the
+               text, go back up. Save to Drive, Download, History and Save as
+               job used to sit here as well, and on a long mapping both rows
+               are on screen at once — the same buttons twice, a screen apart,
+               which reads as two different things that might do two different
+               things. All four are in the toolbar at the top of the page now,
+               where the map's own actions are, and Back to top gets there in
+               one click instead of a long scroll. -->
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value"><i class="ic ic-scissors"></i> Remove unused</button>
             <button class="btn btn-ghost btn-sm" id="undo-remove-btn" onclick="undoRemoveUnmappedCols()" style="display:none;color:var(--amber)">↩ Undo remove</button>
             <button class="btn btn-ghost btn-sm" onclick="copySQL()"><i class="ic ic-clipboard"></i> Copy</button>
-            <button class="btn btn-ghost btn-sm" onclick="saveScriptToDrive()" title="Save this SQL as a script in the Drive"><i class="ic ic-archive"></i> Save to Drive</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadSQL()"><i class="ic ic-download"></i> Download</button>
-            <button class="btn btn-ghost btn-sm" id="open-history-btn-2" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">History</button>
-            <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn" title="Save as a job — mirrored to the Drive (SQL Editor / Jobs)"><i class="ic ic-save"></i> Save as job</button>
+            <button class="btn btn-ghost btn-sm" onclick="backToTop()" title="Back to the toolbar at the top of the page — Save as job, History, Save to Drive and Download are all up there"><i class="ic ic-takeoff"></i> Back to top</button>
           </div>
         </div>
         <div class="panel-body">

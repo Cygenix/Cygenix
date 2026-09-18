@@ -4439,7 +4439,8 @@ function applyDriveScript(sql, name){
   $('tab-schema').style.display='none';
   $('tab-verify').style.display='none';
   showSQLOutput(generatedSQL.insert, [], true);
-  const sb=$('sql-save-btn'); if(sb) sb.disabled=false;
+  // #sql-save-btn was the duplicate Save as job inside the Generated SQL
+  // panel; it is gone, and the one in the toolbar is the only one left.
   const tsb=$('save-job-btn'); if(tsb) tsb.disabled=false;
   try { if (typeof mgRenderButton === 'function') mgRenderButton(); } catch(e){}
   showStatus('✓ Loaded from Drive: '+(name||'script'),'info');
@@ -6732,4 +6733,38 @@ function mgApplyOnSave(job, jobs){
   if (id) job.groupId = id; else delete job.groupId;
   _mgPending = null;
   try { mgRenderButton(); } catch {}
+}
+
+// ── Back to top ─────────────────────────────────────────────────────────────
+// The Generated SQL panel is the bottom of a page that can be a very long way
+// down — a hundred-column mapping puts the toolbar, and every action that
+// belongs to the map rather than to the SQL, several screens above. This is
+// the ride back up, and it replaces the copies of those buttons that used to
+// be repeated at the bottom.
+//
+// The document is what scrolls here (the sidebar is fixed and the body is a
+// normal flow), but a scrolling ancestor is cheap to honour and costs nothing
+// when there is not one — a layout change later should move this button's
+// behaviour with it rather than quietly breaking it.
+function backToTop(){
+  const smooth = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const opts = smooth ? { top: 0, behavior: 'smooth' } : { top: 0 };
+  try { window.scrollTo(opts); } catch { window.scrollTo(0, 0); }
+  // Any scrollable box the panel sits inside, so the button still works if the
+  // page is ever laid out with an inner scroller.
+  try {
+    let el = document.getElementById('sql-panel');
+    while (el && el !== document.body) {
+      if (el.scrollHeight > el.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(el).overflowY)) {
+        try { el.scrollTo(opts); } catch { el.scrollTop = 0; }
+      }
+      el = el.parentElement;
+    }
+  } catch {}
+  // Put the keyboard where the eye now is, rather than leaving focus on a
+  // button that has just scrolled off the bottom of the screen.
+  try {
+    const first = document.getElementById('job-name-input') || document.getElementById('save-job-btn');
+    if (first) first.focus({ preventScroll: true });
+  } catch {}
 }
