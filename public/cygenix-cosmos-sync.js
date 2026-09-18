@@ -58,6 +58,12 @@ const CygenixSync = (() => {
     // small list one person edits and wrong only if two devices edit it at
     // once, which is the same trade every other config blob here makes.
     'cygenix_map_groups',
+    // The Data Generator's saved selections and its run manifests. The
+    // manifest is the only record of which rows a run inserted; kept in one
+    // browser it would mean a run made on a laptop could only be undone on
+    // that laptop, and not at all once its storage was cleared.
+    'cygenix_datagen_selection',
+    'cygenix_datagen_runs',
   ];
 
   const FIELD_MAP = {
@@ -81,6 +87,8 @@ const CygenixSync = (() => {
     // `profiles` in the same document would be read as that.
     connection_profiles: 'cygenix_profiles_v1',
     map_groups: 'cygenix_map_groups',
+    datagen_selection: 'cygenix_datagen_selection',
+    datagen_runs: 'cygenix_datagen_runs',
   };
   const PROFILES_FIELD = 'connection_profiles';
   const PROFILES_KEY = 'cygenix_profiles_v1';
@@ -117,6 +125,12 @@ const CygenixSync = (() => {
     last_snapshots:     'replace',
     // conv_project is an OBJECT not array — mergeField short-circuits on
     // non-arrays and returns local. No strategy needed (would be ignored).
+    //
+    // Run manifests UNION rather than replace. They are an append-only record
+    // of what was inserted where, and a machine that has not synced must not
+    // be able to wipe the record of a run made on another one — that record
+    // is the only way those rows can ever be deleted again.
+    datagen_runs: 'union',
   };
   function strategyFor(field) {
     return MERGE_STRATEGY[field] || 'replace';

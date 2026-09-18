@@ -33,6 +33,11 @@ const check = (label, ok, extra) => {
 const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 
+// Read once, up here, because the phase-3 checks below need them before the
+// section that used to declare them.
+const page = read('public', 'data-generator.html');
+const db = read('netlify', 'functions', 'db-connect.js');
+
 console.log('Data Generator — filling real tables\n');
 
 /* A small but awkward schema: a chain, a composite key, a self-reference and
@@ -476,12 +481,142 @@ check('the database\'s own complaint is classified, and the constraint named',
   && DG.dgClassifyError('Login failed').kind === 'other');
 
 /* ════════════════════════════════════════════════════════════════════════
-   8. The page
+   8. Phase 3 — taking it back out
+   ════════════════════════════════════════════════════════════════════════ */
+console.log('\n— deleting —');
+
+const DPLAN = { schema: 'dbo', name: 'Matter', primaryKeys: ['Id'],
+  columns: [{ name: 'Id', baseType: 'int' }] };
+
+check('a run\'s rows are deleted BY KEY — the whole point of recording them',
+  DG.dgBuildDeleteByKeys(DPLAN, [{ Id: 1 }, { Id: 2 }, { Id: 3 }], {})
+    === 'DELETE FROM [dbo].[Matter] WHERE [Id] IN (1, 2, 3);');
+
+check('a composite key becomes OR\'d groups, because neither engine takes a tuple IN list',
+  (() => {
+    const p = { schema: 's', name: 'L', primaryKeys: ['A', 'B'],
+      columns: [{ name: 'A', baseType: 'int' }, { name: 'B', baseType: 'nvarchar' }] };
+    const sql = DG.dgBuildDeleteByKeys(p, [{ A: 1, B: 'x' }, { A: 2, B: 'y' }], {});
+    return /\(\[A\] = 1 AND \[B\] = N'x'\)/.test(sql) && /OR \(\[A\] = 2 AND \[B\] = N'y'\)/.test(sql);
+  })());
+
+check('a table with no primary key cannot be deleted by key, and says nothing rather than guessing',
+  DG.dgBuildDeleteByKeys({ schema: 'd', name: 'T', primaryKeys: [], columns: [] }, [{ x: 1 }], {}) === null
+  && DG.dgBuildDeleteByKeys(DPLAN, [], {}) === null);
+
+/* TRUNCATE is refused on any table a foreign key points at, cannot be
+   filtered, and resets the identity seed — three different ways of being the
+   wrong tool. */
+check('emptying a table is a DELETE, never a TRUNCATE',
+  DG.dgBuildEmpty('dbo', 'T', {}) === 'DELETE FROM [dbo].[T];'
+  && DG.dgBuildEmpty('dbo', 'T', { dialect: 'postgres' }) === 'DELETE FROM "dbo"."T";'
+  // No TRUNCATE is ever EMITTED, which is not the same as the word being
+  // absent: it appears in the list of verbs that are BANNED, and in the
+  // classifier that recognises a truncation error. Both are the opposite of
+  // emitting one, so the check is that no statement built here contains it.
+  && ['mssql', 'postgres'].every(d =>
+      !/truncate/i.test(DG.dgBuildEmpty('dbo', 'T', { dialect: d }))
+      && !/truncate/i.test(DG.dgBuildDeleteByKeys(DPLAN, [{ Id: 1 }], { dialect: d }) || ''))
+  && (() => { try { DG.dgAssertOnly('TRUNCATE TABLE [x];', ['delete'], 'delete'); return false; }
+              catch (e) { return /contains TRUNCATE/.test(e.message); } })());
+
+check('both deletes run children-first, the reverse of the insert order',
+  DG.dgReverseOrder(['dbo.client', 'dbo.matter', 'dbo.timecard']).join(',')
+    === 'dbo.timecard,dbo.matter,dbo.client');
+
+check('a recorded run summarises to what a person has to choose between',
+  (() => {
+    const s2 = DG.dgRunSummary({ id: 'dgr_1', at: '2026-09-18T10:00:00Z', profile: 'P', tables: {
+      'dbo.client': { name: 'Client', inserted: 6, keyColumns: ['Id'], keys: [{ Id: 1 }] },
+      'dbo.log': { name: 'Log', inserted: 4, keyColumns: [], keys: [] },
+    } });
+    return s2.rows === 10 && s2.tableCount === 2 && s2.undeletable.join(',') === 'Log';
+  })());
+
+console.log('\n— the page: phase 3 —');
+
+check('"Delete generated rows" replaced "Drop all demo tables"',
+  /id="dg-delete-btn"[^>]*onclick="dgOpenRuns\(\)"/.test(page)
+  && /Delete generated rows/.test(page)
+  && !/Drop all demo tables/.test(page));
+
+check('it removes only what that run inserted, and says so before it does',
+  /Only those rows\. Anything that was in the table before, and anything another run added, is left alone/.test(page)
+  && /dgBuildDeleteByKeys/.test(page));
+
+check('the run records the ORDER it inserted in, so the delete can reverse it',
+  /order: keys\.slice\(\)/.test(page) && /DG\.dgReverseOrder\(run\.order/.test(page));
+
+check('…and the key TYPES, because a delete months later will not have the schema',
+  /keyTypes\[c\.name\] = c\.baseType/.test(page) && /keyTypes, keys: kept/.test(page));
+
+check('a half-finished delete keeps its record so it can be tried again',
+  /The record is kept so it can be tried again/.test(page)
+  && /if \(!failed\)\{/.test(page));
+
+check('deleting is refused on production too, and checked first',
+  (() => {
+    const i = page.indexOf('async function dgDeleteRun');
+    const body = page.slice(i, i + 1400);
+    return /dgGuardEnvironment\(\)/.test(body)
+      && body.indexOf('dgGuardEnvironment()') < body.indexOf('_dgWriting');
+  })());
+
+/* The one control that removes rows nobody in this tool put there. */
+check('empty-first is off by default and needs the word typed',
+  /let _dgEmptyFirst = false;/.test(page)
+  && /id="dg-empty-first"/.test(page)
+  // A `checked` ATTRIBUTE, not the word: the handler reads this.checked.
+  && !/id="dg-empty-first"[^>]*\schecked[\s>]/.test(page)
+  && /Type EMPTY to continue/.test(page)
+  && /including rows that were there before/.test(page));
+
+check('…and if it is not confirmed, nothing is emptied AND nothing is generated',
+  /Not confirmed — nothing was emptied, and nothing was generated/.test(page)
+  && /const ok = await dgEmptySelected\(conn, keys\);\s*\n\s*if \(!ok\) return;/.test(page));
+
+check('it empties children before parents',
+  /const order = DG\.dgReverseOrder\(keys\);/.test(page));
+
+/* The schema is not saved. It is a copy of somebody's database and it goes
+   stale; a column added last week would be missing from the copy and present
+   in the table, and the first anyone would know is a failed insert. */
+check('a saved selection remembers the CHOICE, not the schema',
+  /The SCHEMA is deliberately not saved/.test(page)
+  && /schema: SCHEMA\[k\]\.schema, name: SCHEMA\[k\]\.name,/.test(page)
+  && !/columns: SCHEMA\[k\]\.columns/.test(page.slice(page.indexOf('function dgSaveSelection'), page.indexOf('function dgAllSelections'))));
+
+check('it is saved per profile, and the old single-selection shape is moved rather than dropped',
+  /all\[dgProfileId\(\)\] = \{/.test(page)
+  && /if \(Array\.isArray\(doc\.tables\)\)/.test(page));
+
+check('restoring is OFFERED, not done on load — a page that reads the database on open reads it every time a tab is left open',
+  /restoring reads the database/.test(page)
+  && /onclick="dgApplySaved\(\)"/.test(page) && /onclick="dgForgetSaved\(\)"/.test(page));
+
+check('a table that has since been dropped is named rather than silently missing',
+  /no longer exist on this connection/.test(page));
+
+check('both keys sync and are backed up',
+  (() => {
+    const sync = read('public', 'cygenix-cosmos-sync.js');
+    return /'cygenix_datagen_selection'/.test(sync) && /'cygenix_datagen_runs'/.test(sync)
+      && /datagen_runs: 'cygenix_datagen_runs'/.test(sync)
+      && /datagen_runs: 'union'/.test(sync)
+      && /'cygenix_datagen_selection', 'cygenix_datagen_runs'/.test(read('public', 'dashboard-app.js'));
+  })());
+
+/* Union, not replace: a machine that has not synced must not be able to wipe
+   the record of a run made on another one — that record is the only way those
+   rows can ever be deleted again. */
+check('run manifests union rather than replace, so an unsynced tab cannot erase a run',
+  /must not\s*\n\s*\/\/ be able to wipe the record of a run made on another one/.test(read('public', 'cygenix-cosmos-sync.js')));
+
+/* ════════════════════════════════════════════════════════════════════════
+   9. The page
    ════════════════════════════════════════════════════════════════════════ */
 console.log('\n— the page —');
 
-const page = read('public', 'data-generator.html');
-const db = read('netlify', 'functions', 'db-connect.js');
 
 /* The reason for the whole rework: the page used to CREATE four demo tables
    and fill those. Pointed at a customer's real source database, a create-and-
@@ -560,25 +695,49 @@ check('the flag is cleared by the call that set it, and nowhere else',
 check('a read that fails reports its message AND its stack, and one bad table does not stop the rest',
   /e\.stack/.test(page) && /One unreadable table must not take the other/.test(page));
 
-/* Insert and the link-up UPDATE, and nothing else. `dgAssertInsertOnly`
-   reads every statement before it is sent — quoted identifiers and string
-   literals stripped first, so a column called [Delete] is a name rather than
-   a refusal. */
-check('the write path can only insert and link — no create, drop, truncate or delete',
-  /function dgAssertInsertOnly/.test(page)
-  && /DG_FORBIDDEN = \/\\b\(create\|drop\|truncate\|alter\|delete\|merge/.test(page)
-  && /not an insert\. Nothing was sent/.test(page)
-  && (page.match(/dgAssertInsertOnly\(/g) || []).length === 3);
+/* Each path is checked against what IT may do, not against one shared list
+   of frightening words — "no destructive verbs" is not a rule that survives a
+   feature whose other half is a delete. Neither path may create, drop,
+   truncate or alter, ever. */
+check('the insert path may insert and update; the delete path may only delete',
+  /function dgAssertInsertOnly\(sql\)\{ return DG\.dgAssertOnly\(sql, \['insert', 'update'\], 'insert'\); \}/.test(page)
+  && /function dgAssertDeleteOnly\(sql\)\{ return DG\.dgAssertOnly\(sql, \['delete'\], 'delete'\); \}/.test(page)
+  // Three each: the definition, and the two places that path sends anything.
+  && (page.match(/dgAssertInsertOnly\(/g) || []).length === 3
+  && (page.match(/dgAssertDeleteOnly\(/g) || []).length === 3);
+
+check('neither path can ever create, drop, truncate or alter',
+  (() => {
+    const cases = ['DROP TABLE [x];', 'TRUNCATE TABLE [x];', 'CREATE TABLE [x] (a int);', 'ALTER TABLE [x] ADD b int;'];
+    return cases.every(sql => ['insert', 'update', 'delete'].every(verb => {
+      try { DG.dgAssertOnly(sql, [verb], verb); return false; } catch (e) { return /Refusing to run/.test(e.message); }
+    }));
+  })());
+
+check('…and a column called [Delete] is a name, not a refusal',
+  DG.dgAssertOnly('INSERT INTO [dbo].[T] ([Delete], [Drop]) VALUES (1, 2);', ['insert'], 'insert') === true
+  && DG.dgAssertOnly("DELETE FROM [dbo].[T] WHERE [Code] = N'created';", ['delete'], 'delete') === true);
+
+check('the delete path refuses an INSERT, and the insert path refuses a DELETE',
+  (() => {
+    let a = false, b = false;
+    try { DG.dgAssertOnly('DELETE FROM [x];', ['insert', 'update'], 'insert'); } catch (e) { a = /contains DELETE/.test(e.message); }
+    try { DG.dgAssertOnly('INSERT INTO [x] (a) VALUES (1);', ['delete'], 'delete'); } catch (e) { b = /contains INSERT/.test(e.message); }
+    return a && b;
+  })());
 
 check('production is a flat refusal, not a typed confirmation',
   /Sample data is never generated into production/.test(page)
   && /there is no confirmation for this, and none is offered/.test(page)
   && /env === 'PRD'/.test(page));
 
-check('the write is behind its own in-flight flag and three-second gap',
+/* Five occurrences: the declaration, and one set/clear pair for each of the
+   two things that write — generating and deleting a run. A sixth would mean
+   something else had taken it upon itself to decide a write was over. */
+check('both writes are behind the same in-flight flag and three-second gap',
   /let _dgWriting = false;/.test(page)
-  && (page.match(/_dgWriting = (true|false)/g) || []).length === 3
-  && /_dgLastWriteAt < DG_MIN_INTERVAL_MS/.test(page));
+  && (page.match(/_dgWriting = (true|false)/g) || []).length === 5
+  && (page.match(/_dgLastWriteAt < DG_MIN_INTERVAL_MS/g) || []).length === 2);
 
 check('rows go in one batch per call, so no request can reach the 26-second cap',
   /for \(let i = 0; i < gen\.rows\.length; i \+= BATCH_SIZE\)/.test(page)

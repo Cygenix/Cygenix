@@ -39,13 +39,13 @@
 <script src="/cygenix-saved-conn-secrets.js?v=42c16863e0" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
-<script src="/cygenix-cosmos-sync.js?v=bce1e6453b" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=4b4a09f18f" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <!-- The rules about reading a real schema and planning rows for it: the FK
      graph, the insert order, what each column may hold. Pure — no DOM, no
      network — so it is testable in Node and the page below only draws it. -->
-<script src="/cygenix-datagen-model.js?v=98acb63b2f" defer></script>
+<script src="/cygenix-datagen-model.js?v=d792551db1" defer></script>
 <script src="/project-manager.js?v=4f3f390725" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -270,10 +270,20 @@ code,.mono{font-family:var(--mono)}
         <button id="dg-generate-btn" class="dg-btn dg-btn-primary" onclick="dgGenerate()" title="Insert the rows shown in the preview. Nothing is created, dropped or deleted.">▶ Generate data</button>
         <button id="dg-preview-btn" class="dg-btn dg-btn-ghost" onclick="dgRefreshPreview()"><i class="ic ic-sync"></i> Refresh preview</button>
       </div>
-      <div style="font-size:11px;color:var(--text2);max-width:440px;text-align:right">
-        Generate adds rows to the tables you chose. It never creates, drops or
-        deletes anything, and it is refused outright on a production profile.
-      </div>
+      <!-- Off by default, and it stays off until somebody types the word.
+           This is the one control on the page that removes rows that were
+           there before Cygenix ever ran. -->
+      <label class="dg-pick-opt" style="margin:0;max-width:360px">
+        <input type="checkbox" id="dg-empty-first" onchange="dgSetEmptyFirst(this.checked)">
+        <span>Empty the selected tables first — <b>everything</b> in them, not just rows this tool added. Needs confirming.</span>
+      </label>
+      <button id="dg-delete-btn" class="dg-btn dg-btn-danger" onclick="dgOpenRuns()" title="Remove the rows one run inserted, and nothing else"><i class="ic ic-trash"></i> Delete generated rows</button>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-top:0.6rem;line-height:1.6">
+      Generate only ever adds rows: it never creates, drops or alters anything, and
+      it is refused outright on a production profile. Delete removes the rows one
+      run inserted and nothing else — anything that was in the table before is left
+      alone.
     </div>
     <div id="dg-progress-wrap" style="display:none;margin-top:1rem">
       <div style="font-size:11px;color:var(--text2);display:flex;justify-content:space-between">
@@ -305,6 +315,29 @@ code,.mono{font-family:var(--mono)}
         <span style="flex:1"></span>
         <button class="dg-btn dg-btn-ghost" onclick="dgClosePicker()">Cancel</button>
         <button class="dg-btn dg-btn-primary" id="dg-pick-go" onclick="dgApplyPicker()">Add selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recorded runs. Each one knows the keys it inserted, which is the only
+       thing that makes "delete what this run added, and nothing else"
+       possible at all. -->
+  <div class="dg-modal" id="dg-runs-modal" role="dialog" aria-modal="true" aria-label="Delete generated rows">
+    <div class="dg-modal-card" style="width:min(680px,96vw)">
+      <div class="dg-modal-head"><span><i class="ic ic-trash"></i> Delete generated rows</span></div>
+      <div class="dg-modal-body">
+        <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:0.7rem">
+          Each run recorded the keys of the rows it inserted. Deleting a run removes
+          those rows and nothing else — anything that was in the table before, and
+          anything another run added, is left alone. Children are deleted before
+          parents, so a foreign key cannot stop it half way.
+        </p>
+        <div id="dg-runs-list" class="dg-pick-list"></div>
+      </div>
+      <div class="dg-modal-foot">
+        <span class="dg-modal-sub" id="dg-runs-note"></span>
+        <span style="flex:1"></span>
+        <button class="dg-btn dg-btn-ghost" onclick="dgCloseRuns()">Close</button>
       </div>
     </div>
   </div>
@@ -1269,20 +1302,14 @@ const DG_RUNS_KEY = 'cygenix_datagen_runs';
 const DG_EXISTING_SAMPLE = 500;     // parent keys to draw from
 const DG_UNIQUE_SAMPLE = 2000;      // existing values a unique column checks against
 
-const DG_FORBIDDEN = /\b(create|drop|truncate|alter|delete|merge|grant|revoke|exec|execute)\b/i;
-function dgAssertInsertOnly(sql){
-  // Quoted identifiers and string literals come out first: a column called
-  // [Delete] or a generated value of 'created' is a name, not a statement,
-  // and refusing to fill somebody's table over their column name would be a
-  // bug rather than caution.
-  const bare = String(sql)
-    .replace(/\[(?:[^\]]|\]\])*\]/g, ' "id" ')
-    .replace(/"(?:[^"]|"")*"/g, ' "id" ')
-    .replace(/'(?:[^']|'')*'/g, " 'lit' ");
-  if (DG_FORBIDDEN.test(bare)) throw new Error('Refusing to run: that statement is not an insert. Nothing was sent.');
-  if (!/\b(INSERT INTO|UPDATE)\b/i.test(bare)) throw new Error('Refusing to run: no INSERT or UPDATE in that statement. Nothing was sent.');
-  return true;
-}
+/* Each path is checked against what IT is allowed to do, not against one
+   shared list of frightening words. "No destructive verbs" is not a rule that
+   survives a feature whose whole job, on one of its two paths, is to remove
+   rows — so the insert path may insert and update and nothing else, and the
+   delete path may delete and nothing else. Neither may create, drop, truncate
+   or alter, ever. The rule itself lives in the model, where it is tested. */
+function dgAssertInsertOnly(sql){ return DG.dgAssertOnly(sql, ['insert', 'update'], 'insert'); }
+function dgAssertDeleteOnly(sql){ return DG.dgAssertOnly(sql, ['delete'], 'delete'); }
 
 /* Production is a flat refusal, not a typed confirmation. Everywhere else in
    Cygenix a PRD write can be confirmed by typing the profile id, because
@@ -1349,15 +1376,27 @@ async function dgGenerate(){
   const btn = document.getElementById('dg-generate-btn');
   btn.disabled = true;
   const runId = dgRunId();
-  const run = { id: runId, at: new Date().toISOString(), profile: dgProfileId(), tables: {} };
+  // The order is recorded WITH the run: deleting it later has to go children
+  // first, and re-deriving that from a graph the schema may have changed
+  // under would be guessing at what this run actually did.
+  const run = { id: runId, at: new Date().toISOString(), profile: dgProfileId(),
+    order: keys.slice(), tables: {} };
   const RUN_KEYS = {};          // table key -> [ {pkcol: value}, ... ] inserted this run
   let inserted = 0, failedTables = 0;
 
-  logLine('Run ' + runId + ' — inserting only. Nothing will be created, dropped or deleted.', 'info');
+  logLine('Run ' + runId + ' — nothing will be created, dropped or altered.', 'info');
   showProgress('Generating');
   seedPRNG(Date.now() & 0x7fffffff);
 
   try {
+    // Emptying comes first, children before parents, and only if somebody
+    // asked for it and then typed the word. If they do not, nothing is
+    // emptied AND nothing is generated — half of what was asked for is not a
+    // safer outcome, it is a stranger one.
+    if (_dgEmptyFirst){
+      const ok = await dgEmptySelected(conn, keys);
+      if (!ok) return;
+    }
     for (let ti = 0; ti < keys.length; ti++){
       const key = keys[ti];
       // Each table gets its own try/catch: one that cannot be filled must not
@@ -1516,8 +1555,15 @@ async function dgFillTable(conn, key, RUN_KEYS, run, onProgress){
   }
 
   RUN_KEYS[key] = kept;
+  const keyTypes = {};
+  (plan.primaryKeys || []).forEach(k => {
+    const c = plan.columns.find(x => x.name.toLowerCase() === String(k).toLowerCase());
+    if (c) keyTypes[c.name] = c.baseType;
+  });
+  // keyTypes travels with the keys because a delete built months later has to
+  // quote them correctly and will not have the schema in front of it.
   run.tables[key] = { schema: t.schema, name: t.name, inserted: done,
-    keyColumns: plan.primaryKeys || [], keys: kept.slice(0, 20000) };
+    keyColumns: plan.primaryKeys || [], keyTypes, keys: kept.slice(0, 20000) };
   if (gen.deferred.length) run.tables[key].deferred = gen.deferred.length;
   return done;
 }
@@ -1562,11 +1608,173 @@ async function dgLinkPass(conn, brk, RUN_KEYS){
     + ' that went in with an empty link.', 'ok');
 }
 
-/* The run manifest. Local for now, and Cosmos in the next phase — but written
-   NOW rather than then, because the keys it holds are the only record of
-   which rows this run put there, and they exist for a few seconds after the
-   insert and nowhere else. A phase that inserted without recording would
-   leave rows nobody could ever delete. */
+/* ══════════════════════════════════════════════════════════════════════════
+   EMPTYING FIRST
+   ══════════════════════════════════════════════════════════════════════════
+   Off by default, and the only control here that removes rows nobody in this
+   tool put there. It asks for the word to be typed — not a Yes/No, because a
+   Yes/No is answered by muscle memory — and it runs children first so a
+   foreign key cannot stop it half way through with the other half gone. */
+let _dgEmptyFirst = false;
+function dgSetEmptyFirst(on){
+  _dgEmptyFirst = !!on;
+  if (on) logLine('Empty-first is ON. Generate will remove EVERY row from the selected tables before inserting, including rows that were there before.', 'warn');
+  else logLine('Empty-first is off.', 'info');
+}
+window.dgSetEmptyFirst = dgSetEmptyFirst;
+
+async function dgEmptySelected(conn, keys){
+  const order = DG.dgReverseOrder(keys);
+  const typed = window.prompt(
+    'This will DELETE EVERY ROW from ' + order.length + ' table'
+    + (order.length === 1 ? '' : 's') + ', including rows that were there before Cygenix ever ran:\n\n'
+    + order.map(k => '  ' + dgDisplayName(k)).join('\n')
+    + '\n\nThis cannot be undone. Type EMPTY to continue.');
+  if (String(typed || '').trim().toUpperCase() !== 'EMPTY'){
+    logLine('Not confirmed — nothing was emptied, and nothing was generated.', 'warn');
+    return false;
+  }
+  for (const key of order){
+    const t = SCHEMA[key];
+    try {
+      const sql = DG.dgBuildEmpty(t.schema, t.name, { dialect: dgDialect() });
+      dgAssertDeleteOnly(sql);
+      await dgQuery(conn, sql);
+      logLine('  emptied ' + dgDisplayName(key), 'warn');
+    } catch (e){
+      logLine('✗ could not empty ' + dgDisplayName(key) + ': ' + (e && e.message ? e.message : e), 'err');
+      if (e && e.stack) logLine(String(e.stack).split('\n').slice(0, 3).join(' | '), 'err');
+      return false;
+    }
+  }
+  return true;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DELETING ONE RUN'S ROWS
+   ══════════════════════════════════════════════════════════════════════════
+   By key, so it removes what that run inserted and nothing else. Anything
+   that was in the table first, and anything another run added, is untouched.
+   Children before parents, chunked, and refused on a production profile for
+   the same reason generating is. */
+function dgLoadRuns(){
+  try {
+    const all = JSON.parse(localStorage.getItem('cygenix_datagen_runs') || '[]');
+    return Array.isArray(all) ? all : [];
+  } catch (e){ return []; }
+}
+
+function dgOpenRuns(){
+  document.getElementById('dg-runs-modal').classList.add('open');
+  dgRenderRuns();
+}
+window.dgOpenRuns = dgOpenRuns;
+function dgCloseRuns(){ document.getElementById('dg-runs-modal').classList.remove('open'); }
+window.dgCloseRuns = dgCloseRuns;
+
+function dgRenderRuns(){
+  const list = document.getElementById('dg-runs-list');
+  const runs = dgLoadRuns();
+  if (!runs.length){
+    list.innerHTML = '<div style="padding:1.4rem;text-align:center;color:var(--text2);font-size:12px">'
+      + 'No runs recorded yet. Generate some rows and this is where they can be taken back out.</div>';
+    document.getElementById('dg-runs-note').textContent = '';
+    return;
+  }
+  list.innerHTML = runs.map(run => {
+    const s = DG.dgRunSummary(run);
+    const when = s.at ? new Date(s.at).toLocaleString() : '';
+    return '<div class="dg-pick-row" style="cursor:default">'
+      + '<span>' + escapeHtml(s.id) + '</span>'
+      + '<span class="rc">' + escapeHtml(when) + ' · ' + s.rows.toLocaleString() + ' rows · '
+      + s.tableCount + ' table' + (s.tableCount === 1 ? '' : 's')
+      + (s.undeletable.length ? ' · <span style="color:var(--amber)">' + s.undeletable.length + ' with no key</span>' : '')
+      + '</span>'
+      + '<button class="dg-btn dg-btn-danger" style="padding:0.2rem 0.5rem;font-size:10.5px;margin-left:0.6rem" '
+      + 'onclick="dgDeleteRun(\'' + escapeHtml(s.id) + '\')">Delete</button>'
+      + '</div>';
+  }).join('');
+  document.getElementById('dg-runs-note').textContent = runs.length + ' run' + (runs.length === 1 ? '' : 's') + ' recorded';
+}
+
+async function dgDeleteRun(runId){
+  if (!DG) return;
+  const conn = readSourceConn();
+  if (!conn){ logLine('No source connection.', 'err'); return; }
+
+  // Production is refused here for exactly the reason it is refused on
+  // generate, and checked first for exactly the same reason.
+  const guard = dgGuardEnvironment();
+  if (!guard.ok){ logLine('✗ ' + guard.why, 'err'); return; }
+  if (_dgWriting){ logLine('Already working — one moment.', 'warn'); return; }
+  if (Date.now() - _dgLastWriteAt < DG_MIN_INTERVAL_MS){
+    logLine('Please wait a moment before deleting again.', 'warn'); return;
+  }
+
+  const runs = dgLoadRuns();
+  const run = runs.find(r => r.id === runId);
+  if (!run){ logLine('That run is no longer recorded.', 'err'); return; }
+  const s = DG.dgRunSummary(run);
+  if (!confirm('Delete the ' + s.rows.toLocaleString() + ' row' + (s.rows === 1 ? '' : 's')
+      + ' that run ' + s.id + ' inserted?\n\n'
+      + 'Only those rows. Anything that was in the table before, and anything another run added, is left alone.'
+      + (s.undeletable.length ? '\n\nThese have no primary key and cannot be picked back out: '
+          + s.undeletable.join(', ') : ''))) return;
+
+  _dgWriting = true;
+  _dgLastWriteAt = Date.now();
+  document.getElementById('dg-delete-btn').disabled = true;
+  dgCloseRuns();
+  showProgress('Deleting run ' + s.id);
+  let removed = 0, failed = 0;
+  try {
+    // Reverse of the order the run inserted in: children before parents.
+    const order = DG.dgReverseOrder(run.order && run.order.length ? run.order : Object.keys(run.tables));
+    for (let i = 0; i < order.length; i++){
+      const key = order[i];
+      const t = run.tables[key];
+      if (!t || !t.keys || !t.keys.length) continue;
+      try {
+        const plan = { schema: t.schema, name: t.name, primaryKeys: t.keyColumns || [],
+          columns: (t.keyColumns || []).map(c => ({ name: c, baseType: t.keyTypes && t.keyTypes[c] })) };
+        for (let j = 0; j < t.keys.length; j += 200){
+          const sql = DG.dgBuildDeleteByKeys(plan, t.keys.slice(j, j + 200), { dialect: dgDialect() });
+          if (!sql) break;
+          dgAssertDeleteOnly(sql);
+          await dgQuery(conn, sql);
+          removed += Math.min(200, t.keys.length - j);
+        }
+        logLine('  removed ' + t.keys.length.toLocaleString() + ' row(s) from ' + t.schema + '.' + t.name, 'ok');
+      } catch (e){
+        failed++;
+        logLine('✗ ' + t.schema + '.' + t.name + ': ' + (e && e.message ? e.message : e), 'err');
+        if (e && e.stack) logLine(String(e.stack).split('\n').slice(0, 3).join(' | '), 'err');
+      }
+      updateProgress(((i + 1) / order.length) * 100);
+    }
+    if (!failed){
+      // The record goes only when everything it described has gone, so a
+      // half-finished delete can be run again rather than being forgotten.
+      try { localStorage.setItem('cygenix_datagen_runs', JSON.stringify(runs.filter(r => r.id !== runId))); }
+      catch (e){ logLine('  the run was deleted but its record could not be cleared.', 'warn'); }
+    }
+    logLine(failed
+      ? '✗ Run ' + s.id + ': ' + removed.toLocaleString() + ' row(s) removed, ' + failed + ' table(s) failed. The record is kept so it can be tried again.'
+      : '✓ Run ' + s.id + ' removed — ' + removed.toLocaleString() + ' row(s).', failed ? 'err' : 'ok');
+  } finally {
+    _dgWriting = false;
+    document.getElementById('dg-delete-btn').disabled = false;
+    hideProgress();
+    dgRenderRuns();
+  }
+}
+window.dgDeleteRun = dgDeleteRun;
+
+/* The run manifest. Written as the run happens, because the keys it holds are
+   the only record of which rows it put there — they exist for a few seconds
+   after the insert and nowhere else. Synced to Cosmos with everything else,
+   and union-merged, so a run made on one machine can be undone from another
+   and an unsynced tab cannot wipe the record of somebody else's run. */
 function dgSaveRun(run){
   try {
     let all = [];
@@ -1873,10 +2081,15 @@ function dgSetOverride(key, colName, mode){
 window.dgSetOverride = dgSetOverride;
 
 /* ── Remembering the selection ────────────────────────────────────────────
-   Saved per connection profile, so the same test data set can be set up once
-   and rerun. Local for now; the Cosmos key arrives with the rest of the saved
-   selections in a later phase, and putting half of it in now would mean two
-   shapes to migrate rather than one. */
+   Which tables, how many rows each, and any column overrides — saved per
+   connection profile and synced with everything else, so the same test data
+   set can be set up once and rerun from anywhere.
+
+   The SCHEMA is deliberately not saved. It is a copy of somebody's database
+   and it goes stale: a column added last week would be missing from a stored
+   copy and present in the table, and the first a person would know is a
+   failed insert. So what is remembered is the CHOICE, and the schema is read
+   again on restore. */
 const DG_SEL_KEY = 'cygenix_datagen_selection';
 function dgProfileId(){
   try {
@@ -1887,13 +2100,18 @@ function dgProfileId(){
 }
 function dgSaveSelection(){
   try {
-    const doc = { profile: dgProfileId(), tables: Object.keys(SCHEMA).map(k => ({
-      key: k, auto: !!SCHEMA[k].auto, rows: ROW_COUNTS[k] || 0, overrides: SCHEMA[k].overrides || {},
-    })) };
-    localStorage.setItem(DG_SEL_KEY, JSON.stringify(doc));
+    const all = dgAllSelections();
+    all[dgProfileId()] = {
+      savedAt: new Date().toISOString(),
+      tables: Object.keys(SCHEMA).map(k => ({
+        key: k, schema: SCHEMA[k].schema, name: SCHEMA[k].name,
+        auto: !!SCHEMA[k].auto, rows: ROW_COUNTS[k] || 0, overrides: SCHEMA[k].overrides || {},
+      })),
+    };
+    localStorage.setItem('cygenix_datagen_selection', JSON.stringify(all));
   } catch (e){ /* a lost selection costs a re-pick, not data */ }
 }
-function dgRestoreSelection(){
+function dgAllSelections(){
   let doc = null;
   /* Written out in full rather than as DG_SEL_KEY, and deliberately.
      scripts/storage-inventory.js finds keys by scanning public/ for a literal
@@ -1903,11 +2121,69 @@ function dgRestoreSelection(){
      constant, so there is one source of truth and one place the scanner can
      find it. */
   try { doc = JSON.parse(localStorage.getItem('cygenix_datagen_selection') || 'null'); } catch (e){ doc = null; }
-  if (!doc || !doc.tables || !doc.tables.length) return;
-  if (doc.profile !== dgProfileId()) return;      // another profile, another database
-  logLine(doc.tables.length + ' table' + (doc.tables.length === 1 ? '' : 's')
-    + ' were selected last time. Click Choose tables… to read them again.', 'info');
+  if (!doc || typeof doc !== 'object') return {};
+  // The first shape was one selection, not one per profile. Anything that
+  // still looks like it is moved under the profile it was saved for rather
+  // than being thrown away.
+  if (Array.isArray(doc.tables)) { const out = {}; out[doc.profile || 'none'] = { tables: doc.tables }; return out; }
+  return doc;
 }
+/* Offer the last selection back, and read the schema again when it is taken
+   up. Offered rather than applied: restoring reads the database, and a page
+   that hits somebody's source the moment it loads is a page that hits it
+   every time a tab is left open. */
+function dgRestoreSelection(){
+  const saved = dgAllSelections()[dgProfileId()];
+  if (!saved || !saved.tables || !saved.tables.length) return;
+  const n = saved.tables.length;
+  const el = document.getElementById('dg-tables');
+  if (!el) return;
+  el.innerHTML = '<div style="padding:1.4rem;text-align:center;color:var(--text2);font-size:12.5px;line-height:1.8">'
+    + n + ' table' + (n === 1 ? ' was' : 's were') + ' selected last time'
+    + (saved.savedAt ? ' (' + escapeHtml(new Date(saved.savedAt).toLocaleString()) + ')' : '') + '.<br>'
+    + '<button class="dg-btn dg-btn-ghost" style="margin-top:0.6rem" onclick="dgApplySaved()">Read them again</button> '
+    + '<button class="dg-btn dg-btn-ghost" style="margin-top:0.6rem" onclick="dgForgetSaved()">Start fresh</button>'
+    + '</div>';
+}
+
+async function dgApplySaved(){
+  const conn = readSourceConn();
+  if (!conn){ logLine('No source connection.', 'err'); return; }
+  const saved = dgAllSelections()[dgProfileId()];
+  if (!saved || !saved.tables) return;
+  if (!CATALOG.length || !FKGRAPH){
+    const ok = await dgLoadCatalog(conn);
+    if (!ok) { renderTables(); return; }
+  }
+  // Re-pick exactly what was chosen — not what was derived from it. The
+  // parents come back through the same closure as before, so a foreign key
+  // added since is honoured rather than missed.
+  _dgPickSel = new Set(saved.tables.filter(t => !t.auto).map(t => t.key));
+  await dgApplyPicker();
+  saved.tables.forEach(t => {
+    if (!SCHEMA[t.key]) return;
+    if (t.rows) ROW_COUNTS[t.key] = t.rows;
+    if (t.overrides) SCHEMA[t.key].overrides = t.overrides;
+  });
+  dgReplan();
+  dgRenderAll();
+  const missing = saved.tables.filter(t => !SCHEMA[t.key]);
+  logLine('Restored ' + (saved.tables.length - missing.length) + ' of ' + saved.tables.length
+    + ' saved table(s)' + (missing.length ? '; ' + missing.map(t => t.name || t.key).join(', ')
+      + ' no longer exist on this connection' : '') + '.', missing.length ? 'warn' : 'ok');
+}
+window.dgApplySaved = dgApplySaved;
+
+function dgForgetSaved(){
+  try {
+    const all = dgAllSelections();
+    delete all[dgProfileId()];
+    localStorage.setItem('cygenix_datagen_selection', JSON.stringify(all));
+  } catch (e){}
+  renderTables();
+  logLine('Saved selection cleared for this profile.', 'info');
+}
+window.dgForgetSaved = dgForgetSaved;
 
 /* A read-only snapshot of what is selected and how it will run. The page's
    own state stays inside this closure, where it cannot be poked at by

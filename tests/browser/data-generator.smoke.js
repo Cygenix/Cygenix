@@ -105,6 +105,17 @@ const COLS={
          });
          return json(r,{success:true,recordset:/OUTPUT|RETURNING/.test(sql)?out:[]});
        }
+       const del=sql.match(/^DELETE FROM \[(\w+)\]\.\[(\w+)\](.*)$/s);
+       if(del){
+         const key=del[1]+'.'+del[2], rest=del[3]||'';
+         if(!/WHERE/i.test(rest)){ ROWS[key]=[]; return json(r,{success:true,recordset:[]}); }
+         const ids=(rest.match(/IN \(([^)]*)\)/)||[])[1];
+         if(ids){
+           const set=new Set(ids.split(',').map(v=>Number(v.trim())));
+           ROWS[key]=(ROWS[key]||[]).filter(x=>!set.has(x.Id));
+         }
+         return json(r,{success:true,recordset:[]});
+       }
        if(/^UPDATE /.test(sql)) return json(r,{success:true,recordset:[]});
        return json(r,{success:true,recordset:[]});
      }
@@ -140,7 +151,7 @@ const COLS={
    await page.evaluate(()=>document.getElementById('dg-tables').textContent.indexOf('No tables chosen')>=0));
  check('Generate is offered, and says it only ever adds rows',
    await page.evaluate(()=>{const b=document.getElementById('dg-generate-btn');
-     return !b.disabled && /never creates, drops or deletes/.test(document.body.textContent.replace(/\s+/g,' '));}));
+     return !b.disabled && /never creates, drops or alters/.test(document.body.textContent.replace(/\s+/g,' '));}));
 
  await page.click('#dg-pick-btn');
  await page.waitForFunction(()=>document.querySelectorAll('#dg-pick-list .dg-pick-row').length>0,null,{timeout:15000});
@@ -264,6 +275,74 @@ const COLS={
      await dgGenerate();
      return /wait a moment|Already generating/.test(
        document.getElementById('dg-log').textContent.slice(before));}));
+
+ /* ── Phase 3: taking it back out ─────────────────────────────────────── */
+ // Rows that were in the table BEFORE this tool ran. Deleting a run must not
+ // touch them, and that is the whole test.
+ await page.evaluate(()=>0);
+ ROWS['dbo.Client'].unshift({Id:9001,Code:'PRE-EXISTING',Email:'was@here.test'});
+ const beforeClients=ROWS['dbo.Client'].length, beforeMatters=(ROWS['dbo.Matter']||[]).length;
+
+ await page.click('#dg-delete-btn');
+ await page.waitForSelector('#dg-runs-modal.open');
+ const runsList=await page.evaluate(()=>document.getElementById('dg-runs-list').textContent.replace(/\s+/g,' '));
+ check('the recorded run is listed with what it inserted',
+   /dgr_/.test(runsList)&&/18 rows/.test(runsList)&&/2 tables/.test(runsList),runsList.slice(0,160));
+
+ SQL.length=0;
+ await page.waitForTimeout(3200);
+ await page.evaluate(()=>document.querySelector('#dg-runs-list .dg-btn-danger').click());
+ await page.waitForFunction(()=>/Run .* removed/.test(document.getElementById('dg-log').textContent),null,{timeout:30000});
+ await page.waitForTimeout(300);
+
+ check('deleting a run removes exactly the rows it inserted',
+   (ROWS['dbo.Matter']||[]).length===0 && ROWS['dbo.Client'].length===beforeClients-6,
+   'clients '+ROWS['dbo.Client'].length+' of '+beforeClients+', matters '+(ROWS['dbo.Matter']||[]).length+' of '+beforeMatters);
+
+ /* THE check this design exists for. */
+ check('the row that was there BEFORE the run is untouched',
+   ROWS['dbo.Client'].some(r=>r.Code==='PRE-EXISTING'));
+
+ check('children are deleted before parents',
+   (()=>{const d=SQL.filter(q=>/^DELETE/.test(q));
+     return d.length>=2 && /\[Matter\]/.test(d[0]) && /\[Client\]/.test(d[d.length-1]);})(),
+   SQL.filter(q=>/^DELETE/.test(q)).map(q=>q.slice(0,46)).join(' | '));
+
+ check('it deletes BY KEY, never by emptying the table',
+   SQL.filter(q=>/^DELETE/.test(q)).every(q=>/WHERE/i.test(q)));
+
+ check('nothing in the delete path could create, drop, truncate or alter',
+   SQL.every(q=>!/\b(CREATE|DROP|TRUNCATE|ALTER|MERGE)\b/i.test(
+     q.replace(/\[(?:[^\]]|\]\])*\]/g,' id ').replace(/'(?:[^']|'')*'/g," 'l' "))));
+
+ check('the record is cleared once everything it described has gone',
+   await page.evaluate(()=>JSON.parse(localStorage.getItem('cygenix_datagen_runs')||'[]').length===0));
+
+ // Empty-first: off by default, and refused unless the word is typed.
+ check('empty-first starts off',
+   await page.evaluate(()=>!document.getElementById('dg-empty-first').checked));
+ await page.waitForTimeout(3200);        // the write gap, again
+ const emptied=await page.evaluate(async()=>{
+   const before=(window.__promptAnswer=undefined, document.getElementById('dg-log').textContent.length);
+   const realPrompt=window.prompt;
+   window.prompt=()=>'no';                       // the word is NOT typed
+   document.getElementById('dg-empty-first').click();
+   await dgGenerate();
+   const txt=document.getElementById('dg-log').textContent.slice(before);
+   window.prompt=realPrompt;
+   document.getElementById('dg-empty-first').click();
+   return /nothing was emptied, and nothing was generated/.test(txt);});
+ await page.waitForTimeout(200);
+ check('an unconfirmed empty-first stops the whole run, not just the emptying',
+   emptied && ROWS['dbo.Client'].some(r=>r.Code==='PRE-EXISTING'));
+
+ // Saved selections.
+ check('the selection is remembered per profile, with row counts and no schema copy',
+   await page.evaluate(()=>{
+     const all=JSON.parse(localStorage.getItem('cygenix_datagen_selection')||'{}');
+     const mine=all[Object.keys(all)[0]];
+     return !!mine && mine.tables.length===2
+       && mine.tables.every(t=>typeof t.rows==='number' && !('columns' in t));}));
 
  check('a production profile is refused outright, with no way to confirm past it',
    await page.evaluate(async()=>{

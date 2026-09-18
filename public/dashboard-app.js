@@ -15664,7 +15664,11 @@ const BACKUP_KEYS = [
   // Object Mapping's map groups. In the backup because a restore that brought
   // the maps back without their categories would leave every one of them
   // Ungrouped, with no way to tell what they used to be.
-  'cygenix_map_groups'
+  'cygenix_map_groups',
+  // The Data Generator's saved selections, and the manifests that say which
+  // rows each run inserted. Losing the second means losing the ability to
+  // take those rows back out.
+  'cygenix_datagen_selection', 'cygenix_datagen_runs'
 ];
 
 function quickBackupNow() {

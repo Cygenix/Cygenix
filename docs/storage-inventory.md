@@ -30,7 +30,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_pending_token` | Auth token in transit between pages | short-lived; clear on consume | index.html |
 | `cygenix_src_conn_string` | Source connection string, in plain text | WI-10: move to a Key Vault reference | connect.html, project-builder-app.js |
 
-## A — Authoritative — losing it loses customer work (17)
+## A — Authoritative — losing it loses customer work (18)
 
 > These need a server source of truth. `cygenix-cosmos-sync.js` mirrors the keys marked
 > *synced* to Cosmos on a 3-second write-behind; the rest are local-only and are WI-1's
@@ -40,7 +40,8 @@ mechanism that stops an unclassified key being added quietly.
 |---|---|---|---|
 | `cygenix_backup_history` | Restore-module backup history | NOT SYNCED — WI-1 | dashboard-app.js |
 | `cygenix_conv_project` | The currently-open project blob | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, cygenix-schema-graph.js |
-| `cygenix_datagen_runs` | Which rows each Data Generator run inserted | the only record of what a run put there — NOT SYNCED yet | data-generator.html |
+| `cygenix_datagen_runs` | Which rows each Data Generator run inserted | synced (SYNC_KEYS), union-merged — the only record of what a run put there | data-generator.html |
+| `cygenix_datagen_selection` | Which tables the Data Generator had selected, per profile | synced (SYNC_KEYS) | data-generator.html |
 | `cygenix_effort_estimates_v1` | Saved Configurator estimates | NOT SYNCED — WI-1 | project_plan.html |
 | `cygenix_inventory` | Project artifact inventory | synced (SYNC_KEYS) | dashboard-app.js, projects.html, report.html +1 |
 | `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +15 |
@@ -69,7 +70,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data_stream_designer.html, data_stream_store.html |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
-## C — Preference — per-viewer convenience (28)
+## C — Preference — per-viewer convenience (27)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
@@ -82,7 +83,6 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |
-| `cygenix_datagen_selection` | Which tables the Data Generator had selected | local; the schema is re-read from the database on use | data-generator.html |
 | `cygenix_entra_account` | MSAL account record | — | agentive_migration.html, connections.js, cygenix-api.js +11 |
 | `cygenix_expires` | Session expiry marker | — | cygenix-auth-token.js, login.html, project-manager.js |
 | `cygenix_fn_url` | Function URL (not the key) | — | connect.html, project-builder-app.js |

@@ -814,6 +814,120 @@ function dgMissingParents(plan, parentKeys) {
   return out;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   PHASE 3 — TAKING IT BACK OUT
+   ══════════════════════════════════════════════════════════════════════════
+   Two different deletes, and the difference matters.
+
+   "Delete generated rows" removes the rows ONE RUN put there, by their keys,
+   and nothing else. That is the only reason the run manifest exists: without
+   the keys, "the rows we generated" is indistinguishable from "the rows that
+   were already there", and the only delete anyone could offer would be one
+   that emptied the table.
+
+   "Empty selected tables" is that other delete, and it is exactly as
+   dangerous as it sounds — it removes everything, including rows that were
+   there before this tool ever ran. It is off by default, needs the words
+   typed, and runs children-first so a foreign key does not stop it half way.
+
+   Both are DELETE. Neither is TRUNCATE: truncate is refused outright on any
+   table a foreign key points at, it cannot be filtered, and it resets the
+   identity seed — three different ways of being the wrong tool here. */
+
+/* Which statements a path may contain. The insert path may not delete; the
+   delete path may not create, drop, truncate, alter or update. Each is
+   checked against what it is actually allowed to do rather than against one
+   shared list, because "no destructive verbs" is not a rule that survives a
+   feature whose whole job is destructive. */
+var DG_VERBS = ['create', 'drop', 'truncate', 'alter', 'delete', 'merge', 'insert',
+  'update', 'grant', 'revoke', 'exec', 'execute'];
+
+/* Quoted identifiers and string literals come out before the check looks at
+   anything: a column called [Delete] or a value of 'created' is a name, and
+   refusing to fill somebody's table over their column name would be a bug
+   rather than caution. */
+function dgBareStatement(sql) {
+  return str(sql)
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\n\r]*/g, ' ')
+    .replace(/\[(?:[^\]]|\]\])*\]/g, ' "id" ')
+    .replace(/"(?:[^"]|"")*"/g, ' "id" ')
+    .replace(/'(?:[^']|'')*'/g, " 'lit' ");
+}
+function dgAssertOnly(sql, allowed, what) {
+  var bare = dgBareStatement(sql);
+  var banned = DG_VERBS.filter(function (v) { return allowed.indexOf(v) === -1; });
+  var hit = banned.find(function (v) { return new RegExp('\\b' + v + '\\b', 'i').test(bare); });
+  if (hit) throw new Error('Refusing to run: that statement contains ' + hit.toUpperCase()
+    + ', and this is the ' + what + ' path. Nothing was sent.');
+  var has = allowed.some(function (v) { return new RegExp('\\b' + v + '\\b', 'i').test(bare); });
+  if (!has) throw new Error('Refusing to run: no ' + allowed.join(' or ').toUpperCase()
+    + ' in that statement. Nothing was sent.');
+  return true;
+}
+
+/* ── Deleting one run's rows, by key ──────────────────────────────────────
+   A single-column key becomes an IN list; a composite one becomes OR'd
+   groups, because there is no portable way to write a tuple IN list that both
+   engines accept. Chunked by the caller — a hundred thousand keys is not one
+   statement. */
+function dgBuildDeleteByKeys(plan, keyRows, opts) {
+  var o = opts || {};
+  var dialect = o.dialect === 'postgres' ? 'postgres' : 'mssql';
+  var pk = (plan.primaryKeys || []);
+  if (!pk.length || !keyRows || !keyRows.length) return null;
+  var cols = pk.map(function (k) {
+    return plan.columns.find(function (c) { return lower(c.name) === lower(k); }) || { name: k };
+  });
+  var target = dgQualified(plan.schema, plan.name, dialect);
+
+  if (cols.length === 1) {
+    var vals = keyRows.map(function (r) { return dgLiteral(r[cols[0].name], cols[0], dialect); });
+    return 'DELETE FROM ' + target + ' WHERE ' + dgQuote(cols[0].name, dialect)
+      + ' IN (' + vals.join(', ') + ');';
+  }
+  var groups = keyRows.map(function (r) {
+    return '(' + cols.map(function (c) {
+      return dgQuote(c.name, dialect) + ' = ' + dgLiteral(r[c.name], c, dialect);
+    }).join(' AND ') + ')';
+  });
+  return 'DELETE FROM ' + target + ' WHERE ' + groups.join('\n   OR ') + ';';
+}
+
+/* ── Emptying a table ─────────────────────────────────────────────────────
+   Everything, including what was there first. DELETE and not TRUNCATE: see
+   the note at the top of this section. */
+function dgBuildEmpty(schema, name, opts) {
+  var o = opts || {};
+  var dialect = o.dialect === 'postgres' ? 'postgres' : 'mssql';
+  return 'DELETE FROM ' + dgQualified(schema, name, dialect) + ';';
+}
+
+/* Children first. Both deletes run in the reverse of the insert order, so a
+   foreign key never stops one half way through with the other half gone. */
+function dgReverseOrder(order) {
+  return (order || []).slice().reverse();
+}
+
+/* What a recorded run says it did, for the list a person chooses from. Tables
+   with no primary key are called out: their rows went in and cannot be picked
+   back out again, because there is nothing to identify them by. */
+function dgRunSummary(run) {
+  var tables = Object.keys((run && run.tables) || {});
+  var rows = 0, undeletable = [];
+  tables.forEach(function (k) {
+    var t = run.tables[k];
+    rows += Number(t.inserted) || 0;
+    if (!t.keyColumns || !t.keyColumns.length || !t.keys || !t.keys.length) {
+      if (Number(t.inserted) > 0) undeletable.push(t.name || k);
+    }
+  });
+  return {
+    id: str(run && run.id), at: str(run && run.at), profile: str(run && run.profile),
+    tableCount: tables.length, rows: rows, tables: tables, undeletable: undeletable,
+  };
+}
+
 /* The insert order as a sentence, for the strip above the table list. The
    order is the thing most likely to be wrong in a way nobody notices until
    the data is already in, so it is shown rather than merely obeyed. */
@@ -836,5 +950,8 @@ return {
   dgBuildInsert: dgBuildInsert, dgBuildLinkUpdate: dgBuildLinkUpdate,
   dgClassifyError: dgClassifyError, dgGenerateRows: dgGenerateRows,
   dgMissingParents: dgMissingParents,
+  dgBareStatement: dgBareStatement, dgAssertOnly: dgAssertOnly,
+  dgBuildDeleteByKeys: dgBuildDeleteByKeys, dgBuildEmpty: dgBuildEmpty,
+  dgReverseOrder: dgReverseOrder, dgRunSummary: dgRunSummary,
 };
 });
