@@ -187,6 +187,18 @@ const CLIENT_ACTIONS = {
   // the target's structure in them, so both are worth a trail entry.
   'template.export-spec': 'data',
   'template.export-ddl':  'data',
+  // Sep-2026. Creating staging tables is the first thing this page does that
+  // WRITES to somebody's database, so it is recorded whatever the outcome —
+  // the connection's standard name, the schema, and how many tables were
+  // created, skipped and failed. Filed with the rest of "SQL run against a
+  // database"; the page sends the profile's environment with it, so a run
+  // against a PROD-classified connection is re-filed as `prod` by
+  // buildEntry() and lands in a category that cannot be switched off.
+  // Sending a module's pairs to Object Mapping only writes to this browser's
+  // job store, so it is plainly mapping.
+  'template.create-staging': 'mapping',
+  'template.map-send':       'mapping',
+  'template.map-remove':     'mapping',
   'sql.save':             'mapping',
   'sql.delete':           'mapping',
   'connection.test':      'connections',

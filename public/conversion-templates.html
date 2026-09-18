@@ -110,6 +110,23 @@ body.cyg-collapsed{padding-left:54px}
 .ct-mods li.out{opacity:0.55;font-style:italic}
 .ct-mods li .n{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--text3)}
 .ct-mods li .n.zero{color:var(--red)}
+/* ── The two tick columns (Sep-2026) ──────────────────────────────────────
+   Fixed widths on the row and on the heading strip above it, so the boxes
+   line up under their labels whatever the module name does. Both colours
+   come from the theme tokens, so the greying works in dark and light alike
+   rather than being a hard-coded grey that vanishes on one of them. */
+.ct-mods li .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ct-mods li .n{margin-left:0;flex:0 0 40px;text-align:right}
+.ct-mods li .tk{flex:0 0 40px;display:flex;align-items:center;justify-content:center}
+.ct-mods li .tk input{cursor:pointer;margin:0}
+.ct-mods li .tk.none{visibility:hidden}
+.ct-modhead{display:flex;align-items:flex-end;gap:0.5rem;padding:0 0.7rem;font-size:9.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3)}
+.ct-modhead .nm{flex:1 1 auto;min-width:0}
+.ct-modhead .n{flex:0 0 40px;text-align:right}
+.ct-modhead .tk{flex:0 0 40px;text-align:center}
+.ct-mods li.ex{opacity:0.6}
+.ct-mods li.ex .nm{text-decoration:line-through;text-decoration-thickness:1px}
+.ct-mods li .chip.exc{background:var(--amber-bg);color:var(--amber);font-style:normal}
 .ct-mods .ct-sep{padding:0.35rem 0.7rem;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);background:var(--bg3);border-bottom:0.5px solid var(--border)}
 
 table.ct{border-collapse:collapse;width:100%;font-size:12px}
@@ -197,6 +214,11 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
       <button class="btn btn-sm" id="ct-load" onclick="ctOpenLoad()"><i class="ic ic-folder"></i> Load template</button>
       <button class="btn btn-sm btn-primary" id="ct-save" onclick="ctSave()"><i class="ic ic-save"></i> Save</button>
       <button class="btn btn-sm" id="ct-publish" onclick="ctPublish()"><i class="ic ic-upload"></i> Publish</button>
+      <!-- Create staging tables (Sep-2026). Creates only: an existing table
+           is skipped, never dropped, truncated or altered. One call per
+           table, because Netlify cuts a function off at 26 seconds and a
+           half-finished batch is the one outcome nobody can re-run safely. -->
+      <button class="btn btn-sm" id="ct-stage" onclick="ctOpenStage()" title="Create the staging tables in a database, one at a time — existing tables are skipped and never changed"><i class="ic ic-database"></i> Create staging tables</button>
       <button class="btn btn-sm" id="ct-refresh" onclick="ctRefreshScope(false)" title="Re-read the Configurator estimate and bring the module list into line"><i class="ic ic-sync"></i> Refresh scope</button>
       <button class="btn btn-sm" id="ct-refresh-cols" onclick="ctRefreshColumns()" title="Read each in-scope table's columns from the target database and store them with the template"><i class="ic ic-database"></i> Refresh columns</button>
       <!-- Import / export of the mapping (Sep-2026). Front-end only: the file
@@ -251,8 +273,27 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
   <!-- Two panes -->
   <div class="ct-panes">
     <div class="panel" style="margin-bottom:0">
-      <div class="panel-head"><div class="panel-title">Modules in scope</div>
-        <span class="panel-sub" id="ct-mods-sub" style="margin-left:auto"></span></div>
+      <div class="panel-head" style="flex-direction:column;align-items:stretch;gap:0.45rem">
+        <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
+          <div class="panel-title">Modules in scope</div>
+          <span class="panel-sub" id="ct-mods-sub" style="margin-left:auto"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
+          <span class="panel-sub" id="ct-mods-sent"></span>
+          <span style="margin-left:auto;display:flex;gap:0.3rem">
+            <button class="btn btn-sm" id="ct-map-all" onclick="ctMapAll(true)" title="Send every module in scope to Object Mapping">Tick all</button>
+            <button class="btn btn-sm" id="ct-map-none" onclick="ctMapAll(false)" title="Take every module this template sent back out of Object Mapping">Untick all</button>
+          </span>
+        </div>
+        <!-- Column headings for the two tick boxes on each row. Kept in the
+             panel head rather than inside the list so they do not scroll away
+             and so the list stays one <ul> of modules. -->
+        <div class="ct-modhead" aria-hidden="true">
+          <span class="nm"></span><span class="n">Tables</span>
+          <span class="tk" title="Send this module’s staging → target table pairs to Object Mapping">Map</span>
+          <span class="tk" title="Keep this module and its tables, but leave it out of Publish, the specification workbook and Create staging tables">Exclude</span>
+        </div>
+      </div>
       <ul class="ct-mods" id="ct-mods"></ul>
     </div>
 
@@ -348,6 +389,45 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
   </div>
 </div>
 
+<!-- Create staging tables. Nothing is sent until "Create tables" is pressed,
+     and what is sent is the SQL shown in the box, statement for statement. -->
+<div class="ct-modal" id="ct-stage-modal" role="dialog" aria-modal="true" aria-label="Create staging tables">
+  <div class="ct-modal-card" style="width:min(900px,96vw)">
+    <div class="ct-modal-head">Create staging tables <span class="muted" id="ct-stage-sub" style="font-weight:400;font-size:11.5px"></span></div>
+    <div class="ct-modal-body">
+      <p style="margin-bottom:0.7rem">Creates one table per staging table in the modules in scope that are not excluded from publishing.
+        A table that already exists is <b>skipped</b> — nothing here drops, truncates or alters anything, whatever is in it.
+        Each table is its own call, so a run that stops half way has genuinely created the tables it says it has.</p>
+      <div class="ct-field">
+        <label class="form-label" for="ct-stage-conn">Connection</label>
+        <select id="ct-stage-conn" class="form-input" style="width:100%" onchange="ctStageConnChanged()"></select>
+        <div class="muted" id="ct-stage-conn-note" style="font-size:11px;margin-top:0.2rem"></div>
+      </div>
+      <div class="ct-field">
+        <label class="form-label" for="ct-stage-schema">Schema</label>
+        <input id="ct-stage-schema" class="form-input mono" style="width:100%" onchange="ctStageSchemaChanged(this.value)" placeholder="dbo">
+      </div>
+      <div class="ct-counts" id="ct-stage-counts"></div>
+      <div id="ct-stage-warn" class="ct-note warn" style="display:none;margin:0 0 0.7rem"></div>
+      <div class="ct-prev-wrap"><table class="ct-prev" id="ct-stage-rows"><thead><tr>
+        <th>Order</th><th>Module</th><th>Staging table</th><th>Cols</th><th>Status</th><th>Result</th>
+      </tr></thead><tbody></tbody></table></div>
+      <label class="form-label" for="ct-stage-sql" style="margin-top:0.8rem">The SQL that will run</label>
+      <textarea id="ct-stage-sql" class="form-input mono" readonly rows="10" style="width:100%;resize:vertical;white-space:pre" spellcheck="false"></textarea>
+      <div style="display:flex;gap:0.4rem;margin-top:0.4rem;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="ctStageCopy()"><i class="ic ic-clipboard"></i> Copy SQL</button>
+        <button class="btn btn-sm" onclick="ctStageDownload()"><i class="ic ic-download"></i> Download .sql</button>
+      </div>
+      <div id="ct-stage-progress" class="ct-note" style="display:none" role="status"></div>
+    </div>
+    <div class="ct-modal-foot">
+      <button class="btn btn-sm" onclick="ctCloseStage()">Close</button>
+      <button class="btn btn-sm" id="ct-stage-scan" onclick="ctStageScan()" title="Read the connection and mark the tables that are already there">Check what exists</button>
+      <button class="btn btn-sm btn-primary" id="ct-stage-go" onclick="ctStageRun()">Create tables</button>
+    </div>
+  </div>
+</div>
+
   <!-- The audit recorder: save, publish and delete are recorded. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/connections.js?v=375b15ec07" defer></script>
@@ -368,14 +448,21 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- The target's table list, read the way the Schema Explorer reads it:
      one fetch per connection, cached, filtered in memory. -->
 <script src="/cygenix-schema-graph.js?v=6b69c34d3d" defer></script>
-<script src="/cygenix-template-model.js?v=edec78eebf" defer></script>
+<script src="/cygenix-template-model.js?v=4ed31726b5" defer></script>
 <!-- Import / export rules (pure; the sheet library itself is fetched only
      when Import or Excel export is first used). -->
 <script src="/cygenix-template-io.js?v=d1247c68f8" defer></script>
 <!-- The client specification workbook and the staging DDL (Phase 2). Pure
      builders plus the guarded schema read; the sheet library is the same
      lazily-loaded one the export menu already uses. -->
-<script src="/cygenix-template-spec.js?v=9d0f992d45" defer></script>
+<script src="/cygenix-template-spec.js?v=23f2a9b2ff" defer></script>
+<!-- Create staging tables: the CREATE TABLE builder, the existence scan and
+     the one-table-per-call runner. Create-only by construction and by an
+     assertion it runs over its own output before anything is sent. -->
+<script src="/cygenix-template-staging.js?v=1aabd835d3" defer></script>
+<!-- The Object Mapping bridge: turning a module's staging→target pairs into
+     tagged draft jobs, and taking only those back out again. -->
+<script src="/cygenix-template-mapping.js?v=97560b5f32" defer></script>
 <script>
 'use strict';
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -480,7 +567,7 @@ async function api(action, opts, o){
   } finally { CT.inflight = null; setBusy(false); }
 }
 function setBusy(on){
-  ['ct-new', 'ct-load', 'ct-save', 'ct-publish', 'ct-refresh'].forEach((id) => { const b = $(id); if (b) b.disabled = on; });
+  ['ct-new', 'ct-load', 'ct-save', 'ct-publish', 'ct-refresh', 'ct-stage'].forEach((id) => { const b = $(id); if (b) b.disabled = on; });
   if (!on) renderButtons();
 }
 
@@ -499,12 +586,17 @@ function touchDirty(){ CT.dirty = true; mirrorWrite(); renderButtons(); }
    it: save/publish/delete are Mapping & SQL, and the two exports are Data
    out — they put the target's structure in a file that leaves the product. */
 function auditCategory(action){ return /^template\.export-/.test(action) ? 'data' : 'mapping'; }
-function audit(action, summary, detail){
+/* `env` is the connection profile's classification, sent only by the one
+   action that writes to a database. The server re-files a PROD event under
+   the always-on `prod` category, so a paused "Mapping & SQL" cannot swallow
+   the record of tables being created in production. */
+function audit(action, summary, detail, env){
   try {
     if (!window.CygenixAudit || !CT.tpl) return;
     CygenixAudit.record({ action: action, category: auditCategory(action),
       target: { type: 'template', id: CT.tpl.id, label: 'Template: ' + (CT.tpl.name || CT.tpl.id) },
-      projectId: projectId(), summary: summary, detail: detail || null });
+      projectId: projectId(), summary: summary, detail: detail || null,
+      env: env || null });
   } catch (e) { /* recording is best-effort; the save is not */ }
 }
 function note(text, tone){
@@ -622,8 +714,14 @@ async function ctPublish(){
   // The publish freezes whatever snapshot exists, so the warning says what
   // the specification will be missing rather than refusing the publish.
   const warnings = TM.tmPublishWarnings ? TM.tmPublishWarnings(CT.tpl) : [];
-  if (!confirm('Publish "' + CT.tpl.name + '" as version ' + CT.tpl.version + '?\n\n' + s.moduleCount + ' modules, ' + s.tableCount + ' tables, '
+  // Excluded modules are named in the question, not just counted. "3
+  // excluded" is a number somebody skims; "3 excluded: AP, Matters, WIP" is
+  // a sentence they either recognise or stop at.
+  const excluded = TM.tmExcludedModules ? TM.tmExcludedModules(CT.tpl) : [];
+  if (!confirm('Publish "' + CT.tpl.name + '" as version ' + CT.tpl.version + '?\n\n'
+    + s.publishModuleCount + ' of ' + s.moduleCount + ' modules, ' + s.publishTableCount + ' tables, '
     + s.totalColumns + ' columns. '
+    + (excluded.length ? '\n\nLeft out (' + excluded.length + ' excluded from publishing): ' + excluded.join(', ') + '\n' : '')
     + (warnings.length ? '\n\n' + warnings.map(w => w.message).join('\n') + '\n' : '')
     + '\nThe published copy is frozen, columns included; your working draft continues as version ' + (CT.tpl.version + 1) + '.')) return;
   if (CT.dirty) { await ctSave(); if (CT.dirty) return; }     // a publish of unsaved work publishes what nobody can see
@@ -632,7 +730,11 @@ async function ctPublish(){
   const r = await api('template-publish', { method: 'POST', body: { template: frozen, userId: userName() } });
   if (!r) return;
   if (!r.ok) { note('Publish failed: ' + r.detail, 'crit'); return; }
-  audit('template.publish', 'Published template "' + frozen.name + '" v' + frozen.version, { version: frozen.version, modules: s.moduleCount, tables: s.tableCount, profileId: frozen.profileId });
+  audit('template.publish', 'Published template "' + frozen.name + '" v' + frozen.version,
+    { version: frozen.version, modules: s.publishModuleCount, tables: s.publishTableCount, profileId: frozen.profileId,
+      // What was left out, by name. The published document carries the same
+      // list; this puts it in the trail, where it cannot be edited later.
+      excluded: frozen.excludedModules || [] });
   // The draft carries on at version + 1, under a new id; the old draft
   // document goes only once the new one is safely stored.
   const oldId = CT.tpl.id;
@@ -858,6 +960,9 @@ function renderBadges(){
   $('ct-badges').innerHTML = '<span class="chip info">v' + esc(s.version) + '</span>'
     + '<span class="chip ' + (s.status === 'published' ? 'ok' : 'warn') + '">' + (s.status === 'published' ? 'Published' : 'Draft') + '</span>'
     + '<span class="muted" style="font-size:11px">' + s.moduleCount + ' module' + (s.moduleCount === 1 ? '' : 's') + ' · ' + s.tableCount + ' table' + (s.tableCount === 1 ? '' : 's')
+    // The modules stay counted; the exclusion is named beside them, because
+    // "24 modules · 3 excluded" is the true sentence and "21 modules" is not.
+    + (s.excludedCount ? ' · ' + s.excludedCount + ' excluded from publishing' : '')
     + (s.outOfScopeCount ? ' · ' + s.outOfScopeCount + ' out of scope' : '')
     // Column coverage: the client specification is only as complete as this.
     + (s.tableCount ? ' · ' + (s.tablesWithColumns === s.tableCount
@@ -871,7 +976,19 @@ function renderBadges(){
 function renderModules(){
   const mods = (CT.tpl.modules || []);
   const inS = mods.filter(m => m.inScope !== false), out = mods.filter(m => m.inScope === false);
-  $('ct-mods-sub').textContent = inS.length + ' in scope' + (out.length ? ' · ' + out.length + ' dropped' : '');
+  const exCount = inS.filter(m => m.excluded).length;
+  $('ct-mods-sub').textContent = inS.length + ' in scope'
+    + (exCount ? ' · ' + exCount + ' excluded' : '')
+    + (out.length ? ' · ' + out.length + ' dropped' : '');
+  // How many of this template's jobs are actually in Object Mapping right
+  // now — counted from the job store, not from the ticks, because the ticks
+  // are what was asked for and the store is what happened.
+  const MAP = window.CygenixTemplateMapping;
+  const sent = MAP ? MAP.countSent(CT.tpl, readJobs()) : 0;
+  const sentEl = $('ct-mods-sent');
+  if (sentEl) sentEl.textContent = sent
+    ? sent + ' sent to Object Mapping'
+    : 'Nothing sent to Object Mapping yet';
   // An imported module the Configurator never put in scope wears a red
   // "out of scope" badge; one the Configurator dropped keeps the grey
   // "no longer in scope" — different facts, different words.
@@ -879,9 +996,29 @@ function renderModules(){
   const badge = (m) => IO && IO.moduleImportedOutOfScope(m)
     ? ' <span class="chip oos" title="Imported for a module that is not in the Configurator scope">out of scope</span>'
     : ' <span class="chip">no longer in scope</span>';
-  const li = (m, cls) => '<li class="' + cls + (CT.selected === m.module ? ' on' : '') + '" onclick="ctSelect(\'' + escArg(m.module) + '\')" title="' + esc(m.module) + '">'
-    + esc(m.module) + (cls === 'out' ? badge(m) : '')
-    + '<span class="n' + (!(m.tables || []).length && cls !== 'out' ? ' zero' : '') + '">' + (m.tables || []).length + '</span></li>';
+  const ro = isReadOnly();
+  /* The two ticks. A module that has dropped out of the Configurator scope
+     gets neither — there is nothing to publish and nothing to map — but it
+     keeps the two empty cells so every row stays aligned under the headings.
+     Both boxes stop the click reaching the row, or ticking one would also
+     change which module is selected underneath the dialog. */
+  const tick = (m, kind, on, label, tip) =>
+    '<span class="tk"><input type="checkbox"' + (on ? ' checked' : '') + (ro ? ' disabled' : '')
+    + ' onclick="event.stopPropagation()" onchange="' + (kind === 'map' ? 'ctToggleMap' : 'ctToggleExclude')
+    + '(\'' + escArg(m.module) + '\',this.checked)" aria-label="' + esc(label) + '" title="' + esc(tip) + '"></span>';
+  const ticks = (m, cls) => cls === 'out'
+    ? '<span class="tk none"></span><span class="tk none"></span>'
+    : tick(m, 'map', !!m.mapped, 'Send ' + m.module + ' to Object Mapping',
+        'Send this module’s staging → target table pairs to Object Mapping as draft mappings. Unticking removes only the ones sent from here.')
+      + tick(m, 'exc', !!m.excluded, 'Exclude ' + m.module + ' from publishing',
+        'Keep this module and its tables, but leave it out of Publish, the specification workbook and Create staging tables.');
+  const li = (m, cls) => '<li class="' + cls + (cls !== 'out' && m.excluded ? ' ex' : '') + (CT.selected === m.module ? ' on' : '')
+    + '" onclick="ctSelect(\'' + escArg(m.module) + '\')" title="' + esc(m.module) + '">'
+    + '<span class="nm">' + esc(m.module)
+      + (cls === 'out' ? badge(m) : (m.excluded ? ' <span class="chip exc" title="Kept, but left out of Publish, the workbook and Create staging tables">excluded</span>' : ''))
+    + '</span>'
+    + '<span class="n' + (!(m.tables || []).length && cls !== 'out' ? ' zero' : '') + '">' + (m.tables || []).length + '</span>'
+    + ticks(m, cls) + '</li>';
   $('ct-mods').innerHTML = (inS.map(m => li(m, 'in')).join('') || '<li class="empty" style="cursor:default">No modules in scope. Tick modules in Project › Configurator, then Refresh scope.</li>')
     + (out.length ? '<li class="ct-sep" style="cursor:default">No longer in scope — tables kept</li>' + out.map(m => li(m, 'out')).join('') : '');
 }
@@ -947,6 +1084,19 @@ function renderButtons(){
     rc.title = ro ? 'A published version keeps the columns stored when it was published'
       : 'Read each in-scope table’s columns from the target database and store them with the template';
   }
+  // Creating staging tables reads the template but writes to a database, so
+  // a published version may do it: the frozen snapshot is exactly what the
+  // client was told to build. The in-flight flag is this page's own, not the
+  // data layer's, because the run is a series of db-connect calls.
+  const st = $('ct-stage');
+  if (st) {
+    st.disabled = !!CT.staging || !!CT.inflight;
+    st.title = CT.staging ? 'Creating tables — one moment'
+      : 'Create the staging tables in a database, one at a time — existing tables are skipped and never changed';
+  }
+  const mapAll = $('ct-map-all'), mapNone = $('ct-map-none');
+  if (mapAll) mapAll.disabled = ro || !!CT.mapping;
+  if (mapNone) mapNone.disabled = ro || !!CT.mapping;
 }
 
 /* ── Import / export (Sep-2026) ─────────────────────────────────────────
@@ -1245,6 +1395,410 @@ async function ctExportDdl(){
     { version: CT.tpl.version, tables: made, unresolved: rows.missing.length });
   note('Staging DDL for ' + made + ' table' + (made === 1 ? '' : 's')
     + (rows.missing.length ? ' · ' + rows.missing.length + ' skipped with no column detail' : '') + '.', rows.missing.length ? 'warn' : 'ok');
+}
+
+/* ── The two module ticks, and the staging-table builder (Sep-2026) ──────
+   Three controls that all live on the module row or beside it:
+
+     Exclude   keeps the module and its tables but leaves it out of Publish,
+               the specification workbook, the staging DDL and Create staging
+               tables, and out of the readiness check. Purely a document
+               change: the model owns the rule, this only ticks the box.
+     Map       sends that module's staging → target pairs to Object Mapping
+               as tagged DRAFT jobs, and takes back ONLY the ones it sent.
+     Create    builds the staging tables on a connection the operator picks,
+               one CREATE TABLE per call, skipping anything already there.
+
+   All of it is in this script block, with the toolbar's onclick handlers,
+   because functions do not hoist across block boundaries. */
+const JOBS_KEY = 'cygenix_jobs';
+CT.mapping = false;      // in-flight flag for a send / un-send
+CT.staging = false;      // in-flight flag for a staging run
+CT.stagePlan = null;     // the plan while the dialog is open
+
+function readJobs(){
+  try { const j = JSON.parse(localStorage.getItem(JOBS_KEY) || '[]'); return Array.isArray(j) ? j : []; }
+  catch (e) { return []; }
+}
+/* The same cap every other writer of this store applies. It should never
+   bite here — applySend refuses rather than letting it — but a writer that
+   quietly disagreed with the others would be worse than one that does not. */
+function writeJobs(jobs){
+  try { localStorage.setItem(JOBS_KEY, JSON.stringify(jobs.slice(0, window.CygenixTemplateMapping ? CygenixTemplateMapping.JOB_CAP : 100))); return true; }
+  catch (e) { note('The job store could not be written (' + ((e && e.message) || 'storage error') + '). Nothing was changed.', 'crit'); return false; }
+}
+/* Where the template's staging tables live, used to qualify the source name
+   on a mapping. One value, set in the Create staging tables dialog and
+   stored on the template, so the job's source table and the table that
+   actually gets created are the same string. */
+function stagingSchema(){ return String((CT.tpl && CT.tpl.stagingSchema) || 'dbo').trim() || 'dbo'; }
+/* The target's schema for a given table, from the schema already in memory.
+   Never fetches: if the graph has not been loaded, dbo is the assumption the
+   rest of this page makes and the operator can correct the job in Object
+   Mapping, which is where they are going anyway. */
+function targetSchemaOf(name){
+  try {
+    if (CT.graph && CT.graph.ok) {
+      const hit = (CT.graph.tables || []).find(t => String(t.name).toLowerCase() === String(name).toLowerCase());
+      if (hit && hit.schema) return hit.schema;
+    }
+  } catch (e) {}
+  return 'dbo';
+}
+
+/* ── Exclude ─────────────────────────────────────────────────────────────── */
+function ctToggleExclude(moduleName, on){
+  if (!CT.tpl || isReadOnly()) { render(); return; }
+  if (!TM.tmSetModuleExcluded(CT.tpl, moduleName, on, userName())) { render(); return; }
+  touchDirty(); render();
+  const s = TM.tmSummary(CT.tpl);
+  note(on
+    ? '"' + moduleName + '" is excluded from publishing. Its tables are kept, and Publish, the specification workbook and Create staging tables will skip it. '
+      + s.excludedCount + ' of ' + s.moduleCount + ' module' + (s.moduleCount === 1 ? '' : 's') + ' excluded. Press Save to keep it.'
+    : '"' + moduleName + '" is back in the publish. Press Save to keep it.', on ? 'warn' : 'ok');
+}
+
+/* ── Map: send to Object Mapping, and take back only what was sent ───────── */
+async function ctToggleMap(moduleName, on){
+  if (!CT.tpl || isReadOnly()) { render(); return; }
+  const MAP = window.CygenixTemplateMapping;
+  if (!MAP) { note('The Object Mapping bridge is not loaded on this page.', 'crit'); render(); return; }
+  if (CT.mapping) { note('Still sending — one moment.', 'warn'); render(); return; }
+  CT.mapping = true; renderButtons();
+  try {
+    const jobs = readJobs();
+    if (on) {
+      const res = MAP.applySend(CT.tpl, moduleName, jobs, {
+        projectId: projectId(), by: userName(),
+        stagingSchema: stagingSchema(), targetSchemaOf: targetSchemaOf,
+      });
+      if (!res.ok) {
+        // The hundred-job cap. Refuse the whole module and say exactly what
+        // is in the way; trimming to fit would silently delete somebody's
+        // oldest mappings, which is not a trade a tick box gets to make.
+        note(res.reason, 'crit');
+        render();
+        return;
+      }
+      if (!res.added) { note(res.reason, 'warn'); TM.tmSetModuleMapped(CT.tpl, moduleName, true, userName()); touchDirty(); render(); return; }
+      // Stamp each new job with the active connection profile, the same way
+      // Object Mapping's own save does, so a job created here is not a job
+      // with no profile that later refuses to run.
+      try {
+        if (window.CygenixJobProfile) res.created.forEach(j => CygenixJobProfile.attach(j, jobs));
+      } catch (e) { /* the mapping still stands without the stamp */ }
+      if (!writeJobs(res.jobs)) { render(); return; }
+      TM.tmSetModuleMapped(CT.tpl, moduleName, true, userName());
+      touchDirty(); render();
+      audit('template.map-send', 'Sent ' + res.added + ' mapping' + (res.added === 1 ? '' : 's') + ' from "' + moduleName + '" to Object Mapping',
+        { module: moduleName, created: res.added, alreadyMapped: res.plan.duplicates.length, jobsTotal: res.jobs.length });
+      note(res.added + ' draft mapping' + (res.added === 1 ? '' : 's') + ' from "' + moduleName + '" now in Object Mapping'
+        + (res.plan.duplicates.length ? ' · ' + res.plan.duplicates.length + ' pair' + (res.plan.duplicates.length === 1 ? ' was' : 's were') + ' already mapped and left alone' : '')
+        + '. Open Object Mapping to add the column mappings. Press Save to keep the tick.', 'ok');
+    } else {
+      const plan = MAP.planRemove(CT.tpl, moduleName, jobs);
+      if (!plan.remove.length) {
+        TM.tmSetModuleMapped(CT.tpl, moduleName, false, userName());
+        touchDirty(); render();
+        note('Nothing to remove — "' + moduleName + '" has no mappings that came from this template. Anything you built by hand in Object Mapping is untouched.', 'ok');
+        return;
+      }
+      // Only ever this template's own jobs for this module, and the ones
+      // somebody has since worked on are named before they go.
+      if (!confirm('Remove ' + plan.remove.length + ' mapping' + (plan.remove.length === 1 ? '' : 's') + ' that this template created for "' + moduleName + '"?\n\n'
+        + (plan.edited.length ? plan.edited.length + ' of them have been worked on in Object Mapping:\n  ' + plan.edited.slice(0, 8).map(j => j.name).join('\n  ') + (plan.edited.length > 8 ? '\n  …' : '') + '\n\n' : '')
+        + 'Mappings you built by hand are not touched.')) { render(); return; }
+      if (!writeJobs(plan.jobs)) { render(); return; }
+      TM.tmSetModuleMapped(CT.tpl, moduleName, false, userName());
+      touchDirty(); render();
+      audit('template.map-remove', 'Removed ' + plan.remove.length + ' template mapping' + (plan.remove.length === 1 ? '' : 's') + ' for "' + moduleName + '"',
+        { module: moduleName, removed: plan.remove.length, edited: plan.edited.length, jobsTotal: plan.jobs.length });
+      note('Removed ' + plan.remove.length + ' mapping' + (plan.remove.length === 1 ? '' : 's') + ' this template created for "' + moduleName + '". Nothing else in Object Mapping was changed. Press Save to keep the tick.', 'ok');
+    }
+  } finally {
+    CT.mapping = false; renderButtons();
+  }
+}
+
+/* Tick all / untick all, one module at a time through the same path, so the
+   cap refusal and the confirmation behave exactly as they do on one module.
+   It stops at the first refusal rather than carrying on past it. */
+async function ctMapAll(on){
+  if (!CT.tpl || isReadOnly()) return;
+  const mods = (CT.tpl.modules || []).filter(m => m.inScope !== false && (on ? !m.mapped : m.mapped));
+  if (!mods.length) { note(on ? 'Every module in scope is already ticked.' : 'No module is ticked.', 'ok'); return; }
+  if (on && !confirm('Send every module in scope to Object Mapping (' + mods.length + ' module' + (mods.length === 1 ? '' : 's') + ')?')) return;
+  for (let i = 0; i < mods.length; i++) {
+    const before = window.CygenixTemplateMapping ? CygenixTemplateMapping.countSent(CT.tpl, readJobs()) : 0;
+    await ctToggleMap(mods[i].module, on);
+    const after = window.CygenixTemplateMapping ? CygenixTemplateMapping.countSent(CT.tpl, readJobs()) : 0;
+    // A send that added nothing AND left the tick off is a refusal; carrying
+    // on would just repeat the same refusal for every remaining module.
+    if (on && after === before && !TM.tmFindModule(CT.tpl, mods[i].module).mapped) break;
+  }
+}
+
+/* ── Create staging tables ───────────────────────────────────────────────── */
+function stageSide(){ return $('ct-stage-conn') ? $('ct-stage-conn').value : 'src'; }
+function stageSideLabel(side){
+  const p = activeProfile();
+  const base = side === 'tgt' ? 'Target' : 'Source';
+  return base + (p && p.id ? ' connection on profile ' + p.id : ' connection');
+}
+/* The picker offers the ACTIVE PROFILE's two connections and nothing else.
+   A profile is a matched pair that has been classified and locked together;
+   offering an ambient connection here would let somebody create a client's
+   staging tables on a database the governance layer has never looked at. */
+function ctStageConnOptions(){
+  const sel = $('ct-stage-conn');
+  const g = window.CygenixSchemaGraph;
+  const opts = [];
+  ['src', 'tgt'].forEach((side) => {
+    if (g && typeof g.hasConnection === 'function' && !g.hasConnection(side)) return;
+    opts.push('<option value="' + side + '">' + esc(stageSideLabel(side)) + '</option>');
+  });
+  sel.innerHTML = opts.join('') || '<option value="">No connection on the active profile</option>';
+  // The staging database is the one the client builds and hands back as the
+  // SOURCE, so that is the default. The target is offered because a client
+  // sometimes stages inside the target server, and refusing that would just
+  // send them back to the downloadable .sql file.
+  sel.value = opts.length ? 'src' : '';
+  return opts.length;
+}
+function ctStageConnChanged(){ CT.stagePlan = null; ctStagePlan(); }
+/* The schema the operator types here is where the tables are created, so it
+   is also the schema a mapping's source table has to name. It is stored on
+   the template — and only when a PERSON changes it, never as a side effect
+   of opening the dialog, or simply looking would mark a clean template
+   unsaved. */
+function ctStageSchemaChanged(v){
+  const next = String(v || '').trim() || 'dbo';
+  if (!isReadOnly() && CT.tpl && CT.tpl.stagingSchema !== next) { CT.tpl.stagingSchema = next; touchDirty(); }
+  CT.stagePlan = null;
+  ctStagePlan();
+}
+
+async function ctOpenStage(){
+  if (!CT.tpl) return;
+  const ST = window.CygenixTemplateStaging;
+  if (!ST) { note('The staging builder is not loaded on this page.', 'crit'); return; }
+  if (CT.staging) { note('Already creating tables — one moment.', 'warn'); return; }
+  const have = ctStageConnOptions();
+  $('ct-stage-sub').textContent = '— ' + (CT.tpl.name || '') + ' v' + CT.tpl.version;
+  $('ct-stage-schema').value = stagingSchema();
+  $('ct-stage-progress').style.display = 'none';
+  $('ct-stage-progress').textContent = '';
+  $('ct-stage-modal').classList.add('open');
+  if (!have) {
+    $('ct-stage-conn-note').textContent = 'Select a connection profile on the Profiles page first — this page only offers that profile’s connections.';
+  } else {
+    $('ct-stage-conn-note').textContent = 'These are the connections on the active profile. The staging database is normally the source.';
+  }
+  ctStagePlan();
+  // One read to find out what is already there, so the review can say
+  // "exists — will skip" before anything is confirmed rather than after.
+  if (have) await ctStageScan();
+}
+function ctCloseStage(){
+  if (CT.staging) { note('Wait for the run to finish before closing.', 'warn'); return; }
+  $('ct-stage-modal').classList.remove('open');
+  CT.stagePlan = null;
+}
+
+/* Build (or rebuild) the plan from the template and the dialog's choices.
+   Pure until Confirm: no connection is touched here. */
+function ctStagePlan(){
+  const ST = window.CygenixTemplateStaging;
+  if (!ST || !CT.tpl) return null;
+  const side = stageSide();
+  const conn = ctStageConnValue(side);
+  const schema = String($('ct-stage-schema').value || '').trim() || 'dbo';
+  const plan = ST.stagingPlan(CT.tpl, {
+    dialect: ST.dialectOf(conn),
+    schema: schema,
+    existing: (CT.stagePlan && CT.stagePlan.existingFor === side + '|' + schema) ? CT.stagePlan.existing : null,
+  });
+  plan.existing = (CT.stagePlan && CT.stagePlan.existingFor === side + '|' + schema) ? CT.stagePlan.existing : null;
+  plan.existingFor = plan.existing ? side + '|' + schema : '';
+  CT.stagePlan = plan;
+  renderStage();
+  return plan;
+}
+/* The connection VALUE, read only to decide the dialect. It is never logged,
+   never put in a URL and never shown — dialectOf() looks at the scheme and
+   nothing else. */
+function ctStageConnValue(side){
+  try {
+    if (!window.CygenixConnections) return '';
+    const c = CygenixConnections.get() || {};
+    if (side === 'tgt') return c.tgtFnUrl || c.tgtConnString || '';
+    return c.srcFnUrl || c.srcConnString || '';
+  } catch (e) { return ''; }
+}
+
+function renderStage(){
+  const plan = CT.stagePlan;
+  const tile = (k, v, bad) => '<div class="ct-count' + (bad && v ? ' bad' : '') + '"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>';
+  if (!plan) { $('ct-stage-counts').innerHTML = ''; return; }
+  $('ct-stage-counts').innerHTML = tile('to create', plan.toCreate) + tile('already there', plan.toSkip)
+    + tile('no columns yet', plan.noColumns, true)
+    + tile('dialect', plan.dialect === 'postgres' ? 'Postgres' : 'SQL Server');
+  const warn = $('ct-stage-warn');
+  const lines = [];
+  if (!plan.scanned) lines.push('Not checked yet: press "Check what exists" to mark the tables that are already there. A table that exists is skipped either way — the check only tells you in advance.');
+  if (plan.noColumns) lines.push(plan.noColumns + ' table' + (plan.noColumns === 1 ? '' : 's') + ' cannot be created because no columns have been read for ' + (plan.noColumns === 1 ? 'it' : 'them') + '. Run "Refresh columns" first.');
+  if (plan.unknownTypes.length) lines.push(plan.unknownTypes.length + ' column' + (plan.unknownTypes.length === 1 ? ' has a type' : 's have types') + ' this page does not recognise ('
+    + plan.unknownTypes.slice(0, 4).map(u => u.column + ' ' + u.dataType).join(', ') + (plan.unknownTypes.length > 4 ? ', …' : '')
+    + '). They are written exactly as the target spells them; if the server rejects one, that table fails and the rest carry on.');
+  const ex = TM.tmExcludedModules ? TM.tmExcludedModules(CT.tpl) : [];
+  if (ex.length) lines.push(ex.length + ' module' + (ex.length === 1 ? ' is' : 's are') + ' excluded from publishing and left out of this run: ' + ex.join(', ') + '.');
+  warn.style.display = lines.length ? 'block' : 'none';
+  warn.textContent = lines.join(' ');
+
+  const label = { pending: 'will create', exists: 'exists — will skip', 'no-columns': 'no columns — skipped',
+    done: 'done', failed: 'failed' };
+  const tb = $('ct-stage-rows').querySelector('tbody');
+  tb.innerHTML = plan.tables.length ? plan.tables.map(t => '<tr' + (t.status === 'failed' || t.status === 'no-columns' ? ' class="flagged"' : '') + '>'
+    + '<td class="mono">' + (t.loadOrder || '') + '</td><td>' + esc(t.module) + '</td>'
+    + '<td class="mono">' + esc(t.schema) + '.' + esc(t.stagingTable) + '</td>'
+    + '<td class="mono">' + t.columnCount + '</td>'
+    + '<td>' + esc(label[t.status] || t.status) + '</td>'
+    + '<td>' + esc(t.result || t.error || '') + '</td></tr>').join('')
+    : '<tr><td colspan="6" class="empty">Nothing to create. Every module in scope is excluded, or none has tables.</td></tr>';
+
+  const ST = window.CygenixTemplateStaging;
+  $('ct-stage-sql').value = ST ? ST.planScript(plan, {
+    templateName: CT.tpl.name, version: CT.tpl.version, by: userName(),
+    connectionLabel: stageSideLabel(stageSide()), now: new Date(),
+  }) : '';
+  const go = $('ct-stage-go');
+  go.disabled = !!CT.staging || !plan.toCreate;
+  go.textContent = CT.staging ? 'Creating…' : (plan.toCreate ? 'Create ' + plan.toCreate + ' table' + (plan.toCreate === 1 ? '' : 's') : 'Nothing to create');
+  $('ct-stage-scan').disabled = !!CT.staging;
+}
+
+function ctStageCopy(){
+  const box = $('ct-stage-sql');
+  const done = () => note('The SQL is on the clipboard.', 'ok');
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(box.value).then(done, () => { box.select(); document.execCommand('copy'); done(); }); return; }
+    box.select(); document.execCommand('copy'); done();
+  } catch (e) { note('Could not copy — select the text in the box and copy it.', 'warn'); }
+}
+function ctStageDownload(){
+  const SPEC = window.CygenixTemplateSpec;
+  const name = SPEC ? SPEC.specFileName(CT.tpl, 'sql').replace(/-spec\.sql$/, '-staging.sql') : 'staging.sql';
+  downloadBlob(new Blob([$('ct-stage-sql').value], { type: 'text/plain;charset=utf-8' }), name);
+  note('Downloaded the staging script. Running it by hand does the same thing, table for table.', 'ok');
+}
+
+/* The existence scan: one read, marks the rows, changes nothing. */
+async function ctStageScan(){
+  const ST = window.CygenixTemplateStaging;
+  if (!ST || !CT.tpl || CT.staging) return;
+  const side = stageSide();
+  if (!side) { note('No connection on the active profile.', 'warn'); return; }
+  const g = window.CygenixSchemaGraph;
+  if (!g || typeof g.execute !== 'function') { note('The database reader is not loaded on this page.', 'crit'); return; }
+  const schema = String($('ct-stage-schema').value || '').trim() || 'dbo';
+  const dialect = ST.dialectOf(ctStageConnValue(side));
+  $('ct-stage-scan').disabled = true;
+  try {
+    const existing = await ST.scanExisting((sql) => g.execute(side, sql), { dialect: dialect, schema: schema });
+    CT.stagePlan = { existing: existing, existingFor: side + '|' + schema };
+    const plan = ctStagePlan();
+    note('Checked ' + stageSideLabel(side).toLowerCase() + ': ' + plan.toSkip + ' of ' + plan.tables.length
+      + ' staging table' + (plan.tables.length === 1 ? '' : 's') + ' already exist' + (plan.toSkip === 1 ? 's' : '') + ' and will be skipped.', 'ok');
+  } catch (e) {
+    CT.stagePlan = null;
+    ctStagePlan();
+    note('Could not read that connection: ' + ((e && e.message) || 'no response') + '. You can still run the script by hand, or fix the connection and check again.', 'crit');
+  } finally {
+    $('ct-stage-scan').disabled = !!CT.staging;
+  }
+}
+
+/* The run. One table per call, progress per row, and the in-flight flag is
+   set here and cleared in this same call's finally — never in a callback. */
+async function ctStageRun(){
+  const ST = window.CygenixTemplateStaging;
+  if (!ST || !CT.tpl) return;
+  if (CT.staging) { note('Already creating tables — one moment.', 'warn'); return; }
+  const plan = CT.stagePlan;
+  if (!plan || !plan.toCreate) { note('Nothing to create.', 'warn'); return; }
+  const side = stageSide();
+  const g = window.CygenixSchemaGraph;
+  if (!g || typeof g.execute !== 'function') { note('The database reader is not loaded on this page.', 'crit'); return; }
+
+  /* The governance gate, the same one every other write on this product goes
+     through: an UNKNOWN environment blocks the write outright, and a PRD one
+     asks for the word to be typed. Creating tables in somebody's production
+     database by accident is exactly what this exists to stop. */
+  let envClass = '';
+  try {
+    if (window.CygenixProfiles) {
+      const guard = CygenixProfiles.cpGuardWrite(profileStore());
+      if (!guard.ok) { note(guard.why, 'crit'); return; }
+      /* The two vocabularies are not the same list: a profile is classified
+         DEV / TEST / UAT / PRD / SANDBOX / UNKNOWN, the audit trail knows
+         DEV / TEST / STAGING / PROD. Only the three that mean the same thing
+         are translated; anything else is sent as no environment rather than
+         being squeezed into the nearest-looking word. PRD → PROD is the one
+         that matters, because that is what makes the entry always-on. */
+      const cls = (guard.profile && guard.profile.envClass) || '';
+      envClass = cls === 'PRD' ? 'PROD' : (cls === 'DEV' || cls === 'TEST' ? cls : '');
+      if (guard.requiresTypedConfirm) {
+        const typed = prompt('This profile is classified PRODUCTION (' + (guard.profile && guard.profile.id) + ').\n\n'
+          + 'Type CREATE to create ' + plan.toCreate + ' table' + (plan.toCreate === 1 ? '' : 's') + ' in ' + plan.schema + ' on the '
+          + (side === 'tgt' ? 'target' : 'source') + ' connection. Nothing existing will be dropped, truncated or altered.');
+        if (String(typed || '').trim().toUpperCase() !== 'CREATE') { note('Not confirmed — nothing was created.', 'warn'); return; }
+      }
+    }
+  } catch (e) { /* no profiles adopted: the ambient connection, as everywhere else */ }
+
+  if (!plan.scanned && !confirm('The connection has not been checked for existing tables yet.\n\n'
+    + 'Create ' + plan.toCreate + ' table' + (plan.toCreate === 1 ? '' : 's') + ' in ' + plan.schema + ' anyway? Anything already there is skipped, not changed.')) return;
+
+  CT.staging = true;
+  renderButtons(); renderStage();
+  const prog = $('ct-stage-progress');
+  prog.style.display = 'block'; prog.className = 'ct-note';
+  prog.textContent = 'Starting…';
+  let busy = null;
+  try { if (window.CygenixBusy) busy = CygenixBusy.start('Creating staging tables', { button: '#ct-stage-go' }); } catch (e) { busy = null; }
+  try {
+    const r = await ST.runPlan(plan, {
+      execute: (sql) => g.execute(side, sql),
+      onProgress: (p) => {
+        const row = plan.tables.find(t => t.stagingTable === p.table);
+        if (row) row.result = p.outcome.status === 'failed' ? p.outcome.error : p.outcome.status;
+        try { if (busy && busy.progress) busy.progress(p.done, p.total); } catch (e) {}
+        prog.textContent = p.done + ' of ' + p.total + ' · ' + p.table + ' — ' + (p.outcome.status === 'failed' ? 'failed: ' + p.outcome.error : p.outcome.status);
+        renderStage();
+      },
+    });
+    if (!r.ok) { prog.className = 'ct-note crit'; prog.textContent = r.reason; note(r.reason, 'crit'); return; }
+    const bits = [r.created + ' created'];
+    if (r.skipped) bits.push(r.skipped + ' already there');
+    if (r.failed) bits.push(r.failed + ' failed');
+    prog.className = 'ct-note' + (r.failed ? ' crit' : ' ok');
+    prog.textContent = bits.join(' · ') + '.' + (r.failed ? ' The failures are on their own rows above, with the server’s own message.' : '');
+    audit('template.create-staging', 'Created ' + r.created + ' staging table' + (r.created === 1 ? '' : 's') + ' for "' + CT.tpl.name + '" v' + CT.tpl.version,
+      { connection: side === 'tgt' ? 'target' : 'source', schema: plan.schema, dialect: plan.dialect,
+        created: r.created, skipped: r.skipped, failed: r.failed, total: r.total, profileId: CT.tpl.profileId },
+      envClass);
+    note('Staging tables: ' + bits.join(' · ') + '. Nothing existing was dropped, truncated or altered.', r.failed ? 'warn' : 'ok');
+  } catch (e) {
+    prog.className = 'ct-note crit';
+    prog.textContent = (e && e.message) || 'The tables could not be created.';
+    note('Creating the staging tables failed: ' + ((e && e.message) || e), 'crit');
+  } finally {
+    CT.staging = false;
+    try { if (busy && busy.done) busy.done(); } catch (e) {}
+    // The run changed what exists, so the marks are stale until re-checked.
+    if (CT.stagePlan) { CT.stagePlan.existing = null; CT.stagePlan.existingFor = ''; CT.stagePlan.scanned = false; }
+    renderButtons(); renderStage();
+  }
 }
 
 /* The assistant's actions call these by name. Everything else on this page

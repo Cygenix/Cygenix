@@ -36,7 +36,16 @@
   // shape and already `[]`, so the migration adds nothing to a table — it
   // only stamps the schema number. Nothing is required, so a v1 draft that
   // has never been near this code loads and renders exactly as before.
-  var TM_SCHEMA_VERSION = 2;
+  //
+  // 3 (Sep-2026): every module may carry two operator flags, `excluded` and
+  // `mapped`. Both are booleans and both default to FALSE, which is the whole
+  // point of the migration: the brief is that "existing templates load with
+  // nothing excluded", so tmMigrate writes the two fields explicitly rather
+  // than leaving them undefined. Undefined would read as false today, but a
+  // stored document that never says so is a document whose next reader has to
+  // guess, and that is exactly the kind of guess that turns into a module
+  // silently dropped from a client's publish.
+  var TM_SCHEMA_VERSION = 3;
 
   // The persisted column record. Named here so the page, the specification
   // builder and the tests agree on one shape, and so a reader can see what a
@@ -141,8 +150,52 @@
       module: tmTrim(name),
       inScope: true,          // set false when the module leaves the estimate
       tables: [],
-      notes: ''
+      notes: '',
+      /* Two operator decisions, added Sep-2026, both defaulting to off so an
+         existing template loads with nothing excluded and nothing mapped:
+
+           excluded  in scope, tables kept, but left out of Publish, the
+                     specification workbook, the staging DDL and the
+                     readiness check. "Not this time", not "not at all".
+           mapped    this module's staging→target pairs have been sent to
+                     Object Mapping as draft jobs. The flag is the record of
+                     the decision; the jobs themselves live in cygenix_jobs
+                     and carry a tag pointing back here. */
+      excluded: false,
+      mapped: false
     };
+  }
+
+  /* ── The two module flags ───────────────────────────────────────────────
+     Read through helpers rather than touched directly, because "is this
+     module in play" is asked by five callers and they must not each decide
+     it for themselves. A module that has dropped out of scope is never in
+     play whatever its flags say — that is the older rule and it wins. */
+  function tmModuleExcluded(m) { return !!(m && m.excluded); }
+  function tmModuleActive(m) { return !!m && m.inScope !== false && !m.excluded; }
+  /* Every module that publishing, the workbook, the DDL and the readiness
+     check should consider. One definition, one place. */
+  function tmActiveModules(tpl) {
+    return ((tpl && tpl.modules) || []).filter(tmModuleActive);
+  }
+  function tmSetModuleExcluded(tpl, moduleName, excluded, who) {
+    var m = tmFindModule(tpl, moduleName);
+    if (!m || m.inScope === false) return null;   // out of scope has no ticks
+    m.excluded = !!excluded;
+    tmTouch(tpl, who);
+    return m;
+  }
+  function tmSetModuleMapped(tpl, moduleName, mapped, who) {
+    var m = tmFindModule(tpl, moduleName);
+    if (!m || m.inScope === false) return null;
+    m.mapped = !!mapped;
+    tmTouch(tpl, who);
+    return m;
+  }
+  function tmExcludedModules(tpl) {
+    return ((tpl && tpl.modules) || [])
+      .filter(function (m) { return m.inScope !== false && m.excluded; })
+      .map(function (m) { return m.module; });
   }
 
   /**
@@ -369,8 +422,12 @@
 
   /* How much of the in-scope template has column detail. The header line and
      the publish warning both read this, so they cannot disagree. */
+  /* Counts ACTIVE modules only (in scope and not excluded). An excluded
+     module's tables are deliberately kept on the document, but nothing is
+     going to be built from them this time round, so counting their missing
+     columns would raise a publish warning about work nobody is doing. */
   function tmColumnCoverage(tpl) {
-    var inScope = ((tpl && tpl.modules) || []).filter(function (m) { return m.inScope !== false; });
+    var inScope = tmActiveModules(tpl);
     var tablesInScope = 0, tablesWithColumns = 0, totalColumns = 0;
     var missing = [];
     inScope.forEach(function (m) {
@@ -406,6 +463,11 @@
   function tmMigrate(tpl) {
     if (!tpl || typeof tpl !== 'object') return tpl;
     (tpl.modules || []).forEach(function (m) {
+      /* Schema 3. Written as an explicit false rather than left undefined:
+         see the note on TM_SCHEMA_VERSION. A document that already carries
+         the flags keeps whatever the operator set. */
+      if (typeof m.excluded !== 'boolean') m.excluded = false;
+      if (typeof m.mapped !== 'boolean') m.mapped = false;
       (m.tables || []).forEach(function (t) {
         if (!Array.isArray(t.columns)) t.columns = [];
       });
@@ -449,7 +511,21 @@
       });
     }
 
-    inScope.forEach(function (m) {
+    /* "Ready to publish?" asks about the modules that are actually going to be
+       published. An excluded module is skipped entirely: no tables is not a
+       problem for a module nobody is building this time. The one thing we do
+       still check is that something is left — publishing a template with every
+       module excluded produces an empty workbook and an empty DDL, and the
+       operator would only find that out after sending it to the client. */
+    var active = tmActiveModules(tpl);
+    if (inScope.length && !active.length) {
+      issues.push({
+        level: 'error', module: '',
+        message: 'Every module in scope is excluded from publishing. Untick at least one.'
+      });
+    }
+
+    active.forEach(function (m) {
       if (!m.tables || !m.tables.length) {
         issues.push({ level: 'error', module: m.module, message: 'No target tables chosen for this module.' });
         return;
@@ -479,6 +555,19 @@
       });
     });
 
+    /* Not an error — the operator chose this — but it must be visible on the
+       same panel they read before pressing Publish, so that "where did FIN go"
+       is answered before the workbook reaches the client rather than after. */
+    var excluded = tmExcludedModules(tpl);
+    if (excluded.length) {
+      issues.push({
+        level: 'warning', module: '',
+        message: excluded.length + ' module' + (excluded.length === 1 ? ' is' : 's are')
+          + ' excluded from publishing and will be left out of the workbook, the staging DDL and this publish: '
+          + excluded.join(', ') + '.'
+      });
+    }
+
     return issues;
   }
 
@@ -498,6 +587,11 @@
     copy.publishedBy = tmTrim(who);
     copy.updatedAt = copy.publishedAt;
     copy.updatedBy = copy.publishedBy;
+    /* Freeze WHAT WAS LEFT OUT alongside what went in. The module flags travel
+       with the copy anyway, but a reader six months later asking "was AP in
+       version 4?" should not have to reconstruct the answer from a boolean on
+       each of twenty-four modules. This is the audit record of the decision. */
+    copy.excludedModules = tmExcludedModules(tpl);
     return copy;
   }
 
@@ -521,9 +615,17 @@
   function tmSummary(tpl) {
     var mods = (tpl && tpl.modules) || [];
     var inScope = mods.filter(function (m) { return m.inScope !== false; });
+    var active = tmActiveModules(tpl);
+    /* moduleCount and tableCount stay counted over everything IN SCOPE, not
+       over the active set. The header reads "24 modules · 3 excluded from
+       publishing": the 24 is the size of the scope and the 3 is a subset of
+       it. Subtracting here would print "21 modules · 3 excluded", which reads
+       as 24 and is wrong. */
     var tables = 0;
     inScope.forEach(function (m) { tables += (m.tables || []).length; });
-    var empty = inScope.filter(function (m) { return !(m.tables || []).length; }).length;
+    var activeTables = 0;
+    active.forEach(function (m) { activeTables += (m.tables || []).length; });
+    var empty = active.filter(function (m) { return !(m.tables || []).length; }).length;
     var cov = tmColumnCoverage(tpl);
     return {
       name: (tpl && tpl.name) || '',
@@ -536,7 +638,13 @@
       // Added with schema 2; a v1 document reports 0 and 0, which is true.
       totalColumns: cov.totalColumns,
       tablesWithColumns: cov.tablesWithColumns,
-      tablesMissingColumns: cov.tablesMissing.length
+      tablesMissingColumns: cov.tablesMissing.length,
+      // Added with schema 3. A document with no flags reports 0, 0 and the
+      // full in-scope counts, which is exactly "nothing excluded".
+      excludedCount: inScope.length - active.length,
+      mappedCount: inScope.filter(function (m) { return !!m.mapped; }).length,
+      publishModuleCount: active.length,
+      publishTableCount: activeTables
     };
   }
 
@@ -566,6 +674,12 @@
     tmUpdateTable: tmUpdateTable,
     tmRemoveTable: tmRemoveTable,
     tmSetModuleNotes: tmSetModuleNotes,
+    tmModuleExcluded: tmModuleExcluded,
+    tmModuleActive: tmModuleActive,
+    tmActiveModules: tmActiveModules,
+    tmSetModuleExcluded: tmSetModuleExcluded,
+    tmSetModuleMapped: tmSetModuleMapped,
+    tmExcludedModules: tmExcludedModules,
     tmNormaliseColumn: tmNormaliseColumn,
     tmSetTableColumns: tmSetTableColumns,
     tmTableHasColumns: tmTableHasColumns,

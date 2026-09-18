@@ -92,10 +92,10 @@ const tpl = () => {
   v1.schema = 1;
   v1.modules.forEach(m => m.tables.forEach(x => { delete x.columns; delete x.columnsFetchedAt; }));
   const migrated = TM.tmMigrate(v1);
-  check('a schema-1 document migrates: schema 2, every table has an empty columns array, no stamp',
-    migrated.schema === 2 && migrated.modules.every(m => m.tables.every(x => Array.isArray(x.columns) && !x.columns.length && !x.columnsFetchedAt)));
+  check('a schema-1 document migrates: current schema, every table has an empty columns array, no stamp',
+    migrated.schema === TM.TM_SCHEMA_VERSION && migrated.modules.every(m => m.tables.every(x => Array.isArray(x.columns) && !x.columns.length && !x.columnsFetchedAt)));
   check('and it still summarises and validates', TM.tmSummary(migrated).tableCount === 3 && TM.tmValidate(migrated).length === 0);
-  check('the schema version is 2 and the column fields are published', TM.TM_SCHEMA_VERSION === 2 && TM.TM_COLUMN_FIELDS.length === 11);
+  check('the schema version is 3 and the column fields are published', TM.TM_SCHEMA_VERSION === 3 && TM.TM_COLUMN_FIELDS.length === 11);
   check('publishing carries the snapshot with it',
     (() => { const u = tpl(); const f = TM.tmPublish(u, 'me'); return f && TM.tmFindModule(f, 'AP').tables[0].columns.length === 6; })());
 }

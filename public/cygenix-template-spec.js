@@ -55,6 +55,18 @@ function trim(v) { return str(v).trim(); }
 function lower(v) { return trim(v).toLowerCase(); }
 function yesNo(v) { return v ? 'Yes' : 'No'; }
 
+/* ── Which modules this file builds from ───────────────────────────────────
+   The same rule as CygenixTemplateModel.tmModuleActive: in the Configurator
+   scope AND not excluded from publishing. It is restated here rather than
+   imported because this file is deliberately dependency-free — it is loaded
+   in Node by tests with no window and no model — and because the workbook
+   and the DDL must never disagree with the readiness check about which
+   modules are in play. `tests/template-spec.test.js` asserts the two copies
+   give the same answer for every combination of the two flags, in the same
+   way tests/profile-sync.test.js keeps the two profile mergers identical.
+   If you change one, change the other. */
+function moduleActive(m) { return !!m && m.inScope !== false && !m.excluded; }
+
 /* ── Sheet names ───────────────────────────────────────────────────────────
    Excel caps a name at 31 characters, forbids [ ] : * ? / \, and treats two
    names differing only in case as the same name. A staging table name can
@@ -126,7 +138,11 @@ function buildSpecRows(tpl, opts) {
   var taken = {};
   var tables = [], columns = [], missing = [];
   ((tpl && tpl.modules) || []).forEach(function (m) {
-    if (!m || m.inScope === false) return;
+    /* Excluded modules keep their tables on the template and are simply not
+       here: not in Tables, not in Columns, not in Load Order, no populate
+       sheet, and — because the DDL is built from these same rows — no CREATE
+       TABLE either. One filter, four artefacts, no chance of them diverging. */
+    if (!moduleActive(m)) return;
     var list = (m.tables || []).slice().sort(function (a, b) {
       return (Number(a.loadOrder) || 0) - (Number(b.loadOrder) || 0) || str(a.targetTable).localeCompare(str(b.targetTable));
     });
@@ -368,6 +384,10 @@ async function fetchColumns(tpl, opts) {
 
     var jobs = [];
     ((tpl && tpl.modules) || []).forEach(function (m) {
+      /* Deliberately IN SCOPE, not active: reading the target's columns is
+         not publishing. Excluding a module is a decision about this release,
+         and an operator who un-excludes it next week should find the column
+         detail already there rather than having to remember to re-read. */
       if (!m || m.inScope === false) return;
       (m.tables || []).forEach(function (t) {
         if (o.onlyMissing && Array.isArray(t.columns) && t.columns.length) return;
@@ -419,6 +439,7 @@ return {
   TABLES_HEADER: TABLES_HEADER, COLUMNS_HEADER: COLUMNS_HEADER, LOAD_ORDER_HEADER: LOAD_ORDER_HEADER,
   FETCH_CONCURRENCY: FETCH_CONCURRENCY, FETCH_MIN_INTERVAL_MS: FETCH_MIN_INTERVAL_MS,
   specSheetName: specSheetName, sqlType: sqlType, populateVerdict: populateVerdict,
+  moduleActive: moduleActive,
   buildSpecRows: buildSpecRows, readMeRows: readMeRows, populateSheetRows: populateSheetRows,
   buildSpecWorkbook: buildSpecWorkbook, buildStagingDdl: buildStagingDdl,
   specFileName: specFileName, fetchColumns: fetchColumns,

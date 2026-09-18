@@ -65,6 +65,8 @@ const U = 'you@example.test';
   const calls = [];
   let schemaCalls = 0;
   const colCalls = [];
+  const execSql = [];          // every statement Create staging tables sends
+  const made = new Set();      // the stub database's tables
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', (route) => {
     const u = route.request().url();
@@ -102,6 +104,23 @@ const U = 'you@example.test';
         { schema: 'dbo', name: 'VchrDetail', kind: 'table' }, { schema: 'dbo', name: 'Vchr', kind: 'table' },
         { schema: 'dbo', name: 'Matter', kind: 'table' }, { schema: 'dbo', name: 'MattDate', kind: 'table' }] });
       if (body.action === 'schema-fks') return json(route, { foreignKeys: [] });
+      /* The staging side. `execute` is the only route Create staging tables
+         uses — the catalog read and then one CREATE per table. The stub
+         behaves like a database: a table it has already created is there the
+         next time it is asked, which is what makes the "run it twice" check
+         mean something. */
+      if (body.action === 'execute') {
+        const sql = String(body.sql || '');
+        execSql.push(sql);
+        if (/sys\.tables/.test(sql)) return json(route, { recordset: [...made].map((n) => ({ name: n })) });
+        const m = sql.match(/CREATE TABLE \[dbo\]\.\[([^\]]+)\]/);
+        if (m) {
+          if (made.has(m[1])) return json(route, { error: "There is already an object named '" + m[1] + "' in the database." }, 400);
+          made.add(m[1]);
+          return json(route, { success: true, rowsAffected: 0, recordset: [] });
+        }
+        return json(route, { success: true, recordset: [] });
+      }
       if (body.action === 'schema-columns') {
         colCalls.push(body.tableName);
         return json(route, { table: { schema: 'dbo', name: body.tableName, primaryKeys: ['Id'], columns: [
@@ -347,7 +366,9 @@ const U = 'you@example.test';
     before.schema = 1;
     before.modules.forEach((m) => m.tables.forEach((t) => { delete t.columns; }));
     const after = CygenixTemplateModel.tmMigrate(JSON.parse(JSON.stringify(before)));
-    return after.schema === 2 && after.modules.every((m) => m.tables.every((t) => Array.isArray(t.columns)))
+    return after.schema === CygenixTemplateModel.TM_SCHEMA_VERSION
+      && after.modules.every((m) => m.tables.every((t) => Array.isArray(t.columns)))
+      && after.modules.every((m) => m.excluded === false && m.mapped === false)
       && CygenixTemplateModel.tmSummary(after).tableCount === CygenixTemplateModel.tmSummary(CT.tpl).tableCount;
   });
   check('a schema-1 draft forward-migrates and still summarises the same', v1ok);
@@ -429,6 +450,181 @@ const U = 'you@example.test';
   const pubAfter = await page.evaluate(() => window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.map((t) => t.stagingTable).join(','));
   check('renaming a staging table changes the draft\'s spec — proving the spec follows the document it is given',
     pubAfter !== pubBefore && /STG_RENAMED/.test(pubAfter));
+
+  /* ── 9. Exclude from publishing (Sep-2026) ─────────────────────────────── */
+  // Put the renamed table back first, so what follows is about exclusion and
+  // nothing else.
+  await page.evaluate(() => { const m = CT.tpl.modules.find((x) => x.tables.some((t) => t.stagingTable === 'STG_RENAMED'));
+    const t = m.tables.find((x) => x.stagingTable === 'STG_RENAMED');
+    CygenixTemplateModel.tmUpdateTable(CT.tpl, m.module, t.id, { stagingTable: 'STG_' + t.targetTable }, 'me'); render(); });
+
+  const exModule = await page.evaluate(() => CT.tpl.modules.find((m) => m.inScope !== false && m.tables.length).module);
+  const specBefore = await page.evaluate(() => window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.length);
+  const readyBefore = await page.evaluate(() => canPublishNow());
+  await page.evaluate((mod) => {
+    const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
+    li.querySelectorAll('.tk input')[1].click();
+  }, exModule);
+  await page.waitForTimeout(250);
+  const ex = await page.evaluate((mod) => {
+    const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
+    return {
+      greyed: li.classList.contains('ex'),
+      label: /excluded/.test(li.textContent),
+      ticked: li.querySelectorAll('.tk input')[1].checked,
+      sub: document.getElementById('ct-mods-sub').textContent,
+      badges: document.getElementById('ct-badges').textContent,
+      specTables: window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.length,
+      specHasModule: window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.some((t) => t.module === mod),
+      ddlHasModule: new RegExp('\\* ' + mod + ' ·').test(window.CygenixTemplateSpec.buildStagingDdl(CT.tpl, {})),
+      stagingHasModule: window.CygenixTemplateStaging.stagingPlan(CT.tpl, {}).tables.some((t) => t.module === mod),
+      ready: canPublishNow(),
+      issues: document.getElementById('ct-issues').textContent,
+      tablesKept: CygenixTemplateModel.tmFindModule(CT.tpl, mod).tables.length,
+    };
+  }, exModule);
+  check('an excluded module is greyed and labelled, and the tick stays on',
+    ex.greyed && ex.label && ex.ticked, JSON.stringify({ g: ex.greyed, l: ex.label, t: ex.ticked }));
+  check('the summary lines count it — "N in scope · 1 excluded" and "… · 1 excluded from publishing"',
+    /1 excluded/.test(ex.sub) && /1 excluded from publishing/.test(ex.badges), ex.sub + ' || ' + ex.badges);
+  check('it keeps its tables', ex.tablesKept > 0);
+  check('the workbook, the staging DDL and Create staging tables all skip it',
+    ex.specTables < specBefore && !ex.specHasModule && !ex.ddlHasModule && !ex.stagingHasModule,
+    JSON.stringify({ before: specBefore, after: ex.specTables }));
+  check('the readiness check ignores it, and says so as a warning rather than a problem',
+    readyBefore === true && ex.ready === true && /excluded from publishing/.test(ex.issues));
+  // Back in.
+  await page.evaluate((mod) => {
+    const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
+    li.querySelectorAll('.tk input')[1].click();
+  }, exModule);
+  await page.waitForTimeout(200);
+  check('unticking puts it straight back into the publish',
+    await page.evaluate(() => window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.length) === specBefore);
+
+  /* ── 10. Object Mapping ────────────────────────────────────────────────── */
+  await page.evaluate(() => localStorage.setItem('cygenix_jobs', JSON.stringify([
+    { id: 'hand', name: 'my careful mapping', jobType: 'simple-map', projectId: 'p1',
+      sourceTable: 'dbo.STG_Vchr', targetTable: 'dbo.Vchr', columnMapping: [{ srcCol: 'a', tgtCol: 'b' }], status: 'ready' },
+  ])));
+  await page.evaluate((mod) => {
+    const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
+    li.querySelectorAll('.tk input')[0].click();
+  }, exModule);
+  await page.waitForTimeout(400);
+  const sent = await page.evaluate((mod) => {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const mine = jobs.filter((j) => j.fromTemplate && j.fromTemplate.templateId === CT.tpl.id);
+    return { total: jobs.length, mine: mine.length,
+      drafts: mine.every((j) => j.status === 'draft' && !j.columnMapping.length),
+      tagged: mine.every((j) => j.fromTemplate.module === mod),
+      pairs: mine.map((j) => j.sourceTable + '→' + j.targetTable).sort(),
+      handKept: jobs.some((j) => j.id === 'hand' && j.columnMapping.length === 1),
+      profiled: mine.every((j) => !!j.profileId || !!j.connectionProfileId),
+      heading: document.getElementById('ct-mods-sent').textContent,
+      ticked: CygenixTemplateModel.tmFindModule(CT.tpl, mod).mapped,
+      note: document.getElementById('ct-note').textContent };
+  }, exModule);
+  check('ticking Map creates one draft mapping per table, tagged with the template and module',
+    sent.mine > 0 && sent.drafts && sent.tagged, JSON.stringify(sent.pairs));
+  check('the source is the staging table and the target is the target table',
+    sent.pairs.every((p) => /^dbo\.STG_.*→dbo\./.test(p)), sent.pairs.join(' | '));
+  check('a pair already mapped by hand is not duplicated',
+    sent.pairs.every((p) => p !== 'dbo.STG_Vchr→dbo.Vchr') || sent.mine === 0, sent.pairs.join(' | '));
+  check('the heading counts what is actually in Object Mapping',
+    new RegExp(sent.mine + ' sent to Object Mapping').test(sent.heading), sent.heading);
+  check('each created job is stamped with the active connection profile', sent.profiled);
+
+  // Ticking again must add nothing.
+  const twice = await page.evaluate(async (mod) => { await ctToggleMap(mod, true); return JSON.parse(localStorage.getItem('cygenix_jobs') || '[]').length; }, exModule);
+  check('sending the same module again adds nothing', twice === sent.total);
+
+  await page.evaluate((mod) => {
+    const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
+    li.querySelectorAll('.tk input')[0].click();
+  }, exModule);
+  await page.waitForTimeout(400);
+  const back = await page.evaluate(() => {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    return { total: jobs.length, mine: jobs.filter((j) => j.fromTemplate && j.fromTemplate.templateId === CT.tpl.id).length,
+      hand: jobs.find((j) => j.id === 'hand') };
+  });
+  check('unticking removes only what this template created',
+    back.mine === 0 && back.total === 1, JSON.stringify({ total: back.total, mine: back.mine }));
+  check('THE mapping built by hand is untouched, column mapping and all',
+    !!back.hand && back.hand.columnMapping.length === 1 && back.hand.status === 'ready');
+
+  /* ── 11. Create staging tables ─────────────────────────────────────────── */
+  execSql.length = 0;
+  await page.click('#ct-stage');
+  await page.waitForSelector('#ct-stage-modal.open');
+  await page.waitForFunction(() => /already exist/.test(document.getElementById('ct-note').textContent)
+    || document.getElementById('ct-stage-go').textContent !== 'Creating…', null, { timeout: 15000 });
+  await page.waitForTimeout(400);
+  const dlg = await page.evaluate(() => ({
+    conns: Array.from(document.querySelectorAll('#ct-stage-conn option')).map((o) => o.value + ':' + o.textContent),
+    schema: document.getElementById('ct-stage-schema').value,
+    sql: document.getElementById('ct-stage-sql').value,
+    rows: Array.from(document.querySelectorAll('#ct-stage-rows tbody tr')).map((tr) => tr.children[4] ? tr.children[4].textContent : ''),
+    toCreate: CT.stagePlan.toCreate, scanned: CT.stagePlan.scanned,
+  }));
+  check('the picker offers only the active profile\'s connections, source first',
+    dlg.conns.length === 2 && dlg.conns[0].indexOf('src:') === 0 && /FIN_3E_UAT/.test(dlg.conns[0]), dlg.conns.join(' | '));
+  check('the dialog shows the SQL it will send, create-only and guarded',
+    /IF OBJECT_ID\(N'dbo\./.test(dlg.sql) && /Create only\./.test(dlg.sql)
+    && !/\bDROP\b|\bTRUNCATE\b|\bALTER\b/i.test(dlg.sql.replace(/\/\*[\s\S]*?\*\//g, '')), dlg.sql.slice(0, 160));
+  check('the connection was checked first, and nothing exists yet',
+    dlg.scanned === true && dlg.toCreate > 0 && dlg.rows.every((r) => /will create|no columns/.test(r)), dlg.rows.join(','));
+
+  await page.click('#ct-stage-go');
+  await page.waitForFunction(() => /created/.test(document.getElementById('ct-stage-progress').textContent), null, { timeout: 20000 });
+  await page.waitForTimeout(300);
+  const run1 = await page.evaluate(() => ({ prog: document.getElementById('ct-stage-progress').textContent,
+    note: document.getElementById('ct-note').textContent }));
+  const creates = execSql.filter((s) => /CREATE TABLE/.test(s));
+  check('every table was created, one CREATE per call — never one big batch',
+    creates.length === dlg.toCreate && creates.every((s) => (s.match(/CREATE TABLE/g) || []).length === 1),
+    creates.length + ' calls for ' + dlg.toCreate + ' tables');
+  check('the run reports what happened', new RegExp(dlg.toCreate + ' created').test(run1.prog), run1.prog);
+  check('nothing sent could drop, truncate or alter anything',
+    !execSql.some((s) => /\b(drop|truncate|alter|delete|insert|update|merge)\b/i.test(s)));
+
+  // Run it again: everything is there now, so everything is skipped.
+  execSql.length = 0;
+  await page.waitForTimeout(3200);                       // the three-second gap is real
+  await page.click('#ct-stage-scan');
+  await page.waitForFunction(() => /already exist/.test(document.getElementById('ct-note').textContent), null, { timeout: 15000 });
+  const run2 = await page.evaluate(() => ({
+    toCreate: CT.stagePlan.toCreate, toSkip: CT.stagePlan.toSkip,
+    goDisabled: document.getElementById('ct-stage-go').disabled,
+    rows: Array.from(document.querySelectorAll('#ct-stage-rows tbody tr')).map((tr) => tr.children[4].textContent),
+  }));
+  check('a second run finds every table already there and offers to create nothing',
+    run2.toCreate === 0 && run2.toSkip === creates.length && run2.goDisabled
+    && run2.rows.filter((r) => /exists/.test(r)).length === creates.length, JSON.stringify(run2));
+  check('and the second pass sent no CREATE at all — one catalog read, nothing else',
+    !execSql.some((s) => /CREATE TABLE/.test(s)) && execSql.length === 1, execSql.length + ' calls');
+  await page.click('#ct-stage-modal .ct-modal-foot .btn:has-text("Close")');
+
+  /* ── 12. The ticks survive a reload ────────────────────────────────────── */
+  await page.evaluate((mod) => {
+    CygenixTemplateModel.tmSetModuleExcluded(CT.tpl, mod, true, 'me');
+    CygenixTemplateModel.tmSetModuleMapped(CT.tpl, mod, true, 'me');
+    touchDirty(); render();
+  }, exModule);
+  await page.click('#ct-save');
+  await page.waitForFunction(() => /^Saved /.test(document.getElementById('ct-note').textContent), null, { timeout: 15000 });
+  await open();
+  const afterReload = await page.evaluate((mod) => {
+    const m = CygenixTemplateModel.tmFindModule(CT.tpl, mod);
+    const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
+    return { excluded: m.excluded, mapped: m.mapped,
+      mapBox: li.querySelectorAll('.tk input')[0].checked, exBox: li.querySelectorAll('.tk input')[1].checked,
+      greyed: li.classList.contains('ex') };
+  }, exModule);
+  check('both ticks are stored with the template and are still set after a reload',
+    afterReload.excluded === true && afterReload.mapped === true
+    && afterReload.mapBox === true && afterReload.exBox === true && afterReload.greyed, JSON.stringify(afterReload));
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 
