@@ -57,15 +57,15 @@ function yesNo(v) { return v ? 'Yes' : 'No'; }
 
 /* ── Which modules this file builds from ───────────────────────────────────
    The same rule as CygenixTemplateModel.tmModuleActive: in the Configurator
-   scope AND not excluded from publishing. It is restated here rather than
-   imported because this file is deliberately dependency-free — it is loaded
-   in Node by tests with no window and no model — and because the workbook
-   and the DDL must never disagree with the readiness check about which
-   modules are in play. `tests/template-spec.test.js` asserts the two copies
-   give the same answer for every combination of the two flags, in the same
-   way tests/profile-sync.test.js keeps the two profile mergers identical.
+   scope AND ticked as included. It is restated here rather than imported
+   because this file is deliberately dependency-free — it is loaded in Node by
+   tests with no window and no model — and because the workbook and the DDL
+   must never disagree with the readiness check about which modules are in
+   play. `tests/template-controls.test.js` asserts the copies give the same
+   answer for every combination of the two flags, in the same way
+   tests/profile-sync.test.js keeps the two profile mergers identical.
    If you change one, change the other. */
-function moduleActive(m) { return !!m && m.inScope !== false && !m.excluded; }
+function moduleActive(m) { return !!m && m.inScope !== false && !!m.included; }
 
 /* ── Sheet names ───────────────────────────────────────────────────────────
    Excel caps a name at 31 characters, forbids [ ] : * ? / \, and treats two
@@ -138,10 +138,10 @@ function buildSpecRows(tpl, opts) {
   var taken = {};
   var tables = [], columns = [], missing = [];
   ((tpl && tpl.modules) || []).forEach(function (m) {
-    /* Excluded modules keep their tables on the template and are simply not
-       here: not in Tables, not in Columns, not in Load Order, no populate
-       sheet, and — because the DDL is built from these same rows — no CREATE
-       TABLE either. One filter, four artefacts, no chance of them diverging. */
+    /* A module in scope but not ticked keeps its tables on the template and
+       is simply not here: not in Tables, not in Columns, not in Load Order, no
+       populate sheet, and — because the DDL is built from these same rows — no
+       CREATE TABLE either. One filter, four artefacts, no divergence. */
     if (!moduleActive(m)) return;
     var list = (m.tables || []).slice().sort(function (a, b) {
       return (Number(a.loadOrder) || 0) - (Number(b.loadOrder) || 0) || str(a.targetTable).localeCompare(str(b.targetTable));
@@ -384,10 +384,11 @@ async function fetchColumns(tpl, opts) {
 
     var jobs = [];
     ((tpl && tpl.modules) || []).forEach(function (m) {
-      /* Deliberately IN SCOPE, not active: reading the target's columns is
-         not publishing. Excluding a module is a decision about this release,
-         and an operator who un-excludes it next week should find the column
-         detail already there rather than having to remember to re-read. */
+      /* Deliberately IN SCOPE, not included: reading the target's columns is
+         not publishing. Whether a module ships in this version is a decision
+         about this release, and an operator who ticks it next week should find
+         the column detail already there rather than having to remember to
+         re-read it. */
       if (!m || m.inScope === false) return;
       (m.tables || []).forEach(function (t) {
         if (o.onlyMissing && Array.isArray(t.columns) && t.columns.length) return;

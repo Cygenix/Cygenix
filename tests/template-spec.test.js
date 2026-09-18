@@ -48,6 +48,10 @@ const tpl = () => {
   TM.tmAddTable(t, 'AP', { targetTable: 'Vchr', required: false }, 'me');
   TM.tmAddTable(t, 'Matters', { targetTable: 'Matter' }, 'me');
   TM.tmSetTableColumns(t, 'AP', a.id, COLS, { primaryKeys: ['VchrIndex'], by: 'me' });
+  // Schema 4: a module is in the publish only because somebody ticked it, so
+  // a fixture that wants both modules published has to say so.
+  TM.tmSetModuleIncluded(t, 'AP', true, 'me');
+  TM.tmSetModuleIncluded(t, 'Matters', true, 'me');
   return t;
 };
 
@@ -87,15 +91,26 @@ const tpl = () => {
   check('a module with no tables still blocks publish, exactly as before',
     (() => { const u = TM.tmNewTemplate({ name: 'x', profileId: 'P' }); TM.tmSyncScope(u, ['AP']); return TM.tmCanPublish(u) === false; })());
 
-  // The migration: a schema-1 document, as the live draft is.
+  // The migration: a schema-1 document, as a live draft written before any of
+  // this was. It carries no column arrays and neither module flag.
   const v1 = JSON.parse(JSON.stringify(tpl()));
   v1.schema = 1;
-  v1.modules.forEach(m => m.tables.forEach(x => { delete x.columns; delete x.columnsFetchedAt; }));
-  const migrated = TM.tmMigrate(v1);
+  v1.modules.forEach(m => { delete m.included; delete m.mapped;
+    m.tables.forEach(x => { delete x.columns; delete x.columnsFetchedAt; }); });
+  const migrated = TM.tmMigrate(JSON.parse(JSON.stringify(v1)));
   check('a schema-1 document migrates: current schema, every table has an empty columns array, no stamp',
     migrated.schema === TM.TM_SCHEMA_VERSION && migrated.modules.every(m => m.tables.every(x => Array.isArray(x.columns) && !x.columns.length && !x.columnsFetchedAt)));
-  check('and it still summarises and validates', TM.tmSummary(migrated).tableCount === 3 && TM.tmValidate(migrated).length === 0);
-  check('the schema version is 3 and the column fields are published', TM.TM_SCHEMA_VERSION === 3 && TM.TM_COLUMN_FIELDS.length === 11);
+  // The migration also clears every Include tick — see TM_SCHEMA_VERSION — so
+  // the document that comes back out summarises and validates as one with
+  // nothing in the publish yet, which is exactly what it now is.
+  check('and it still summarises, with nothing yet ticked for the publish',
+    TM.tmSummary(migrated).moduleCount === 2 && TM.tmSummary(migrated).publishModuleCount === 0
+    && TM.tmValidate(migrated).some(i => i.level === 'error' && /No module is included/.test(i.message)));
+  check('…and ticking the modules puts it back exactly where it was',
+    (() => { const u = TM.tmMigrate(JSON.parse(JSON.stringify(v1)));
+      ['AP', 'Matters'].forEach(m => TM.tmSetModuleIncluded(u, m, true, 'me'));
+      return TM.tmSummary(u).tableCount === 3 && TM.tmValidate(u).length === 0; })());
+  check('the schema version is 4 and the column fields are published', TM.TM_SCHEMA_VERSION === 4 && TM.TM_COLUMN_FIELDS.length === 11);
   check('publishing carries the snapshot with it',
     (() => { const u = tpl(); const f = TM.tmPublish(u, 'me'); return f && TM.tmFindModule(f, 'AP').tables[0].columns.length === 6; })());
 }

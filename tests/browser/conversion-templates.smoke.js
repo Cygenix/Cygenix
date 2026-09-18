@@ -179,7 +179,13 @@ const U = 'you@example.test';
     await page.waitForFunction(() => !!window.CygenixTemplateModel && typeof CT !== 'undefined' && !!CT.tpl, null, { timeout: 20000 });
     await page.waitForTimeout(600);
   };
-  const mods = () => page.evaluate(() => Array.from(document.querySelectorAll('#ct-mods li')).map((li) => ({ text: li.textContent.trim(), out: li.classList.contains('out'), sep: li.classList.contains('ct-sep') })));
+  // `name` is the module's own text, without the table count or any chip the
+  // row has picked up — the ticks add one, and an assertion about the module
+  // list should not break because a row is now marked as included.
+  const mods = () => page.evaluate(() => Array.from(document.querySelectorAll('#ct-mods li')).map((li) => ({
+    text: li.textContent.trim(),
+    name: ((li.querySelector('.nm') || {}).firstChild || { textContent: li.textContent }).textContent.trim(),
+    out: li.classList.contains('out'), sep: li.classList.contains('ct-sep') })));
   const rows = () => page.evaluate(() => Array.from(document.querySelectorAll('#ct-tables tbody tr[data-id]')).map((tr) => ({ target: tr.querySelectorAll('input')[0].value, staging: tr.querySelectorAll('input')[1].value })));
   const noteText = () => page.evaluate(() => document.getElementById('ct-note').textContent);
 
@@ -200,11 +206,38 @@ const U = 'you@example.test';
   /* ── 2. Scope from the Configurator, in its order ───────────────────────── */
   let m = await mods();
   check('the modules are exactly the ticked ones, in the estimate\'s order',
-    JSON.stringify(m.filter((x) => !x.sep).map((x) => x.text.replace(/\d+$/, '').trim())) === JSON.stringify(['AP', 'Matters', 'WIP']), JSON.stringify(m));
+    JSON.stringify(m.filter((x) => !x.sep).map((x) => x.name)) === JSON.stringify(['AP', 'Matters', 'WIP']), JSON.stringify(m));
   const band = await page.evaluate(() => ({ profile: document.getElementById('ct-profile').textContent, estimate: document.getElementById('ct-estimate').textContent,
     scopeMode: document.getElementById('ct-scopemode').value, prefix: document.getElementById('ct-prefix').value }));
   check('the header names the profile and the estimate, defaults the scope rule to "any" and the prefix to STG_',
     /FIN_3E_UAT/.test(band.profile) && /Acme 3E/.test(band.estimate) && band.scopeMode === 'any' && band.prefix === 'STG_', JSON.stringify(band));
+
+  /* ── 2b. Include is opt-in: nothing is ticked until somebody ticks it ──── */
+  const preTicked = await page.evaluate(() => Array.from(document.querySelectorAll('#ct-mods li'))
+    .filter((li) => li.querySelectorAll('.tk input').length === 2)
+    .map((li) => Array.from(li.querySelectorAll('.tk input')).map((i) => i.checked)));
+  check('a template nobody has touched has NOTHING ticked — not Map, not Include',
+    preTicked.length === 3 && preTicked.every((pair) => pair[0] === false && pair[1] === false), JSON.stringify(preTicked));
+  const gate0 = await page.evaluate(() => ({ disabled: document.getElementById('ct-publish').disabled,
+    issues: document.getElementById('ct-issues').textContent, sub: document.getElementById('ct-mods-sub').textContent }));
+  check('…so Publish is blocked, and the reason is the tick rather than the tables',
+    gate0.disabled && /No module is included in the publish yet/.test(gate0.issues) && /0 included/.test(gate0.sub),
+    gate0.issues.slice(0, 160));
+  // Tick all three through the real boxes; everything after this is the state
+  // an operator reaches by choosing what this version of the template ships.
+  for (const name of ['AP', 'Matters', 'WIP']) {
+    // One at a time, re-found each time: ticking re-renders the list, so a
+    // NodeList taken before the first click is detached by the second.
+    await page.evaluate((mod) => {
+      const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
+      li.querySelectorAll('.tk input')[1].click();
+    }, name);
+    await page.waitForTimeout(120);
+  }
+  check('ticking Include marks the row and counts it',
+    await page.evaluate(() => document.querySelectorAll('#ct-mods li.inc .chip.inc').length === 3
+      && /3 included/.test(document.getElementById('ct-mods-sub').textContent)
+      && /3 included in the publish/.test(document.getElementById('ct-badges').textContent)));
 
   /* ── 3. Add a table from the live picker, and one typed ────────────────── */
   await page.evaluate(() => ctSelect('AP'));
@@ -255,7 +288,7 @@ const U = 'you@example.test';
   await page.waitForTimeout(200);
   m = await mods();
   check('re-ticking brings AP back, in the estimate\'s order, tables intact',
-    !m.some((x) => x.out) && JSON.stringify(m.map((x) => x.text.replace(/\d+$/, '').trim())) === JSON.stringify(['AP', 'Matters', 'WIP']) && /back in scope: AP/.test(await noteText()), JSON.stringify(m));
+    !m.some((x) => x.out) && JSON.stringify(m.map((x) => x.name)) === JSON.stringify(['AP', 'Matters', 'WIP']) && /back in scope: AP/.test(await noteText()), JSON.stringify(m));
 
   /* ── 7. Publish freezes a copy; the draft becomes v2 ───────────────────── */
   await page.evaluate(() => { ctSelect('Matters'); ctAddTable('Matter'); ctSelect('WIP'); ctAddTable('TimeCard'); });
@@ -368,7 +401,7 @@ const U = 'you@example.test';
     const after = CygenixTemplateModel.tmMigrate(JSON.parse(JSON.stringify(before)));
     return after.schema === CygenixTemplateModel.TM_SCHEMA_VERSION
       && after.modules.every((m) => m.tables.every((t) => Array.isArray(t.columns)))
-      && after.modules.every((m) => m.excluded === false && m.mapped === false)
+      && after.modules.every((m) => typeof m.included === 'boolean' && typeof m.mapped === 'boolean')
       && CygenixTemplateModel.tmSummary(after).tableCount === CygenixTemplateModel.tmSummary(CT.tpl).tableCount;
   });
   check('a schema-1 draft forward-migrates and still summarises the same', v1ok);
@@ -451,7 +484,7 @@ const U = 'you@example.test';
   check('renaming a staging table changes the draft\'s spec — proving the spec follows the document it is given',
     pubAfter !== pubBefore && /STG_RENAMED/.test(pubAfter));
 
-  /* ── 9. Include in publishing (Sep-2026) ──────────────────────────────── */
+  /* ── 9. Un-ticking Include (Sep-2026) ─────────────────────────────────── */
   // Put the renamed table back first, so what follows is about the Include
   // tick and nothing else.
   await page.evaluate(() => { const m = CT.tpl.modules.find((x) => x.tables.some((t) => t.stagingTable === 'STG_RENAMED'));
@@ -461,13 +494,6 @@ const U = 'you@example.test';
   const exModule = await page.evaluate(() => CT.tpl.modules.find((m) => m.inScope !== false && m.tables.length).module);
   const specBefore = await page.evaluate(() => window.CygenixTemplateSpec.buildSpecRows(CT.tpl, {}).tables.length);
   const readyBefore = await page.evaluate(() => canPublishNow());
-  // Both columns read the same way round, but they START differently and must:
-  // Map is off until somebody asks for it, Include is on until somebody says
-  // otherwise. A template that opened with nothing included would be one that
-  // publishes nothing until every box is ticked.
-  const startTicked = await page.evaluate(() => Array.from(document.querySelectorAll('#ct-mods li:not(.out):not(.ct-sep)'))
-    .filter((li) => li.querySelectorAll('.tk input').length === 2)
-    .every((li) => li.querySelectorAll('.tk input')[1].checked && !li.querySelectorAll('.tk input')[0].checked));
   await page.evaluate((mod) => {
     const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
     li.querySelectorAll('.tk input')[1].click();
@@ -476,8 +502,8 @@ const U = 'you@example.test';
   const ex = await page.evaluate((mod) => {
     const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
     return {
-      greyed: li.classList.contains('ex'),
-      label: /not included/.test(li.textContent),
+      marked: li.classList.contains('inc'),
+      label: /included/.test(li.textContent),
       ticked: li.querySelectorAll('.tk input')[1].checked,
       sub: document.getElementById('ct-mods-sub').textContent,
       badges: document.getElementById('ct-badges').textContent,
@@ -490,12 +516,11 @@ const U = 'you@example.test';
       tablesKept: CygenixTemplateModel.tmFindModule(CT.tpl, mod).tables.length,
     };
   }, exModule);
-  check('Include starts TICKED on every module in scope — nothing is left out by default',
-    startTicked === true, String(startTicked));
-  check('un-ticking Include greys the module and labels it, and the box stays clear',
-    ex.greyed && ex.label && ex.ticked === false, JSON.stringify({ g: ex.greyed, l: ex.label, t: ex.ticked }));
-  check('the summary lines count it — "N in scope · 1 not included" and "… · 1 not included in the publish"',
-    /1 not included/.test(ex.sub) && /1 not included in the publish/.test(ex.badges), ex.sub + ' || ' + ex.badges);
+  check('un-ticking Include clears the box and drops the row\'s mark',
+    ex.ticked === false && ex.marked === false && ex.label === false,
+    JSON.stringify({ marked: ex.marked, label: ex.label, ticked: ex.ticked }));
+  check('the summary lines count what is left — "N in scope · 2 included" and "… · 2 included in the publish"',
+    /2 included/.test(ex.sub) && /2 included in the publish/.test(ex.badges), ex.sub + ' || ' + ex.badges);
   check('it keeps its tables', ex.tablesKept > 0);
   check('the workbook, the staging DDL and Create staging tables all skip it',
     ex.specTables < specBefore && !ex.specHasModule && !ex.ddlHasModule && !ex.stagingHasModule,
@@ -617,7 +642,7 @@ const U = 'you@example.test';
 
   /* ── 12. The ticks survive a reload ────────────────────────────────────── */
   await page.evaluate((mod) => {
-    CygenixTemplateModel.tmSetModuleExcluded(CT.tpl, mod, true, 'me');
+    CygenixTemplateModel.tmSetModuleIncluded(CT.tpl, mod, false, 'me');
     CygenixTemplateModel.tmSetModuleMapped(CT.tpl, mod, true, 'me');
     touchDirty(); render();
   }, exModule);
@@ -627,13 +652,14 @@ const U = 'you@example.test';
   const afterReload = await page.evaluate((mod) => {
     const m = CygenixTemplateModel.tmFindModule(CT.tpl, mod);
     const li = Array.from(document.querySelectorAll('#ct-mods li')).find((x) => x.textContent.trim().indexOf(mod) === 0);
-    return { excluded: m.excluded, mapped: m.mapped,
+    return { included: m.included, mapped: m.mapped,
       mapBox: li.querySelectorAll('.tk input')[0].checked, incBox: li.querySelectorAll('.tk input')[1].checked,
-      greyed: li.classList.contains('ex') };
+      marked: li.classList.contains('inc') };
   }, exModule);
   check('both ticks are stored with the template and are exactly as they were after a reload',
-    afterReload.excluded === true && afterReload.mapped === true
-    && afterReload.mapBox === true && afterReload.incBox === false && afterReload.greyed, JSON.stringify(afterReload));
+    afterReload.included === false && afterReload.mapped === true
+    && afterReload.mapBox === true && afterReload.incBox === false && afterReload.marked === false,
+    JSON.stringify(afterReload));
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 

@@ -34,6 +34,10 @@ const tpl = () => {
   TM.tmAddTable(t, 'AP', { targetTable: 'VchrDetail', notes: 'lines, "quoted", with a comma' }, 'me');
   TM.tmAddTable(t, 'AP', { targetTable: 'Vchr' }, 'me');
   TM.tmAddTable(t, 'Matters', { targetTable: 'Matter', required: false }, 'me');
+  // Schema 4: Include is opt-in, and these checks are about a template that
+  // has been set up to publish. Import/export itself ignores the tick — the
+  // mapping grid round-trips everything in scope — but tmCanPublish does not.
+  ['AP', 'Matters', 'WIP'].forEach(m => TM.tmSetModuleIncluded(t, m, true, 'me'));
   return t;
 };
 

@@ -90,12 +90,17 @@ const estimate = (ticks) => ({
   const t = TM.tmNewTemplate({ name: 'Finance', projectId: 'p1', profileId: 'FIN-DEV-01', estimateId: 'Acme 3E', createdBy: 'me' });
   TM.tmSyncScope(t, ['AP', 'Matters'], 'me');
   TM.tmAddTable(t, 'AP', { targetTable: 'VchrDetail' }, 'me');
+  // Schema 4: being in scope is not being in the publish. A module is only
+  // validated, published and built once somebody has ticked Include on it.
+  TM.tmSetModuleIncluded(t, 'AP', true, 'me');
+  TM.tmSetModuleIncluded(t, 'Matters', true, 'me');
   const v = TM.tmValidate(t);
   check('a module in scope with no tables blocks publish, in plain words',
     !TM.tmCanPublish(t) && v.some(i => i.level === 'error' && i.module === 'Matters' && /No target tables chosen/.test(i.message)));
   TM.tmAddTable(t, 'Matters', { targetTable: 'Matter' }, 'me');
   check('with every module covered it can publish', TM.tmCanPublish(t) && TM.tmValidate(t).length === 0);
   const noProfile = TM.tmNewTemplate({ name: 'x' }); TM.tmSyncScope(noProfile, ['AP']); TM.tmAddTable(noProfile, 'AP', { targetTable: 'A' });
+  TM.tmSetModuleIncluded(noProfile, 'AP', true, 'me');
   check('a template with no profile cannot publish — it belongs to one', !TM.tmCanPublish(noProfile)
     && TM.tmValidate(noProfile).some(i => /connection profile/.test(i.message)));
   TM.tmSyncScope(t, ['AP'], 'me');

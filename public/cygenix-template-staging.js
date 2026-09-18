@@ -64,11 +64,11 @@ function lower(v) { return trim(v).toLowerCase(); }
 
 /* ── Which module a table belongs to ──────────────────────────────────────
    The same rule as CygenixTemplateModel.tmModuleActive and
-   CygenixTemplateSpec.moduleActive: in the Configurator scope AND not
-   excluded from publishing. Restated for the same reason it is restated
-   there — this file has no dependencies — and kept honest by
-   tests/template-staging.test.js, which asserts all three agree. */
-function moduleActive(m) { return !!m && m.inScope !== false && !m.excluded; }
+   CygenixTemplateSpec.moduleActive: in the Configurator scope AND ticked as
+   included. Restated for the same reason it is restated there — this file has
+   no dependencies — and kept honest by tests/template-controls.test.js, which
+   asserts all three agree. */
+function moduleActive(m) { return !!m && m.inScope !== false && !!m.included; }
 
 /* ── Dialect ──────────────────────────────────────────────────────────────
    Read from the connection VALUE, which is either a connection string or an

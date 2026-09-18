@@ -124,9 +124,13 @@ body.cyg-collapsed{padding-left:54px}
 .ct-modhead .nm{flex:1 1 auto;min-width:0}
 .ct-modhead .n{flex:0 0 40px;text-align:right}
 .ct-modhead .tk{flex:0 0 40px;text-align:center}
-.ct-mods li.ex{opacity:0.6}
-.ct-mods li.ex .nm{text-decoration:line-through;text-decoration-thickness:1px}
-.ct-mods li .chip.exc{background:var(--amber-bg);color:var(--amber);font-style:normal}
+/* Include marks what IS in the publish, not what is missing from it. Greying
+   the unticked rows was right while every module started ticked and an
+   exclusion was the exception; now that nothing is ticked until somebody says
+   so, it would grey the whole list on a template nobody has touched yet and
+   read as broken. So the chip is positive, and it is a word as well as a
+   colour — the tick itself is the other, colour-free, indicator. */
+.ct-mods li .chip.inc{background:var(--green-bg);color:var(--green);font-style:normal}
 .ct-mods .ct-sep{padding:0.35rem 0.7rem;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);background:var(--bg3);border-bottom:0.5px solid var(--border)}
 
 table.ct{border-collapse:collapse;width:100%;font-size:12px}
@@ -291,7 +295,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
         <div class="ct-modhead" aria-hidden="true">
           <span class="nm"></span><span class="n">Tables</span>
           <span class="tk" title="Send this module’s staging → target table pairs to Object Mapping">Map</span>
-          <span class="tk" title="Ticked: this module is published. Untick to keep it and its tables but leave it out of Publish, the specification workbook and Create staging tables">Include</span>
+          <span class="tk" title="Tick the modules this version of the template ships. An unticked module keeps its tables but is left out of Publish, the specification workbook and Create staging tables">Include</span>
         </div>
       </div>
       <ul class="ct-mods" id="ct-mods"></ul>
@@ -395,7 +399,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
   <div class="ct-modal-card" style="width:min(900px,96vw)">
     <div class="ct-modal-head">Create staging tables <span class="muted" id="ct-stage-sub" style="font-weight:400;font-size:11.5px"></span></div>
     <div class="ct-modal-body">
-      <p style="margin-bottom:0.7rem">Creates one table per staging table in the modules in scope that are included in the publish.
+      <p style="margin-bottom:0.7rem">Creates one table per staging table in the modules ticked as included.
         A table that already exists is <b>skipped</b> — nothing here drops, truncates or alters anything, whatever is in it.
         Each table is its own call, so a run that stops half way has genuinely created the tables it says it has.</p>
       <div class="ct-field">
@@ -448,18 +452,18 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- The target's table list, read the way the Schema Explorer reads it:
      one fetch per connection, cached, filtered in memory. -->
 <script src="/cygenix-schema-graph.js?v=6b69c34d3d" defer></script>
-<script src="/cygenix-template-model.js?v=06c686d6d2" defer></script>
+<script src="/cygenix-template-model.js?v=1d903bc91b" defer></script>
 <!-- Import / export rules (pure; the sheet library itself is fetched only
      when Import or Excel export is first used). -->
 <script src="/cygenix-template-io.js?v=d1247c68f8" defer></script>
 <!-- The client specification workbook and the staging DDL (Phase 2). Pure
      builders plus the guarded schema read; the sheet library is the same
      lazily-loaded one the export menu already uses. -->
-<script src="/cygenix-template-spec.js?v=23f2a9b2ff" defer></script>
+<script src="/cygenix-template-spec.js?v=840a983f37" defer></script>
 <!-- Create staging tables: the CREATE TABLE builder, the existence scan and
      the one-table-per-call runner. Create-only by construction and by an
      assertion it runs over its own output before anything is sent. -->
-<script src="/cygenix-template-staging.js?v=1aabd835d3" defer></script>
+<script src="/cygenix-template-staging.js?v=1b8ad90058" defer></script>
 <!-- The Object Mapping bridge: turning a module's staging→target pairs into
      tagged draft jobs, and taking only those back out again. -->
 <script src="/cygenix-template-mapping.js?v=97560b5f32" defer></script>
@@ -714,14 +718,17 @@ async function ctPublish(){
   // The publish freezes whatever snapshot exists, so the warning says what
   // the specification will be missing rather than refusing the publish.
   const warnings = TM.tmPublishWarnings ? TM.tmPublishWarnings(CT.tpl) : [];
-  // Excluded modules are named in the question, not just counted. "3
-  // excluded" is a number somebody skims; "3 excluded: AP, Matters, WIP" is
-  // a sentence they either recognise or stop at.
+  // The modules being published are NAMED in the question, not just counted.
+  // "6 modules" is a number somebody skims; "AP, AR, GJ, Matters, Trust, WIP"
+  // is a sentence they either recognise or stop at. Capped, because a list
+  // nobody can read is a list nobody reads.
+  const included = TM.tmActiveModules ? TM.tmActiveModules(CT.tpl).map(m => m.module) : [];
   const excluded = TM.tmExcludedModules ? TM.tmExcludedModules(CT.tpl) : [];
   if (!confirm('Publish "' + CT.tpl.name + '" as version ' + CT.tpl.version + '?\n\n'
     + s.publishModuleCount + ' of ' + s.moduleCount + ' modules, ' + s.publishTableCount + ' tables, '
     + s.totalColumns + ' columns. '
-    + (excluded.length ? '\n\nLeft out (' + excluded.length + ' not included): ' + excluded.join(', ') + '\n' : '')
+    + '\n\nIncluded: ' + included.slice(0, 12).join(', ') + (included.length > 12 ? ', …' : '')
+    + (excluded.length ? '\nLeft out (' + excluded.length + ' not ticked): ' + excluded.slice(0, 12).join(', ') + (excluded.length > 12 ? ', …' : '') + '\n' : '\n')
     + (warnings.length ? '\n\n' + warnings.map(w => w.message).join('\n') + '\n' : '')
     + '\nThe published copy is frozen, columns included; your working draft continues as version ' + (CT.tpl.version + 1) + '.')) return;
   if (CT.dirty) { await ctSave(); if (CT.dirty) return; }     // a publish of unsaved work publishes what nobody can see
@@ -960,10 +967,11 @@ function renderBadges(){
   $('ct-badges').innerHTML = '<span class="chip info">v' + esc(s.version) + '</span>'
     + '<span class="chip ' + (s.status === 'published' ? 'ok' : 'warn') + '">' + (s.status === 'published' ? 'Published' : 'Draft') + '</span>'
     + '<span class="muted" style="font-size:11px">' + s.moduleCount + ' module' + (s.moduleCount === 1 ? '' : 's') + ' · ' + s.tableCount + ' table' + (s.tableCount === 1 ? '' : 's')
-    // The modules stay counted and the ones left out are named beside them,
-    // because "24 modules · 3 not included" is the true sentence and "21
-    // modules" is not.
-    + (s.excludedCount ? ' · ' + s.excludedCount + ' not included in the publish' : '')
+    // The modules in scope stay counted and the ticked ones are named beside
+    // them, because "24 modules · 6 included" is the true sentence and "6
+    // modules" is not. Shown at nought too: that is the state that blocks a
+    // publish, so it is the state most worth saying out loud.
+    + ' · ' + s.publishModuleCount + ' included in the publish'
     + (s.outOfScopeCount ? ' · ' + s.outOfScopeCount + ' out of scope' : '')
     // Column coverage: the client specification is only as complete as this.
     + (s.tableCount ? ' · ' + (s.tablesWithColumns === s.tableCount
@@ -977,9 +985,11 @@ function renderBadges(){
 function renderModules(){
   const mods = (CT.tpl.modules || []);
   const inS = mods.filter(m => m.inScope !== false), out = mods.filter(m => m.inScope === false);
-  const exCount = inS.filter(m => m.excluded).length;
-  $('ct-mods-sub').textContent = inS.length + ' in scope'
-    + (exCount ? ' · ' + exCount + ' not included' : '')
+  // The interesting number on an opt-in control is how many ARE ticked, and
+  // it is shown even at nought, because "0 included" is the thing an operator
+  // wondering why Publish is greyed out needs to read.
+  const incCount = inS.filter(m => m.included).length;
+  $('ct-mods-sub').textContent = inS.length + ' in scope · ' + incCount + ' included'
     + (out.length ? ' · ' + out.length + ' dropped' : '');
   // How many of this template's jobs are actually in Object Mapping right
   // now — counted from the job store, not from the ticks, because the ticks
@@ -1007,23 +1017,22 @@ function renderModules(){
     '<span class="tk"><input type="checkbox"' + (on ? ' checked' : '') + (ro ? ' disabled' : '')
     + ' onclick="event.stopPropagation()" onchange="' + (kind === 'map' ? 'ctToggleMap' : 'ctToggleInclude')
     + '(\'' + escArg(m.module) + '\',this.checked)" aria-label="' + esc(label) + '" title="' + esc(tip) + '"></span>';
-  /* Both columns read the same way round: a TICK means "yes, do this". The
-     stored flag is still `excluded`, and deliberately so — a document that
-     has never been near this feature has no flag at all, and "no flag" must
-     mean published. Storing `included` would make that same silence mean
-     "leave it out", which is the one way this feature could lose a module
-     from a client's workbook without anybody deciding to. So the inversion
-     lives here, on the one line that draws the box, and nowhere else. */
+  /* Both columns read the same way round AND start the same way: off, until
+     a person turns them on. Nothing is pre-ticked. Being in the Configurator
+     scope says what the conversion covers; the Include tick says what THIS
+     version of the template ships, and that is the operator's call, module by
+     module. It is also the safe way round — a module nobody ticked is left
+     out of a client's workbook rather than put into it unasked. */
   const ticks = (m, cls) => cls === 'out'
     ? '<span class="tk none"></span><span class="tk none"></span>'
     : tick(m, 'map', !!m.mapped, 'Send ' + m.module + ' to Object Mapping',
         'Send this module’s staging → target table pairs to Object Mapping as draft mappings. Unticking removes only the ones sent from here.')
-      + tick(m, 'inc', !m.excluded, 'Include ' + m.module + ' in publishing',
-        'Ticked: this module is published. Untick to keep the module and its tables but leave it out of Publish, the specification workbook and Create staging tables.');
-  const li = (m, cls) => '<li class="' + cls + (cls !== 'out' && m.excluded ? ' ex' : '') + (CT.selected === m.module ? ' on' : '')
+      + tick(m, 'inc', !!m.included, 'Include ' + m.module + ' in the publish',
+        'Tick to put this module in the publish: the specification workbook, the staging DDL and Create staging tables. Unticked, it keeps its tables and is simply left out.');
+  const li = (m, cls) => '<li class="' + cls + (cls !== 'out' && m.included ? ' inc' : '') + (CT.selected === m.module ? ' on' : '')
     + '" onclick="ctSelect(\'' + escArg(m.module) + '\')" title="' + esc(m.module) + '">'
     + '<span class="nm">' + esc(m.module)
-      + (cls === 'out' ? badge(m) : (m.excluded ? ' <span class="chip exc" title="Not included: kept, but left out of Publish, the workbook and Create staging tables">not included</span>' : ''))
+      + (cls === 'out' ? badge(m) : (m.included ? ' <span class="chip inc" title="In the publish: the workbook, the staging DDL and Create staging tables">included</span>' : ''))
     + '</span>'
     + '<span class="n' + (!(m.tables || []).length && cls !== 'out' ? ' zero' : '') + '">' + (m.tables || []).length + '</span>'
     + ticks(m, cls) + '</li>';
@@ -1408,13 +1417,11 @@ async function ctExportDdl(){
 /* ── The two module ticks, and the staging-table builder (Sep-2026) ──────
    Three controls that all live on the module row or beside it:
 
-     Include   ticked for every module by default. Unticking keeps the module
-               and its tables but leaves it out of Publish, the specification
-               workbook, the staging DDL and Create staging tables, and out of
-               the readiness check. Purely a document change: the model owns
-               the rule, this only ticks the box. The STORED flag is still
-               `excluded`, so that a template written before this feature
-               existed — with no flag at all — is published, not dropped.
+     Include   opt-in, like Map: off until somebody ticks it. A ticked module
+               is in Publish, the specification workbook, the staging DDL,
+               Create staging tables and the readiness check; an unticked one
+               keeps its tables and is left out of all five. Purely a document
+               change: the model owns the rule, this only ticks the box.
      Map       sends that module's staging → target pairs to Object Mapping
                as tagged DRAFT jobs, and takes back ONLY the ones it sent.
      Create    builds the staging tables on a connection the operator picks,
@@ -1458,20 +1465,20 @@ function targetSchemaOf(name){
 }
 
 /* ── Include ─────────────────────────────────────────────────────────────
-   `on` is the state of the TICK — true means "include this module" — and the
-   stored flag is its opposite. The one line that inverts it is here and on
-   the line that draws the box; everything downstream, model included, still
-   speaks in terms of what is excluded, because "no flag stored" has to go on
-   meaning "published" for every template written before this existed. */
+   Opt-in, like Map: the flag is stored exactly as the tick reads, and nothing
+   here inverts anything. Which modules a version of the template ships is the
+   operator's decision, module by module, and an untouched template ships
+   none of them until somebody says so. */
 function ctToggleInclude(moduleName, on){
   if (!CT.tpl || isReadOnly()) { render(); return; }
-  if (!TM.tmSetModuleExcluded(CT.tpl, moduleName, !on, userName())) { render(); return; }
+  if (!TM.tmSetModuleIncluded(CT.tpl, moduleName, on, userName())) { render(); return; }
   touchDirty(); render();
   const s = TM.tmSummary(CT.tpl);
+  const tail = s.publishModuleCount + ' of ' + s.moduleCount + ' module' + (s.moduleCount === 1 ? '' : 's')
+    + ' included. Press Save to keep it.';
   note(on
-    ? '"' + moduleName + '" is included in the publish again. Press Save to keep it.'
-    : '"' + moduleName + '" is no longer included. Its tables are kept, and Publish, the specification workbook and Create staging tables will skip it. '
-      + s.publishModuleCount + ' of ' + s.moduleCount + ' module' + (s.moduleCount === 1 ? '' : 's') + ' included. Press Save to keep it.',
+    ? '"' + moduleName + '" is in the publish: the specification workbook, the staging DDL and Create staging tables. ' + tail
+    : '"' + moduleName + '" is out of the publish. Its tables are kept, and the workbook, the staging DDL and Create staging tables will skip it. ' + tail,
     on ? 'ok' : 'warn');
 }
 
@@ -1668,7 +1675,8 @@ function renderStage(){
     + plan.unknownTypes.slice(0, 4).map(u => u.column + ' ' + u.dataType).join(', ') + (plan.unknownTypes.length > 4 ? ', …' : '')
     + '). They are written exactly as the target spells them; if the server rejects one, that table fails and the rest carry on.');
   const ex = TM.tmExcludedModules ? TM.tmExcludedModules(CT.tpl) : [];
-  if (ex.length) lines.push(ex.length + ' module' + (ex.length === 1 ? ' is' : 's are') + ' not included in the publish and left out of this run: ' + ex.join(', ') + '.');
+  if (ex.length) lines.push(ex.length + ' module' + (ex.length === 1 ? ' is' : 's are') + ' not ticked as included and left out of this run: '
+    + ex.slice(0, 8).join(', ') + (ex.length > 8 ? ', …' : '') + '.');
   warn.style.display = lines.length ? 'block' : 'none';
   warn.textContent = lines.join(' ');
 
@@ -1681,7 +1689,7 @@ function renderStage(){
     + '<td class="mono">' + t.columnCount + '</td>'
     + '<td>' + esc(label[t.status] || t.status) + '</td>'
     + '<td>' + esc(t.result || t.error || '') + '</td></tr>').join('')
-    : '<tr><td colspan="6" class="empty">Nothing to create. No module in scope is included, or none has tables.</td></tr>';
+    : '<tr><td colspan="6" class="empty">Nothing to create. Tick Include beside the modules this version covers, or none of them has tables yet.</td></tr>';
 
   const ST = window.CygenixTemplateStaging;
   $('ct-stage-sql').value = ST ? ST.planScript(plan, {

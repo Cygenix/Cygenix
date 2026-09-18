@@ -1,13 +1,13 @@
 // tests/template-controls.test.js — Conversion Templates: the three module
 // controls added Sep-2026.
 //
-//   Include in publishing     a tick per module, TICKED by default. Untick it
-//                             and the module stays, its tables stay, and
-//                             Publish, the specification workbook, the staging
-//                             DDL and Create staging tables all skip it. The
-//                             readiness check ignores it. The stored flag is
-//                             still `excluded`, so a template written before
-//                             any of this loads with everything included.
+//   Include in the publish    a tick per module, OPT-IN: off until somebody
+//                             ticks it, exactly like Map. A ticked module is
+//                             in Publish, the specification workbook, the
+//                             staging DDL and Create staging tables; an
+//                             unticked one keeps its tables and is left out of
+//                             all four, and the readiness check ignores it.
+//                             A publish with nothing ticked is blocked.
 //   Object Mapping            a module's staging → target pairs go to Object
 //                             Mapping as tagged DRAFT jobs. Unticking removes
 //                             ONLY those. A mapping built by hand is never
@@ -50,7 +50,16 @@ const COLS = [
   { name: 'Amount', ordinal: 4, baseType: 'decimal', precision: 18, scale: 2, isNullable: false },
   { name: 'Total', ordinal: 5, baseType: 'decimal', precision: 18, scale: 2, isComputed: true },
 ];
+/* Three modules in scope with tables and columns, all three TICKED — the
+   state an operator reaches after choosing what this version ships. Nothing
+   is ticked by the model itself; that is what `tplUntouched` is for. */
 function tpl() {
+  const t = tplUntouched();
+  ['AP', 'Matters', 'WIP'].forEach(m => TM.tmSetModuleIncluded(t, m, true, 'me'));
+  return t;
+}
+/* The same template as the page first builds it: nothing ticked. */
+function tplUntouched() {
   const t = TM.tmNewTemplate({ name: 'T', projectId: 'p1', profileId: 'FIN_3E_UAT' });
   TM.tmSyncScope(t, ['AP', 'Matters', 'WIP']);
   [['AP', 'Vchr'], ['AP', 'VchrDetail'], ['Matters', 'Matter'], ['WIP', 'WIPItem']].forEach(([m, x], i) => {
@@ -66,64 +75,91 @@ function tpl() {
    ════════════════════════════════════════════════════════════════════════ */
 console.log('\n— the model —');
 
-check('a new module is neither excluded nor mapped, and both are real booleans',
-  (() => { const m = TM.tmNewModule('AP'); return m.excluded === false && m.mapped === false; })());
+check('a new module is neither included nor mapped — both ticks are opt-in, and both are real booleans',
+  (() => { const m = TM.tmNewModule('AP'); return m.included === false && m.mapped === false; })());
 
-check('an older document loads with nothing excluded and nothing mapped',
+check('a module the Configurator has just brought into scope is not in the publish until it is ticked',
   (() => {
     const t = tpl();
-    t.modules.forEach(m => { delete m.excluded; delete m.mapped; });
+    TM.tmSyncScope(t, ['AP', 'Matters', 'WIP', 'Trust'], 'me');
+    return TM.tmFindModule(t, 'Trust').included === false
+      && TM.tmActiveModules(t).map(m => m.module).join(',') === 'AP,Matters,WIP';
+  })());
+
+check('a document written before either flag existed loads with nothing ticked',
+  (() => {
+    const t = tpl();
+    t.modules.forEach(m => { delete m.included; delete m.mapped; });
     t.schema = 2;
     const after = TM.tmMigrate(t);
     return after.schema === TM.TM_SCHEMA_VERSION
-      && after.modules.every(m => m.excluded === false && m.mapped === false);
+      && after.modules.every(m => m.included === false && m.mapped === false);
   })());
 
-check('excluding a module keeps it in scope and keeps its tables',
+/* The schema-3 → 4 rule, stated as a decision because it is one: a document
+   that said "excluded: false" was saying "published", and carrying that
+   across would tick every module on every existing template. It is dropped
+   instead, and the flag with it, so nothing is left behind to be read by
+   accident. The cost is re-ticking; the alternative is a workbook nobody
+   chose the contents of. */
+check('a schema-3 document does NOT arrive with every module ticked, and keeps no stale flag',
+  (() => {
+    const t = tplUntouched();
+    t.schema = 3;
+    t.modules.forEach(m => { delete m.included; m.excluded = false; });
+    const after = TM.tmMigrate(t);
+    return after.modules.every(m => m.included === false && !('excluded' in m))
+      && TM.tmActiveModules(after).length === 0;
+  })());
+
+check('un-ticking Include keeps the module in scope and keeps its tables',
   (() => {
     const t = tpl();
-    TM.tmSetModuleExcluded(t, 'AP', true, 'me');
+    TM.tmSetModuleIncluded(t, 'AP', false, 'me');
     const m = TM.tmFindModule(t, 'AP');
-    return m.inScope !== false && m.tables.length === 2 && m.excluded === true;
+    return m.inScope !== false && m.tables.length === 2 && m.included === false;
   })());
 
 check('a module that has dropped out of the Configurator scope cannot be ticked either way',
   (() => {
     const t = tpl();
     TM.tmSyncScope(t, ['AP', 'Matters']);           // WIP drops out, tables kept
-    return TM.tmSetModuleExcluded(t, 'WIP', true, 'me') === null
+    return TM.tmSetModuleIncluded(t, 'WIP', true, 'me') === null
       && TM.tmSetModuleMapped(t, 'WIP', true, 'me') === null;
   })());
 
-check('tmActiveModules is in scope AND not excluded, and names the excluded ones',
+check('tmActiveModules is in scope AND ticked, and tmExcludedModules names the rest',
   (() => {
     const t = tpl();
-    TM.tmSetModuleExcluded(t, 'Matters', true, 'me');
+    TM.tmSetModuleIncluded(t, 'Matters', false, 'me');
     const active = TM.tmActiveModules(t).map(m => m.module);
     return active.join(',') === 'AP,WIP' && TM.tmExcludedModules(t).join(',') === 'Matters';
   })());
 
-check('the readiness check ignores an excluded module — even one with no tables at all',
+check('the readiness check ignores an unticked module — even one with no tables at all',
   (() => {
     const t = tpl();
     TM.tmSyncScope(t, ['AP', 'Matters', 'WIP', 'Empty']);
-    const before = TM.tmCanPublish(t);              // Empty has no tables: blocked
-    TM.tmSetModuleExcluded(t, 'Empty', true, 'me');
+    TM.tmSetModuleIncluded(t, 'Empty', true, 'me');
+    const before = TM.tmCanPublish(t);              // ticked and empty: blocked
+    TM.tmSetModuleIncluded(t, 'Empty', false, 'me');
     return before === false && TM.tmCanPublish(t) === true;
   })());
 
-check('…but un-ticking Include on EVERY module blocks the publish, rather than publishing nothing',
+check('a template nobody has ticked yet cannot be published, and says why',
   (() => {
-    const t = tpl();
-    ['AP', 'Matters', 'WIP'].forEach(m => TM.tmSetModuleExcluded(t, m, true, 'me'));
+    const t = tplUntouched();
     return TM.tmCanPublish(t) === false
-      && TM.tmValidate(t).some(i => i.level === 'error' && /no module in scope is included/i.test(i.message));
+      && TM.tmValidate(t).some(i => i.level === 'error' && /no module is included in the publish yet/i.test(i.message));
   })());
+
+check('…and that error is not buried under a warning naming every module in scope',
+  TM.tmValidate(tplUntouched()).filter(i => /not included in the publish/.test(i.message)).length === 0);
 
 check('a module left out is a warning on the readiness panel, named not just counted',
   (() => {
     const t = tpl();
-    TM.tmSetModuleExcluded(t, 'WIP', true, 'me');
+    TM.tmSetModuleIncluded(t, 'WIP', false, 'me');
     const w = TM.tmValidate(t).filter(i => i.level === 'warning' && /not included in the publish/.test(i.message));
     return w.length === 1 && /WIP/.test(w[0].message);
   })());
@@ -133,7 +169,7 @@ check('column coverage and the publish warning skip excluded modules',
     const t = tpl();
     const row = TM.tmAddTable(t, 'WIP', { targetTable: 'NoCols' }, 'me');   // no snapshot
     const before = TM.tmColumnCoverage(t).tablesMissing.length;
-    TM.tmSetModuleExcluded(t, 'WIP', true, 'me');
+    TM.tmSetModuleIncluded(t, 'WIP', false, 'me');
     return before === 1 && TM.tmColumnCoverage(t).tablesMissing.length === 0
       && TM.tmPublishWarnings(t).length === 0 && !!row;
   })());
@@ -141,7 +177,7 @@ check('column coverage and the publish warning skip excluded modules',
 check('the summary counts the scope, names the exclusions, and says what will be published',
   (() => {
     const t = tpl();
-    TM.tmSetModuleExcluded(t, 'AP', true, 'me');
+    TM.tmSetModuleIncluded(t, 'AP', false, 'me');
     const s = TM.tmSummary(t);
     // 3 modules in scope, 4 tables; AP is 2 of those tables.
     return s.moduleCount === 3 && s.tableCount === 4 && s.excludedCount === 1
@@ -151,7 +187,7 @@ check('the summary counts the scope, names the exclusions, and says what will be
 check('publishing freezes WHICH modules were excluded, for the audit',
   (() => {
     const t = tpl();
-    TM.tmSetModuleExcluded(t, 'Matters', true, 'me');
+    TM.tmSetModuleIncluded(t, 'Matters', false, 'me');
     const f = TM.tmPublish(t, 'me');
     return f && Array.isArray(f.excludedModules) && f.excludedModules.join(',') === 'Matters';
   })());
@@ -173,7 +209,7 @@ check('the three copies of "is this module in play" give the same answer for eve
 check('the specification workbook leaves an excluded module out of every sheet',
   (() => {
     const t = tpl();
-    TM.tmSetModuleExcluded(t, 'AP', true, 'me');
+    TM.tmSetModuleIncluded(t, 'AP', false, 'me');
     const rows = SPEC.buildSpecRows(t);
     return rows.tables.length === 2
       && !rows.tables.some(r => r.module === 'AP')
@@ -184,7 +220,7 @@ check('the specification workbook leaves an excluded module out of every sheet',
 check('the staging DDL leaves it out too — one filter, both artefacts',
   (() => {
     const t = tpl();
-    TM.tmSetModuleExcluded(t, 'AP', true, 'me');
+    TM.tmSetModuleIncluded(t, 'AP', false, 'me');
     const sql = SPEC.buildStagingDdl(t);
     return !/STG_Vchr\b/.test(sql) && /STG_Matter\b/.test(sql);
   })());
@@ -192,13 +228,13 @@ check('the staging DDL leaves it out too — one filter, both artefacts',
 check('and Create staging tables leaves it out as well',
   (() => {
     const t = tpl();
-    TM.tmSetModuleExcluded(t, 'AP', true, 'me');
+    TM.tmSetModuleIncluded(t, 'AP', false, 'me');
     const plan = ST.stagingPlan(t, {});
     return plan.tables.length === 2 && !plan.tables.some(r => r.module === 'AP');
   })());
 
-check('reading the target columns is NOT narrowed by exclusion — un-exclude and the detail is there',
-  /Deliberately IN SCOPE, not active/.test(read('public', 'cygenix-template-spec.js')));
+check('reading the target columns is NOT narrowed by the tick — tick it later and the detail is there',
+  /Deliberately IN SCOPE, not included/.test(read('public', 'cygenix-template-spec.js')));
 
 /* ════════════════════════════════════════════════════════════════════════
    3. Create staging tables
@@ -525,14 +561,17 @@ check('both tick boxes are on the right of the row, under headings that say Map 
 
 /* Both columns read the same way round: a tick means yes. The stored flag is
    still the exception, so that a template with no flag at all is published. */
-check('Include is TICKED when the module is not excluded, and stores the opposite',
-  /tick\(m, 'inc', !m\.excluded,/.test(page)
-  && /function ctToggleInclude\(moduleName, on\)\{[\s\S]{0,200}tmSetModuleExcluded\(CT\.tpl, moduleName, !on,/.test(page)
-  && !/ctToggleExclude/.test(page));
+check('Include is opt-in and stores exactly what the tick reads — nothing inverts anything',
+  /tick\(m, 'inc', !!m\.included,/.test(page)
+  && /function ctToggleInclude\(moduleName, on\)\{[\s\S]{0,240}tmSetModuleIncluded\(CT\.tpl, moduleName, on,/.test(page)
+  && !/ctToggleExclude/.test(page) && !/m\.excluded/.test(page));
+
+check('nothing is pre-ticked: the page never writes a tick the operator did not',
+  !/tmSetModuleIncluded\([^)]*true/.test(page.replace(/ctToggleInclude[\s\S]*?\n\}/, '')));
 
 check('each tick box explains itself on hover',
   /title="Send this module’s staging → target table pairs to Object Mapping/.test(page)
-  && /Ticked: this module is published\. Untick to keep/.test(page));
+  && /Tick to put this module in the publish/.test(page));
 
 check('a module no longer in scope gets no tick boxes, but keeps the row aligned',
   /cls === 'out'\s*\n?\s*\? '<span class="tk none"><\/span><span class="tk none"><\/span>'/.test(page)
@@ -541,15 +580,22 @@ check('a module no longer in scope gets no tick boxes, but keeps the row aligned
 check('ticking a box does not also change which module is selected',
   /onclick="event\.stopPropagation\(\)"/.test(page));
 
-check('a row left out is greyed AND labelled — colour alone is not a label',
-  /\.ct-mods li\.ex\{opacity/.test(page) && /class="chip exc"/.test(page)
-  && />not included<\/span>/.test(page));
+/* Positive marking, not greying. While every module started ticked, greying
+   the exception was right; now that nothing is ticked until somebody says so,
+   greying would grey the whole list on a template nobody has touched and read
+   as broken. The chip is a WORD as well as a colour, and the tick itself is
+   the colour-free indicator. */
+check('an included row is marked with a word, and nothing is greyed by default',
+  /class="chip inc"/.test(page) && />included<\/span>/.test(page)
+  && !/\.ct-mods li\.ex\{/.test(page));
 
-check('the greying uses theme tokens, so it works in dark and light alike',
-  /\.ct-mods li \.chip\.exc\{background:var\(--amber-bg\);color:var\(--amber\)/.test(page));
+check('the chip uses theme tokens, so it works in dark and light alike',
+  /\.ct-mods li \.chip\.inc\{background:var\(--green-bg\);color:var\(--green\)/.test(page));
 
-check('the summary line says how many are left out, without changing the module count',
-  /excludedCount \? ' · ' \+ s\.excludedCount \+ ' not included in the publish'/.test(page));
+check('the summary line says how many ARE included, always, without changing the module count',
+  /\+ ' · ' \+ s\.publishModuleCount \+ ' included in the publish'/.test(page)
+  && /incCount = inS\.filter\(m => m\.included\)\.length/.test(page)
+  && /' in scope · ' \+ incCount \+ ' included'/.test(page));
 
 check('Tick all / Untick all are in the section header, with the count beside them',
   /id="ct-map-all"[^>]*onclick="ctMapAll\(true\)"/.test(page)

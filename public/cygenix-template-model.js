@@ -38,14 +38,22 @@
   // has never been near this code loads and renders exactly as before.
   //
   // 3 (Sep-2026): every module may carry two operator flags, `excluded` and
-  // `mapped`. Both are booleans and both default to FALSE, which is the whole
-  // point of the migration: the brief is that "existing templates load with
-  // nothing excluded", so tmMigrate writes the two fields explicitly rather
-  // than leaving them undefined. Undefined would read as false today, but a
-  // stored document that never says so is a document whose next reader has to
-  // guess, and that is exactly the kind of guess that turns into a module
-  // silently dropped from a client's publish.
-  var TM_SCHEMA_VERSION = 3;
+  // `mapped`, written explicitly rather than left undefined so that no reader
+  // has to guess what an absent flag meant.
+  //
+  // 4 (Sep-2026): `excluded` becomes `included`, and the decision becomes
+  // OPT-IN. A module is in the publish only because somebody ticked it. Both
+  // module ticks now behave the same way: off until asked for.
+  //
+  // The migration does NOT carry `!excluded` across. Under schema 3 every
+  // module was included unless somebody said otherwise, so translating it
+  // faithfully would tick every module on every existing template and leave
+  // the operator unticking twenty-four boxes to get back to the handful they
+  // wanted. Instead every module starts NOT included, and the operator ticks
+  // the ones this version ships. That also fails the safe way: the worst case
+  // is a publish that is blocked until somebody chooses, rather than a
+  // workbook that quietly carries modules nobody asked for to a client.
+  var TM_SCHEMA_VERSION = 4;
 
   // The persisted column record. Named here so the page, the specification
   // builder and the tests agree on one shape, and so a reader can see what a
@@ -151,22 +159,26 @@
       inScope: true,          // set false when the module leaves the estimate
       tables: [],
       notes: '',
-      /* Two operator decisions, added Sep-2026, both defaulting to off so an
-         existing template loads with nothing excluded and nothing mapped:
+      /* Two operator decisions, added Sep-2026. Both are opt-in: they start
+         off and only a person turns them on, which is why both read the same
+         way round on screen and why neither can happen by accident.
 
-           excluded  in scope, tables kept, but left out of Publish, the
-                     specification workbook, the staging DDL and the
-                     readiness check. "Not this time", not "not at all".
-                     The screen shows this as an INCLUDE tick, ticked by
-                     default; the flag stays named for the exception because
-                     a document that says nothing has to mean "published",
-                     and an `included` flag would make silence mean the
-                     opposite. The inversion lives in the page, once.
+           included  this module is in the publish: the specification
+                     workbook, the staging DDL, Create staging tables and the
+                     readiness check. A module that is in scope but not
+                     included keeps its tables and is simply left out. "Not
+                     this time", not "not at all".
            mapped    this module's staging→target pairs have been sent to
                      Object Mapping as draft jobs. The flag is the record of
                      the decision; the jobs themselves live in cygenix_jobs
-                     and carry a tag pointing back here. */
-      excluded: false,
+                     and carry a tag pointing back here.
+
+         Being in scope is not the same as being in the publish. Scope comes
+         from the Configurator and says what the conversion covers; this says
+         what THIS version of the template ships. Silence means not included,
+         which is the safe way round: a module nobody ticked is left out of a
+         client's workbook rather than put into it unasked. */
+      included: false,
       mapped: false
     };
   }
@@ -176,17 +188,17 @@
      module in play" is asked by five callers and they must not each decide
      it for themselves. A module that has dropped out of scope is never in
      play whatever its flags say — that is the older rule and it wins. */
-  function tmModuleExcluded(m) { return !!(m && m.excluded); }
-  function tmModuleActive(m) { return !!m && m.inScope !== false && !m.excluded; }
+  function tmModuleIncluded(m) { return !!(m && m.included); }
+  function tmModuleActive(m) { return !!m && m.inScope !== false && !!m.included; }
   /* Every module that publishing, the workbook, the DDL and the readiness
      check should consider. One definition, one place. */
   function tmActiveModules(tpl) {
     return ((tpl && tpl.modules) || []).filter(tmModuleActive);
   }
-  function tmSetModuleExcluded(tpl, moduleName, excluded, who) {
+  function tmSetModuleIncluded(tpl, moduleName, included, who) {
     var m = tmFindModule(tpl, moduleName);
     if (!m || m.inScope === false) return null;   // out of scope has no ticks
-    m.excluded = !!excluded;
+    m.included = !!included;
     tmTouch(tpl, who);
     return m;
   }
@@ -197,9 +209,13 @@
     tmTouch(tpl, who);
     return m;
   }
+  /* The modules in scope that this version leaves out. Named for the fact,
+     not for the flag: what a reader of a published template wants to know is
+     what is missing from it, and that question has the same answer whichever
+     way round the tick is stored. */
   function tmExcludedModules(tpl) {
     return ((tpl && tpl.modules) || [])
-      .filter(function (m) { return m.inScope !== false && m.excluded; })
+      .filter(function (m) { return m.inScope !== false && !m.included; })
       .map(function (m) { return m.module; });
   }
 
@@ -427,10 +443,10 @@
 
   /* How much of the in-scope template has column detail. The header line and
      the publish warning both read this, so they cannot disagree. */
-  /* Counts ACTIVE modules only (in scope and not excluded). An excluded
-     module's tables are deliberately kept on the document, but nothing is
-     going to be built from them this time round, so counting their missing
-     columns would raise a publish warning about work nobody is doing. */
+  /* Counts INCLUDED modules only. A module that is in scope but not ticked
+     keeps its tables on the document, but nothing is going to be built from
+     them this time round, so counting their missing columns would raise a
+     publish warning about work nobody is doing. */
   function tmColumnCoverage(tpl) {
     var inScope = tmActiveModules(tpl);
     var tablesInScope = 0, tablesWithColumns = 0, totalColumns = 0;
@@ -468,11 +484,14 @@
   function tmMigrate(tpl) {
     if (!tpl || typeof tpl !== 'object') return tpl;
     (tpl.modules || []).forEach(function (m) {
-      /* Schema 3. Written as an explicit false rather than left undefined:
-         see the note on TM_SCHEMA_VERSION. A document that already carries
-         the flags keeps whatever the operator set. */
-      if (typeof m.excluded !== 'boolean') m.excluded = false;
+      /* Schema 4. Both flags are written as an explicit false rather than
+         left undefined, so no later reader has to guess what silence meant.
+         A document that already carries `included` keeps whatever the
+         operator set; a schema-3 document's `excluded` is DROPPED rather than
+         inverted — see the note on TM_SCHEMA_VERSION for why. */
+      if (typeof m.included !== 'boolean') m.included = false;
       if (typeof m.mapped !== 'boolean') m.mapped = false;
+      if ('excluded' in m) delete m.excluded;
       (m.tables || []).forEach(function (t) {
         if (!Array.isArray(t.columns)) t.columns = [];
       });
@@ -517,16 +536,17 @@
     }
 
     /* "Ready to publish?" asks about the modules that are actually going to be
-       published. An excluded module is skipped entirely: no tables is not a
-       problem for a module nobody is building this time. The one thing we do
-       still check is that something is left — publishing a template with every
-       module excluded produces an empty workbook and an empty DDL, and the
-       operator would only find that out after sending it to the client. */
+       published. A module that is in scope but not included is skipped
+       entirely: no tables is not a problem for a module nobody is building
+       this time. The one thing we do still check is that SOMETHING is
+       included — a publish with nothing ticked produces an empty workbook and
+       an empty DDL, and the operator would find that out after sending it to
+       the client rather than before. */
     var active = tmActiveModules(tpl);
     if (inScope.length && !active.length) {
       issues.push({
         level: 'error', module: '',
-        message: 'No module in scope is included in the publish. Tick Include on at least one.'
+        message: 'No module is included in the publish yet. Tick Include beside the modules this version covers.'
       });
     }
 
@@ -562,14 +582,19 @@
 
     /* Not an error — the operator chose this — but it must be visible on the
        same panel they read before pressing Publish, so that "where did FIN go"
-       is answered before the workbook reaches the client rather than after. */
-    var excluded = tmExcludedModules(tpl);
+       is answered before the workbook reaches the client rather than after.
+       Silent when nothing is included at all: the error above already says so,
+       and listing every module in scope underneath it would bury it. The names
+       are capped, because a warning nobody can read is a warning nobody
+       reads. */
+    var excluded = active.length ? tmExcludedModules(tpl) : [];
     if (excluded.length) {
+      var named = excluded.slice(0, 8).join(', ') + (excluded.length > 8 ? ', …' : '');
       issues.push({
         level: 'warning', module: '',
         message: excluded.length + ' module' + (excluded.length === 1 ? ' is' : 's are')
           + ' not included in the publish and will be left out of the workbook, the staging DDL and this publish: '
-          + excluded.join(', ') + '.'
+          + named + '.'
       });
     }
 
@@ -622,10 +647,10 @@
     var inScope = mods.filter(function (m) { return m.inScope !== false; });
     var active = tmActiveModules(tpl);
     /* moduleCount and tableCount stay counted over everything IN SCOPE, not
-       over the active set. The header reads "24 modules · 3 excluded from
-       publishing": the 24 is the size of the scope and the 3 is a subset of
-       it. Subtracting here would print "21 modules · 3 excluded", which reads
-       as 24 and is wrong. */
+       over the included set. The header reads "24 modules · 6 included in the
+       publish": the 24 is the size of the scope and the 6 is a subset of it.
+       Subtracting here would print "18 modules · 6 included", which reads as
+       24 and is wrong. */
     var tables = 0;
     inScope.forEach(function (m) { tables += (m.tables || []).length; });
     var activeTables = 0;
@@ -644,8 +669,8 @@
       totalColumns: cov.totalColumns,
       tablesWithColumns: cov.tablesWithColumns,
       tablesMissingColumns: cov.tablesMissing.length,
-      // Added with schema 3. A document with no flags reports 0, 0 and the
-      // full in-scope counts, which is exactly "nothing excluded".
+      // Added with schema 3, opt-in since 4. A document with no flags reports
+      // nothing included and nothing mapped, which is exactly what it says.
       excludedCount: inScope.length - active.length,
       mappedCount: inScope.filter(function (m) { return !!m.mapped; }).length,
       publishModuleCount: active.length,
@@ -679,10 +704,10 @@
     tmUpdateTable: tmUpdateTable,
     tmRemoveTable: tmRemoveTable,
     tmSetModuleNotes: tmSetModuleNotes,
-    tmModuleExcluded: tmModuleExcluded,
+    tmModuleIncluded: tmModuleIncluded,
     tmModuleActive: tmModuleActive,
     tmActiveModules: tmActiveModules,
-    tmSetModuleExcluded: tmSetModuleExcluded,
+    tmSetModuleIncluded: tmSetModuleIncluded,
     tmSetModuleMapped: tmSetModuleMapped,
     tmExcludedModules: tmExcludedModules,
     tmNormaliseColumn: tmNormaliseColumn,
