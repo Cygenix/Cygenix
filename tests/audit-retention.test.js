@@ -230,25 +230,18 @@ async function seedChain(store, ages) {
   await seedChain(store, [500, 480, 1]);
   const liveHead = (await store.get('audit/head')).seq;
 
-  // A head that reports a different sequence on every read is the race the
-  // append retry exists for; three failures means the write is genuinely
-  // lost, and required:true then throws.
-  //
-  // The FIRST head read is left alone: runRetention reads it to find the end
-  // of the chain, and a flapping value there would make it bail before ever
-  // reaching the append — which would pass this test for the wrong reason.
-  // The sabotage starts once the scan is done.
-  const realGet = store.get.bind(store);
-  let headReads = 0;
-  let n = 0;
-  store.get = async (k) => {
-    if (k !== 'audit/head') return realGet(k);
-    if (headReads++ === 0) return realGet(k);
-    return { seq: n++, hash: '' };
-  };
+  // A store that quietly swallows every audit entry written to it. A flapping
+  // HEAD is no longer enough to simulate this: the append treats the head as a
+  // hint and recovers from one that is wrong, which is the point of it. What
+  // it cannot recover from — and must not proceed past — is a write that does
+  // not land, so that is what is sabotaged here. Only entry writes are
+  // dropped; the rest of the store works, or the purge would fail for a
+  // reason that has nothing to do with the record.
+  const realSet = store.setJSON.bind(store);
+  store.setJSON = async (k, v) => (/^audit\/e\//.test(k) ? undefined : realSet(k, v));
   let threw = false;
   try { await retention.runRetention(store, {}); } catch (e) { threw = !!e.auditFailure; }
-  store.get = realGet;
+  store.setJSON = realSet;
 
   check('a purge whose record cannot be written throws rather than proceeding', threw);
   check('AND NOTHING WAS DELETED',

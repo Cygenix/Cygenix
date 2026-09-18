@@ -451,7 +451,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <script src="/cygenix-profile-apply.js?v=fbedee4630" defer></script>
 <!-- The target's table list, read the way the Schema Explorer reads it:
      one fetch per connection, cached, filtered in memory. -->
-<script src="/cygenix-schema-graph.js?v=6b69c34d3d" defer></script>
+<script src="/cygenix-schema-graph.js?v=f0fb879ed7" defer></script>
 <script src="/cygenix-template-model.js?v=1d903bc91b" defer></script>
 <!-- Import / export rules (pure; the sheet library itself is fetched only
      when Import or Excel export is first used). -->
@@ -463,7 +463,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- Create staging tables: the CREATE TABLE builder, the existence scan and
      the one-table-per-call runner. Create-only by construction and by an
      assertion it runs over its own output before anything is sent. -->
-<script src="/cygenix-template-staging.js?v=1b8ad90058" defer></script>
+<script src="/cygenix-template-staging.js?v=0e957babd4" defer></script>
 <!-- The Object Mapping bridge: turning a module's staging→target pairs into
      tagged draft jobs, and taking only those back out again. -->
 <script src="/cygenix-template-mapping.js?v=97560b5f32" defer></script>
@@ -1807,7 +1807,12 @@ async function ctStageRun(){
     if (r.skipped) bits.push(r.skipped + ' already there');
     if (r.failed) bits.push(r.failed + ' failed');
     prog.className = 'ct-note' + (r.failed ? ' crit' : ' ok');
-    prog.textContent = bits.join(' · ') + '.' + (r.failed ? ' The failures are on their own rows above, with the server’s own message.' : '');
+    // The server's advice once, not once per row. Twelve tables refused for
+    // the same reason produce twelve identical rows and one sentence worth
+    // reading, and that sentence is usually what to do next.
+    prog.textContent = bits.join(' · ') + '.'
+      + (r.failed ? ' The failures are on their own rows above, with the server’s own message.' : '')
+      + ((r.hints && r.hints.length) ? ' ' + r.hints.join(' ') : '');
     audit('template.create-staging', 'Created ' + r.created + ' staging table' + (r.created === 1 ? '' : 's') + ' for "' + CT.tpl.name + '" v' + CT.tpl.version,
       { connection: side === 'tgt' ? 'target' : 'source', schema: plan.schema, dialect: plan.dialect,
         created: r.created, skipped: r.skipped, failed: r.failed, total: r.total, profileId: CT.tpl.profileId },

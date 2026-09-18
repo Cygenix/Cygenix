@@ -446,7 +446,8 @@ async function runPlan(plan, opts) {
 
     for (var i = 0; i < todo.length; i++) {
       var t = todo[i];
-      var outcome = { module: t.module, stagingTable: t.stagingTable, targetTable: t.targetTable, status: 'created', error: '' };
+      var outcome = { module: t.module, stagingTable: t.stagingTable, targetTable: t.targetTable,
+        status: 'created', error: '', hint: '' };
       try {
         await execute(t.sql);
         created++;
@@ -455,7 +456,15 @@ async function runPlan(plan, opts) {
         // it, but a concurrent creation lands here and it is a skip.
         var msg = (e && e.message) || 'could not create';
         if (/already exists|there is already an object named/i.test(msg)) { outcome.status = 'skipped'; skipped++; }
-        else { outcome.status = 'failed'; outcome.error = msg; failed++; }
+        else {
+          outcome.status = 'failed';
+          outcome.error = msg;
+          // The server's advice, kept apart from its complaint. A refusal
+          // reads the same on every row; what to do about it is worth saying
+          // once, and the caller shows it once.
+          outcome.hint = (e && e.hint) || '';
+          failed++;
+        }
       }
       t.status = outcome.status === 'failed' ? 'failed' : 'done';
       t.error = outcome.error;
@@ -465,7 +474,10 @@ async function runPlan(plan, opts) {
         catch (e2) { /* the run matters, the progress line does not */ }
       }
     }
-    return { ok: true, created: created, skipped: skipped, failed: failed, results: results, total: todo.length };
+    var hints = [];
+    results.forEach(function (r) { if (r.hint && hints.indexOf(r.hint) === -1) hints.push(r.hint); });
+    return { ok: true, created: created, skipped: skipped, failed: failed,
+      results: results, total: todo.length, hints: hints };
   } catch (e) {
     return { ok: false, reason: (e && e.message) || 'The tables could not be created.',
       created: created, skipped: skipped, failed: failed, results: results };

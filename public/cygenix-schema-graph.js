@@ -102,10 +102,22 @@
           signal: AbortSignal.timeout(60000),
         }));
     const data = await res.json().catch(() => ({ error: 'Non-JSON response (' + res.status + ')' }));
-    if (!res.ok) throw new Error(data.error || res.statusText);
+    // db-connect answers a refusal with both an error and a HINT — what to do
+    // about it. Throwing only the error threw the useful half away: "the audit
+    // record could not be written" tells an operator nothing, while "nothing
+    // was executed, retry shortly" tells them everything. The hint rides on
+    // the Error rather than inside its message so no existing caller's
+    // wording, or any test matching on it, changes.
+    const fail = (msg) => {
+      const e = new Error(msg);
+      if (data && data.hint) e.hint = String(data.hint);
+      e.status = res.status;
+      return e;
+    };
+    if (!res.ok) throw fail(data.error || res.statusText);
     // The Azure /api/db route answers HTTP 200 with { success:false, error }
     // for an unknown action, so a status check alone is not enough.
-    if (data && data.success === false && data.error) throw new Error(data.error);
+    if (data && data.success === false && data.error) throw fail(data.error);
     return data;
   }
 

@@ -351,6 +351,30 @@ check('the run is one call per table — Netlify cuts a function off at 26 secon
       && sent.every(s => (s.match(/CREATE TABLE/g) || []).length === 1);
   })());
 
+check('a refusal\'s HINT is kept beside its message, and de-duplicated for the caller',
+  (async () => {
+    ST._resetRunStateForTests();
+    const p = ST.stagingPlan(tpl(), {});
+    const r = await ST.runPlan(p, {
+      now: 1e12,
+      execute: () => {
+        // What db-connect answers when a Production write cannot be recorded:
+        // the same complaint on every row, and one sentence worth reading.
+        const e = new Error('Refused: the audit record could not be written, so the action was refused');
+        e.hint = 'Production changes are not run unless they can be recorded. Retry shortly — nothing was executed.';
+        e.status = 503;
+        return Promise.reject(e);
+      },
+    });
+    return r.ok && r.failed === 4 && r.hints.length === 1
+      && /nothing was executed/.test(r.hints[0])
+      && r.results.every(x => /audit record could not be written/.test(x.error));
+  })());
+
+check('the page says that hint once, not once per row',
+  /\(r\.hints && r\.hints\.length\) \? ' ' \+ r\.hints\.join\(' '\) : ''/.test(read('public', 'conversion-templates.html'))
+  && /if \(data && data\.hint\) e\.hint = String\(data\.hint\)/.test(read('public', 'cygenix-schema-graph.js')));
+
 check('a table that fails does not stop the others, and the server\'s own message is kept',
   await (async () => {
     ST._resetRunStateForTests();

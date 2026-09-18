@@ -206,6 +206,46 @@ function invalidateAuditConfig() { _auditCfg.at = 0; }
 // ── Append-only audit (Section 10) ────────────────────────────────────────
 const pad = (n) => String(n).padStart(10, '0');
 
+// Five attempts with a short, growing pause. Three immediate retries against
+// an eventually-consistent store are three copies of the same stale read; the
+// pause is what gives a head write from the call before this one time to
+// become visible. The whole ladder is under a second, well inside the 26
+// seconds a Netlify function has.
+const APPEND_ATTEMPTS = 5;
+const APPEND_BACKOFF_MS = [40, 100, 250, 500];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// How far the search below will gallop before giving up. 2^20 entries is far
+// more than this product will hold, and the bound is what stops a corrupt
+// store turning a repair into a function that never returns.
+const CHAIN_END_MAX_STEP = 1 << 20;
+
+// ── Finding the end of the chain when the head pointer is behind ──────────
+//
+// `start` is a sequence already known to be occupied. Doubling out to the
+// first free slot and then bisecting back finds the last entry in about
+// 2·log₂(n) reads — roughly thirty for a chain of fifty thousand — where
+// walking forward one at a time would be fifty thousand reads and a timeout.
+// It only runs when the head is actually wrong, which should be rare and,
+// once this has run, self-corrects.
+async function findChainEnd(store, start) {
+  const at = (n) => store.get('audit/e/' + pad(n), { type: 'json' }).catch(() => null);
+  let lo = start;                 // known occupied
+  let hi = null;                  // known free
+  let step = 1;
+  while (hi === null) {
+    if (step > CHAIN_END_MAX_STEP) return null;
+    const probe = lo + step;
+    if (await at(probe)) { lo = probe; step *= 2; } else hi = probe;
+  }
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (await at(mid)) lo = mid; else hi = mid;
+  }
+  const entry = await at(lo);
+  return entry ? { seq: lo, entry } : null;
+}
+
 // Every append also writes a compact projection into a per-month index.
 // readAudit() costs one blob GET per entry, so filtering a year of events by
 // actor and category that way is thousands of round-trips inside a
@@ -265,38 +305,61 @@ async function appendAudit(store, evt, opts) {
     }
   }
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < APPEND_ATTEMPTS; attempt++) {
+    if (attempt) await sleep(APPEND_BACKOFF_MS[attempt - 1] || 400);
+
+    // ── Where the chain actually ends ─────────────────────────────────────
+    //
+    // `audit/head` is a pointer, and a pointer can be behind the thing it
+    // points at: Netlify Blobs is eventually consistent, an append's head
+    // write can land after the next append's head read, and a head blob that
+    // was lost or never written reads as seq 0 while thousands of entries
+    // sit behind it. The old loop trusted the pointer, found the slot
+    // occupied, and retried the identical stale read three times before
+    // giving up — so a head that was behind by even one entry failed every
+    // append until it caught up, and a head that was lost failed them
+    // FOREVER. With `required` set, that is a Production write refused
+    // because of a pointer.
+    //
+    // So the entries are the record and the head is only a hint. When the
+    // slot the head names is already taken, find the real end of the chain
+    // and append there, which also puts the head right on the way past.
     const head = (await store.get('audit/head', { type: 'json' })) || { seq: 0, hash: '' };
-    const seq = head.seq + 1;
-    const key = 'audit/e/' + pad(seq);
+    let seq = (Number(head.seq) || 0) + 1;
+    let prevHash = head.hash || '';
+
+    const sitting = await store.get('audit/e/' + pad(seq), { type: 'json' }).catch(() => null);
+    if (sitting) {
+      const end = await findChainEnd(store, seq);
+      if (end == null) continue;                  // could not be established; back off and retry
+      seq = end.seq + 1;
+      prevHash = end.entry.entryHash || '';
+      const free = await store.get('audit/e/' + pad(seq), { type: 'json' }).catch(() => null);
+      if (free) continue;                         // it moved again underneath us
+    }
 
     // ── Never write over an occupied sequence ────────────────────────────
     //
-    // seq is derived from the head blob. If that read is stale — an
-    // eventually-consistent store, a head write that has not landed yet, a
-    // concurrent append — seq can name an entry that ALREADY EXISTS. The
-    // original loop wrote to it anyway and then, when the head check
-    // failed, deleted it: an overwrite followed by a delete of somebody
-    // else's evidence, in the one structure that is supposed to be
-    // append-only.
-    //
-    // It cost one extra read per append to close, on a path that already
-    // does six, and it is worth it. An audit chain that can silently lose
-    // an entry to a stale read is not an audit chain.
-    const occupied = await store.get(key, { type: 'json' }).catch(() => null);
-    if (occupied) continue;          // head is behind; re-read and try again
+    // The original loop wrote to an occupied slot anyway and then, when the
+    // head check failed, deleted it: an overwrite followed by a delete of
+    // somebody else's evidence, in the one structure that is supposed to be
+    // append-only. Nothing here deletes an entry, ever.
+    const entry = rbac.chainEntry(prevHash, { seq, ...built });
+    await store.setJSON('audit/e/' + pad(seq), entry);
 
-    const entry = rbac.chainEntry(head.hash, { seq, ...built });
-    await store.setJSON(key, entry);
-    // Confirm the head has not moved beneath us before advancing it.
-    const check = (await store.get('audit/head', { type: 'json' })) || { seq: 0, hash: '' };
-    if (check.seq === head.seq) {
-      await store.setJSON('audit/head', { seq, hash: entry.entryHash });
-      await appendIndex(store, entry, seq);
-      return entry;
-    }
-    // Safe to roll back: the occupancy check above proved this key was ours.
-    await store.delete(key).catch(() => {});
+    // Read our own write back. Two appends can still pick the same free slot
+    // — the store has no conditional put, so there is no way to claim one
+    // atomically — and the later write wins. Whoever reads back somebody
+    // else's entry simply lost the slot: it leaves that entry alone, does
+    // not touch the head, and appends again further along. This is the known
+    // limit; it is stated in docs and in any evidence pack rather than
+    // papered over. What it can no longer do is delete the winner's entry.
+    const landed = await store.get('audit/e/' + pad(seq), { type: 'json' }).catch(() => null);
+    if (!landed || landed.entryHash !== entry.entryHash) continue;
+
+    await store.setJSON('audit/head', { seq, hash: entry.entryHash });
+    await appendIndex(store, entry, seq);
+    return entry;
   }
   // Fail open on the WRITE only: a lost audit write must not block the
   // user's action after it was authorised — but say so in the logs. The one
