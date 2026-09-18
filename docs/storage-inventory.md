@@ -68,7 +68,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data_stream_designer.html, data_stream_store.html |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
-## C — Preference — per-viewer convenience (27)
+## C — Preference — per-viewer convenience (28)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
@@ -81,6 +81,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |
+| `cygenix_datagen_selection` | Which tables the Data Generator had selected | local; the schema is re-read from the database on use | data-generator.html |
 | `cygenix_entra_account` | MSAL account record | — | agentive_migration.html, connections.js, cygenix-api.js +11 |
 | `cygenix_expires` | Session expiry marker | — | cygenix-auth-token.js, login.html, project-manager.js |
 | `cygenix_fn_url` | Function URL (not the key) | — | connect.html, project-builder-app.js |
@@ -102,4 +103,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_58 classified key(s) across `public/`._
+_59 classified key(s) across `public/`._

@@ -59,6 +59,7 @@ const CLASSES = {
   'cygenix_issues':              ['A', 'Tracked issues', 'synced (SYNC_KEYS)'],
   'cygenix_inventory':           ['A', 'Project artifact inventory', 'synced (SYNC_KEYS)'],
   'cygenix_map_groups':          ['A', 'Object Mapping group names and colours', 'synced (SYNC_KEYS)'],
+  'cygenix_datagen_selection':   ['C', 'Which tables the Data Generator had selected', 'local; the schema is re-read from the database on use'],
   'cygenix_sys_params':          ['A', 'System parameters', 'synced (SYNC_KEYS)'],
   'cygenix_performance':         ['A', 'Performance settings', 'synced (SYNC_KEYS)'],
   'cygenix_last_snapshots':      ['A', 'Recent project snapshots', 'synced (SYNC_KEYS)'],

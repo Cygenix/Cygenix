@@ -66,6 +66,28 @@ const tenancy = require('./lib/tenancy');
 // surfaced this bug because it's the first consumer to use these type
 // strings for DDL; the column-mapping UI was only displaying them.
 
+/* Group flat unique-index rows into one entry per index.
+ *
+ * A UNIQUE over (TenantId, Code) means the PAIR must be unique — TenantId may
+ * repeat, Code may repeat, the combination may not. Returned flat, those two
+ * rows read as two independently unique columns, and anything generating data
+ * would then refuse values that are perfectly legal. So the shape says which
+ * it is: one entry per index, with its columns in key order.
+ *
+ * `isConstraint` distinguishes a declared UNIQUE constraint from a unique
+ * index. Both enforce the same rule; only the wording of the error differs,
+ * and a log line that names the right one is worth the extra field.
+ */
+function groupUniques(rows){
+  const byName = new Map();
+  for (const r of (rows || [])) {
+    if (!r || !r.name) continue;
+    if (!byName.has(r.name)) byName.set(r.name, { name: r.name, columns: [], isConstraint: !!r.isConstraint });
+    byName.get(r.name).columns.push(r.columns);
+  }
+  return [...byName.values()];
+}
+
 function typeNeedsPrecisionScale(type){
   const t = String(type || '').toUpperCase();
   return t === 'DECIMAL' || t === 'NUMERIC' || t === 'DEC';
@@ -461,7 +483,7 @@ async function handleMssql(action, connectionString, database, body) {
         const schemaName = body.schemaName;
         const tableName  = body.tableName;
         if (!schemaName || !tableName) return err('schemaName and tableName are required', null, 400);
-        const [colsR, pkR, fkR] = await Promise.all([
+        const [colsR, pkR, fkR, uqR] = await Promise.all([
           pool.request()
             .input('s', mssql.NVarChar, schemaName)
             .input('t', mssql.NVarChar, tableName)
@@ -505,7 +527,33 @@ async function handleMssql(action, connectionString, database, body) {
               FROM sys.foreign_keys fk
               JOIN sys.foreign_key_columns fkc ON fk.object_id=fkc.constraint_object_id
               WHERE OBJECT_SCHEMA_NAME(fk.parent_object_id)=@s
-                AND OBJECT_NAME(fk.parent_object_id)=@t`)
+                AND OBJECT_NAME(fk.parent_object_id)=@t`),
+          // ── Unique constraints and unique indexes (Sep-2026) ──────────────
+          // Anything that generates rows has to know which columns must not
+          // repeat, and a UNIQUE constraint is only half the answer: a unique
+          // INDEX enforces the same rule and is far more common on a real
+          // schema. sys.indexes covers both, so this reads it once and filters
+          // out the primary key, which callers already have separately.
+          //
+          // Grouped by index so a COMPOSITE unique — where the COMBINATION
+          // must be unique and each column alone may repeat — is not mistaken
+          // for two independent unique columns. That mistake would make a
+          // generator refuse perfectly valid data.
+          pool.request()
+            .input('s', mssql.NVarChar, schemaName)
+            .input('t', mssql.NVarChar, tableName)
+            .query(`
+              SELECT i.name AS index_name, i.is_unique_constraint,
+                c.name AS column_name, ic.key_ordinal
+              FROM sys.indexes i
+              JOIN sys.objects o ON o.object_id = i.object_id
+              JOIN sys.schemas sch ON sch.schema_id = o.schema_id
+              JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+              JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+              WHERE i.is_unique = 1 AND i.is_primary_key = 0
+                AND ic.is_included_column = 0
+                AND sch.name = @s AND o.name = @t
+              ORDER BY i.name, ic.key_ordinal`)
         ]);
         const columns = colsR.recordset.map(c => {
           let type = c.DATA_TYPE.toUpperCase();
@@ -530,6 +578,10 @@ async function handleMssql(action, connectionString, database, body) {
             columns,
             primaryKeys: pkR.recordset.map(r => r.COLUMN_NAME),
             foreignKeys: fkR.recordset.map(r => ({ column: r.fk_column, references: `${r.ref_schema}.${r.ref_table}(${r.ref_column})` })),
+            uniques: groupUniques(uqR.recordset.map(r => ({
+              name: r.index_name, columns: r.column_name,
+              isConstraint: r.is_unique_constraint === true || r.is_unique_constraint === 1,
+            }))),
           },
         };
         break;
@@ -911,7 +963,7 @@ async function handlePostgres(action, connectionString, database, body) {
         const schemaName = body.schemaName;
         const tableName  = body.tableName;
         if (!schemaName || !tableName) return err('schemaName and tableName are required', null, 400);
-        const [colsR, pkR, fkR] = await Promise.all([
+        const [colsR, pkR, fkR, uqR] = await Promise.all([
           client.query(`
             SELECT c.column_name, c.data_type, c.character_maximum_length,
                    c.numeric_precision, c.numeric_scale,
@@ -944,6 +996,27 @@ async function handlePostgres(action, connectionString, database, body) {
                    ON rc.unique_constraint_name = ccu.constraint_name
             WHERE  kcu.table_schema = $1 AND kcu.table_name = $2
           `, [schemaName, tableName]),
+          // Unique constraints and unique indexes, the Postgres half of the
+          // same question the mssql branch asks: which columns must not
+          // repeat. pg_index covers both, so one read answers it, and the
+          // primary key is excluded because callers already have it. Grouped
+          // by index, so a composite unique stays one rule over several
+          // columns rather than becoming several rules over one column each.
+          client.query(`
+            SELECT ci.relname AS index_name,
+                   a.attname  AS column_name,
+                   k.ord      AS key_ordinal,
+                   i.indisunique AND NOT i.indisprimary AS is_unique
+            FROM   pg_index i
+            JOIN   pg_class  ct ON ct.oid = i.indrelid
+            JOIN   pg_class  ci ON ci.oid = i.indexrelid
+            JOIN   pg_namespace n ON n.oid = ct.relnamespace
+            CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+            JOIN   pg_attribute a ON a.attrelid = ct.oid AND a.attnum = k.attnum
+            WHERE  i.indisunique AND NOT i.indisprimary
+              AND  n.nspname = $1 AND ct.relname = $2
+            ORDER  BY ci.relname, k.ord
+          `, [schemaName, tableName]),
         ]);
         const columns = colsR.rows.map(c => {
           let type = (c.data_type || '').toUpperCase();
@@ -963,7 +1036,56 @@ async function handlePostgres(action, connectionString, database, body) {
             columns,
             primaryKeys: pkR.rows.map(r => r.column_name),
             foreignKeys: fkR.rows.map(r => ({ column: r.fk_column, references: `${r.ref_schema}.${r.ref_table}(${r.ref_column})` })),
+            uniques: groupUniques(uqR.rows.map(r => ({
+              name: r.index_name, columns: r.column_name, isConstraint: false,
+            }))),
           },
+        };
+        break;
+      }
+
+      // ── schema-fks ────────────────────────────────────────────────────────
+      // The whole database's FK edges in one call, matching the mssql action of
+      // the same name. It was missing here, which meant anything wanting a
+      // dependency graph — insert order, impact analysis, generating linked
+      // sample data — could get one on SQL Server and had to read every table
+      // one at a time on Postgres, or go without.
+      //
+      // The constraint name is returned so a COMPOSITE foreign key can be
+      // reassembled: it arrives as one row per column pair, and only the name
+      // says which rows belong to the same key.
+      case 'schema-fks': {
+        const fkR = await client.query(`
+          SELECT con.conname                AS fk_name,
+                 sch.nspname                AS fk_schema,
+                 tbl.relname                AS fk_table,
+                 att.attname                AS fk_column,
+                 rsch.nspname               AS ref_schema,
+                 rtbl.relname               AS ref_table,
+                 ratt.attname               AS ref_column
+          FROM   pg_constraint con
+          JOIN   pg_class     tbl  ON tbl.oid  = con.conrelid
+          JOIN   pg_namespace sch  ON sch.oid  = tbl.relnamespace
+          JOIN   pg_class     rtbl ON rtbl.oid = con.confrelid
+          JOIN   pg_namespace rsch ON rsch.oid = rtbl.relnamespace
+          CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(src, tgt, ord)
+          JOIN   pg_attribute att  ON att.attrelid  = con.conrelid  AND att.attnum  = k.src
+          JOIN   pg_attribute ratt ON ratt.attrelid = con.confrelid AND ratt.attnum = k.tgt
+          WHERE  con.contype = 'f'
+            AND  sch.nspname NOT IN ('pg_catalog','information_schema')
+          ORDER  BY con.conname, k.ord
+        `);
+        result = {
+          success: true,
+          foreignKeys: fkR.rows.map(r => ({
+            fromSchema: r.fk_schema,
+            fromTable:  r.fk_table,
+            fromColumn: r.fk_column,
+            toSchema:   r.ref_schema,
+            toTable:    r.ref_table,
+            toColumn:   r.ref_column,
+            name:       r.fk_name,
+          })),
         };
         break;
       }
