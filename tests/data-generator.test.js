@@ -296,7 +296,187 @@ check('a parent added automatically gets a fifth of its children, with a floor o
   && DG.dgDefaultParentRows(10) === 10 && DG.dgDefaultParentRows(0) === 10);
 
 /* ════════════════════════════════════════════════════════════════════════
-   7. The page
+   7. Phase 2 — building the write
+   ════════════════════════════════════════════════════════════════════════ */
+console.log('\n— the write —');
+
+const MPLAN = DG.dgPlanTable(
+  { schema: 'dbo', name: 'Matter', primaryKeys: ['Id'], uniques: [{ name: 'UQ_Ref', columns: ['Ref'] }],
+    columns: [
+      { name: 'Id', type: 'INT', baseType: 'int', nullable: false, isIdentity: true, ordinal: 1 },
+      { name: 'ClientId', type: 'INT', baseType: 'int', nullable: false, ordinal: 2 },
+      { name: 'Ref', type: 'NVARCHAR(8)', baseType: 'nvarchar', maxLength: 8, nullable: false, ordinal: 3 },
+      { name: 'Note', type: 'NVARCHAR(50)', baseType: 'nvarchar', maxLength: 50, nullable: true, ordinal: 4 },
+    ] },
+  { dialect: 'mssql', inferColumnMeta: infer, fks: G.fksOf('dbo.matter') });
+
+const PARENTS = { FK_Matter_Client: [{ Id: 7 }, { Id: 8 }, { Id: 9 }] };
+const genRows = (n, opts) => DG.dgGenerateRows(MPLAN, n, Object.assign(
+  { generate: () => 'AB', parentKeys: PARENTS, random: () => 0.9, nullPercent: 0 }, opts || {}));
+
+check('identity columns are never written — the database assigns them',
+  (() => {
+    const r = genRows(3).rows;
+    return r.every(x => !('Id' in x)) && r.every(x => 'ClientId' in x);
+  })());
+
+/* THE rule this whole feature exists for. */
+check('a foreign key only ever takes a key that really exists',
+  (() => {
+    const r = genRows(9).rows;
+    return r.every(x => [7, 8, 9].indexOf(x.ClientId) !== -1);
+  })());
+
+check('children are spread across the parents, not piled on the first',
+  (() => {
+    const r = genRows(9).rows;
+    return new Set(r.map(x => x.ClientId)).size === 3;
+  })());
+
+check('…and the spread clumps a little rather than being perfectly even',
+  (() => {
+    const even = DG.dgSpread(9, [1, 2, 3], () => 0.9);
+    const clumped = DG.dgSpread(9, [1, 2, 3], () => 0.1);
+    return even.join('') === '123123123' && clumped.join('') !== '123123123';
+  })());
+
+check('unique and primary-key columns never repeat within a run',
+  (() => {
+    const r = genRows(50).rows;
+    return new Set(r.map(x => x.Ref)).size === 50;
+  })());
+
+/* Without this the first run looks fine and the second collides with it. */
+check('…nor against values that were already in the table',
+  (() => {
+    const pools = { ref: DG.dgUniquePool(['AB', 'AB-2']) };
+    const r = genRows(3, { pools }).rows;
+    return r.every(x => x.Ref !== 'AB' && x.Ref !== 'AB-2') && new Set(r.map(x => x.Ref)).size === 3;
+  })());
+
+check('a unique value that cannot fit its column is shortened to make room, not overflowed',
+  (() => {
+    const pool = DG.dgUniquePool([]);
+    const col = { baseType: 'nvarchar', maxLength: 8 };
+    const vals = [];
+    for (let i = 0; i < 30; i++) vals.push(pool.next(() => 'SAMEVALUE', col));
+    return vals.every(v => v.length <= 8) && new Set(vals).size === 30;
+  })());
+
+check('a generator with a tiny vocabulary does not hang the run',
+  (() => {
+    const pool = DG.dgUniquePool([]);
+    const out = [];
+    for (let i = 0; i < 20; i++) out.push(pool.next(() => 'only', { baseType: 'int' }));
+    return new Set(out).size === 20;
+  })());
+
+check('a nullable column is sometimes empty; a key never is',
+  (() => {
+    const r = genRows(20, { nullPercent: 100, random: () => 0 }).rows;
+    return r.every(x => x.Note === null) && r.every(x => x.Ref && x.ClientId);
+  })());
+
+/* ── The statements ─────────────────────────────────────────────────────── */
+const INS = DG.dgBuildInsert(MPLAN, genRows(2).rows, { dialect: 'mssql' });
+
+check('the insert names only the columns it writes, and never the identity',
+  /INSERT INTO \[dbo\]\.\[Matter\] \(\[ClientId\], \[Ref\], \[Note\]\)/.test(INS.sql)
+  && !/\[Id\],/.test(INS.sql));
+
+/* A bare OUTPUT is refused outright on any table that has a trigger, and a
+   source database of the sort this is pointed at is exactly where triggers
+   live. The INTO form works either way. */
+check('SQL Server reads the keys back with OUTPUT ... INTO, which survives a trigger',
+  /DECLARE @dgkeys TABLE \(\[Id\] INT\);/.test(INS.sql)
+  && /OUTPUT inserted\.\[Id\] INTO @dgkeys/.test(INS.sql)
+  && /SELECT \[Id\] FROM @dgkeys;/.test(INS.sql)
+  && INS.returnsKeys === true);
+
+/* The only mention anywhere is the comment saying why it is not used.
+   Turning it off and writing our own identities would mean owning somebody
+   else's sequence, colliding with whatever else writes to that table, and
+   leaving the seed behind for the next person to trip over. */
+check('IDENTITY_INSERT is never used — the database owns its own sequence',
+  !/IDENTITY_INSERT/i.test(INS.sql)
+  && !/IDENTITY_INSERT/i.test(read('public', 'data-generator.html'))
+  && (read('public', 'cygenix-datagen-model.js').match(/IDENTITY_INSERT/gi) || []).length === 1);
+
+check('Postgres uses RETURNING and its own quoting',
+  (() => {
+    const pg = DG.dgBuildInsert(MPLAN, genRows(1).rows, { dialect: 'postgres' });
+    return /INSERT INTO "dbo"\."Matter"/.test(pg.sql) && /RETURNING "Id";/.test(pg.sql)
+      && !/DECLARE/.test(pg.sql);
+  })());
+
+check('a key WE generate is not read back — we already know it',
+  (() => {
+    const p = DG.dgPlanTable({ schema: 'd', name: 'T', primaryKeys: ['Code'],
+      columns: [{ name: 'Code', type: 'NVARCHAR(9)', baseType: 'nvarchar', maxLength: 9, nullable: false }] },
+      { inferColumnMeta: infer });
+    const b = DG.dgBuildInsert(p, [{ Code: 'A' }], { dialect: 'mssql' });
+    return b.returnsKeys === false && !/OUTPUT/.test(b.sql);
+  })());
+
+check('a string literal is escaped, and a Unicode column gets its N prefix',
+  DG.dgLiteral("O'Brien", { baseType: 'nvarchar' }, 'mssql') === "N'O''Brien'"
+  && DG.dgLiteral("O'Brien", { baseType: 'nvarchar' }, 'postgres') === "'O''Brien'"
+  && DG.dgLiteral(null, { baseType: 'int' }, 'mssql') === 'NULL');
+
+check('a boolean is written the way each engine spells it',
+  DG.dgLiteral(1, { baseType: 'bit' }, 'mssql') === '1'
+  && DG.dgLiteral(1, { baseType: 'boolean' }, 'postgres') === 'TRUE');
+
+check('an identifier with a closing bracket or a quote in it is escaped, not broken',
+  DG.dgQuote('a]b', 'mssql') === '[a]]b]' && DG.dgQuote('a"b', 'postgres') === '"a""b"');
+
+check('existing parent keys are read capped and ordered, in both dialects',
+  /^SELECT TOP 500 \[Id\] FROM \[dbo\]\.\[Client\] ORDER BY \[Id\]$/.test(
+    DG.dgExistingKeysSql('dbo', 'Client', ['Id'], { limit: 500 }))
+  && /LIMIT 500$/.test(DG.dgExistingKeysSql('dbo', 'Client', ['Id'], { dialect: 'postgres', limit: 500 })));
+
+/* ── Cycles, for real this time ─────────────────────────────────────────── */
+check('a column being broken out of a cycle goes in NULL and is remembered for the second pass',
+  (() => {
+    const r = genRows(3, { nullFirst: ['ClientId'] });
+    return r.rows.every(x => x.ClientId === null) && r.deferred.length === 3;
+  })());
+
+check('the second pass is an UPDATE per row, keyed on the primary key',
+  (() => {
+    const sql = DG.dgBuildLinkUpdate(MPLAN,
+      [{ set: { ClientId: 7 }, where: { Id: 1 } }, { set: { ClientId: 8 }, where: { Id: 2 } }],
+      { dialect: 'mssql' });
+    return /UPDATE \[dbo\]\.\[Matter\] SET \[ClientId\] = 7 WHERE \[Id\] = 1;/.test(sql)
+      && sql.split('\n').length === 2;
+  })());
+
+/* ── Refusing what is not an insert ─────────────────────────────────────── */
+check('a table with a NOT NULL key and nothing to point at is named, not attempted',
+  (() => {
+    const m = DG.dgMissingParents(MPLAN, {});
+    return m.length === 1 && m[0].blocking === true && m[0].to === 'dbo.client';
+  })());
+
+check('…but a NULLABLE key with no parents is just a column left empty',
+  (() => {
+    const p = DG.dgPlanTable({ schema: 'dbo', name: 'Matter', primaryKeys: ['Id'],
+      columns: [{ name: 'Id', isIdentity: true }, { name: 'ClientId', baseType: 'int', nullable: true }] },
+      { inferColumnMeta: infer, fks: G.fksOf('dbo.matter') });
+    return DG.dgMissingParents(p, {})[0].blocking === false;
+  })());
+
+check('the database\'s own complaint is classified, and the constraint named',
+  DG.dgClassifyError('The INSERT statement conflicted with the CHECK constraint "CK_Status".').kind === 'check'
+  && DG.dgClassifyError('The INSERT statement conflicted with the CHECK constraint "CK_Status".').constraint === 'CK_Status'
+  && DG.dgClassifyError('Violation of UNIQUE KEY constraint "UQ_Ref".').kind === 'unique'
+  && DG.dgClassifyError('violates foreign key constraint "fk_a"').kind === 'fk'
+  && DG.dgClassifyError('String or binary data would be truncated').kind === 'truncation'
+  && DG.dgClassifyError('Cannot insert the value NULL into column').kind === 'null'
+  && DG.dgClassifyError('Login failed').kind === 'other');
+
+/* ════════════════════════════════════════════════════════════════════════
+   8. The page
    ════════════════════════════════════════════════════════════════════════ */
 console.log('\n— the page —');
 
@@ -380,9 +560,49 @@ check('the flag is cleared by the call that set it, and nowhere else',
 check('a read that fails reports its message AND its stack, and one bad table does not stop the rest',
   /e\.stack/.test(page) && /One unreadable table must not take the other/.test(page));
 
-check('nothing writes in this phase: Generate is disabled and says why',
-  /id="dg-generate-btn"[^>]*disabled/.test(page)
-  && /Generating rows is not part of this phase/.test(page));
+/* Insert and the link-up UPDATE, and nothing else. `dgAssertInsertOnly`
+   reads every statement before it is sent — quoted identifiers and string
+   literals stripped first, so a column called [Delete] is a name rather than
+   a refusal. */
+check('the write path can only insert and link — no create, drop, truncate or delete',
+  /function dgAssertInsertOnly/.test(page)
+  && /DG_FORBIDDEN = \/\\b\(create\|drop\|truncate\|alter\|delete\|merge/.test(page)
+  && /not an insert\. Nothing was sent/.test(page)
+  && (page.match(/dgAssertInsertOnly\(/g) || []).length === 3);
+
+check('production is a flat refusal, not a typed confirmation',
+  /Sample data is never generated into production/.test(page)
+  && /there is no confirmation for this, and none is offered/.test(page)
+  && /env === 'PRD'/.test(page));
+
+check('the write is behind its own in-flight flag and three-second gap',
+  /let _dgWriting = false;/.test(page)
+  && (page.match(/_dgWriting = (true|false)/g) || []).length === 3
+  && /_dgLastWriteAt < DG_MIN_INTERVAL_MS/.test(page));
+
+check('rows go in one batch per call, so no request can reach the 26-second cap',
+  /for \(let i = 0; i < gen\.rows\.length; i \+= BATCH_SIZE\)/.test(page)
+  && /const BATCH_SIZE = 500/.test(page));
+
+check('each table has its own try/catch, and reports message and stack',
+  /one that cannot be filled must not\n\s*\/\/ take the rest of the run with it/.test(page)
+  && (page.match(/e\.stack/g) || []).length >= 3);
+
+check('a CHECK failure names the constraint and moves to the next table',
+  /failed a CHECK constraint/.test(page) && /the rest of this table is skipped/.test(page));
+
+check('the run is recorded as it happens, because the keys exist nowhere else',
+  /function dgSaveRun/.test(page)
+  && /localStorage\.setItem\('cygenix_datagen_runs'/.test(page)
+  && /cygenix_datagen_runs/.test(read('docs', 'storage-inventory.md')));
+
+check('a parent nobody selected is SAMPLED from what is already in it, never invented',
+  /dgExistingKeysSql/.test(page) && /drawing from/.test(page)
+  && /DG_EXISTING_SAMPLE = 500/.test(page));
+
+check('uniqueness is checked against rows that were already there',
+  /DG_UNIQUE_SAMPLE = 2000/.test(page)
+  && /existing value\(s\) read so nothing repeats/.test(page));
 
 /* Column names and types only. Not a default — there is no code path that
    could send a value, because a toggle is one mis-click from a disclosure. */

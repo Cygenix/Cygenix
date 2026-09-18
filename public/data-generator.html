@@ -45,7 +45,7 @@
 <!-- The rules about reading a real schema and planning rows for it: the FK
      graph, the insert order, what each column may hold. Pure — no DOM, no
      network — so it is testable in Node and the page below only draws it. -->
-<script src="/cygenix-datagen-model.js?v=99a8746fd2" defer></script>
+<script src="/cygenix-datagen-model.js?v=98acb63b2f" defer></script>
 <script src="/project-manager.js?v=4f3f390725" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -267,12 +267,12 @@ code,.mono{font-family:var(--mono)}
              gone from this file entirely — it built four demo tables, and
              pointing that at somebody's real source database is not a thing
              to leave one click away. -->
-        <button id="dg-generate-btn" class="dg-btn dg-btn-primary" onclick="dgGenerate()" disabled title="Reading and planning only in this phase — inserting rows comes next">▶ Generate data</button>
+        <button id="dg-generate-btn" class="dg-btn dg-btn-primary" onclick="dgGenerate()" title="Insert the rows shown in the preview. Nothing is created, dropped or deleted.">▶ Generate data</button>
         <button id="dg-preview-btn" class="dg-btn dg-btn-ghost" onclick="dgRefreshPreview()"><i class="ic ic-sync"></i> Refresh preview</button>
       </div>
-      <div style="font-size:11px;color:var(--text2);max-width:420px;text-align:right">
-        This phase reads your schema and shows what it would generate.
-        Nothing is written to the database.
+      <div style="font-size:11px;color:var(--text2);max-width:440px;text-align:right">
+        Generate adds rows to the tables you chose. It never creates, drops or
+        deletes anything, and it is refused outright on a production profile.
       </div>
     </div>
     <div id="dg-progress-wrap" style="display:none;margin-top:1rem">
@@ -1246,14 +1246,339 @@ function dgValueForColumn(key, col, rowIndex){
   return generateValueFor(t.name, col.name, col.type, rowIndex, {});
 }
 
-// ── Generate flow ──────────────────────────────────────────────────────────
-// Phase 1 reads and plans. It does not write, and the code that used to
-// create and drop four demo tables has been removed from this file rather
-// than left behind a disabled button.
+/* ══════════════════════════════════════════════════════════════════════════
+   GENERATE — INSERT ONLY
+   ══════════════════════════════════════════════════════════════════════════
+   This is the only thing on the page that writes, and it writes one kind of
+   statement: INSERT, plus an UPDATE to join up rows that went in with an
+   empty link. There is no CREATE and no DROP anywhere in this file, and
+   `dgAssertInsertOnly` reads every statement before it is sent — not as a
+   formality, but because this runs against a database somebody else owns.
+
+   ONE BATCH PER CALL. Netlify cuts a function off at 26 seconds, so a table
+   of a hundred thousand rows is two hundred calls of five hundred rows,
+   awaited one after another, each reporting itself. A run that dies half way
+   through has genuinely inserted what it says it has.
+
+   THE GUARDS. `_dgWriting` is set before the first await of the call that
+   sets it and cleared in that same call's finally — never by a callback. A
+   three-second minimum gap sits on top. Neither is touched anywhere else. */
+let _dgWriting = false;
+let _dgLastWriteAt = 0;
+const DG_RUNS_KEY = 'cygenix_datagen_runs';
+const DG_EXISTING_SAMPLE = 500;     // parent keys to draw from
+const DG_UNIQUE_SAMPLE = 2000;      // existing values a unique column checks against
+
+const DG_FORBIDDEN = /\b(create|drop|truncate|alter|delete|merge|grant|revoke|exec|execute)\b/i;
+function dgAssertInsertOnly(sql){
+  // Quoted identifiers and string literals come out first: a column called
+  // [Delete] or a generated value of 'created' is a name, not a statement,
+  // and refusing to fill somebody's table over their column name would be a
+  // bug rather than caution.
+  const bare = String(sql)
+    .replace(/\[(?:[^\]]|\]\])*\]/g, ' "id" ')
+    .replace(/"(?:[^"]|"")*"/g, ' "id" ')
+    .replace(/'(?:[^']|'')*'/g, " 'lit' ");
+  if (DG_FORBIDDEN.test(bare)) throw new Error('Refusing to run: that statement is not an insert. Nothing was sent.');
+  if (!/\b(INSERT INTO|UPDATE)\b/i.test(bare)) throw new Error('Refusing to run: no INSERT or UPDATE in that statement. Nothing was sent.');
+  return true;
+}
+
+/* Production is a flat refusal, not a typed confirmation. Everywhere else in
+   Cygenix a PRD write can be confirmed by typing the profile id, because
+   those are writes somebody means to make. Filling a production table with
+   invented rows has no legitimate case at all, so there is nothing to
+   confirm. */
+function dgGuardEnvironment(){
+  try {
+    const CP = window.CygenixProfiles;
+    if (!CP) return { ok: true, envClass: '' };
+    const store = CP.cpLoad();
+    const g = CP.cpGuardWrite(store, {});
+    if (!g.checked) return { ok: true, envClass: '' };
+    if (!g.ok) return { ok: false, why: g.why };
+    const env = (g.profile && g.profile.envClass) || '';
+    if (env === 'PRD') {
+      return { ok: false, why: 'Profile ' + (g.profile && g.profile.id)
+        + ' is classified PRODUCTION. Sample data is never generated into production — there is no confirmation for this, and none is offered.' };
+    }
+    return { ok: true, envClass: env, profileId: g.profile && g.profile.id };
+  } catch (e){
+    return { ok: true, envClass: '' };
+  }
+}
+
+function dgRunId(){
+  return 'dgr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+/* A read that is part of the run rather than of the picker: it shares the
+   in-flight flag through its caller and reports its own failures. */
+async function dgQuery(conn, sql){
+  const r = await dbCall(conn, { action: 'execute', sql });
+  return (r && (r.recordset || r.rows)) || [];
+}
+
 async function dgGenerate(){
-  logLine('Generating rows is not part of this phase. The schema has been read and the plan is on screen; inserting comes next.', 'warn');
+  if (!DG){ logLine('The data-generator model did not load — reload the page.', 'err'); return; }
+  const conn = readSourceConn();
+  if (!conn){ logLine('No source connection. Set one in Dashboard → Connections.', 'err'); return; }
+  /* The environment is checked FIRST, before the in-flight flag and before
+     the three-second gap. A refusal that says "wait a moment" when the real
+     answer is "never, this is production" teaches the operator to press the
+     button again, which is the opposite of what a refusal is for. */
+  const guard = dgGuardEnvironment();
+  if (!guard.ok){ logLine('✗ ' + guard.why, 'err'); return; }
+
+  if (_dgWriting){ logLine('Already generating — one moment.', 'warn'); return; }
+  if (Date.now() - _dgLastWriteAt < DG_MIN_INTERVAL_MS){
+    logLine('Please wait a moment before generating again.', 'warn'); return;
+  }
+  const keys = ORDER ? ORDER.order.filter(k => SCHEMA[k]) : [];
+  if (!keys.length){ logLine('No tables selected. Click Choose tables… first.', 'warn'); return; }
+
+  const total = keys.reduce((n, k) => n + (ROW_COUNTS[k] || 0), 0);
+  if (!total){ logLine('Every selected table is set to 0 rows.', 'warn'); return; }
+  if (!confirm('Insert ' + total.toLocaleString() + ' row' + (total === 1 ? '' : 's')
+      + ' across ' + keys.length + ' table' + (keys.length === 1 ? '' : 's') + '?\n\n'
+      + keys.map((k, i) => (i + 1) + '. ' + dgDisplayName(k) + ' — ' + (ROW_COUNTS[k] || 0).toLocaleString()).join('\n')
+      + '\n\nNothing is created, dropped or deleted. Rows are only added.')) return;
+
+  _dgWriting = true;
+  _dgLastWriteAt = Date.now();
+  const btn = document.getElementById('dg-generate-btn');
+  btn.disabled = true;
+  const runId = dgRunId();
+  const run = { id: runId, at: new Date().toISOString(), profile: dgProfileId(), tables: {} };
+  const RUN_KEYS = {};          // table key -> [ {pkcol: value}, ... ] inserted this run
+  let inserted = 0, failedTables = 0;
+
+  logLine('Run ' + runId + ' — inserting only. Nothing will be created, dropped or deleted.', 'info');
+  showProgress('Generating');
+  seedPRNG(Date.now() & 0x7fffffff);
+
+  try {
+    for (let ti = 0; ti < keys.length; ti++){
+      const key = keys[ti];
+      // Each table gets its own try/catch: one that cannot be filled must not
+      // take the rest of the run with it.
+      try {
+        const n = await dgFillTable(conn, key, RUN_KEYS, run, (done, of) => {
+          updateProgress(((ti + (of ? done / of : 0)) / keys.length) * 100);
+        });
+        inserted += n;
+      } catch (e){
+        failedTables++;
+        logLine('✗ ' + dgDisplayName(key) + ': ' + (e && e.message ? e.message : e), 'err');
+        if (e && e.stack) logLine(String(e.stack).split('\n').slice(0, 3).join(' | '), 'err');
+      }
+    }
+
+    // The second pass: rows that went in with an empty link, now that what
+    // they point at exists.
+    for (const brk of (ORDER.breaks || [])){
+      if (!SCHEMA[brk.table]) continue;
+      try { await dgLinkPass(conn, brk, RUN_KEYS); }
+      catch (e){
+        logLine('✗ linking ' + dgDisplayName(brk.table) + ': ' + (e && e.message ? e.message : e), 'err');
+      }
+    }
+
+    dgSaveRun(run);
+    logLine('✓ Run ' + runId + ' complete — ' + inserted.toLocaleString() + ' row'
+      + (inserted === 1 ? '' : 's') + ' inserted'
+      + (failedTables ? ', ' + failedTables + ' table' + (failedTables === 1 ? '' : 's') + ' skipped' : '')
+      + '.', failedTables ? 'warn' : 'ok');
+  } catch (e){
+    logLine('✗ ' + (e && e.message ? e.message : e), 'err');
+    if (e && e.stack) logLine(String(e.stack).split('\n').slice(0, 3).join(' | '), 'err');
+  } finally {
+    _dgWriting = false;
+    btn.disabled = false;
+    hideProgress();
+  }
 }
 window.dgGenerate = dgGenerate;
+
+/* One table: find real parent keys, seed the uniqueness pools from what is
+   already there, generate, and insert in batches. */
+async function dgFillTable(conn, key, RUN_KEYS, run, onProgress){
+  const t = SCHEMA[key];
+  const plan = t.plan;
+  const count = ROW_COUNTS[key] || 0;
+  if (!count){ logLine('Skipping ' + dgDisplayName(key) + ' (0 rows)', 'warn'); return 0; }
+  if ((ORDER.unbreakable || []).indexOf(key) !== -1){
+    logLine('Skipping ' + dgDisplayName(key) + ' — it is in a loop with no nullable link to break.', 'warn');
+    return 0;
+  }
+
+  // ── Parent keys, per foreign key ──────────────────────────────────────
+  // A parent generated in this run hands over the keys it was given. A parent
+  // nobody selected is SAMPLED from what is already in it — never invented,
+  // because a foreign key pointing at a row that does not exist is the one
+  // thing this whole feature exists to avoid.
+  const parentKeys = {};
+  for (const fk of (plan.fks || [])){
+    if (fk.self){ parentKeys[fk.name] = []; continue; }
+    if (RUN_KEYS[fk.to] && RUN_KEYS[fk.to].length){
+      parentKeys[fk.name] = RUN_KEYS[fk.to];
+      continue;
+    }
+    const parent = SCHEMA[fk.to];
+    const cols = fk.columns.map(p => p.to);
+    const sql = DG.dgExistingKeysSql(
+      parent ? parent.schema : DG.dgSplitKey(fk.to).schema,
+      parent ? parent.name : DG.dgSplitKey(fk.to).name,
+      cols, { dialect: dgDialect(), limit: DG_EXISTING_SAMPLE });
+    const rows = await dgQuery(conn, sql);
+    parentKeys[fk.name] = rows;
+    logLine('  ' + dgDisplayName(key) + ' → ' + dgDisplayName(fk.to) + ': drawing from '
+      + rows.length + ' existing key' + (rows.length === 1 ? '' : 's'), rows.length ? 'info' : 'warn');
+  }
+
+  const missing = DG.dgMissingParents(plan, parentKeys);
+  const blocking = missing.filter(m => m.blocking);
+  if (blocking.length){
+    // A NOT NULL foreign key with nothing to point at is not something to
+    // attempt and report row by row. Named, skipped, run carries on.
+    logLine('✗ ' + dgDisplayName(key) + ' cannot be generated: '
+      + blocking.map(m => m.columns.join('+') + ' must point at ' + dgDisplayName(m.to)
+        + ', which has no rows and is not being generated').join('; ')
+      + '. Add that table to the selection, or give it rows first.', 'err');
+    return 0;
+  }
+  missing.filter(m => !m.blocking).forEach(m => {
+    logLine('  ' + m.columns.join('+') + ' will be left empty — ' + dgDisplayName(m.to) + ' has no rows.', 'warn');
+  });
+
+  // ── Uniqueness against what is already there ──────────────────────────
+  // Without this the first run looks fine and the second collides with the
+  // first. Read once per table, capped, and only for the columns that must
+  // not repeat AND that we are the ones writing.
+  const pools = {};
+  const uniqueCols = plan.columns.filter(c => c.write && (c.isPrimaryKey || c.unique));
+  if (uniqueCols.length && (t.existingRows == null || t.existingRows > 0)){
+    try {
+      const sql = DG.dgExistingKeysSql(t.schema, t.name, uniqueCols.map(c => c.name),
+        { dialect: dgDialect(), limit: DG_UNIQUE_SAMPLE });
+      const rows = await dgQuery(conn, sql);
+      uniqueCols.forEach(c => {
+        pools[c.name.toLowerCase()] = DG.dgUniquePool(rows.map(r => r[c.name]).filter(v => v != null));
+      });
+      if (rows.length) logLine('  ' + rows.length + ' existing value(s) read so nothing repeats.', 'info');
+    } catch (e){
+      // Not fatal: a column we cannot read is a column we can still fill,
+      // and the database will refuse a duplicate if we get it wrong.
+      logLine('  could not read existing values (' + (e.message || e) + ') — uniqueness is within this run only.', 'warn');
+    }
+  }
+  uniqueCols.forEach(c => { if (!pools[c.name.toLowerCase()]) pools[c.name.toLowerCase()] = DG.dgUniquePool([]); });
+
+  const brk = (ORDER.breaks || []).find(b => b.table === key);
+  const gen = DG.dgGenerateRows(plan, count, {
+    generate: (col, i) => dgValueForColumn(key, col, i),
+    parentKeys, pools, random: rnd, nullPercent: 10,
+    nullFirst: brk ? brk.nullFirst : [],
+  });
+
+  // ── Insert, one batch per call ────────────────────────────────────────
+  let done = 0, kept = [];
+  for (let i = 0; i < gen.rows.length; i += BATCH_SIZE){
+    const batch = gen.rows.slice(i, i + BATCH_SIZE);
+    const built = DG.dgBuildInsert(plan, batch, { dialect: dgDialect() });
+    if (!built) break;
+    dgAssertInsertOnly(built.sql);
+    try {
+      const back = await dgQuery(conn, built.sql);
+      if (built.returnsKeys && back.length) kept = kept.concat(back);
+      else if (built.keyColumns.length){
+        // Keys we generated ourselves: we already know them.
+        kept = kept.concat(batch.map(r => {
+          const o = {}; built.keyColumns.forEach(c => { o[c] = r[c]; }); return o;
+        }));
+      }
+      done += batch.length;
+      logLine('  ' + dgDisplayName(key) + ': ' + done.toLocaleString() + ' of ' + count.toLocaleString(), 'info');
+    } catch (e){
+      const cls = DG.dgClassifyError(e && e.message);
+      const named = cls.constraint ? ' (' + cls.constraint + ')' : '';
+      if (cls.kind === 'check'){
+        logLine('✗ ' + dgDisplayName(key) + ' batch ' + (i / BATCH_SIZE + 1)
+          + ' failed a CHECK constraint' + named + ': ' + (e.message || e)
+          + ' — the rest of this table is skipped.', 'err');
+        break;
+      }
+      logLine('✗ ' + dgDisplayName(key) + ' batch ' + (i / BATCH_SIZE + 1) + ' failed'
+        + named + ' [' + cls.kind + ']: ' + (e.message || e), 'err');
+      break;
+    }
+    if (onProgress) onProgress(done, count);
+  }
+
+  RUN_KEYS[key] = kept;
+  run.tables[key] = { schema: t.schema, name: t.name, inserted: done,
+    keyColumns: plan.primaryKeys || [], keys: kept.slice(0, 20000) };
+  if (gen.deferred.length) run.tables[key].deferred = gen.deferred.length;
+  return done;
+}
+
+/* The second pass. Rows that went in with an empty link get one UPDATE each,
+   now that the thing they point at exists. Self-references draw from the same
+   table's own new keys; a cycle draws from its partner's. */
+async function dgLinkPass(conn, brk, RUN_KEYS){
+  const key = brk.table;
+  const t = SCHEMA[key];
+  const mine = RUN_KEYS[key] || [];
+  if (!mine.length) return;
+  const links = [];
+  for (const fk of brk.linkAfter){
+    const pool = fk.self ? mine : (RUN_KEYS[fk.to] || []);
+    if (!pool.length) continue;
+    const targets = DG.dgSpread(mine.length, pool, rnd);
+    mine.forEach((row, i) => {
+      // A self-reference must not point at itself, so the first row is left
+      // unlinked and becomes the root of the tree rather than its own parent.
+      if (fk.self && i === 0) return;
+      const to = targets[i];
+      if (!to) return;
+      const set = {}, where = {};
+      fk.columns.forEach(p => { set[p.from] = to[p.to]; });
+      (t.plan.primaryKeys || []).forEach(k => { where[k] = row[k]; });
+      if (fk.self && Object.keys(where).some(k => set[fk.columns[0].from] === where[k])) return;
+      if (Object.keys(where).length) links.push({ set, where });
+    });
+  }
+  if (!links.length) return;
+  // Chunked, like the inserts: a thousand UPDATEs is not one request.
+  let done = 0;
+  for (let i = 0; i < links.length; i += 100){
+    const sql = DG.dgBuildLinkUpdate(t.plan, links.slice(i, i + 100), { dialect: dgDialect() });
+    if (!sql) continue;
+    dgAssertInsertOnly(sql);
+    await dgQuery(conn, sql);
+    done += Math.min(100, links.length - i);
+  }
+  logLine('  linked ' + done + ' row' + (done === 1 ? '' : 's') + ' in ' + dgDisplayName(key)
+    + ' that went in with an empty link.', 'ok');
+}
+
+/* The run manifest. Local for now, and Cosmos in the next phase — but written
+   NOW rather than then, because the keys it holds are the only record of
+   which rows this run put there, and they exist for a few seconds after the
+   insert and nowhere else. A phase that inserted without recording would
+   leave rows nobody could ever delete. */
+function dgSaveRun(run){
+  try {
+    let all = [];
+    try { all = JSON.parse(localStorage.getItem('cygenix_datagen_runs') || '[]') || []; } catch (e){ all = []; }
+    all.unshift(run);
+    localStorage.setItem('cygenix_datagen_runs', JSON.stringify(all.slice(0, 20)));
+    logLine('  run recorded as ' + run.id + ' — the rows it inserted can be deleted by it later.', 'info');
+  } catch (e){
+    logLine('  ✗ the run could not be recorded (' + (e.message || e)
+      + '). The rows are in; note the run id ' + run.id + ' if you need to find them.', 'err');
+  }
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
    THE PICKER, AND READING THE SCHEMA

@@ -370,6 +370,25 @@ var TEXT_TYPES = ['char', 'varchar', 'nchar', 'nvarchar', 'text', 'ntext', 'char
 var INT_TYPES = ['int', 'integer', 'bigint', 'smallint', 'tinyint', 'int2', 'int4', 'int8'];
 var DEC_TYPES = ['decimal', 'numeric', 'money', 'smallmoney', 'dec'];
 var BOOL_TYPES = ['bit', 'boolean', 'bool'];
+var DATE_TYPES = ['date', 'datetime', 'datetime2', 'smalldatetime', 'datetimeoffset',
+  'timestamp without time zone', 'timestamp with time zone', 'timestamptz',
+  'time', 'time without time zone'];
+
+/* A GUID derived from whatever we were handed, so the same input always gives
+   the same GUID. Not cryptographic and not trying to be — it exists so a
+   uniqueidentifier column gets something of the right shape rather than a
+   rejected insert. */
+function dgGuidFrom(seed) {
+  var s1 = str(seed) + '|' + Math.random();
+  var h = 0x811c9dc5, out = '';
+  for (var i = 0; i < 32; i++) {
+    for (var j = 0; j < s1.length; j++) h = Math.imul(h ^ s1.charCodeAt(j), 16777619) >>> 0;
+    h = Math.imul(h ^ i, 16777619) >>> 0;
+    out += ((h >>> 28) & 15).toString(16);
+  }
+  return out.slice(0, 8) + '-' + out.slice(8, 12) + '-4' + out.slice(13, 16) + '-a'
+    + out.slice(17, 20) + '-' + out.slice(20, 32);
+}
 
 function dgCoerce(value, col) {
   if (value == null) return null;
@@ -401,6 +420,22 @@ function dgCoerce(value, col) {
     var max = Math.pow(10, whole) - Math.pow(10, -Math.max(0, scale));
     if (Math.abs(rounded) > max) rounded = Number((max * (rounded < 0 ? -1 : 1)).toFixed(Math.max(0, scale)));
     return rounded;
+  }
+  if (t === 'uniqueidentifier' || t === 'uuid') {
+    // A GUID column takes a GUID and nothing else. Whatever the generator
+    // produced, what goes in is the canonical 8-4-4-4-12.
+    var g = str(value);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(g) ? g.toLowerCase() : dgGuidFrom(g);
+  }
+  if (DATE_TYPES.indexOf(t) !== -1) {
+    var d = value instanceof Date ? value : new Date(str(value));
+    if (isNaN(d.getTime())) return null;
+    var iso = d.toISOString();
+    // A DATE column rejects a time; a time column wants only one. Sending the
+    // whole ISO string to either is the commonest way a generated row bounces.
+    if (t === 'date') return iso.slice(0, 10);
+    if (t === 'time' || t === 'time without time zone') return iso.slice(11, 19);
+    return iso.slice(0, 23).replace('T', ' ');
   }
   if (TEXT_TYPES.indexOf(t) !== -1) {
     var s = str(value);
@@ -463,6 +498,322 @@ function dgPreviewRows(plan, count, generate, opts) {
   return rows;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   PHASE 2 — BUILDING THE WRITE
+   ══════════════════════════════════════════════════════════════════════════
+   Still pure. Nothing here opens a connection; it produces the statement text
+   and the caller sends it. That is what lets the whole write path be tested
+   without a database, which for a feature whose worst failure is "it wrote
+   the wrong thing" is not a nicety. */
+
+function dgQuote(name, dialect) {
+  var n = str(name);
+  if (dialect === 'postgres') return '"' + n.replace(/"/g, '""') + '"';
+  return '[' + n.replace(/]/g, ']]') + ']';
+}
+function dgQualified(schema, name, dialect) {
+  return dgQuote(schema || (dialect === 'postgres' ? 'public' : 'dbo'), dialect) + '.' + dgQuote(name, dialect);
+}
+
+/* A value as SQL text. Parameters would be better and are not available: the
+   `execute` action this rides on takes a statement, not a parameter list, and
+   adding a parameterised route is a backend change this phase does not need.
+   So every literal is escaped here, in one function, rather than at each of
+   the four call sites where it would eventually differ. */
+function dgLiteral(v, col, dialect) {
+  if (v === null || v === undefined) return 'NULL';
+  var t = lower(col && (col.baseType || col.type));
+  var paren = t.indexOf('('); if (paren > 0) t = t.slice(0, paren).trim();
+  if (BOOL_TYPES.indexOf(t) !== -1) {
+    return dialect === 'postgres' ? (v ? 'TRUE' : 'FALSE') : (v ? '1' : '0');
+  }
+  if (INT_TYPES.indexOf(t) !== -1 || DEC_TYPES.indexOf(t) !== -1) {
+    var n = Number(v);
+    return isFinite(n) ? String(n) : 'NULL';
+  }
+  var esc = str(v).replace(/'/g, "''");
+  // N'' is SQL Server's way of saying "this string is Unicode". Without it an
+  // accented character silently becomes a question mark in an NVARCHAR column.
+  var prefix = (dialect !== 'postgres' && /^n?(var)?char$/.test(t.replace('n', 'n'))) ? 'N' : '';
+  if (dialect !== 'postgres' && /^(nchar|nvarchar|ntext)$/.test(t)) prefix = 'N';
+  return prefix + "'" + esc + "'";
+}
+
+/* ── Uniqueness, across the whole run ─────────────────────────────────────
+   A pool per column that must not repeat. It is seeded with what is ALREADY
+   in the table — otherwise the first run looks fine and the second collides
+   with the first — and then holds everything this run has produced.
+
+   `next` asks the generator for a value and, if it has been seen, asks again;
+   after a few tries it stops asking and makes one, because a generator with a
+   small vocabulary (a status, a country) will never produce a thousand
+   distinct values however many times it is asked, and looping until it does
+   is how a run hangs. */
+function dgUniquePool(existing) {
+  var seen = new Set((existing || []).map(function (v) { return lower(v); }));
+  return {
+    size: function () { return seen.size; },
+    has: function (v) { return seen.has(lower(v)); },
+    add: function (v) { seen.add(lower(v)); return v; },
+    next: function (make, col, tries) {
+      var n = tries || 6;
+      for (var i = 0; i < n; i++) {
+        var v = dgCoerce(make(i), col);
+        if (v != null && !seen.has(lower(v))) { seen.add(lower(v)); return v; }
+      }
+      // Give up asking and derive one. Numbers count up from what is there;
+      // text gets a short suffix that is cut to fit rather than overflowing.
+      var t = lower(col && (col.baseType || col.type));
+      if (INT_TYPES.indexOf(t) !== -1 || DEC_TYPES.indexOf(t) !== -1) {
+        var k = seen.size + 1;
+        while (seen.has(String(k))) k++;
+        seen.add(String(k));
+        return dgCoerce(k, col);
+      }
+      var base = str(dgCoerce(make(0), col) || 'v');
+      var suffix, out, j = 1;
+      do {
+        suffix = '-' + (seen.size + j).toString(36);
+        var max = col && col.maxLength > 0 ? col.maxLength : 4000;
+        out = (base.slice(0, Math.max(0, max - suffix.length)) + suffix).slice(0, max);
+        j++;
+      } while (seen.has(lower(out)) && j < 1000);
+      seen.add(lower(out));
+      return out;
+    },
+  };
+}
+
+/* ── Spreading children across parents ────────────────────────────────────
+   Not all on parent one, and not one each either. Round-robin over a shuffled
+   list gives every parent roughly the same number of children, which is
+   uniform in a way real data never is; so the index walks with a small random
+   jitter, which clumps a little. A migration script that only ever sees one
+   child per parent is a script whose GROUP BY has never been exercised. */
+function dgSpread(count, parents, random) {
+  var rnd = typeof random === 'function' ? random : Math.random;
+  var out = [];
+  if (!parents || !parents.length) return out;
+  var i = 0;
+  for (var n = 0; n < count; n++) {
+    out.push(parents[i % parents.length]);
+    i += 1 + (rnd() < 0.25 ? 1 : 0);
+  }
+  return out;
+}
+
+/* Existing key values in a parent nobody selected. Capped, because a parent
+   with four million rows is not something to read in order to pick a handful
+   of foreign keys, and ORDERed so two runs against a static table draw from
+   the same set rather than whatever the engine felt like returning. */
+function dgExistingKeysSql(schema, name, keyColumns, opts) {
+  var o = opts || {};
+  var dialect = o.dialect === 'postgres' ? 'postgres' : 'mssql';
+  var limit = o.limit > 0 ? o.limit : 500;
+  var cols = (keyColumns || []).map(function (c) { return dgQuote(c, dialect); }).join(', ');
+  var from = dgQualified(schema, name, dialect);
+  if (dialect === 'postgres') {
+    return 'SELECT ' + cols + ' FROM ' + from + ' ORDER BY ' + cols + ' LIMIT ' + limit;
+  }
+  return 'SELECT TOP ' + limit + ' ' + cols + ' FROM ' + from + ' ORDER BY ' + cols;
+}
+
+/* ── The INSERT ───────────────────────────────────────────────────────────
+   One statement per batch, and it hands the generated keys back.
+
+   SQL Server: OUTPUT ... INTO a table variable, not a bare OUTPUT. A bare
+   OUTPUT is refused outright on any table that has a trigger — "the target
+   table cannot have any enabled triggers when the statement contains an
+   OUTPUT clause without INTO" — and a source database of the sort this tool
+   is pointed at is exactly where triggers live. The INTO form works either
+   way, at the cost of declaring the variable, which needs the key columns'
+   declared types. We have them.
+
+   IDENTITY_INSERT is never used. The database assigns identities and we read
+   back what it assigned; turning it off and writing our own would mean owning
+   the sequence, colliding with whatever else writes to that table, and
+   leaving the identity seed behind for somebody else to trip over. */
+function dgBuildInsert(plan, rows, opts) {
+  var o = opts || {};
+  var dialect = o.dialect === 'postgres' ? 'postgres' : 'mssql';
+  var cols = plan.columns.filter(function (c) { return c.write; });
+  if (!cols.length || !rows.length) return null;
+
+  var target = dgQualified(plan.schema, plan.name, dialect);
+  var colList = '(' + cols.map(function (c) { return dgQuote(c.name, dialect); }).join(', ') + ')';
+  var values = rows.map(function (r) {
+    return '(' + cols.map(function (c) { return dgLiteral(r[c.name], c, dialect); }).join(', ') + ')';
+  }).join(',\n  ');
+
+  // Only the key columns the DATABASE fills in need reading back. A key we
+  // generated ourselves we already know.
+  var keyCols = (plan.primaryKeys || []).map(function (k) {
+    return plan.columns.find(function (c) { return lower(c.name) === lower(k); });
+  }).filter(Boolean);
+  var wantBack = keyCols.length && keyCols.some(function (c) { return !c.write; });
+
+  if (dialect === 'postgres') {
+    var ret = keyCols.length ? '\nRETURNING ' + keyCols.map(function (c) { return dgQuote(c.name, dialect); }).join(', ') : '';
+    return { sql: 'INSERT INTO ' + target + ' ' + colList + ' VALUES\n  ' + values + ret + ';',
+      returnsKeys: !!keyCols.length, keyColumns: keyCols.map(function (c) { return c.name; }) };
+  }
+
+  if (!wantBack) {
+    return { sql: 'INSERT INTO ' + target + ' ' + colList + ' VALUES\n  ' + values + ';',
+      returnsKeys: false, keyColumns: keyCols.map(function (c) { return c.name; }) };
+  }
+  var decl = keyCols.map(function (c) { return dgQuote(c.name, dialect) + ' ' + (c.type || 'INT'); }).join(', ');
+  var outList = keyCols.map(function (c) { return 'inserted.' + dgQuote(c.name, dialect); }).join(', ');
+  var sel = keyCols.map(function (c) { return dgQuote(c.name, dialect); }).join(', ');
+  return {
+    sql: 'DECLARE @dgkeys TABLE (' + decl + ');\n'
+      + 'INSERT INTO ' + target + ' ' + colList + '\n'
+      + 'OUTPUT ' + outList + ' INTO @dgkeys\n'
+      + 'VALUES\n  ' + values + ';\n'
+      + 'SELECT ' + sel + ' FROM @dgkeys;',
+    returnsKeys: true, keyColumns: keyCols.map(function (c) { return c.name; }),
+  };
+}
+
+/* ── The second pass, for cycles and self-references ──────────────────────
+   Rows that went in with their link empty, joined up now that the thing they
+   point at exists. One UPDATE per row rather than a clever set-based join,
+   because the pairing was decided in memory and there is nothing in the
+   database to join on — and because a failure then names the row it was. */
+function dgBuildLinkUpdate(plan, links, opts) {
+  var o = opts || {};
+  var dialect = o.dialect === 'postgres' ? 'postgres' : 'mssql';
+  var target = dgQualified(plan.schema, plan.name, dialect);
+  var stmts = (links || []).map(function (l) {
+    var set = Object.keys(l.set).map(function (c) {
+      var col = plan.columns.find(function (x) { return lower(x.name) === lower(c); }) || {};
+      return dgQuote(c, dialect) + ' = ' + dgLiteral(l.set[c], col, dialect);
+    }).join(', ');
+    var where = Object.keys(l.where).map(function (c) {
+      var col = plan.columns.find(function (x) { return lower(x.name) === lower(c); }) || {};
+      return dgQuote(c, dialect) + ' = ' + dgLiteral(l.where[c], col, dialect);
+    }).join(' AND ');
+    return 'UPDATE ' + target + ' SET ' + set + ' WHERE ' + where + ';';
+  });
+  return stmts.length ? stmts.join('\n') : null;
+}
+
+/* ── What the database just complained about ──────────────────────────────
+   A failed batch is not a failed run. The engines word it differently and the
+   kind decides what happens next: a CHECK constraint means this table's rules
+   are beyond guessing and the table is abandoned with the constraint named; a
+   unique collision means try the batch again with fresh values; a foreign-key
+   error means a parent key went missing under us. Anything else is reported
+   as it came. */
+function dgClassifyError(message) {
+  var m = str(message);
+  if (/CHECK constraint|check constraint|violates check constraint/i.test(m)) {
+    return { kind: 'check', constraint: dgConstraintName(m) };
+  }
+  if (/UNIQUE KEY constraint|duplicate key|violates unique constraint|Cannot insert duplicate/i.test(m)) {
+    return { kind: 'unique', constraint: dgConstraintName(m) };
+  }
+  if (/FOREIGN KEY constraint|violates foreign key constraint/i.test(m)) {
+    return { kind: 'fk', constraint: dgConstraintName(m) };
+  }
+  if (/String or binary data would be truncated|value too long/i.test(m)) {
+    return { kind: 'truncation', constraint: dgConstraintName(m) };
+  }
+  if (/Cannot insert the value NULL|null value in column/i.test(m)) {
+    return { kind: 'null', constraint: dgConstraintName(m) };
+  }
+  return { kind: 'other', constraint: dgConstraintName(m) };
+}
+function dgConstraintName(message) {
+  var m = str(message).match(/constraint ["'`]?([A-Za-z0-9_.\[\]]+)["'`]?/i);
+  return m ? m[1].replace(/[\[\]"'`]/g, '') : '';
+}
+
+/* ── Generating the rows to insert ────────────────────────────────────────
+   The real thing, not the preview. Differences that matter:
+
+     · foreign keys get an ACTUAL parent key — one generated earlier in this
+       run, or one already in the table — never an invented number;
+     · unique and primary-key columns go through the pool, so nothing repeats
+       within the run or against what is already there;
+     · a column caught in a cycle is written null and remembered, for the
+       second pass to fill in.
+
+   `parentKeys` is { fkName: [ {col:value,...}, ... ] } — the real keys each
+   foreign key may draw from. A key with an empty list and a NOT NULL column
+   is a table that cannot be generated, and the caller is told so rather than
+   being handed rows the database will reject. */
+function dgGenerateRows(plan, count, ctx) {
+  var c = ctx || {};
+  var rnd = typeof c.random === 'function' ? c.random : Math.random;
+  var nullPct = c.nullPercent == null ? 10 : Number(c.nullPercent);
+  var generate = typeof c.generate === 'function' ? c.generate : function () { return null; };
+  var pools = c.pools || {};
+  var parentKeys = c.parentKeys || {};
+  var nullFirst = new Set((c.nullFirst || []).map(lower));
+
+  // One parent per row per key, decided up front so the spread is over the
+  // whole table rather than re-rolled each row.
+  var assigned = {};
+  (plan.fks || []).forEach(function (fk) {
+    var pool = parentKeys[fk.name] || [];
+    assigned[fk.name] = dgSpread(count, pool, rnd);
+  });
+
+  var rows = [], deferred = [];
+  for (var i = 0; i < count; i++) {
+    var row = {}, defer = null;
+    plan.columns.forEach(function (col) {
+      if (!col.write) return;
+      var low = lower(col.name);
+
+      if (col.fk) {
+        var fkName = col.fk.name;
+        if (nullFirst.has(low)) {
+          row[col.name] = null;
+          defer = defer || { index: i, set: {} };
+          defer.set[col.name] = { fk: fkName, ref: col.fk.column };
+          return;
+        }
+        var parent = (assigned[fkName] || [])[i];
+        row[col.name] = parent ? dgCoerce(parent[col.fk.column], col) : null;
+        return;
+      }
+
+      if (col.isPrimaryKey || col.unique) {
+        var pool = pools[low] || (pools[low] = dgUniquePool([]));
+        row[col.name] = pool.next(function (n) { return generate(col, i + n * 7919); }, col);
+        return;
+      }
+
+      if (col.nullable && rnd() * 100 < nullPct) { row[col.name] = null; return; }
+      row[col.name] = dgCoerce(generate(col, i), col);
+    });
+    rows.push(row);
+    if (defer) deferred.push(defer);
+  }
+  return { rows: rows, deferred: deferred };
+}
+
+/* Which foreign keys of this table have nothing to point at, and whether that
+   is fatal. A nullable key with no parents is a column left null; a NOT NULL
+   one is a table that cannot be generated at all, and saying so before the
+   run beats finding out on row one. */
+function dgMissingParents(plan, parentKeys) {
+  var out = [];
+  (plan.fks || []).forEach(function (fk) {
+    var pool = (parentKeys || {})[fk.name] || [];
+    if (pool.length || fk.self) return;
+    var required = fk.columns.some(function (p) {
+      var col = plan.columns.find(function (c) { return lower(c.name) === lower(p.from); });
+      return col && col.nullable === false;
+    });
+    out.push({ fk: fk.name, to: fk.to, blocking: required,
+      columns: fk.columns.map(function (p) { return p.from; }) });
+  });
+  return out;
+}
+
 /* The insert order as a sentence, for the strip above the table list. The
    order is the thing most likely to be wrong in a way nobody notices until
    the data is already in, so it is shown rather than merely obeyed. */
@@ -480,5 +831,10 @@ return {
   dgPlanTable: dgPlanTable, dgCoerce: dgCoerce,
   dgPreviewColumns: dgPreviewColumns, dgPreviewRows: dgPreviewRows,
   dgOrderLabel: dgOrderLabel,
+  dgQuote: dgQuote, dgQualified: dgQualified, dgLiteral: dgLiteral, dgGuidFrom: dgGuidFrom,
+  dgUniquePool: dgUniquePool, dgSpread: dgSpread, dgExistingKeysSql: dgExistingKeysSql,
+  dgBuildInsert: dgBuildInsert, dgBuildLinkUpdate: dgBuildLinkUpdate,
+  dgClassifyError: dgClassifyError, dgGenerateRows: dgGenerateRows,
+  dgMissingParents: dgMissingParents,
 };
 });

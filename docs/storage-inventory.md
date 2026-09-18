@@ -30,7 +30,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_pending_token` | Auth token in transit between pages | short-lived; clear on consume | index.html |
 | `cygenix_src_conn_string` | Source connection string, in plain text | WI-10: move to a Key Vault reference | connect.html, project-builder-app.js |
 
-## A — Authoritative — losing it loses customer work (16)
+## A — Authoritative — losing it loses customer work (17)
 
 > These need a server source of truth. `cygenix-cosmos-sync.js` mirrors the keys marked
 > *synced* to Cosmos on a 3-second write-behind; the rest are local-only and are WI-1's
@@ -40,6 +40,7 @@ mechanism that stops an unclassified key being added quietly.
 |---|---|---|---|
 | `cygenix_backup_history` | Restore-module backup history | NOT SYNCED — WI-1 | dashboard-app.js |
 | `cygenix_conv_project` | The currently-open project blob | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, cygenix-schema-graph.js |
+| `cygenix_datagen_runs` | Which rows each Data Generator run inserted | the only record of what a run put there — NOT SYNCED yet | data-generator.html |
 | `cygenix_effort_estimates_v1` | Saved Configurator estimates | NOT SYNCED — WI-1 | project_plan.html |
 | `cygenix_inventory` | Project artifact inventory | synced (SYNC_KEYS) | dashboard-app.js, projects.html, report.html +1 |
 | `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +15 |
@@ -103,4 +104,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_59 classified key(s) across `public/`._
+_60 classified key(s) across `public/`._

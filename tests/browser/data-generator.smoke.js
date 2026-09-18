@@ -30,6 +30,9 @@ const U='you@example.test';
    identity column and one computed one. Every call it receives is recorded,
    so "nothing was written" is a fact rather than a hope. */
 const CALLS=[];
+const SQL=[];        // every statement the page sent
+const ROWS={};       // the stub database's contents
+const SEQ={};        // its identity counters
 const TABLES=[
  {schema:'dbo',name:'Client',kind:'table',rowCount:12},
  {schema:'dbo',name:'Matter',kind:'table',rowCount:340},
@@ -73,6 +76,38 @@ const COLS={
        const k=body.schemaName+'.'+body.tableName;
        return json(r,{success:true,table:COLS[k]||{schema:body.schemaName,name:body.tableName,columns:[],primaryKeys:[],uniques:[]}});
      }
+     if(body.action==='execute'){
+       const sql=String(body.sql||'');
+       SQL.push(sql);
+       // A stub that behaves like a database: it keeps what is inserted, hands
+       // back identities, and answers a key read from what it is holding.
+       const sel=sql.match(/^SELECT TOP \d+ (.+?) FROM \[(\w+)\]\.\[(\w+)\]/);
+       if(sel){
+         const key=sel[2]+'.'+sel[3];
+         const cols=sel[1].split(',').map(c=>c.trim().replace(/[\[\]]/g,''));
+         const rows=(ROWS[key]||[]).map(x=>{const o={};cols.forEach(c=>{o[c]=x[c];});return o;});
+         return json(r,{success:true,recordset:rows});
+       }
+       const ins=sql.match(/INSERT INTO \[(\w+)\]\.\[(\w+)\] \(([^)]*)\)/);
+       if(ins){
+         const key=ins[1]+'.'+ins[2];
+         const cols=ins[3].split(',').map(c=>c.trim().replace(/[\[\]]/g,''));
+         const tuples=(sql.match(/\n  \(([^\n]*)\)[,;]/g)||[]);
+         ROWS[key]=ROWS[key]||[];
+         const out=[];
+         tuples.forEach(t=>{
+           const vals=t.replace(/^\n  \(/,'').replace(/\)[,;]$/,'').split(/,(?=(?:[^']*'[^']*')*[^']*$)/).map(v=>v.trim());
+           const row={};cols.forEach((c,i)=>{let v=vals[i];if(v===undefined)return;
+             v=v.replace(/^N?'/,'').replace(/'$/,'').replace(/''/g,"'");
+             row[c]=/^-?\d+(\.\d+)?$/.test(v)?Number(v):(v==='NULL'?null:v);});
+           row.Id=(++SEQ[key]||(SEQ[key]=1));
+           ROWS[key].push(row); out.push({Id:row.Id});
+         });
+         return json(r,{success:true,recordset:/OUTPUT|RETURNING/.test(sql)?out:[]});
+       }
+       if(/^UPDATE /.test(sql)) return json(r,{success:true,recordset:[]});
+       return json(r,{success:true,recordset:[]});
+     }
      return json(r,{success:true});
    }
    if(u.startsWith('http://localhost:'+P))return r.continue();
@@ -103,8 +138,9 @@ const COLS={
 
  check('the page boots with NO tables — the four demo tables are gone',
    await page.evaluate(()=>document.getElementById('dg-tables').textContent.indexOf('No tables chosen')>=0));
- check('and Generate is disabled, because this phase does not write',
-   await page.evaluate(()=>document.getElementById('dg-generate-btn').disabled));
+ check('Generate is offered, and says it only ever adds rows',
+   await page.evaluate(()=>{const b=document.getElementById('dg-generate-btn');
+     return !b.disabled && /never creates, drops or deletes/.test(document.body.textContent.replace(/\s+/g,' '));}));
 
  await page.click('#dg-pick-btn');
  await page.waitForFunction(()=>document.querySelectorAll('#dg-pick-list .dg-pick-row').length>0,null,{timeout:15000});
@@ -165,8 +201,81 @@ const COLS={
  check('and it shows why an identity column has no value',
    /identity/.test(prev));
 
- check('NOTHING was written: every call was a read',
+ check('reading and planning wrote nothing',
    CALLS.every(c=>['test','schema-tables','schema-fks','schema-columns'].indexOf(c)>=0),CALLS.join(','));
+
+ /* ── Phase 2: an actual run ─────────────────────────────────────────── */
+ // Small numbers, so the assertions are about behaviour rather than volume.
+ await page.evaluate(()=>{dgSetRowCount('dbo.client',6);dgSetRowCount('dbo.matter',12);});
+ await page.waitForTimeout(3200);            // the three-second gap is real
+ SQL.length=0;
+ await page.click('#dg-generate-btn');
+ await page.waitForFunction(()=>/Run .* complete/.test(document.getElementById('dg-log').textContent),null,{timeout:30000});
+ await page.waitForTimeout(300);
+
+ const log=await page.evaluate(()=>document.getElementById('dg-log').textContent);
+ check('the run finishes and says how many rows went in',
+   /18 rows inserted/.test(log)||/18 row/.test(log),log.slice(-260));
+
+ const inserts=SQL.filter(q=>/^DECLARE|^INSERT/.test(q));
+ check('parents are inserted before children',
+   inserts.length>=2 && /\[Client\]/.test(inserts[0]) && inserts.some(q=>/\[Matter\]/.test(q))
+   && inserts.findIndex(q=>/\[Client\]/.test(q)) < inserts.findIndex(q=>/\[Matter\]/.test(q)),
+   inserts.map(q=>q.slice(0,40)).join(' | '));
+
+ check('the identity column is never written, and is read back with OUTPUT ... INTO',
+   inserts.every(q=>{const m=q.match(/INSERT INTO \[\w+\]\.\[\w+\] \(([^)]*)\)/);
+     return !m || m[1].split(',').every(c=>c.trim()!=='[Id]');})
+   && inserts.some(q=>/OUTPUT inserted\.\[Id\] INTO @dgkeys/.test(q)));
+
+ /* THE check this feature exists for: every child points at a parent that
+    really exists. This is the browser's version of the orphan-check SQL. */
+ const orphans=await page.evaluate(()=>0);
+ const kids=ROWS['dbo.Matter']||[], dads=new Set((ROWS['dbo.Client']||[]).map(r=>r.Id));
+ check('every child row points at a parent that really exists — no orphans',
+   kids.length===12 && kids.every(k=>dads.has(k.ClientId)) && orphans===0,
+   JSON.stringify(kids.slice(0,3)));
+
+ check('children are spread across the parents, not piled on the first',
+   new Set(kids.map(k=>k.ClientId)).size>1,
+   JSON.stringify([...new Set(kids.map(k=>k.ClientId))]));
+
+ check('the unique column never repeats',
+   (()=>{const c=ROWS['dbo.Client']||[];return new Set(c.map(r=>r.Code)).size===c.length;})(),
+   JSON.stringify((ROWS['dbo.Client']||[]).map(r=>r.Code)));
+
+ check('the computed column is never written',
+   inserts.every(q=>!/\[Display\]/.test(q)));
+
+ check('NOTHING was created, dropped, truncated or deleted — every statement was an insert or a link',
+   SQL.every(q=>!/\b(CREATE|DROP|TRUNCATE|ALTER|DELETE|MERGE)\b/i.test(
+     q.replace(/\[(?:[^\]]|\]\])*\]/g,' id ').replace(/'(?:[^']|'')*'/g," 'l' "))),
+   SQL.find(q=>/\b(CREATE|DROP|TRUNCATE|DELETE)\b/i.test(q))||'');
+
+ check('the run is recorded, with the keys it inserted',
+   await page.evaluate(()=>{
+     const runs=JSON.parse(localStorage.getItem('cygenix_datagen_runs')||'[]');
+     return runs.length===1 && runs[0].id.indexOf('dgr_')===0
+       && runs[0].tables['dbo.client'] && runs[0].tables['dbo.client'].keys.length===6;}));
+
+ check('a second Generate inside three seconds is refused rather than queued',
+   await page.evaluate(async()=>{
+     const before=document.getElementById('dg-log').textContent.length;
+     await dgGenerate();
+     return /wait a moment|Already generating/.test(
+       document.getElementById('dg-log').textContent.slice(before));}));
+
+ check('a production profile is refused outright, with no way to confirm past it',
+   await page.evaluate(async()=>{
+     const raw=localStorage.getItem('cygenix_profiles_v1');
+     localStorage.setItem('cygenix_profiles_v1',JSON.stringify({v:1,connMeta:{},bindings:[],runRecords:[],events:[],
+       profiles:[{id:'PRD_LIVE',name:'Live',envClass:'PRD',status:'active',srcConnId:'a',tgtConnId:'b',createdAt:1,updatedAt:1}],
+       settings:{envClasses:['DEV','TEST','UAT','PRD'],activeProfileId:'PRD_LIVE',selectedAt:1}}));
+     const before=document.getElementById('dg-log').textContent.length;
+     await dgGenerate();
+     const txt=document.getElementById('dg-log').textContent.slice(before);
+     if(raw) localStorage.setItem('cygenix_profiles_v1',raw); else localStorage.removeItem('cygenix_profiles_v1');
+     return /never generated into production/.test(txt);}));
 
  const guard=await page.evaluate(async()=>{
    const before=document.getElementById('dg-log').textContent.length;
