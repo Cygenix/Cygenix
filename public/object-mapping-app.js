@@ -466,6 +466,9 @@ document.addEventListener('DOMContentLoaded', function init(){
   // Recent-maps grid on the empty canvas. Rendered from localStorage only, so
   // it paints immediately — no connection or network round trip needed.
   try { renderRecentMaps(''); } catch(e){ console.warn('[recent-maps]', e); }
+  // The group dropdown. Drawn from localStorage alone, like the grid above it,
+  // so it paints with the page rather than after a round trip.
+  try { mgRenderButton(); } catch(e){ console.warn('[map-groups]', e); }
 
   const c = CygenixConnections.get();
   // Source: same shape as target — Azure Function URL takes priority over
@@ -3032,6 +3035,7 @@ function generateSingleSQL(silent){
   generatedSQL={insert:sub(sql), schema:sub(schemaSQL), verify:sub(verifySQL)};
   showSQLOutput(generatedSQL.insert, warnings, !silent);
   $('save-job-btn').disabled=false;
+  try { if (typeof mgRenderButton === 'function') mgRenderButton(); } catch(e){}
   $('tab-schema').style.display='';
   $('tab-verify').style.display='';
 }
@@ -4321,6 +4325,7 @@ function generateOTMSQL(){
   // "Independent" beside SQL that is a single transaction.
   if(txForced && txSel){ txSel.value='single'; }
   $('save-job-btn').disabled=false;
+  try { if (typeof mgRenderButton === 'function') mgRenderButton(); } catch(e){}
   $('tab-schema').style.display='none';
   $('tab-verify').style.display='none';
 }
@@ -4436,6 +4441,7 @@ function applyDriveScript(sql, name){
   showSQLOutput(generatedSQL.insert, [], true);
   const sb=$('sql-save-btn'); if(sb) sb.disabled=false;
   const tsb=$('save-job-btn'); if(tsb) tsb.disabled=false;
+  try { if (typeof mgRenderButton === 'function') mgRenderButton(); } catch(e){}
   showStatus('✓ Loaded from Drive: '+(name||'script'),'info');
 }
 
@@ -4523,6 +4529,12 @@ function saveAsJob(){
     // would silently re-stamp an old job with today's profile.
     try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
     catch(e){ console.warn('[job-profile]', e); }
+    // The map's group, for exactly the same reason: this record is rebuilt
+    // from the form, and the group is not on the form. An edit carries the
+    // stored group forward; a new map takes whatever was chosen in the header
+    // before it had anywhere to store it.
+    try { if (typeof mgApplyOnSave === 'function') mgApplyOnSave(job, jobs); }
+    catch(e){ console.warn('[map-groups] save', e); }
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
@@ -4606,6 +4618,12 @@ function saveAsJob(){
     // would silently re-stamp an old job with today's profile.
     try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
     catch(e){ console.warn('[job-profile]', e); }
+    // The map's group, for exactly the same reason: this record is rebuilt
+    // from the form, and the group is not on the form. An edit carries the
+    // stored group forward; a new map takes whatever was chosen in the header
+    // before it had anywhere to store it.
+    try { if (typeof mgApplyOnSave === 'function') mgApplyOnSave(job, jobs); }
+    catch(e){ console.warn('[map-groups] save', e); }
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
@@ -4900,6 +4918,7 @@ function resetAll(){
   $('join-panel').style.display='none'; window._joinState=[];
   $('mapping-wrap').style.display='none'; $('single-empty').style.display='block'; if(typeof renderRecentMaps==='function') renderRecentMaps('');
   $('sql-panel').style.display='none'; $('save-job-btn').disabled=true;
+  try { if (typeof mgRenderButton === 'function') mgRenderButton(); } catch(e){}
   $('otm-cards').innerHTML=''; $('otm-empty').style.display='block';
   clearEditMode();
   if(typeof _wipDraftClear==='function') _wipDraftClear();
@@ -4917,6 +4936,7 @@ function clearMapState(){
   $('join-panel').style.display='none'; window._joinState=[];
   $('mapping-wrap').style.display='none'; $('single-empty').style.display='block'; if(typeof renderRecentMaps==='function') renderRecentMaps('');
   $('sql-panel').style.display='none'; $('save-job-btn').disabled=true;
+  try { if (typeof mgRenderButton === 'function') mgRenderButton(); } catch(e){}
   $('otm-cards').innerHTML=''; $('otm-empty').style.display='block';
   clearEditMode();
   if(typeof _wipDraftClear==='function') _wipDraftClear();
@@ -5078,6 +5098,9 @@ function renderLoadMapList(){
       const hay=((j.name||'')+' '+(j.source||j.sourceTable||'')+' '+(j.target||j.targetTable||'')).toLowerCase();
       if(!hay.includes(query)) return false;
     }
+    // Group chips. Applied last so the chip counts, which are built from the
+    // rest of the filtering, do not change as you click between them.
+    if (typeof mgFilterMatches === 'function' && !mgFilterMatches(j)) return false;
     return true;
   });
 
@@ -5089,6 +5112,27 @@ function renderLoadMapList(){
   });
 
   $('load-map-count').textContent = filtered.length+' of '+jobs.length+' job'+(jobs.length===1?'':'s');
+
+  // The chips are built from everything the OTHER filters let through, so the
+  // counts stay still as you click between them.
+  try {
+    if (typeof mgRenderChips === 'function'){
+      mgRenderChips(jobs.filter(j => {
+        if (j._deleted) return false;
+        if (projectFilter==='__none__'){ if (j.projectId) return false; }
+        else if (projectFilter !== '__all__'){ if ((j.projectId||'') !== projectFilter) return false; }
+        if (modeFilter){
+          const t=j.jobType || (j.oneToManyConfig?'one-to-many':'simple-map');
+          if (t!==modeFilter) return false;
+        }
+        if (query){
+          const hay=((j.name||'')+' '+(j.source||j.sourceTable||'')+' '+(j.target||j.targetTable||'')).toLowerCase();
+          if (!hay.includes(query)) return false;
+        }
+        return true;
+      }));
+    }
+  } catch(e){ console.warn('[map-groups] chips', e); }
 
   if(!filtered.length){
     list.innerHTML='<div style="padding:2rem 1rem;text-align:center;color:var(--text3);font-size:12px">'+
@@ -5120,7 +5164,10 @@ function renderLoadMapList(){
     const projLabel = j.projectId
       ? esc(projectNameById[j.projectId] || j.projectId)
       : '(no project)';
-    return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);${isCurrent?'background:rgba(74,91,214,0.06)':''}">
+    // Same stripe and same named pill as the recent-maps tile, so a map looks
+    // like itself wherever it is listed.
+    const mg = (typeof mgCardBits === 'function') ? mgCardBits(j) : { has:false, cls:'', style:'', pill:'', color:'' };
+    return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);${mg.has?'border-left:4px solid '+escAttr(mg.color)+';':''}${isCurrent?'background:rgba(74,91,214,0.06)':''};${escAttr(mg.style)}">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:3px;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
@@ -5131,8 +5178,8 @@ function renderLoadMapList(){
         <div style="font-size:11px;color:var(--text2);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
           ${src} <span style="color:var(--text3)">→</span> ${tgt}
         </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:3px">
-          ${cols}${created?' · '+esc(created):''}
+        <div style="font-size:10px;color:var(--text3);margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span>${cols}${created?' · '+esc(created):''}</span>${mg.pill}
         </div>
       </div>
       <button class="btn btn-primary btn-sm" onclick="loadMapById('${esc(j.id)}')" ${isCurrent?'disabled':''} title="${isCurrent?'Already loaded':'Load this map'}">
@@ -5386,8 +5433,12 @@ function renderRecentMaps(filter){
       : `<span class="rm-chip">${mapped} column${mapped===1?'':'s'}</span>`;
     const isCurrent = (typeof editJobId!=='undefined' && editJobId===j.id);
     const pinned = pins.has(j.id);
-    return `<div class="rm-card${pinned?' pinned':''}${isCurrent?' current':''}" tabindex="0" role="button"
-         style="--rm-accent:${accent}"
+    // The map's group: a stripe down the left edge and a named pill in the
+    // footer. A map with no group, or one whose group has been deleted, gets
+    // neither and looks exactly as it did before groups existed.
+    const mg = (typeof mgCardBits === 'function') ? mgCardBits(j) : { cls:'', style:'', pill:'' };
+    return `<div class="rm-card${pinned?' pinned':''}${isCurrent?' current':''}${mg.cls}" tabindex="0" role="button"
+         style="--rm-accent:${accent};${mg.style}"
          aria-label="Open map ${esc(j.name||'unnamed')}"
          onclick="loadMapById('${esc(j.id)}')"
          onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();loadMapById('${esc(j.id)}')}">
@@ -5402,6 +5453,7 @@ function renderRecentMaps(filter){
         <div class="rm-path">${src} → ${tgt}</div>
         <div class="rm-foot">
           ${chip}
+          ${mg.pill}
           <span class="rm-when">${isCurrent?'currently open':esc(rmWhen(j.created))}</span>
         </div>
       </div>
@@ -5416,6 +5468,10 @@ function renderRecentMaps(filter){
     grid.innerHTML = '<div style="grid-column:1/-1;padding:1.5rem;text-align:center;color:var(--text3);font-size:12px">'
       + 'No recent maps match “' + esc(String(filter)) + '”.</div>';
   }
+  // The legend describes the tiles above it, so it is built from the same
+  // list — not from the account's whole vocabulary of groups.
+  try { if (typeof mgRenderLegend === 'function') mgRenderLegend(shown); } catch(e){ console.warn('[map-groups] legend', e); }
+  try { if (typeof mgRenderButton === 'function') mgRenderButton(); } catch(e){}
 }
 
 // "Start a new map" from the empty canvas: the source table picker is the
@@ -6231,3 +6287,437 @@ window.addEventListener('cygenix:job-reverted', (e) => {
   });
 })();
 
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MAP GROUPS (Sep-2026, Phase 1)
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// A group is a named category with a colour — Master data, Transactional,
+// Reference — and a map belongs to at most one. The colour shows on the map
+// card so forty maps read as a structure rather than a list.
+//
+// WHERE THE RULES ARE: cygenix-map-groups.js. It is pure — no DOM, no network,
+// no storage of its own — so validation, seeding, the palette and "what does a
+// dangling groupId mean" are decided once and tested in Node. This section is
+// only the screen: what is drawn, what is clicked, and when something is
+// written.
+//
+// NOTHING HERE POSTS. The group list is one localStorage key and a map's group
+// is a field on a job that is already saved to the same key every other save
+// uses. The existing write-behind sync carries both to Cosmos on its own three
+// second debounce, so there is no new request to guard, no new endpoint, and
+// no way for clicking the dropdown twenty times to make twenty calls.
+//
+// A MAP STORES ONLY THE ID. Recolour a group and every map in it changes,
+// because none of them ever held a colour to go stale.
+
+const MG = () => window.CygenixMapGroups;
+
+// The store, cached. Re-read rather than trusted after anything that could
+// have changed it elsewhere (another tab, a sync writeback), which is what
+// mgReload is for.
+let _mgStore = null;
+// A group chosen for a map that has not been saved yet. It cannot be written
+// to a job that does not exist, so it waits here and saveAsJob() stamps it on.
+let _mgPending = null;
+
+function mgStore(){
+  if (_mgStore) return _mgStore;
+  const m = MG(); if (!m) return { version: 1, groups: [] };
+  _mgStore = m.mgLoad(localStorage);
+  // Seeding is a read that writes: the first time an account opens this page
+  // the four starter groups are persisted, so every other device sees the same
+  // four rather than each seeding its own copy with different ids.
+  //
+  // The key is written out in full rather than as m.MG_KEY, and deliberately.
+  // scripts/storage-inventory.js finds keys by scanning public/ for a literal
+  // inside localStorage.getItem(...), so a key that only ever appears as a
+  // constant is a key the inventory — and the classification test that guards
+  // it — never sees. tests/map-groups.test.js asserts the literal here still
+  // equals the model's constant, so there is one source of truth and one
+  // place the scanner can find it.
+  try {
+    if (!localStorage.getItem('cygenix_map_groups')) m.mgSave(localStorage, _mgStore);
+  } catch {}
+  return _mgStore;
+}
+function mgReload(){ _mgStore = null; return mgStore(); }
+
+// Write, then redraw everything the colour or the name appears on. One
+// function so a recolour cannot update the cards and forget the legend.
+function mgWriteStore(next){
+  const m = MG(); if (!m) return { ok:false, reason:'Map groups are not loaded.' };
+  const res = m.mgSave(localStorage, next);
+  _mgStore = res.store;
+  mgRenderAll();
+  if (!res.ok) showStatus(res.reason, 'err');
+  return res;
+}
+
+function mgRenderAll(){
+  try { mgRenderButton(); } catch(e){ console.warn('[map-groups] button', e); }
+  try { if ($('mg-menu') && $('mg-menu').classList.contains('open')) mgRenderMenu(); } catch(e){}
+  try { renderRecentMaps(($('rm-filter')||{}).value||''); } catch(e){}
+  try { if ($('load-map-modal') && $('load-map-modal').classList.contains('open')) renderLoadMapList(); } catch(e){}
+}
+
+// ── The open map ────────────────────────────────────────────────────────────
+// A saved map is the job with id === editJobId. An unsaved one is whatever is
+// on the canvas: real enough to put in a group, not yet real enough to write
+// the group to, which is what _mgPending is for.
+function mgOpenJob(){
+  if (typeof editJobId === 'undefined' || !editJobId) return null;
+  return _getAllSavedJobs().find(j => j.id === editJobId) || null;
+}
+function mgCanAssign(){
+  if (mgOpenJob()) return true;
+  const hasSrc = (typeof srcTable !== 'undefined' && srcTable);
+  const hasTgt = (typeof tgtTable !== 'undefined' && tgtTable)
+    || (typeof targetTables !== 'undefined' && (targetTables||[]).length);
+  return !!(hasSrc && hasTgt);
+}
+// The group id currently in force: the saved map's, or the one waiting to be
+// saved with a new map.
+function mgCurrentId(){
+  const job = mgOpenJob();
+  if (job) return job.groupId || null;
+  return _mgPending;
+}
+
+// ── Setting a map's group ───────────────────────────────────────────────────
+// For a saved map this is the same patch-in-place write persistMappingToSavedJob
+// uses: read cygenix_jobs, Object.assign the one field, write it back. Not
+// saveAsJob(), which rebuilds the whole record from the canvas and would turn
+// "categorise this map" into "re-save everything about it".
+function mgSetGroup(groupId){
+  const id = groupId || null;
+  const job = mgOpenJob();
+  if (!job){
+    if (!mgCanAssign()){
+      showStatus('Choose source and target tables first — a group belongs to a map', 'err');
+      return;
+    }
+    _mgPending = id;
+    mgCloseMenu();
+    mgRenderButton();
+    showStatus(id ? 'Group set — it is saved with the map' : 'Group cleared', 'info');
+    return;
+  }
+  try {
+    const jobs = _getAllSavedJobs();
+    const idx = jobs.findIndex(j => j.id === job.id);
+    if (idx < 0) return;
+    jobs[idx] = Object.assign({}, jobs[idx], { groupId: id });
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,100)));
+  } catch(e){
+    showStatus('The group could not be saved: ' + ((e&&e.message)||'storage error'), 'err');
+    return;
+  }
+  _mgPending = null;
+  mgCloseMenu();
+  mgRenderAll();
+  const g = MG().mgById(mgStore(), id);
+  showStatus(g ? 'Map group: ' + g.name : 'Map is now ungrouped', 'info');
+}
+
+// ── The button ──────────────────────────────────────────────────────────────
+function mgRenderButton(){
+  const btn = $('mg-btn'); if (!btn || !MG()) return;
+  const can = mgCanAssign();
+  btn.disabled = !can;
+  const g = MG().mgById(mgStore(), mgCurrentId());
+  const dot = $('mg-btn-dot'), label = $('mg-btn-label');
+  if (dot) dot.style.background = g ? g.color : MG().UNGROUPED_COLOR;
+  if (label) label.textContent = g ? g.name : MG().UNGROUPED_LABEL;
+  btn.title = can
+    ? (g ? 'Map group: ' + g.name : 'This map has no group — click to choose one')
+    : 'Choose source and target tables first — a group belongs to a map';
+  if (!can) mgCloseMenu();
+}
+
+// ── The menu ────────────────────────────────────────────────────────────────
+function mgToggleMenu(force){
+  const menu = $('mg-menu'), btn = $('mg-btn');
+  if (!menu || !btn || btn.disabled) return;
+  const open = force === undefined ? !menu.classList.contains('open') : !!force;
+  menu.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open){ mgRenderMenu(); mgFocusFirst(); }
+}
+function mgCloseMenu(){
+  const menu = $('mg-menu'), btn = $('mg-btn');
+  if (menu) menu.classList.remove('open');
+  if (btn) btn.setAttribute('aria-expanded','false');
+}
+function mgFocusFirst(){
+  const menu = $('mg-menu'); if (!menu) return;
+  const first = menu.querySelector('.mg-item, input, button');
+  if (first) setTimeout(() => { try { first.focus(); } catch{} }, 0);
+}
+
+function mgRenderMenu(){
+  const menu = $('mg-menu'); if (!menu || !MG()) return;
+  const m = MG();
+  const cur = mgCurrentId();
+  const rows = m.mgOrdered(mgStore()).map(g =>
+    `<button type="button" class="mg-item" role="menuitemradio" aria-checked="${g.id===cur?'true':'false'}"
+       onclick="mgSetGroup('${escAttr(g.id)}')">
+       <span class="mg-dot" style="background:${escAttr(g.color)}"></span>
+       <span class="mg-name">${esc(g.name)}</span>
+       ${g.id===cur?'<span class="mg-tick" aria-hidden="true">✓</span>':''}
+     </button>`).join('');
+  menu.innerHTML = rows
+    + `<button type="button" class="mg-item" role="menuitemradio" aria-checked="${cur?'false':'true'}" onclick="mgSetGroup('')">
+         <span class="mg-dot" style="background:${m.UNGROUPED_COLOR}"></span>
+         <span class="mg-name">${m.UNGROUPED_LABEL}</span>
+         ${cur?'':'<span class="mg-tick" aria-hidden="true">✓</span>'}
+       </button>`
+    + '<div class="mg-sep"></div>'
+    + '<button type="button" class="mg-item" onclick="mgOpenNew()"><span class="mg-name">+ New group…</span></button>'
+    + '<button type="button" class="mg-item" onclick="mgOpenEdit()"><span class="mg-name">Edit groups…</span></button>';
+}
+
+// ── New group ───────────────────────────────────────────────────────────────
+// The panel replaces the menu's contents rather than opening a second popover:
+// two stacked poppers is how a dropdown starts swallowing clicks meant for the
+// page, and one Esc should close whatever is open.
+let _mgDraftColor = null;
+
+function mgOpenNew(){
+  const menu = $('mg-menu'); if (!menu || !MG()) return;
+  _mgDraftColor = MG().PALETTE[0].hex;
+  menu.innerHTML = `<div class="mg-panel">
+      ${mgErrHtml()}
+      <div class="mg-row">
+        <input type="text" id="mg-new-name" maxlength="${MG().MG_NAME_MAX}" placeholder="Group name"
+               autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();mgSaveNew()}">
+      </div>
+      ${mgSwatchesHtml(_mgDraftColor)}
+      <div class="mg-acts">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="mgRenderMenu()">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="mgSaveNew()">Save</button>
+      </div>
+    </div>`;
+  mgFocusFirst();
+}
+function mgSwatchesHtml(selected){
+  const m = MG();
+  return '<div class="mg-swatches">'
+    + m.PALETTE.map(c =>
+        `<button type="button" class="mg-sw" title="${escAttr(c.name)}" aria-label="${escAttr(c.name)}"
+           aria-pressed="${c.hex===selected?'true':'false'}" style="background:${escAttr(c.hex)}"
+           onclick="mgPickColor('${escAttr(c.hex)}')"></button>`).join('')
+    + '</div>'
+    + `<label class="mg-custom" title="Any colour, as six hex digits">
+         <input type="color" id="mg-color" value="${escAttr(selected || m.PALETTE[0].hex)}"
+                oninput="mgPickColor(this.value)"> Custom…
+       </label>`;
+}
+function mgPickColor(hex){
+  const m = MG(); if (!m) return;
+  const v = m.mgValidateColor(hex);
+  if (!v){ mgErr('That is not a colour — six hex digits, like #3B7DD8.'); return; }
+  _mgDraftColor = v;
+  const menu = $('mg-menu'); if (!menu) return;
+  menu.querySelectorAll('.mg-sw').forEach(b => {
+    b.setAttribute('aria-pressed', (b.style.backgroundColor && m.mgValidateColor(mgRgbToHex(b.style.backgroundColor)) === v) ? 'true' : 'false');
+  });
+  const picker = $('mg-color'); if (picker && picker.value.toUpperCase() !== v) picker.value = v;
+  mgErr('');
+}
+// A swatch's colour comes back from the DOM as rgb(...), so comparing it with
+// the stored hex needs one conversion. Kept here rather than in the model:
+// it is a fact about browsers, not about groups.
+function mgRgbToHex(rgb){
+  const m2 = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(String(rgb||''));
+  if (!m2) return String(rgb||'');
+  return '#' + [1,2,3].map(i => Number(m2[i]).toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+// The panel's refusal line. Written once so the id exists once in the source
+// as well as once in the DOM — the two panels that use it are mutually
+// exclusive, but a text scan for duplicate ids cannot know that, and a rule
+// that has to be argued with is a rule that stops being enforced.
+function mgErrHtml(){ return '<div class="mg-err" id="mg-err" style="display:none"></div>'; }
+function mgErr(text){
+  const el = $('mg-err'); if (!el) return;
+  el.textContent = text || '';
+  el.style.display = text ? 'block' : 'none';
+}
+function mgSaveNew(){
+  const m = MG(); if (!m) return;
+  const name = ($('mg-new-name')||{}).value || '';
+  const res = m.mgAdd(mgStore(), { name, color: _mgDraftColor });
+  if (!res.ok){ mgErr(res.reason); return; }
+  const w = mgWriteStore(res.store);
+  if (!w.ok) return;
+  // A group made from the map header is almost always the group that map
+  // wants, so it is applied straight away rather than making the user pick it
+  // from a menu they have just closed.
+  if (mgCanAssign()) mgSetGroup(res.group.id); else { mgCloseMenu(); }
+}
+
+// ── Edit groups ─────────────────────────────────────────────────────────────
+function mgOpenEdit(){
+  const menu = $('mg-menu'), m = MG(); if (!menu || !m) return;
+  const groups = m.mgOrdered(mgStore());
+  menu.innerHTML = `<div class="mg-panel">
+      ${mgErrHtml()}
+      <div class="mg-list">${
+        groups.length ? groups.map(g => `<div class="mg-edit-row">
+            <input type="color" value="${escAttr(g.color)}" title="Colour for ${escAttr(g.name)}"
+                   aria-label="Colour for ${escAttr(g.name)}"
+                   style="width:22px;height:22px;padding:0;border:0.5px solid var(--border2);border-radius:5px;background:var(--bg3);cursor:pointer"
+                   oninput="mgEditColor('${escAttr(g.id)}', this.value)">
+            <input type="text" value="${escAttr(g.name)}" maxlength="${m.MG_NAME_MAX}"
+                   aria-label="Name for ${escAttr(g.name)}"
+                   onchange="mgEditName('${escAttr(g.id)}', this.value)">
+            <button type="button" class="mg-icon danger" title="Delete ${escAttr(g.name)}"
+                    aria-label="Delete ${escAttr(g.name)}" onclick="mgDeleteGroup('${escAttr(g.id)}')">✕</button>
+          </div>`).join('')
+          : '<div class="mg-hint" style="margin:2px">No groups yet.</div>'
+      }</div>
+      <p class="mg-hint">Renaming or recolouring a group updates every map in it at once — a map stores the group, never the colour.</p>
+      <div class="mg-acts">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="mgRenderMenu()">Done</button>
+        <button type="button" class="btn btn-sm" onclick="mgOpenNew()">+ New group…</button>
+      </div>
+    </div>`;
+  mgFocusFirst();
+}
+function mgEditName(id, name){
+  const m = MG(); if (!m) return;
+  const res = m.mgUpdate(mgStore(), id, { name });
+  if (!res.ok){ mgErr(res.reason); mgOpenEditKeepError(res.reason); return; }
+  mgWriteStore(res.store);
+  mgOpenEdit();
+}
+function mgEditColor(id, color){
+  const m = MG(); if (!m) return;
+  const res = m.mgUpdate(mgStore(), id, { color });
+  if (!res.ok){ mgErr(res.reason); return; }
+  // Written straight away, and every card redrawn with it: "recolour and watch
+  // them all change" is the point of storing the id rather than the colour.
+  mgWriteStore(res.store);
+}
+// Re-render the editor and put the refusal back on it — mgOpenEdit rebuilds
+// the panel, which would otherwise wipe the message explaining the refusal.
+function mgOpenEditKeepError(reason){
+  mgOpenEdit();
+  mgErr(reason);
+}
+function mgDeleteGroup(id){
+  const m = MG(); if (!m) return;
+  const g = m.mgById(mgStore(), id); if (!g) return;
+  if (!confirm('Delete the group "' + g.name + '"?\n\nMaps in this group will become Ungrouped.')) return;
+  const res = m.mgRemove(mgStore(), id);
+  if (!res.ok){ mgErr(res.reason); return; }
+  // The maps are NOT rewritten. They keep a groupId that now names nothing and
+  // display as Ungrouped by the model's rule, so if the group comes back from
+  // another device's sync they come back with it.
+  mgWriteStore(res.store);
+  mgOpenEdit();
+}
+
+// ── Legend and filter chips ─────────────────────────────────────────────────
+// The legend lists only the groups actually on the tiles below, so it says
+// what the colours on screen mean rather than what the account's vocabulary
+// is. Nothing on screen has a group, nothing is shown.
+function mgRenderLegend(maps){
+  const el = $('mg-legend'), m = MG(); if (!el || !m) return;
+  const use = m.mgUsage(mgStore(), maps || []);
+  if (!use.used.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'flex';
+  el.innerHTML = use.used.map(g =>
+      `<span class="mg-leg"><span class="mg-dot" style="background:${escAttr(g.color)}"></span>${esc(g.name)}<span class="mg-count">${g.count}</span></span>`).join('')
+    + (use.ungrouped
+        ? `<span class="mg-leg"><span class="mg-dot" style="background:${m.UNGROUPED_COLOR}"></span>${m.UNGROUPED_LABEL}<span class="mg-count">${use.ungrouped}</span></span>`
+        : '');
+}
+
+// Browse-all filter. Display only, and deliberately not stored: a filter that
+// survives the modal closing is a filter that hides maps next week for a
+// reason nobody remembers setting.
+let _mgFilter = '__all__';
+function mgSetFilter(v){ _mgFilter = v || '__all__'; renderLoadMapList(); }
+function mgFilterMatches(job){
+  if (_mgFilter === '__all__') return true;
+  const g = MG() ? MG().mgGroupOf(mgStore(), job) : null;
+  if (_mgFilter === '__none__') return !g;
+  return !!g && g.id === _mgFilter;
+}
+function mgRenderChips(maps){
+  const el = $('mg-chips'), m = MG(); if (!el || !m) return;
+  const use = m.mgUsage(mgStore(), maps || []);
+  const chip = (val, label, color, count) =>
+    `<button type="button" class="mg-chip" aria-pressed="${_mgFilter===val?'true':'false'}"
+       onclick="mgSetFilter('${escAttr(val)}')">`
+    + (color ? `<span class="mg-dot" style="background:${escAttr(color)}"></span>` : '')
+    + esc(label) + (count != null ? `<span class="mg-count">${count}</span>` : '') + '</button>';
+  el.innerHTML = chip('__all__', 'All', null, (maps||[]).length)
+    + use.used.map(g => chip(g.id, g.name, g.color, g.count)).join('')
+    + (use.ungrouped ? chip('__none__', m.UNGROUPED_LABEL, m.UNGROUPED_COLOR, use.ungrouped) : '');
+}
+
+// The stripe and the pill, for one map. Returned as pieces rather than as
+// markup so the two card renderers can place them in their own layouts.
+function mgCardBits(job){
+  const m = MG();
+  const g = m ? m.mgGroupOf(mgStore(), job) : null;
+  if (!g) return { has:false, cls:'', style:'', pill:'', color:'', name:'' };
+  return {
+    has: true,
+    cls: ' mg-has',
+    color: g.color,
+    name: g.name,
+    style: '--mg-color:' + g.color + ';--mg-tint:' + m.mgTint(g.color, 0.14) + ';',
+    // The NAME is always in the pill. Colour is never the only signal.
+    pill: `<span class="mg-pill" title="Group: ${escAttr(g.name)}"><span class="mg-dot" style="background:${escAttr(g.color)}"></span><span class="mg-pill-name">${esc(g.name)}</span></span>`,
+  };
+}
+
+// ── Wiring ──────────────────────────────────────────────────────────────────
+// Close on an outside click or Esc, and move through the menu with the arrow
+// keys. The button itself is a <button>, so Tab reaches it and Enter or Space
+// opens it with no help from here.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest || !e.target.closest('#mg-wrap')) mgCloseMenu();
+});
+document.addEventListener('keydown', (e) => {
+  const menu = $('mg-menu');
+  if (!menu || !menu.classList.contains('open')) return;
+  if (e.key === 'Escape'){ e.preventDefault(); mgCloseMenu(); const b = $('mg-btn'); if (b) b.focus(); return; }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const items = Array.from(menu.querySelectorAll('.mg-item, input, button'));
+  if (!items.length) return;
+  e.preventDefault();
+  const at = items.indexOf(document.activeElement);
+  const next = e.key === 'ArrowDown'
+    ? items[(at + 1 + items.length) % items.length]
+    : items[(at - 1 + items.length) % items.length];
+  if (next) next.focus();
+});
+// Another tab edited the list. Re-read and redraw rather than showing names
+// and colours this tab happens to remember.
+window.addEventListener('storage', (e) => {
+  if (!e || (e.key !== 'cygenix_map_groups' && e.key !== 'cygenix_jobs')) return;
+  mgReload();
+  mgRenderAll();
+});
+
+// Stamp the map's group onto a job that saveAsJob() has just rebuilt from the
+// canvas. The group is not on the form, so without this an edit would drop it
+// and a new map would never get one.
+//
+// An edit keeps whatever is stored, unless the header was used to change it
+// since — the header writes straight to the stored job, so "stored" and
+// "chosen" are the same thing there. A new map takes _mgPending, the choice
+// made before there was a job to write it to, and clears it so it cannot leak
+// onto the next map.
+function mgApplyOnSave(job, jobs){
+  if (!job) return;
+  const prev = (jobs || []).find(j => j.id === job.id);
+  const id = (prev && prev.groupId) || _mgPending || null;
+  if (id) job.groupId = id; else delete job.groupId;
+  _mgPending = null;
+  try { mgRenderButton(); } catch {}
+}

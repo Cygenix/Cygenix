@@ -51,6 +51,13 @@ const CygenixSync = (() => {
     // knew it existed. The one key that is MERGED rather than replaced, on
     // both sides of the wire — see mergeProfilesIntoCloud() below.
     'cygenix_profiles_v1',
+    // Object Mapping's map groups — the named, coloured categories a map can
+    // belong to. Account-wide, not per-project, because the categories a firm
+    // works in are the same on every conversion it runs. An OBJECT, not an
+    // array, so mergeField short-circuits to local-wins; that is right for a
+    // small list one person edits and wrong only if two devices edit it at
+    // once, which is the same trade every other config blob here makes.
+    'cygenix_map_groups',
   ];
 
   const FIELD_MAP = {
@@ -73,6 +80,7 @@ const CygenixSync = (() => {
     // `profile-*` family of actions for DATA profiling, and a field called
     // `profiles` in the same document would be read as that.
     connection_profiles: 'cygenix_profiles_v1',
+    map_groups: 'cygenix_map_groups',
   };
   const PROFILES_FIELD = 'connection_profiles';
   const PROFILES_KEY = 'cygenix_profiles_v1';

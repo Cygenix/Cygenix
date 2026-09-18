@@ -15660,7 +15660,11 @@ const BACKUP_KEYS = [
   'cygenix_wasis_rules','cygenix_inventory','cygenix_sql_scripts','cygenix_issues',
   'cygenix_validation_sources','cygenix_sys_params','cygenix_conv_project',
   'cygenix_api_key','cygenix_project_name','cygenix_analyst_name','cygenix_client_name',
-  'cygenix_active_project','cygenix_app_prefs'
+  'cygenix_active_project','cygenix_app_prefs',
+  // Object Mapping's map groups. In the backup because a restore that brought
+  // the maps back without their categories would leave every one of them
+  // Ungrouped, with no way to tell what they used to be.
+  'cygenix_map_groups'
 ];
 
 function quickBackupNow() {
