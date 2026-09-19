@@ -309,6 +309,7 @@ function showView(v) {
   if (v === 'report-settings')   renderReportSettings();
   if (v === 'task-agent')        ta_init();
   if (v === 'server-migration')  ensureServerMigration();
+  if (v === 'diagnostics' && window.CygenixDiagnostics) window.CygenixDiagnostics.init('cyg-diag-mount');
 }
 
 function selectTarget(el, name) {

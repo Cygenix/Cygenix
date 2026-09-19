@@ -45,13 +45,13 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_datagen_selection` | Which tables the Data Generator had selected, per profile | synced (SYNC_KEYS) | data-generator.html |
 | `cygenix_effort_estimates_v1` | Saved Configurator estimates | NOT SYNCED — WI-1 | project_plan.html |
 | `cygenix_inventory` | Project artifact inventory | synced (SYNC_KEYS) | dashboard-app.js, projects.html, report.html +1 |
-| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +15 |
+| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-diagnostics.js, cygenix-integrations.js +16 |
 | `cygenix_map_groups` | Object Mapping group names and colours | synced (SYNC_KEYS) | object-mapping-app.js |
 | `cygenix_objmap_wip_` | Object-mapping work in progress | NOT SYNCED — WI-1 | schema_explorer.html |
 | `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js, dashboard-app.js |
 | `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_project_settings` | Per-project settings | synced (SYNC_KEYS) | dashboard-app.js |
-| `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, conversion-templates.html, cygenix-integrations.js +6 |
+| `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, conversion-templates.html, cygenix-diagnostics.js +7 |
 | `cygenix_report` | Generated conversion report | NOT SYNCED — WI-1 | connect.html, dashboard-app.js, project-builder-app.js +2 |
 | `cygenix_report_config` | Report configuration | NOT SYNCED — WI-1 | report.html, report_settings.html |
 | `cygenix_sys_params` | System parameters | synced (SYNC_KEYS) | dashboard-app.js, system-parameters.html |
@@ -78,8 +78,8 @@ mechanism that stops an unclassified key being added quietly.
 | `cyg_goto` | Cross-page navigation intent | — | connect.html, cygenix-sidebar.js, dashboard-app.js +2 |
 | `cyg_search_q` | A query typed in the masthead, handed to the Search view once | — | cygenix-sidebar.js, dashboard-app.js |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
-| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +16 |
-| `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-cosmos-sync.js, cygenix-sidebar.js +3 |
+| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +17 |
+| `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-cosmos-sync.js, cygenix-diagnostics.js +4 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
 | `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +35 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
@@ -101,7 +101,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_src_conn_mode` | Source connection mode | — | connect.html |
 | `cygenix_src_fn_url` | Source function URL | — | connect.html |
 | `cygenix_token` | Session marker | MSAL holds the real token | admin.html, agentive_migration.html, connect.html +18 |
-| `cygenix_user` | Signed-in user (email, name) | — | agentive_migration.html, assurance.html, connect.html +18 |
+| `cygenix_user` | Signed-in user (email, name) | — | agentive_migration.html, assurance.html, connect.html +19 |
 | `cygenix_user_email` | Signed-in email | — | validation.html |
 
 ---

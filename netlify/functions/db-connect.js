@@ -203,6 +203,15 @@ const RBAC_ACTION = {
   'schema': 'schema.read', 'schema-tables': 'schema.read',
   'schema-columns': 'schema.read', 'schema-fks': 'schema.read',
   'fetch-page': 'sql.read', 'rowcounts': 'schema.read',
+  // The Diagnostics panel (Sep-2026). Both are gated as a connection test,
+  // which is what they are: diag-probe runs a fixed menu of read-only
+  // catalogue queries the server owns, and diag-temp-table creates a temp
+  // table inside a transaction it then rolls back. Gating the second as a
+  // write would audit a rolled-back probe as a Production change and put a
+  // second-approver rule in front of a health check — and the Validator
+  // role, which holds connection.test but not sql.write, is exactly who
+  // runs these before sign-off.
+  'diag-probe': 'connection.test', 'diag-temp-table': 'connection.test',
 };
 
 async function rbacGate(authed, action, dialect, connectionString, database, body) {
@@ -835,13 +844,26 @@ async function handleMssql(action, connectionString, database, body) {
         break;
       }
 
+      // ── Diagnostics (Sep-2026) ──────────────────────────────────────────
+      // See diagProbeMssql / diagTempTableMssql below for what each probe
+      // runs and why the browser is never allowed to send the SQL itself.
+      case 'diag-probe': {
+        result = await diagProbeMssql(pool, body);
+        break;
+      }
+      case 'diag-temp-table': {
+        result = await diagTempTableMssql(pool);
+        break;
+      }
+
       default:
-        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | schema-tables | schema-columns | schema-fks | execute | fetch-page | batch | rowcounts', 400);
+        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | schema-tables | schema-columns | schema-fks | execute | fetch-page | batch | rowcounts | diag-probe | diag-temp-table', 400);
     }
 
     return ok(result);
 
   } catch (e) {
+    if (e.statusCode) return err(e.message, e.hint || null, e.statusCode);
     return err('Query error: ' + e.message, getMssqlHint(e.message));
   }
   // No pool.close() here: real pools are cached for the warm container (see
@@ -1277,17 +1299,387 @@ async function handlePostgres(action, connectionString, database, body) {
         break;
       }
 
+      // ── Diagnostics (Sep-2026) — the Postgres half of the same probes ──
+      case 'diag-probe': {
+        result = await diagProbePostgres(client, body);
+        break;
+      }
+      case 'diag-temp-table': {
+        result = await diagTempTablePostgres(client);
+        break;
+      }
+
       default:
-        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | execute | fetch-page | batch | rowcounts', 400);
+        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | execute | fetch-page | batch | rowcounts | diag-probe | diag-temp-table', 400);
     }
 
     return ok(result);
 
   } catch (e) {
+    if (e.statusCode) return err(e.message, e.hint || null, e.statusCode);
     return err('Query error: ' + e.message, getPostgresHint(e));
   } finally {
     try { await client.end(); } catch {}
   }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DIAGNOSTICS PROBES (Sep-2026)
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// The Diagnostics tab used to have one "Run Tests" button wired to a function
+// that no longer existed, so it did nothing. It is now a panel of selectable
+// checks — reachability, login, version, permissions, free space, collation,
+// a rolled-back temp table — that a customer runs before a migration and
+// hands the report to whoever owns the database.
+//
+// Two rules shaped this code, and both are worth restating so nobody
+// "simplifies" them away:
+//
+//   1. The browser never sends SQL. It names a probe from the fixed menu
+//      below and, for the permission and collation probes, a list of
+//      {schema, name} pairs. Every statement is written here, every name is
+//      passed as a bound parameter, and identifiers are quoted by the
+//      database's own QUOTENAME / format('%I') rather than by string
+//      concatenation in JavaScript. The `execute` action already lets a
+//      signed-in engineer run arbitrary read-only SQL, so this is not about
+//      hiding SQL from them — it is about a diagnostic that is gated as a
+//      connection test never being a second, softer route to a statement
+//      the sql.write gate would have refused.
+//
+//   2. Every probe is read-only. The one apparent exception, the temp table,
+//      is created inside a transaction that is rolled back in the same batch
+//      and then checked for, so the result can say "nothing was left behind"
+//      as a measured fact rather than a promise. SET XACT_ABORT ON means a
+//      failure part-way (no CREATE TABLE permission, say) rolls back on its
+//      own rather than leaving an open transaction on a pooled connection.
+//
+// Results are plain data. The panel turns them into Pass / Warn / Fail and
+// the plain-English "what to do" line; the server does not decide severity,
+// because the thresholds (a minimum version, a slow-ping cut-off) belong in
+// one place the reader can see, at the top of the browser module.
+//
+// A probe that fails on permission grounds — HAS_PERMS_BY_NAME needs no
+// special grant, but sys.dm_os_volume_stats needs VIEW SERVER STATE — is
+// caught per probe and reported as `unavailable` with the driver's message,
+// so one locked-down catalogue view does not fail the whole check.
+
+const DIAG_MAX_TABLES = 200;
+
+// Validate and normalise the {schema, name} list the browser sends. Length
+// caps match SQL Server's sysname (128); a name longer than that is not a
+// table, it is a mistake, and refusing it here keeps the parameter bindings
+// honest. The list itself is capped so a mapping of thousands of tables
+// cannot turn one probe into a lambda-timeout — the panel is told to send
+// the mapped objects only.
+function diagTables(body, defaultSchema) {
+  const raw = Array.isArray(body && body.tables) ? body.tables : [];
+  if (raw.length > DIAG_MAX_TABLES) {
+    const e = new Error('Too many tables for one probe (max ' + DIAG_MAX_TABLES + ').');
+    e.statusCode = 400; e.hint = 'Send the mapped objects only, in batches.';
+    throw e;
+  }
+  const out = [];
+  for (const t of raw) {
+    const schema = String((t && t.schema) || defaultSchema || '').trim();
+    const name   = String((t && t.name) || '').trim();
+    if (!name || name.length > 128 || schema.length > 128) continue;
+    out.push({ schema, name });
+  }
+  return out;
+}
+
+// Probe names the browser may ask for. Anything else is a 400, not a guess.
+const DIAG_PROBES = new Set(['version', 'ping', 'read-access', 'write-access', 'bulk', 'space', 'collation']);
+
+function diagProbeName(body) {
+  const probe = String((body && body.probe) || '').trim();
+  if (!DIAG_PROBES.has(probe)) {
+    const e = new Error('Unknown probe: ' + (probe || '(none)'));
+    e.statusCode = 400; e.hint = 'Valid probes: ' + [...DIAG_PROBES].join(' | ');
+    throw e;
+  }
+  return probe;
+}
+
+// Three round trips, timed on the server. The browser cannot time the
+// database alone — its clock includes the Netlify hop, which on a cold
+// lambda is most of the number and says nothing about the customer's
+// server. Averaging here answers the question the check actually asks.
+async function diagPing(run) {
+  const samplesMs = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = process.hrtime.bigint();
+    await run();
+    samplesMs.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  const avgMs = samplesMs.reduce((a, b) => a + b, 0) / samplesMs.length;
+  return { samplesMs: samplesMs.map(v => Math.round(v * 10) / 10), avgMs: Math.round(avgMs * 10) / 10 };
+}
+
+async function diagProbeMssql(pool, body) {
+  const probe = diagProbeName(body);
+  const tables = diagTables(body, 'dbo');
+  const q = (sql, inputs) => {
+    const r = pool.request();
+    for (const [k, v] of Object.entries(inputs || {})) r.input(k, mssql.NVarChar, v);
+    return r.query(sql);
+  };
+  // QUOTENAME does the quoting, on the server, from a bound parameter —
+  // there is no path from a table name to the statement text.
+  const OBJ = "QUOTENAME(@s) + '.' + QUOTENAME(@t)";
+
+  switch (probe) {
+    case 'version': {
+      const r = await q(`
+        SELECT CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(128)) AS version,
+               CAST(SERVERPROPERTY('ProductLevel')   AS NVARCHAR(128)) AS level,
+               CAST(SERVERPROPERTY('Edition')        AS NVARCHAR(128)) AS edition,
+               CAST(SERVERPROPERTY('EngineEdition')  AS INT)           AS engineEdition,
+               (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) AS compatibilityLevel`);
+      const row = r.recordset[0] || {};
+      return { success: true, engine: 'mssql', version: row.version || null, level: row.level || null,
+               edition: row.edition || null, engineEdition: row.engineEdition == null ? null : Number(row.engineEdition),
+               compatibilityLevel: row.compatibilityLevel == null ? null : Number(row.compatibilityLevel) };
+    }
+
+    case 'ping': {
+      const timing = await diagPing(() => q('SELECT 1 AS one'));
+      return { success: true, engine: 'mssql', ...timing };
+    }
+
+    case 'read-access':
+    case 'write-access': {
+      const perms = probe === 'read-access' ? ['SELECT'] : ['INSERT', 'UPDATE', 'DELETE'];
+      const out = [];
+      for (const t of tables) {
+        const r = await q(`
+          SELECT CASE WHEN OBJECT_ID(${OBJ}) IS NULL THEN 0 ELSE 1 END AS exists_,
+                 ${perms.map(p => `HAS_PERMS_BY_NAME(${OBJ}, 'OBJECT', '${p}') AS [${p}]`).join(',\n                 ')}`,
+          { s: t.schema, t: t.name });
+        const row = r.recordset[0] || {};
+        const entry = { schema: t.schema, name: t.name, exists: row.exists_ === 1 };
+        for (const p of perms) entry[p.toLowerCase()] = row[p] == null ? null : row[p] === 1;
+        out.push(entry);
+      }
+      const result = { success: true, engine: 'mssql', tables: out };
+      if (probe === 'write-access') {
+        // CREATE TABLE is a database permission AND needs ALTER on the
+        // schema the table lands in; a login with one and not the other
+        // still cannot create the staging table. Both are reported.
+        const db = await q(`SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'CREATE TABLE') AS ct`);
+        result.createTable = (db.recordset[0] || {}).ct === 1;
+        const schemas = [...new Set(tables.map(t => t.schema))];
+        result.schemas = [];
+        for (const s of schemas) {
+          const r = await q(`SELECT HAS_PERMS_BY_NAME(QUOTENAME(@s), 'SCHEMA', 'ALTER') AS a`, { s });
+          result.schemas.push({ schema: s, alter: (r.recordset[0] || {}).a === 1 });
+        }
+      }
+      return result;
+    }
+
+    case 'bulk': {
+      // Three ways a login can be allowed to bulk load, depending on the
+      // engine: the server-level permission, the fixed server role, and on
+      // Azure SQL Database the database-scoped permission. HAS_PERMS_BY_NAME
+      // answers NULL for a permission the engine does not know, which is
+      // read as "not this way", not as a failure.
+      const r = await q(`
+        SELECT HAS_PERMS_BY_NAME(NULL, NULL, 'ADMINISTER BULK OPERATIONS') AS serverPerm,
+               IS_SRVROLEMEMBER('bulkadmin') AS bulkadmin,
+               HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'ADMINISTER DATABASE BULK OPERATIONS') AS dbPerm`);
+      const row = r.recordset[0] || {};
+      const flag = v => (v == null ? null : Number(v) === 1);
+      return { success: true, engine: 'mssql', supported: true,
+               serverPermission: flag(row.serverPerm), bulkadmin: flag(row.bulkadmin), databasePermission: flag(row.dbPerm) };
+    }
+
+    case 'space': {
+      // Per-file size and used space from the database's own catalogue —
+      // no special grant needed. Volume free space needs VIEW SERVER STATE
+      // and is simply absent when the login lacks it.
+      const r = await q(`
+        SELECT name, type_desc AS kind,
+               CAST(size AS BIGINT) * 8 / 1024.0 AS sizeMb,
+               CAST(FILEPROPERTY(name, 'SpaceUsed') AS BIGINT) * 8 / 1024.0 AS usedMb,
+               CASE WHEN max_size = -1 THEN NULL ELSE CAST(max_size AS BIGINT) * 8 / 1024.0 END AS maxSizeMb,
+               growth, is_percent_growth AS percentGrowth
+        FROM sys.database_files`);
+      const files = r.recordset.map(f => ({
+        name: f.name, kind: f.kind,
+        sizeMb: f.sizeMb == null ? null : Number(f.sizeMb),
+        usedMb: f.usedMb == null ? null : Number(f.usedMb),
+        freeMb: (f.sizeMb == null || f.usedMb == null) ? null : Number(f.sizeMb) - Number(f.usedMb),
+        maxSizeMb: f.maxSizeMb == null ? null : Number(f.maxSizeMb),
+        autogrow: Number(f.growth) > 0,
+        percentGrowth: f.percentGrowth === true || f.percentGrowth === 1,
+      }));
+      let volumes = null, volumesUnavailable = null;
+      try {
+        const v = await q(`
+          SELECT DISTINCT vs.volume_mount_point AS mount,
+                 vs.total_bytes / 1048576.0 AS totalMb, vs.available_bytes / 1048576.0 AS freeMb
+          FROM sys.database_files f
+          CROSS APPLY sys.dm_os_volume_stats(DB_ID(), f.file_id) vs`);
+        volumes = v.recordset.map(x => ({ mount: x.mount, totalMb: Number(x.totalMb), freeMb: Number(x.freeMb) }));
+      } catch (e) { volumesUnavailable = e.message; }
+      return { success: true, engine: 'mssql', files, volumes, volumesUnavailable };
+    }
+
+    case 'collation': {
+      const d = await q(`
+        SELECT CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS NVARCHAR(128)) AS dbCollation,
+               CAST(SERVERPROPERTY('Collation') AS NVARCHAR(128)) AS serverCollation`);
+      const row = d.recordset[0] || {};
+      const columns = [];
+      for (const t of tables) {
+        const r = await q(`
+          SELECT COLUMN_NAME AS col, COLLATION_NAME AS collation
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = @s AND TABLE_NAME = @t AND COLLATION_NAME IS NOT NULL`,
+          { s: t.schema, t: t.name });
+        for (const c of r.recordset) columns.push({ schema: t.schema, name: t.name, column: c.col, collation: c.collation });
+      }
+      return { success: true, engine: 'mssql', collation: row.dbCollation || null,
+               serverCollation: row.serverCollation || null, columns };
+    }
+  }
+  return { success: false, error: 'unreachable' };
+}
+
+async function diagTempTableMssql(pool) {
+  // One batch, one connection, so the "is it still there" check runs where
+  // the table would be — a temp table is scoped to the session, and a check
+  // from another pooled connection would report "gone" whether or not it
+  // was. The rollback is the test; the DROP after it is the safety net and
+  // is reported separately so a rollback that did not clean up is visible.
+  const r = await pool.request().query(`
+    SET XACT_ABORT ON;
+    DECLARE @n INT, @afterRollback INT, @afterCleanup INT;
+    BEGIN TRAN;
+      CREATE TABLE #cygenix_diag_probe (id INT NOT NULL);
+      INSERT INTO #cygenix_diag_probe (id) VALUES (1);
+      SELECT @n = COUNT(*) FROM #cygenix_diag_probe;
+    ROLLBACK TRAN;
+    SET @afterRollback = CASE WHEN OBJECT_ID('tempdb..#cygenix_diag_probe') IS NULL THEN 0 ELSE 1 END;
+    IF @afterRollback = 1 DROP TABLE #cygenix_diag_probe;
+    SET @afterCleanup = CASE WHEN OBJECT_ID('tempdb..#cygenix_diag_probe') IS NULL THEN 0 ELSE 1 END;
+    SELECT @n AS n, @afterRollback AS remainsAfterRollback, @afterCleanup AS remainsAfterCleanup;`);
+  const row = r.recordset[0] || {};
+  return { success: true, engine: 'mssql', rows: Number(row.n) || 0,
+           remainsAfterRollback: Number(row.remainsAfterRollback) === 1,
+           remainsAfterCleanup: Number(row.remainsAfterCleanup) === 1 };
+}
+
+async function diagProbePostgres(client, body) {
+  const probe = diagProbeName(body);
+  const tables = diagTables(body, 'public');
+  // format('%I.%I', $1, $2) is Postgres quoting the identifier itself; the
+  // names never touch the statement text.
+  const REG = "format('%I.%I', $1, $2)";
+
+  switch (probe) {
+    case 'version': {
+      const r = await client.query(`
+        SELECT version() AS version,
+               current_setting('server_version') AS server_version,
+               current_setting('server_version_num') AS server_version_num`);
+      const row = r.rows[0] || {};
+      return { success: true, engine: 'postgres', version: (row.version || '').split(' on ')[0].trim() || null,
+               serverVersion: row.server_version || null,
+               serverVersionNum: row.server_version_num == null ? null : Number(row.server_version_num) };
+    }
+
+    case 'ping': {
+      const timing = await diagPing(() => client.query('SELECT 1 AS one'));
+      return { success: true, engine: 'postgres', ...timing };
+    }
+
+    case 'read-access':
+    case 'write-access': {
+      const perms = probe === 'read-access' ? ['SELECT'] : ['INSERT', 'UPDATE', 'DELETE'];
+      const out = [];
+      for (const t of tables) {
+        // has_table_privilege raises on a relation that does not exist, so
+        // existence is asked first and the privilege only of a table that is
+        // there. The two answers are distinct facts and both are reported.
+        const ex = await client.query(`SELECT to_regclass(${REG}) IS NOT NULL AS exists`, [t.schema, t.name]);
+        const entry = { schema: t.schema, name: t.name, exists: !!(ex.rows[0] && ex.rows[0].exists) };
+        if (entry.exists) {
+          const r = await client.query(
+            `SELECT ${perms.map((p, i) => `has_table_privilege(${REG}, $${i + 3}) AS p${i}`).join(', ')}`,
+            [t.schema, t.name, ...perms]);
+          perms.forEach((p, i) => { entry[p.toLowerCase()] = !!(r.rows[0] && r.rows[0]['p' + i]); });
+        } else {
+          for (const p of perms) entry[p.toLowerCase()] = null;
+        }
+        out.push(entry);
+      }
+      const result = { success: true, engine: 'postgres', tables: out };
+      if (probe === 'write-access') {
+        // CREATE TABLE in Postgres is CREATE on the schema, per schema.
+        const schemas = [...new Set(tables.map(t => t.schema))];
+        result.schemas = [];
+        for (const s of schemas) {
+          const r = await client.query(`SELECT has_schema_privilege($1, 'CREATE') AS c`, [s]).catch(() => ({ rows: [{ c: null }] }));
+          result.schemas.push({ schema: s, create: r.rows[0] ? r.rows[0].c : null });
+        }
+        result.createTable = result.schemas.length ? result.schemas.every(s => s.create === true) : null;
+      }
+      return result;
+    }
+
+    case 'bulk':
+      // COPY FROM STDIN is how Cygenix loads Postgres and needs only INSERT;
+      // there is no bulk-load permission to check, so the panel marks this
+      // Skipped rather than inventing one.
+      return { success: true, engine: 'postgres', supported: false, reason: 'Not supported on PostgreSQL' };
+
+    case 'space': {
+      const r = await client.query(`SELECT pg_database_size(current_database()) AS bytes`);
+      return { success: true, engine: 'postgres', databaseBytes: Number((r.rows[0] || {}).bytes) || 0,
+               freeSupported: false, reason: 'PostgreSQL does not expose volume free space through SQL' };
+    }
+
+    case 'collation': {
+      const d = await client.query(`SELECT datcollate, datctype FROM pg_database WHERE datname = current_database()`);
+      const row = d.rows[0] || {};
+      const columns = [];
+      for (const t of tables) {
+        const r = await client.query(`
+          SELECT column_name AS col, collation_name AS collation
+          FROM information_schema.columns
+          WHERE table_schema = $1 AND table_name = $2 AND collation_name IS NOT NULL`, [t.schema, t.name]);
+        for (const c of r.rows) columns.push({ schema: t.schema, name: t.name, column: c.col, collation: c.collation });
+      }
+      return { success: true, engine: 'postgres', collation: row.datcollate || null, ctype: row.datctype || null, columns };
+    }
+  }
+  return { success: false, error: 'unreachable' };
+}
+
+async function diagTempTablePostgres(client) {
+  // A pg Client is one connection, so BEGIN / ROLLBACK and the check after
+  // it all run in the same session. ON COMMIT DROP is belt and braces: the
+  // transaction never commits, but if it somehow did the table would still
+  // not outlive it.
+  let rows = 0;
+  await client.query('BEGIN');
+  try {
+    await client.query('CREATE TEMP TABLE cygenix_diag_probe (id int NOT NULL) ON COMMIT DROP');
+    await client.query('INSERT INTO cygenix_diag_probe (id) VALUES (1)');
+    const r = await client.query('SELECT count(*)::int AS n FROM cygenix_diag_probe');
+    rows = (r.rows[0] || {}).n || 0;
+  } finally {
+    await client.query('ROLLBACK');
+  }
+  const after = await client.query(`SELECT to_regclass('pg_temp.cygenix_diag_probe') IS NOT NULL AS remains`);
+  const remainsAfterRollback = !!(after.rows[0] && after.rows[0].remains);
+  if (remainsAfterRollback) await client.query('DROP TABLE IF EXISTS pg_temp.cygenix_diag_probe');
+  const clean = await client.query(`SELECT to_regclass('pg_temp.cygenix_diag_probe') IS NOT NULL AS remains`);
+  return { success: true, engine: 'postgres', rows,
+           remainsAfterRollback, remainsAfterCleanup: !!(clean.rows[0] && clean.rows[0].remains) };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

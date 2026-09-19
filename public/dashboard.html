@@ -1456,7 +1456,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=a736f5c51a" defer></script>
-  <script src="/dashboard-app.js?v=675ae960b8" defer></script>
+  <script src="/dashboard-app.js?v=b92db057dc" defer></script>
+  <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
+       that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
+       run in document order, so the globals exist by the time it runs. -->
+  <script src="/cygenix-diagnostics.js?v=efd6c148d1" defer></script>
 
 
   <!-- MAIN -->
@@ -3667,15 +3671,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       </div>
     </div>
 
-    <!-- DIAGNOSTICS -->
+    <!-- DIAGNOSTICS — rendered whole by cygenix-diagnostics.js when the tab
+         is opened (showView('diagnostics') calls CygenixDiagnostics.init()).
+         This used to be one "Run Tests" button whose onclick named a
+         function that no longer existed; see the header of that module for
+         what replaced it and the rules it keeps. -->
     <div id="view-diagnostics" class="view">
-      <div class="panel-header">
-        <div class="panel-title">Connection Diagnostics</div>
-        <button class="btn btn-primary" onclick="runDiagnostics()">Run Tests</button>
-      </div>
-      <div id="diag-output" style="font-family:var(--mono);font-size:12px;line-height:2;color:var(--text2)">
-        <div style="color:var(--text3)">Click "Run Tests" to check your Netlify function setup.</div>
-      </div>
+      <div id="cyg-diag-mount"></div>
     </div>
 
     <!-- CONVERSION REPORTS -->
