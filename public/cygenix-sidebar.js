@@ -85,6 +85,17 @@
     { section: null, group: 'home', items: [
       { key:'dashboard', label:'Home', view:'dashboard', icon: iconDashboard() },
     ]},
+    // PLAN sits directly below Home, before Connect, because it is where an
+    // engagement starts: the Configurator decides which modules are in scope
+    // and sizes the work, and the Project plan is built from that output.
+    // The handoff filed both as tabs under Reports, and nobody found them
+    // there — a plan is not a report, and the person who asked for these to
+    // sit at the top of the rail in August was right. Keys unchanged:
+    // effort-estimator and project-plan-grid are what the pages mount with.
+    { section: 'Plan', group:'plan', items: [
+      { key:'effort-estimator',  label:'Configurator', href:'/configurator', icon: iconEstimator() },
+      { key:'project-plan-grid', label:'Project plan', href:'/project-plan', icon: iconPlanGrid() },
+    ]},
     { section: 'Connect', group:'connect', items: [
       { key:'connections', label:'Connections',             view:'connections', icon: iconPlug() },
       { key:'profiles',    label:'Profiles & integrations', href:'/profiles',   icon: iconShield() },
@@ -162,11 +173,9 @@
       { key:'report-builder',    label:'Report builder',    href:'/reports' },
       { key:'reports',           label:'Conversion report', view:'reports' },
       { key:'inventory',         label:'Project artifacts', view:'inventory' },
-      // The estimate and the plan are documents about the project, which is
-      // what this screen is for. Keys unchanged: effort-estimator and
-      // project-plan-grid are what the pages mount with.
-      { key:'effort-estimator',  label:'Configurator',      href:'/configurator' },
-      { key:'project-plan-grid', label:'Project plan',      href:'/project-plan' },
+      // The Configurator and the Project plan were tabs here for a while;
+      // they are rail items in the PLAN group now, and a key lives in one
+      // place only.
     ],
     'audit': [
       { key:'audit',       label:'Audit log',   view:'audit' },

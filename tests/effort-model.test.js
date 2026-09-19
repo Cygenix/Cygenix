@@ -321,11 +321,12 @@ check('it follows the estimate\'s own module list, not the defaults',
     /Hourly rate/.test(html) && /Estimated cost/.test(html) && /hourlyRate/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
-  // The Project expander is gone (console redesign, Sep-2026): the
-  // Configurator is a tab on the Reports screen, first of the two project
-  // documents, and its key and address are unchanged.
-  check('the Configurator (nee Effort Estimator) is a tab on Reports, key and address unchanged',
-    /'report-builder': \[[\s\S]*?key:'effort-estimator',\s*label:'Configurator',\s*href:'\/configurator'/.test(sidebar)
+  // The Project expander is gone (console redesign, Sep-2026). The
+  // Configurator was a tab on Reports for a while and nobody found it there;
+  // it leads the PLAN group directly below Home now, and its key and
+  // address are unchanged.
+  check('the Configurator (nee Effort Estimator) leads the Plan group, key and address unchanged',
+    /section: 'Plan', group:'plan', items: \[\s*\{ key:'effort-estimator',\s*label:'Configurator',\s*href:'\/configurator'/.test(sidebar)
     && !/key:'project-group'/.test(sidebar));
 }
 

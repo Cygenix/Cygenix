@@ -108,11 +108,11 @@ const server = http.createServer((req, res) => {
   console.log('Dashboard sidebar — the nav actually changes the view\n');
 
   await open('/dashboard');
-  check('the dashboard is served at the extensionless address and the five-group rail renders',
-    (await page.evaluate(() => document.querySelectorAll('.cyg-nav-item[data-key]').length)) === 13
+  check('the dashboard is served at the extensionless address and the six-group rail renders',
+    (await page.evaluate(() => document.querySelectorAll('.cyg-nav-item[data-key]').length)) === 15
     && (await page.evaluate(() => Array.from(document.querySelectorAll('.cyg-nav-label')).map(l => l.textContent.trim())
           .filter(l => l !== 'Pinned').join(',')))
-       === 'Connect,Model,Run,Quality,Govern');
+       === 'Plan,Connect,Model,Run,Quality,Govern');
   check('the masthead is on the page: logo, project, search, region, avatar',
     await page.evaluate(() => !!document.querySelector('#cx-masthead .cx-logo') && !!document.getElementById('cyg-proj-btn')
       && !!document.getElementById('cx-mh-search') && !!document.getElementById('cx-mh-region') && !!document.getElementById('cyg-user-chip')));

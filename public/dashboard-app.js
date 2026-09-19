@@ -4793,6 +4793,8 @@ function renderHome(){
                not a thing to build. -->
           <button type="button" class="cx-btn" id="ps-ai-btn" onclick="refreshProjectNarrative()"
                   title="Rewrite the project summary with Claude, using your own API key">Rewrite summary</button>
+          <a class="cx-btn" href="/configurator" title="Choose which modules are in scope and size the work">Configurator</a>
+          <a class="cx-btn" href="/project-plan" title="The plan built from the Configurator's output">Project plan</a>
           <a class="cx-btn" href="/analytics?tab=delivery">Preflight</a>
           <a class="cx-btn cx-btn-primary" href="/dashboard#goto=jobs" onclick="showView('jobs');return false">Open jobs</a>
         </div>

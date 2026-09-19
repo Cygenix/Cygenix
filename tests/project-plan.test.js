@@ -342,13 +342,14 @@ const check = (name, ok, detail) => {
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
   // The Configurator and the Project plan used to sit in a Project expander
-  // under Home. The console redesign (Sep-2026) dissolved the expanders: both
-  // are tabs on the Reports screen now — documents about the project, next
-  // to the other documents — Configurator first, then the plan, and their
-  // keys are unchanged so this page's data-active still resolves.
-  check('the Configurator and the Project plan are tabs on Reports, Configurator first',
+  // under Home. The console redesign (Sep-2026) dissolved the expanders and
+  // filed both as tabs on Reports, where nobody found them: a plan is not a
+  // report. They are the PLAN group now, directly below Home — Configurator
+  // first, then the plan — and their keys are unchanged so this page's
+  // data-active still resolves.
+  check('the Configurator and the Project plan are the Plan group at the top of the rail, Configurator first',
     (() => {
-      const grp = /'report-builder': \[[\s\S]*?\],/.exec(sidebar);
+      const grp = /section: 'Plan', group:'plan', items: \[[\s\S]*?\]\}/.exec(sidebar);
       if (!grp) return false;
       const est = grp[0].indexOf("key:'effort-estimator'");
       const pln = grp[0].indexOf("key:'project-plan-grid'");

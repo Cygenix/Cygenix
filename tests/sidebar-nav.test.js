@@ -64,14 +64,21 @@ const missing = LEGACY_KEYS.filter(k => !SB.__findItem(k));
 check('every pre-redesign key still resolves (' + LEGACY_KEYS.length + ')', missing.length === 0,
   'missing: ' + missing.join(', '));
 
-/* ── 2. Five groups, in the order the work happens ───────────────────────── */
+/* ── 2. Six groups, in the order the work happens ────────────────────────── */
+// Plan comes first: the Configurator decides what is in scope and sizes it,
+// and the Project plan is built from that. The handoff filed both as tabs
+// under Reports, and nobody found them there.
 const sections = NAV.map(s => s.section).filter(Boolean);
-check('the rail is five groups — Connect, Model, Run, Quality, Govern — after Home',
-  JSON.stringify(sections) === JSON.stringify(['Connect','Model','Run','Quality','Govern'])
+check('the rail is six groups — Plan, Connect, Model, Run, Quality, Govern — after Home',
+  JSON.stringify(sections) === JSON.stringify(['Plan','Connect','Model','Run','Quality','Govern'])
   && NAV[0].section === null && NAV[0].items.length === 1 && NAV[0].items[0].key === 'dashboard',
   'got: ' + sections.join(' → '));
-check('and it is thirteen destinations, not thirty',
-  railKeys.length === 13, railKeys.length + ': ' + railKeys.join(','));
+check('and it is fifteen destinations, not thirty',
+  railKeys.length === 15, railKeys.length + ': ' + railKeys.join(','));
+check('the Configurator and the Project plan are the Plan group, directly below Home',
+  NAV[1].section === 'Plan' && NAV[1].items.map(i => i.key).join(',') === 'effort-estimator,project-plan-grid'
+  && NAV[1].items[0].label === 'Configurator' && NAV[1].items[0].href === '/configurator'
+  && NAV[1].items[1].label === 'Project plan' && NAV[1].items[1].href === '/project-plan');
 
 /* ── 3. No expanders, no decoration ───────────────────────────────────────
    Finding 04: the per-item colour was decoration using the status palette.
@@ -124,8 +131,9 @@ check('Jobs & packages: packages, server migration, analytics', under('jobs', 'p
 check('Data stream: store, change events, monitor', under('data-stream', 'data-stream-store') && under('data-stream', 'data-stream-events') && under('data-stream', 'data-stream-monitor'));
 check('Assurance: quality review and validation', under('assurance', 'data-quality') && under('assurance', 'validation'));
 check('Cleansing & enrichment: enrichment', under('data-cleansing', 'data-enrichment'));
-check('Reports: report builder, conversion report, artifacts, configurator, project plan',
-  ['reports','inventory','effort-estimator','project-plan-grid'].every(k => under('report-builder', k)));
+check('Reports: report builder, conversion report, artifacts — the plan is not a report',
+  ['reports','inventory'].every(k => under('report-builder', k))
+  && !under('report-builder', 'effort-estimator') && !under('report-builder', 'project-plan-grid'));
 check('Audit log: performance and diagnostics', under('audit', 'performance') && under('audit', 'diagnostics'));
 check('Settings and governance live in the account menu',
   ['project-settings','notifications','system-parameters','user-roles','privacy-security'].every(k => ACCT.some(i => i.key === k)));
@@ -145,7 +153,7 @@ const expectRail = {
   'project-builder':'jobs', 'server-migration':'jobs', 'analytics':'jobs',
   'data-stream-store':'data-stream', 'data-stream-events':'data-stream', 'data-stream-monitor':'data-stream',
   'integrations':'profiles', 'reports':'report-builder', 'inventory':'report-builder',
-  'effort-estimator':'report-builder', 'project-plan-grid':'report-builder',
+  'effort-estimator':'effort-estimator', 'project-plan-grid':'project-plan-grid',
   'performance':'audit', 'diagnostics':'audit',
   'search':'dashboard', 'project-summary-document':'dashboard', 'insights':'schema-explorer', 'data-analyser':'connections',
   'dashboard':'dashboard', 'jobs':'jobs', 'assurance':'assurance',

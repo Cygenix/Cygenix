@@ -16,8 +16,8 @@
    hook that genuinely had no selector — the Home cards area — is the one
    that was added.
 
-   THE RAIL IS FIVE GROUPS (console redesign, Sep-2026)
-   Connect · Model · Run · Quality · Govern, thirteen items. What used to be
+   THE RAIL IS SIX GROUPS (console redesign, Sep-2026)
+   Plan · Connect · Model · Run · Quality · Govern, fifteen items. What used to be
    a fold-out group's children — Packages, Server migration, Change events,
    Validation, Conversion report and the rest — are tabs inside the screen
    they belong to, so a stop that used to spotlight a group now spotlights
@@ -76,12 +76,17 @@ return [
 
   { id: 'project', section: 'Start here', title: 'Project', page: 'dashboard', target: '#cyg-proj-btn',
     body: "Everything is scoped to one active project, and you switch it here. The <b>Configurator</b> "
-        + "that sizes a migration and the <b>Project plan</b> live under Reports." },
+        + "that sizes a migration and the <b>Project plan</b> are the first group on the rail." },
 
   { id: 'account', section: 'Start here', title: 'Your account', page: 'project-settings', target: '#cyg-user-chip',
     body: "<b>General settings</b> is where you add your Anthropic API key — that one field switches on "
         + "me and every other AI feature. Also here: Notifications, System parameters, Users &amp; roles "
         + "and Governance." },
+
+  { id: 'plan', section: 'Plan', title: 'Configurator and Project plan', page: 'effort-estimator',
+    target: '[data-key="effort-estimator"]',
+    body: "Where an engagement starts. The <b>Configurator</b> switches modules in and out of scope and "
+        + "sizes the work; the <b>Project plan</b> is built from that output. Both act on the active project." },
 
   { id: 'connections', section: 'Connect', title: 'Connections', page: 'connections',
     target: '[data-key="connections"]',
