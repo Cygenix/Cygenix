@@ -1587,11 +1587,18 @@ function asStatus(store, opts) {
   var openBreaches = store.breaches.filter(function (b) {
     return b.state === 'open' || b.state === 'acknowledged';
   }).length;
+  var cats = {};
+  enabled.forEach(function (r) { cats[r.category || 'custom'] = 1; });
+  var latestBreachAt = store.breaches.reduce(function (m, b) {
+    return (b.state === 'open' || b.state === 'acknowledged') && b.openedAt > m ? b.openedAt : m;
+  }, 0) || null;
   var st = {
     checksWritten: enabled.length,
     checksRun: enabled.filter(function (r) { return ranIds[r.id]; }).length,
+    categories: Object.keys(cats).length,
     lastRunAt: lastRunAt,
     openBreaches: openBreaches,
+    latestBreachAt: latestBreachAt,
     connections: (opts && opts.connections) || 0,
   };
   if (st.checksWritten === 0) st.state = 'no-checks';
@@ -1601,27 +1608,61 @@ function asStatus(store, opts) {
   return st;
 }
 
-/* §4 — the four-step ribbon, derived from the same object. */
+/* §4 — the four-step ribbon, derived from the same object.
+   The four steps are the four things an auditor asks, in the order they
+   ask them: are there checks, have they run against live data, is
+   anything open, has the evidence gone out. "Connect" used to be step one;
+   it was a prerequisite, not a step of the proof, and the status band
+   already says what to do when nothing is connected. Each note is a
+   figure, never a tick: "41 have run at least once" is something a
+   reader can check, "done" is not. */
 function asRibbon(status) {
   var steps = [
-    { key: 'connect', label: 'Connect' },
-    { key: 'write',   label: 'Write checks' },
-    { key: 'run',     label: 'Run them' },
-    { key: 'publish', label: 'Publish evidence' },
+    { key: 'write',   label: 'Checks written' },
+    { key: 'run',     label: 'Run against live data' },
+    { key: 'clear',   label: 'Breaches cleared' },
+    { key: 'publish', label: 'Evidence published' },
   ];
-  var stage = status.connections === 0 ? 0
-            : status.checksWritten === 0 ? 1
-            : status.checksRun === 0 ? 2 : 3;
+  var stage = status.checksWritten === 0 ? 0
+            : status.checksRun === 0 ? 1
+            : status.openBreaches > 0 ? 2 : 3;
   steps.forEach(function (s, i) {
     s.state = i < stage ? 'done' : i === stage ? 'now' : 'todo';
   });
-  steps[0].note = status.connections ? '✓ ' + status.connections + ' connection'
-    + (status.connections === 1 ? '' : 's') + ' live' : 'No connection yet';
-  steps[1].note = status.checksWritten ? '✓ ' + status.checksWritten + ' written' : 'Nothing written';
-  steps[2].note = stage === 2 ? 'You are here'
-    : stage > 2 ? '✓ ' + status.checksRun + ' have run' : '—';
-  steps[3].note = status.state === 'passing' ? 'Ready' : 'Needs one clean run';
+  var n = status.openBreaches;
+  steps[0].note = status.checksWritten
+    ? status.checksWritten + ' across ' + status.categories + ' categor' + (status.categories === 1 ? 'y' : 'ies')
+    : 'Nothing written yet';
+  steps[1].note = status.checksRun ? status.checksRun + ' have run at least once'
+    : stage === 1 ? 'You are here' : 'Not yet';
+  steps[2].note = n ? n + ' open' + (status.latestBreachAt ? ', raised ' + fmtClock(status.latestBreachAt) : '')
+    : status.checksRun ? 'None open' : 'Not yet';
+  steps[3].note = status.state === 'passing' ? 'Ready' : n ? 'Blocked by ' + n + ' open' : 'Needs one clean run';
   return steps;
+}
+/* HH:MM in the reader's locale — the ribbon's timestamp, and only that */
+function fmtClock(ms) {
+  try { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  catch (e) { return ''; }
+}
+
+/* §5 — money columns under a check. A column is money by the same
+   pattern the profiler uses; it is "under a check" when a countable rule
+   binds to its table. One figure of four on the coverage strip. */
+function asMoneyCoverage(store, catalog, opts) {
+  opts = opts || {};
+  var scope = ((catalog && catalog.tables) || []).filter(function (t) { return !opts.db || t.db === opts.db; });
+  var checked = {};
+  countableRules(store, opts.phase || null).forEach(function (r) {
+    asResolveBinding(r, catalog).forEach(function (t) { checked[t.db + '.' + t.schema + '.' + t.table] = 1; });
+  });
+  var total = 0, under = 0;
+  scope.forEach(function (t) {
+    var cols = (t.columns || []).filter(function (c) { return MONEY_COL.test(c); });
+    total += cols.length;
+    if (checked[t.db + '.' + t.schema + '.' + t.table]) under += cols.length;
+  });
+  return { total: total, checked: under, pct: total ? Math.round(100 * under / total) : null };
 }
 
 /* =======================================================================
@@ -2140,6 +2181,7 @@ return {
   asManifest: asManifest,
   asAgeSamples: asAgeSamples,
   asCoverage: asCoverage,
+  asMoneyCoverage: asMoneyCoverage,
   asSuggestBundles: asSuggestBundles,
   asAcceptBundle: asAcceptBundle,
   asEvidence: asEvidence,

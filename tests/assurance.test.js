@@ -423,18 +423,35 @@ check('a skipped run does not count as having run',
     return A.asStatus(s, {}).checksRun === 0 && A.asStatus(s, {}).state === 'never-run'; })());
 
 // ── 14. The ribbon derives from the status object, no new state (§4) ────────
+// The four steps are the four questions an auditor asks, in order (console
+// redesign, Sep-2026): checks written · run against live data · breaches
+// cleared · evidence published. "Connect" was a prerequisite, not a step of
+// the proof, and the status band already handles the unconnected case.
 const rb = A.asRibbon(A.asStatus(stEmpty, { connections: 2 }));
 check('four steps, keyed and labelled', rb.length === 4
-  && rb.map(s => s.key).join(',') === 'connect,write,run,publish');
+  && rb.map(s => s.key).join(',') === 'write,run,clear,publish'
+  && rb.map(s => s.label).join('|') === 'Checks written|Run against live data|Breaches cleared|Evidence published');
 check('a passing estate stands at Publish',
   rb[0].state === 'done' && rb[1].state === 'done' && rb[2].state === 'done'
-  && rb[3].state === 'now' && rb[3].note === 'Ready');
-check('no connections puts you at step one',
+  && rb[3].state === 'now' && rb[3].note === 'Ready' && rb[2].note === 'None open');
+check('nothing written puts you at step one',
   A.asRibbon(A.asStatus(A.asNewStore(now), { connections: 0 }))[0].state === 'now');
 const rbNever = A.asRibbon(stNever);
-check('written-but-never-run stands at Run them, marked "You are here"',
-  rbNever[2].state === 'now' && rbNever[2].note === 'You are here'
+check('written-but-never-run stands at Run, marked "You are here"',
+  rbNever[1].state === 'now' && rbNever[1].note === 'You are here'
   && rbNever[3].note === 'Needs one clean run');
+check('every note is a figure the reader can check, never a tick',
+  /^\d+ across \d+ categor/.test(rb[0].note) && /^\d+ have run at least once$/.test(rb[1].note)
+  && !rb.some(s => /✓/.test(s.note)));
+check('an open breach stands at Breaches cleared with the count and the time it was raised',
+  (() => { const s = A.asNewStore(now);
+    A.asSaveRule(s, { name: 'n', category: 'finance', check: 'completeness.not_null' }, 'u', now);
+    s.runs.push({ id: 'k', ruleId: s.rules[0].id, startedAt: now, status: 'fail' });
+    s.breaches.push({ id: 'b', ruleId: s.rules[0].id, openedAt: now, state: 'open', severity: 'critical' });
+    const st = A.asStatus(s, { connections: 1 });
+    const r = A.asRibbon(st);
+    return st.latestBreachAt === now && st.categories === 1
+      && r[2].state === 'now' && /^1 open, raised \d/.test(r[2].note) && r[3].note === 'Blocked by 1 open'; })());
 
 // ── 15. proves templates and human schedules (§7) ───────────────────────────
 const provesOf = (check_, params, targets) => A.asProvesFor({ check: check_, params: params || {},
@@ -719,12 +736,13 @@ check('the page splits into Engineer and Evidence views — the old six tabs are
 // §2 + §3: one status line, one primary CTA in the header.
 check('one status line and one primary CTA live in the page header',
   PAGE.includes('as-status-line') && PAGE.includes('id="as-cta"')
-  /* filled buttons: header CTA, bundle Add-all (§6 spec), drawer save */
-  && (PAGE.match(/class="btn btn-primary"/g) || []).length === 3
+  /* filled buttons: header CTA, bundle Add-all (§6 spec), drawer save, and
+     Send to cleansing on a breach — the one action that fixes data */
+  && (PAGE.match(/class="btn btn-primary/g) || []).length === 4
   && !/as-head[\s\S]{0,400}\+ New rule/.test(PAGE));
 check('the state machine covers all four states with the brief\'s copy',
   PAGE.includes('No checks written yet') && PAGE.includes('Nothing has been proven yet')
-  && PAGE.includes('Review breaches') && PAGE.includes('Publish evidence pack')
+  && /'Review ' \+ n \+ ' breach'/.test(PAGE) && PAGE.includes('Publish evidence pack')
   && PAGE.includes('so there is no evidence to show anyone'));
 // §4: the ribbon derives from the same status object.
 check('the four-step ribbon renders from asRibbon, not its own state',
@@ -811,9 +829,10 @@ check('rowsExcluded renders as an accounted-for figure, never a breach',
 check('derived rules run on job completion, not on a wall clock',
   /asRunDueJobRules/.test(PAGE) && /On job completion/.test(PAGE)
   && /asJobRuleDue/.test(PAGE));
-check('the five states render as pills and derived rules name their map',
-  /Derived<\/span>/.test(PAGE) && /Armed<\/span>/.test(PAGE) && /Proven<\/span>/.test(PAGE)
-  && /Dormant<\/span>/.test(PAGE) && /object-mapping\?edit=/.test(PAGE));
+check('the five states render as a word with a square, and derived rules name their map',
+  /word: 'Derived'/.test(PAGE) && /word: 'Armed'/.test(PAGE) && /word: 'Proven'/.test(PAGE)
+  && /word: 'Open'/.test(PAGE) && /word: 'Dormant'/.test(PAGE) && /word: 'Error'/.test(PAGE)
+  && /class="st st-'/.test(PAGE) && /object-mapping\?edit=/.test(PAGE));
 check('a connection mismatch refuses derived checks and says why (§5, decided)',
   /as-mismatch/.test(PAGE) && /refuse to run/.test(PAGE)
   && /never touched/.test(PAGE) && /runnable\(/.test(PAGE));

@@ -32,201 +32,268 @@
 <meta name="theme-color" content="#FFFFFF">
 <meta name="description" content="Every validation rule from the migration, running on a schedule against live data.">
 <title>Cygenix – Assurance</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+/* ── Assurance in the console's design language (Sep-2026, Phase 3) ──────
+   The tokens live in cygenix-console.css; nothing here is a colour of its
+   own. What this block owns is the page's shape: the status band as the
+   one blueprint frame on the screen, the four-cell ribbon, the four-measure
+   coverage strip, the checks table led by a sentence, and the breach split.
+   The old look — 10px mono sub-lines, rounded pills, a filled panel for
+   every block — read as a monitoring console; a screen whose job is to be
+   handed to an auditor needs to read as a document. Type does the
+   hierarchy now, and hue is kept for state. */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   /* The console palette lives in cygenix-console.css. Only what is this
      page's own is declared here. */
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:216px;transition:padding-left 0.2s ease}
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:216px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
-.page{padding:1rem 1.25rem;max-width:1500px}
+.page{padding:28px 32px 34px;max-width:1500px}
 
-.as-head{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:0.4rem}
-.as-title{font-size:18px;font-weight:600}
-.as-sub{font-size:12px;color:var(--text2);line-height:1.5;max-width:520px}
-.as-status{margin-left:auto;display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.as-status .txt{text-align:right;max-width:460px}
-.as-status .line{font-size:14px;font-weight:600}
-.as-status .line.bad{color:var(--red)}
-.as-status .line.good{color:var(--green)}
-.as-status .subnote{font-size:11.5px;color:var(--text2);line-height:1.45}
+/* header: kicker, title, sentence */
+.as-head{margin-bottom:22px}
+.as-title{font-family:var(--font-heading);font-weight:600;font-size:40px;line-height:.95;text-transform:uppercase;color:var(--color-text);margin:6px 0 0}
+.as-sub{font-size:16px;line-height:1.5;color:var(--color-neutral-800);max-width:86ch;margin-top:10px}
 
-.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
-.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
-.btn:disabled{opacity:0.45;cursor:default}
-.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn-primary:hover{color:#fff;opacity:0.9}
-.btn-ghost{background:transparent;border-style:dashed}
-.btn-danger{color:var(--red)}
+/* the status band: one status object, one line, one consequence, ONE CTA */
+.as-status{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 22px;margin:0 0 14px;flex-wrap:wrap}
+.as-status .txt{min-width:0}
+.as-status .line{font-family:var(--font-heading);font-weight:600;font-size:26px;line-height:1;text-transform:uppercase;color:var(--color-text)}
+.as-status .line.bad{color:var(--state-fail)}
+.as-status .line.good{color:var(--state-ok)}
+.as-status .subnote{font-size:15px;line-height:1.5;color:var(--color-neutral-800);margin-top:6px}
+.as-cta{height:40px;padding:0 22px;font-size:16px;flex:none}
 
-.ribbon{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0.6rem 0 0.9rem}
-.rstep{border:0.5px solid var(--border);border-radius:8px;padding:0.5rem 0.7rem;background:var(--bg2)}
-.rstep .num{font-family:var(--mono);font-size:10px;color:var(--text2)}
-.rstep .t{font-size:12px;font-weight:600}
-.rstep .n{font-size:10.5px;color:var(--text2);font-family:var(--mono);margin-top:1px}
-.rstep.done{border-color:rgba(34,201,122,0.35)}
-.rstep.done .t{color:var(--green)}
-.rstep.now{border-color:var(--accent);background:var(--accent-glow)}
-.rstep.now .t{color:var(--accent)}
-@media(max-width:800px){.ribbon{grid-template-columns:repeat(2,1fr)}}
+.btn:not(.btn-primary):not(.link){border-color:var(--color-divider);color:var(--color-text);background:transparent}
+.btn:not(.btn-primary):not(.link):hover{background:var(--hover-tint)}
+.btn-danger{color:var(--state-fail)}
+.btn.link{border-color:transparent;background:transparent;color:var(--color-accent-700);padding:0 4px;height:auto;font-family:var(--font-body);font-weight:400;font-size:13px}
+.btn.link:hover{background:transparent;text-decoration:underline}
 
-.as-seg{display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;gap:2px;flex-wrap:wrap}
-.as-seg button{border:none;background:transparent;color:var(--text3);font-family:var(--serif);font-size:12px;font-weight:500;padding:0.4rem 0.85rem;border-radius:6px;cursor:pointer;white-space:nowrap}
-.as-seg button.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
-.as-count{display:inline-block;min-width:16px;padding:0 5px;border-radius:8px;background:var(--red-bg);color:var(--red);font-size:10.5px;font-family:var(--mono);margin-left:4px}
+/* the ribbon: four equal bordered cells, derived from the same status object */
+.ribbon{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 18px}
+.rstep{border:1px solid var(--color-divider);padding:14px 16px 13px;background:transparent}
+.rstep .idx{font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.1em;color:var(--color-neutral-600);line-height:1.2}
+.rstep .t{font-family:var(--font-heading);font-weight:600;font-size:19px;line-height:1.1;text-transform:uppercase;color:var(--color-text);margin-top:4px}
+.rstep .n{font-size:13px;line-height:1.4;color:var(--color-neutral-700);margin-top:4px}
+.rstep.now{border-color:var(--color-accent);background:var(--color-accent-100)}
+.rstep.now .idx,.rstep.now .t{color:var(--color-accent-900)}
+.rstep.now .n{color:var(--color-accent-800)}
+.rstep.todo .t{color:var(--color-neutral-600)}
+@media(max-width:900px){.ribbon{grid-template-columns:repeat(2,1fr)}}
 
-.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:0.9rem}
-.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
-.panel-title{font-size:13px;font-weight:600}
-.panel-sub{font-size:11.5px;color:var(--text2)}
-.panel-body{padding:0.8rem 0.9rem}
-.p-right{margin-left:auto;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap}
-.note{padding:0.55rem 0.9rem;font-size:11.5px;color:var(--text2);border-top:0.5px solid var(--border)}
+/* the audience control */
+.as-seg{display:inline-flex;border:1px solid var(--color-divider);margin-bottom:22px}
+.as-seg button{padding:7px 18px;font-family:var(--font-heading);font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);background:transparent;border:0;cursor:pointer;line-height:1.2;white-space:nowrap}
+.as-seg button.active{background:var(--color-accent-900);color:var(--color-bg)}
+.as-count{display:inline-block;min-width:16px;padding:0 5px;color:var(--state-fail);font-size:13px;margin-left:4px}
 
-table{border-collapse:collapse;width:100%;font-size:12px}
-th{font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);font-weight:500;text-align:left;padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
-td{padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);vertical-align:top}
+/* sections: a tracked label above a bordered, transparent panel */
+.panel{background:transparent;border:1px solid var(--color-divider);overflow:hidden;margin-bottom:26px}
+.panel-header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--color-divider);flex-wrap:wrap}
+.panel-title{font-family:var(--font-heading);font-weight:600;font-size:15px;line-height:1.2;letter-spacing:.16em;text-transform:uppercase;color:var(--color-neutral-700)}
+.panel-sub{font-size:13px;line-height:1.5;color:var(--color-neutral-700);margin-top:0}
+.panel-body{padding:16px}
+.p-right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.note{padding:10px 16px;font-size:13px;line-height:1.5;color:var(--color-neutral-700);border-top:1px solid var(--color-divider)}
+
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.4}
+th{font-family:var(--font-body);font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 60%,transparent);text-align:left;padding:8px 12px;border-bottom:1px solid var(--color-divider);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--color-divider);vertical-align:top}
 tr:last-child td{border-bottom:none}
 .tw{overflow-x:auto}
-.mono{font-family:var(--mono);font-size:11px}
-.muted{color:var(--text2)}
+.mono{font-family:var(--mono);font-size:12px}
+.muted{color:var(--color-neutral-700)}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 
-.chip{display:inline-block;padding:1px 8px;border-radius:9px;font-size:10.5px;font-weight:500;background:var(--bg4);color:var(--text2);white-space:nowrap}
-.chip.crit{background:var(--red-bg);color:var(--red)}
-.chip.warn{background:var(--amber-bg);color:var(--amber)}
-.chip.ok{background:var(--green-bg);color:var(--green)}
-.chip.info{background:var(--accent-glow);color:var(--accent)}
-.sev{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle}
-.sev.c{background:var(--red)}.sev.w{background:var(--amber)}.sev.i{background:var(--text2)}
-.rulename{display:block;font-weight:500}
-.rid{display:block;font-family:var(--mono);font-size:10.5px;color:var(--text2)}
-.scope{font-family:var(--mono);font-size:11px;color:var(--text2)}
+/* tags: bordered ink, uppercase Condensed — the environment tag is the model */
+.chip{display:inline-block;font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;line-height:1.4;border:1px solid var(--color-divider);color:var(--color-neutral-700);background:transparent;white-space:nowrap}
+.chip.crit{color:var(--state-fail);border-color:var(--state-fail)}
+.chip.warn{color:var(--state-warn);border-color:var(--state-warn)}
+.chip.ok{color:var(--state-ok);border-color:var(--state-ok)}
+.chip.info{color:var(--color-accent-800);border-color:var(--color-accent-300);background:var(--color-accent-100)}
+.sev{display:inline-block;width:8px;height:8px;vertical-align:middle;flex:none}
+.sev.c{background:var(--state-fail)}.sev.w{background:var(--state-warn)}.sev.i{background:var(--color-neutral-400)}
+/* the five rule states: a word and an 8px square, never a pass/fail binary */
+.st{display:inline-flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap}
+.st::before{content:'';width:8px;height:8px;background:var(--color-neutral-400);flex:none}
+.st-derived{color:var(--color-neutral-700)}
+.st-armed{color:var(--color-accent-800)}.st-armed::before{background:var(--color-accent)}
+.st-proven{color:var(--state-ok)}.st-proven::before{background:var(--state-ok)}
+.st-open{color:var(--state-fail)}.st-open::before{background:var(--state-fail)}
+.st-dormant{color:var(--state-warn)}.st-dormant::before{background:var(--state-warn)}
+.st-error{color:var(--state-warn)}.st-error::before{background:var(--state-warn)}
+.rulename{display:block;font-size:15px;line-height:1.4;color:var(--color-text)}
+.rid{display:block;font-size:13px;line-height:1.5;color:var(--color-neutral-700)}
+.scope{font-size:13px;color:var(--color-neutral-700)}
 .rowlink{cursor:pointer}
-.rowlink:hover td{background:var(--bg3)}
+.rowlink:hover td{background:var(--hover-tint)}
 
-.covbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--bg4);margin:0.35rem 0 0.55rem}
+/* coverage: four measures, a 5px bar under each but the last */
+.covgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;padding:16px 16px 18px}
+.cov{min-width:0}
+.cov .k{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600)}
+.cov .v{font-family:var(--font-heading);font-weight:600;font-size:40px;line-height:.95;margin-top:8px;font-variant-numeric:tabular-nums;color:var(--color-text);display:flex;align-items:baseline;gap:3px}
+.cov .v .u{font-size:20px;color:var(--color-neutral-600)}
+.cov .v.warn{color:var(--state-warn)}
+.cov .bar{height:5px;background:var(--color-neutral-300);margin-top:10px;overflow:hidden}
+.cov .bar i{display:block;height:100%;background:var(--color-accent)}
+.cov .n{font-size:13px;line-height:1.45;color:var(--color-neutral-700);margin-top:10px}
+.covdetail{padding:14px 16px 16px;border-top:1px solid var(--color-divider)}
+.covbar{display:flex;height:5px;overflow:hidden;background:var(--color-neutral-300);margin:0 0 10px}
 .covbar i{display:block;height:100%}
-.covleg{display:flex;gap:16px;font-size:11px;color:var(--text2);flex-wrap:wrap;margin-bottom:0.55rem}
-.covleg .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:baseline}
-.covgaps{font-size:12px;line-height:1.65}
+.covleg{display:flex;gap:18px;font-size:13px;color:var(--color-neutral-700);flex-wrap:wrap;margin-bottom:8px}
+.covleg .sw{display:inline-block;width:8px;height:8px;margin-right:6px;vertical-align:baseline}
+.covgaps{font-size:14px;line-height:1.55;color:var(--color-neutral-800)}
+@media(max-width:1100px){.covgrid{grid-template-columns:repeat(2,1fr)}}
 
-.bundle{display:flex;gap:12px;align-items:flex-start;padding:0.75rem 0.9rem;border-top:0.5px solid var(--border)}
+/* suggested checks: category tag, the title as what it proves, one line why */
+.bundle{display:flex;gap:16px;align-items:center;padding:14px 16px;border-top:1px solid var(--color-divider)}
+.bundle:first-child{border-top:none}
 .bundle .body{flex:1;min-width:0}
-.bundle b{font-size:12.5px}
-.bundle p{font-size:11.5px;color:var(--text2);margin-top:2px}
-.bundle .meta{font-family:var(--mono);font-size:10.5px;color:var(--text2);margin-top:4px}
-.bundle .acts{display:flex;gap:6px;flex:none;align-items:flex-start}
-.bexp{border-top:0.5px dotted var(--border);background:var(--bg3);padding:0.4rem 0.9rem 0.6rem}
-.bexp .bitem{display:flex;gap:10px;align-items:center;padding:0.35rem 0;border-bottom:0.5px dotted var(--border);font-size:11.5px}
+.bundle b{display:block;font-family:var(--font-heading);font-weight:600;font-size:17px;line-height:1.2;text-transform:uppercase;color:var(--color-text)}
+.bundle p{font-size:15px;line-height:1.45;color:var(--color-neutral-800);margin-top:3px}
+.bundle .meta{font-size:13px;color:var(--color-neutral-700);margin-top:4px}
+.bundle .acts{display:flex;gap:8px;flex:none;align-items:center}
+.bexp{border-top:1px solid var(--color-divider);background:var(--color-neutral-100);padding:6px 16px 10px}
+.bexp .bitem{display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--color-divider);font-size:14px}
 .bexp .bitem:last-child{border-bottom:none}
 .bexp .bitem .nm{flex:1;min-width:0}
-.bexp .bitem .pv{color:var(--text2)}
+.bexp .bitem .pv{color:var(--color-neutral-700);font-size:13px}
 
-.fchip{border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;border-radius:12px;padding:3px 10px;cursor:pointer;font-family:var(--serif);white-space:nowrap}
-.fchip.on{color:var(--accent);border-color:rgba(74,91,214,0.45);background:var(--accent-glow)}
-.fchip .ct{font-family:var(--mono);font-size:10px;opacity:0.8;margin-left:3px}
-.as-search{font-family:var(--serif);font-size:12px;padding:5px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);min-width:210px}
-.inp{font-family:var(--serif);font-size:12px;padding:5px 8px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%}
-textarea.inp{font-family:var(--mono);font-size:11px;min-height:70px;resize:vertical}
+/* filter chips on the search row */
+.fchip{border:1px solid var(--color-divider);background:transparent;color:var(--color-neutral-700);font-family:var(--font-body);font-size:13px;padding:5px 11px;cursor:pointer;white-space:nowrap;line-height:1.2}
+.fchip:hover{color:var(--color-text)}
+.fchip.on{color:var(--color-accent-800);border-color:var(--color-accent);background:var(--color-accent-100)}
+.fchip .ct{font-size:12px;opacity:.75;margin-left:4px;font-variant-numeric:tabular-nums}
+.as-search{font-family:var(--font-body);font-size:14px;padding:5px 10px;border:1px solid var(--color-divider);background:var(--color-bg);color:var(--text);min-width:240px;height:30px}
+.inp{font-family:var(--font-body);font-size:14px;padding:6px 8px;border:1px solid var(--color-divider);background:var(--color-bg);color:var(--text);width:100%}
+textarea.inp{font-family:var(--mono);font-size:12px;min-height:70px;resize:vertical}
 select.inp{cursor:pointer}
-.fld{margin-bottom:0.6rem}
-.fld label{display:block;font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin-bottom:3px;font-weight:500}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:0.6rem}
-.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.6rem}
+.fld{margin-bottom:10px}
+.fld label{display:block;font-size:13px;color:var(--color-neutral-700);margin-bottom:4px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 
-.grid2{display:grid;grid-template-columns:1fr 380px;gap:0.9rem;align-items:start}
+.grid2{display:grid;grid-template-columns:1fr 380px;gap:26px;align-items:start}
 @media(max-width:1100px){.grid2{grid-template-columns:1fr}}
-.split{display:grid;grid-template-columns:290px minmax(0,1fr);gap:0.9rem;align-items:start}
-@media(max-width:1100px){.split{grid-template-columns:1fr}}
 
-.bq{display:flex;flex-direction:column;gap:4px}
-.bq-item{text-align:left;border:0.5px solid var(--border);background:var(--bg2);border-radius:8px;padding:0.55rem 0.7rem;cursor:pointer;color:var(--text);font-family:var(--serif)}
-.bq-item.on{border-color:rgba(74,91,214,0.5);background:var(--accent-glow)}
-.bq-item .t{font-size:12px;font-weight:500}
-.bq-item .m{font-size:10.5px;color:var(--text2);font-family:var(--mono)}
+/* breaches: a 300px 1fr split inside one border */
+.split{display:grid;grid-template-columns:300px minmax(0,1fr);align-items:stretch}
+.split > .bq{border-right:1px solid var(--color-divider)}
+@media(max-width:1100px){.split{grid-template-columns:1fr}.split > .bq{border-right:none;border-bottom:1px solid var(--color-divider)}}
 
-.diag{border:0.5px solid rgba(107,78,142,0.4);border-radius:var(--r);overflow:hidden;margin-top:0.8rem}
-.diag-h{background:var(--purple-bg);padding:0.5rem 0.8rem;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center}
-.diag-b{padding:0.7rem 0.8rem;font-size:12.5px;line-height:1.65}
-.ev{list-style:none;margin-top:0.6rem}
-.ev li{display:flex;gap:10px;font-size:11.5px;padding:3px 0;border-top:0.5px dotted var(--border)}
-.ev .k{min-width:120px;color:var(--text2);text-transform:uppercase;font-size:10px;letter-spacing:0.05em;padding-top:1px}
-.diag-foot{font-size:10.5px;color:var(--text2);border-top:0.5px solid var(--border);padding:0.45rem 0.8rem}
+.bq{display:flex;flex-direction:column}
+.bq-item{text-align:left;border:0;border-bottom:1px solid var(--color-divider);border-left:3px solid transparent;background:transparent;padding:12px 14px 12px 13px;cursor:pointer;color:var(--text);font-family:var(--font-body);width:100%}
+.bq-item:hover{background:var(--hover-tint)}
+.bq-item.on{background:var(--color-accent-100);border-left-color:var(--state-fail)}
+.bq-item .ts{display:flex;gap:10px;align-items:center;font-size:13px;color:var(--color-neutral-700)}
+.bq-item .t{font-family:var(--font-heading);font-weight:600;font-size:17px;line-height:1.2;text-transform:uppercase;margin-top:6px;color:var(--color-text)}
+.bq-item .m{font-size:13px;color:var(--color-neutral-700);margin-top:3px}
+.bq-item.done .t,.bq-item.done .m,.bq-item.done .ts{color:var(--color-neutral-600)}
+.bq-item.done.on{border-left-color:var(--color-neutral-400)}
+.bq .empty{padding:24px 14px}
+.bd{padding:18px 22px 20px}
+.bd-h{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.bd-proves{font-family:var(--font-heading);font-weight:600;font-size:23px;line-height:1.1;text-transform:uppercase;color:var(--color-text)}
+.bd-why{font-size:15px;line-height:1.5;color:var(--color-neutral-800);margin-top:10px;max-width:86ch}
+.bd-measures{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;border-top:1px solid var(--color-divider);border-bottom:1px solid var(--color-divider);padding:14px 0;margin:16px 0}
+.bd-measures .k{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600)}
+.bd-measures .v{font-family:var(--font-heading);font-weight:600;font-size:26px;line-height:1;margin-top:6px;font-variant-numeric:tabular-nums;color:var(--color-text);word-break:break-all}
+.bd-measures .v.fail{color:var(--state-fail)}
+.bd-measures .v.when{font-size:22px;white-space:nowrap}
+.bd-measures .v.mono{font-family:var(--mono);font-size:13px;font-weight:400;line-height:1.4;margin-top:8px}
+.bd-ro{font-size:13px;line-height:1.5;color:var(--color-neutral-700)}
+.bd-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.bd-more{margin-top:18px}
+@media(max-width:900px){.bd-measures{grid-template-columns:1fr 1fr}}
+
+.diag{border:1px solid var(--color-divider);overflow:hidden;margin-top:18px}
+.diag-h{background:var(--color-neutral-100);padding:8px 14px;font-family:var(--font-heading);font-weight:600;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-neutral-700);display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--color-divider)}
+.diag-b{padding:12px 14px;font-size:14px;line-height:1.55;color:var(--color-neutral-800)}
+.ev{list-style:none;margin-top:10px}
+.ev li{display:flex;gap:12px;font-size:13px;padding:5px 0;border-top:1px solid var(--color-divider)}
+.ev .k{min-width:120px;color:var(--color-neutral-600);text-transform:uppercase;font-size:11px;letter-spacing:.08em;padding-top:2px}
+.diag-foot{font-size:13px;line-height:1.5;color:var(--color-neutral-700);border-top:1px solid var(--color-divider);padding:8px 14px}
 
 .trail{list-style:none}
-.trail li{display:flex;gap:12px;font-size:12px;padding:4px 0}
-.trail .ts{font-family:var(--mono);font-size:10.5px;color:var(--text2);min-width:130px}
+.trail li{display:flex;gap:14px;font-size:13px;line-height:1.5;padding:5px 0;border-top:1px solid var(--color-divider)}
+.trail li:first-child{border-top:none}
+.trail .ts{color:var(--color-neutral-700);min-width:150px;font-variant-numeric:tabular-nums}
 
-.sug{display:flex;gap:12px;align-items:flex-start;padding:0.7rem 0.9rem;border-top:0.5px solid var(--border)}
+.sug{display:flex;gap:16px;align-items:center;padding:14px 16px;border-top:1px solid var(--color-divider)}
 .sug .body{flex:1;min-width:0}
-.sug b{font-size:12.5px}
-.sug p{font-size:11.5px;color:var(--text2);margin-top:2px}
-.sug .acts{display:flex;gap:6px}
+.sug b{display:block;font-family:var(--font-heading);font-weight:600;font-size:17px;line-height:1.2;text-transform:uppercase}
+.sug p{font-size:15px;line-height:1.45;color:var(--color-neutral-800);margin-top:3px}
+.sug .acts{display:flex;gap:8px;flex:none}
 
-.tog{width:34px;height:18px;border-radius:10px;border:0.5px solid var(--border2);background:var(--bg4);cursor:pointer;position:relative;flex:none}
-.tog::after{content:'';position:absolute;top:1.5px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--text2);transition:all 0.15s}
-.tog[aria-pressed="true"]{background:var(--accent)}
-.tog[aria-pressed="true"]::after{left:17px;background:#fff}
+.tog{width:34px;height:18px;border:1px solid var(--color-divider);background:var(--color-neutral-200);cursor:pointer;position:relative;flex:none;padding:0}
+.tog::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;background:var(--color-neutral-600);transition:all 0.15s}
+.tog[aria-pressed="true"]{background:var(--color-accent);border-color:var(--color-accent)}
+.tog[aria-pressed="true"]::after{left:18px;background:#fff}
 
-.conf{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px}
-.conf .track{width:52px;height:5px;border-radius:3px;background:var(--bg4);overflow:hidden;display:inline-block}
-.conf .track i{display:block;height:100%;background:var(--accent)}
+.conf{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-variant-numeric:tabular-nums}
+.conf .track{width:52px;height:5px;background:var(--color-neutral-300);overflow:hidden;display:inline-block}
+.conf .track i{display:block;height:100%;background:var(--color-accent)}
 
-.scrim{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:60;display:none}
+/* the rule builder drawer */
+.scrim{position:fixed;inset:0;background:var(--modal-scrim);z-index:60;display:none}
 .scrim.show{display:block}
-.as-drawer{position:fixed;top:0;right:-560px;width:540px;max-width:96vw;height:100vh;background:var(--bg2);border-left:0.5px solid var(--border2);z-index:61;transition:right 0.2s ease;display:flex;flex-direction:column}
+.as-drawer{position:fixed;top:0;right:-560px;width:540px;max-width:96vw;height:100vh;background:var(--color-bg);border-left:1px solid var(--color-divider);z-index:61;transition:right 0.2s ease;display:flex;flex-direction:column;box-shadow:var(--shadow-strong)}
 .as-drawer.show{right:0}
-.dw-h{display:flex;align-items:center;gap:0.6rem;padding:0.8rem 1rem;border-bottom:0.5px solid var(--border)}
-.dw-b{flex:1;overflow-y:auto;padding:0.9rem 1rem}
-.fs{border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.8rem;margin-bottom:0.8rem}
-.fs legend{font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text2);padding:0 6px;font-weight:500}
-.dw-f{padding:0.7rem 1rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;align-items:center}
-.dry{font-family:var(--mono);font-size:11px;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;margin-top:0.5rem;white-space:pre-wrap;max-height:220px;overflow:auto}
+.dw-h{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--color-divider)}
+.dw-h .panel-title{font-size:22px;letter-spacing:normal;color:var(--color-text)}
+.dw-b{flex:1;overflow-y:auto;padding:16px 18px}
+.fs{border:1px solid var(--color-divider);padding:12px 14px 6px;margin-bottom:14px}
+.fs legend{font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--color-neutral-700);padding:0 6px}
+.dw-f{padding:12px 18px;border-top:1px solid var(--color-divider);display:flex;gap:10px;align-items:center}
+.dry{font-family:var(--mono);font-size:12px;line-height:1.5;background:var(--color-neutral-100);border:1px solid var(--color-divider);padding:10px 12px;margin-top:8px;white-space:pre-wrap;max-height:220px;overflow:auto}
 
-.retain{display:flex;gap:12px;align-items:flex-start;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.35);border-radius:var(--r);padding:0.7rem 0.8rem;margin-bottom:0.8rem}
-.retain b{font-size:12.5px}
-.retain p{font-size:11.5px;color:var(--text2)}
+.retain{display:flex;gap:14px;align-items:flex-start;background:var(--color-accent-100);border:1px solid var(--color-accent-300);padding:12px 14px;margin-bottom:14px}
+.retain b{font-size:15px}
+.retain p{font-size:13px;line-height:1.5;color:var(--color-neutral-800)}
 
-.rep-head{padding:1.1rem 1rem;border-bottom:0.5px solid var(--border)}
-.rep-head .k{font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
-.rep-head h2{font-size:19px;margin:2px 0}
-.rep-stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:0.5px solid var(--border)}
-.rep-stat{padding:0.8rem;border-right:0.5px solid var(--border);text-align:center}
-.rep-stat:last-child{border-right:none}
-.rep-stat .v{font-size:21px;font-weight:600;font-family:var(--mono)}
-.rep-stat .k{font-size:10.5px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em}
+/* the evidence view */
+.rep-head{padding:20px 22px;border-bottom:1px solid var(--color-divider)}
+.rep-head .k{font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--color-accent-700)}
+.rep-head h2{font-family:var(--font-heading);font-weight:600;font-size:30px;line-height:1;text-transform:uppercase;margin:6px 0 0}
+.rep-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--color-divider);border-top:1px solid var(--color-divider)}
+.rep-stat{padding:16px 20px 18px;background:var(--color-bg)}
+.rep-stat .v{font-family:var(--font-heading);font-weight:600;font-size:36px;line-height:.95;font-variant-numeric:tabular-nums}
+.rep-stat .k{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:8px}
+.rep-stat .muted{font-size:13px;margin-top:4px}
 @media(max-width:800px){.rep-stats{grid-template-columns:1fr 1fr}}
 
-.ev-statement{font-size:15px;line-height:1.8;max-width:840px}
-.sigstrip{font-family:var(--mono);font-size:10.5px;color:var(--text2);border-top:0.5px solid var(--border);margin-top:0.9rem;padding-top:0.6rem;word-break:break-all;line-height:1.7}
-.openitem{display:flex;gap:12px;align-items:flex-start;padding:0.7rem 0.9rem;border-top:0.5px solid var(--border)}
+.ev-statement{font-size:16px;line-height:1.7;max-width:86ch;color:var(--color-text)}
+.sigstrip{font-family:var(--mono);font-size:12px;color:var(--color-neutral-700);border-top:1px solid var(--color-divider);margin-top:16px;padding-top:10px;word-break:break-all;line-height:1.7}
+.openitem{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border-top:1px solid var(--color-divider)}
+.openitem:first-child{border-top:none}
 .openitem .body{flex:1;min-width:0}
-.openitem b{font-size:12.5px}
-.openitem p{font-size:11.5px;color:var(--text2);margin-top:2px;line-height:1.55}
-.claim{border-top:0.5px solid var(--border)}
-.claim summary{cursor:pointer;padding:0.6rem 0.9rem;font-size:12.5px;display:flex;gap:10px;align-items:center;list-style:none}
+.openitem b{display:block;font-family:var(--font-heading);font-weight:600;font-size:17px;line-height:1.2;text-transform:uppercase}
+.openitem p{font-size:14px;color:var(--color-neutral-800);margin-top:3px;line-height:1.5}
+.claim{border-top:1px solid var(--color-divider)}
+.claim:first-child{border-top:none}
+.claim summary{cursor:pointer;padding:11px 16px;font-size:15px;display:flex;gap:10px;align-items:center;list-style:none}
 .claim summary::-webkit-details-marker{display:none}
-.claim summary .arrow{color:var(--text2);font-size:10px}
+.claim summary .arrow{color:var(--color-neutral-600);font-size:11px;transition:transform .12s}
 .claim[open] summary .arrow{transform:rotate(90deg)}
-.claim .steps{padding:0 0.9rem 0.8rem}
-.claim .step{display:flex;gap:12px;padding:0.4rem 0;border-top:0.5px dotted var(--border);font-size:12px}
-.claim .step .k{min-width:70px;color:var(--text2);text-transform:uppercase;font-size:10px;letter-spacing:0.06em;padding-top:2px;font-weight:500}
-.claim .step pre{font-family:var(--mono);font-size:10.5px;white-space:pre-wrap;word-break:break-all;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.6rem;flex:1;min-width:0}
-.notcov{margin:0;padding-left:20px;font-size:12.5px;line-height:1.9;color:var(--text2)}
-.pack{display:flex;gap:12px;align-items:center;padding:0.6rem 0.9rem;border-top:0.5px solid var(--border);font-size:12px}
+.claim .steps{padding:0 16px 14px}
+.claim .step{display:flex;gap:12px;padding:7px 0;border-top:1px solid var(--color-divider);font-size:14px}
+.claim .step .k{min-width:70px;color:var(--color-neutral-600);text-transform:uppercase;font-size:11px;letter-spacing:.08em;padding-top:3px}
+.claim .step pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-all;background:var(--color-neutral-100);border:1px solid var(--color-divider);padding:8px 10px;flex:1;min-width:0}
+.notcov{margin:0;padding-left:20px;font-size:15px;line-height:1.8;color:var(--color-neutral-800)}
+.pack{display:flex;gap:14px;align-items:center;padding:12px 16px;border-top:1px solid var(--color-divider);font-size:14px}
+.pack:first-child{border-top:none}
 .pack .body{flex:1}
-.pack .body p{font-size:11px;color:var(--text2)}
+.pack .body b{font-family:var(--font-heading);font-weight:600;font-size:17px;text-transform:uppercase}
+.pack .body p{font-size:13px;color:var(--color-neutral-700);line-height:1.5}
 
-.empty{padding:1.6rem;text-align:center;color:var(--text2);font-size:12.5px;line-height:1.7}
-.empty a{color:var(--accent)}
+.empty{padding:26px 16px;text-align:center;color:var(--color-neutral-700);font-size:14px;line-height:1.6}
+.empty a{color:var(--color-accent-700)}
 @media print{
   body{padding-left:0;background:#fff;color:#000}
-  #cyg-sidebar-mount,.as-head,.as-seg,.ribbon,.no-print{display:none !important}
+  #cyg-sidebar-mount,.as-head,.as-status,.as-seg,.ribbon,.no-print{display:none !important}
   .panel{border-color:#ccc}
 }
 </style>
@@ -238,26 +305,30 @@ select.inp{cursor:pointer}
 <div class="page">
 <div id="cyg-subnav-mount"></div>
   <div class="as-head">
-    <div>
-      <div class="as-title">✓ Assurance</div>
-      <div class="as-sub">Every validation rule written to prove the migration was correct, running on a schedule
-        against live data — for as long as the data matters.</div>
+    <div class="cx-kicker">Quality</div>
+    <h1 class="as-title">Assurance</h1>
+    <div class="as-sub">Every validation rule written to prove the migration was correct, running on a schedule
+      against live data — for as long as the data matters.</div>
+  </div>
+
+  <!-- §2: the one status line + §3: the one primary action, visible on every tab.
+       The blueprint frame is reserved for this band: it is the single most
+       important object on the screen, so it is the only one with corners. -->
+  <div class="as-status cx-blueprint">
+    <span class="cx-corner tl"></span><span class="cx-corner tr"></span>
+    <span class="cx-corner bl"></span><span class="cx-corner br"></span>
+    <div class="txt">
+      <div class="line" id="as-status-line">—</div>
+      <div class="subnote" id="as-status-sub"></div>
     </div>
-    <!-- §2: the one status line + §3: the one primary action, visible on every tab -->
-    <div class="as-status">
-      <div class="txt">
-        <div class="line" id="as-status-line">—</div>
-        <div class="subnote" id="as-status-sub"></div>
-      </div>
-      <button class="btn btn-primary" id="as-cta" onclick="asCtaClick()">…</button>
-    </div>
+    <button class="btn btn-primary as-cta" id="as-cta" onclick="asCtaClick()">…</button>
   </div>
 
   <!-- §4: four-step progress ribbon, derived from the same status object -->
   <div class="ribbon" id="as-ribbon"></div>
 
   <!-- §9: split by audience -->
-  <div class="as-seg" role="group" aria-label="Assurance views" style="margin-bottom:0.9rem">
+  <div class="as-seg" role="group" aria-label="Assurance views">
     <button id="as-tab-eng" class="active" onclick="asView('eng')">Engineer</button>
     <button id="as-tab-ev" onclick="asView('ev')">Evidence</button>
   </div>
@@ -266,22 +337,27 @@ select.inp{cursor:pointer}
   <div id="as-v-eng">
 
     <!-- the connection-mismatch banner: refuse and say why -->
-    <div class="panel" id="as-mismatch" style="display:none;border-color:rgba(240,70,70,0.5)">
-      <div class="panel-body" id="as-mismatch-body" style="font-size:12.5px;line-height:1.7"></div>
+    <div class="panel cx-attn cx-attn-fail" id="as-mismatch" style="display:none;border-left-width:3px">
+      <div class="panel-body" id="as-mismatch-body" style="font-size:15px;line-height:1.55"></div>
     </div>
 
     <!-- §5: coverage instead of a column of zeros -->
     <div class="panel" id="as-coverage-panel">
       <div class="panel-header"><div class="panel-title">Coverage of the migration</div>
         <span class="panel-sub" id="as-cov-hint">measuring…</span></div>
-      <div class="panel-body" id="as-coverage"><div class="muted" style="font-size:12px">Reading the target schema…</div></div>
+      <div id="as-coverage"><div class="covgrid">
+        <div class="cov"><div class="k">Tables with a check</div><div class="v"><span class="cx-shimmer"></span></div><div class="bar"></div></div>
+        <div class="cov"><div class="k">Rows under check</div><div class="v"><span class="cx-shimmer"></span></div><div class="bar"></div></div>
+        <div class="cov"><div class="k">Money columns</div><div class="v"><span class="cx-shimmer"></span></div><div class="bar"></div></div>
+        <div class="cov"><div class="k">Unchecked tables</div><div class="v"><span class="cx-shimmer"></span></div><div class="n">Reading the target schema</div></div>
+      </div></div>
     </div>
 
     <!-- §6: suggestions bundled by rule template -->
     <div class="panel" id="as-bundles-panel">
       <div class="panel-header"><div class="panel-title">Suggested checks</div>
         <span class="panel-sub" id="as-bundle-sub">from the profiler</span>
-        <div class="p-right"><button class="btn" onclick="asProfileNow()">↻ Re-profile</button></div></div>
+        <div class="p-right"><button class="btn link" onclick="asProfileNow()">↻ Re-profile</button></div></div>
       <div id="as-bundles"><div class="empty">Profiling the schema…</div></div>
       <div id="as-sugs"></div>
     </div>
@@ -291,13 +367,13 @@ select.inp{cursor:pointer}
       <div class="panel-header">
         <div class="panel-title">Your checks</div>
         <div class="p-right">
-          <button class="btn btn-ghost" onclick="asImportValidation()" title="Read the Validation module's script sources and import each script as a continuous custom.sql rule — the Validation page itself is untouched">⇪ Import from Validation</button>
-          <button class="btn" onclick="asDrawerOpen()">+ New rule</button>
+          <button class="btn btn-ghost" onclick="asImportValidation()" title="Read the Validation module's script sources and import each script as a continuous custom.sql rule — the Validation page itself is untouched">Import from Validation</button>
+          <button class="btn btn-ghost" onclick="asDrawerOpen()">+ New rule</button>
         </div>
       </div>
       <div class="panel-header" style="border-top:none">
         <input class="as-search" id="as-rule-q" placeholder="Search rules, tables, tags…" oninput="asRenderRules()">
-        <span id="as-catchips" style="display:flex;gap:5px;flex-wrap:wrap"></span>
+        <span id="as-catchips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
         <div class="p-right">
           <button class="fchip" id="as-f-continuous" onclick="asToggleFilter('continuous')">Continuous</button>
           <button class="fchip" id="as-f-migration" onclick="asToggleFilter('migration')">Migration-only</button>
@@ -315,11 +391,9 @@ select.inp{cursor:pointer}
     <div class="panel" id="as-breaches-panel">
       <div class="panel-header"><div class="panel-title">Breaches</div>
         <span class="panel-sub" id="as-breach-sub"></span></div>
-      <div class="panel-body">
-        <div class="split">
-          <div class="bq" id="as-bq"></div>
-          <div style="min-width:0" id="as-breach-detail"><div class="panel" style="margin:0"><div class="empty">No breach selected.</div></div></div>
-        </div>
+      <div class="split">
+        <div class="bq" id="as-bq"></div>
+        <div style="min-width:0" id="as-breach-detail"><div class="empty">No breach selected.</div></div>
       </div>
     </div>
 
@@ -329,7 +403,7 @@ select.inp{cursor:pointer}
         <div class="panel-header"><div class="panel-title">Schedules</div>
           <span class="panel-sub">the group owns the cron; a rule may override it</span>
           <div class="p-right"><span class="mono muted" id="as-sweepnote"></span>
-            <button class="btn" id="as-sweep" onclick="asSweepDue()" title="Run every group whose schedule has come due since its last sweep">▶ Run due groups</button></div></div>
+            <button class="btn btn-ghost" id="as-sweep" onclick="asSweepDue()" title="Run every group whose schedule has come due since its last sweep">Run due groups</button></div></div>
         <div class="tw"><table id="as-groups"><thead>
           <tr><th>Group</th><th class="num">Rules</th><th>Runs</th><th>Next run</th><th>Est. cost</th><th></th></tr>
         </thead><tbody></tbody></table></div>
@@ -347,7 +421,7 @@ select.inp{cursor:pointer}
         </div>
         <div class="panel">
           <div class="panel-header"><div class="panel-title">Quiet hours &amp; suppression</div></div>
-          <div class="panel-body" style="font-size:12px;line-height:1.9" id="as-quiet"></div>
+          <div class="panel-body" style="font-size:13px;line-height:1.9" id="as-quiet"></div>
         </div>
       </div>
     </div>
@@ -357,8 +431,8 @@ select.inp{cursor:pointer}
       <div class="panel-header"><div class="panel-title">Tags</div>
         <span class="panel-sub" id="as-tag-count"></span>
         <div class="p-right">
-          <button class="btn" onclick="asProposeTagsNow()">↻ Propose from schema</button>
-          <button class="btn" onclick="asAcceptTags(0.9)">Accept above 0.90</button>
+          <button class="btn btn-ghost" onclick="asProposeTagsNow()">Propose from schema</button>
+          <button class="btn btn-ghost" onclick="asAcceptTags(0.9)">Accept above 0.90</button>
         </div></div>
       <div class="tw"><table id="as-tag-props"><thead>
         <tr><th>Column</th><th>Proposed tag</th><th>Confidence</th><th>Why</th><th></th></tr>
@@ -415,7 +489,7 @@ select.inp{cursor:pointer}
   <div class="dw-h">
     <div class="panel-title" id="as-dw-title">New rule</div>
     <span class="chip info" id="as-dw-badge">Draft</span>
-    <div class="p-right"><button class="btn" onclick="asDrawerClose()">Close</button></div>
+    <div class="p-right"><button class="btn btn-ghost" onclick="asDrawerClose()">Close</button></div>
   </div>
   <div class="dw-b">
     <div class="retain">
@@ -427,7 +501,7 @@ select.inp{cursor:pointer}
       <div class="fld"><label>Rule name</label><input class="inp" id="as-dw-name" placeholder="Cost centre in reference set"></div>
       <div class="fld"><label>What it proves — one plain-English sentence, present tense</label>
         <input class="inp" id="as-dw-proves" placeholder="Every posting still carries a cost centre the reference set knows.">
-        <div class="muted" style="font-size:10.5px;margin-top:3px">Required. Suggested checks arrive with this
+        <div class="muted" style="font-size:13px;margin-top:3px">Required. Suggested checks arrive with this
           pre-filled; a template fills it for standard checks if you leave it blank.</div></div>
       <div class="row3">
         <div class="fld"><label>Category</label><select class="inp" id="as-dw-category"></select></div>
@@ -440,7 +514,7 @@ select.inp{cursor:pointer}
     <fieldset class="fs"><legend>Check</legend>
       <div class="fld"><label>Check type</label><select class="inp" id="as-dw-check" onchange="asDwCheckChanged()"></select></div>
       <div class="fld"><label>Parameters (JSON)</label><textarea class="inp" id="as-dw-params" rows="5"></textarea>
-        <div class="muted" style="font-size:10.5px;margin-top:3px" id="as-dw-paramhint"></div></div>
+        <div class="muted" style="font-size:13px;margin-top:3px" id="as-dw-paramhint"></div></div>
     </fieldset>
     <fieldset class="fs"><legend>Binding — tag first</legend>
       <div class="row3">
@@ -454,7 +528,7 @@ select.inp{cursor:pointer}
         <input class="inp mono" id="as-dw-bpattern" placeholder="tgt.dbo.*.currency_code"></div>
       <div class="fld" id="as-dw-btargets-w" style="display:none"><label>Targets — one db.schema.table.column per line (column optional)</label>
         <textarea class="inp" id="as-dw-btargets" rows="3" placeholder="tgt.dbo.gl_posting.cost_centre"></textarea></div>
-      <div class="muted" style="font-size:11px" id="as-dw-resolves"></div>
+      <div class="muted" style="font-size:13px" id="as-dw-resolves"></div>
     </fieldset>
     <fieldset class="fs"><legend>Thresholds</legend>
       <div class="row3">
@@ -463,13 +537,13 @@ select.inp{cursor:pointer}
         <div class="fld"><label>Unit</label><select class="inp" id="as-dw-unit">
           <option value="rows">rows</option><option value="percent">percent</option></select></div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px">
         <button class="tog" id="as-dw-baseline" aria-pressed="false" onclick="asTog(this)" aria-label="Baseline"></button>
         Also warn when the measure moves more than <input class="inp mono" id="as-dw-band" value="10" style="width:52px;display:inline-block"> % against its 7-day baseline
       </div>
     </fieldset>
     <fieldset class="fs"><legend>Schedule</legend>
-      <div class="muted" style="font-size:11px;margin-bottom:4px" id="as-dw-cronhuman"></div>
+      <div class="muted" style="font-size:13px;margin-bottom:4px" id="as-dw-cronhuman"></div>
       <div class="fld"><label>Cron override (optional — the group's cron applies when blank)</label>
         <input class="inp mono" id="as-dw-cron" placeholder="0 4 * * *" oninput="asDwCronChanged()"></div>
     </fieldset>
@@ -483,8 +557,8 @@ select.inp{cursor:pointer}
     <div id="as-dw-dry" class="dry" style="display:none"></div>
   </div>
   <div class="dw-f">
-    <button class="btn" onclick="asDryRun()">▷ Dry run</button>
-    <span class="muted" style="font-size:11px" id="as-dw-drynote">Dry-run the preview before saving — the save is gated on it.</span>
+    <button class="btn btn-ghost" onclick="asDryRun()">Dry run</button>
+    <span class="muted" style="font-size:13px" id="as-dw-drynote">Dry-run the preview before saving — the save is gated on it.</span>
     <div class="p-right"><button class="btn btn-primary" id="as-dw-save" onclick="asSaveFromDrawer()" disabled>Save rule</button></div>
   </div>
 </aside>
@@ -503,7 +577,7 @@ select.inp{cursor:pointer}
 <script src="/cygenix-subject-harvest.js?v=223a1d8144" defer></script>
 <script src="/cygenix-integrations.js?v=9d508375a5" defer></script>
 <script src="/cygenix-map-context.js?v=f006e965b8" defer></script>
-<script src="/cygenix-assurance.js?v=d1a71328e3" defer></script>
+<script src="/cygenix-assurance.js?v=c4ac6abaa4" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
 <script src="/cygenix-sidebar.js?v=a39bbf4be2" defer></script>
@@ -1162,13 +1236,21 @@ function renderStatus(){
     cta.textContent = 'Run all ' + st.checksWritten + ' checks · ~' + A.fmtDuration(est);
     ctaAction = asRunAll;
   } else if (st.state === 'breaches'){
-    line.textContent = st.openBreaches + ' open breach' + (st.openBreaches === 1 ? '' : 'es');
+    /* the line is the count against the estate; the consequence sentence
+       says what the breach blocks, which is the reason to act on it */
+    const n = st.openBreaches;
+    const critical = store.breaches.some(b => (b.state === 'open' || b.state === 'acknowledged') && b.severity === 'critical');
+    line.textContent = n + ' of ' + st.checksWritten + ' check' + (st.checksWritten === 1 ? '' : 's')
+      + (n === 1 ? ' is' : ' are') + ' open · last run ' + fmtWhen(st.lastRunAt);
     line.className = 'line bad';
-    sub.textContent = st.checksRun + ' of ' + st.checksWritten + ' checks have run · last run ' + fmtWhen(st.lastRunAt) + '.';
-    cta.textContent = 'Review breaches';
+    sub.textContent = critical
+      ? 'The evidence pack cannot be published while a critical breach is open.'
+      : 'The evidence pack will name ' + (n === 1 ? 'this breach' : 'these breaches') + ' as open until '
+        + (n === 1 ? 'it is' : 'they are') + ' resolved or accepted.';
+    cta.textContent = 'Review ' + n + ' breach' + (n === 1 ? '' : 'es');   /* was 'Review breaches' */
     ctaAction = () => { asView('eng'); $('as-breaches-panel').scrollIntoView({ behavior: 'smooth' }); };
   } else {
-    line.textContent = 'All ' + st.checksWritten + ' checks passing · last run ' + fmtWhen(st.lastRunAt);
+    line.textContent = 'All ' + st.checksWritten + ' check' + (st.checksWritten === 1 ? '' : 's') + ' passing · last run ' + fmtWhen(st.lastRunAt);
     line.className = 'line good';
     sub.textContent = 'The evidence pack is ready to share.';
     cta.textContent = 'Publish evidence pack';
@@ -1177,7 +1259,7 @@ function renderStatus(){
 
   /* §4: the ribbon derives from the SAME status object — no new state */
   $('as-ribbon').innerHTML = A.asRibbon(st).map((s, i) =>
-    '<div class="rstep ' + s.state + '"><div class="num">' + (i + 1) + '</div>'
+    '<div class="rstep ' + s.state + '"><div class="idx">' + (i + 1) + '</div>'
     + '<div class="t">' + esc(s.label) + '</div><div class="n">' + esc(s.note || '') + '</div></div>').join('');
   return st;
 }
@@ -1230,8 +1312,26 @@ function renderCoverageMapped(host, hint){
   const tgtTotal = catalog ? catalog.tables.filter(x => x.db === 'tgt').length : null;
   const outside = tgtTotal == null ? null : Math.max(0, tgtTotal - mapScope.mappedTableCount);
 
-  host.innerHTML =
-    '<div class="covbar">'
+  /* the four measures: tables with a check, rows under check, money columns,
+     unchecked — a strip of figures that can each reach their ceiling */
+  const withCheck = mapScope.tables.filter(t => store.rules.some(r => r.enabled && r.provenance
+    && r.provenance.source === 'derived' && r.provenance.jobId === t.jobId));
+  const rowsUnder = withCheck.reduce((a, t) => a + ((t.run && t.run.inserted) || 0), 0);
+  const money = catalog ? A.asMoneyCoverage(store, catalog, { db: 'tgt', phase }) : null;
+  const unchecked = mapScope.tables.length - withCheck.length;
+  const uncheckedNote = unchecked === 0
+    ? (mapScope.tables.length ? 'Every mapped table has a check' : 'No tables mapped yet')
+    : mapScope.tables.filter(t => !withCheck.includes(t)).slice(0, 2).map(t => t.name || t.tgtTable).join(', ')
+      + (unchecked > 2 ? ' and ' + (unchecked - 2) + ' more' : '') + ' — not derived';
+  host.innerHTML = covGrid([
+    ['Tables with a check', withCheck.length, '/' + mapScope.tables.length, mapScope.tables.length ? withCheck.length / mapScope.tables.length : 0],
+    ['Rows under check', mapScope.mappedRowsLanded ? Math.round(100 * rowsUnder / mapScope.mappedRowsLanded) : 0, '%', mapScope.mappedRowsLanded ? rowsUnder / mapScope.mappedRowsLanded : 0],
+    ['Money columns', money && money.pct != null ? money.pct : '—', money && money.pct != null ? '%' : '', money && money.pct != null ? money.pct / 100 : 0,
+      money ? null : 'catalogue not loaded'],
+    ['Unchecked tables', unchecked, '', null, uncheckedNote],
+  ])
+    + '<div class="covdetail">'
+    + '<div class="covbar">'
     + (buckets.proven.length ? '<i style="width:' + pc('proven') + '%;background:var(--green)"></i>' : '')
     + (buckets.breaching.length ? '<i style="width:' + pc('breaching') + '%;background:var(--red)"></i>' : '')
     + (buckets.armed.length ? '<i style="width:' + Math.max(0, 100 - pc('proven') - pc('breaching')) + '%;background:var(--amber)"></i>' : '')
@@ -1249,14 +1349,28 @@ function renderCoverageMapped(host, hint){
     /* rowsExcluded: accounted for, not lost — never rendered as a breach */
     + mapInfo.map(x => '<div class="covgaps">' + esc(x.proves) + '</div>').join('')
     + (mapSkipped.length
-      ? '<div class="muted" style="font-size:10.5px;margin-top:6px">Not derived: '
+      ? '<div class="muted" style="font-size:13px;margin-top:6px">Not derived: '
         + esc(mapSkipped.map(s => s.id.split('/').pop() + ' (' + s.why + ')').join('; ')) + '.</div>' : '')
     + (outside != null
-      ? '<div class="muted" style="font-size:11px;margin-top:8px">' + outside.toLocaleString('en-GB')
+      ? '<div class="muted" style="font-size:13px;margin-top:8px">' + outside.toLocaleString('en-GB')
         + ' tables in ' + esc(catalogMeta.tgtDb || 'the target') + ' are outside this migration — '
         + '<a href="/object-mapping" style="color:var(--accent)">review scope</a> if that looks wrong.</div>'
-      : '<div class="muted" style="font-size:11px;margin-top:8px">— The connection catalogue has not loaded, '
-        + 'so the outside-this-migration count cannot be shown yet.</div>');
+      : '<div class="muted" style="font-size:13px;margin-top:8px">— The connection catalogue has not loaded, '
+        + 'so the outside-this-migration count cannot be shown yet.</div>')
+    + '</div>';
+}
+
+/* the four-column strip: label, value, unit, a 0..1 fill for the 5px bar
+   (null = no bar, an explanatory line instead), and the line's text */
+function covGrid(cells){
+  return '<div class="covgrid">' + cells.map(([k, v, u, fill, note], i) =>
+    '<div class="cov"><div class="k">' + esc(k) + '</div>'
+    + '<div class="v' + (i === 3 && Number(v) > 0 ? ' warn' : '') + '">' + esc(String(v))
+    + (u ? '<span class="u">' + esc(u) + '</span>' : '') + '</div>'
+    + (fill == null || note
+      ? '<div class="n">' + esc(note || '') + '</div>'
+      : '<div class="bar"><i style="width:' + Math.round(100 * Math.max(0, Math.min(1, fill))) + '%"></i></div>')
+    + '</div>').join('') + '</div>';
 }
 
 function renderCoverage(){
@@ -1265,8 +1379,12 @@ function renderCoverage(){
   document.querySelector('#as-coverage-panel .panel-title').textContent = 'Coverage of the migration';
   if (!catalog || !catalog.tables.length){
     hint.textContent = 'not yet measurable';
-    host.innerHTML = '<div class="muted" style="font-size:12px">— No target schema loaded, so coverage cannot be'
-      + ' computed. Connect the project databases and this card fills itself in.</div>';
+    /* the frame, the labels and the units paint; the figures are dashes
+       with the reason, never a panel that says Loading */
+    host.innerHTML = covGrid([
+      ['Tables with a check', '—', '', 0], ['Rows under check', '—', '', 0], ['Money columns', '—', '', 0],
+      ['Unchecked tables', '—', '', null, 'No target schema loaded, so coverage cannot be computed. Connect the project databases and this strip fills itself in.'],
+    ]);
     return;
   }
   const cov = A.asCoverage(store, catalog, { db: 'tgt', labelFn: t => t.schema });
@@ -1278,8 +1396,19 @@ function renderCoverage(){
     ? 'Biggest gaps: ' + cov.gaps.map(g => g.label + ' — 0 checks across ' + g.tables + ' table'
         + (g.tables === 1 ? '' : 's') + (g.examples.length ? ' including ' + g.examples.join(', ') : '')).join('. ') + '.'
     : (m === 0 ? 'Every material table has at least one check on it.' : '');
-  host.innerHTML =
-    '<div class="covbar">'
+  const rowsAll = cov.checked.concat(cov.materialUnchecked, cov.lowRisk).reduce((a, t) => a + (t.rowCount || 0), 0);
+  const rowsChecked = cov.checked.reduce((a, t) => a + (t.rowCount || 0), 0);
+  const money = A.asMoneyCoverage(store, catalog, { db: 'tgt', phase: phaseOf() });
+  host.innerHTML = covGrid([
+    ['Tables with a check', c, '/' + cov.inScope, cov.inScope ? c / cov.inScope : 0],
+    ['Rows under check', rowsAll ? Math.round(100 * rowsChecked / rowsAll) : 0, '%', rowsAll ? rowsChecked / rowsAll : 0],
+    ['Money columns', money.pct == null ? '—' : money.pct, money.pct == null ? '' : '%', money.pct == null ? 0 : money.pct / 100,
+      money.pct == null ? 'no money columns in the target' : null],
+    ['Unchecked tables', m + l, '', null, m + l === 0 ? 'Every table in scope has a check'
+      : m + ' material · ' + l + ' low-risk reference'],
+  ])
+    + '<div class="covdetail">'
+    + '<div class="covbar">'
     + (c ? '<i style="width:' + pc(c) + '%;background:var(--green)" title="checked"></i>' : '')
     + (m ? '<i style="width:' + pc(m) + '%;background:var(--amber)" title="material but unchecked"></i>' : '')
     + (l ? '<i style="width:' + Math.max(0, 100 - pc(c) - pc(m)) + '%;background:var(--bg4)" title="low-risk reference"></i>' : '')
@@ -1290,9 +1419,10 @@ function renderCoverage(){
     + '<span><span class="sw" style="background:var(--bg4)"></span>' + l + ' low-risk reference</span>'
     + '</div>'
     + (gaps ? '<div class="covgaps">' + esc(gaps) + '</div>' : '')
-    + '<div class="muted" style="font-size:10.5px;margin-top:6px">Material = carries a money column, is referenced by'
+    + '<div class="muted" style="font-size:13px;margin-top:6px">Material = carries a money column, is referenced by'
     + ' a foreign key, or holds more than ' + (store.settings.materialRowThreshold || 10000).toLocaleString('en-GB')
-    + ' rows (configurable).</div>';
+    + ' rows (configurable).</div>'
+    + '</div>';
 }
 
 /* ═══════════════ §6: suggestion bundles ═══════════════ */
@@ -1313,12 +1443,12 @@ function renderBundles(){
     host.innerHTML = Object.keys(byJob).map(jid => {
       const rules = byJob[jid];
       const t = mapScope.tables.find(x => x.jobId === jid) || {};
-      return '<div class="bundle"><div class="body"><b>' + esc(rules[0].provenance.jobName || jid) + '</b>'
+      return '<div class="bundle"><span class="chip">Derived</span><div class="body"><b>' + esc(rules[0].provenance.jobName || jid) + '</b>'
         + '<p>' + rules.length + ' check' + (rules.length === 1 ? '' : 's') + ' derived from this job\'s mapping'
         + (t.predicate ? ' — the source is counted under its own filter (<span class="mono">'
           + esc(t.predicate) + '</span>)' : '') + '.</p>'
         + '<div class="meta">' + esc(jid) + ' · runs on job completion · no writes</div></div>'
-        + '<div class="acts"><a class="btn" href="/object-mapping?edit=' + esc(jid) + '">View map</a></div></div>';
+        + '<div class="acts"><a class="btn btn-ghost" href="/object-mapping?edit=' + esc(jid) + '">View map</a></div></div>';
     }).join('') || '<div class="empty">No derived checks yet — add a table mapping and its checks appear here.</div>';
     $('as-sugs').innerHTML = '';
     return;
@@ -1336,18 +1466,18 @@ function renderBundles(){
     : 'nothing waiting';
   host.innerHTML = res.bundles.length ? res.bundles.map(b => {
     const open = expandedBundle === b.key;
-    return '<div class="bundle"><div class="body">'
+    return '<div class="bundle"><span class="chip">' + esc(catLabel((b.items[0] || {}).category || 'custom')) + '</span><div class="body">'
       + '<b>' + esc(b.title) + '</b><p>' + esc(b.plain) + '</p>'
       + '<div class="meta">' + b.count + ' table' + (b.count === 1 ? '' : 's') + ' · ~'
       + A.fmtDuration(b.estMsPerSweep) + ' per sweep · no writes</div></div>'
       + '<div class="acts">'
-      + '<button class="btn" onclick="asBundleReview(\'' + b.key + '\')">' + (open ? 'Close' : 'Review') + '</button>'
+      + '<button class="btn btn-ghost" onclick="asBundleReview(\'' + b.key + '\')">' + (open ? 'Close' : 'Review') + '</button>'
       + '<button class="btn btn-primary" onclick="asBundleAddAll(\'' + b.key + '\')">Add all ' + b.count + '</button>'
       + '</div></div>'
       + (open ? '<div class="bexp">' + b.items.map((d, i) =>
           '<div class="bitem"><span class="nm"><b>' + esc(d.name) + '</b><br><span class="pv">' + esc(d.proves || '') + '</span></span>'
-          + '<button class="btn" onclick="asBundleDismiss(\'' + b.key + '\',\'' + esc(b.tables[i]) + '\')">Dismiss</button>'
-          + '<button class="btn" onclick="asBundleAddOne(\'' + b.key + '\',' + i + ')">Add</button></div>').join('')
+          + '<button class="btn btn-ghost btn-sm" onclick="asBundleDismiss(\'' + b.key + '\',\'' + esc(b.tables[i]) + '\')">Dismiss</button>'
+          + '<button class="btn btn-ghost btn-sm" onclick="asBundleAddOne(\'' + b.key + '\',' + i + ')">Add rule</button></div>').join('')
         + '</div>' : '');
   }).join('') : '<div class="empty">The profiler has nothing new to suggest — every table it can cover already has'
     + ' a check, was dismissed, or is out of scope.</div>';
@@ -1358,12 +1488,12 @@ function renderOtherSugs(){
      per-item cards, below the bundles */
   const sugs = store.suggestions.filter(s => s.state === 'proposed' && BUNDLE_CHECKS.indexOf(s.check) < 0);
   $('as-sugs').innerHTML = sugs.length
-    ? '<div class="note" style="border-top:0.5px solid var(--border)">Other suggestions — one decision each</div>'
+    ? '<div class="note" style="border-top:1px solid var(--border)">Other suggestions — one decision each</div>'
       + sugs.map(s =>
         '<div class="sug"><span class="chip">' + esc(catLabel(s.category)) + '</span>'
         + '<div class="body"><b>' + esc(s.title) + '</b><p>' + esc(s.detail) + '</p></div>'
-        + '<div class="acts"><button class="btn" onclick="asDismissSug(\'' + s.id + '\')">Dismiss</button>'
-        + '<button class="btn" onclick="asAcceptSug(\'' + s.id + '\')">Review &amp; add</button></div></div>').join('')
+        + '<div class="acts"><button class="btn btn-ghost" onclick="asDismissSug(\'' + s.id + '\')">Dismiss</button>'
+        + '<button class="btn btn-ghost" onclick="asAcceptSug(\'' + s.id + '\')">Add rule</button></div></div>').join('')
     : '';
 }
 function bundleByKey(key){
@@ -1414,16 +1544,28 @@ function asClearRuleFilters(){
   asRenderRules();
 }
 /* the five states replacing the pass/open binary */
-function stateChip(r){
+function ruleStateOf(r){
   const lr = lastRunOf(r.id);
-  if (lr && lr.status === 'error') return '<span class="chip warn">Error</span>';
+  if (lr && lr.status === 'error') return { key: 'error', word: 'Error' };
   return {
-    derived:   '<span class="chip info">Derived</span>',
-    armed:     '<span class="chip">Armed</span>',
-    proven:    '<span class="chip ok">Proven</span>',
-    breaching: '<span class="chip crit">Open</span>',
-    dormant:   '<span class="chip warn">Dormant</span>',
-  }[A.asRuleState(store, r, { phase: phaseOf() })] || '<span class="chip">—</span>';
+    derived:   { key: 'derived', word: 'Derived' },
+    armed:     { key: 'armed',   word: 'Armed' },
+    proven:    { key: 'proven',  word: 'Proven' },
+    breaching: { key: 'open',    word: 'Open' },
+    dormant:   { key: 'dormant', word: 'Dormant' },
+  }[A.asRuleState(store, r, { phase: phaseOf() })] || { key: 'derived', word: '—' };
+}
+/* a word and an 8px square in the state's colour: Derived, Armed, Proven,
+   Open, Dormant, Error — never a pass/fail pill */
+function stateChip(r){
+  const st = ruleStateOf(r);
+  return '<span class="st st-' + st.key + '">' + st.word + '</span>';
+}
+/* the square on its own, prefixed to the sentence in the first column */
+function stateSquare(r){
+  const k = ruleStateOf(r).key;
+  const cls = { open: 'cx-dot-fail', proven: 'cx-dot-ok', dormant: 'cx-dot-warn', error: 'cx-dot-warn', armed: 'cx-dot-accent' }[k] || '';
+  return '<span class="cx-dot ' + cls + '"></span>';
 }
 function runsCell(r){
   if (r.schedule && r.schedule.onJobCompletion) return 'On job completion';
@@ -1441,7 +1583,7 @@ function scopeCell(r){
     const ct = catalog.tables.find(x => x.db === t.db && x.schema === t.schema && x.table === t.table);
     if (ct) rows = ct.rowCount;
   }
-  return '<span class="mono">' + esc(name || '—') + '</span>'
+  return '<span>' + esc(name || '—') + '</span>'
     + (rows != null ? '<span class="rid">' + rows.toLocaleString('en-GB') + ' rows</span>' : '');
 }
 function asRenderRules(){
@@ -1492,15 +1634,16 @@ function asRenderRules(){
     const lr = lastRunOf(r.id);
     return '<tr>'
       /* §7: the plain-English sentence leads; the internals are the sub-line */
-      + '<td><span class="rulename">' + esc(r.proves || r.name) + '</span>'
-      + '<span class="rid">' + esc(r.id) + ' · ' + esc(r.name) + ' · ' + esc(r.check) + prov + '</span></td>'
+      + '<td><span class="rulename">' + stateSquare(r) + esc(r.proves || r.name) + '</span>'
+      + '<span class="rid" style="padding-left:16px">' + esc(r.id) + ' · ' + esc(r.name) + ' · ' + esc(r.check) + prov + '</span></td>'
       + '<td>' + scopeCell(r) + '</td>'
       + '<td>' + esc(runsCell(r)) + '</td>'
       + '<td>' + stateChip(r) + '</td>'
-      + '<td><button class="btn" onclick="asToggleSql(\'' + r.id + '\')" title="The SQL this check runs — recorded verbatim on every run">' + (sqlOpen ? '▴' : 'SQL') + '</button></td>'
+      + '<td><button class="btn link" onclick="asToggleSql(\'' + r.id + '\')" title="The SQL this check runs — recorded verbatim on every run">'
+      + (sqlOpen ? 'Hide' : r.check === 'custom.sql' ? 'Custom' : 'Generated') + '</button></td>'
       + '<td><button class="tog" aria-pressed="' + String(!!r.enabled) + '" aria-label="Enabled" onclick="asToggleRule(\'' + r.id + '\')"></button></td>'
-      + '<td style="white-space:nowrap"><button class="btn" onclick="asRunNow(\'' + r.id + '\')" title="Run this rule now">▶</button> '
-      + '<button class="btn" onclick="asDrawerOpen(\'' + r.id + '\')">Edit</button></td></tr>'
+      + '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="asRunNow(\'' + r.id + '\')" title="Run this rule now">Run</button> '
+      + '<button class="btn btn-ghost btn-sm" onclick="asDrawerOpen(\'' + r.id + '\')">Edit</button></td></tr>'
       + (sqlOpen ? '<tr><td colspan="7" style="background:var(--bg3)"><div class="dry" style="margin:0">'
           + esc(lr && lr.queryText ? lr.queryText : 'Not run yet — the SQL is recorded verbatim with the first run.'
             + ' Dry-run it in the editor to preview.') + '</div></td></tr>' : '');
@@ -1539,10 +1682,10 @@ function renderTags(){
     + '<td><span class="chip info">' + esc(p.tag) + '</span></td>'
     + '<td><span class="conf"><span class="track"><i style="width:' + Math.round(p.confidence * 100) + '%"></i></span>'
     + p.confidence.toFixed(2) + '</span></td>'
-    + '<td class="muted" style="font-size:11.5px">' + esc(p.rationale) + '</td>'
-    + '<td style="white-space:nowrap"><button class="btn" onclick="asAcceptTag(' + i + ')">Accept</button> '
-    + '<button class="btn" onclick="asDismissTag(' + i + ')">Dismiss</button></td></tr>'
-  ).join('') : '<tr><td colspan="5" class="empty">No proposals waiting. ↻ Propose from schema reads column names, types and keys — metadata only, no values.</td></tr>';
+    + '<td class="muted" style="font-size:13px">' + esc(p.rationale) + '</td>'
+    + '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="asAcceptTag(' + i + ')">Accept</button> '
+    + '<button class="btn btn-ghost btn-sm" onclick="asDismissTag(' + i + ')">Dismiss</button></td></tr>'
+  ).join('') : '<tr><td colspan="5" class="empty">No proposals waiting. Propose from schema reads column names, types and keys — metadata only, no values.</td></tr>';
 
   const byTag = {};
   store.tags.forEach(t => { (byTag[t.tag] = byTag[t.tag] || []).push(t); });
@@ -1553,11 +1696,26 @@ function renderTags(){
     return '<tr><td><span class="chip info">' + esc(tag) + '</span></td>'
       + '<td class="mono num">' + byTag[tag].length + '</td>'
       + '<td class="muted">' + (bound.length ? bound.map(b => esc(b.id)).join(', ') : '<span class="chip warn">no rule bound</span>') + '</td>'
-      + '<td><button class="btn" onclick="asDrawerOpen(null,{binding:{mode:\'tag\',tag:\'' + esc(tag) + '\'}})">+ Rule on this tag</button></td></tr>';
+      + '<td><button class="btn btn-ghost btn-sm" onclick="asDrawerOpen(null,{binding:{mode:\'tag\',tag:\'' + esc(tag) + '\'}})">+ Rule on this tag</button></td></tr>';
   }).join('') || '<tr><td colspan="4" class="empty">No tags yet — accept proposals above.</td></tr>';
 }
 
 /* ═══════════════ breaches ═══════════════ */
+/* The queue on the left, the detail on the right, inside one border. A
+   queue entry is the severity, the time, the rule's name and the row count;
+   the detail leads with the sentence the rule proves, because a breach is
+   that sentence being false. The four measures between the dividers are
+   the ones an auditor asks for in that order — how many rows were looked
+   at, how many failed, when it was first seen, and the hash that ties the
+   figures to the run record. The actions are decisions, not state names:
+   Send to cleansing is the one that fixes data, so it is the filled one. */
+function fmtInt(n){ return Number(n || 0).toLocaleString('en-GB'); }
+function fmtClock(ms){
+  try { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+}
+function fmtDay(ms){
+  try { return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); } catch { return ''; }
+}
 function renderBreaches(){
   const open = openBreaches().length;
   $('as-breach-sub').textContent = open
@@ -1567,15 +1725,20 @@ function renderBreaches(){
   if (!selBreach && list.length) selBreach = (openBreaches()[0] || list[0]).id;
   $('as-bq').innerHTML = list.length ? list.map(b => {
     const r = ruleOf(b.ruleId);
-    return '<button class="bq-item ' + (b.id === selBreach ? 'on' : '') + '" onclick="selBreach=\'' + b.id + '\';renderAll()">'
-      + '<div class="t">' + (b.state !== 'resolved' ? '● ' : '') + esc(r.name) + '</div>'
-      + '<div class="m">' + esc(b.ruleId) + ' · ' + (b.currentRowsFailed || b.peakRowsFailed || 0) + ' rows · '
-      + fmtWhen(b.openedAt) + ' · ' + esc(b.state) + '</div></button>';
+    const done = b.state === 'resolved';
+    const rows = b.currentRowsFailed || b.peakRowsFailed || 0;
+    return '<button class="bq-item ' + (b.id === selBreach ? 'on' : '') + (done ? ' done' : '')
+      + '" onclick="selBreach=\'' + b.id + '\';renderAll()">'
+      + '<div class="ts">' + (done ? '<span class="chip ok">Resolved</span>' : sevChip(b.severity))
+      + '<span>' + esc(fmtClock(b.openedAt)) + '</span></div>'
+      + '<div class="t">' + esc(r.name) + '</div>'
+      + '<div class="m">' + fmtInt(rows) + ' row' + (rows === 1 ? '' : 's') + ' failed'
+      + (b.state === 'acknowledged' ? ' · acknowledged' : b.state === 'suppressed' ? ' · suppressed' : '') + '</div></button>';
   }).join('') : '<div class="empty">No breaches recorded.</div>';
 
   const b = store.breaches.find(x => x.id === selBreach);
   const host = $('as-breach-detail');
-  if (!b){ host.innerHTML = '<div class="panel" style="margin:0"><div class="empty">No breach selected.</div></div>'; return; }
+  if (!b){ host.innerHTML = '<div class="empty">No breach selected.</div>'; return; }
   const r = ruleOf(b.ruleId);
   const run = store.runs.filter(x => x.ruleId === b.ruleId).slice(-1)[0];
   const signals = (run && run.context) || {};
@@ -1583,56 +1746,84 @@ function renderBreaches(){
   const sample = run ? run.perTarget.flatMap(t => t.sampleRows || []).slice(0, 8) : [];
   const cols = sample.length ? Object.keys(sample[0]).slice(0, 6) : [];
   const trail = store.events.filter(e => e.breachId === b.id || (e.ruleId === b.ruleId && /^breach\./.test(e.type)));
+  const failed = b.currentRowsFailed || b.peakRowsFailed || 0;
+  const scanned = run ? ((run.counts && run.counts.compared) || run.rowsScanned || 0) : 0;
+  const targets = run && run.perTarget[0] ? run.perTarget.map(t => t.target).join(', ') : '';
+  const sql = run && run.perTarget[0] && run.perTarget[0].generatedSql
+    ? run.perTarget.map(t => t.generatedSql).join('\n\n') : '';
+
+  /* the explanation names the counts and the cause the engine found; when
+     the engine found nothing it says so rather than inventing a cause */
+  const why = fmtInt(failed) + (scanned ? ' of ' + fmtInt(scanned) : '') + ' row' + (failed === 1 ? '' : 's')
+    + ' fail' + (failed === 1 ? 's' : '') + ' this check'
+    + (targets ? ' in ' + targets : '') + (run && run.why ? ' — ' + run.why : '') + '. '
+    + (prose || 'The engine\'s signals show nothing unusual about the failing rows: no new values, no single writer, no correlated breach.')
+    + (b.runCount > 1 ? ' Seen on ' + b.runCount + ' runs.' : '');
 
   host.innerHTML =
-    '<div class="panel"><div class="panel-header">'
-    + '<span class="sev ' + (b.severity === 'critical' ? 'c' : 'w') + '"></span>'
-    + '<div class="panel-title">' + esc(r.name) + '</div>'
-    + '<span class="chip">' + esc(catLabel(r.category)) + '</span>'
+    '<div class="bd"><div class="bd-h">'
+    + sevChip(b.severity) + '<span class="chip">' + esc(catLabel(r.category)) + '</span>'
     + '<span class="chip ' + (b.state === 'resolved' ? 'ok' : b.state === 'suppressed' ? '' : 'crit') + '">' + esc(b.state) + '</span>'
-    + '<div class="p-right">'
-    + (b.state === 'open' ? '<button class="btn" onclick="asAck(\'' + b.id + '\')">Acknowledge</button>' : '')
-    + (b.state !== 'resolved' ? '<button class="btn" onclick="asResolveBreach(\'' + b.id + '\')">Resolve</button>'
-      + '<button class="btn" onclick="asSuppressBreach(\'' + b.ruleId + '\')">Suppress…</button>'
-      + '<button class="btn" onclick="asCleanse(\'' + b.id + '\')">Cleanse rows</button>' : '')
-    + '</div></div><div class="panel-body">'
-    + '<table style="font-size:12px"><tbody>'
-    + '<tr><td class="muted" style="width:110px">Rule</td><td><span class="mono">' + esc(b.ruleId) + '</span> · ' + esc(r.check)
-    + (r.provenance && r.provenance.source === 'migration' ? ' · created during migration, promoted to continuous' : '') + '</td></tr>'
-    + '<tr><td class="muted">Scope</td><td class="mono">' + (run && run.perTarget[0] ? esc(run.perTarget.map(t => t.target).join(', ')) : '—') + '</td></tr>'
-    + '<tr><td class="muted">Rows</td><td>current <b>' + (b.currentRowsFailed || 0) + '</b> · peak ' + (b.peakRowsFailed || 0)
-    + ' · across ' + (b.runCount || 1) + ' run' + ((b.runCount || 1) === 1 ? '' : 's') + '</td></tr>'
-    + '<tr><td class="muted">Opened</td><td>' + new Date(b.openedAt).toLocaleString() + (b.resolvedAt ? ' · resolved ' + new Date(b.resolvedAt).toLocaleString() + ' (' + esc(b.resolution || '') + ')' : '') + '</td></tr>'
-    + '</tbody></table>'
-    + '<div class="diag"><div class="diag-h">Diagnosis <span class="chip info">written from the engine\'s own signals</span></div>'
-    + '<div class="diag-b">' + esc(prose)
+    + (r.provenance && r.provenance.source === 'migration' ? '<span class="cx-meta">created during migration, promoted to continuous</span>' : '')
+    + '</div>'
+    + '<div class="bd-proves">' + esc(r.proves || r.name) + '</div>'
+    + '<div class="bd-why">' + esc(why) + '</div>'
+    + '<div class="bd-measures">'
+    + '<div><div class="k">Rows scanned</div><div class="v">' + (scanned ? fmtInt(scanned) : '—') + '</div></div>'
+    + '<div><div class="k">Rows failed</div><div class="v fail">' + fmtInt(failed) + '</div></div>'
+    + '<div><div class="k">First seen</div><div class="v when">' + esc(fmtDay(b.openedAt) + ' · ' + fmtClock(b.openedAt)) + '</div></div>'
+    + '<div><div class="k">Run hash</div><div class="v mono" title="' + esc((run && run.runHash) || '') + '">'
+    + (run && run.runHash ? esc(run.runHash.slice(0, 16)) + '…' : '—') + '</div></div>'
+    + '</div>'
+    + '<div class="bd-ro">Pass, fail and thresholds are computed by the rule engine in SQL; every statement it ran is a '
+    + 'read-only SELECT, recorded verbatim on the run. Nothing on this screen writes to either database.</div>'
+    + '<div class="bd-acts">'
+    + (b.state !== 'resolved'
+      ? '<button class="btn btn-primary" onclick="asCleanse(\'' + b.id + '\')">Send to cleansing</button>' : '')
+    + '<button class="btn btn-ghost" onclick="asBdToggle(\'as-bd-rows\')"' + (sample.length ? '' : ' disabled title="No sampled rows are retained for this breach"')
+    + '>View the ' + fmtInt(failed) + ' row' + (failed === 1 ? '' : 's') + '</button>'
+    + '<button class="btn btn-ghost" onclick="asBdToggle(\'as-bd-sql\')"' + (sql ? '' : ' disabled title="Not run yet — the SQL is recorded verbatim with the first run"') + '>Show the SQL</button>'
+    + (b.state !== 'resolved'
+      ? '<button class="btn btn-ghost" onclick="asSuppressBreach(\'' + b.ruleId + '\')" title="Suppress this rule with a reason and an expiry — both go to the audit trail">Accept risk</button>'
+        + (b.state === 'open' ? '<button class="btn btn-ghost" onclick="asAck(\'' + b.id + '\')">Acknowledge</button>' : '')
+        + '<button class="btn btn-ghost" onclick="asResolveBreach(\'' + b.id + '\')">Resolve</button>'
+      : '<span class="cx-meta">resolved ' + esc(new Date(b.resolvedAt || 0).toLocaleString()) + (b.resolution ? ' — ' + esc(b.resolution) : '') + '</span>')
+    + '</div>'
+    + '<div class="bd-more">'
+    + '<details id="as-bd-rows"><summary style="display:none"></summary>'
+    + (sample.length
+      ? '<div class="tw"><table><thead><tr>' + cols.map(c => '<th>' + esc(c) + '</th>').join('')
+        + '</tr></thead><tbody>' + sample.map(row => '<tr>' + cols.map(c => '<td class="mono">' + esc(String(row[c] == null ? '' : row[c]).slice(0, 60)) + '</td>').join('') + '</tr>').join('')
+        + '</tbody></table></div>'
+        + '<div class="muted" style="font-size:13px;margin:6px 0 12px">Showing ' + sample.length + ' retained sample rows of '
+        + fmtInt(failed) + ' failing. <a href="#" onclick="asExportRows(\'' + b.id + '\');return false" style="color:var(--color-accent-700)">Export sampled rows to CSV</a></div>'
+      : '') + '</details>'
+    + '<details id="as-bd-sql"><summary style="display:none"></summary>'
+    + (sql ? '<div class="dry" style="margin:0 0 12px">' + esc(sql) + '</div>' : '') + '</details>'
+    + '<div class="diag"><div class="diag-h">Diagnosis <span class="chip info">from the engine\'s own signals</span></div>'
+    + '<div class="diag-b">' + esc(prose || 'No signal stands out.')
     + '<ul class="ev">'
     + '<li><span class="k">New values</span><span>' + (signals.newValues && signals.newValues.length ? esc(signals.newValues.join(', ')) : 'none the previous runs had not seen') + '</span></li>'
     + '<li><span class="k">Insert window</span><span>' + (signals.insertWindow ? esc(signals.insertWindow.from + ' – ' + signals.insertWindow.to) + ' (from the sampled rows)' : 'no audit-date column in the sample') + '</span></li>'
     + '<li><span class="k">Written by</span><span>' + (signals.writtenBy ? esc(signals.writtenBy) : 'no writer column in the sample') + '</span></li>'
     + '<li><span class="k">Correlated</span><span>' + (signals.correlatedBreaches && signals.correlatedBreaches.length ? esc(signals.correlatedBreaches.join(', ')) : 'no other rule on these tables is breaching') + '</span></li>'
     + '</ul></div>'
-    + '<div class="diag-foot">Pass, fail and thresholds are computed by the rule engine in SQL. The diagnosis only arranges evidence the engine already collected — it cannot open, close or change a breach.</div></div>'
-    + (sample.length
-      ? '<div class="tw" style="margin-top:0.8rem"><table><thead><tr>' + cols.map(c => '<th>' + esc(c) + '</th>').join('')
-        + '</tr></thead><tbody>' + sample.map(row => '<tr>' + cols.map(c => '<td class="mono">' + esc(String(row[c] == null ? '' : row[c]).slice(0, 60)) + '</td>').join('') + '</tr>').join('')
-        + '</tbody></table></div>'
-        + '<div class="muted" style="font-size:11px;margin-top:4px">Showing ' + sample.length + ' retained sample rows of '
-        + (b.currentRowsFailed || b.peakRowsFailed) + ' failing. <a href="#" onclick="asExportRows(\'' + b.id + '\');return false" style="color:var(--accent)">Export sampled rows to CSV</a></div>'
-      : '')
-    + (run && run.perTarget[0] && run.perTarget[0].generatedSql
-      ? '<details style="margin-top:0.8rem"><summary class="muted" style="cursor:pointer;font-size:11.5px">Generated SQL — reproduce this by hand</summary>'
-        + '<div class="dry">' + esc(run.perTarget.map(t => t.generatedSql).join('\n\n')) + '</div></details>'
-      : '')
-    + '</div></div>'
-    + '<div class="panel" style="margin:0.9rem 0 0"><div class="panel-header"><div class="panel-title">Audit trail</div>'
+    + '<div class="diag-foot">The diagnosis only arranges evidence the engine already collected — it cannot open, close or change a breach.</div></div>'
+    + '<div class="panel" style="margin:18px 0 0"><div class="panel-header"><div class="panel-title">Audit trail</div>'
     + '<span class="panel-sub">every state change, kept with the rule history</span></div>'
     + '<div class="panel-body"><ul class="trail">'
     + (trail.length ? trail.map(e => '<li><span class="ts">' + new Date(e.at).toLocaleString() + '</span><span><b>'
         + esc(e.type.replace('breach.', '')) + '</b>' + (e.by ? ' — ' + esc(e.by) : '') + (e.reason ? ' — ' + esc(e.reason) : '')
         + (e.resolution ? ' — ' + esc(e.resolution) : '') + '</span></li>').join('')
       : '<li class="muted">No events yet.</li>')
-    + '</ul></div></div>';
+    + '</ul></div></div>'
+    + '</div></div>';
+}
+/* the rows and the SQL are folded until asked for; the fold is a <details>
+   so it survives a re-render only as long as the breach stays selected */
+function asBdToggle(id){
+  const d = $(id);
+  if (d) d.open = !d.open;
 }
 
 /* ═══════════════ schedules & routing ═══════════════ */
@@ -1648,7 +1839,7 @@ function renderSched(){
       + '<td class="mono">' + (next ? new Date(next).toLocaleString() : '—')
       + (g.lastRunAt ? '<span class="rid">last ' + fmtWhen(g.lastRunAt) + '</span>' : '<span class="rid">never swept</span>') + '</td>'
       + '<td class="mono">' + est + '</td>'
-      + '<td><button class="btn" onclick="' + (g.id === 'grp_profile' ? 'asProfileNow()' : 'asRunGroup(\'' + g.id + '\')') + '">▶ Run now</button></td></tr>';
+      + '<td><button class="btn btn-ghost btn-sm" onclick="' + (g.id === 'grp_profile' ? 'asProfileNow()' : 'asRunGroup(\'' + g.id + '\')') + '">Run now</button></td></tr>';
   }).join('');
 
   const rt = $('as-routing').querySelector('tbody');
@@ -1725,7 +1916,7 @@ function renderEvidence(){
   ];
   $('as-ev-tiles').innerHTML = tiles.map(([k, v, n]) =>
     '<div class="rep-stat"><div class="v">' + v + '</div><div class="k">' + esc(k) + '</div>'
-    + '<div class="muted" style="font-size:10.5px">' + esc(n) + '</div></div>').join('');
+    + '<div class="muted">' + esc(n) + '</div></div>').join('');
 
   /* open items — named, never a bare count */
   $('as-ev-open').innerHTML = openN ? ev.open.map(o => {
@@ -1742,7 +1933,7 @@ function renderEvidence(){
   const catKeys = Object.keys(ev.claims);
   $('as-ev-claims').innerHTML = catKeys.length ? catKeys.map(cat =>
     '<details class="claim"><summary><span class="arrow">▶</span><b>' + esc(cat) + '</b>'
-    + '<span class="muted" style="font-size:11px">' + ev.claims[cat].length + ' claim' + (ev.claims[cat].length === 1 ? '' : 's') + '</span></summary>'
+    + '<span class="muted" style="font-size:13px">' + ev.claims[cat].length + ' claim' + (ev.claims[cat].length === 1 ? '' : 's') + '</span></summary>'
     + '<div class="steps">' + ev.claims[cat].map(c =>
       '<div class="step"><span class="k">Claim</span><span>' + esc(c.claim) + '</span></div>'
       + '<div class="step"><span class="k">Query</span>' + (c.query
@@ -1768,7 +1959,7 @@ function renderEvidence(){
     ['Run log (JSON)', 'the complete append-only run records, exactly as stored', 'asExportRunLog()'],
   ].map(([t, p, fn]) =>
     '<div class="pack"><div class="body"><b>' + t + '</b><p>' + p + '</p></div>'
-    + '<button class="btn" onclick="' + fn + '">Download</button></div>').join('')
+    + '<button class="btn btn-ghost" onclick="' + fn + '">Download</button></div>').join('')
     + '<div class="pack"><div class="body"><b>Verify this pack</b>'
     + '<p>manifest sha256 ' + esc(ev.manifest ? ev.manifest.hash : '— (no sweep recorded yet)') + '<br>'
     + 'Recompute it: sha256 each run record (the JSON fields id, ruleId, ruleVersion, startedAt, finishedAt, result,'
