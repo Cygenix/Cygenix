@@ -129,16 +129,6 @@
   // A stable colour per actor, derived from the address rather than assigned,
   // so the same person is the same colour on every machine and across
   // reloads without anything being stored.
-  var AVATAR_COLOURS = ['var(--accent)', 'var(--teal)', 'var(--purple)', 'var(--green)', 'var(--amber)', 'var(--red)'];
-  function avatarColour(email) {
-    var s = String(email || ''), h = 0;
-    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    return AVATAR_COLOURS[h % AVATAR_COLOURS.length];
-  }
-
-  function outcomeClass(o) {
-    return o === 'allowed' ? 'cyg-a-p-green' : o === 'denied' ? 'cyg-a-p-red' : 'cyg-a-p-amber';
-  }
 
   function toast(msg) {
     var t = document.getElementById('cyg-a-toast');
@@ -156,156 +146,190 @@
     var s = document.createElement('style');
     s.id = 'cyg-audit-styles';
     s.textContent = [
-      /* Every colour is a theme token, so this screen follows the workspace
-         theme rather than pinning the light palette the mockup was drawn in. */
-      '.cyg-a-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-soft)}',
-      '.cyg-a-status{display:grid;grid-template-columns:1fr auto;gap:16px;padding:18px 20px;align-items:center;margin-bottom:16px}',
-      '.cyg-a-status h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
-      '.cyg-a-status p{margin:0;color:var(--text2);font-size:13px}',
-      '.cyg-a-status.paused{border-color:var(--amber);background:linear-gradient(0deg,var(--bg2),var(--amber-bg))}',
-      '.cyg-a-status.off{border-color:var(--red);background:linear-gradient(0deg,var(--bg2),var(--red-bg))}',
-      '.cyg-a-pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;border-radius:999px;padding:2px 9px;white-space:nowrap}',
-      '.cyg-a-p-green{background:var(--green-bg);color:var(--green)}',
-      '.cyg-a-p-amber{background:var(--amber-bg);color:var(--amber)}',
-      '.cyg-a-p-red{background:var(--red-bg);color:var(--red)}',
-      '.cyg-a-p-grey{background:var(--bg4);color:var(--text2)}',
-      '.cyg-a-p-purple{background:var(--purple-bg);color:var(--purple)}',
-      '.cyg-a-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}',
+      /* Audit log in the console design language (Phase 5, Sep-2026). Every
+         colour is a token from cygenix-console.css; hue is kept for state —
+         a verified chain is state-ok, a break is state-fail, a PROD event
+         takes the state-fail border on its category tag — and nothing else
+         on the screen carries a colour of its own. The integrity band is
+         the one blueprint frame on the screen. Radius 0 throughout. */
+      '.cyg-a-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:18px}',
+      '.cyg-a-head .cx-head-actions{padding-top:22px}',
+      '.cyg-a-btn{height:32px;border:1px solid var(--color-divider);background:transparent;color:var(--color-text);padding:0 15px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.2;white-space:nowrap;transition:background .12s,color .12s}',
+      '.cyg-a-btn:hover:not(:disabled){background:var(--hover-tint)}',
+      '.cyg-a-btn:disabled{opacity:.45;cursor:not-allowed}',
+      '.cyg-a-btn.primary{background:var(--color-accent);border-color:var(--color-accent);color:#fff}',
+      '.cyg-a-btn.primary:hover:not(:disabled){background:var(--color-accent-600);border-color:var(--color-accent-600)}',
+      '.cyg-a-btn.danger{background:transparent;border-color:var(--state-fail);color:var(--state-fail)}',
+      '.cyg-a-btn.warn{background:transparent;border-color:var(--state-warn);color:var(--state-warn)}',
+      '.cyg-a-btn.sm{height:30px;padding:0 13px}',
+      '.cyg-a-link{border:0;background:none;color:var(--color-accent-700);font-family:var(--font-body);font-size:14px;cursor:pointer;padding:0 4px}',
+      '.cyg-a-link:hover{text-decoration:underline}',
+      '.cyg-a-note-h{font-size:14px;color:var(--color-neutral-700);line-height:1.5}',
+      /* the tabs: the console strip */
+      '.cyg-a-tabs{display:flex;gap:0;border-bottom:1px solid var(--color-divider);margin-bottom:22px;overflow-x:auto}',
+      '.cyg-a-tab{border:0;background:none;padding:8px 14px 9px;cursor:pointer;color:var(--color-neutral-600);border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--font-heading);font-weight:600;font-size:16px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;line-height:1.2}',
+      '.cyg-a-tab:hover{color:var(--color-text)}',
+      '.cyg-a-tab[aria-selected="true"]{color:var(--color-text);border-color:var(--color-accent)}',
+      /* the integrity band */
+      '.cyg-a-band{padding:16px 20px;display:flex;align-items:flex-start;gap:28px;flex-wrap:wrap;margin:0 0 22px}',
+      '.cyg-a-band .k{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600)}',
+      '.cyg-a-band .v{font-family:var(--font-heading);font-weight:600;font-size:22px;line-height:1.05;text-transform:uppercase;margin-top:6px;color:var(--color-text);font-variant-numeric:tabular-nums}',
+      '.cyg-a-band .v.ok{color:var(--state-ok)}.cyg-a-band .v.fail{color:var(--state-fail)}.cyg-a-band .v.dim{color:var(--color-neutral-600)}',
+      '.cyg-a-band .v.plain{text-transform:none;font-family:var(--font-body);font-weight:400;font-size:18px;margin-top:8px}',
+      '.cyg-a-band .caveat{margin-left:auto;max-width:42ch;font-size:14px;line-height:1.5;color:var(--color-neutral-700);align-self:flex-end}',
+      '.cyg-a-band .caveat.fail{color:var(--color-text);border-left:3px solid var(--state-fail);padding-left:12px}',
+      /* the capture state line */
+      '.cyg-a-status{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--color-divider);margin-bottom:18px}',
+      '.cyg-a-status h3{margin:0;font-size:15px;font-weight:400;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--color-text)}',
+      '.cyg-a-status p{margin:2px 0 0;color:var(--color-neutral-700);font-size:13px;line-height:1.5}',
+      '.cyg-a-status .txt{flex:1;min-width:240px}',
+      '.cyg-a-status.paused .cyg-a-seg button.on{color:var(--state-warn)}',
+      '.cyg-a-status.off .cyg-a-seg button.on{color:var(--state-fail)}',
+      '.cyg-a-pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;line-height:1.4;border:1px solid var(--color-divider);color:var(--color-neutral-700);white-space:nowrap}',
+      '.cyg-a-p-green{color:var(--state-ok);border-color:var(--state-ok)}',
+      '.cyg-a-p-amber{color:var(--state-warn);border-color:var(--state-warn)}',
+      '.cyg-a-p-red{color:var(--state-fail);border-color:var(--state-fail)}',
+      '.cyg-a-p-grey{color:var(--color-neutral-700);border-color:var(--color-divider)}',
+      '.cyg-a-p-purple{color:var(--color-accent-800);border-color:var(--color-accent-300);background:var(--color-accent-100)}',
+      '.cyg-a-dot{width:8px;height:8px;background:currentColor;flex:none}',
       '.cyg-a-dot.live{animation:cygADot 1.6s infinite}',
-      '@keyframes cygADot{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}',
+      '@keyframes cygADot{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}',
       '@media (prefers-reduced-motion:reduce){.cyg-a-dot.live{animation:none}}',
-      '.cyg-a-always{margin-top:10px;font-size:12.5px;color:var(--text2);display:flex;gap:8px;align-items:flex-start}',
+      '.cyg-a-always{font-size:13px;color:var(--color-neutral-700);display:flex;gap:8px;align-items:flex-start;max-width:52ch}',
       '.cyg-a-always .ic{flex:none;margin-top:2px}',
-      '.cyg-a-seg{display:inline-flex;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px}',
-      '.cyg-a-seg button{border:0;background:transparent;padding:7px 14px;border-radius:7px;cursor:pointer;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:7px;font:inherit}',
-      '.cyg-a-seg button:hover:not(:disabled){color:var(--text)}',
+      '.cyg-a-seg{display:inline-flex;border:1px solid var(--color-divider)}',
+      '.cyg-a-seg button{border:0;background:transparent;padding:7px 16px;cursor:pointer;font-family:var(--font-heading);font-weight:600;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);display:flex;align-items:center;gap:7px;line-height:1.2}',
+      '.cyg-a-seg button:hover:not(:disabled){color:var(--color-text)}',
       '.cyg-a-seg button:disabled{opacity:.5;cursor:not-allowed}',
-      '.cyg-a-seg button.on{background:var(--bg2);color:var(--text);box-shadow:var(--shadow-soft)}',
-      '.cyg-a-seg button.on[data-s=recording]{color:var(--green)}',
-      '.cyg-a-seg button.on[data-s=paused]{color:var(--amber)}',
-      '.cyg-a-seg button.on[data-s=off]{color:var(--red)}',
-      '.cyg-a-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}',
-      '.cyg-a-kpi{padding:14px 16px}',
-      '.cyg-a-kpi .l{font-size:12px;color:var(--text2)}',
-      '.cyg-a-kpi .v{font-size:24px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}',
-      '.cyg-a-kpi .d{font-size:12px;color:var(--text3)}',
-      '.cyg-a-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:14px;overflow-x:auto}',
-      '.cyg-a-tab{border:0;background:none;padding:10px 14px;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;font-weight:500;white-space:nowrap;font:inherit;text-align:left}',
-      '.cyg-a-tab[aria-selected="true"]{color:var(--accent);border-color:var(--accent);font-weight:600}',
-      '.cyg-a-tab small{display:block;font-weight:400;font-size:11px;color:var(--text3)}',
-      '.cyg-a-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}',
-      '.cyg-a-in,.cyg-a-sel{height:34px;border:1px solid var(--border2);border-radius:8px;background:var(--bg2);color:var(--text);padding:0 10px;font:inherit;font-size:13px}',
-      '.cyg-a-in{min-width:200px;flex:1;max-width:340px}',
-      '.cyg-a-btn{height:34px;border:1px solid var(--border2);border-radius:8px;background:var(--bg2);color:var(--text);padding:0 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:500;font-size:13px;font-family:inherit}',
-      '.cyg-a-btn:hover:not(:disabled){border-color:var(--text3)}',
-      '.cyg-a-btn:disabled{opacity:.55;cursor:not-allowed}',
-      '.cyg-a-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--text)}',
-      '.cyg-a-btn.danger{background:var(--red);border-color:var(--red);color:#fff}',
-      '.cyg-a-btn.warn{background:var(--amber);border-color:var(--amber);color:#fff}',
+      '.cyg-a-seg button.on{background:var(--color-accent-900);color:var(--color-bg)}',
+      /* the four measures */
+      '.cyg-a-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--color-divider);border:1px solid var(--color-divider);margin-bottom:22px}',
+      '.cyg-a-kpi{padding:14px 18px 16px;background:var(--color-bg)}',
+      '.cyg-a-kpi .l{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600)}',
+      '.cyg-a-kpi .v{font-family:var(--font-heading);font-weight:600;font-size:32px;line-height:.95;margin-top:8px;font-variant-numeric:tabular-nums;color:var(--color-text)}',
+      '.cyg-a-kpi .d{font-size:13px;color:var(--color-neutral-700);margin-top:6px}',
+      /* events: the filter row and the table */
+      '.cyg-a-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}',
+      '.cyg-a-in,.cyg-a-sel{height:34px;border:1px solid var(--color-divider);background:var(--color-bg);color:var(--color-text);padding:0 10px;font-family:var(--font-body);font-size:14px}',
+      '.cyg-a-in{min-width:220px;flex:0 1 260px}',
+      '.cyg-a-count{margin-left:auto;font-size:14px;color:var(--color-neutral-700);font-variant-numeric:tabular-nums}',
       '.cyg-a-sp{flex:1}',
-      '.cyg-a-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}',
-      '.cyg-a-chip{border:1px solid var(--border2);background:var(--bg2);color:var(--text2);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit}',
-      '.cyg-a-chip[aria-pressed="true"]{background:var(--accent-glow);border-color:transparent;color:var(--accent);font-weight:600}',
+      '.cyg-a-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}',
+      '.cyg-a-chip{border:1px solid var(--color-divider);background:transparent;color:var(--color-neutral-700);padding:4px 10px;font-family:var(--font-body);font-size:13px;cursor:pointer;line-height:1.2}',
+      '.cyg-a-chip:hover{color:var(--color-text)}',
+      '.cyg-a-chip[aria-pressed="true"]{background:var(--color-accent-100);border-color:var(--color-accent);color:var(--color-accent-800)}',
+      '.cyg-a-card{border:1px solid var(--color-divider);background:transparent}',
       '.cyg-a-tw{overflow-x:auto}',
-      '.cyg-a-table{width:100%;border-collapse:collapse;font-size:13px}',
-      '.cyg-a-table th{text-align:left;font-size:11px;letter-spacing:.08em;color:var(--text2);font-weight:600;background:var(--bg3);padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap}',
-      '.cyg-a-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}',
+      '.cyg-a-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.4}',
+      '.cyg-a-table th{text-align:left;font-family:var(--font-body);font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 60%,transparent);background:transparent;padding:8px 10px;border-bottom:1px solid var(--color-divider);white-space:nowrap}',
+      '.cyg-a-table th.r,.cyg-a-table td.r{text-align:right}',
+      '.cyg-a-table td{padding:8px 10px;border-bottom:1px solid var(--color-divider);vertical-align:top;color:var(--color-text)}',
       /* The filter row. Sticky is deliberate: the whole point of putting a
          filter in a column header is that you can see which column it
          governs, and that stops being true the moment it scrolls away. */
-      '.cyg-a-table tr.cyg-a-filters th{background:var(--bg2);padding:6px 8px;border-bottom:1px solid var(--border2);position:sticky;top:0;z-index:1}',
-      '.cyg-a-fsel,.cyg-a-fin{width:100%;min-width:104px;max-width:230px;height:30px;font:inherit;font-size:12px;' +
-        'border:1px solid var(--border2);border-radius:6px;background:var(--bg2);color:var(--text);padding:0 7px}',
-      '.cyg-a-fsel:focus-visible,.cyg-a-fin:focus-visible{outline:2px solid var(--accent);outline-offset:1px}',
+      '.cyg-a-table tr.cyg-a-filters th{background:var(--color-bg);padding:6px 6px;border-bottom:1px solid var(--color-divider);position:sticky;top:0;z-index:1}',
+      '.cyg-a-fsel,.cyg-a-fin{width:100%;min-width:96px;max-width:230px;height:30px;font-family:var(--font-body);font-size:13px;' +
+        'border:1px solid var(--color-divider);background:var(--color-bg);color:var(--color-text);padding:0 7px}',
+      '.cyg-a-fsel:focus-visible,.cyg-a-fin:focus-visible{outline:2px solid var(--color-accent);outline-offset:1px}',
       /* A set filter is tinted, so a table that looks empty because of one is
          visibly different from a table that is empty. */
-      '.cyg-a-fsel.on,.cyg-a-fin.on{border-color:var(--accent);background:var(--accent-glow);font-weight:600}',
+      '.cyg-a-fsel.on,.cyg-a-fin.on{border-color:var(--color-accent);background:var(--color-accent-100);color:var(--color-accent-800)}',
       '.cyg-a-fsel:disabled{opacity:.5;cursor:not-allowed}',
       '.cyg-a-table tr.ev{cursor:pointer}',
-      '.cyg-a-table tr.ev:hover{background:var(--hover-tint)}',
-      '.cyg-a-table tr.ev.sel{background:var(--accent-glow)}',
-      '.cyg-a-table tr.ev:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}',
-      '.cyg-a-when{font-family:var(--mono);font-size:12.5px;white-space:nowrap}',
-      '.cyg-a-when small{display:block;color:var(--text3);font-family:var(--sans);font-size:11px}',
-      '.cyg-a-who{display:flex;gap:9px;align-items:flex-start;min-width:190px}',
-      '.cyg-a-av{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:600;color:#fff;flex:none}',
-      '.cyg-a-who small{display:block;color:var(--text3);font-size:11.5px}',
-      '.cyg-a-act{font-family:var(--mono);font-size:12.5px;color:var(--text)}',
-      '.cyg-a-what{min-width:240px}',
-      '.cyg-a-what .s{color:var(--text2);font-size:12.5px;margin-top:2px}',
-      '.cyg-a-tgt{font-size:12.5px;color:var(--text2);min-width:140px}',
-      '.cyg-a-env{font-family:var(--mono);font-size:12px;font-weight:500}',
-      '.cyg-a-env.PROD{color:var(--red)}.cyg-a-env.STAGING{color:var(--amber)}',
-      '.cyg-a-env.TEST{color:var(--teal)}.cyg-a-env.DEV{color:var(--text3)}',
-      '.cyg-a-ai{font-size:10.5px;font-weight:600;color:var(--purple);background:var(--purple-bg);border-radius:4px;padding:0 5px;margin-left:4px;white-space:nowrap}',
-      '.cyg-a-src{font-size:10.5px;color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:0 4px;margin-left:4px}',
-      '.cyg-a-table tr.gap td{background:var(--amber-bg);color:var(--amber);font-size:12.5px;text-align:center;padding:8px;border-top:1px dashed var(--amber);border-bottom:1px dashed var(--amber)}',
-      '.cyg-a-table tr.gap.off td{background:var(--red-bg);color:var(--red);border-color:var(--red)}',
-      '.cyg-a-foot{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;color:var(--text2);font-size:12.5px;flex-wrap:wrap;gap:8px}',
-      '.cyg-a-empty{padding:40px;text-align:center;color:var(--text2)}',
+      '.cyg-a-table tr.ev:hover td{background:var(--hover-tint)}',
+      '.cyg-a-table tr.ev.sel td{background:var(--color-accent-100)}',
+      '.cyg-a-table tr.ev:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}',
+      '.cyg-a-seq{font-variant-numeric:tabular-nums;color:var(--color-neutral-700);white-space:nowrap}',
+      '.cyg-a-when{white-space:nowrap;font-variant-numeric:tabular-nums}',
+      '.cyg-a-when small{display:block;color:var(--color-neutral-600);font-size:13px}',
+      '.cyg-a-who{min-width:160px;word-break:break-all}',
+      '.cyg-a-who small{display:block;color:var(--color-neutral-600);font-size:13px}',
+      '.cyg-a-cat{font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;line-height:1.4;border:1px solid var(--color-divider);color:var(--color-neutral-700);white-space:nowrap;display:inline-block}',
+      '.cyg-a-cat.prod{color:var(--state-fail);border-color:var(--state-fail)}',
+      '.cyg-a-act{font-family:var(--mono);font-size:12px;color:var(--color-text);white-space:nowrap}',
+      '.cyg-a-what .s{color:var(--color-neutral-700);font-size:13px;margin-top:2px}',
+      '.cyg-a-tgt{min-width:140px}',
+      '.cyg-a-env{font-size:13px;color:var(--color-neutral-700)}',
+      '.cyg-a-env.PROD{color:var(--state-fail)}',
+      '.cyg-a-out{font-size:13px}.cyg-a-out.allowed{color:var(--state-ok)}.cyg-a-out.denied{color:var(--state-fail)}.cyg-a-out.failed{color:var(--state-warn)}',
+      '.cyg-a-srcw{font-size:13px;color:var(--color-neutral-600);white-space:nowrap}',
+      '.cyg-a-ai{font-size:12px;color:var(--color-accent-800);border:1px solid var(--color-accent-300);background:var(--color-accent-100);padding:0 5px;margin-left:6px;white-space:nowrap}',
+      '.cyg-a-src{font-size:12px;color:var(--color-neutral-600);border:1px solid var(--color-divider);padding:0 4px;margin-left:6px}',
+      '.cyg-a-table tr.gap td{background:transparent;color:var(--color-neutral-800);font-size:13px;padding:8px 12px;border-left:3px solid var(--state-warn)}',
+      '.cyg-a-table tr.gap.off td{border-left-color:var(--state-fail)}',
+      '.cyg-a-foot{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;color:var(--color-neutral-700);font-size:13px;flex-wrap:wrap;gap:8px;border-top:1px solid var(--color-divider)}',
+      '.cyg-a-empty{padding:40px;text-align:center;color:var(--color-neutral-700);font-size:14px}',
+      /* the drawer */
       '.cyg-a-scrim{position:fixed;inset:0;background:var(--modal-scrim);opacity:0;pointer-events:none;transition:opacity .2s;z-index:1400}',
       '.cyg-a-scrim.on{opacity:1;pointer-events:auto}',
-      '.cyg-a-drawer{position:fixed;top:0;right:0;height:100vh;width:min(520px,100vw);background:var(--bg2);border-left:1px solid var(--border);box-shadow:var(--shadow-strong);transform:translateX(105%);transition:transform .22s ease;display:flex;flex-direction:column;z-index:1401}',
+      '.cyg-a-drawer{position:fixed;top:0;right:0;height:100vh;width:min(520px,100vw);background:var(--color-bg);border-left:1px solid var(--color-divider);box-shadow:var(--shadow-strong);transform:translateX(105%);transition:transform .22s ease;display:flex;flex-direction:column;z-index:1401}',
       '.cyg-a-drawer.on{transform:none}',
       '@media (prefers-reduced-motion:reduce){.cyg-a-drawer{transition:none}}',
-      '.cyg-a-dh{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start}',
-      '.cyg-a-dh h2{margin:0;font-size:16px;font-family:var(--mono);font-weight:500;word-break:break-all}',
-      '.cyg-a-dh p{margin:4px 0 0;color:var(--text2);font-size:13px}',
-      '.cyg-a-x{margin-left:auto;border:0;background:none;font-size:20px;cursor:pointer;color:var(--text2);line-height:1;padding:0 4px}',
+      '.cyg-a-dh{padding:18px 20px;border-bottom:1px solid var(--color-divider);display:flex;gap:12px;align-items:flex-start}',
+      '.cyg-a-dh h2{margin:0;font-size:22px;font-family:var(--font-heading);font-weight:600;text-transform:uppercase;line-height:1.05;word-break:break-all}',
+      '.cyg-a-dh p{margin:6px 0 0;color:var(--color-neutral-700);font-size:14px}',
+      '.cyg-a-x{margin-left:auto;border:0;background:none;font-size:20px;cursor:pointer;color:var(--color-neutral-700);line-height:1;padding:0 4px}',
       '.cyg-a-db{padding:16px 20px;overflow:auto;flex:1}',
-      '.cyg-a-kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px;margin-bottom:18px}',
-      '.cyg-a-kv dt{color:var(--text2)}.cyg-a-kv dd{margin:0;word-break:break-word}',
-      '.cyg-a-db h4{font-size:11px;letter-spacing:.1em;color:var(--text2);margin:0 0 8px;font-weight:600}',
-      '.cyg-a-diff{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:18px;font-family:var(--mono);font-size:12px}',
-      '.cyg-a-diff .row{display:grid;grid-template-columns:130px 1fr 1fr;border-bottom:1px solid var(--border)}',
+      '.cyg-a-kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:14px;margin-bottom:18px}',
+      '.cyg-a-kv dt{color:var(--color-neutral-700)}.cyg-a-kv dd{margin:0;word-break:break-word}',
+      '.cyg-a-db h4{font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--color-neutral-700);margin:0 0 8px}',
+      '.cyg-a-diff{border:1px solid var(--color-divider);overflow:hidden;margin-bottom:18px;font-family:var(--mono);font-size:12px}',
+      '.cyg-a-diff .row{display:grid;grid-template-columns:130px 1fr 1fr;border-bottom:1px solid var(--color-divider)}',
       '.cyg-a-diff .row:last-child{border:0}',
       '.cyg-a-diff .row>div{padding:7px 10px;word-break:break-word}',
-      '.cyg-a-diff .hd{background:var(--bg3);font-family:var(--sans);font-size:11px;color:var(--text2);font-weight:600;letter-spacing:.06em}',
-      '.cyg-a-diff .b{background:var(--red-bg);color:var(--red)}',
-      '.cyg-a-diff .a{background:var(--green-bg);color:var(--green)}',
-      '.cyg-a-hash{font-family:var(--mono);font-size:11.5px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text2);word-break:break-all;line-height:1.7}',
-      '.cyg-a-hash b{color:var(--text);font-weight:500}',
+      '.cyg-a-diff .hd{background:var(--color-neutral-100);font-family:var(--font-body);font-size:11px;color:var(--color-neutral-700);letter-spacing:.08em}',
+      '.cyg-a-diff .b{color:var(--state-fail)}',
+      '.cyg-a-diff .a{color:var(--state-ok)}',
+      '.cyg-a-hash{font-family:var(--mono);font-size:12px;background:var(--color-neutral-100);border:1px solid var(--color-divider);padding:10px;color:var(--color-neutral-700);word-break:break-all;line-height:1.7}',
+      '.cyg-a-hash b{color:var(--color-text);font-weight:500}',
+      /* modals */
       '.cyg-a-modal{position:fixed;inset:0;display:none;place-items:center;background:var(--modal-scrim);z-index:1500;padding:16px}',
       '.cyg-a-modal.on{display:grid}',
-      '.cyg-a-mbox{background:var(--bg2);border-radius:var(--r-lg);width:min(460px,100%);padding:20px;box-shadow:var(--shadow-strong)}',
-      '.cyg-a-mbox h3{margin:0 0 6px;font-size:17px}',
-      '.cyg-a-mbox p{color:var(--text2);margin:0 0 14px;font-size:13.5px}',
-      '.cyg-a-mbox label{display:block;font-size:12.5px;font-weight:600;margin:10px 0 5px}',
-      '.cyg-a-mbox textarea,.cyg-a-mbox select,.cyg-a-mbox input[type=text]{width:100%;border:1px solid var(--border2);border-radius:8px;padding:8px 10px;background:var(--bg2);color:var(--text);font:inherit;font-size:13px}',
+      '.cyg-a-mbox{background:var(--color-bg);border:1px solid var(--color-divider);width:min(460px,100%);padding:20px;box-shadow:var(--shadow-strong)}',
+      '.cyg-a-mbox h3{margin:0 0 6px;font-family:var(--font-heading);font-weight:600;font-size:22px;text-transform:uppercase;line-height:1.05}',
+      '.cyg-a-mbox p{color:var(--color-neutral-800);margin:0 0 14px;font-size:14px;line-height:1.5}',
+      '.cyg-a-mbox label{display:block;font-size:13px;color:var(--color-neutral-700);margin:10px 0 5px}',
+      '.cyg-a-mbox textarea,.cyg-a-mbox select,.cyg-a-mbox input[type=text]{width:100%;border:1px solid var(--color-divider);padding:8px 10px;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:14px}',
       '.cyg-a-mbox textarea{min-height:70px;resize:vertical}',
       '.cyg-a-mact{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}',
-      '.cyg-a-note{font-size:12.5px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text2);margin-top:10px}',
-      '.cyg-a-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}',
-      '.cyg-a-pad{padding:18px 20px}',
-      '.cyg-a-pad h3{margin:0 0 4px;font-size:15px}',
-      '.cyg-a-pad>p{margin:0 0 14px;color:var(--text2);font-size:13px}',
-      '.cyg-a-cat{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--border)}',
-      '.cyg-a-cat:first-of-type{border-top:0}',
-      '.cyg-a-cat .t{flex:1}.cyg-a-cat .t b{font-weight:500;display:block}',
-      '.cyg-a-cat .t small{color:var(--text3);font-size:12px}',
-      '.cyg-a-tg{position:relative;width:36px;height:20px;flex:none;display:inline-block}',
-      '.cyg-a-tg input{position:absolute;opacity:0;width:36px;height:20px;margin:0;cursor:pointer}',
-      '.cyg-a-tg span{position:absolute;inset:0;border-radius:99px;background:var(--bg4);transition:background .15s;pointer-events:none}',
-      '.cyg-a-tg span:before{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:var(--bg2);left:2px;top:2px;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}',
-      '.cyg-a-tg input:checked+span{background:var(--accent)}',
-      '.cyg-a-tg input:checked+span:before{transform:translateX(16px)}',
+      '.cyg-a-note{font-size:13px;line-height:1.5;border-left:3px solid var(--color-neutral-400);padding:2px 0 2px 12px;color:var(--color-neutral-800);margin-top:12px}',
+      '.cyg-a-note.warn{border-left-color:var(--state-warn)}',
+      /* settings, integrity, retention */
+      '.cyg-a-grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start}',
+      '.cyg-a-pad{padding:18px 20px;margin-bottom:26px}',
+      '.cyg-a-pad h3{margin:0 0 4px;font-family:var(--font-heading);font-weight:600;font-size:17px;text-transform:uppercase;line-height:1.2}',
+      '.cyg-a-pad>p{margin:0 0 14px;color:var(--color-neutral-800);font-size:14px;line-height:1.5}',
+      '.cyg-a-cat-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--color-divider)}',
+      '.cyg-a-cat-row:first-of-type{border-top:0}',
+      '.cyg-a-cat-row .t{flex:1}.cyg-a-cat-row .t b{font-weight:500;display:block;font-size:14px}',
+      '.cyg-a-cat-row .t small{color:var(--color-neutral-700);font-size:13px;line-height:1.4}',
+      /* A locked category is a fact, not a control: a word and a note, never
+         a disabled switch. A disabled switch invites a click that can never
+         work. */
+      '.cyg-a-locked{font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-700);border:1px solid var(--color-divider);padding:2px 8px;white-space:nowrap;flex:none}',
+      '.cyg-a-tg{position:relative;width:34px;height:18px;flex:none;display:inline-block}',
+      '.cyg-a-tg input{position:absolute;opacity:0;width:34px;height:18px;margin:0;cursor:pointer}',
+      '.cyg-a-tg span{position:absolute;inset:0;background:var(--color-neutral-200);border:1px solid var(--color-divider);transition:background .15s;pointer-events:none}',
+      '.cyg-a-tg span:before{content:"";position:absolute;width:12px;height:12px;background:var(--color-neutral-600);left:2px;top:2px;transition:transform .15s}',
+      '.cyg-a-tg input:checked+span{background:var(--color-accent);border-color:var(--color-accent)}',
+      '.cyg-a-tg input:checked+span:before{transform:translateX(16px);background:#fff}',
       '.cyg-a-tg input:disabled{cursor:not-allowed}',
       '.cyg-a-tg input:disabled+span{opacity:.55}',
-      '.cyg-a-tg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}',
+      '.cyg-a-tg input:focus-visible+span{outline:2px solid var(--color-accent);outline-offset:2px}',
       '.cyg-a-radio{display:flex;gap:8px;flex-wrap:wrap}',
-      '.cyg-a-radio label{border:1px solid var(--border2);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px}',
+      '.cyg-a-radio label{border:1px solid var(--color-divider);padding:7px 12px;cursor:pointer;font-size:14px}',
       '.cyg-a-radio input{margin-right:6px}',
       '.cyg-a-chain{display:flex;gap:6px;align-items:center;overflow-x:auto;padding:6px 0 14px}',
-      '.cyg-a-blk{flex:none;border:1px solid var(--green);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:11px;background:var(--bg2);min-width:120px}',
-      '.cyg-a-blk b{display:block;color:var(--text);font-size:11.5px}',
-      '.cyg-a-arrow{color:var(--text3);flex:none}',
+      '.cyg-a-blk{flex:none;border:1px solid var(--color-divider);padding:8px 10px;font-family:var(--mono);font-size:12px;background:transparent;min-width:120px}',
+      '.cyg-a-blk b{display:block;color:var(--color-text);font-size:12px;font-family:var(--font-body);font-weight:500}',
+      '.cyg-a-arrow{color:var(--color-neutral-600);flex:none}',
       '.cyg-a-denied{max-width:520px;margin:60px auto;text-align:center;padding:36px}',
-      '.cyg-a-denied .ic-wrap{width:52px;height:52px;border-radius:14px;background:var(--red-bg);color:var(--red);display:grid;place-items:center;margin:0 auto 14px}',
-      '.cyg-a-toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg2);padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;z-index:1600;pointer-events:none;max-width:90vw;text-align:center}',
+      '.cyg-a-denied .ic-wrap{width:52px;height:52px;border:1px solid var(--state-fail);color:var(--state-fail);display:grid;place-items:center;margin:0 auto 14px}',
+      '.cyg-a-toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--color-accent-900);color:var(--color-bg);padding:10px 16px;font-size:14px;opacity:0;transition:.2s;z-index:1600;pointer-events:none;max-width:90vw;text-align:center}',
       '.cyg-a-toast.on{opacity:1;transform:translateX(-50%)}',
-      '.cyg-a-banner{border:1px solid var(--amber);background:var(--amber-bg);color:var(--text);border-radius:var(--r);padding:10px 13px;font-size:13px;margin-bottom:14px}',
-      '@media (max-width:1000px){.cyg-a-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cyg-a-grid2{grid-template-columns:1fr}}',
-      '@media (max-width:640px){.cyg-a-status{grid-template-columns:1fr}.cyg-a-in{max-width:none;width:100%}.cyg-a-kv{grid-template-columns:1fr}.cyg-a-diff .row{grid-template-columns:90px 1fr 1fr}}',
+      '.cyg-a-banner{border-left:3px solid var(--state-warn);padding:2px 0 2px 12px;color:var(--color-text);font-size:14px;line-height:1.5;margin-bottom:14px}',
+      '@media (max-width:1000px){.cyg-a-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cyg-a-grid2{grid-template-columns:1fr}.cyg-a-band .caveat{margin-left:0;max-width:none}}',
+      '@media (max-width:640px){.cyg-a-in{max-width:none;width:100%}.cyg-a-kv{grid-template-columns:1fr}.cyg-a-diff .row{grid-template-columns:90px 1fr 1fr}}',
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -398,17 +422,82 @@
       return;
     }
     mount.innerHTML =
-      bannerHtml() + statusHtml() + kpiHtml() + tabsHtml() +
+      headerHtml() + tabsHtml() + bandHtml() + bannerHtml() + statusHtml() + kpiHtml() +
       '<div id="cyg-a-panel-events" role="tabpanel" aria-labelledby="cyg-a-tab-events"' +
         (state.tab === 'events' ? '' : ' hidden') + '></div>' +
       '<div id="cyg-a-panel-settings" role="tabpanel" aria-labelledby="cyg-a-tab-settings"' +
         (state.tab === 'settings' ? '' : ' hidden') + '></div>' +
       '<div id="cyg-a-panel-integrity" role="tabpanel" aria-labelledby="cyg-a-tab-integrity"' +
-        (state.tab === 'integrity' ? '' : ' hidden') + '></div>';
+        (state.tab === 'integrity' ? '' : ' hidden') + '></div>' +
+      '<div id="cyg-a-panel-retention" role="tabpanel" aria-labelledby="cyg-a-tab-retention"' +
+        (state.tab === 'retention' ? '' : ' hidden') + '></div>';
     renderEventsPanel();
     renderSettingsPanel();
     renderIntegrityPanel();
+    renderRetentionPanel();
     wire();
+  }
+
+  // ── Header and the integrity band ───────────────────────────────────────
+  //
+  // Kicker, title, and the two actions the whole screen exists for: get the
+  // evidence out, and prove the chain. Verify is the filled one because it
+  // is the one an auditor presses first.
+  function headerHtml() {
+    var st = state.status;
+    return '<div class="cx-head cyg-a-head"><div>' +
+      '<div class="cx-kicker">Govern · Hash-chained, append only</div>' +
+      '<h1 class="cx-title">Audit log</h1></div>' +
+      '<div class="cx-head-actions">' +
+      (st.canExport
+        ? '<button class="cyg-a-btn" id="cyg-a-csv" type="button" title="Every matching entry as CSV, with its hashes — the export is itself written to the trail">Export evidence pack</button>' +
+          '<button class="cyg-a-link" id="cyg-a-json" type="button" title="The same rows as JSON">JSON</button>'
+        : '<span class="cyg-a-note-h">Export needs the Platform Administrator or Auditor role</span>') +
+      (st.canVerify
+        ? '<button class="cyg-a-btn primary" id="cyg-a-verify" type="button"' +
+          (state.verifying ? ' disabled' : '') + '>' + (state.verifying ? 'Verifying…' : 'Verify chain') + '</button>'
+        : '') +
+      '</div></div>';
+  }
+
+  // What the chain is verified to, stated as a sentence in the status colour.
+  // A verification run in this session outranks the one the trail recorded;
+  // neither is invented — with no verification on record the band says so.
+  function verifyFact() {
+    var v = state.verifyResult || state.status.lastVerify || null;
+    if (!v) return { kind: 'none' };
+    var at = v.verifiedAt || v.at || null;
+    if (v.ok === false) return { kind: 'break', at: at, brokenAt: v.brokenAt, reason: v.reason };
+    // The head at the time of the check is what was verified; a verify in
+    // this session covers the head as loaded, a recorded one the entry that
+    // recorded it (the verify entry follows the entries it checked).
+    var to = state.verifyResult ? (state.status.headSeq || v.count || 0) : (v.seq ? v.seq - 1 : (v.count || 0));
+    return { kind: 'ok', at: at, to: to, count: v.count };
+  }
+
+  function bandHtml() {
+    var st = state.status;
+    var f = verifyFact();
+    var cats = (st.categories || []).length;
+    var locked = (st.alwaysOn || []).length;
+    var chain = f.kind === 'ok'
+      ? '<div class="v ok">Verified to entry ' + esc(Number(f.to || 0).toLocaleString('en-GB')) + '</div>'
+      : f.kind === 'break'
+        ? '<div class="v fail">Break at entry ' + esc(Number(f.brokenAt || 0).toLocaleString('en-GB')) + '</div>'
+        : '<div class="v dim">Not yet verified</div>';
+    var last = f.at ? (rel(f.at) === 'just now' ? 'Just now' : esc(fmt(f.at))) : '—';
+    var caveat = f.kind === 'break'
+      ? '<div class="caveat fail"><b>Entry ' + esc(f.brokenAt) + ' does not line up' +
+        (f.reason ? ' — ' + esc(f.reason) : '') + '.</b> Export the trail before anything else is written, ' +
+        'compare that entry against the archive and the retention checkpoint, and record the finding as an incident.</div>'
+      : '<div class="caveat">A simultaneous append can race the head. A break is reported, never hidden — state that in any evidence pack.</div>';
+    return '<div class="cx-blueprint cyg-a-band" id="cyg-a-band">' +
+      '<span class="cx-corner tl"></span><span class="cx-corner tr"></span><span class="cx-corner bl"></span><span class="cx-corner br"></span>' +
+      '<div><div class="k">Chain</div>' + chain + '</div>' +
+      '<div><div class="k">Last verified</div><div class="v plain">' + last + '</div></div>' +
+      '<div><div class="k">Capture</div><div class="v plain">' + cats + ' categor' + (cats === 1 ? 'y' : 'ies') +
+        ' · ' + locked + ' locked</div></div>' +
+      caveat + '</div>';
   }
 
   function deniedHtml() {
@@ -480,11 +569,11 @@
         (canCfg ? '' : ' disabled') + ' aria-pressed="' + (s === 'off') + '">' +
         '<i class="ic ic-stop ic-sm"></i>Off</button></div>';
 
-    return '<div class="cyg-a-card cyg-a-status' + (s === 'recording' ? '' : ' ' + s) + '">' +
-      '<div><h3>' + pill + '<span>' + esc(title) + '</span></h3><p>' + text + '</p>' +
+    return '<div class="cyg-a-status' + (s === 'recording' ? '' : ' ' + s) + '">' +
+      '<div class="txt"><h3>' + pill + '<span>' + esc(title) + '</span></h3><p>' + text + '</p></div>' +
       '<div class="cyg-a-always"><i class="ic ic-shield ic-sm"></i><span>Security events are ' +
       '<b>always recorded</b>, whatever the state: sign-ins, users and roles, PROD writes, ' +
-      'and every change to this switch itself.</span></div></div>' +
+      'and every change to this switch itself.</span></div>' +
       seg + '</div>';
   }
 
@@ -494,28 +583,28 @@
     // "people making changes" computed over one person's own slice would be
     // a true number that answers a different question.
     if (!s) {
-      return '<div class="cyg-a-card cyg-a-pad" style="margin-bottom:16px">' +
-        '<p style="margin:0;color:var(--text2);font-size:13px">You are seeing your own entries. ' +
-        'Organisation-wide counts need the Owner, Platform Administrator or Auditor role.</p></div>';
+      return '<div class="cyg-a-note" style="margin:0 0 22px">You are seeing your own entries. ' +
+        'Organisation-wide counts need the Owner, Platform Administrator or Auditor role.</div>';
     }
     var tile = function (label, value, detail, colour) {
-      return '<div class="cyg-a-card cyg-a-kpi"><div class="l">' + esc(label) + '</div>' +
+      return '<div class="cyg-a-kpi"><div class="l">' + esc(label) + '</div>' +
         '<div class="v"' + (colour ? ' style="color:' + colour + '"' : '') + '>' + value + '</div>' +
         '<div class="d">' + esc(detail) + '</div></div>';
     };
     return '<div class="cyg-a-kpis">' +
       tile('Events · last 24h', s.events, 'across all projects') +
       tile('People making changes', s.actors, 'distinct actors, 24h') +
-      tile('PROD changes', s.prodChanges, 'writes and config on PROD', s.prodChanges ? 'var(--red)' : '') +
+      tile('PROD changes', s.prodChanges, 'writes and config on PROD', s.prodChanges ? 'var(--state-fail)' : '') +
       tile('Denied / failed', s.deniedOrFailed, 'blocked by role, or errored',
-           s.deniedOrFailed ? 'var(--amber)' : '') +
+           s.deniedOrFailed ? 'var(--state-warn)' : '') +
       '</div>';
   }
 
   var TABS = [
-    { key: 'events', label: 'Events', hint: 'who · what · when' },
-    { key: 'settings', label: 'Capture settings', hint: 'what gets recorded' },
-    { key: 'integrity', label: 'Integrity', hint: 'verify the chain' },
+    { key: 'events', label: 'Events' },
+    { key: 'settings', label: 'Capture settings' },
+    { key: 'integrity', label: 'Integrity' },
+    { key: 'retention', label: 'Retention' },
   ];
 
   function tabsHtml() {
@@ -527,7 +616,7 @@
         return '<button type="button" class="cyg-a-tab" role="tab" id="cyg-a-tab-' + t.key + '" ' +
           'data-tab="' + t.key + '" aria-selected="' + on + '" ' +
           'aria-controls="cyg-a-panel-' + t.key + '" tabindex="' + (on ? '0' : '-1') + '">' +
-          esc(t.label) + '<small>' + esc(t.hint) + '</small></button>';
+          esc(t.label) + '</button>';
       }).join('') + '</div>';
   }
 
@@ -573,21 +662,20 @@
     // into the column it filters — with six columns and rows this dense, a
     // separate strip of unlabelled dropdowns makes the reader work out which
     // control governs which column before they can use either.
+    // The filter row: free text across everything, the category chips, a
+    // Clear control while anything is set, and the count pushed right. The
+    // exports moved to the header; the per-column filters stay in the column
+    // they govern, below.
+    var windowWord = f.days === 1 ? 'last 24 hours' : f.days === 7 ? 'last 7 days' : f.days === 30 ? 'last 30 days' : 'all time';
     var toolbar = '<div class="cyg-a-toolbar">' +
-      '<input class="cyg-a-in" id="cyg-a-q" type="search" placeholder="Search everything…" ' +
+      '<input class="cyg-a-in" id="cyg-a-q" type="search" placeholder="Filter by actor, object or id" ' +
         'aria-label="Search all columns" value="' + esc(f.q) + '">' +
       (activeFilterCount()
-        ? '<button class="cyg-a-btn" id="cyg-a-clear" type="button">Clear ' +
+        ? '<button class="cyg-a-btn sm" id="cyg-a-clear" type="button">Clear ' +
           activeFilterCount() + ' filter' + (activeFilterCount() === 1 ? '' : 's') + '</button>'
         : '') +
-      '<span class="cyg-a-sp"></span>' +
-      (st.canExport
-        ? '<button class="cyg-a-btn primary" id="cyg-a-csv" type="button">' +
-          '<i class="ic ic-download ic-sm"></i>Export CSV</button>' +
-          '<button class="cyg-a-btn" id="cyg-a-json" type="button">' +
-          '<i class="ic ic-download ic-sm"></i>JSON</button>'
-        : '<span style="font-size:12.5px;color:var(--text3)">Export needs the Platform ' +
-          'Administrator or Auditor role</span>') +
+      '<span class="cyg-a-count" id="cyg-a-count">' + Number(state.total || 0).toLocaleString('en-GB') +
+        ' event' + (state.total === 1 ? '' : 's') + ' · ' + windowWord + '</span>' +
       '</div>';
 
     var chips = '<div class="cyg-a-chips" id="cyg-a-chips">' +
@@ -605,7 +693,8 @@
 
     el.innerHTML = toolbar + chips + unindexed +
       '<div class="cyg-a-card"><div class="cyg-a-tw"><table class="cyg-a-table">' +
-      '<thead><tr><th>WHEN</th><th>WHO</th><th>WHAT</th><th>TARGET</th><th>ENV</th><th>OUTCOME</th></tr>' +
+      '<thead><tr><th>Seq</th><th>When</th><th>Actor</th><th>Category</th><th>Action</th><th>Object</th>' +
+      '<th>Env</th><th>Outcome</th><th class="r">Source</th></tr>' +
       filterRow(f) + '</thead>' +
       '<tbody id="cyg-a-rows">' + rows + '</tbody></table></div>' +
       '<div class="cyg-a-foot"><span>' + state.events.length + ' shown of ' + state.total +
@@ -655,6 +744,7 @@
     // because of one is visibly different from a table that is empty.
     var cls = function (base, set) { return base + (set ? ' on' : ''); };
     return '<tr class="cyg-a-filters">' +
+      cell('') +
       cell('<select class="' + cls('cyg-a-fsel', f.days !== 7) + '" data-filter="days" aria-label="Filter by date range">' +
         [[1, 'Last 24 hours'], [7, 'Last 7 days'], [30, 'Last 30 days'], [0, 'All time']]
           .map(function (o) {
@@ -666,6 +756,7 @@
         optionList(facets.actors.map(function (a) {
           return { value: a.value, label: a.value + ' (' + a.count + ')' };
         }), f.actor, 'Anyone') + '</select>') +
+      cell('') +
       cell('<select class="' + cls('cyg-a-fsel', f.action) + '" data-filter="action" aria-label="Filter by action">' +
         optionList(facets.actions.map(function (a) {
           return { value: a.value, label: a.value + ' (' + a.count + ')' };
@@ -676,6 +767,7 @@
         optionList(['PROD', 'STAGING', 'TEST', 'DEV'], f.env, 'Any') + '</select>') +
       cell('<select class="' + cls('cyg-a-fsel', f.outcome) + '" data-filter="outcome" aria-label="Filter by outcome">' +
         optionList(['allowed', 'denied', 'failed'], f.outcome, 'Any') + '</select>') +
+      cell('') +
       '</tr>';
   }
 
@@ -686,7 +778,7 @@
   // not saying.
   function buildRows() {
     if (!state.events.length) {
-      return '<tr><td colspan="6" class="cyg-a-empty">' +
+      return '<tr><td colspan="9" class="cyg-a-empty">' +
         (state.error ? esc(state.error) : 'No events match these filters.') + '</td></tr>';
     }
     var items = state.events.map(function (e) {
@@ -712,29 +804,41 @@
     var when = g.open
       ? 'from ' + esc(fmt(g.from)) + ' — still ' + (g.kind === 'off' ? 'off' : 'paused')
       : esc(fmt(g.from)) + ' &rarr; ' + esc(fmt(g.to));
-    return '<tr class="gap' + (g.kind === 'off' ? ' off' : '') + '"><td colspan="6">' +
+    return '<tr class="gap' + (g.kind === 'off' ? ' off' : '') + '"><td colspan="9">' +
       what + ' ' + when + (g.by ? ' by ' + esc(g.by) : '') +
       (g.reason ? ' — "' + esc(g.reason) + '"' : '') +
       '. Security, access and PROD events in this window are still recorded and still shown.' +
       '</td></tr>';
   }
 
+  // The category tag is the same bordered tag as the environment tag; a
+  // PROD-scoped event takes the state-fail border and text. The avatar
+  // blocks went — six categorical colours on a column of names was hue
+  // spent on nothing.
+  function categoryTag(e) {
+    var cat = ((state.status.categories || []).filter(function (c) { return c.key === e.category; })[0]) || {};
+    var word = e.category === 'prod' ? 'PROD' : (cat.label || e.category || '—');
+    var prod = e.category === 'prod' || String(e.environment || '').toUpperCase() === 'PROD';
+    return '<span class="cyg-a-cat' + (prod ? ' prod' : '') + '" title="' + esc(cat.label || e.category || '') + '">' + esc(word) + '</span>';
+  }
   function eventRow(e) {
-    var name = e.actorName || e.actorEmail || 'System';
+    var name = e.actorEmail || e.actorName || 'system';
     var roles = (e.effectiveRoles || []).join(' ');
     return '<tr class="ev" data-seq="' + e.seq + '" tabindex="0">' +
+      '<td class="cyg-a-seq">' + esc(e.seq) + '</td>' +
       '<td class="cyg-a-when">' + esc(fmt(e.occurredAt)) + '<small>' + esc(rel(e.occurredAt)) + '</small></td>' +
-      '<td><div class="cyg-a-who"><div class="cyg-a-av" style="background:' + avatarColour(e.actorEmail) + '">' +
-        esc(initials(e.actorName, e.actorEmail)) + '</div><div>' + esc(name) +
+      '<td><div class="cyg-a-who">' + esc(name) +
         (e.actorType === 'assistant' ? '<span class="cyg-a-ai">via Ask Cygenix</span>' : '') +
         (e.source === 'client' ? '<span class="cyg-a-src">client</span>' : '') +
         '<small>' + esc(roles || e.actorType) +
-        (e.context && e.context.ip ? ' · ' + esc(e.context.ip) : '') + '</small></div></div></td>' +
+        (e.context && e.context.ip ? ' · ' + esc(e.context.ip) : '') + '</small></div></td>' +
+      '<td>' + categoryTag(e) + '</td>' +
       '<td class="cyg-a-what"><div class="cyg-a-act">' + esc(e.action) + '</div>' +
         '<div class="s">' + esc(e.summary || '') + '</div></td>' +
       '<td class="cyg-a-tgt">' + esc((e.target && e.target.label) || e.resourceId || '—') + '</td>' +
       '<td><span class="cyg-a-env ' + esc(e.environment || '') + '">' + esc(e.environment || '—') + '</span></td>' +
-      '<td><span class="cyg-a-pill ' + outcomeClass(e.outcome) + '">' + esc(e.outcome) + '</span></td></tr>';
+      '<td><span class="cyg-a-out ' + esc(e.outcome || '') + '">' + esc(e.outcome) + '</span></td>' +
+      '<td class="r cyg-a-srcw">' + (e.source === 'client' ? 'client' : 'server') + '</td></tr>';
   }
 
   // ── Drawer ──────────────────────────────────────────────────────────────
@@ -757,7 +861,7 @@
         (e.actorType === 'assistant'
           ? '<br><span class="cyg-a-ai">Ask Cygenix acted on behalf of ' + esc(e.onBehalfOf || '—') + '</span>'
           : '') + '</dd>' +
-      '<dt>Outcome</dt><dd><span class="cyg-a-pill ' + outcomeClass(e.outcome) + '">' + esc(e.outcome) +
+      '<dt>Outcome</dt><dd><span class="cyg-a-out ' + esc(e.outcome || '') + '">' + esc(e.outcome) +
         '</span>' + (e.detail && e.detail.reason ? ' — ' + esc(e.detail.reason) : '') + '</dd>' +
       '<dt>Target</dt><dd>' + esc((e.target && e.target.label) || e.resourceId || '—') +
         (e.resourceType ? ' <span style="color:var(--text3)">(' + esc(e.resourceType) + ')</span>' : '') + '</dd>' +
@@ -791,7 +895,7 @@
       'prev&nbsp;&nbsp;' + esc(e.prevHash || '(first entry)') + '<br>' +
       'hash&nbsp;&nbsp;<b>' + esc(e.entryHash) + '</b><br>' +
       '<span class="cyg-a-pill cyg-a-p-grey" style="margin-top:6px">' +
-      'Verify the whole chain on the Integrity tab</span></div>';
+      'Verify chain, in the header, walks the whole chain</span></div>';
 
     document.getElementById('cyg-a-dact').textContent = e.action;
     document.getElementById('cyg-a-dsum').textContent = e.summary || '';
@@ -858,11 +962,15 @@
 
     var cats = (st.categories || []).map(function (c) {
       var on = cfg.categories[c.key] !== false;
-      return '<div class="cyg-a-cat"><div class="t"><b>' + esc(c.label) +
-        (c.alwaysOn ? ' <span class="cyg-a-pill cyg-a-p-grey"><i class="ic ic-lock ic-sm"></i>always on</span>' : '') +
+      if (c.alwaysOn) {
+        return '<div class="cyg-a-cat-row"><div class="t"><b>' + esc(c.label) + '</b>' +
+          '<small>' + esc(c.detail || '') + ' Always recorded — a pause cannot hide it and no role can switch it off.</small></div>' +
+          '<span class="cyg-a-locked" title="Locked: recorded whatever the capture state">Locked</span></div>';
+      }
+      return '<div class="cyg-a-cat-row"><div class="t"><b>' + esc(c.label) +
         '</b><small>' + esc(c.detail || '') + '</small></div>' +
         '<label class="cyg-a-tg"><input type="checkbox" data-cat-key="' + esc(c.key) + '"' +
-        (on ? ' checked' : '') + ((c.alwaysOn || !can) ? ' disabled' : '') +
+        (on ? ' checked' : '') + (can ? '' : ' disabled') +
         ' aria-label="Record ' + esc(c.label) + '"><span></span></label></div>';
     }).join('');
 
@@ -877,7 +985,7 @@
     }).join('');
 
     var flag = function (key, label, detail) {
-      return '<div class="cyg-a-cat"><div class="t"><b>' + esc(label) + '</b><small>' + esc(detail) +
+      return '<div class="cyg-a-cat-row"><div class="t"><b>' + esc(label) + '</b><small>' + esc(detail) +
         '</small></div><label class="cyg-a-tg"><input type="checkbox" data-flag="' + key + '"' +
         (cfg[key] !== false ? ' checked' : '') + (can ? '' : ' disabled') +
         ' aria-label="' + esc(label) + '"><span></span></label></div>';
@@ -888,8 +996,8 @@
         'Changing it belongs to the Organisation Owner and the Platform Administrator — an auditor who ' +
         'can quieten the trail they report on is not an auditor.</div>') +
       '<div class="cyg-a-grid2"><div class="cyg-a-card cyg-a-pad">' +
-      '<h3>What gets recorded</h3><p>Turn categories off to reduce noise. Locked rows cannot be ' +
-      'disabled here or through the API — they are what a pause is not allowed to hide.</p>' +
+      '<h3>What gets recorded</h3><p>Turn categories off to reduce noise. The four locked rows ' +
+      'cannot be disabled here or through the API — they are what a pause is not allowed to hide.</p>' +
       '<div id="cyg-a-cats">' + cats + '</div></div>' +
       '<div style="display:flex;flex-direction:column;gap:16px">' +
       '<div class="cyg-a-card cyg-a-pad"><h3>Retention</h3>' +
@@ -952,27 +1060,30 @@
               esc(state.verifyResult.brokenAt) + ' — ' + esc(state.verifyResult.reason))
         : 'Not verified in this session.';
 
-    el.innerHTML = retentionHtml() +
+    el.innerHTML =
       '<div class="cyg-a-card cyg-a-pad">' +
-      '<h3><i class="ic ic-chain ic-sm"></i> Hash chain</h3>' +
+      '<h3>Hash chain</h3>' +
       '<p>Every entry stores the SHA-256 of the one before it, so editing or removing any past row ' +
       'breaks every hash after it. Verification walks the chain and names the first entry that does ' +
       'not line up.</p>' +
       '<div class="cyg-a-chain">' + blocks + '</div>' +
       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-      (state.status.canVerify
-        ? '<button class="cyg-a-btn primary" id="cyg-a-verify" type="button"' +
-          (state.verifying ? ' disabled' : '') + '>Verify the full chain</button>'
-        : '') +
-      '<span id="cyg-a-verifyout" style="font-size:13px;color:var(--text2)">' + out + '</span></div>' +
-      '<div class="cyg-a-note" style="margin-top:14px"><b>The known limit, stated rather than buried.</b> ' +
+      '<span id="cyg-a-verifyout" style="font-size:14px;color:var(--color-neutral-800)">' + out + '</span>' +
+      (state.status.canVerify ? '<span class="cyg-a-note-h">— Verify chain is in the header.</span>' : '') + '</div>' +
+      '<div class="cyg-a-note warn" style="margin-top:14px"><b>The known limit, stated rather than buried.</b> ' +
       'Netlify Blobs has no transactions, so two appends at the same instant can race for the head ' +
       'position. A short retry closes the realistic window at this product\'s traffic, and verification ' +
       'reports a break rather than hiding one — but this is tamper-evident, not tamper-proof, and an ' +
       'evidence pack should say so.</div></div>';
+  }
 
-    var vb = document.getElementById('cyg-a-verify');
-    if (vb) vb.addEventListener('click', runVerify);
+  // Retention has its own tab: what it has actually done, and the control
+  // to run it. The policy (how long, archive or erase) stays under Capture
+  // settings with the other settings, because it is a setting.
+  function renderRetentionPanel() {
+    var el = document.getElementById('cyg-a-panel-retention');
+    if (!el) return;
+    el.innerHTML = retentionHtml();
     var pb = document.getElementById('cyg-a-purge');
     if (pb) pb.addEventListener('click', runPurge);
   }
@@ -1002,15 +1113,15 @@
         'verification walks the whole of it. Events older than <b>' + esc(label) +
         '</b> are purged nightly once any exist.</p>';
 
-    return '<div class="cyg-a-card cyg-a-pad" style="margin-bottom:16px">' +
-      '<h3><i class="ic ic-clock ic-sm"></i> Retention</h3>' + body +
+    return '<div class="cyg-a-card cyg-a-pad">' +
+      '<h3>Retention</h3>' + body +
       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">' +
       (canRun
         ? '<button class="cyg-a-btn" id="cyg-a-purge" type="button"' +
           (state.purging ? ' disabled' : '') + '>' +
           (state.purging ? 'Running…' : 'Run retention now') + '</button>'
         : '') +
-      '<span id="cyg-a-purgeout" style="font-size:13px;color:var(--text2)">' +
+      '<span id="cyg-a-purgeout" style="font-size:14px;color:var(--color-neutral-800)">' +
       (state.purgeResult || 'Runs nightly. Each run is budgeted, so a large backlog is ' +
        'worked down over successive nights rather than in one pass.') +
       '</span></div>' +
@@ -1029,7 +1140,7 @@
           : 'PERMANENTLY ERASED — archiving is switched off.'))) return;
     state.purging = true;
     state.purgeResult = null;
-    renderIntegrityPanel();
+    renderRetentionPanel();
     post({ op: 'purge' }).then(function (d) {
       state.purgeResult = d.purged
         ? 'Purged ' + d.purged + ' entr' + (d.purged === 1 ? 'y' : 'ies') +
@@ -1042,13 +1153,14 @@
       state.purgeResult = 'Failed: ' + esc(e.message);
       toast('Retention run failed: ' + e.message);
       state.purging = false;
-      renderIntegrityPanel();
+      renderRetentionPanel();
     }).then(function () { state.purging = false; });
   }
 
   function runVerify() {
     state.verifying = true;
     renderIntegrityPanel();
+    refreshBand();
     api('what=verify').then(function (d) {
       state.verifyResult = d;
       toast(d.ok ? 'Chain intact — ' + d.count + ' entries' : 'Chain BROKEN at entry ' + d.brokenAt);
@@ -1058,7 +1170,25 @@
     }).then(function () {
       state.verifying = false;
       renderIntegrityPanel();
+      refreshBand();
     });
+  }
+  // The band and the header button both say what the chain is verified to,
+  // so they are redrawn together after a verification.
+  function refreshBand() {
+    var band = mount && mount.querySelector('#cyg-a-band');
+    if (band) {
+      var holder = document.createElement('div');
+      holder.innerHTML = bandHtml();
+      band.replaceWith(holder.firstElementChild);
+    }
+    var head = mount && mount.querySelector('.cyg-a-head');
+    if (head) {
+      var h = document.createElement('div');
+      h.innerHTML = headerHtml();
+      head.replaceWith(h.firstElementChild);
+      wireHeader();
+    }
   }
 
   // ── Modals ──────────────────────────────────────────────────────────────
@@ -1103,7 +1233,7 @@
       '<p>General change capture stops until the timer runs out. Security, access, PROD and the log\'s ' +
       'own events keep recording.</p>' +
       '<label for="cyg-a-dur">Pause for</label><select id="cyg-a-dur">' + opts + '</select>' +
-      '<label for="cyg-a-why">Reason <span style="color:var(--red)">*</span></label>' +
+      '<label for="cyg-a-why">Reason <span style="color:var(--state-fail)">*</span></label>' +
       '<textarea id="cyg-a-why" placeholder="e.g. bulk re-import of 40 staging tables, too noisy"></textarea>' +
       '<div class="cyg-a-note">This is recorded as <span style="font-family:var(--mono)">audit.pause</span> ' +
       'with your name and your reason, and drawn as a gap in the timeline. The log records its own ' +
@@ -1117,7 +1247,7 @@
     modal('<h3>Turn the audit log off?</h3>' +
       '<p>General change capture stops with <b>no end time</b>. Security, access, PROD and the log\'s ' +
       'own events keep recording, and it stays off until somebody turns it back on.</p>' +
-      '<label for="cyg-a-why">Reason <span style="color:var(--red)">*</span></label>' +
+      '<label for="cyg-a-why">Reason <span style="color:var(--state-fail)">*</span></label>' +
       '<textarea id="cyg-a-why" placeholder="Why does it need to be off?"></textarea>' +
       '<label for="cyg-a-conf">Type <b>OFF</b> to confirm</label>' +
       '<input type="text" id="cyg-a-conf" autocomplete="off" spellcheck="false">' +
@@ -1135,7 +1265,7 @@
       if (m === 'cancel') return closeModal();
       var why = (document.getElementById('cyg-a-why').value || '').trim();
       if (why.length < 4) {
-        document.getElementById('cyg-a-why').style.borderColor = 'var(--red)';
+        document.getElementById('cyg-a-why').style.borderColor = 'var(--state-fail)';
         document.getElementById('cyg-a-why').focus();
         return;
       }
@@ -1147,7 +1277,7 @@
         body.state = 'off';
         body.confirm = (document.getElementById('cyg-a-conf').value || '').trim();
         if (body.confirm.toUpperCase() !== 'OFF') {
-          document.getElementById('cyg-a-conf').style.borderColor = 'var(--red)';
+          document.getElementById('cyg-a-conf').style.borderColor = 'var(--state-fail)';
           document.getElementById('cyg-a-conf').focus();
           return;
         }
@@ -1249,8 +1379,18 @@
     });
   }
 
+  function wireHeader() {
+    var csv = document.getElementById('cyg-a-csv');
+    if (csv) csv.addEventListener('click', function () { exportAs('csv'); });
+    var json = document.getElementById('cyg-a-json');
+    if (json) json.addEventListener('click', function () { exportAs('json'); });
+    var vb = document.getElementById('cyg-a-verify');
+    if (vb) vb.addEventListener('click', runVerify);
+  }
+
   function wire() {
     wireStatus();
+    wireHeader();
     var tabs = mount.querySelectorAll('.cyg-a-tab');
     for (var i = 0; i < tabs.length; i++) {
       tabs[i].addEventListener('click', function (e) { selectTab(e.currentTarget.dataset.tab); });
@@ -1352,10 +1492,6 @@
       });
     }
 
-    var csv = document.getElementById('cyg-a-csv');
-    if (csv) csv.addEventListener('click', function () { exportAs('csv'); });
-    var json = document.getElementById('cyg-a-json');
-    if (json) json.addEventListener('click', function () { exportAs('json'); });
     var more = document.getElementById('cyg-a-more');
     if (more) more.addEventListener('click', loadMore);
   }

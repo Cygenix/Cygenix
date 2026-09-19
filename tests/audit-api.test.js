@@ -341,6 +341,14 @@ const is2xx = (r) => r.status >= 200 && r.status < 300;
   check('over a non-trivial number of entries', ver.json.count > 20);
   check('and the verification is itself recorded',
     (await get({ what: 'events', action: 'audit.verify' })).json.total >= 1);
+  // The status call reports the last verification from the trail, so the
+  // screen's integrity band is a statement about a recorded fact.
+  const stAfterVerify = (await get({ what: 'status' })).json;
+  check('the status carries the last verification — ok, the count, and when',
+    !!stAfterVerify.lastVerify && stAfterVerify.lastVerify.ok === true
+    && stAfterVerify.lastVerify.count === ver.json.count && /^\d{4}-/.test(stAfterVerify.lastVerify.at));
+  check('and the head sequence, so "verified to entry N" can be stated',
+    stAfterVerify.headSeq === JSON.parse(MEM.get('audit/head')).seq);
 
   // Tamper with one row in place, exactly as the brief asks.
   const head = JSON.parse(MEM.get('audit/head'));
@@ -350,6 +358,9 @@ const is2xx = (r) => r.status >= 200 && r.status < 300;
   const broken = await get({ what: 'verify' });
   check('editing a stored row is detected', broken.json.ok === false);
   check('and the first break is named', broken.json.brokenAt === victim.seq);
+  check('the status then reports the break, not the earlier pass',
+    (await get({ what: 'status' })).json.lastVerify.ok === false
+    && (await get({ what: 'status' })).json.lastVerify.brokenAt === victim.seq);
   MEM.set(victimKey, JSON.stringify(victim));
   check('restoring it makes the chain verify again', (await get({ what: 'verify' })).json.ok === true);
 

@@ -188,8 +188,23 @@ exports.handler = async function (event) {
         // than repeating the policy back at the reader.
         const checkpoint = await retention.checkpointStatus(store);
         const recent = await org.queryAudit(store, { category: 'audit', limit: 100 });
+        // The last verification, from the trail itself: audit.verify entries
+        // carry the result in their detail, so the screen can say "verified
+        // to entry N, at T" without re-walking the chain on every load. None
+        // yet is a real state and is reported as null, not as a guess.
+        const lastVerifyEntry = (recent.entries || []).filter(e => e.action === 'audit.verify')[0] || null;
+        const lastVerify = lastVerifyEntry ? {
+          at: lastVerifyEntry.occurredAt,
+          ok: lastVerifyEntry.outcome === 'allowed',
+          count: (lastVerifyEntry.detail && lastVerifyEntry.detail.count) || null,
+          brokenAt: (lastVerifyEntry.detail && lastVerifyEntry.detail.brokenAt) || null,
+          reason: (lastVerifyEntry.detail && lastVerifyEntry.detail.reason) || null,
+          seq: lastVerifyEntry.seq,
+        } : null;
         return ok({
           state: resolved.state,
+          headSeq: recent.chainTotal || 0,
+          lastVerify,
           storedState: resolved.storedState,
           pausedUntil: resolved.pausedUntil || null,
           msRemaining: resolved.msRemaining || null,

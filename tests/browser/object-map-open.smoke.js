@@ -149,10 +149,13 @@ const JOB_ID='job_tpl_1789722047112_ausrq7';
     // in a plain <script src> — it is not on window, and reaching for it
     // returns undefined and quietly passes every check that follows.
     mapping:Array.from(document.querySelectorAll('#mapping-tbody tr')).map(tr=>{
+      // Phase 4 column order: Target column · Source column · Transform ·
+      // Fixed value · Confidence. The target cell's first element is the
+      // lineage span carrying the bare column name; the type and any NOT
+      // NULL note follow it.
       const tds=tr.children;
-      const sel=tds[0].querySelector('select');
-      // The target cell carries a NOT NULL badge on a second line.
-      return [tds[2].textContent.trim().split('\n')[0].trim(), sel?sel.value:''];
+      const sel=tds[1].querySelector('select');
+      return [tds[0].firstElementChild.textContent.trim(), sel?sel.value:''];
     }),
     stats:(document.getElementById('map-stats')||{}).textContent||'',
   }));
@@ -197,9 +200,9 @@ const JOB_ID='job_tpl_1789722047112_ausrq7';
   const real=await page.evaluate(()=>({
     mapping:Array.from(document.querySelectorAll('#mapping-tbody tr')).map(tr=>{
       const tds=tr.children;
-      const sel=tds[0].querySelector('select');
-      const tf=tds[4].querySelector('select');
-      return [tds[2].textContent.trim().split('\n')[0].trim(), sel?sel.value:'', tf?tf.value:''];
+      const sel=tds[1].querySelector('select');
+      const tf=tds[2].querySelector('select');
+      return [tds[0].firstElementChild.textContent.trim(), sel?sel.value:'', tf?tf.value:''];
     }),
     status:(document.getElementById('status-bar')||{}).textContent||'',
   }));

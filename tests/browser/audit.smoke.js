@@ -339,7 +339,8 @@ function statusBody() {
 
   // ── 2. Tabs ─────────────────────────────────────────────────────────────
   console.log('\n2. Tabs, from a keyboard');
-  check('the tablist is a real tablist', (await page.$$('[role="tab"]')).length === 3);
+  check('the tablist is a real tablist — four tabs: Events, Capture settings, Integrity, Retention',
+    (await page.$$('[role="tab"]')).length === 4);
   check('only the selected tab is in the tab order',
     (await page.$$('[role="tab"][tabindex="0"]')).length === 1);
   await page.focus('#cyg-a-tab-events');
@@ -351,7 +352,8 @@ function statusBody() {
     (await page.getAttribute('#cyg-a-panel-events', 'hidden')) !== null);
   await page.keyboard.press('End');
   check('End jumps to the last tab',
-    await page.getAttribute('#cyg-a-tab-integrity', 'aria-selected') === 'true');
+    await page.getAttribute('#cyg-a-tab-retention', 'aria-selected') === 'true');
+  await page.click('#cyg-a-tab-integrity');
 
   // ── 3. Integrity ────────────────────────────────────────────────────────
   console.log('\n3. Integrity');
@@ -363,10 +365,19 @@ function statusBody() {
     document.getElementById('cyg-a-verifyout').textContent), null, { timeout: 8000 });
   check('verifying reports the result', /9 entries/.test(await page.textContent('#cyg-a-verifyout')));
 
-  // Retention. A chain that has never been purged must say so, rather than
-  // repeating the policy back at the reader as though it had happened.
-  const integrity = () => page.textContent('#cyg-a-panel-integrity');
-  check('the Integrity tab has a retention panel', await page.isVisible('#cyg-a-purge'));
+  // The integrity band says what the chain is verified to, as a sentence.
+  check('the band states the verification as a sentence in the status colour',
+    /Verified to entry/.test(await page.textContent('#cyg-a-band')) &&
+    await page.$eval('#cyg-a-band .v.ok', (e) => !!e));
+  check('and names the known limit rather than a badge',
+    /A simultaneous append can race the head/.test(await page.textContent('#cyg-a-band')));
+
+  // Retention has its own tab. A chain that has never been purged must say
+  // so, rather than repeating the policy back at the reader as though it
+  // had happened.
+  await page.click('#cyg-a-tab-retention');
+  const integrity = () => page.textContent('#cyg-a-panel-retention');
+  check('the Retention tab has the retention panel', await page.isVisible('#cyg-a-purge'));
   check('and says nothing has been purged yet',
     /Nothing has been purged yet/.test(await integrity()));
   check('explaining why deleting will not break verification',
@@ -401,15 +412,18 @@ function statusBody() {
   world.settings.archiveBeforePurge = true;
   world.checkpoint = { purged: false, chainStartsAt: 1 };
   await openAudit();
-  await page.click('#cyg-a-tab-integrity');
+  await page.click('#cyg-a-tab-retention');
 
   // ── 4. Settings ─────────────────────────────────────────────────────────
   console.log('\n4. Capture settings');
   await page.click('#cyg-a-tab-settings');
-  const locked = await page.$$eval('#cyg-a-cats input[type=checkbox]',
-    (els) => els.filter((e) => e.disabled).length);
-  check('the four always-on categories are locked in the UI', locked === 4);
-  check('and an optional one is not', await page.isEnabled('#cyg-a-cats input[data-cat-key="settings"]'));
+  // A locked category is a word and a note, not a disabled switch: a
+  // disabled switch invites a click that can never work.
+  const locked = await page.$$eval('#cyg-a-cats .cyg-a-locked', (els) => els.length);
+  check('the four always-on categories are marked locked in the UI', locked === 4);
+  check('and carry no switch at all',
+    (await page.$$('#cyg-a-cats input[type=checkbox]')).length === CATEGORIES.filter((c) => !c.alwaysOn).length);
+  check('while an optional one has a live switch', await page.isEnabled('#cyg-a-cats input[data-cat-key="settings"]'));
 
   await page.uncheck('#cyg-a-cats input[data-cat-key="jobs"]');
   await page.waitForFunction(() => document.getElementById('cyg-a-toast'), null, { timeout: 5000 });
@@ -592,7 +606,7 @@ function statusBody() {
   check('an empty reason is refused in the browser, before the round trip',
     world.posts.length === before);
   check('and the field is marked',
-    (await page.getAttribute('#cyg-a-why', 'style') || '').indexOf('var(--red)') !== -1);
+    (await page.getAttribute('#cyg-a-why', 'style') || '').indexOf('var(--state-fail)') !== -1);
 
   await page.fill('#cyg-a-why', 'bulk re-import of 40 staging tables');
   await page.selectOption('#cyg-a-dur', '120');
@@ -641,10 +655,11 @@ function statusBody() {
 
   // ── 8. Export ───────────────────────────────────────────────────────────
   console.log('\n8. Export');
-  check('the CSV export is the primary action on the toolbar',
-    await page.$eval('#cyg-a-csv', (e) => e.classList.contains('primary')));
+  check('the export is a secondary action in the header, beside Verify chain',
+    await page.$eval('#cyg-a-csv', (e) => !e.classList.contains('primary') && !!e.closest('.cyg-a-head')) &&
+    await page.$eval('#cyg-a-verify', (e) => e.classList.contains('primary') && !!e.closest('.cyg-a-head')));
   check('and says what it does rather than showing a bare arrow',
-    /Export CSV/.test(await page.textContent('#cyg-a-csv')));
+    /Export evidence pack/.test(await page.textContent('#cyg-a-csv')));
   const dl = page.waitForEvent('download', { timeout: 8000 }).catch(() => null);
   await page.click('#cyg-a-csv');
   const download = await dl;
