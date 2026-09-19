@@ -200,7 +200,10 @@ const U='you@example.test';
     &&row.some(t=>/Back to top/.test(t)),JSON.stringify(row));
   check('Save to Drive and Download are in the toolbar instead — not lost',
     await page.evaluate(()=>{
-      const bar=$('save-job-btn').parentElement.textContent;
+      // The toolbar row under the title (Phase 4): the two segmented
+      // controls and the map's file actions. Save as job sits in the
+      // header's action group beside it.
+      const bar=(document.querySelector('.om-toolbar')||$('save-job-btn').parentElement).textContent;
       return /Save to Drive/.test(bar)&&/Download/.test(bar);}));
 
   await page.evaluate(()=>$('sql-panel').scrollIntoView());

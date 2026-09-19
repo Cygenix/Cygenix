@@ -377,20 +377,72 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .copy-btn{position:absolute;top:0.5rem;right:0.5rem;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3);font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer;font-family:var(--mono);transition:all 0.15s}
 .copy-btn:hover{color:var(--text);border-color:var(--border2);background:var(--bg4)}
 
-/* JOBS TABLE */
-.jobs-table{width:100%;border-collapse:collapse}
-.jobs-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;border-bottom:0.5px solid var(--border)}
-.jobs-table td{padding:0.45rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle;white-space:nowrap}
+/* JOBS — the table, the filter row, the selection bar and the right column
+   (Phase 4, Sep-2026). Status is four words in the status colours:
+   Complete, SQL ready, Failed, Pending; Running stays amber while a run is
+   in flight. The right column is the same 360px sticky column Home uses. */
+.jb-grid{display:grid;grid-template-columns:minmax(0,1fr) var(--cx-right-col-w,360px);margin:-28px -32px -34px;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px))}
+.jb-main{padding:28px 32px 34px;min-width:0}
+.jb-side{background:var(--color-neutral-100);border-left:1px solid var(--color-divider);padding:28px 24px;position:sticky;top:0;align-self:start;display:flex;flex-direction:column;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));max-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));overflow:auto}
+@media(max-width:1200px){.jb-grid{grid-template-columns:1fr}.jb-side{position:static;max-height:none;min-height:0;border-left:0;border-top:1px solid var(--color-divider)}}
+.jb-head{margin-bottom:22px}
+.jb-more-wrap{position:relative;display:inline-block}
+.jb-more-menu{display:none;position:absolute;top:calc(100% + 4px);right:0;z-index:40;min-width:200px;background:var(--color-bg);border:1px solid var(--color-divider);box-shadow:var(--shadow-strong);padding:4px 0}
+.jb-more-menu.open{display:block}
+.jb-more-menu button{display:block;width:100%;text-align:left;background:none;border:0;font-family:var(--font-body);font-size:14px;color:var(--color-text);padding:8px 14px;cursor:pointer}
+.jb-more-menu button:hover{background:var(--hover-tint)}
+.jb-filters{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+#view-jobs .jb-filter-input{width:220px;height:34px;padding:0 10px;font-size:14px;font-family:var(--font-body);background:var(--color-bg);border:1px solid var(--color-divider)}
+#view-jobs .jb-select{width:auto;min-width:160px;height:34px;padding:0 28px 0 10px;font-size:14px;font-family:var(--font-body);background:var(--color-bg);border:1px solid var(--color-divider)}
+#view-jobs .jb-select-sm{height:30px;min-width:170px;font-size:13px}
+.jb-side-acts a,.jb-side-foot a{text-decoration:none}
+.jb-side .btn-danger{background:transparent;color:var(--state-fail);border:1px solid var(--state-fail)}
+.jb-count{margin-left:auto;font-size:14px;color:var(--color-neutral-700);font-variant-numeric:tabular-nums}
+.jb-selbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--color-accent-100);border:1px solid var(--color-accent-300);padding:10px 14px;margin-bottom:14px}
+.jb-selcount{font-family:var(--font-heading);font-weight:600;font-size:16px;text-transform:uppercase;color:var(--color-accent-900);margin-right:6px;letter-spacing:.02em}
+.jb-move{display:inline-flex;gap:6px;align-items:center}
+.jb-clear{margin-left:auto;color:var(--color-accent-800);background:none;border:0;font-family:var(--font-body);font-size:14px;cursor:pointer;padding:0 4px;height:auto}
+.jb-clear:hover{text-decoration:underline}
+.jobs-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.4}
+.jobs-table th{font-family:var(--font-body);font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 60%,transparent);padding:7px 10px;text-align:left;border-bottom:1px solid var(--color-divider);white-space:nowrap}
+.jobs-table td{padding:8px 10px;border-bottom:1px solid var(--color-divider);vertical-align:middle;white-space:nowrap;color:var(--color-text)}
 .jobs-table tr:last-child td{border-bottom:none}
-.jobs-table tr:hover td{background:rgba(255,255,255,0.02)}
-.job-name{font-size:13px;font-weight:500;color:var(--text);display:inline-block;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
-.job-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:0.5rem}
+.jobs-table tbody tr{cursor:pointer}
+.jobs-table tbody tr:hover td{background:var(--hover-tint)}
+.jobs-table tbody tr.on td{background:var(--color-accent-100)}
+.jobs-table .r{text-align:right;font-variant-numeric:tabular-nums}
+.jobs-table td.jb-muted,.jobs-table .jb-muted{color:var(--color-neutral-700)}
+.job-name{font-family:var(--font-heading);font-weight:600;font-size:15px;color:var(--color-text);display:inline-block;max-width:300px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;line-height:1.2}
+.job-meta{font-size:13px;color:var(--color-neutral-700);margin-left:8px}
+.jb-tag{display:inline-block;font-family:var(--font-heading);font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:1px 6px;margin-left:6px;border:1px solid var(--color-divider);color:var(--color-neutral-700);vertical-align:middle;line-height:1.4}
+.jb-tag-fail{color:var(--state-fail);border-color:var(--state-fail)}
+.jb-st{font-size:13px;white-space:nowrap}
+.jb-st-complete{color:var(--state-ok)}
+.jb-st-ready{color:var(--color-accent-800)}
+.jb-st-failed{color:var(--state-fail)}
+.jb-st-pending{color:var(--color-neutral-600)}
+.jb-st-running{color:var(--state-warn)}
+/* still used by the Schedules table in the Task Agent view */
 .jobs-actions{display:flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
-.jobs-actions .btn{padding:3px 8px;font-size:11px;line-height:1.4}
-.job-drag-handle{color:var(--text3);transition:color 0.12s}
-.job-drag-handle:hover{color:var(--accent);cursor:grab}
+.job-drag-handle{color:var(--color-neutral-400);transition:color 0.12s}
+.job-drag-handle:hover{color:var(--color-accent);cursor:grab}
 .job-drag-handle:active{cursor:grabbing}
-.jobs-table tr.job-row-drag-over td{border-top:2px solid var(--accent);background:var(--accent-glow)}
+.jobs-table tr.job-row-drag-over td{border-top:2px solid var(--color-accent);background:var(--color-accent-100)}
+/* the right column */
+.jb-side .cx-kicker{margin-bottom:6px}
+.jb-side-name{font-family:var(--font-heading);font-weight:600;font-size:23px;line-height:1.05;text-transform:uppercase;color:var(--color-text);word-break:break-word}
+.jb-side-pair{font-size:14px;color:var(--color-neutral-700);margin-top:6px;word-break:break-all}
+.jb-side .cx-attn{margin:18px 0 4px}
+.jb-side .cx-attn p{font-size:14px}
+.jb-side-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.jb-facts{list-style:none;margin:20px 0 0;padding:0}
+.jb-facts li{display:flex;justify-content:space-between;gap:12px;font-size:14px;line-height:1.5;padding:6px 0;border-bottom:1px solid var(--color-divider)}
+.jb-facts li span:first-child{color:var(--color-neutral-700)}
+.jb-facts li span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.jb-side .cx-section{margin:22px 0 8px}
+.jb-versions{font-size:13px;line-height:1.8;color:var(--color-neutral-800)}
+.jb-side-foot{margin-top:auto;padding-top:22px;display:flex;gap:8px;flex-wrap:wrap}
+.jb-side-empty{font-size:14px;line-height:1.5;color:var(--color-neutral-700)}
 
 /* MODAL */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:200;align-items:center;justify-content:center}
@@ -563,43 +615,72 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .sconn-chip .sconn-action-btn.danger:hover{ color:var(--red); }
 #view-connections .sconn-empty{ font-size:11px;color:var(--text3);font-style:italic; }
 
-/* ─── Masked connection summary ──────────────────────────────────────
-   A configured connection is summarised rather than printed. The raw
-   string holds a password in cleartext, so it stays off screen until
-   the user asks to edit it — screen shares, screenshots and someone
-   walking past the desk all used to expose it. */
+/* ─── Connections in the console design language (Phase 4, Sep-2026) ──
+   Two blueprint panels — the one framed object on the screen is the pair
+   of connections everything else inherits. A configured connection is
+   summarised rather than printed: the raw string holds a password in
+   cleartext, so it stays off screen until the user asks to edit it —
+   screen shares, screenshots and someone walking past the desk all used
+   to expose it. */
+#view-connections .conn-head{ margin-bottom:22px; }
+#view-connections .conn-saved-word{ font-size:14px;color:var(--state-ok); }
+#view-connections .conn-grid{ display:grid;grid-template-columns:1fr 1fr;gap:26px;margin:26px 0 22px; }
+@media(max-width:1100px){ #view-connections .conn-grid{ grid-template-columns:1fr; } }
+#view-connections .conn-panel{ padding:20px 22px; }
+#view-connections .conn-panel-head{ display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px; }
+#view-connections .conn-status{ display:inline-flex;align-items:center;font-size:14px;color:var(--color-neutral-600);white-space:nowrap; }
+#view-connections .conn-status .cx-dot{ margin-right:8px; }
+#view-connections .conn-status.ok{ color:var(--state-ok); }
+#view-connections .conn-status.fail{ color:var(--state-fail); }
+#view-connections .conn-seg{ margin-bottom:12px; }
+#view-connections .conn-seg > button{ padding:7px 18px;font-family:var(--font-heading);font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);background:transparent;border:0;cursor:pointer;line-height:1.2; }
+#view-connections .conn-seg > button.on{ background:var(--color-accent-900);color:var(--color-bg); }
 #view-connections .conn-locked{
-  display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;
-  background:var(--bg3);border:0.5px solid var(--border2);
-  border-radius:var(--r);padding:0.6rem 0.75rem;margin-bottom:0.5rem;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:var(--color-neutral-100);border:1px solid var(--color-divider);
+  padding:12px 14px;margin-bottom:12px;
 }
-#view-connections .conn-locked .conn-locked-icon{ font-size:13px;opacity:0.55;line-height:1; }
 #view-connections .conn-locked .conn-locked-main{ display:flex;flex-direction:column;gap:2px;min-width:0;flex:1; }
-#view-connections .conn-locked .conn-locked-label{
-  font-size:9px;font-weight:500;color:var(--text3);
-  text-transform:uppercase;letter-spacing:0.08em;
-}
-#view-connections .conn-locked .conn-locked-value{
-  font-family:var(--mono);font-size:12px;color:var(--text);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-#view-connections .conn-locked .conn-locked-value.none{ color:var(--text3);font-style:italic;font-family:var(--serif); }
-#view-connections .conn-locked .conn-locked-nick{
-  font-family:var(--serif);font-size:10px;color:var(--text2);
-  background:var(--bg4);border-radius:100px;padding:1px 8px;
-}
+#view-connections .conn-locked .conn-locked-label{ font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600); }
+#view-connections .conn-locked .conn-locked-value{ font-family:var(--font-heading);font-weight:600;font-size:19px;line-height:1.1;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+#view-connections .conn-locked .conn-locked-value.none{ color:var(--color-neutral-600);font-style:italic; }
+#view-connections .conn-locked .conn-locked-nick{ font-size:13px;color:var(--color-neutral-700);border:1px solid var(--color-divider);padding:1px 8px; }
+#view-connections .conn-locked .conn-locked-note{ flex-basis:100%;font-size:14px;line-height:1.5;color:var(--color-neutral-700); }
+#view-connections .conn-fields{ display:grid;grid-template-columns:1fr 1fr;gap:10px 12px; }
+#view-connections .conn-fields .conn-full{ grid-column:1/-1; }
+#view-connections .conn-checks{ display:flex;gap:18px;align-items:center;font-size:14px;color:var(--color-neutral-800); }
+#view-connections .conn-checks label{ display:flex;align-items:center;gap:6px;cursor:pointer; }
+#view-connections .conn-optional{ font-weight:400;color:var(--color-neutral-600);text-transform:none;letter-spacing:0; }
+#view-connections .conn-hint{ font-size:13px;line-height:1.5;color:var(--color-neutral-700);margin-top:6px; }
+#view-connections .conn-hint code{ font-family:var(--mono);font-size:12px;background:var(--color-neutral-100);padding:1px 4px; }
+#view-connections .conn-preview{ font-family:var(--mono);font-size:13px;color:var(--color-neutral-700);background:var(--color-neutral-100);border:1px solid var(--color-divider);padding:8px 10px;word-break:break-all;min-height:16px; }
+#conn-tab-databases .form-label{ font-size:13px;color:var(--color-neutral-700);text-transform:none;letter-spacing:0;margin-bottom:4px;font-weight:400; }
+#conn-tab-databases .form-input{ height:34px;padding:0 10px;font-size:14px;font-family:var(--font-body);background:var(--color-bg);border:1px solid var(--color-divider); }
+#conn-tab-databases .form-input.conn-mono{ font-family:var(--mono);font-size:13px; }
+#conn-tab-databases select.form-input{ padding-right:28px; }
+#view-connections .conn-foot{ display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--color-divider);margin-top:16px;padding-top:12px; }
+#view-connections .conn-facts{ font-size:14px;line-height:1.4;color:var(--color-neutral-700);flex:1;min-width:0; }
+#view-connections .conn-foot-acts{ display:flex;gap:8px;margin-left:auto; }
+#view-connections .conn-saved{ margin-top:16px;padding-top:14px;border-top:1px solid var(--color-divider); }
+#view-connections .conn-saved-h{ font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--color-neutral-700);margin-bottom:8px;display:flex;align-items:center;gap:8px; }
+#view-connections .conn-count{ font-family:var(--font-body);font-size:12px;letter-spacing:0;color:var(--color-neutral-700);border:1px solid var(--color-divider);padding:0 6px; }
+#view-connections .conn-chips{ display:flex;flex-wrap:wrap;gap:6px;min-height:20px; }
+#view-connections .conn-guardrail{ margin:0 0 26px; }
+#view-connections .conn-guardrail p{ max-width:86ch; }
 
-/* ─── Data import (Connections view, tabbed) ───────────────────────── */
-#view-connections .cx-tabs{ }
+/* ─── Tabs (Connections view) ─────────────────────────────────────── */
+#view-connections .cx-tabs{ display:flex;gap:0;border-bottom:1px solid var(--color-divider);flex-wrap:wrap; }
 #view-connections .cx-tab{
-  background:transparent;border:none;color:var(--text3);
-  font-family:var(--serif);font-size:12px;font-weight:500;
-  padding:0.7rem 1.1rem;cursor:pointer;
-  border-bottom:2px solid transparent;
+  background:transparent;border:none;color:var(--color-neutral-600);
+  font-family:var(--font-heading);font-weight:600;font-size:16px;letter-spacing:.06em;text-transform:uppercase;
+  padding:8px 14px 9px;cursor:pointer;text-decoration:none;
+  border-bottom:2px solid transparent;margin-bottom:-1px;
   transition:color 0.15s,border-color 0.15s;
 }
-#view-connections .cx-tab:hover{ color:var(--text2); }
-#view-connections .cx-tab-active{ color:var(--accent);border-bottom-color:var(--accent); }
+#view-connections .cx-tab:hover{ color:var(--color-text); }
+#view-connections .cx-tab-active{ color:var(--color-text);border-bottom-color:var(--color-accent); }
+#view-connections .cx-tab-away{ color:var(--color-accent-700); }
+#view-connections .cx-tab-away:hover{ color:var(--color-accent-800); }
 
 #view-connections .imp-drop{
   border:1.5px dashed var(--border2);border-radius:var(--r);
@@ -1375,7 +1456,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=519f4c989c" defer></script>
-  <script src="/dashboard-app.js?v=07beae754e" defer></script>
+  <script src="/dashboard-app.js?v=9f1015dad9" defer></script>
 
 
   <!-- MAIN -->
@@ -1517,30 +1598,66 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
     <!-- ALL JOBS -->
     <div id="view-jobs" class="view">
-      <div class="panel-header">
-        <div class="panel-title">All Migration Jobs</div>
-        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)"><i class="ic ic-bolt"></i> Generate SQL</button>
-          <button class="btn btn-ghost" onclick="openValidateModal()" title="Dry-run TOP 100 INSERT inside a transaction (rolls back) — catches range, NOT NULL, FK and parse errors before a real migration">✓ Validate</button>
-          <button class="btn btn-ghost" onclick="openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column"><i class="ic ic-clipboard"></i> Setup Check</button>
-          <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files"><i class="ic ic-download"></i> Export Scripts</button>
-          <button class="btn btn-ghost" onclick="openExportPackageModal()" title="Export each selected job as a self-contained .sql package: target schema + source staging table + source data + migration. Runs on any SQL Server with no Cygenix needed."><i class="ic ic-package"></i> Export Package</button>
-          <button class="btn btn-ghost" id="show-deleted-btn" onclick="toggleShowDeleted()" title="Toggle between active jobs and the Trash (soft-deleted jobs). Restore or permanently delete from the Trash view."><i class="ic ic-trash"></i> Show deleted</button>
-          <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
+      <!-- Jobs in the console design language (Phase 4, Sep-2026). The
+           seven equal ghost buttons became three plus an overflow; the bulk
+           actions appear on selection instead of sitting greyed out; the
+           row actions moved into the right-hand column, where the selected
+           job is described in full. -->
+      <div class="jb-grid">
+        <div class="jb-main">
+          <div class="cx-head jb-head">
+            <div>
+              <div class="cx-kicker">Run</div>
+              <h1 class="cx-title">All migration jobs</h1>
+            </div>
+            <div class="cx-head-actions">
+              <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)">Generate SQL</button>
+              <button class="btn btn-ghost" onclick="openValidateModal()" title="Dry-run TOP 100 INSERT inside a transaction (rolls back) — catches range, NOT NULL, FK and parse errors before a real migration">Validate</button>
+              <span class="jb-more-wrap">
+                <button class="btn btn-ghost" id="jobs-more-btn" onclick="jobsMoreToggle()" aria-haspopup="true" aria-expanded="false">More ▾</button>
+                <div class="jb-more-menu" id="jobs-more-menu" role="menu" aria-label="More job actions">
+                  <button role="menuitem" onclick="jobsMoreClose();openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column">Setup check</button>
+                  <button role="menuitem" onclick="jobsMoreClose();openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">Export scripts</button>
+                  <button role="menuitem" onclick="jobsMoreClose();openExportPackageModal()" title="Export each selected job as a self-contained .sql package: target schema + source staging table + source data + migration. Runs on any SQL Server with no Cygenix needed.">Export package</button>
+                  <button role="menuitem" id="show-deleted-btn" onclick="jobsMoreClose();toggleShowDeleted()" title="Toggle between active jobs and the Trash (soft-deleted jobs). Restore or permanently delete from the Trash view.">Show deleted</button>
+                </div>
+              </span>
+              <button class="btn btn-primary" onclick="showView('new-job')">+ New migration</button>
+            </div>
+          </div>
+
+          <!-- Filter row -->
+          <div class="jb-filters">
+            <input id="jobs-name-filter" class="form-input jb-filter-input" placeholder="Filter by name or table" oninput="renderAllJobs()" autocomplete="off">
+            <select id="jobs-project-filter" class="form-input jb-select" onchange="renderAllJobs()" aria-label="Project"></select>
+            <select id="jobs-status-filter" class="form-input jb-select" onchange="renderAllJobs()" aria-label="Status">
+              <option value="">Status · Any</option>
+              <option value="complete">Complete</option>
+              <option value="ready">SQL ready</option>
+              <option value="failed">Failed</option>
+              <option value="pending">Pending</option>
+            </select>
+            <span id="jobs-filter-count" class="jb-count"></span>
+          </div>
+
+          <!-- Selection bar: only while rows are selected -->
+          <div id="jobs-bulk-actions" class="jb-selbar" style="display:none">
+            <span class="jb-selcount"><span id="jobs-selected-count">0</span> selected</span>
+            <button class="btn btn-ghost btn-sm" onclick="openExportScriptsModal()">Export scripts</button>
+            <button class="btn btn-ghost btn-sm" onclick="openExportPackageModal()">Export package</button>
+            <button class="btn btn-ghost btn-sm" onclick="openSetupCheckModal()">Setup check</button>
+            <span class="jb-move">
+              <select id="jobs-move-target" class="form-input jb-select jb-select-sm" aria-label="Move to project"></select>
+              <button class="btn btn-ghost btn-sm" onclick="bulkMoveJobsToProject()">Move to project</button>
+            </span>
+            <button class="btn link jb-clear" onclick="clearJobSelection()">Clear</button>
+          </div>
+
+          <div id="all-jobs"></div>
         </div>
+        <!-- The selected job, in full. Rendered by renderJobSide. -->
+        <aside class="jb-side" id="jobs-side" aria-label="Selected job"></aside>
       </div>
-      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
-        <label style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Project</label>
-        <select id="jobs-project-filter" class="form-input" style="width:auto;min-width:220px;padding:5px 10px;font-size:12px" onchange="renderAllJobs()"></select>
-        <div id="jobs-bulk-actions" style="display:none;gap:0.5rem;align-items:center">
-          <span style="font-size:11px;color:var(--accent);font-family:var(--mono)"><span id="jobs-selected-count">0</span> selected</span>
-          <select id="jobs-move-target" class="form-input" style="width:auto;min-width:180px;padding:4px 8px;font-size:11px"></select>
-          <button class="btn btn-primary btn-sm" onclick="bulkMoveJobsToProject()">Move →</button>
-          <button class="btn btn-ghost btn-sm" onclick="clearJobSelection()">Clear</button>
-        </div>
-        <span id="jobs-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
-      </div>
-      <div id="all-jobs"></div>
     </div>
 
     <!-- EXPORT SCRIPTS MODAL -->
@@ -2445,25 +2562,22 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
     <!-- CONNECTIONS VIEW -->
     <div id="view-connections" class="view">
-      <div class="panel-header">
+      <div class="cx-head conn-head">
         <div>
-          <div class="panel-title"><i class="ic ic-plug"></i> Project Connections</div>
-          <div class="panel-sub">Configure source and target database connections once — all pages inherit these settings automatically</div>
-          <div style="margin-top:0.5rem;font-size:11px;color:var(--text3);display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-            <span style="color:var(--text2);font-weight:500">Supported:</span>
-            <span style="background:rgba(74,91,214,0.12);color:#6ea4ff;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">SQL&nbsp;Server</span>
-            <span style="background:rgba(23,130,124,0.12);color:#17827C;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">PostgreSQL</span>
-          </div>
+          <div class="cx-kicker">Connect</div>
+          <h1 class="cx-title">Project connections</h1>
+          <div class="cx-sub">Configure the source and target once. Every page — mapping, jobs, assurance,
+            streams — inherits these settings.</div>
         </div>
-        <div style="display:flex;gap:0.75rem;align-items:center">
-          <div id="conn-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</div>
-          <button id="conn-tab-save-btn" class="btn btn-primary btn-sm" onclick="saveProjectConnections()"><i class="ic ic-save"></i> Save connections</button>
-          <button id="conn-tab-clear-btn" class="btn btn-ghost btn-sm" onclick="clearProjectConnections()" style="color:var(--red)">✕ Clear all</button>
+        <div class="cx-head-actions">
+          <span id="conn-save-indicator" class="conn-saved-word" style="display:none">Saved</span>
+          <button id="conn-tab-clear-btn" class="btn btn-ghost" onclick="clearProjectConnections()">Clear all</button>
+          <button id="conn-tab-save-btn" class="btn btn-primary" onclick="saveProjectConnections()">Save connections</button>
         </div>
       </div>
 
       <!-- Tab bar -->
-      <div class="cx-tabs" style="display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border)">
+      <div class="cx-tabs">
         <button class="cx-tab cx-tab-active" data-tab="databases" onclick="switchConnTab('databases')">
           Database connections
         </button>
@@ -2477,228 +2591,246 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           Linked servers
         </button>
         <button class="cx-tab" data-tab="blob" onclick="switchConnTab('blob')">
-          Azure Blob Source
+          Azure Blob source
         </button>
-        <a class="cx-tab" href="/data-generator" style="text-decoration:none" title="Populate a source database with realistic demo data for migration demonstrations">
-          Data Generator
+        <!-- Navigates away, so it reads in the link colour with the mark -->
+        <a class="cx-tab cx-tab-away" href="/data-generator" title="Populate a source database with realistic demo data for migration demonstrations">
+          Data generator ↗
         </a>
       </div>
 
       <!-- Tab: Database connections -->
       <div id="conn-tab-databases">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
+        <div class="conn-grid">
           <!-- Source -->
-          <div class="panel">
-            <div style="font-size:13px;font-weight:600;color:var(--teal);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
-              Source Database
-              <span id="src-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
+          <div class="cx-blueprint conn-panel" id="src-conn-panel">
+            <span class="cx-corner tl"></span><span class="cx-corner tr"></span>
+            <span class="cx-corner bl"></span><span class="cx-corner br"></span>
+            <div class="conn-panel-head">
+              <h2 class="cx-h">Source database</h2>
+              <!-- The status pair: an 8px square and a word. Not configured,
+                   Not tested, Connected, Unreachable — set by connSetStatus. -->
+              <span class="conn-status" id="src-conn-status"><span class="cx-dot" id="src-conn-dot"></span><span id="src-conn-word">Not configured</span></span>
             </div>
-            <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
-              <button id="src-mode-direct" class="btn btn-sm" onclick="connReveal('src');setSrcMode('direct')" style="flex:1;justify-content:center">Direct</button>
-              <button id="src-mode-azure" class="btn btn-sm" onclick="connReveal('src');setSrcMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+            <div class="cx-seg conn-seg" role="group" aria-label="Connection mode">
+              <button id="src-mode-direct" onclick="connReveal('src');setSrcMode('direct')">Direct</button>
+              <button id="src-mode-azure" onclick="connReveal('src');setSrcMode('azure')">Azure Function</button>
             </div>
             <!-- Masked summary, shown instead of the fields once a connection
                  is configured. Database name and saved nickname only — the
                  raw string carries a password. -->
             <div id="src-conn-locked" class="conn-locked" style="display:none">
-              <span class="conn-locked-icon"><i class="ic ic-lock"></i> </span>
               <span class="conn-locked-main">
                 <span class="conn-locked-label" id="src-conn-locked-label">Database</span>
                 <span class="conn-locked-value" id="src-conn-locked-value"></span>
               </span>
               <span class="conn-locked-nick" id="src-conn-locked-nick" style="display:none"></span>
-              <button class="btn btn-ghost btn-sm" onclick="connReveal('src')" title="Show the connection details so they can be edited"><i class="ic ic-edit"></i> Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="connReveal('src')" title="Show the connection details so they can be edited">Reveal &amp; edit</button>
+              <span class="conn-locked-note">The string is kept on this browser and shown masked here. Saving a change
+                is written to the audit trail.</span>
             </div>
             <div id="src-direct-wrap">
               <!-- How the string gets in. Two ways into ONE field: whichever
                    you use, #proj-src-cs is what is stored, tested, saved
                    and handed to every job. -->
-              <div class="conn-entry-toggle" style="display:flex;gap:0.35rem;margin-bottom:0.6rem">
-                <button id="src-entry-paste" class="btn btn-sm" onclick="setConnEntry('src','paste')" style="flex:1;justify-content:center;font-size:11px">Paste string</button>
-                <button id="src-entry-build" class="btn btn-sm" onclick="setConnEntry('src','build')" style="flex:1;justify-content:center;font-size:11px">Settings</button>
+              <div class="cx-seg conn-seg conn-entry-toggle" role="group" aria-label="How to enter the connection">
+                <button id="src-entry-paste" onclick="setConnEntry('src','paste')">Paste string</button>
+                <button id="src-entry-build" onclick="setConnEntry('src','build')">Settings</button>
               </div>
               <div id="src-build-wrap" style="display:none">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 0.6rem">
-                  <div style="grid-column:1/-1">
+                <div class="conn-fields">
+                  <div class="conn-full">
                     <label class="form-label">Engine</label>
-                    <select id="src-b-engine" class="form-input" style="font-size:11px" onchange="connBuildChanged('src',true)">
+                    <select id="src-b-engine" class="form-input" onchange="connBuildChanged('src',true)">
                       <option value="mssql">SQL Server / Azure SQL</option>
                       <option value="postgres">PostgreSQL</option>
                     </select>
                   </div>
-                  <div style="grid-column:1/span 1">
+                  <div>
                     <label class="form-label">Host</label>
-                    <input id="src-b-host" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="db.example.com" oninput="connBuildChanged('src')">
+                    <input id="src-b-host" class="form-input" placeholder="db.example.com" oninput="connBuildChanged('src')">
                   </div>
                   <div>
                     <label class="form-label">Port</label>
-                    <input id="src-b-port" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="1433" inputmode="numeric" oninput="connBuildChanged('src')">
+                    <input id="src-b-port" class="form-input" placeholder="1433" inputmode="numeric" oninput="connBuildChanged('src')">
                   </div>
-                  <div style="grid-column:1/-1">
+                  <div class="conn-full">
                     <label class="form-label">Database</label>
-                    <input id="src-b-db" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="database name" oninput="connBuildChanged('src')">
+                    <input id="src-b-db" class="form-input" placeholder="database name" oninput="connBuildChanged('src')">
                   </div>
                   <div>
                     <label class="form-label">User</label>
-                    <input id="src-b-user" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="user" autocomplete="off" oninput="connBuildChanged('src')">
+                    <input id="src-b-user" class="form-input" placeholder="user" autocomplete="off" oninput="connBuildChanged('src')">
                   </div>
                   <div>
                     <label class="form-label">Password</label>
-                    <input id="src-b-pw" class="form-input" style="font-family:var(--mono);font-size:11px" type="password" placeholder="password" autocomplete="new-password" oninput="connBuildChanged('src')">
+                    <input id="src-b-pw" class="form-input" type="password" placeholder="password" autocomplete="new-password" oninput="connBuildChanged('src')">
                   </div>
-                  <div id="src-b-schema-wrap" style="grid-column:1/-1;display:none">
-                    <label class="form-label">Schema <span style="font-weight:400;color:var(--text3)">— optional</span></label>
-                    <input id="src-b-schema" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="public" oninput="connBuildChanged('src')">
-                    <div style="font-size:10px;color:var(--text3);margin-top:0.2rem">Sets the search path, so an unqualified table name resolves here. Cygenix still reads every schema — this does not narrow what it can see.</div>
+                  <div id="src-b-schema-wrap" class="conn-full" style="display:none">
+                    <label class="form-label">Schema <span class="conn-optional">— optional</span></label>
+                    <input id="src-b-schema" class="form-input" placeholder="public" oninput="connBuildChanged('src')">
+                    <div class="conn-hint">Sets the search path, so an unqualified table name resolves here. Cygenix still reads every schema — this does not narrow what it can see.</div>
                   </div>
-                  <div id="src-b-ssl-wrap" style="grid-column:1/-1;display:none">
+                  <div id="src-b-ssl-wrap" class="conn-full" style="display:none">
                     <label class="form-label">SSL</label>
-                    <select id="src-b-ssl" class="form-input" style="font-size:11px" onchange="connBuildChanged('src')">
+                    <select id="src-b-ssl" class="form-input" onchange="connBuildChanged('src')">
                       <option value="auto">Automatic — on for managed hosts</option>
                       <option value="require">Require</option>
                       <option value="disable">Disable</option>
                     </select>
                   </div>
-                  <div id="src-b-mssql-opts" style="grid-column:1/-1;display:flex;gap:1rem;align-items:center;font-size:11px;color:var(--text2)">
-                    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="src-b-encrypt" type="checkbox" checked onchange="connBuildChanged('src')"> Encrypt</label>
-                    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="src-b-trust" type="checkbox" onchange="connBuildChanged('src')"> Trust server certificate</label>
+                  <div id="src-b-mssql-opts" class="conn-full conn-checks">
+                    <label><input id="src-b-encrypt" type="checkbox" checked onchange="connBuildChanged('src')"> Encrypt</label>
+                    <label><input id="src-b-trust" type="checkbox" onchange="connBuildChanged('src')"> Trust server certificate</label>
                   </div>
                 </div>
-                <label class="form-label" style="margin-top:0.6rem">Connection string</label>
-                <div id="src-b-preview" style="font-family:var(--mono);font-size:11px;color:var(--text3);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.55rem;word-break:break-all;min-height:16px">Fill in a host and a database.</div>
-                <div style="font-size:10px;color:var(--text3);margin-top:0.3rem">The password is hidden here, not in what is saved.</div>
+                <label class="form-label" style="margin-top:10px">Connection string</label>
+                <div id="src-b-preview" class="conn-preview">Fill in a host and a database.</div>
+                <div class="conn-hint">The password is hidden here, not in what is saved.</div>
               </div>
               <div id="src-cs-wrap">
               <label class="form-label">Connection string</label>
-              <input id="proj-src-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.25rem" placeholder="SQL Server: Server=host;Database=db;User Id=u;Password=p  OR  Postgres: postgres://user:pass@host:5432/db">
-              <div style="font-size:10px;color:var(--text3);margin-bottom:0.5rem">Dialect auto-detected from the string. Postgres URLs start with <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">postgres://</code> or <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">postgresql://</code><br>Entra-only Azure SQL: add <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Authentication=Active Directory Service Principal</code> with the app registration's client id as User Id, its secret as Password, and <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Tenant Id</code>. Scheduled runs can also use <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Authentication=Active Directory Default</code>, which uses the Cygenix Function App's own managed identity.</div>
+              <input id="proj-src-cs" class="form-input conn-mono" placeholder="SQL Server: Server=host;Database=db;User Id=u;Password=p  OR  Postgres: postgres://user:pass@host:5432/db">
+              <div class="conn-hint">Dialect auto-detected from the string. Postgres URLs start with <code>postgres://</code> or <code>postgresql://</code><br>Entra-only Azure SQL: add <code>Authentication=Active Directory Service Principal</code> with the app registration's client id as User Id, its secret as Password, and <code>Tenant Id</code>. Scheduled runs can also use <code>Authentication=Active Directory Default</code>, which uses the Cygenix Function App's own managed identity.</div>
               </div>
             </div>
             <div id="src-azure-wrap" style="display:none">
               <label class="form-label">Azure Function URL</label>
-              <input id="proj-src-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
-              <label class="form-label">Function key</label>
-              <input id="proj-src-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
+              <input id="proj-src-fn-url" class="form-input conn-mono" placeholder="https://fn.azurewebsites.net/api/db">
+              <label class="form-label" style="margin-top:10px">Function key</label>
+              <input id="proj-src-fn-key" class="form-input conn-mono" placeholder="function-key" type="password">
             </div>
-            <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.25rem">
-              <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')"><i class="ic ic-plug"></i> Connect &amp; test</button>
-              <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('src')" title="Save current connection under a name"><i class="ic ic-save"></i> Save as…</button>
-              <button id="src-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('src')" title="Hide the connection details again" style="display:none"><i class="ic ic-lock"></i> Hide</button>
+            <!-- Footer: the environment tag, the facts line, Test pushed right -->
+            <div class="conn-foot">
+              <span class="cx-tag" id="src-env-tag" title="Unclassified connections default to PROD">PROD</span>
+              <span class="conn-facts" id="src-conn-result"></span>
+              <span class="conn-foot-acts">
+                <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('src')" title="Save current connection under a name">Save as…</button>
+                <button id="src-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('src')" title="Hide the connection details again" style="display:none">Hide</button>
+                <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')" title="Connect and test">Test</button>
+              </span>
             </div>
-            <div id="src-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
 
             <!-- Saved connections list (src) -->
-            <div style="margin-top:0.875rem;padding-top:0.875rem;border-top:0.5px solid var(--border)">
-              <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
-                Saved source connections <span id="sconn-src-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">0</span>
-              </div>
-              <div id="sconn-src-list" style="display:flex;flex-wrap:wrap;gap:0.4rem;min-height:20px"></div>
+            <div class="conn-saved">
+              <div class="conn-saved-h">Saved source connections <span class="conn-count" id="sconn-src-count">0</span></div>
+              <div id="sconn-src-list" class="conn-chips"></div>
             </div>
           </div>
 
           <!-- Target -->
-          <div class="panel">
-            <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
-              Target Database
-              <span id="tgt-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
+          <div class="cx-blueprint conn-panel" id="tgt-conn-panel">
+            <span class="cx-corner tl"></span><span class="cx-corner tr"></span>
+            <span class="cx-corner bl"></span><span class="cx-corner br"></span>
+            <div class="conn-panel-head">
+              <h2 class="cx-h">Target database</h2>
+              <!-- The status pair: an 8px square and a word. Not configured,
+                   Not tested, Connected, Unreachable — set by connSetStatus. -->
+              <span class="conn-status" id="tgt-conn-status"><span class="cx-dot" id="tgt-conn-dot"></span><span id="tgt-conn-word">Not configured</span></span>
             </div>
-            <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
-              <button id="tgt-mode-direct" class="btn btn-sm" onclick="connReveal('tgt');setTgtMode('direct')" style="flex:1;justify-content:center">Direct</button>
-              <button id="tgt-mode-azure" class="btn btn-sm" onclick="connReveal('tgt');setTgtMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+            <div class="cx-seg conn-seg" role="group" aria-label="Connection mode">
+              <button id="tgt-mode-direct" onclick="connReveal('tgt');setTgtMode('direct')">Direct</button>
+              <button id="tgt-mode-azure" onclick="connReveal('tgt');setTgtMode('azure')">Azure Function</button>
             </div>
+            <!-- Masked summary, shown instead of the fields once a connection
+                 is configured. Database name and saved nickname only — the
+                 raw string carries a password. -->
             <div id="tgt-conn-locked" class="conn-locked" style="display:none">
-              <span class="conn-locked-icon"><i class="ic ic-lock"></i> </span>
               <span class="conn-locked-main">
                 <span class="conn-locked-label" id="tgt-conn-locked-label">Database</span>
                 <span class="conn-locked-value" id="tgt-conn-locked-value"></span>
               </span>
               <span class="conn-locked-nick" id="tgt-conn-locked-nick" style="display:none"></span>
-              <button class="btn btn-ghost btn-sm" onclick="connReveal('tgt')" title="Show the connection details so they can be edited"><i class="ic ic-edit"></i> Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="connReveal('tgt')" title="Show the connection details so they can be edited">Reveal &amp; edit</button>
+              <span class="conn-locked-note">The string is kept on this browser and shown masked here. Saving a change
+                is written to the audit trail.</span>
             </div>
             <div id="tgt-direct-wrap" style="display:none">
               <!-- How the string gets in. Two ways into ONE field: whichever
                    you use, #proj-tgt-cs is what is stored, tested, saved
                    and handed to every job. -->
-              <div class="conn-entry-toggle" style="display:flex;gap:0.35rem;margin-bottom:0.6rem">
-                <button id="tgt-entry-paste" class="btn btn-sm" onclick="setConnEntry('tgt','paste')" style="flex:1;justify-content:center;font-size:11px">Paste string</button>
-                <button id="tgt-entry-build" class="btn btn-sm" onclick="setConnEntry('tgt','build')" style="flex:1;justify-content:center;font-size:11px">Settings</button>
+              <div class="cx-seg conn-seg conn-entry-toggle" role="group" aria-label="How to enter the connection">
+                <button id="tgt-entry-paste" onclick="setConnEntry('tgt','paste')">Paste string</button>
+                <button id="tgt-entry-build" onclick="setConnEntry('tgt','build')">Settings</button>
               </div>
               <div id="tgt-build-wrap" style="display:none">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 0.6rem">
-                  <div style="grid-column:1/-1">
+                <div class="conn-fields">
+                  <div class="conn-full">
                     <label class="form-label">Engine</label>
-                    <select id="tgt-b-engine" class="form-input" style="font-size:11px" onchange="connBuildChanged('tgt',true)">
+                    <select id="tgt-b-engine" class="form-input" onchange="connBuildChanged('tgt',true)">
                       <option value="mssql">SQL Server / Azure SQL</option>
                       <option value="postgres">PostgreSQL</option>
                     </select>
                   </div>
-                  <div style="grid-column:1/span 1">
+                  <div>
                     <label class="form-label">Host</label>
-                    <input id="tgt-b-host" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="db.example.com" oninput="connBuildChanged('tgt')">
+                    <input id="tgt-b-host" class="form-input" placeholder="db.example.com" oninput="connBuildChanged('tgt')">
                   </div>
                   <div>
                     <label class="form-label">Port</label>
-                    <input id="tgt-b-port" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="1433" inputmode="numeric" oninput="connBuildChanged('tgt')">
+                    <input id="tgt-b-port" class="form-input" placeholder="1433" inputmode="numeric" oninput="connBuildChanged('tgt')">
                   </div>
-                  <div style="grid-column:1/-1">
+                  <div class="conn-full">
                     <label class="form-label">Database</label>
-                    <input id="tgt-b-db" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="database name" oninput="connBuildChanged('tgt')">
+                    <input id="tgt-b-db" class="form-input" placeholder="database name" oninput="connBuildChanged('tgt')">
                   </div>
                   <div>
                     <label class="form-label">User</label>
-                    <input id="tgt-b-user" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="user" autocomplete="off" oninput="connBuildChanged('tgt')">
+                    <input id="tgt-b-user" class="form-input" placeholder="user" autocomplete="off" oninput="connBuildChanged('tgt')">
                   </div>
                   <div>
                     <label class="form-label">Password</label>
-                    <input id="tgt-b-pw" class="form-input" style="font-family:var(--mono);font-size:11px" type="password" placeholder="password" autocomplete="new-password" oninput="connBuildChanged('tgt')">
+                    <input id="tgt-b-pw" class="form-input" type="password" placeholder="password" autocomplete="new-password" oninput="connBuildChanged('tgt')">
                   </div>
-                  <div id="tgt-b-schema-wrap" style="grid-column:1/-1;display:none">
-                    <label class="form-label">Schema <span style="font-weight:400;color:var(--text3)">— optional</span></label>
-                    <input id="tgt-b-schema" class="form-input" style="font-family:var(--mono);font-size:11px" placeholder="public" oninput="connBuildChanged('tgt')">
-                    <div style="font-size:10px;color:var(--text3);margin-top:0.2rem">Sets the search path, so an unqualified table name resolves here. Cygenix still reads every schema — this does not narrow what it can see.</div>
+                  <div id="tgt-b-schema-wrap" class="conn-full" style="display:none">
+                    <label class="form-label">Schema <span class="conn-optional">— optional</span></label>
+                    <input id="tgt-b-schema" class="form-input" placeholder="public" oninput="connBuildChanged('tgt')">
+                    <div class="conn-hint">Sets the search path, so an unqualified table name resolves here. Cygenix still reads every schema — this does not narrow what it can see.</div>
                   </div>
-                  <div id="tgt-b-ssl-wrap" style="grid-column:1/-1;display:none">
+                  <div id="tgt-b-ssl-wrap" class="conn-full" style="display:none">
                     <label class="form-label">SSL</label>
-                    <select id="tgt-b-ssl" class="form-input" style="font-size:11px" onchange="connBuildChanged('tgt')">
+                    <select id="tgt-b-ssl" class="form-input" onchange="connBuildChanged('tgt')">
                       <option value="auto">Automatic — on for managed hosts</option>
                       <option value="require">Require</option>
                       <option value="disable">Disable</option>
                     </select>
                   </div>
-                  <div id="tgt-b-mssql-opts" style="grid-column:1/-1;display:flex;gap:1rem;align-items:center;font-size:11px;color:var(--text2)">
-                    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="tgt-b-encrypt" type="checkbox" checked onchange="connBuildChanged('tgt')"> Encrypt</label>
-                    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input id="tgt-b-trust" type="checkbox" onchange="connBuildChanged('tgt')"> Trust server certificate</label>
+                  <div id="tgt-b-mssql-opts" class="conn-full conn-checks">
+                    <label><input id="tgt-b-encrypt" type="checkbox" checked onchange="connBuildChanged('tgt')"> Encrypt</label>
+                    <label><input id="tgt-b-trust" type="checkbox" onchange="connBuildChanged('tgt')"> Trust server certificate</label>
                   </div>
                 </div>
-                <label class="form-label" style="margin-top:0.6rem">Connection string</label>
-                <div id="tgt-b-preview" style="font-family:var(--mono);font-size:11px;color:var(--text3);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.55rem;word-break:break-all;min-height:16px">Fill in a host and a database.</div>
-                <div style="font-size:10px;color:var(--text3);margin-top:0.3rem">The password is hidden here, not in what is saved.</div>
+                <label class="form-label" style="margin-top:10px">Connection string</label>
+                <div id="tgt-b-preview" class="conn-preview">Fill in a host and a database.</div>
+                <div class="conn-hint">The password is hidden here, not in what is saved.</div>
               </div>
               <div id="tgt-cs-wrap">
               <label class="form-label">Connection string</label>
-              <input id="proj-tgt-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.25rem" placeholder="SQL Server: Server=host;Database=db;User Id=u;Password=p  OR  Postgres: postgres://user:pass@host:5432/db">
-              <div style="font-size:10px;color:var(--text3);margin-bottom:0.5rem">Dialect auto-detected from the string. Postgres URLs start with <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">postgres://</code> or <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">postgresql://</code><br>Entra-only Azure SQL: add <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Authentication=Active Directory Service Principal</code> with the app registration's client id as User Id, its secret as Password, and <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Tenant Id</code>. Scheduled runs can also use <code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono)">Authentication=Active Directory Default</code>, which uses the Cygenix Function App's own managed identity.</div>
+              <input id="proj-tgt-cs" class="form-input conn-mono" placeholder="SQL Server: Server=host;Database=db;User Id=u;Password=p  OR  Postgres: postgres://user:pass@host:5432/db">
+              <div class="conn-hint">Dialect auto-detected from the string. Postgres URLs start with <code>postgres://</code> or <code>postgresql://</code><br>Entra-only Azure SQL: add <code>Authentication=Active Directory Service Principal</code> with the app registration's client id as User Id, its secret as Password, and <code>Tenant Id</code>. Scheduled runs can also use <code>Authentication=Active Directory Default</code>, which uses the Cygenix Function App's own managed identity.</div>
               </div>
             </div>
             <div id="tgt-azure-wrap">
               <label class="form-label">Azure Function URL</label>
-              <input id="proj-tgt-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
-              <label class="form-label">Function key</label>
-              <input id="proj-tgt-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
+              <input id="proj-tgt-fn-url" class="form-input conn-mono" placeholder="https://fn.azurewebsites.net/api/db">
+              <label class="form-label" style="margin-top:10px">Function key</label>
+              <input id="proj-tgt-fn-key" class="form-input conn-mono" placeholder="function-key" type="password">
             </div>
-            <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.25rem">
-              <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')"><i class="ic ic-plug"></i> Connect &amp; test</button>
-              <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('tgt')" title="Save current connection under a name"><i class="ic ic-save"></i> Save as…</button>
-              <button id="tgt-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('tgt')" title="Hide the connection details again" style="display:none"><i class="ic ic-lock"></i> Hide</button>
+            <!-- Footer: the environment tag, the facts line, Test pushed right -->
+            <div class="conn-foot">
+              <span class="cx-tag" id="tgt-env-tag" title="Unclassified connections default to PROD">PROD</span>
+              <span class="conn-facts" id="tgt-conn-result"></span>
+              <span class="conn-foot-acts">
+                <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('tgt')" title="Save current connection under a name">Save as…</button>
+                <button id="tgt-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('tgt')" title="Hide the connection details again" style="display:none">Hide</button>
+                <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')" title="Connect and test">Test</button>
+              </span>
             </div>
-            <div id="tgt-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
 
             <!-- Saved connections list (tgt) -->
-            <div style="margin-top:0.875rem;padding-top:0.875rem;border-top:0.5px solid var(--border)">
-              <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
-                Saved target connections <span id="sconn-tgt-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">0</span>
-              </div>
-              <div id="sconn-tgt-list" style="display:flex;flex-wrap:wrap;gap:0.4rem;min-height:20px"></div>
+            <div class="conn-saved">
+              <div class="conn-saved-h">Saved target connections <span class="conn-count" id="sconn-tgt-count">0</span></div>
+              <div id="sconn-tgt-list" class="conn-chips"></div>
             </div>
 
             <!-- Saved stream destinations (Phase 2 of the Data Stream profile
@@ -2707,15 +2839,21 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
                  saved-connection store as the two lists above (side 'dest'),
                  so a credential takes the same local-only path and the same
                  audit hook. Rendered by cygenix-stream-destinations.js. -->
-            <div id="sdst-panel" style="margin-top:0.875rem;padding-top:0.875rem;border-top:0.5px solid var(--border)">
-              <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
-                Saved stream destinations <span id="sdst-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">0</span>
-                <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="sdstNew()" title="Save a broker topic, webhook, file landing zone or database that streams deliver to"><i class="ic ic-plus"></i> New destination…</button>
+            <div id="sdst-panel" class="conn-saved">
+              <div class="conn-saved-h">Saved stream destinations <span class="conn-count" id="sdst-count">0</span>
+                <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="sdstNew()" title="Save a broker topic, webhook, file landing zone or database that streams deliver to">+ New destination…</button>
               </div>
-              <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem;max-width:80ch">Where a data stream delivers. Picked by name in the Data Stream Designer; the endpoint syncs between your browsers, the credential stays in this one.</div>
-              <div id="sdst-list" style="display:flex;flex-wrap:wrap;gap:0.4rem;min-height:20px"></div>
+              <div class="conn-hint" style="margin-bottom:8px;max-width:80ch">Where a data stream delivers. Picked by name in the Data Stream Designer; the endpoint syncs between your browsers, the credential stays in this one.</div>
+              <div id="sdst-list" class="conn-chips"></div>
             </div>
           </div>
+        </div>
+        <!-- The guardrail note: shown whenever either side resolves to PROD,
+             including the default case where a connection is simply
+             unclassified. Rendered by connRenderEnv. -->
+        <div id="conn-guardrail" class="cx-attn cx-attn-warn conn-guardrail" style="display:none">
+          <div class="cx-h-sm" id="conn-guardrail-title">Both sides are classified PROD</div>
+          <p id="conn-guardrail-text"></p>
         </div>
       </div>
 

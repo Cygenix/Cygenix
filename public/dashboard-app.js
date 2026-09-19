@@ -3914,30 +3914,6 @@ window.startExportPackage      = startExportPackage;
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
 
-  function jobStatusBadge(j) {
-    // 'running' is a transient state with no bucket of its own — surface it
-    // before falling back to the shared classification, so the badge and the
-    // donut always tell the same story about a settled job.
-    const raw = String(j.executionStatus || j.status || '').toLowerCase();
-    if (raw === 'running') return '<span class="badge" style="background:var(--amber-bg);color:var(--amber)"><i class="ic-dot" style="color:var(--amber)"></i> Running</span>';
-    const b = jobBucket(j);
-    if (b === 'complete') return '<span class="badge badge-green"><i class="ic-dot" style="color:var(--green)"></i> Complete</span>';
-    if (b === 'failed')   return '<span class="badge" style="background:var(--red-bg);color:var(--red)"><i class="ic-dot" style="color:var(--red)"></i> Failed</span>';
-    if (b === 'ready')    return '<span class="badge badge-green">SQL Ready</span>';
-    return '<span class="badge" style="background:var(--bg3);color:var(--text3)"><i class="ic-dot" style="color:var(--text3)"></i> Pending</span>';
-  }
-
-  function lastRunText(j) {
-    const ts = j.lastRun || j.completedAt || j.executedAt;
-    if (!ts) return '<span style="font-size:10px;color:var(--text3)">Never run</span>';
-    const d = new Date(ts);
-    const diff = Date.now() - d.getTime();
-    if (diff < 60000)   return '<span style="font-size:10px;color:var(--green)">Just now</span>';
-    if (diff < 3600000) return '<span style="font-size:10px;color:var(--text3)">' + Math.round(diff/60000) + 'm ago</span>';
-    if (diff < 86400000)return '<span style="font-size:10px;color:var(--text3)">' + Math.round(diff/3600000) + 'h ago</span>';
-    return '<span style="font-size:10px;color:var(--text3)">' + d.toLocaleDateString('en-GB') + '</span>';
-  }
-
   // The Profile cell. One store read per render rather than one per row —
   // this runs for every job on every redraw, and a hundred rows is a hundred
   // JSON.parses of the profile store otherwise.
@@ -3947,7 +3923,7 @@ function jobsTableHTML(jobs) {
     try { p = window.CygenixJobProfile ? CygenixJobProfile.of(j, _profStore) : null; }
     catch(e){ p = null; }
     // An old job has none, and that is not an error — it predates the field.
-    if (!p) return '<span style="color:var(--text3);font-size:11px">—</span>';
+    if (!p) return '<span style="color:var(--text3);font-size:13px">—</span>';
     // Bound on the Profiles page beats stamped at creation; a profile that has
     // since been deleted still shows the name it ran under, dimmed, because
     // the alternative is a blank where a real fact used to be.
@@ -3956,71 +3932,168 @@ function jobsTableHTML(jobs) {
       : stale ? 'This profile no longer exists — showing the name the job was created under'
       : 'Created under this profile')
       + (p.envClass ? ' · ' + p.envClass : '');
-    return '<span title="' + escapeAttr(title) + '" style="font-size:10px;padding:1px 7px;border-radius:9px;'
-      + 'font-family:var(--mono);white-space:nowrap;'
-      + (stale ? 'background:var(--bg3);color:var(--text3);border:0.5px dashed var(--border2)'
-               : 'background:var(--accent-glow);color:var(--accent)')
+    return '<span title="' + escapeAttr(title) + '" style="font-size:13px;padding:1px 7px;'
+      + 'white-space:nowrap;'
+      + (stale ? 'background:var(--bg3);color:var(--text3);border:1px dashed var(--border2)'
+               : 'color:var(--color-accent-800);border:1px solid var(--color-accent-300);background:var(--color-accent-100)')
       + '">' + escapeHtml(p.name) + '</span>';
   }
 
+  // The status column is a word in the status colour — never a filled pill.
+  // The four words are the product's own: Complete, SQL ready, Failed,
+  // Pending. Running is transient and stays amber while a run is in flight.
   return '<table class="jobs-table"><thead><tr>' +
     '<th style="width:22px" title="Drag rows to reorder"></th>' +
-    '<th style="width:28px"><input type="checkbox" id="jobs-select-all" onchange="toggleAllJobsSelection(this.checked)" style="cursor:pointer"></th>' +
-    '<th style="width:40px">#</th>' +
-    '<th>Job Name</th><th>Profile</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th>' +
-    '<th>Exec Status</th><th>Last Run</th><th>Actions</th>' +
+    '<th style="width:28px"><input type="checkbox" id="jobs-select-all" onchange="toggleAllJobsSelection(this.checked)" style="cursor:pointer" aria-label="Select all"></th>' +
+    '<th>Job Name</th><th>Profile</th><th>Source</th><th>Target</th>' +
+    '<th class="r">Rows</th><th>Updated</th><th class="r">Status</th>' +
     '</tr></thead><tbody>' +
-    jobs.map((j, idx) => {
-      // Version + last-modified chip text. Falls back gracefully when a job
-      // pre-dates auto-versioning (no j.version yet) by showing just the
-      // created date.
-      const v = (typeof j.version === 'number' && j.version > 0) ? ('v'+j.version) : '';
-      const lm = j.lastModified || j.created || null;
-      const lmStr = lm ? new Date(lm).toLocaleString('en-GB', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
-      // Combined chip — small, accent colour, sits next to the type badge.
-      // Renders as "v3 · 24/05/26, 14:32" when both are present.
-      const versionChip = (v || lmStr)
-        ? `<span style="font-size:9px;padding:1px 6px;margin-left:4px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono);font-weight:500" title="Auto-versioned on each meaningful change. Click to see full history.">${v}${v&&lmStr?' · ':''}${lmStr}</span>`
-        : '';
-      // Conditional action buttons. Soft-deleted rows show Restore + Hard
-      // Delete only — everything else is hidden because edit/generate
-      // operations on a deleted row don't make sense.
+    jobs.map((j) => {
       const isDel = !!j._deleted;
-      const actions = isDel ? `
-          <button class="btn" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.25)" onclick="restoreJob('${j.id}')" title="Restore from Trash">↩ Restore</button>
-          <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="hardDeleteJob('${j.id}')" title="Permanent delete"><i class="ic ic-trash"></i> Delete forever</button>
-        ` : `
-          <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(107,78,142,0.25)" title="Edit"><i class="ic ic-edit"></i> </button>
-          <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history"><i class="ic ic-clock"></i> </button>
-          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor?job=${j.id}'" style="color:var(--teal);border-color:rgba(23,130,124,0.25)" title="Open SQL in editor"><i class="ic ic-edit"></i> </button>` : ''}
-          <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
-          <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename"><i class="ic ic-edit"></i> </button>
-          <button class="btn btn-ghost" onclick="startEditSource('${j.id}')" title="Edit source table"><i class="ic ic-database"></i> </button>
-          <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Move to Trash">✕</button>
-        `;
-      const rowStyle = isDel ? 'opacity:0.6;background:rgba(240,70,70,0.04)' : '';
-      return `<tr id="job-row-${j.id}" data-job-id="${j.id}" style="${rowStyle}" ondragover="onJobRowDragOver(event)" ondragleave="onJobRowDragLeave(event)" ondrop="onJobRowDrop(event,'${j.id}')" ondragend="onJobRowDragEnd(event)">
-      <td class="job-drag-cell" style="text-align:center;color:var(--text3);user-select:none" title="Drag to reorder"><span class="job-drag-handle" draggable="true" ondragstart="onJobRowDragStart(event,'${j.id}')" style="cursor:grab;font-size:14px;line-height:1;display:inline-block;padding:2px 4px">⠿</span></td>
-      <td style="text-align:center"><input type="checkbox" class="job-select-cb" data-job-id="${j.id}" onchange="onJobSelectToggle()" style="cursor:pointer" ${selectedJobIds.has(j.id)?'checked':''}></td>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${idx+1}</td>
+      const st = jobStatusWord(j);
+      const v = (typeof j.version === 'number' && j.version > 0) ? ('v' + j.version) : '';
+      const on = j.id === _jobSideId ? ' on' : '';
+      return `<tr id="job-row-${j.id}" data-job-id="${j.id}" class="${on.trim()}" style="${isDel ? 'opacity:0.6' : ''}" onclick="jobsRowClick(event,'${j.id}')" ondragover="onJobRowDragOver(event)" ondragleave="onJobRowDragLeave(event)" ondrop="onJobRowDrop(event,'${j.id}')" ondragend="onJobRowDragEnd(event)">
+      <td class="job-drag-cell" style="text-align:center;user-select:none" title="Drag to reorder"><span class="job-drag-handle" draggable="true" ondragstart="onJobRowDragStart(event,'${j.id}')" style="font-size:14px;line-height:1;display:inline-block;padding:2px 4px">⠿</span></td>
+      <td style="text-align:center"><input type="checkbox" class="job-select-cb" data-job-id="${j.id}" onchange="onJobSelectToggle()" style="cursor:pointer" ${selectedJobIds.has(j.id)?'checked':''} aria-label="Select job"></td>
       <td>
-        <span class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="${escapeAttr(j.name)} — double-click to rename">${j.name}</span>
-        ${j.jobType==='one-to-many'?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono)">1→M</span>':j.jobType==='sql'?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono)">SQL</span>':''}
-        ${versionChip}
-        ${isDel ? ` <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--red-bg);color:var(--red);font-family:var(--mono)" title="Deleted ${j._deletedAt? new Date(j._deletedAt).toLocaleString('en-GB'):''}">DELETED</span>` : ''}
-        <span class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</span>
+        <span class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="${escapeAttr(j.name)} — double-click to rename">${escapeHtml(j.name || '')}</span>
+        ${j.jobType==='one-to-many'?'<span class="jb-tag">1→M</span>':j.jobType==='sql'?'<span class="jb-tag">SQL</span>':''}
+        ${isDel ? '<span class="jb-tag jb-tag-fail" title="Deleted ' + (j._deletedAt ? new Date(j._deletedAt).toLocaleString('en-GB') : '') + '">Deleted</span>' : ''}
+        ${v ? '<span class="job-meta" title="Auto-versioned on each meaningful change">' + v + '</span>' : ''}
       </td>
       <td>${jobProfilePill(j)}</td>
-      <td><span class="job-source" id="job-source-${j.id}" ondblclick="startEditSource('${j.id}')" style="font-size:11px;color:var(--text3);font-family:var(--mono);cursor:text" title="${escapeAttr(j.sourceTable||j.source||'')} — double-click to edit source table">${j.sourceTable||j.source||'—'}</span></td>
-      <td><span style="font-size:12px;color:var(--text2)">${j.target||'—'}</span></td>
-      <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.tables?.length||j.files?.length||'—'}</span></td>
-      <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.totalRows?.toLocaleString()||'—'}</span></td>
-      <td>${jobStatusBadge(j)}</td>
-      <td>${lastRunText(j)}</td>
-      <td>
-        <div class="jobs-actions">${actions}</div>
-      </td></tr>`;
+      <td><span class="job-source" id="job-source-${j.id}" ondblclick="startEditSource('${j.id}')" style="cursor:text" title="${escapeAttr(j.sourceTable||j.source||'')} — double-click to edit source table">${escapeHtml(j.sourceTable||j.source||'—')}</span></td>
+      <td>${escapeHtml(j.target||'—')}</td>
+      <td class="r">${j.totalRows ? Number(j.totalRows).toLocaleString('en-GB') : '<span class="jb-muted">—</span>'}</td>
+      <td class="jb-muted">${escapeHtml(jobUpdatedText(j))}</td>
+      <td class="r"><span class="jb-st jb-st-${st.key}">${st.word}</span></td>
+      </tr>`;
     }).join('') + '</tbody></table>';
+}
+
+// The status vocabulary — four words, exactly, plus the transient Running.
+function jobStatusWord(j){
+  const raw = String((j && (j.executionStatus || j.status)) || '').toLowerCase();
+  if (raw === 'running') return { key: 'running', word: 'Running' };
+  const b = jobBucket(j);
+  if (b === 'complete') return { key: 'complete', word: 'Complete' };
+  if (b === 'failed')   return { key: 'failed',   word: 'Failed' };
+  if (b === 'ready')    return { key: 'ready',    word: 'SQL ready' };
+  return { key: 'pending', word: 'Pending' };
+}
+// "Updated" is the most recent thing that happened to the job: a run, a
+// save, or its creation. Relative inside a day, a date after that.
+function jobUpdatedText(j){
+  const ts = [j.lastRun, j.completedAt, j.executedAt, j.lastModified, j.created]
+    .filter(Boolean).map(x => new Date(x).getTime()).filter(n => !isNaN(n));
+  if (!ts.length) return '—';
+  const t = Math.max.apply(null, ts);
+  const diff = Date.now() - t;
+  if (diff < 60000)    return 'Just now';
+  if (diff < 3600000)  return Math.round(diff / 60000) + ' min ago';
+  if (diff < 86400000) return 'Today ' + new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (diff < 172800000) return 'Yest. ' + new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+// ── The right column: the selected job in full ─────────────────────────────
+// A row click selects a job for the column (the checkbox is for bulk work
+// and is left alone). The column carries what the row used to cram into an
+// Actions cell — open, history, report, rename, export, delete — plus the
+// facts an engineer asks for before pressing anything, and the real error
+// when the last run failed.
+let _jobSideId = null;
+function jobsRowClick(ev, id){
+  const t = ev && ev.target;
+  if (t && (t.closest('input, button, a, .job-drag-handle') || t.tagName === 'INPUT')) return;
+  if (t && t.closest('.job-name') && document.getElementById('rename-input-' + id)) return;
+  _jobSideId = id;
+  document.querySelectorAll('#all-jobs tr[data-job-id]').forEach(tr => tr.classList.toggle('on', tr.dataset.jobId === id));
+  renderJobSide();
+}
+function jobsExportOne(id){
+  selectedJobIds.clear();
+  selectedJobIds.add(id);
+  document.querySelectorAll('.job-select-cb').forEach(cb => { cb.checked = cb.dataset.jobId === id; });
+  refreshJobsBulkBar();
+  openExportPackageModal();
+}
+function renderJobSide(shown){
+  const host = document.getElementById('jobs-side');
+  if (!host) return;
+  const list = Array.isArray(shown) ? shown : state.jobs;
+  const j = _jobSideId && state.jobs.find(x => x.id === _jobSideId);
+  if (!j){
+    host.innerHTML = '<div class="cx-kicker">Selected job</div>'
+      + '<div class="jb-side-empty">' + (list.length ? 'Click a row to see the job in full — its error if it failed, what is mapped, and every action on it.' : 'No jobs yet. + New migration starts one.') + '</div>';
+    return;
+  }
+  const st = jobStatusWord(j);
+  const isDel = !!j._deleted;
+  const err = String(j.lastError || j.error || j.executionError || j.errorMessage || '').trim();
+  const mapped = Array.isArray(j.columnMapping) ? j.columnMapping.filter(m => m && m.tgtCol && (m.srcCol || (m.literalValue != null && m.literalValue !== ''))).length : 0;
+  const targetCols = Array.isArray(j.columnMapping) ? j.columnMapping.filter(m => m && m.tgtCol).length : 0;
+  const hasSql = !!(j.insertSQL || j.migrationSQL);
+  const lm = j.lastModified || j.created;
+  const fact = (k, v) => '<li><span>' + k + '</span><span>' + v + '</span></li>';
+  host.innerHTML =
+    '<div class="cx-kicker">Selected job</div>'
+    + '<div class="jb-side-name">' + escapeHtml(j.name || '') + '</div>'
+    + '<div class="jb-side-pair">' + escapeHtml(j.sourceTable || j.source || '—') + ' → ' + escapeHtml(j.target || '—') + '</div>'
+    + (st.key === 'failed'
+      ? '<div class="cx-attn cx-attn-fail"><div class="cx-h-sm">Failed' + (j.lastRun ? ' · ' + escapeHtml(jobUpdatedText(j)) : '') + '</div>'
+        + '<p>' + (err ? escapeHtml(err) : 'The run reported a failure with no message. Open the run in Packages for the log.') + '</p>'
+        + '<div class="jb-side-acts"><a class="btn btn-primary btn-sm" href="/project-builder" title="Runs resume from their checkpoint in Packages">Resume</a>'
+        + '<button class="btn btn-ghost btn-sm" onclick="editJob(\'' + j.id + '\')">Open mapping</button></div></div>'
+      : '<div class="jb-side-acts">'
+        + (isDel ? '' : '<button class="btn btn-primary btn-sm" onclick="editJob(\'' + j.id + '\')">Open mapping</button>')
+        + '<button class="btn btn-ghost btn-sm" onclick="CygenixHistory.open(\'' + j.id + '\')" title="Version history">History</button>'
+        + (hasSql ? '<a class="btn btn-ghost btn-sm" href="/sql-editor?job=' + encodeURIComponent(j.id) + '" title="Open SQL in editor">SQL editor</a>' : '')
+        + '<button class="btn btn-ghost btn-sm" onclick="openReport(\'' + j.id + '\')">Report</button>'
+        + '</div>')
+    + '<ul class="jb-facts">'
+    + fact('Status', '<span class="jb-st jb-st-' + st.key + '">' + st.word + '</span>')
+    + fact('Columns mapped', targetCols ? mapped + ' of ' + targetCols : '—')
+    + fact('Schema SQL', j.schemaSQL ? 'Generated' : '—')
+    + fact('Migration SQL', hasSql ? 'Generated' : '—')
+    + fact('Rows', j.totalRows ? Number(j.totalRows).toLocaleString('en-GB') : '—')
+    + fact('Last run', j.lastRun ? escapeHtml(new Date(j.lastRun).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) : 'Never')
+    + fact('Version', (typeof j.version === 'number' && j.version > 0) ? 'v' + j.version : '—')
+    + '</ul>'
+    + '<div class="cx-section">Version history</div>'
+    + '<div class="jb-versions">'
+    + ((typeof j.version === 'number' && j.version > 0) ? 'v' + j.version + ' · ' + (lm ? escapeHtml(new Date(lm).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })) : '') + '<br>' : '')
+    + 'Created ' + escapeHtml(j.created ? new Date(j.created).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
+    + ' · <a href="#" onclick="CygenixHistory.open(\'' + j.id + '\');return false" style="color:var(--color-accent-700)">Full history</a>'
+    + '</div>'
+    + '<div class="jb-side-foot">'
+    + (isDel
+      ? '<button class="btn btn-ghost btn-sm" onclick="restoreJob(\'' + j.id + '\')">Restore</button>'
+        + '<button class="btn btn-danger btn-sm" onclick="hardDeleteJob(\'' + j.id + '\')">Delete forever</button>'
+      : '<button class="btn btn-ghost btn-sm" onclick="startRenameJob(\'' + j.id + '\')">Rename</button>'
+        + '<button class="btn btn-ghost btn-sm" onclick="startEditSource(\'' + j.id + '\')" title="Edit source table">Edit source</button>'
+        + '<button class="btn btn-ghost btn-sm" onclick="jobsExportOne(\'' + j.id + '\')">Export package</button>'
+        + '<button class="btn btn-danger btn-sm" onclick="deleteJob(\'' + j.id + '\')" title="Move to Trash">Delete</button>')
+    + '</div>';
+}
+// The overflow menu on the header
+function jobsMoreToggle(){
+  const m = document.getElementById('jobs-more-menu'), b = document.getElementById('jobs-more-btn');
+  if (!m) return;
+  const open = !m.classList.contains('open');
+  m.classList.toggle('open', open);
+  if (b) b.setAttribute('aria-expanded', String(open));
+  if (open) setTimeout(() => document.addEventListener('click', jobsMoreOutside, { once: true }), 0);
+}
+function jobsMoreClose(){
+  const m = document.getElementById('jobs-more-menu'), b = document.getElementById('jobs-more-btn');
+  if (m) m.classList.remove('open');
+  if (b) b.setAttribute('aria-expanded', 'false');
+}
+function jobsMoreOutside(ev){
+  if (ev.target && ev.target.closest && ev.target.closest('.jb-more-wrap')) return;
+  jobsMoreClose();
 }
 
 // ── Row reordering (drag-and-drop) ────────────────────────────────────────
@@ -4252,7 +4325,7 @@ function cancelEditSource(jobId) {
 function deleteJob(jobId) {
   const job = state.jobs.find(j => j.id === jobId);
   if (!job) return;
-  if (!confirm('Move job "' + job.name + '" to Trash? You can restore it from "Show deleted" next to + New Migration.')) return;
+  if (!confirm('Move job "' + job.name + '" to Trash? You can restore it from "Show deleted" under More.')) return;
   // SOFT delete — keep the row, flag it. This is the core safety net:
   // never silently remove a job from the array. Hard-deletes only happen
   // from the "View deleted" panel with a second confirm.
@@ -4313,7 +4386,7 @@ function toggleShowDeleted(){
   renderAllJobs();
   // Update the dropdown's label so the user can see the active state.
   const btn = document.getElementById('show-deleted-btn');
-  if (btn) btn.textContent = _showDeletedJobs ? '↩ Hide deleted' : 'Show deleted';
+  if (btn) btn.textContent = _showDeletedJobs ? 'Hide deleted' : 'Show deleted';
 }
 
 // ── safeMutateJob / safeRemoveJob / safeUpsertJob ──────────────────────────
@@ -6090,6 +6163,13 @@ function renderAllJobs() {
     shown = shown.filter(j => !j._deleted);
   }
 
+  // The filter row: a name-or-table search and a status word.
+  const q = String((document.getElementById('jobs-name-filter') || {}).value || '').trim().toLowerCase();
+  const sf = String((document.getElementById('jobs-status-filter') || {}).value || '');
+  const beforeText = shown.length;
+  if (q) shown = shown.filter(j => [j.name, j.sourceTable, j.source, j.target].some(x => String(x || '').toLowerCase().includes(q)));
+  if (sf) shown = shown.filter(j => jobBucket(j) === sf);
+
   // Count display
   const countEl = document.getElementById('jobs-filter-count');
   if (countEl){
@@ -6100,9 +6180,13 @@ function renderAllJobs() {
     const denom = _showDeletedJobs
       ? state.jobs.filter(j => j && j._deleted).length
       : liveJobs(state.jobs).length;
-    countEl.textContent = (filterValue === '__all' && !_showDeletedJobs)
-      ? `${denom} total`
-      : `${shown.length} of ${denom}`;
+    const unfiltered = !q && !sf && (filterValue === '__all' || filterValue === 'active');
+    countEl.textContent = _showDeletedJobs
+      ? `${shown.length} in trash`
+      : (unfiltered && shown.length === denom) || (filterValue === '__all' && !q && !sf)
+        ? `${denom} job${denom === 1 ? '' : 's'}`
+        : `${shown.length} of ${denom} jobs`;
+    void beforeText;
   }
 
   $('all-jobs').innerHTML = shown.length
@@ -6116,6 +6200,13 @@ function renderAllJobs() {
   }
   refreshJobsMoveTargetDropdown();
   refreshJobsBulkBar();
+  // The right column follows the list: keep the selection if it is still
+  // on screen, otherwise lead with the first failed job, then the first.
+  if (!shown.some(j => j.id === _jobSideId)){
+    _jobSideId = (shown.find(j => jobBucket(j) === 'failed') || shown[0] || {}).id || null;
+    document.querySelectorAll('#all-jobs tr[data-job-id]').forEach(tr => tr.classList.toggle('on', tr.dataset.jobId === _jobSideId));
+  }
+  renderJobSide(shown);
 }
 
 function codePanel(job, type) {
@@ -9909,12 +10000,11 @@ function setConnEntry(side, how) {
   // value is sensitive. Paste mode is one click away for editing by hand.
   var raw = document.getElementById(side + '-cs-wrap');
   if (raw) raw.style.display = build ? 'none' : '';
+  // The segmented control carries its state as a class; the stylesheet
+  // draws it. Inline colours here used to fight the theme.
   var styleBtn = function (id, active) {
     var el = document.getElementById(id);
-    if (!el) return;
-    el.style.background = active ? 'var(--accent-glow)' : 'transparent';
-    el.style.color = active ? 'var(--accent)' : 'var(--text2)';
-    el.style.border = active ? '0.5px solid rgba(74,91,214,0.3)' : '0.5px solid var(--border2)';
+    if (el && el.classList) el.classList.toggle('on', !!active);
   };
   styleBtn(side + '-entry-paste', !build);
   styleBtn(side + '-entry-build', build);
@@ -9924,10 +10014,7 @@ function setSrcMode(mode) {
   srcMode = mode;
   const styles = (id, active) => {
     const el = document.getElementById(id);
-    if (!el) return;
-    el.style.background = active ? 'var(--accent-glow)' : 'transparent';
-    el.style.color = active ? 'var(--accent)' : 'var(--text2)';
-    el.style.border = active ? '0.5px solid rgba(74,91,214,0.3)' : '0.5px solid var(--border2)';
+    if (el && el.classList) el.classList.toggle('on', !!active);
   };
   styles('src-mode-direct', mode==='direct');
   styles('src-mode-azure',  mode==='azure');
@@ -9937,10 +10024,7 @@ function setTgtMode(mode) {
   tgtMode = mode;
   const styles = (id, active) => {
     const el = document.getElementById(id);
-    if (!el) return;
-    el.style.background = active ? 'var(--accent-glow)' : 'transparent';
-    el.style.color = active ? 'var(--accent)' : 'var(--text2)';
-    el.style.border = active ? '0.5px solid rgba(74,91,214,0.3)' : '0.5px solid var(--border2)';
+    if (el && el.classList) el.classList.toggle('on', !!active);
   };
   styles('tgt-mode-direct', mode==='direct');
   styles('tgt-mode-azure',  mode==='azure');
@@ -9981,6 +10065,61 @@ function initConnectionsView() {
   renderConnLock('src');
   renderConnLock('tgt');
   connProfileLines();
+  connRenderEnv();
+}
+
+/* ── The environment tag and the guardrail note (Phase 4, Sep-2026) ──────
+   Each side carries the classification of the connection the selected
+   profile put there — DEV, TST, UAT, STG or PRD, read from the profile
+   store's connMeta by cpConnMeta. A connection nobody has classified is
+   treated as PROD, because the safe mistake is to guard a rehearsal, not
+   to skip the guard on a cutover. The note below the two panels says so
+   whenever either side resolves to PROD, including that default case. */
+function connEnvOf(side){
+  const DEFAULT = { label: 'PROD', prod: true, classified: false };
+  try {
+    const CP = window.CygenixProfiles;
+    if (!CP) return DEFAULT;
+    const st = CP.cpLoad();
+    const id = st && st.settings && st.settings.activeProfileId;
+    const p = id && (st.profiles || []).find(x => x.id === id);
+    let cls = 'UNKNOWN';
+    if (p){
+      const cid = side === 'src' ? p.srcConnId : p.tgtConnId;
+      const meta = cid ? CP.cpConnMeta(st, cid) : null;
+      cls = (meta && meta.envClass) || p.envClass || 'UNKNOWN';
+    }
+    cls = String(cls).toUpperCase();
+    if (cls === 'UNKNOWN') return DEFAULT;
+    const prod = cls === 'PRD' || cls === 'PROD';
+    return { label: prod ? 'PROD' : cls, prod, classified: true };
+  } catch (e) { return DEFAULT; }
+}
+function connRenderEnv(){
+  const env = { src: connEnvOf('src'), tgt: connEnvOf('tgt') };
+  ['src', 'tgt'].forEach(s => {
+    const t = document.getElementById(s + '-env-tag');
+    if (!t) return;
+    t.textContent = env[s].label;
+    t.className = 'cx-tag' + (env[s].prod ? ' cx-tag-fail' : '');
+    t.title = env[s].classified ? 'Classified on the Profiles page' : 'Unclassified connections default to PROD';
+  });
+  const note = document.getElementById('conn-guardrail');
+  if (!note) return;
+  const prodSides = ['src', 'tgt'].filter(s => env[s].prod);
+  note.style.display = prodSides.length ? '' : 'none';
+  if (!prodSides.length) return;
+  const title = document.getElementById('conn-guardrail-title');
+  const text = document.getElementById('conn-guardrail-text');
+  const both = prodSides.length === 2;
+  const unclassified = prodSides.some(s => !env[s].classified);
+  if (title) title.textContent = both ? 'Both sides are classified PROD'
+    : (prodSides[0] === 'src' ? 'The source' : 'The target') + ' is classified PROD';
+  if (text) text.textContent = 'Destructive operations on a PROD connection require a second approver, and '
+    + 'writes are governed by each role\'s PROD permissions. '
+    + (unclassified
+      ? 'A connection nobody has classified is treated as PROD — classify it on the Profiles page if this pair is a rehearsal rather than the real cutover.'
+      : 'Reclassify on the Profiles page if this pair is a rehearsal rather than the real cutover.');
 }
 
 /* ── Where the live values came from (Sep-2026) ───────────────────────────
@@ -10019,6 +10158,27 @@ function connProfileLines(){
   } catch (e) { /* a note, never a reason the view fails */ }
 }
 
+/* The status pair on each panel: an 8px square and one of four words.
+   "Configured" used to paint green, which read as "working" — a string
+   that has never been tested is Not tested, and green is kept for a
+   connection that actually answered. The last test result is remembered
+   for the visit so a save does not downgrade Connected to Not tested. */
+const connTestResult = { src: null, tgt: null };
+function connSetStatus(side, state){
+  const dot = document.getElementById(side + '-conn-dot');
+  const word = document.getElementById(side + '-conn-word');
+  const wrap = document.getElementById(side + '-conn-status');
+  const map = {
+    none:     { cls: '',              wrap: '',     word: 'Not configured' },
+    untested: { cls: '',              wrap: '',     word: 'Not tested' },
+    ok:       { cls: 'cx-dot-ok',     wrap: 'ok',   word: 'Connected' },
+    fail:     { cls: 'cx-dot-fail',   wrap: 'fail', word: 'Unreachable' },
+  };
+  const m = map[state] || map.none;
+  if (dot) dot.className = 'cx-dot ' + m.cls;
+  if (word) word.textContent = m.word;
+  if (wrap) wrap.className = 'conn-status ' + m.wrap;
+}
 function updateConnDots() {
   // CygenixConnections.get() now reads from the per-user slice of the
   // localStorage blob at cygenix_project_connections, which persists
@@ -10026,16 +10186,14 @@ function updateConnDots() {
   const c = CygenixConnections.get();
   const srcOk = !!(c.srcConnString || c.srcFnUrl);
   const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
-  const setDot = (id, ok) => { const el=document.getElementById(id); if(el) el.style.background=ok?'var(--green)':'var(--red)'; };
-  setDot('src-conn-dot', srcOk);
-  setDot('tgt-conn-dot', tgtOk);
+  connSetStatus('src', !srcOk ? 'none' : (connTestResult.src || 'untested'));
+  connSetStatus('tgt', !tgtOk ? 'none' : (connTestResult.tgt || 'untested'));
   const navDot = document.getElementById('conn-status-dot');
   if (navDot) navDot.style.background = srcOk&&tgtOk ? 'var(--green)' : (srcOk||tgtOk) ? 'var(--amber)' : 'var(--red)';
 }
 
 async function testProjConn(which) {
   const resultEl = document.getElementById(which+'-conn-result');
-  const dotEl    = document.getElementById(which+'-conn-dot');
   resultEl.textContent='Connecting…'; resultEl.style.color='var(--accent)';
   let conn = '';
   if (which==='src') {
@@ -10091,12 +10249,14 @@ async function testProjConn(which) {
     }
     resultEl.textContent='Connected · '+data.database+' · '+(data.user||'').split('@')[0];
     resultEl.style.color='var(--green)';
-    if (dotEl) dotEl.style.background='var(--green)';
+    connTestResult[which] = 'ok';
+    connSetStatus(which, 'ok');
     saveProjectConnections();
   } catch(e) {
     resultEl.textContent= e.message;
     resultEl.style.color='var(--red)';
-    if (dotEl) dotEl.style.background='var(--red)';
+    connTestResult[which] = 'fail';
+    connSetStatus(which, 'fail');
   }
 }
 
@@ -10141,7 +10301,8 @@ function saveProjectConnections() {
   renderConnLock('src');
   renderConnLock('tgt');
   const ind = document.getElementById('conn-save-indicator');
-  if (ind) { ind.style.display = 'block'; setTimeout(() => ind.style.display = 'none', 2500); }
+  if (ind) { ind.style.display = ''; setTimeout(() => ind.style.display = 'none', 2500); }
+  connRenderEnv();
   // A credential typed to finish the selected profile's connection is kept
   // on this browser, so it is never asked for again here (a copy into the
   // local secret store; the synced, locked entry is untouched).
@@ -10178,6 +10339,7 @@ function clearProjectConnections() {
   ['proj-src-cs','proj-src-fn-url','proj-src-fn-key','proj-tgt-cs','proj-tgt-fn-url','proj-tgt-fn-key']
     .forEach(id=>{const el=document.getElementById(id);if(el) el.value='';});
   ['src-conn-result','tgt-conn-result'].forEach(id=>{const el=document.getElementById(id);if(el) el.textContent='';});
+  connTestResult.src = connTestResult.tgt = null;
   updateConnDots();
   // Nothing configured now, so the summaries have nothing to summarise and
   // the empty fields come back for re-entry.

@@ -1532,6 +1532,7 @@ async function selectTable(which, value){
     $('src-col-wrap').style.display='block';
     $('src-col-count').style.display='inline';
     $('src-col-count').textContent=t.columns.length+' cols'+(t.objType==='view'?' · view':'');
+    const tn=$('src-table-name'); if(tn) tn.textContent=t.fullName||t.name||'';
     const rc=$('src-rowcount');
     if(rc) rc.textContent = (typeof t.rowCount === 'number') ? t.rowCount.toLocaleString()+' rows' : '—';
     renderSrcColList();
@@ -1667,7 +1668,8 @@ async function buildMappingIfReady(){
   const mapped = columnMapping.filter(m=>m.tgtCol&&(m.srcCol||m.literalValue)).length;
   const total  = columnMapping.filter(m=>m.tgtCol).length;
   $('map-stats').style.display='inline';
-  $('map-stats').textContent = mapped+' / '+total+' target cols mapped';
+  $('map-stats').textContent = mapped+' of '+total+' mapped';
+  const tgtName=$('tgt-table-name'); if(tgtName) tgtName.textContent = tgtTable ? ' · '+(tgtTable.fullName||tgtTable.name||'') : '';
   showStatus('Mapping ready — '+mapped+' of '+total+' target columns matched','info');
 }
 
@@ -2718,12 +2720,12 @@ function renderMappingTable(){
   const srcColOpts = srcColEntries.map(c =>
     `<option value="${esc(c.name)}">${c.fromJoin?'⊞ ':''}${esc(c.name)}</option>`
   ).join('');
+  const decisions = [];
   tbody.innerHTML = columnMapping.map((m,i)=>{
     const srcDef = (srcTable?.columns||[]).find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
     const srcType = srcDef&&typeof srcDef==='object'?srcDef.type:'';
     const tgtDef = tgtCols.find(c=>c.name===m.tgtCol);
     const tgtType = tgtDef?.type||'';
-    const matchColor = m.match==='HIGH'?'var(--green)':m.match==='MEDIUM'?'var(--amber)':m.match==='LOW'?'var(--red)':'var(--text3)';
     const hasFixed = !!(m.literalValue !== undefined && m.literalValue !== '');
     const hasMapping = !!m.srcCol || hasFixed;
     // An aggregate such as MAX([CaseName]) lives in the same Fixed value box,
@@ -2802,48 +2804,102 @@ function renderMappingTable(){
           ? `<div style="margin-top:2px;color:var(--text3);font-size:9px;font-weight:500">NOT NULL</div>`
           : '');
 
-    return `<tr style="${rowStyle}">
+    // A truncation nobody has accepted is a decision, raised below the table
+    if (willTruncate && !m._truncAccepted) decisions.push({ i, tgtCol: m.tgtCol, srcCol: m.srcCol, srcType, tgtType, truncLen });
+    const review = willTruncate && !m._truncAccepted ? ' om-review' : '';
+
+    return `<tr style="${rowStyle}" class="${review.trim()}" id="om-row-${i}">
+      <td style="font-weight:500">
+        <span onclick="openLineage(${i})" style="cursor:pointer;border-bottom:1px dotted var(--color-neutral-400)"
+              title="Lineage & impact — the path back to source, and what a change here would affect">${esc(m.tgtCol)}</span><span class="om-type">${esc(tgtType)}</span>${willTruncate?`<span class="om-type" style="color:var(--state-warn)" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})">LEFT(${truncLen})</span>`:''}
+        ${notNullMsgHtml}
+        ${identityBadgeHtml}
+      </td>
       <td>
-        <select class="map-select" ${disAttr} style="font-family:var(--mono);font-size:11px${overridesSrc?';color:var(--text3);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
+        <select class="map-select" ${disAttr} style="${overridesSrc?'color:var(--color-neutral-600);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
           onchange="columnMapping[${i}].srcCol=this.value;columnMapping[${i}].match=this.value?'HIGH':'';renderMappingTable();renderSrcColList();tryAutoGenSQL()">
           <option value="">— none —</option>
           ${srcColOpts.replace(`value="${esc(m.srcCol)}"`,`value="${esc(m.srcCol)}" selected`)}
-        </select>
+        </select>${srcType?`<span class="om-type">${esc(srcType)}</span>`:''}
       </td>
-      <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
-      <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">
-        <span onclick="openLineage(${i})" style="cursor:pointer;border-bottom:1px dotted var(--border2)"
-              title="Lineage & impact — the path back to source, and what a change here would affect">${esc(m.tgtCol)}</span>
-        ${notNullMsgHtml}
-      </td>
-      <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
-        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})"><i class="ic ic-warning"></i> LEFT(${truncLen})</span>`:''}
-        ${identityBadgeHtml}
-      </td>
-      <td><select class="map-select" ${disAttr} style="width:80px${identityLocked?';cursor:not-allowed':''}" onchange="updateTransform(${i},this.value)">
+      <td><select class="map-select" id="om-transform-${i}" ${disAttr} style="width:118px${identityLocked?';cursor:not-allowed':''}" onchange="updateTransform(${i},this.value)">
         ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST','SAFE_GUID','SAFE_NUMERIC','SAFE_TRUNC'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
       </select></td>
       <td>
-        <input class="map-select" style="width:120px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
+        <input class="map-select" style="width:130px;font-family:var(--mono);font-size:12px${identityLocked?';cursor:not-allowed':''}"
           ${disAttr}
           placeholder="${identityLocked?'(identity locked)':"e.g. N'Value', 0, NULL…"}"
           value="${esc(m.literalValue||'')}"
           oninput="columnMapping[${i}].literalValue=this.value.trim();tryAutoGenSQL()"
           title="Fixed SQL value — overrides source column. Leave blank to use source.">
       </td>
-      <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${identityLocked?'<span style="color:var(--text3)">auto</span>':(m.match||'—')}</span>${
-        (!identityLocked && m.evidence)
-          ? ` <span style="font-size:10px;color:var(--text3);cursor:help;font-family:var(--mono)" title="${esc((m.evidence.reasons||[]).join('\n'))}">${m.evidence.score}% ⓘ</span>`
-          : ''}</td>
-      <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
+      <td class="om-conf">${confidenceCell(m, identityLocked)}</td>
+      <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--color-neutral-600);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
     </tr>`;
   }).join('');
+  renderDecisions(decisions);
   // Reset hide-unmapped toggle when mapping rebuilt
   _hidingUnmapped = false;
   const btn = $('btn-toggle-unmapped');
   if(btn){ btn.textContent='Hide Unmapped'; btn.style.color=''; btn.style.borderColor=''; }
   // Re-apply any active filter after re-render
   applyMapFilter();
+}
+
+// ── Confidence as a bar, decisions as callouts (Phase 4, Sep-2026) ───────────
+// Match used to be a coloured word — green HIGH, amber MEDIUM, red LOW — which
+// spent the status colours on a score. It is a 6px bar now: accent-700 at
+// 90% and above, the accent at 70–89, accent-300 below. The evidence score
+// is the width where the evidence mapper ran; the model's word maps to a
+// nominal width otherwise. The word and the reasons stay in the tooltip.
+function confidenceScore(m){
+  if (m && m.evidence && typeof m.evidence.score === 'number') return Math.max(0, Math.min(100, m.evidence.score));
+  const w = String((m && m.match) || '').toUpperCase();
+  if (w === 'HIGH') return 95;
+  if (w === 'MEDIUM') return 78;
+  if (w === 'LOW') return 55;
+  if (w === 'AUTO') return 90;
+  return null;
+}
+function confidenceCell(m, identityLocked){
+  if (identityLocked) return '<span class="none" title="SQL Server fills identity columns">auto</span>';
+  const score = confidenceScore(m);
+  if (score == null) return '<span class="none">—</span>';
+  const band = score >= 90 ? 'hi' : score >= 70 ? '' : 'lo';
+  const why = (m.evidence && (m.evidence.reasons || []).join('\n')) || '';
+  const title = (m.match ? String(m.match).toUpperCase() + ' · ' : '') + score + '%' + (why ? '\n' + why : '');
+  return '<span class="bar ' + band + '" title="' + esc(title) + '" aria-label="Confidence ' + score + '%"><i style="width:' + score + '%"></i></span>';
+}
+// One callout per ambiguous transform. Today that is a character column
+// wider at the source than the target, which the generator cuts with
+// LEFT(n) — silently, in a row, until now. Accept records the decision on
+// the mapping; Edit transform takes the person to the row's own control.
+function renderDecisions(list){
+  const host = $('om-decisions');
+  if (!host) return;
+  if (!list || !list.length){ host.innerHTML = ''; return; }
+  const rows = (typeof srcTable === 'object' && srcTable && typeof srcTable.rowCount === 'number') ? srcTable.rowCount : null;
+  host.innerHTML = list.map(d =>
+    '<div class="om-decision" id="om-decision-' + d.i + '">'
+    + '<div class="t">' + esc(d.tgtCol) + ' will be cut to ' + d.truncLen + ' characters</div>'
+    + '<p>' + esc(d.srcCol) + ' is ' + esc(d.srcType) + ' at the source and ' + esc(d.tgtType) + ' at the target. '
+    + 'Values longer than ' + d.truncLen + ' lose their tail on the way across'
+    + (rows != null ? ' — up to ' + rows.toLocaleString('en-GB') + ' rows are in scope' : '')
+    + '. Accept the cut, or change the transform before the next run.</p>'
+    + '<div class="acts"><button class="btn btn-primary btn-sm" onclick="omAcceptDecision(' + d.i + ')">Accept</button>'
+    + '<button class="btn btn-ghost btn-sm" onclick="omEditTransform(' + d.i + ')">Edit transform</button></div>'
+    + '</div>').join('');
+}
+function omAcceptDecision(i){
+  if (!columnMapping[i]) return;
+  columnMapping[i]._truncAccepted = true;
+  renderMappingTable();
+  showStatus('Accepted: ' + columnMapping[i].tgtCol + ' is cut to fit. The mapping records the decision.', 'info');
+}
+function omEditTransform(i){
+  const sel = $('om-transform-' + i);
+  if (!sel) return;
+  try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); sel.focus(); } catch (e) {}
 }
 
 // ── Single SQL generation ─────────────────────────────────────────────────────
@@ -3159,7 +3215,7 @@ const OM_LEFT_W_KEY   = 'cygenix_om_left_width';
 const OM_LEFT_COL_KEY = 'cygenix_om_left_collapsed';
 const OM_LEFT_MIN = 220;   // narrower than this and the column list is unusable
 const OM_LEFT_MAX = 620;
-const OM_LEFT_DEFAULT = 300;
+const OM_LEFT_DEFAULT = 312;   // the handoff's left column
 
 function omClampLeft(px){
   const n = Number(px);
@@ -4789,6 +4845,7 @@ async function checkEditMode(){
   $('edit-banner').style.display='flex';
   $('edit-job-name').textContent=job.name;
   if($('job-name-input')) $('job-name-input').value = job.name||'';
+  const ver=$('om-version'); if(ver) ver.textContent = (typeof job.version==='number' && job.version>0) ? 'Version '+job.version : '';
 
   // Set mode
   const isOTM=job.jobType==='one-to-many'||job.oneToManyConfig;
@@ -5010,9 +5067,15 @@ function cancelEdit(){
   try { $('single-empty')?.scrollIntoView({behavior:'smooth',block:'center'}); } catch(_){}
 }
 
+// The History button: a job has a history once it has been saved.
+function omOpenHistory(){
+  if (editJobId) CygenixHistory.open(editJobId);
+  else alert('Save the job first to start a version history.');
+}
 function clearEditMode(){
   editJobId=null;
   $('edit-banner').style.display='none';
+  const ver=$('om-version'); if(ver) ver.textContent='';
   if($('job-name-input')) $('job-name-input').value='';
   history.replaceState({},document.title,location.pathname);
 }

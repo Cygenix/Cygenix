@@ -84,7 +84,7 @@ check('a width above the maximum clamps down', t.width() === 620, String(t.width
 t.get('omApplyLeft(300.6, false)');
 check('a fractional width is rounded', t.width() === 301, String(t.width()));
 t.get('omApplyLeft("nonsense", false)');
-check('an unparseable width falls back to the default', t.width() === 300, String(t.width()));
+check('an unparseable width falls back to the default', t.width() === 312, String(t.width()));
 
 // ── Persistence ──────────────────────────────────────────────────────────
 t = build();
@@ -132,9 +132,9 @@ check('the restored button shows the expand arrow', t.btn.textContent === '›')
 t = build({ 'cygenix_om_left_width':'600', 'cygenix_om_left_collapsed':'1' });
 t.get('omInitSplitter()');
 t.get('omResetLeft()');
-check('reset returns the width to the default', t.width() === 300);
+check('reset returns the width to the default', t.width() === 312);
 check('reset also expands a collapsed panel', t.collapsed() === false);
-check('reset persists both', t.store['cygenix_om_left_width'] === '300' &&
+check('reset persists both', t.store['cygenix_om_left_width'] === '312' &&
                              t.store['cygenix_om_left_collapsed'] === '0');
 
 // ── Dragging ─────────────────────────────────────────────────────────────

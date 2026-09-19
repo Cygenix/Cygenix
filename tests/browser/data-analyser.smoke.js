@@ -183,7 +183,7 @@ const SECOND = 'customer_id,name,joined\n7,Whitfield & Sons,2024-01-09\n8,Halcyo
     // page rather than a tab with a panel, so it carries no data-tab.
     const strip = await page.evaluate(() => Array.from(document.querySelectorAll('#view-connections .cx-tabs .cx-tab, #view-connections .cx-tab'))
       .filter((t, i, a) => a.indexOf(t) === i).map((t) => t.dataset.tab || t.textContent.trim()).join(','));
-    check('the tab strip keeps its order', strip === 'databases,import,restore,linked,blob,Data Generator', strip);
+    check('the tab strip keeps its order', strip === 'databases,import,restore,linked,blob,Data generator ↗', strip);
 
     // ── The menu and the mount ─────────────────────────────────────────
     check('the widget mounted inside the tab', await page.locator('#conn-tab-import #analyser.cygx').count() === 1);

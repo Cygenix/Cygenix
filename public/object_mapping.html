@@ -52,9 +52,6 @@
 <meta name="twitter:title" content="Cygenix – Object Mapping">
 <meta name="twitter:description" content="AI column mapping for SQL database migrations.">
 <title>Cygenix – Object Mapping</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -65,7 +62,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 body.cyg-collapsed{padding-left:54px}
 
 /* ── Layout ── */
-.page{padding:1.5rem 2rem;max-width:100%}
+.page{padding:28px 32px 34px;max-width:100%}
 /* Left column is resizable and collapsible. It was a fixed 300px, which is
    tight for long table names and the WHERE/GROUP BY rows, and there was no way
    to reclaim the space for the mapping grid once the source table was picked.
@@ -73,8 +70,8 @@ body.cyg-collapsed{padding-left:54px}
    localStorage on load. */
 .main-grid{
   display:grid;
-  grid-template-columns:var(--om-left-w,300px) 12px 1fr;
-  gap:0.75rem;
+  grid-template-columns:var(--om-left-w,312px) 12px 1fr;
+  gap:6px;
   align-items:start;
 }
 .main-grid.left-collapsed{ grid-template-columns:0 12px 1fr; }
@@ -100,7 +97,7 @@ body.cyg-collapsed{padding-left:54px}
   position:absolute;top:8px;left:50%;transform:translateX(-50%);
   width:20px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;
   background:var(--bg2);border:0.5px solid var(--border2);border-radius:5px;
-  color:var(--text3);font-size:10px;line-height:1;cursor:pointer;z-index:2;
+  color:var(--text3);font-size:12px;line-height:1;cursor:pointer;z-index:2;
 }
 .om-split-btn:hover{ border-color:var(--accent);color:var(--accent);background:var(--bg3) }
 @media(max-width:900px){
@@ -177,14 +174,14 @@ body.cyg-collapsed{padding-left:54px}
    Everything else comes from the theme variables, so the whole thing works on
    both themes without a second palette. */
 .mg-wrap{position:relative;display:inline-block}
-.mg-btn{display:inline-flex;align-items:center;gap:6px;max-width:190px;padding:0.4rem 0.7rem;border-radius:var(--r);
-  font-size:12px;font-weight:500;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);
-  color:var(--text2);font-family:var(--serif);transition:all .15s;white-space:nowrap}
-.mg-btn:hover:not(:disabled){background:var(--bg3);color:var(--text)}
+.mg-btn{display:inline-flex;align-items:center;gap:8px;max-width:220px;padding:4px 6px;
+  font-size:14px;font-weight:400;cursor:pointer;border:1px solid transparent;background:transparent;
+  color:var(--color-text);font-family:var(--font-body);transition:all .15s;white-space:nowrap}
+.mg-btn:hover:not(:disabled){border-color:var(--color-divider)}
 .mg-btn:disabled{opacity:0.45;cursor:default}
 .mg-btn .mg-label{overflow:hidden;text-overflow:ellipsis}
 .mg-btn .mg-caret{color:var(--text3);font-size:9px;margin-left:1px}
-.mg-dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px;display:inline-block;
+.mg-dot{width:9px;height:9px;border-radius:0;flex:0 0 9px;display:inline-block;
   box-shadow:0 0 0 1px rgba(0,0,0,0.10) inset}
 /* Wide enough for ten swatches on a row, so twenty colours are two tidy rows
    rather than three ragged ones. */
@@ -247,38 +244,45 @@ body.cyg-collapsed{padding-left:54px}
 .mg-chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-glow,rgba(74,91,214,0.12));color:var(--accent)}
 .mg-chip .mg-count{opacity:.7}
 
-.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1rem}
+/* Panels are transparent line drawings; the title is 17px Condensed. */
+.panel{background:transparent;border:1px solid var(--color-divider);overflow:hidden;margin-bottom:24px}
 /* A panel containing a table search must not clip: .search-drop is absolutely
    positioned inside it, so overflow:hidden cropped the results to whatever
    room was left below the input — often one row, which made finding a table
    by typing nearly impossible. Only panels with a search opt out; every other
    panel keeps the clipping that rounds its corners. */
 .panel:has(.search-wrap){overflow:visible}
-.panel-head{padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:0.75rem}
-.panel-title{font-size:13px;font-weight:600;color:var(--text)}
-.panel-body{padding:1rem 1.25rem}
+.panel-head{padding:12px 16px;border-bottom:1px solid var(--color-divider);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.panel-title{font-family:var(--font-heading);font-weight:600;font-size:17px;line-height:1.2;text-transform:uppercase;color:var(--color-text);display:flex;align-items:center;gap:8px}
+.panel-title .ic{display:none}
+.panel-title .om-tsel{color:var(--color-neutral-700)}
+.panel-body{padding:16px}
 
 /* ── Forms ── */
-.form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
-.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-label{font-size:13px;font-weight:400;color:var(--color-neutral-700);display:block;margin-bottom:4px}
+.form-input{width:100%;background:var(--color-bg);border:1px solid var(--color-divider);padding:7px 10px;font-size:14px;color:var(--text);font-family:var(--font-body);outline:none;transition:border-color 0.15s}
 .form-input:focus{border-color:var(--accent)}
 
 /* ── Buttons ── */
-.btn{display:inline-flex;align-items:center;gap:6px;padding:0.4rem 0.875rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
-.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
-.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);background:var(--bg3)}
-.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
-.btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
-.btn-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.3)}
-.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.3)}
-.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
-.btn-sm{padding:0.25rem 0.625rem;font-size:11px}
-.btn:disabled{opacity:0.4;cursor:not-allowed}
+/* Buttons: one filled primary per screen, everything else bordered ink.
+   The green / teal / purple / red variants were categorical colour on a
+   button; category is not state, so they all read as secondary now. */
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 15px;font-family:var(--font-heading);font-weight:600;font-size:14px;line-height:1.2;cursor:pointer;border:1px solid var(--color-divider);background:transparent;color:var(--color-text);transition:background .12s,color .12s;white-space:nowrap;text-decoration:none}
+.btn:hover{background:var(--hover-tint);color:var(--color-text)}
+.btn-primary{background:var(--color-accent);border-color:var(--color-accent);color:#fff}.btn-primary:hover{background:var(--color-accent-600);border-color:var(--color-accent-600);color:#fff}
+.btn-ghost,.btn-green,.btn-amber,.btn-teal,.btn-purple{background:transparent;color:var(--color-text);border-color:var(--color-divider)}
+.btn-red{background:transparent;color:var(--state-fail);border-color:var(--state-fail)}
+.btn-sm{height:30px;padding:0 13px;font-size:14px}
+.btn.link{border-color:transparent;background:transparent;color:var(--color-accent-700);padding:0 4px;height:auto;font-family:var(--font-body);font-weight:400;font-size:14px}
+.btn.link:hover{background:transparent;text-decoration:underline}
+.btn:disabled{opacity:0.45;cursor:not-allowed}
 
 /* ── Mode toggle ── */
-.mode-toggle{display:flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:3px;gap:3px}
-.mode-btn{flex:1;text-align:center;padding:0.4rem 1rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
-.mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
+/* Segmented controls — the handoff's .seg */
+.mode-toggle{display:inline-flex;background:transparent;border:1px solid var(--color-divider);padding:0;gap:0}
+.mode-btn{flex:1;text-align:center;padding:7px 18px;font-family:var(--font-heading);font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:background .12s,color .12s;color:var(--color-neutral-600);border:none;background:transparent;line-height:1.2;white-space:nowrap}
+.mode-btn .ic{display:none}
+.mode-btn.active{background:var(--color-accent-900);color:var(--color-bg)}
 /* TABLE / VIEW tag in the source pickers — only rendered when the object-type
    filter is showing more than one kind, where it is the only thing telling two
    similarly named objects apart. */
@@ -288,30 +292,51 @@ body.cyg-collapsed{padding-left:54px}
 .objtype-badge.is-view{background:rgba(168,136,208,0.14);color:var(--purple,#a888d0);border-color:rgba(168,136,208,0.35)}
 
 /* ── Connection banner ── */
-.conn-banner{display:flex;align-items:center;gap:0.75rem;padding:0.625rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:1rem;flex-wrap:wrap}
-.conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.conn-dot.ok{background:var(--green)}
-.conn-dot.err{background:var(--red)}
-.conn-dot.idle{background:var(--text3)}
-.conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
-.conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif)}
-.conn-btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.3)}
+/* The connection line: two status squares and their words, one link */
+.conn-banner{display:flex;align-items:center;gap:12px;padding:0 0 14px;margin-bottom:18px;border-bottom:1px solid var(--color-divider);flex-wrap:wrap}
+.conn-dot{width:8px;height:8px;flex-shrink:0;background:var(--color-neutral-400)}
+.conn-dot.ok{background:var(--state-ok)}
+.conn-dot.err{background:var(--state-fail)}
+.conn-dot.idle{background:var(--color-neutral-400)}
+.conn-label{font-size:13px;color:var(--color-neutral-700)}
+.conn-btn{font-size:13px;padding:0;cursor:pointer;border:0;background:transparent;color:var(--color-accent-700);font-family:var(--font-body)}
+.conn-btn:hover{text-decoration:underline}
 
 /* ── Source column list ── */
-.src-col-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto;max-height:220px}
-.src-col-pill{display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-radius:4px;font-size:11px;cursor:grab;background:var(--bg3);border:0.5px solid var(--border2);font-family:var(--mono)}
-.src-col-pill:hover{border-color:var(--teal);background:var(--teal-bg)}
-.src-col-pill.mapped{border-color:rgba(34,201,122,0.3);background:var(--green-bg)}
-.src-col-type{color:var(--text3);font-size:10px;margin-left:auto;flex-shrink:0}
+/* The column list: 13px rows, name left and type right, mapped on accent-100 */
+.src-col-list{display:flex;flex-direction:column;gap:0;overflow-y:auto;max-height:220px;border-top:1px solid var(--color-divider)}
+.src-col-pill{display:flex;align-items:center;gap:8px;padding:5px 8px;font-size:13px;cursor:grab;background:transparent;border:0;border-bottom:1px solid var(--color-divider);font-family:var(--font-body);color:var(--color-text)}
+.src-col-pill:hover{background:var(--hover-tint)}
+.src-col-pill.mapped{background:var(--color-accent-100)}
+.src-col-type{color:var(--color-neutral-600);font-size:13px;margin-left:auto;flex-shrink:0}
+.om-tname{font-family:var(--font-heading);font-weight:600;font-size:18px;line-height:1.1;color:var(--color-text);margin:4px 0 2px;word-break:break-all}
+.om-trow{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--color-neutral-700);margin-bottom:8px;flex-wrap:wrap}
 
 /* ── Mapping table ── */
-.map-table{width:100%;border-collapse:collapse;font-size:11px}
-.map-table th{text-align:left;padding:6px 8px;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;border-bottom:0.5px solid var(--border);background:var(--bg3);font-weight:600}
-.map-table td{padding:4px 6px;border-bottom:0.5px solid var(--border)}
+/* The mapping table at 13px. Confidence is a 6px bar in a 118px cell,
+   never a colour: accent-700 at 90%+, the accent at 70–89, accent-300
+   below. The word (HIGH / MEDIUM / LOW) and the evidence stay in the
+   tooltip. */
+.map-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.4}
+.map-table th{text-align:left;padding:7px 8px;color:color-mix(in srgb,var(--color-text) 60%,transparent);font-size:11px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--color-divider);background:transparent;font-weight:400;white-space:nowrap}
+.map-table td{padding:6px 8px;border-bottom:1px solid var(--color-divider);vertical-align:middle}
 .map-table tr:last-child td{border-bottom:none}
-.map-table tr:hover td{background:rgba(255,255,255,0.015)}
-.map-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;width:100%}
-.map-select:focus{border-color:var(--accent)}
+.map-table tr:hover td{background:var(--hover-tint)}
+.map-table tr.om-review td{background:var(--color-accent-100)}
+.map-table .om-type{color:var(--color-neutral-600);font-size:13px;margin-left:6px;white-space:nowrap}
+.map-select{background:var(--color-bg);border:1px solid var(--color-divider);padding:4px 6px;font-size:13px;color:var(--text);font-family:var(--font-body);outline:none;width:auto;min-width:140px;max-width:100%;height:30px}
+.map-select:focus{border-color:var(--color-accent)}
+.om-conf{width:118px}
+.om-conf .bar{display:block;height:6px;background:var(--color-neutral-200);overflow:hidden}
+.om-conf .bar i{display:block;height:100%;background:var(--color-accent)}
+.om-conf .bar.hi i{background:var(--color-accent-700)}
+.om-conf .bar.lo i{background:var(--color-accent-300)}
+.om-conf .none{font-size:13px;color:var(--color-neutral-600)}
+/* Decision callouts — one per ambiguous transform, raised, never silent */
+.om-decision{border-left:3px solid var(--state-warn);padding:4px 0 6px 14px;margin:14px 0 0}
+.om-decision .t{font-family:var(--font-heading);font-weight:600;font-size:17px;line-height:1.2;text-transform:uppercase;color:var(--color-text)}
+.om-decision p{font-size:14px;line-height:1.45;color:var(--color-neutral-800);margin:4px 0 10px;max-width:86ch}
+.om-decision .acts{display:flex;gap:8px;flex-wrap:wrap}
 
 /* ── Target cards (OTM mode) ── */
 .tgt-card{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.75rem;overflow:hidden}
@@ -350,30 +375,33 @@ body.cyg-collapsed{padding-left:54px}
 .drop-rows{font-size:10px;color:var(--text3)}
 
 /* ── SQL Preview ── */
-.sql-box{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:1rem;font-family:var(--mono);font-size:11px;color:var(--text2);white-space:pre;overflow:auto;max-height:400px;max-width:300ch;line-height:1.6}
-.sql-tab{padding:0.4rem 0.875rem;font-size:12px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;font-family:var(--serif);background:none;border-top:none;border-left:none;border-right:none}
-.sql-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.sql-box{background:var(--color-neutral-100);border:1px solid var(--color-divider);padding:14px 16px;font-family:var(--mono);font-size:13px;color:var(--color-text);white-space:pre;overflow:auto;max-height:400px;max-width:300ch;line-height:1.8}
+/* Migration | Schema | Verify as a segmented control in the panel head */
+.om-sqlseg{display:inline-flex;border:1px solid var(--color-divider)}
+.sql-tab{padding:7px 18px;font-family:var(--font-heading);font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;color:var(--color-neutral-600);border:0;background:transparent;line-height:1.2}
+.sql-tab.active{background:var(--color-accent-900);color:var(--color-bg)}
 
 /* ── Status ── */
-.status-bar{font-size:12px;padding:0.5rem 0.75rem;border-radius:var(--r);border:0.5px solid transparent;display:none}
+.status-bar{font-size:14px;line-height:1.5;padding:10px 14px;border:1px solid transparent;display:none;margin-bottom:16px}
 .status-bar.visible{display:block}
-.status-ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
-.status-err{background:var(--red-bg);border-color:rgba(240,70,70,0.25);color:var(--red)}
-.status-info{background:var(--accent-glow);border-color:rgba(74,91,214,0.2);color:var(--accent)}
+.status-ok{background:transparent;border-color:var(--state-ok);color:var(--state-ok)}
+.status-err{background:transparent;border-color:var(--state-fail);color:var(--state-fail)}
+.status-info{background:var(--color-accent-100);border-color:var(--color-accent-300);color:var(--color-accent-800)}
 /* Not an error and not a nicety — "this needs your eye before you save it".
    A draft map opened on a name-matched grid says so here. */
-.status-warn{background:var(--amber-bg);border-color:rgba(245,158,11,0.3);color:var(--amber)}
+.status-warn{background:transparent;border-color:var(--state-warn);color:var(--state-warn)}
 
 /* ── Size buttons ── */
-.size-btn{background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer}
-.size-btn.active{background:var(--accent-glow);border-color:rgba(74,91,214,0.3);color:var(--accent)}
+.size-btn{background:transparent;border:1px solid var(--color-divider);padding:1px 6px;font-size:12px;color:var(--color-neutral-700);cursor:pointer;font-family:var(--font-body)}
+.size-btn.active{background:var(--color-accent-100);border-color:var(--color-accent);color:var(--color-accent-800)}
 
 /* ── Badge ── */
-.badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:100px;font-weight:500}
-.badge-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.2)}
-.badge-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.2)}
-.badge-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.2)}
-.badge-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.2)}
+/* Tags: the environment tag is the model. The column count and the
+   progress tag are .tag-accent; amber and red are kept for state. */
+.badge{display:inline-block;font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;line-height:1.4;border:1px solid var(--color-divider);color:var(--color-neutral-700);white-space:nowrap}
+.badge-green,.badge-teal{color:var(--color-accent-800);border-color:var(--color-accent-300);background:var(--color-accent-100)}
+.badge-amber{color:var(--state-warn);border-color:var(--state-warn)}
+.badge-red{color:var(--state-fail);border-color:var(--state-fail)}
 
 /* ── Join builder ── */
 .join-on-input{flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--teal);font-family:var(--mono);outline:none}
@@ -417,13 +445,25 @@ body.cyg-collapsed{padding-left:54px}
 .where-msg-user{background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;align-self:flex-end;max-width:90%;color:var(--text)}
 .where-msg-assistant{font-size:12px;color:var(--text2);font-family:var(--mono);white-space:pre-wrap;line-height:1.6}
 
-/* Page header */
-.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:0.75rem}
-.page-title{font-size:1.2rem;font-weight:600}
-.page-sub{font-size:12px;color:var(--text3)}
+/* Page header (Phase 4, Sep-2026): kicker with the edit context, the
+   title, the two save actions on the right, and one toolbar row beneath
+   with the segmented controls and the map's file actions. The markup
+   order is title, toolbar, actions — the grid areas put the actions on
+   the right of the title — so the toolbar stays ahead of Save as job in
+   the source, which is where two tests expect the map-group pill. */
+.om-top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title actions" "toolbar toolbar";gap:12px 24px;align-items:start;margin-bottom:22px}
+.om-title-block{grid-area:title;min-width:0}
+.om-title-block .cx-kicker{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.om-actions{grid-area:actions;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-top:22px;justify-content:flex-end}
+.om-toolbar{grid-area:toolbar;display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--color-divider);padding-bottom:14px}
+.om-toolbar-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.om-version{font-size:14px;color:var(--color-neutral-700);white-space:nowrap}
+@media(max-width:1100px){.om-top{grid-template-columns:1fr;grid-template-areas:"title" "actions" "toolbar"}.om-actions{padding-top:0;justify-content:flex-start}}
 
-/* Edit job banner */
-.edit-banner{padding:0.625rem 1rem;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);font-size:12px;color:var(--amber);margin-bottom:1rem;display:flex;align-items:center;gap:0.75rem}
+/* Edit job context — lives in the kicker, not a banner of its own. The
+   app sets display:flex on it, which is why the kicker is a flex row. */
+.edit-banner{display:inline-flex;align-items:center;gap:8px;font:inherit;color:inherit;background:transparent;border:0;padding:0;margin:0}
+.edit-banner strong{font-weight:600;color:var(--color-accent-800)}
 /* ── Visual drag-and-drop view ─────────────────────────────────────────────── */
 .visual-view{padding:0.75rem}
 .visual-hint{font-size:11px;color:var(--text3);margin-bottom:0.75rem;padding:0.4rem 0.6rem;background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--accent)}
@@ -492,6 +532,13 @@ body.cyg-collapsed{padding-left:54px}
   .visual-canvas{grid-template-columns:1fr;gap:1.5rem}
   .visual-lines{display:none}
 }
+/* Radius 0 everywhere on this page, the logo tile excepted — the console
+   stylesheet covers the shared shapes; these are the page's own. */
+.rm-filter,.rm-thumb,.rm-new,.mg-menu,.mg-item,.mg-panel input[type=text],.mg-sw,.mg-icon,.mg-custom input[type=color],
+.objtype-badge,.search-drop,.search-icon-btn,.tp-row,.tp-mark,.where-chat,.where-msg-user,.visual-hint,.visual-pill,
+.visual-pill .vp-type,.visual-fs-btn,.vo-target-group,.tgt-card,.join-on-input,.cond-join,.cond-text,.cond-del,.gb-wand,
+.om-split-btn,.modal,.rm-card,.rm-chip,.rm-pin,.rm-del,.mg-pill,.mg-chip,.mg-btn{border-radius:0}
+.rm-card:hover{transform:none;box-shadow:none}
 </style>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 </head>
@@ -510,7 +557,7 @@ body.cyg-collapsed{padding-left:54px}
 <!-- Map groups: the rules about the group list. Pure, no DOM, no network;
      loaded before the app so the app can rely on it. -->
 <script src="/cygenix-map-groups.js?v=08330317a2" defer></script>
-<script src="/object-mapping-app.js?v=ea2a39ef03" defer></script>
+<script src="/object-mapping-app.js?v=f6b62874a7" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=4b4a09f18f" defer></script>
@@ -553,69 +600,70 @@ document.addEventListener('DOMContentLoaded', function(){
 <div class="page">
   <!-- Page header -->
 <div id="cyg-subnav-mount"></div>
-  <div class="page-header">
-    <div>
-      <div class="page-title" style="display:flex;align-items:center;gap:0.5rem"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5h8l-2-2M13 11H5l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Object Mapping</div>
-      <div class="page-sub">Map source columns to one or more target tables and generate migration SQL</div>
+  <div class="om-top">
+    <div class="om-title-block">
+      <div class="cx-kicker">Model
+        <!-- Edit job context (shown when ?edit= param present) -->
+        <span class="edit-banner" id="edit-banner" style="display:none">
+          <span>· Editing saved job</span>
+          <strong id="edit-job-name"></strong>
+          <button class="btn link" onclick="cancelEdit()" title="Stop editing and go back to your maps">Cancel edit</button>
+        </span>
+      </div>
+      <h1 class="cx-title">Object mapping</h1>
     </div>
-    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
-      <!-- Mode toggle -->
-      <div class="mode-toggle" id="mode-toggle">
-        <button class="mode-btn active" id="mode-single" onclick="setMode('single')">◈ Single map</button>
-        <button class="mode-btn" id="mode-otm" onclick="setMode('otm')">⊞ One-to-many</button>
+    <!-- One toolbar row: the two segmented controls, then the map's file
+         actions, then the map-group pill and the version pushed right. -->
+    <div class="om-toolbar">
+      <div class="mode-toggle" id="mode-toggle" role="group" aria-label="Map mode">
+        <button class="mode-btn active" id="mode-single" onclick="setMode('single')">Single map</button>
+        <button class="mode-btn" id="mode-otm" onclick="setMode('otm')">One-to-many</button>
       </div>
-      <div class="mode-toggle" id="view-toggle" style="margin-left:0">
-        <button class="mode-btn active" id="view-table" onclick="setView('table')" title="Table view"><i class="ic ic-menu"></i> Table</button>
-        <button class="mode-btn" id="view-visual" onclick="setView('visual')" title="Visual drag-and-drop view"><i class="ic ic-sparkle"></i> Visual</button>
+      <div class="mode-toggle" id="view-toggle" role="group" aria-label="View">
+        <button class="mode-btn active" id="view-table" onclick="setView('table')" title="Table view">Table</button>
+        <button class="mode-btn" id="view-visual" onclick="setView('visual')" title="Visual drag-and-drop view">Visual</button>
       </div>
-      <button class="btn btn-green btn-sm" onclick="newMap()" title="Start a new map (will prompt to save current work)"><i class="ic ic-sparkle"></i> New map</button>
-      <button class="btn btn-teal btn-sm" onclick="openLoadMapModal()" title="Load an existing saved map"><i class="ic ic-folder-open"></i> Load map</button>
-      <button class="btn btn-ghost btn-sm" onclick="openScriptFromDrive()" title="Open a saved SQL script from the Drive"><i class="ic ic-archive"></i> Open from Drive</button>
-      <!-- These two came up from the Generated SQL panel. History and Save as
-           job were genuinely duplicated there — the same buttons twice, a
-           screen apart — but Save to Drive and Download existed ONLY down
-           there, so deleting them would have quietly removed the only way to
-           get the SQL out of this page as a file. They are the other half of
-           "Open from Drive", so they sit next to it. Both already refuse with
-           "Generate SQL first" when there is nothing to save. -->
-      <button class="btn btn-ghost btn-sm" onclick="saveScriptToDrive()" title="Save the generated SQL as a script in the Drive"><i class="ic ic-save"></i> Save to Drive</button>
-      <button class="btn btn-ghost btn-sm" onclick="downloadSQL()" title="Download the generated SQL as a .sql file"><i class="ic ic-download"></i> Download</button>
-      <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
-      <input id="job-name-input" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Job name (optional)" maxlength="120" />
-      <button class="btn btn-ghost btn-sm" id="open-history-btn" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">History</button>
-      <!-- Map group. Sits beside Save as job because it is a property of the
-           map being saved, not a view control. Disabled until there is a map
-           to put in a group; the tooltip says why. -->
-      <span class="mg-wrap" id="mg-wrap">
-        <button type="button" class="mg-btn" id="mg-btn" onclick="mgToggleMenu()"
-                aria-haspopup="true" aria-expanded="false" disabled
-                title="Choose source and target tables first — a group belongs to a map">
-          <span class="mg-dot" id="mg-btn-dot" style="background:#9AA3AE"></span>
-          <span class="mg-label" id="mg-btn-label">Ungrouped</span>
-          <span class="mg-caret" aria-hidden="true">▾</span>
-        </button>
-        <div class="mg-menu" id="mg-menu" role="menu" aria-label="Map group"></div>
-      </span>
-      <button class="btn btn-primary btn-sm" id="save-job-btn" onclick="saveAsJob()" disabled><i class="ic ic-save"></i> Save as job</button>
+      <button class="btn btn-green" onclick="newMap()" title="Start a new map (will prompt to save current work)">New map</button>
+      <button class="btn btn-teal" onclick="openLoadMapModal()" title="Load an existing saved map">Load map</button>
+      <button class="btn btn-ghost" onclick="openScriptFromDrive()" title="Open a saved SQL script from the Drive">Open from Drive</button>
+      <!-- Save to Drive and Download came up from the Generated SQL panel.
+           They are the other half of "Open from Drive", so they sit next
+           to it. Both refuse with "Generate SQL first" when there is
+           nothing to save. -->
+      <button class="btn btn-ghost" onclick="saveScriptToDrive()" title="Save the generated SQL as a script in the Drive">Save to Drive</button>
+      <button class="btn btn-ghost" onclick="downloadSQL()" title="Download the generated SQL as a .sql file">Download</button>
+      <button class="btn btn-ghost" onclick="resetAll()" title="Start fresh">Reset</button>
+      <div class="om-toolbar-right">
+        <span class="om-version" id="om-version"></span>
+        <!-- Map group. A property of the map being saved, not a view
+             control. Disabled until there is a map to put in a group; the
+             tooltip says why. -->
+        <span class="mg-wrap" id="mg-wrap">
+          <button type="button" class="mg-btn" id="mg-btn" onclick="mgToggleMenu()"
+                  aria-haspopup="true" aria-expanded="false" disabled
+                  title="Choose source and target tables first — a group belongs to a map">
+            <span class="mg-dot" id="mg-btn-dot" style="background:#9AA3AE"></span>
+            <span class="mg-label" id="mg-btn-label">Ungrouped</span>
+            <span class="mg-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="mg-menu" id="mg-menu" role="menu" aria-label="Map group"></div>
+        </span>
+      </div>
+    </div>
+    <div class="om-actions">
+      <input id="job-name-input" class="form-input" style="width:200px" placeholder="Job name (optional)" maxlength="120" />
+      <button class="btn btn-ghost" id="open-history-btn" onclick="omOpenHistory()" title="Version history for this job">History</button>
+      <button class="btn btn-primary" id="save-job-btn" onclick="saveAsJob()" disabled>Save as job</button>
     </div>
   </div>
 
-  <!-- Edit job banner (shown when ?edit= param present) -->
-  <div class="edit-banner" id="edit-banner" style="display:none">
-    <span><i class="ic ic-edit"></i> Editing saved job:</span>
-    <strong id="edit-job-name"></strong>
-    <button class="btn btn-ghost btn-sm" onclick="cancelEdit()" style="margin-left:auto"
-            title="Stop editing and go back to your maps">✕ Cancel edit</button>
-  </div>
-
-  <!-- Connection banner (read-only — connections are configured on the Dashboard → Connections page) -->
+  <!-- Connection line (read-only — connections are configured on the Dashboard → Connections page) -->
   <div class="conn-banner" id="conn-banner">
     <div class="conn-dot idle" id="src-dot"></div>
     <span class="conn-label" id="src-label">Source: not configured</span>
-    <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not configured</span>
-    <a href="/dashboard#connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none"><i class="ic ic-cog"></i> Manage connections</a>
+    <a href="/dashboard#goto=connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none">Manage connections</a>
   </div>
 
   <!-- Status -->
@@ -630,7 +678,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="panel">
         <div class="panel-head" onclick="toggleSrcPanel()" style="cursor:pointer;user-select:none" title="Click to collapse">
           <div style="display:flex;align-items:center;gap:0.5rem">
-            <div class="panel-title"><i class="ic ic-clipboard"></i> Source table</div>
+            <div class="panel-title">Source table</div>
             <span class="badge badge-teal" id="src-col-count" style="display:none"></span>
           </div>
           <span id="src-panel-toggle" style="color:var(--text3);font-size:14px;line-height:1;transition:transform 0.2s">▼</span>
@@ -670,15 +718,16 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
           <!-- Column list -->
           <div id="src-col-wrap" style="display:none">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem">
-              <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Columns — drag or click to map</span>
+            <div class="om-tname" id="src-table-name"></div>
+            <div class="om-trow">
               <!-- A view has no stored row count and counting one can scan a lot
                    of data, so it happens on request rather than on selection. -->
-              <span style="font-size:10.5px;color:var(--text3);display:flex;align-items:center;gap:5px">
+              <span style="display:flex;align-items:center;gap:6px">
                 <span id="src-rowcount">—</span>
                 <button class="size-btn" onclick="event.stopPropagation();countSourceRows()" title="Count rows now (runs SELECT COUNT(*))">Count</button>
+                <span title="Drag a column onto a target row, or click it to map">· drag or click to map</span>
               </span>
-              <div style="display:flex;gap:0.25rem">
+              <div style="display:flex;gap:4px">
                 <button class="size-btn active" id="sz-m" onclick="event.stopPropagation();setColHeight('m')">M</button>
                 <button class="size-btn" id="sz-l" onclick="event.stopPropagation();setColHeight('l')">L</button>
                 <button class="size-btn" id="sz-xl" onclick="event.stopPropagation();setColHeight('xl')"><i class="ic ic-fullscreen"></i> </button>
@@ -695,7 +744,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
       <!-- Options -->
       <div class="panel">
-        <div class="panel-head"><div class="panel-title"><i class="ic ic-cog"></i> Options</div></div>
+        <div class="panel-head"><div class="panel-title">Options</div></div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:0.875rem">
           <!-- Transaction mode (OTM only) -->
           <div id="tx-mode-wrap">
@@ -713,19 +762,19 @@ document.addEventListener('DOMContentLoaded', function(){
                over it, so nothing downstream had to change. -->
           <div>
             <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
-              WHERE conditions (optional)
-              <button onclick="openWhereModal()" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)"><i class="ic ic-robot"></i> AI help</button>
+              WHERE conditions
+              <button class="btn link" onclick="openWhereModal()" title="Describe the rows you want in plain English">AI help</button>
             </label>
             <div id="where-rows"></div>
-            <button class="btn btn-ghost btn-sm" onclick="addWhereCond()" style="width:100%;margin-top:0.3rem;justify-content:center">+ Add condition</button>
+            <button class="btn link" onclick="addWhereCond()" style="margin-top:4px">+ Add condition</button>
             <div id="where-note" style="display:none;font-size:10px;color:var(--text3);margin-top:0.35rem;line-height:1.45"></div>
             <input id="src-where" type="hidden">
           </div>
           <!-- GROUP BY — repeatable list of columns or expressions. -->
           <div>
-            <label class="form-label">GROUP BY (optional)</label>
+            <label class="form-label">GROUP BY</label>
             <div id="groupby-rows"></div>
-            <button class="btn btn-ghost btn-sm" onclick="addGroupBy()" style="width:100%;margin-top:0.3rem;justify-content:center">+ Add GROUP BY column</button>
+            <button class="btn link" onclick="addGroupBy()" style="margin-top:4px">+ Add GROUP BY column</button>
             <div id="groupby-note" style="display:none;font-size:10px;margin-top:0.35rem;line-height:1.45"></div>
             <!-- gb- prefix: #src-col-list is already the source COLUMN list div
                  in the picker above. Sharing the id made getElementById return
@@ -745,8 +794,8 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
           <!-- API key -->
           <div>
-            <label class="form-label">Anthropic API key (for AI features)</label>
-            <input id="api-key" type="password" class="form-input" style="font-family:var(--mono)" placeholder="sk-ant-…">
+            <label class="form-label">Anthropic API key — for AI features</label>
+            <input id="api-key" type="password" class="form-input" style="font-family:var(--mono);font-size:13px" placeholder="sk-ant-…">
           </div>
         </div>
       </div>
@@ -767,11 +816,11 @@ document.addEventListener('DOMContentLoaded', function(){
       <div id="mode-single-panel">
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title"><i class="ic ic-target"></i> Target table</div>
-            <div style="display:flex;gap:0.5rem;align-items:center">
+            <div class="panel-title">Target table<span class="om-tsel" id="tgt-table-name"></span></div>
+            <div style="display:flex;gap:8px;align-items:center">
               <span class="badge badge-green" id="map-stats" style="display:none"></span>
-              <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()"><i class="ic ic-robot"></i> Re-map</button>
-              <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none;color:var(--teal);border-color:rgba(23,130,124,0.3)">+ Joined col</button>
+              <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()" title="Ask the model to map the columns again">Re-map</button>
+              <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none">+ Joined col</button>
             </div>
           </div>
           <div class="panel-body">
@@ -805,8 +854,8 @@ document.addEventListener('DOMContentLoaded', function(){
             <div id="mapping-wrap" style="display:none">
               <!-- Filter + sort toolbar -->
               <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-                <input id="map-filter" class="form-input" style="flex:1;min-width:140px;max-width:260px;font-size:12px;padding:0.35rem 0.6rem" placeholder="Filter columns…" oninput="applyMapFilter()">
-                <select id="map-filter-match" class="form-input" style="width:120px;font-size:12px;padding:0.35rem 0.5rem" onchange="applyMapFilter()">
+                <input id="map-filter" class="form-input" style="flex:1;min-width:140px;max-width:260px;height:30px;padding:0 10px;font-size:13px" placeholder="Filter columns…" oninput="applyMapFilter()">
+                <select id="map-filter-match" class="form-input" style="width:140px;height:30px;padding:0 8px;font-size:13px" onchange="applyMapFilter()">
                   <option value="">All rows</option>
                   <option value="HIGH">HIGH match</option>
                   <option value="MEDIUM">MEDIUM match</option>
@@ -814,36 +863,36 @@ document.addEventListener('DOMContentLoaded', function(){
                   <option value="unmapped">Unmapped only</option>
                   <option value="fixed">Fixed value</option>
                 </select>
-                <button class="btn btn-ghost btn-sm" id="btn-toggle-unmapped" onclick="toggleUnmappedCols()" title="Show or hide rows with no source column and no fixed value"><i class="ic ic-eye"></i> Hide Unmapped</button>
-                <button class="btn btn-ghost btn-sm" onclick="clearMapFilter()" title="Clear filter">✕ Clear</button>
+                <button class="btn btn-ghost btn-sm" id="btn-toggle-unmapped" onclick="toggleUnmappedCols()" title="Show or hide rows with no source column and no fixed value">Hide Unmapped</button>
+                <button class="btn btn-ghost btn-sm" onclick="clearMapFilter()" title="Clear filter">Clear</button>
                 <!-- Evidence-based auto-mapping: profiles a sample of real
                      values on both sides (cardinality, format fingerprints,
                      value overlap where the target holds data) and proposes
                      mappings with the reasoning on each row. Read-only. -->
                 <button class="btn btn-ghost btn-sm" id="evidence-map-btn" onclick="runEvidenceMap()"
-                        style="color:var(--purple);border-color:rgba(107,78,142,0.35)"
                         title="Propose mappings from measured evidence — value overlap, format fingerprints, cardinality and type behaviour on a sample of real data — instead of name matching. Each proposal shows its reasoning; hover the score in the Match column.">
                   Evidence map
                 </button>
-                <span id="map-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+                <span id="map-filter-count" style="font-size:13px;color:var(--color-neutral-700)"></span>
               </div>
               <div style="overflow-x:auto">
                 <table class="map-table" id="mapping-table">
                   <thead><tr>
-                    <th onclick="sortMapping('src')" style="cursor:pointer;user-select:none">Source column <span id="sort-src" style="opacity:0.4">⇅</span></th>
-                    <th>Src type</th>
                     <th onclick="sortMapping('tgt')" style="cursor:pointer;user-select:none">Target column <span id="sort-tgt" style="opacity:0.4">⇅</span></th>
-                    <th>Tgt type</th>
+                    <th onclick="sortMapping('src')" style="cursor:pointer;user-select:none">Source column <span id="sort-src" style="opacity:0.4">⇅</span></th>
                     <th>Transform</th>
                     <th title="Type a fixed SQL value instead of source (e.g. N'Enterprise', 0, GETDATE(), NULL)">Fixed value</th>
-                    <th onclick="sortMapping('match')" style="cursor:pointer;user-select:none">Match <span id="sort-match" style="opacity:0.4">⇅</span></th>
+                    <th onclick="sortMapping('match')" style="cursor:pointer;user-select:none" class="om-conf">Confidence <span id="sort-match" style="opacity:0.4">⇅</span></th>
                     <th></th>
                   </tr></thead>
                   <tbody id="mapping-tbody"></tbody>
                 </table>
               </div>
-              <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
-                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()"><i class="ic ic-bolt"></i> Generate SQL</button>
+              <!-- Decision callouts: one per ambiguous transform, rendered by
+                   renderMappingTable, never left silent in a row -->
+              <div id="om-decisions"></div>
+              <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">Generate SQL</button>
                 <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map."><i class="ic ic-tools"></i> Auto-fix (Agentive)</button>
               </div>
             </div>
@@ -906,7 +955,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="panel">
           <div class="panel-head">
             <div style="display:flex;align-items:center;gap:0.5rem">
-              <div class="panel-title"><i class="ic ic-target"></i> Target tables</div>
+              <div class="panel-title">Target tables</div>
               <span class="badge badge-teal" id="tgt-count" style="display:none">0</span>
             </div>
             <button class="btn btn-primary btn-sm" onclick="addOTMTarget()">+ Add target table</button>
@@ -953,7 +1002,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <!-- ══ SQL PREVIEW (both modes) ══ -->
       <div class="panel" id="sql-panel" style="display:none">
         <div class="panel-head">
-          <div class="panel-title"><i class="ic ic-bolt"></i> Generated SQL</div>
+          <div class="panel-title">Generated SQL</div>
           <!-- Only what belongs to the SQL itself: trim the mapping, copy the
                text, go back up. Save to Drive, Download, History and Save as
                job used to sit here as well, and on a long mapping both rows
@@ -962,25 +1011,25 @@ document.addEventListener('DOMContentLoaded', function(){
                things. All four are in the toolbar at the top of the page now,
                where the map's own actions are, and Back to top gets there in
                one click instead of a long scroll. -->
-          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value"><i class="ic ic-scissors"></i> Remove unused</button>
-            <button class="btn btn-ghost btn-sm" id="undo-remove-btn" onclick="undoRemoveUnmappedCols()" style="display:none;color:var(--amber)">↩ Undo remove</button>
-            <button class="btn btn-ghost btn-sm" onclick="copySQL()"><i class="ic ic-clipboard"></i> Copy</button>
-            <button class="btn btn-ghost btn-sm" onclick="backToTop()" title="Back to the toolbar at the top of the page — Save as job, History, Save to Drive and Download are all up there"><i class="ic ic-takeoff"></i> Back to top</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value">Remove unused</button>
+            <button class="btn btn-ghost btn-sm" id="undo-remove-btn" onclick="undoRemoveUnmappedCols()" style="display:none">Undo remove</button>
+            <button class="btn btn-ghost btn-sm" onclick="copySQL()">Copy</button>
+            <button class="btn btn-ghost btn-sm" onclick="backToTop()" title="Back to the toolbar at the top of the page — Save as job, History, Save to Drive and Download are all up there">Back to top</button>
+            <!-- Migration | Schema | Verify -->
+            <div class="om-sqlseg" role="group" aria-label="Which SQL">
+              <button class="sql-tab active" id="tab-sql" onclick="showSQLTab('sql')">Migration</button>
+              <button class="sql-tab" id="tab-schema" onclick="showSQLTab('schema')" style="display:none">Schema</button>
+              <button class="sql-tab" id="tab-verify" onclick="showSQLTab('verify')" style="display:none">Verify</button>
+            </div>
           </div>
         </div>
         <div class="panel-body">
-          <!-- Tab bar -->
-          <div style="display:flex;border-bottom:0.5px solid var(--border);margin-bottom:1rem">
-            <button class="sql-tab active" id="tab-sql" onclick="showSQLTab('sql')">Migration SQL</button>
-            <button class="sql-tab" id="tab-schema" onclick="showSQLTab('schema')" style="display:none">Schema check</button>
-            <button class="sql-tab" id="tab-verify" onclick="showSQLTab('verify')" style="display:none">Verify</button>
-          </div>
           <div class="sql-box" id="sql-output"></div>
           <!-- Warnings -->
           <div id="sql-warnings" style="display:none;margin-top:0.75rem">
-            <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:0.4rem"><i class="ic ic-warning"></i> Warnings</div>
-            <div id="sql-warnings-list" style="font-size:12px;color:var(--text2);line-height:1.8"></div>
+            <div class="cx-h-sm" style="color:var(--state-warn);margin-bottom:6px">Warnings</div>
+            <div id="sql-warnings-list" style="font-size:14px;color:var(--color-neutral-800);line-height:1.7"></div>
           </div>
         </div>
       </div>
