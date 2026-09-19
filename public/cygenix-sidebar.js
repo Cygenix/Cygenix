@@ -605,14 +605,7 @@
       .cyg-fav-item.cyg-fav-dragging{opacity:.4}
       .cyg-fav-item.cyg-fav-drop-before{box-shadow:inset 0  2px 0 0 var(--color-accent,#5980a6)}
       .cyg-fav-item.cyg-fav-drop-after {box-shadow:inset 0 -2px 0 0 var(--color-accent,#5980a6)}
-      .cyg-fav-hint{position:relative;margin:2px 10px 6px;padding:8px 24px 8px 10px;
-        border:1px dashed var(--color-divider,rgba(29,31,32,.16));border-radius:0;
-        font-size:13px;line-height:1.45;color:var(--color-neutral-700,#5d5d60)}
-      .cyg-fav-hint-x{position:absolute;top:3px;right:4px;padding:2px 5px;border:0;border-radius:0;
-        background:transparent;color:var(--color-neutral-600,#7a7a7d);font-size:14px;line-height:1;cursor:pointer}
-      .cyg-fav-hint-x:hover{color:var(--color-text,#1d1f20)}
       .cyg-sidebar.collapsed .cyg-fav-star,
-      .cyg-sidebar.collapsed .cyg-fav-hint{display:none}
       .cyg-sidebar.collapsed .cyg-fav-section{margin-bottom:6px;padding-bottom:8px;border-bottom:1px solid var(--color-divider,rgba(29,31,32,.16))}
       @media (prefers-reduced-motion: reduce){ .cyg-fav-star{transition:none} }
 
@@ -1556,7 +1549,6 @@
 
   var MAX_PINS   = 8;
   var STORE_BASE = 'cygenix_sidebar_pinned_v1';
-  var HINT_KEY   = 'cygenix_sidebar_pinned_hint_v1';
 
   /* ---------- store (namespaced per signed-in user) ---------------------- */
 
@@ -1583,12 +1575,10 @@
   function togglePin(key) {
     var pins = getPins(), i = pins.indexOf(key);
     if (i > -1) { pins.splice(i, 1); }
-    else { if (pins.length >= MAX_PINS) pins.shift(); pins.push(key); dismissHint(); }
+    else { if (pins.length >= MAX_PINS) pins.shift(); pins.push(key); }
     savePins(pins);
   }
 
-  function hintDismissed() { try { return localStorage.getItem(HINT_KEY) === '1'; } catch (e) { return true; } }
-  function dismissHint()   { try { localStorage.setItem(HINT_KEY, '1'); } catch (e) {} }
 
   /* ---------- helpers ---------------------------------------------------- */
 
@@ -1668,7 +1658,12 @@
     var pins = getPins();
     var sec  = host.querySelector('.cyg-fav-section');
 
-    if (!pins.length && hintDismissed()) { if (sec) sec.remove(); return; }
+    // Nothing pinned: no section at all. The block used to open with a
+    // "hover and click the star" hint on every page for everyone who had
+    // never pinned anything, which is most people most of the time. The
+    // star still appears on hover, so pinning is still discoverable; the
+    // section appears the moment the first pin lands.
+    if (!pins.length) { if (sec) sec.remove(); return; }
 
     if (!sec) {
       sec = document.createElement('div');
@@ -1687,20 +1682,6 @@
       if (node) sec.appendChild(node);
     });
 
-    if (!pins.length) {
-      var hint = document.createElement('div');
-      hint.className = 'cyg-fav-hint';
-      var txt = document.createElement('span');
-      txt.textContent = 'Hover a menu item and click ☆ to pin it here.';
-      var x = document.createElement('button');
-      x.type = 'button';
-      x.className = 'cyg-fav-hint-x';
-      x.textContent = '×';
-      x.setAttribute('aria-label', 'Dismiss');
-      x.addEventListener('click', function () { dismissHint(); apply(); });
-      hint.appendChild(txt); hint.appendChild(x);
-      sec.appendChild(hint);
-    }
   }
 
   /* ---------- the star on every real row --------------------------------- */

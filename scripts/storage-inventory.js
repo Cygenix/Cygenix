@@ -91,7 +91,6 @@ const CLASSES = {
   'cygenix_app_prefs':                 ['C', 'Theme and app preferences', ''],
   'cygenix_sidebar_collapsed':         ['C', 'Sidebar collapsed state', ''],
   'cygenix_sidebar_pinned_v1':         ['C', 'Pinned sidebar favourites', ''],
-  'cygenix_sidebar_pinned_hint_v1':    ['C', 'First-run hint dismissal', ''],
   'cygenix_sidebar_closed_groups':     ['C', 'Collapsed nav groups', ''],
   'cygenix_jobs_panel_collapsed':      ['C', 'Jobs panel collapsed', ''],
   'cygenix_sql_panel_collapsed':       ['C', 'SQL panel collapsed', ''],
