@@ -12053,6 +12053,12 @@ function switchConnTab(tab){
   if (bl) bl.style.display = tab === 'blob'      ? 'block' : 'none';
   if (rs) rs.style.display = tab === 'restore'   ? 'block' : 'none';
   if (tab === 'restore') { try { rstInit(); } catch(e){ console.warn('[restore] init:', e); } }
+  // The Collation card mounts on the first visit to the Database connections
+  // tab and re-reads the profile on every later visit, so a connection or
+  // profile changed since is reflected without a reload.
+  if (tab === 'databases' && window.cygCollation) {
+    try { window.cygCollation.init('cyg-collation-mount'); } catch(e){ console.warn('[collation] init:', e); }
+  }
   // The Data Analyser mounts on the first visit to the import tab and not
   // before: it injects styles and builds its DOM, and a boot that never
   // opens this tab should not pay for either.
@@ -16054,7 +16060,15 @@ const BACKUP_KEYS = [
   // The Data Generator's saved selections, and the manifests that say which
   // rows each run inserted. Losing the second means losing the ability to
   // take those rows back out.
-  'cygenix_datagen_selection', 'cygenix_datagen_runs'
+  'cygenix_datagen_selection', 'cygenix_datagen_runs',
+  // Connection profiles. They were never in the backup, which mattered less
+  // when a profile was a name and two connection ids; collation settings now
+  // live on them, and a restore that brought the jobs back without the
+  // collation decisions would put the migration back to guessing.
+  'cygenix_profiles_v1',
+  // The Collation card's own per-user state: collapsed or open, and which
+  // severity filter was last used.
+  'cygenix_collation_ui_v1'
 ];
 
 function quickBackupNow() {

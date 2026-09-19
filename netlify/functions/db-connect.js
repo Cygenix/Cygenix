@@ -739,7 +739,17 @@ async function handleMssql(action, connectionString, database, body) {
         if (!sqlToRun) return err('sql is required', null, 400);
         if (/^\s*(DROP\s+DATABASE|TRUNCATE\s+TABLE|DELETE\s+FROM\s*\w+\s*$)/i.test(sqlToRun))
           return err('Destructive statement blocked. Use explicit WHERE clauses.', null, 400);
-        const r = await pool.request().query(sqlToRun);
+        // Optional bound parameters, matching the Azure handler, which has
+        // accepted `params` since the relay was written. Without this the two
+        // backends disagreed: a caller that kept schema and table names as
+        // parameters worked through Azure and silently lost them through
+        // Netlify, which left "build the name into the string" as the only
+        // portable option. A name is data; it travels as data.
+        const rq = pool.request();
+        for (const prm of (Array.isArray(body.params) ? body.params : [])) {
+          if (prm && typeof prm.name === 'string') rq.input(prm.name, prm.value);
+        }
+        const r = await rq.query(sqlToRun);
         // Unbounded SELECTs used to be buffered whole and then die at
         // Netlify's 6MB response cap with a generic 502. Cap the rows and
         // say the result was truncated so the editor can tell the user.

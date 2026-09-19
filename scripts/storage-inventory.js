@@ -92,6 +92,7 @@ const CLASSES = {
   'cygenix_sidebar_collapsed':         ['C', 'Sidebar collapsed state', ''],
   'cygenix_sidebar_pinned_v1':         ['C', 'Pinned sidebar favourites', ''],
   'cygenix_diag_selection_v1':         ['C', 'Diagnostics tab: ticked tests, side toggle, report format and last run time, per user', ''],
+  'cygenix_collation_ui_v1':           ['C', 'Collation card: collapsed state and severity filter, per user', 'synced (SYNC_KEYS), local-wins — the collation SETTINGS are not here, they live on the connection profile inside cygenix_profiles_v1'],
   'cygenix_sidebar_closed_groups':     ['C', 'Collapsed nav groups', ''],
   'cygenix_jobs_panel_collapsed':      ['C', 'Jobs panel collapsed', ''],
   'cygenix_sql_panel_collapsed':       ['C', 'SQL panel collapsed', ''],

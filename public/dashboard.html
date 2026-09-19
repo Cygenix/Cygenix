@@ -1372,7 +1372,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-stream-destinations.js?v=ecc5fb8edf" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
-<script src="/cygenix-cosmos-sync.js?v=4b4a09f18f" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=f10cd57fe4" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
 <script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
@@ -1456,11 +1456,16 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=a736f5c51a" defer></script>
-  <script src="/dashboard-app.js?v=b92db057dc" defer></script>
+  <script src="/dashboard-app.js?v=e31c259d5e" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
   <script src="/cygenix-diagnostics.js?v=efd6c148d1" defer></script>
+  <!-- Collation matching. After cygenix-profiles.js (it reads and writes the
+       profile store) and after dashboard-app.js (it calls impGetConn,
+       impDbCall and sconnGetAll). Deferred scripts run in document order,
+       so both are defined by the time this one does anything. -->
+  <script src="/cygenix-collation.js?v=cc92f68152" defer></script>
 
 
   <!-- MAIN -->
@@ -2859,6 +2864,14 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div class="cx-h-sm" id="conn-guardrail-title">Both sides are classified PROD</div>
           <p id="conn-guardrail-text"></p>
         </div>
+
+        <!-- COLLATION — rendered whole by cygenix-collation.js on the first
+             visit to this tab (switchConnTab('databases') calls its init).
+             The card itself carries id="cyg-collation-card" so Object
+             Mapping and the job-run block can deep-link to it. Everything
+             else about the feature, including its styles, lives in that
+             module. -->
+        <div id="cyg-collation-mount"></div>
       </div>
 
       <!-- Tab: Restore database — capability-driven per the restore module

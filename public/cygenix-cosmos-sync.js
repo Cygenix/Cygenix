@@ -64,6 +64,12 @@ const CygenixSync = (() => {
     // that laptop, and not at all once its storage was cleared.
     'cygenix_datagen_selection',
     'cygenix_datagen_runs',
+    // The Collation card's per-user view state — collapsed or open, and the
+    // severity filter. An OBJECT, so mergeField short-circuits to local-wins,
+    // which is right for a preference one person sets on one machine. The
+    // collation SETTINGS are not here: they live on the connection profile,
+    // inside cygenix_profiles_v1, and take that key's merge.
+    'cygenix_collation_ui_v1',
   ];
 
   const FIELD_MAP = {
@@ -89,6 +95,7 @@ const CygenixSync = (() => {
     map_groups: 'cygenix_map_groups',
     datagen_selection: 'cygenix_datagen_selection',
     datagen_runs: 'cygenix_datagen_runs',
+    collation_ui: 'cygenix_collation_ui_v1',
   };
   const PROFILES_FIELD = 'connection_profiles';
   const PROFILES_KEY = 'cygenix_profiles_v1';
