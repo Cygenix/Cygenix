@@ -2720,6 +2720,7 @@ function renderMappingTable(){
   const srcColOpts = srcColEntries.map(c =>
     `<option value="${esc(c.name)}">${c.fromJoin?'⊞ ':''}${esc(c.name)}</option>`
   ).join('');
+  omRenderCollationSummary();
   const decisions = [];
   tbody.innerHTML = columnMapping.map((m,i)=>{
     const srcDef = (srcTable?.columns||[]).find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
@@ -2814,6 +2815,7 @@ function renderMappingTable(){
               title="Lineage & impact — the path back to source, and what a change here would affect">${esc(m.tgtCol)}</span><span class="om-type">${esc(tgtType)}</span>${willTruncate?`<span class="om-type" style="color:var(--state-warn)" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})">LEFT(${truncLen})</span>`:''}
         ${notNullMsgHtml}
         ${identityBadgeHtml}
+        ${omCollationBadge(m)}
       </td>
       <td>
         <select class="map-select" ${disAttr} style="${overridesSrc?'color:var(--color-neutral-600);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
@@ -4464,6 +4466,7 @@ function showSQLOutput(sql, warnings=[], scroll=false){
   $('sql-output').textContent=sql;
   currentSQLTab='sql';
   $('tab-sql').classList.add('active');
+  omLintSQL(sql);
   if(warnings.length){
     $('sql-warnings').style.display='block';
     $('sql-warnings-list').innerHTML=warnings.map(w=>`• ${w}`).join('<br>');
@@ -4476,7 +4479,75 @@ function showSQLOutput(sql, warnings=[], scroll=false){
 function showSQLTab(tab){
   currentSQLTab=tab;
   ['sql','schema','verify'].forEach(t=>{ $('tab-'+t)?.classList.toggle('active',t===tab); });
-  $('sql-output').textContent = tab==='sql'?generatedSQL.insert:tab==='schema'?generatedSQL.schema:generatedSQL.verify;
+  const shown = tab==='sql'?generatedSQL.insert:tab==='schema'?generatedSQL.schema:generatedSQL.verify;
+  $('sql-output').textContent = shown;
+  // The banner follows the tab: each of the three scripts is different SQL
+  // and a clash in one is not a clash in another.
+  omLintSQL(shown);
+}
+
+// ── Collation (Stage B) ──────────────────────────────────────────────────────
+// Reporting only. Nothing here changes a character of the generated SQL; the
+// settings that decide what to DO about a clash are on the Collation card,
+// and acting on them is Stage C.
+//
+// Every one of these is a no-op when cygenix-collation.js has not loaded, or
+// when no profile carries collation settings yet. Object Mapping is the
+// screen people live in, and a linter that can break it is worse than no
+// linter — so each entry point is wrapped and each failure is silent.
+
+// The {schema, table, column} descriptors for one mapped row.
+function omCollationRefs(m){
+  if (!m || !m.srcCol || !m.tgtCol) return null;
+  const split = (full, fallback) => {
+    const s = String(full || '').replace(/[\[\]"`]/g, '').trim();
+    if (!s) return null;
+    const parts = s.split('.');
+    return parts.length >= 2
+      ? { schema: parts[parts.length - 2], table: parts[parts.length - 1] }
+      : { schema: fallback || 'dbo', table: parts[0] };
+  };
+  const s = split(srcTable && (srcTable.fullName || srcTable.name));
+  const t = split(tgtTable && (tgtTable.fullName || tgtTable.name));
+  if (!s || !t) return null;
+  return { src: { schema: s.schema, table: s.table, column: m.srcCol },
+           tgt: { schema: t.schema, table: t.table, column: m.tgtCol } };
+}
+
+function omCollationBadge(m){
+  try {
+    if (!window.cygCollation || !window.cygCollation.badgeFor) return '';
+    const refs = omCollationRefs(m);
+    if (!refs) return '';
+    const b = window.cygCollation.badgeFor(refs.src, refs.tgt);
+    return b ? b.html : '';
+  } catch (e) { return ''; }
+}
+
+// The one-line summary above the table, with a link into the Collation card.
+function omRenderCollationSummary(){
+  const host = document.getElementById('om-collation-summary');
+  if (!host) return;
+  try {
+    if (!window.cygCollation || !window.cygCollation.summaryLine) { host.style.display='none'; return; }
+    const pairs = (columnMapping||[]).map(omCollationRefs).filter(Boolean);
+    const s = window.cygCollation.summaryLine(pairs);
+    if (!s) { host.innerHTML=''; host.style.display='none'; return; }
+    const tone = s.state === 'fail' ? 'cx-attn-fail' : s.state === 'warn' ? 'cx-attn-warn' : 'cx-attn-ok';
+    host.innerHTML = '<div class="cx-attn ' + tone + '" style="margin:0 0 12px">'
+      + '<div class="cx-h-sm">Collation</div>'
+      + '<p style="margin-bottom:0">' + esc(s.text)
+      + ' <a href="' + s.link + '">Open the Collation card</a>.</p></div>';
+    host.style.display = '';
+  } catch (e) { host.style.display='none'; }
+}
+
+// The clash list under the SQL tabs, for whichever script is on screen.
+function omLintSQL(sql){
+  try {
+    if (!window.cygCollation || !window.cygCollation.renderBanner) return;
+    window.cygCollation.renderBanner('om-collation-banner', sql);
+  } catch (e) { /* the SQL panel still shows its SQL */ }
 }
 
 function copySQL(){

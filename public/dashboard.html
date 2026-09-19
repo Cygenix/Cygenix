@@ -1434,7 +1434,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
   <script src="/cygenix-datastream.js?v=cf1b2702f0" defer></script>
   <script src="/cygenix-datastream-ui.js?v=a0e01de431" defer></script>
-  <script src="/cygenix-preflight.js?v=b84fe6bfb2" defer></script>
+  <script src="/cygenix-preflight.js?v=95a838842e" defer></script>
   <script src="/cygenix-profiles.js?v=cf4e02a1a3" defer></script>
   <script src="/cygenix-profile-apply.js?v=fbedee4630" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
@@ -1456,7 +1456,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=a736f5c51a" defer></script>
-  <script src="/dashboard-app.js?v=e31c259d5e" defer></script>
+  <script src="/dashboard-app.js?v=4c2898ce41" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
@@ -1465,7 +1465,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        profile store) and after dashboard-app.js (it calls impGetConn,
        impDbCall and sconnGetAll). Deferred scripts run in document order,
        so both are defined by the time this one does anything. -->
-  <script src="/cygenix-collation.js?v=cc92f68152" defer></script>
+  <script src="/cygenix-collation-rules.js?v=806430dd57" defer></script>
+  <script src="/cygenix-collation.js?v=3071689281" defer></script>
 
 
   <!-- MAIN -->
@@ -1748,6 +1749,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <strong>Heads up:</strong> validation does a real INSERT (then rolls back). On the target it will: consume identity values up to the sample size, briefly hold table locks, write to the transaction log, and fire any INSERT triggers. Don't run during production hours on production targets.
         </div>
 
+        <!-- Collation clashes in the SQL Validate is about to wrap and run.
+             Validate is the module that rewrites a job's two-part names into
+             a cross-database query, so it is where a collation conflict
+             surfaces first. Filled by _validateLintCollation(). -->
+        <div id="validate-collation-banner" style="display:none;margin-bottom:1rem"></div>
+
         <div class="form-row" style="margin-bottom:0.75rem">
           <label class="form-label">Sample size (rows from source)</label>
           <select id="validate-sample-size" class="form-input" style="width:140px">
@@ -1855,6 +1862,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div id="pkg-warn" class="alert alert-amber" style="margin-bottom:1rem">
           <strong>This may be slow.</strong> Each job runs SELECT * against the source table and inlines every row into the .sql file. For tables with millions of rows the file can be hundreds of MB. Pulls happen sequentially with no row cap.
         </div>
+
+        <!-- Collation clashes in the package about to be written. An export
+             package joins a source-typed staging table to target columns, so
+             it carries the same risk as a live run. Filled by
+             _pkgLintCollation(). -->
+        <div id="pkg-collation-banner" style="display:none;margin-bottom:1rem"></div>
 
         <div id="pkg-progress-wrap" style="display:none;max-height:42vh;overflow-y:auto;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);padding:0.5rem">
           <div id="pkg-progress-list" style="font-family:var(--mono);font-size:12px;line-height:1.65"></div>

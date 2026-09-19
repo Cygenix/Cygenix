@@ -933,6 +933,12 @@ async function runSQL() {
   const sql = sel || editor.value.trim();
   if (!sql) { alert('Write some SQL first.'); return; }
 
+  // Collation lint, before the query goes anywhere. Reporting only: the
+  // user's SQL is never rewritten, and a clash does not stop the run —
+  // SQL Server will raise its own error if it means to, and a linter that
+  // refused to run a query on a guess would be worse than the error.
+  sqlEdLintCollation(sql);
+
   // Guard against writing to the SOURCE database by accident. The Run
   // connection defaults to "Source DB", and a loaded migration script is
   // usually a write against the TARGET — so an INSERT/UPDATE/DELETE can land
@@ -1046,6 +1052,24 @@ function renderDMLResult(affected, ms, sql) {
       <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Completed in ${ms}ms</div>
     </div>`;
   if (footer) footer.textContent = '';
+}
+
+// ── Collation lint (Stage B) ────────────────────────────────────────────────
+// The SQL editor is the one place the product runs text a person wrote
+// rather than text it generated, so this is the only clash point where the
+// warning has to arrive without anybody asking for it. It reports; it never
+// edits. The offer to apply a fix is Stage C, and it will ask first.
+//
+// Silent when cygenix-collation.js is absent or no profile carries collation
+// settings: an editor that threw while linting would be an editor that would
+// not run queries.
+function sqlEdLintCollation(sql) {
+  const host = document.getElementById('sqled-collation-banner');
+  if (!host) return [];
+  try {
+    if (!window.cygCollation || !window.cygCollation.renderBanner) { host.style.display = 'none'; return []; }
+    return window.cygCollation.renderBanner(host, sql);
+  } catch (e) { host.style.display = 'none'; return []; }
 }
 
 function renderResults(rows, ms, sql) {

@@ -530,7 +530,13 @@
             if (pm) { probeConn = srcConn; probeTable = parentStep.srcTable; probeCol = pm.srcCol; probeWhere = parentStep.srcWhere || ''; }
           }
           try {
-            const probeR = await dbCall(probeConn, { action: 'execute', sql: pfFkProbeSql(vals, probeTable, probeCol, probeWhere) });
+            /* The probe is the one statement preflight builds that puts
+               source values and a target column in the same expression, so
+               it is the one worth keeping for the collation lint to read.
+               The LAST one built is enough: they all share a shape. */
+            const probeSql = pfFkProbeSql(vals, probeTable, probeCol, probeWhere);
+            jr.probeSql = probeSql;
+            const probeR = await dbCall(probeConn, { action: 'execute', sql: probeSql });
             const hits = Number((probeR.recordset && probeR.recordset[0] && probeR.recordset[0].hits) || 0);
             const orphans = Math.max(0, Math.min(vals.length, 200) - hits);
             if (orphans > 0) {

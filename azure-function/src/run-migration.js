@@ -49,6 +49,11 @@ const sql = require('mssql');
 const { sendNotification } = require('./notify');
 const { dispatchConnectors } = require('./connectors');
 const { resolveSqlConfig, isEntraConn, connectWithRetry } = require('./sql-entra');
+/* The collation rules. The same bytes as public/cygenix-collation-rules.js,
+   so a clash the Collation card reports on a screen is the clash this runner
+   reports in a run log. Stage B reports only; the gate that can refuse a run
+   is Stage C. */
+const collationRules = require('./collation-rules');
 
 // ── Cosmos client (lazy singleton, matches index.js pattern) ──────────────
 let _cosmos = null;
@@ -393,6 +398,63 @@ async function execSqlStep(step, ensureSrcPool, ensureTgtPool, log) {
   const rows = Array.isArray(r.rowsAffected) ? r.rowsAffected.reduce((a, b) => a + (b || 0), 0) : (r.rowsAffected || 0);
   log.push('Done. rowsAffected=' + rows.toLocaleString());
   return { status: 'success', rowsAffected: rows, connOn, log };
+}
+
+/* ── Collation settings, read where the server can see them ────────────────
+   The browser keeps them on the connection profile inside localStorage and
+   syncs that whole store to the `projects` document as `connection_profiles`.
+   A scheduled run has no browser, so it reads the same document — which is
+   the point of storing the settings on the profile rather than in a screen's
+   own state. Returns null when the user has never set any, and null means
+   "say nothing", never "assume the defaults are fine".                      */
+const _collationCache = new Map();          // userId → { at, model }
+const COLLATION_CACHE_MS = 60000;
+
+async function loadCollationSettings(userId) {
+  if (!userId) return null;
+  const hit = _collationCache.get(userId);
+  if (hit && (Date.now() - hit.at) < COLLATION_CACHE_MS) return hit.model;
+  let model = null;
+  try {
+    const { resource } = await getCosmosContainer('projects').item(userId, userId).read();
+    const store = resource && resource.connection_profiles;
+    const profiles = (store && Array.isArray(store.profiles)) ? store.profiles : [];
+    const activeId = store && store.settings && store.settings.activeProfileId;
+    const p = (activeId && profiles.filter((x) => x && x.id === activeId)[0])
+      || profiles.filter((x) => x && x.status === 'active' && x.collation)[0]
+      || profiles.filter((x) => x && x.collation)[0]
+      || null;
+    if (p && p.collation) model = collationRules.normalise(p.collation);
+  } catch (e) {
+    // A missing document is a user who has never saved settings, not a fault.
+    if (!e || e.code !== 404) model = null;
+  }
+  _collationCache.set(userId, { at: Date.now(), model: model });
+  return model;
+}
+
+/* Report the collation clashes in one statement into the run log. Reporting
+   only: the statement runs either way and SQL Server raises its own error if
+   it means to. A statement too large to be worth scanning is skipped — a
+   batch INSERT of inlined literals has no column references to clash. */
+const COLLATION_LINT_MAX_CHARS = 200000;
+function lintCollation(sqlText, model, log, label) {
+  if (!model || !sqlText || typeof sqlText !== 'string') return [];
+  if (sqlText.length > COLLATION_LINT_MAX_CHARS) return [];
+  try {
+    const clashes = collationRules.findClashes(sqlText, { model: model, columns: (model.lastScan && model.lastScan.columns) || [] });
+    if (!clashes.length) return [];
+    log.push('Collation: ' + collationRules.summariseClashes(clashes) + (label ? ' (' + label + ')' : ''));
+    clashes.slice(0, 5).forEach((c) => {
+      log.push('  line ' + c.line + ': ' + c.expression + ' — ' + (c.leftCollation || '?')
+        + ' against ' + (c.rightCollation || '?') + '. Fix: ' + c.fix);
+    });
+    if (clashes.length > 5) log.push('  and ' + (clashes.length - 5) + ' more.');
+    return clashes;
+  } catch (e) {
+    // A linter that can fail a migration is not a safety feature.
+    return [];
+  }
 }
 
 async function execMigrationStep(step, ensureSrcPool, ensureTgtPool, log) {
@@ -1123,6 +1185,14 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   // Stamp the resolved target onto the run before anything executes, so even
   // a first-step failure records where it was pointed.
   await recordEndpoints();
+
+  /* The collation settings for whoever owns this schedule, read from Cosmos
+     once for the whole run. A scheduled run has no browser to ask, which is
+     exactly why Stage A put the settings on the connection profile. */
+  let collationModel = null;
+  try { collationModel = await loadCollationSettings(userId); }
+  catch (e) { ctx.log('[collation] settings unavailable:', e.message); }
+
   try {
     for (let i = 0; i < stepsToRun.length; i++) {
       const step = stepsToRun[i];
@@ -1134,6 +1204,9 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
         const isSqlStep =
           step.jobType === 'sql' || step.jobType === 'sql-script' || step.type === 'sql' ||
           (!step.srcTable && (step.sql || step.insertSQL));
+        // Collation lint on whatever this step will run, into the step log.
+        // Reporting only — the step proceeds either way.
+        lintCollation(step.insertSQL || step.sql, collationModel, stepLog, stepLabel);
         const r = isSqlStep
           ? await execSqlStep(step, ensureSrc, ensureTgt, stepLog)
           : await execMigrationStep(step, ensureSrc, ensureTgt, stepLog);

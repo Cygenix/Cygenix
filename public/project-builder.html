@@ -501,6 +501,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <button type="button" class="btn btn-ghost btn-sm" id="copy-last-sql-btn" onclick="copyLastExecutedSQL()" title="Copy the last SQL statement that was sent to the database" disabled><i class="ic ic-clipboard"></i> Copy last SQL</button>
           <span id="copy-hint" style="font-size:11px;color:var(--text3);align-self:center"></span>
         </div>
+        <!-- Collation clashes in the SQL this run is about to send. A
+             sibling of #exec-log, which is emptied at the start of every
+             run. Filled by pbLintCollation() in project-builder-app.js. -->
+        <div id="pb-collation-banner" style="display:none;margin-bottom:0.5rem"></div>
         <div class="exec-log" id="exec-log"></div>
       </div>
 
@@ -644,7 +648,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 </div>
 
 <script src="/cygenix-resume.js?v=f002a6878e" defer></script>
-<script src="/cygenix-preflight.js?v=b84fe6bfb2" defer></script>
+<script src="/cygenix-preflight.js?v=95a838842e" defer></script>
 <script src="/cygenix-transform.js?v=d82bf34dcc" defer></script>
 <script src="/cygenix-batches.js?v=cb5942e034" defer></script>
 <!-- Read-only here: the Batches screen shows which tables are ALSO carried by
@@ -652,7 +656,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <script src="/cygenix-datastream.js?v=cf1b2702f0" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
 <script src="/cygenix-analyser-handoff.js?v=0bea095948" defer></script>
-<script src="/project-builder-app.js?v=cec6971e8e" defer></script>
+<!-- Collation. The rules load first; see the note in object_mapping.html. -->
+<script src="/cygenix-collation-rules.js?v=806430dd57" defer></script>
+<script src="/cygenix-collation.js?v=3071689281" defer></script>
+<script src="/project-builder-app.js?v=2ad4af6b15" defer></script>
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>

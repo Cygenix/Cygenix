@@ -66,11 +66,19 @@
    ============================================================================ */
 (function (root, factory) {
   'use strict';
-  var api = factory(root);
+  /* The rules ship twice — here and in azure-function/src/collation-rules.js
+     — so the Task Agent decides the same way this screen does. Loading them
+     as a separate script rather than inlining them is what makes that
+     possible: the Function App is zipped from azure-function/ alone. */
+  var Rules = (typeof module === 'object' && module.exports)
+    ? require('./cygenix-collation-rules.js')
+    : root.CygenixCollationRules;
+  if (!Rules) throw new Error('cygenix-collation.js needs cygenix-collation-rules.js, which must load first.');
+  var api = factory(root, Rules);
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.cygCollation = api;
   root.CygenixCollation = api;          // the house naming, kept as an alias
-})(typeof window !== 'undefined' ? window : globalThis, function (root) {
+})(typeof window !== 'undefined' ? window : globalThis, function (root, Rules) {
   'use strict';
 
   /* ── Constants a reader will want to find ────────────────────────────── */
@@ -127,90 +135,20 @@
        SQL_Latin1_General_CP1_CI_AS       the legacy SQL_ family
      BIN and BIN2 are case- AND accent-sensitive by definition and carry no
      _CS_/_AS_ tokens, which is why they are tested first. */
-  var FLAG_TOKENS = { CS: 1, CI: 1, AS: 1, AI: 1, KS: 1, WS: 1, SC: 1, VSS: 1, BIN: 1, BIN2: 1, UTF8: 1 };
-
-  function parseCollation(name) {
-    var n = String(name || '').trim();
-    if (!n) return { name: '', known: false, cs: null, accent: null, bin: false, utf8: false,
-                     legacy: false, lineage: '', language: '', version: '' };
-    var upper = n.toUpperCase();
-    var bin = /_BIN2?(_|$)/.test(upper);
-    var legacy = /^SQL_/.test(upper);
-    /* Token by token rather than one global replace: a global replace that
-       rewrites `_CI_` to `_` moves past the `_AS` that followed it, so
-       Latin1_General_CI_AS came out as LATIN1_GENERAL_AS and two collations
-       that share a language looked like different languages. */
-    var parts = upper.split('_').filter(Boolean);
-    var language = [], version = '';
-    parts.forEach(function (tok, i) {
-      if (i === 0 && tok === 'SQL') return;                 // lineage, held separately
-      if (FLAG_TOKENS[tok]) return;                         // a sensitivity flag
-      if (/^\d+$/.test(tok)) { version = tok; return; }     // the collation version
-      language.push(tok);
-    });
-    return {
-      name: n,
-      known: true,
-      bin: bin,
-      // A binary collation compares byte for byte: case and accent both matter.
-      cs: bin ? true : (/_CS(_|$)/.test(upper) ? true : (/_CI(_|$)/.test(upper) ? false : null)),
-      accent: bin ? true : (/_AS(_|$)/.test(upper) ? true : (/_AI(_|$)/.test(upper) ? false : null)),
-      utf8: /_UTF8(_|$)/.test(upper),
-      legacy: legacy,
-      lineage: legacy ? 'SQL' : 'WINDOWS',
-      language: language.join('_'),
-      version: version,
-      family: (legacy ? 'SQL_' : '') + language.join('_') + (version ? '_' + version : ''),
-    };
-  }
-
-  /* How two collations differ. The words are the vocabulary the severity
-     rules are written in, so the difference between a cosmetic mismatch and
-     a dangerous one is one list membership test rather than a second parse.
-
-     `accent` and `version` are the soft pair: same language, same lineage,
-     same case rule, same encoding, and the values still compare equal for
-     everything but ordering and diacritics. Everything else — a different
-     language, a Windows collation against a legacy SQL_ one, a case rule
-     that flips, a UTF-8 target — changes what the data means. */
-  var SOFT_DIFFS = { accent: 1, version: 1 };
-  function collationDiff(a, b) {
-    var pa = parseCollation(a), pb = parseCollation(b);
-    var out = [];
-    if (!pa.known || !pb.known) return out;
-    if (pa.name === pb.name) return out;
-    if (pa.cs !== pb.cs) out.push('case');
-    if (pa.utf8 !== pb.utf8) out.push('encoding');
-    if (pa.language !== pb.language) out.push('language');
-    if (pa.lineage !== pb.lineage) out.push('lineage');
-    if (pa.bin !== pb.bin) out.push('binary');
-    if (pa.version !== pb.version) out.push('version');
-    if (pa.accent !== pb.accent) out.push('accent');
-    if (!out.length) out.push('version');   // names differ for a reason we did not name
-    return out;
-  }
-  function isSoftDiff(diff) {
-    return diff.length > 0 && diff.every(function (d) { return !!SOFT_DIFFS[d]; });
-  }
-
-  /* Non-Unicode types only. An nvarchar column stores UTF-16 whatever the
-     collation says, so a code page difference cannot lose a character in
-     one; a varchar column stores exactly the code page its collation
-     names, and anything outside it becomes '?' on the way in. */
-  function isNonUnicodeText(dataType) {
-    return /^(char|varchar|text)$/i.test(String(dataType || '').trim());
-  }
-  function isTextType(dataType) {
-    return /^(n?char|n?varchar|n?text|sysname)$/i.test(String(dataType || '').trim());
-  }
-
-  /* The collation this feature will use, before any per-column override. */
-  function resolvedCollation(model) {
-    if (!model) return '';
-    if (model.strategy === 'explicit') return String(model.explicitCollation || '').trim();
-    if (model.strategy === 'source') return (model.source && model.source.dbCollation) || '';
-    return (model.target && model.target.dbCollation) || '';
-  }
+  /* The collation-name parser, the difference vocabulary and the saved
+     shape all live in cygenix-collation-rules.js, which ships twice so the
+     Function App runs the same bytes. They are re-exported below, so every
+     caller that had them from this module still does. */
+  var parseCollation = Rules.parseCollation;
+  var collationDiff = Rules.collationDiff;
+  var isSoftDiff = Rules.isSoftDiff;
+  var isNonUnicodeText = Rules.isNonUnicodeText;
+  var isTextType = Rules.isTextType;
+  var resolvedCollation = Rules.resolvedCollation;
+  var ISSUE = Rules.ISSUE;
+  var defaults = Rules.defaults;
+  var normalise = Rules.normalise;
+  var sideDefaults = function () { return Rules.defaults().source; };
 
   /* server|database, and nothing else. This is what tells the card that the
      connection has been repointed since the collations were read. It must
@@ -264,63 +202,6 @@
   function keyOf(o) { return (o.schema + '.' + o.name).toLowerCase(); }
   function colKey(schema, table, column) { return schema + '.' + table + '.' + column; }
 
-  /* ── The saved shape ─────────────────────────────────────────────────── */
-  function sideDefaults() {
-    return { server: '', database: '', serverCollation: '', dbCollation: '', tempdbCollation: '',
-             codePage: null, cs: null, as: null, utf8: false, productVersion: '', detectedAt: null };
-  }
-  function defaults() {
-    return {
-      version: VERSION,
-      source: sideDefaults(),
-      target: sideDefaults(),
-      fingerprint: { source: '', target: '' },
-      strategy: 'target',
-      explicitCollation: null,
-      resolvedCollation: '',
-      tempTables: 'resolved',
-      generatedSqlMode: 'apply',
-      userSqlMode: 'offer_fix',
-      caseRule: 'warn',
-      codePageRule: 'warn',
-      columnOverrides: {},
-      acknowledged: [],
-      lastScan: null,
-    };
-  }
-  /* A stored object from an older build, or a hand-edited one, is filled in
-     rather than thrown on — this runs on page load. */
-  function normalise(saved) {
-    var d = defaults();
-    if (!saved || typeof saved !== 'object') return d;
-    var pickSide = function (s) {
-      var out = sideDefaults();
-      if (s && typeof s === 'object') Object.keys(out).forEach(function (k) { if (s[k] !== undefined) out[k] = s[k]; });
-      return out;
-    };
-    var one = function (v, allowed, fallback) { return allowed.indexOf(v) >= 0 ? v : fallback; };
-    return {
-      version: VERSION,
-      source: pickSide(saved.source),
-      target: pickSide(saved.target),
-      fingerprint: {
-        source: String((saved.fingerprint && saved.fingerprint.source) || ''),
-        target: String((saved.fingerprint && saved.fingerprint.target) || ''),
-      },
-      strategy: one(saved.strategy, ['target', 'source', 'explicit'], 'target'),
-      explicitCollation: saved.explicitCollation || null,
-      resolvedCollation: String(saved.resolvedCollation || ''),
-      tempTables: one(saved.tempTables, ['resolved', 'database_default'], 'resolved'),
-      generatedSqlMode: one(saved.generatedSqlMode, ['apply', 'warn'], 'apply'),
-      userSqlMode: one(saved.userSqlMode, ['offer_fix', 'warn'], 'offer_fix'),
-      caseRule: one(saved.caseRule, ['warn', 'block'], 'warn'),
-      codePageRule: one(saved.codePageRule, ['warn', 'block'], 'warn'),
-      columnOverrides: (saved.columnOverrides && typeof saved.columnOverrides === 'object' && !Array.isArray(saved.columnOverrides)) ? saved.columnOverrides : {},
-      acknowledged: Array.isArray(saved.acknowledged) ? saved.acknowledged.slice() : [],
-      lastScan: saved.lastScan || null,
-    };
-  }
-
   /* ── The grading. A pure function, because every severity rule in the
         brief is a claim that has to be testable without a database. ──────
      `pairs` is one entry per mapped column pair:
@@ -328,14 +209,6 @@
                             tgt:{ …same… } }
      Findings come back most serious first, each with a stable id so an
      acknowledgement survives a re-scan.                                   */
-  var ISSUE = {
-    CODEPAGE: 'codepage',
-    CASE_UNIQUE: 'case_unique',
-    MISMATCH: 'mismatch',
-    TEMPDB: 'tempdb',
-    UTF8: 'utf8',
-    ACCENT: 'accent',
-  };
   var SEV_RANK = { high: 0, medium: 1, low: 2 };
 
   function buildFindings(input) {
@@ -543,8 +416,29 @@
   }
 
   /* ── Profile access. Read-modify-write, never a wholesale upsert. ────── */
+  /* The profile store. cygenix-profiles.js is the canonical reader, but it is
+     loaded on the Connections page and on almost none of the pages Stage B
+     wires — Object Mapping, the SQL editor, Project Builder, Balancing and
+     Assurance all lack it. Depending on it alone made settings() return null
+     on every one of them, so the whole feature reported nothing, silently,
+     on the screens it exists for. That is the exact failure this module's
+     header says it will not have.
+
+     So: use the module when it is there, and otherwise read the one key it
+     would have read. cpLoad() does the same JSON.parse behind the same
+     try/catch; nothing is interpreted differently, and no page has to grow a
+     script tag to be told about a collation clash. */
+  var STORE_KEY = 'cygenix_profiles_v1';
   function store() {
-    try { return root.CygenixProfiles && root.CygenixProfiles.cpLoad ? root.CygenixProfiles.cpLoad() : null; } catch (e) { return null; }
+    try {
+      if (root.CygenixProfiles && root.CygenixProfiles.cpLoad) return root.CygenixProfiles.cpLoad();
+    } catch (e) { /* fall through to the raw read */ }
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object') ? parsed : null;
+    } catch (e) { return null; }
   }
   function activeProfile(st) {
     st = st || store();
@@ -753,9 +647,24 @@
       state.model.resolvedCollation = resolvedCollation(state.model);
       state.findings = buildFindings({ model: state.model, pairs: graded, resolved: state.model.resolvedCollation });
       var summary = summarise(state.findings);
+      /* The columns as well as the findings. Stage B's linter resolves a
+         column reference in a piece of SQL to a collation, and without this
+         it would have to assume every column carries its database's
+         collation — true most of the time, and wrong exactly where somebody
+         has already had collation trouble and pinned one column. */
+      var scannedColumns = [];
+      [['src', srcCols], ['tgt', tgtCols]].forEach(function (pair) {
+        Object.keys(pair[1]).forEach(function (k) {
+          var c = pair[1][k];
+          scannedColumns.push({ side: pair[0], schema: c.schema, table: c.table, column: c.column,
+            collation: c.collation, dataType: c.dataType, codePage: c.codePage,
+            inUniqueKey: c.inUniqueKey, maxLength: c.maxLength });
+        });
+      });
       state.model.lastScan = {
         at: new Date().toISOString(),
         summary: { high: summary.high, medium: summary.medium, low: summary.low },
+        columns: scannedColumns,
         findings: state.findings.map(function (f) {
           return { id: f.id, severity: f.severity, object: f.object, issueCode: f.issueCode,
                    sourceCollation: f.sourceCollation, targetCollation: f.targetCollation,
@@ -1195,6 +1104,247 @@
     });
   }
 
+  /* ════════════════════════════════════════════════════════════════════════
+     THE PUBLIC API — what the rest of the product asks (Stage B)
+     ────────────────────────────────────────────────────────────────────────
+     Four questions, and the four answers. The rules behind them live in
+     cygenix-collation-rules.js and run identically in the Function App;
+     these are the thin wrappers that know where the settings are kept in a
+     browser. Everything here is read-only: Stage B reports, it does not
+     change a single character of anybody's SQL.
+     ════════════════════════════════════════════════════════════════════════ */
+
+  /* The saved settings for a profile, or null. No profile id means the
+     active one, which is what every caller on a page actually wants. */
+  function settings(profileId) {
+    var st = store();
+    if (!st || !st.profiles) return null;
+    var p = profileId
+      ? st.profiles.filter(function (x) { return x.id === profileId; })[0]
+      : activeProfile(st);
+    if (!p || !p.collation) return null;
+    return normalise(p.collation);
+  }
+  function modelOr(model) { return model || settings() || null; }
+
+  /* The collation to write for one column: override, then strategy. */
+  function resolve(side, schema, table, column) {
+    var m = settings();
+    if (!m) return '';
+    return Rules.resolveWith(m, side, schema, table, column);
+  }
+
+  /* May a job run? Blocking is opt-in per rule, so this answers yes with
+     warnings unless the operator asked for a block. */
+  function gate(profileId) {
+    var m = settings(profileId);
+    if (!m) return { ok: true, reasons: [], warnings: [], checked: false, resolvedCollation: '' };
+    return Rules.gateWith(m);
+  }
+
+  /* Which table belongs to which side. Read from the jobs bound to the
+     profile, because that is the only place the product records "this table
+     is the source and that one is the target". */
+  function tablesFromJobs(model) {
+    var out = [], seen = {};
+    var add = function (o, side) {
+      if (!o) return;
+      var k = (o.schema + '.' + o.name + '|' + side).toLowerCase();
+      if (seen[k]) return;
+      seen[k] = 1; out.push({ side: side, schema: o.schema, name: o.name });
+    };
+    try {
+      var jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]') || [];
+      var st = store();
+      var pid = state.profileId || (st && st.settings && st.settings.activeProfileId);
+      jobs.forEach(function (j) {
+        if (!j || j.deleted || j.isDeleted) return;
+        if (pid && root.CygenixJobProfile && root.CygenixJobProfile.of) {
+          var of = null;
+          try { of = root.CygenixJobProfile.of(j, st); } catch (e) { of = null; }
+          if (of && of.id !== pid) return;
+        }
+        add(splitObject(j.sourceTable || j.source, 'dbo'), 'src');
+        add(splitObject(j.target || j.targetTable, 'dbo'), 'tgt');
+      });
+    } catch (e) { /* no jobs on this page is not a fault */ }
+    if (model) {
+      /* The databases themselves, so a three-part name resolves even when no
+         job mentions the table. */
+      if (model.source && model.source.database) out.database = model.source.database;
+    }
+    return out;
+  }
+
+  /* The context findClashes needs: the settings, the columns the last scan
+     read, and which table is which side. Per-column collations come from the
+     scan when there was one; without it every text column is assumed to
+     carry its database's collation, which is true far more often than not
+     and is the assumption a person makes reading the same query. */
+  function contextFor(opts) {
+    opts = opts || {};
+    var model = modelOr(opts.model);
+    if (!model) return null;
+    var columns = opts.columns
+      || (model.lastScan && Array.isArray(model.lastScan.columns) ? model.lastScan.columns : []);
+    var tables = opts.tables || tablesFromJobs(model);
+    return { model: model, columns: columns, tables: tables };
+  }
+
+  /* findClashes(sql, context) — context is optional; without one it is built
+     from the active profile. Returns [] rather than throwing on anything,
+     because it is called from inside other modules' render paths and a
+     linter that can break the screen it lints is worse than no linter. */
+  function findClashes(sql, context) {
+    try {
+      var ctx = context && context.model ? context : contextFor(context);
+      if (!ctx) return [];
+      return Rules.findClashes(sql, ctx);
+    } catch (e) { return []; }
+  }
+
+  /* One call for a module that wants to lint and draw. */
+  function lint(sql, opts) {
+    var ctx = contextFor(opts);
+    var clashes = ctx ? findClashes(sql, ctx) : [];
+    return { clashes: clashes, summary: Rules.summariseClashes(clashes),
+             model: ctx ? ctx.model : null, configured: !!ctx };
+  }
+
+  /* ── Drawing, shared by every module that reports a clash ────────────── */
+  var LINK = '/dashboard#goto=connections/databases';
+  var WIRE_CSS = [
+    '.cyg-coll-banner{ margin:0 0 12px; }',
+    '.cyg-coll-banner .cyg-coll-list{ margin:6px 0 0; padding:0; list-style:none; }',
+    '.cyg-coll-banner .cyg-coll-list li{ font-size:13px;line-height:1.5;color:var(--color-neutral-800,var(--text2,#444));margin-bottom:3px; }',
+    '.cyg-coll-banner .cyg-coll-ln{ font-family:var(--mono,monospace);font-size:12px;color:var(--color-neutral-600,var(--text3,#777));margin-right:6px; }',
+    '.cyg-coll-banner .cyg-coll-sql{ font-family:var(--mono,monospace);font-size:12px;word-break:break-word; }',
+    '.cyg-coll-banner .cyg-coll-fix{ color:var(--color-neutral-700,var(--text2,#555)); }',
+    '.cyg-coll-banner a{ color:var(--color-accent-700,var(--accent,#4a5bd6)); }',
+    '.cyg-coll-badge{ display:inline-flex;align-items:center;gap:4px;font-family:var(--font-heading,inherit);font-weight:600;font-size:10px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;padding:1px 5px;border:1px solid var(--color-divider,var(--border,#ddd));cursor:help; }',
+    '.cyg-coll-badge::before{ content:"";width:6px;height:6px;flex:none;background:var(--color-neutral-400,#999); }',
+    '.cyg-coll-badge.ok{ color:var(--state-ok,var(--green,#3f6b52)); } .cyg-coll-badge.ok::before{ background:var(--state-ok,var(--green,#3f6b52)); }',
+    '.cyg-coll-badge.warn{ color:var(--state-warn,var(--amber,#9a6b1f)); } .cyg-coll-badge.warn::before{ background:var(--state-warn,var(--amber,#9a6b1f)); }',
+    '.cyg-coll-badge.fail{ color:var(--state-fail,var(--red,#9c3f38)); } .cyg-coll-badge.fail::before{ background:var(--state-fail,var(--red,#9c3f38)); }',
+  ].join('\n');
+  function injectWireStyles() {
+    if (typeof document === 'undefined' || document.getElementById('cyg-coll-wire-css')) return;
+    var s = document.createElement('style');
+    s.id = 'cyg-coll-wire-css';
+    s.textContent = WIRE_CSS;
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  var MAX_BANNER_ROWS = 8;
+  function bannerHtml(clashes, opts) {
+    opts = opts || {};
+    if (!clashes || !clashes.length) return '';
+    var high = clashes.filter(function (c) { return c.severity === 'high'; }).length;
+    var tone = high ? 'cx-attn-fail' : 'cx-attn-warn';
+    var title = high
+      ? high + ' collation clash' + (high === 1 ? '' : 'es') + ' would fail when this runs'
+      : clashes.length + ' collation difference' + (clashes.length === 1 ? '' : 's') + ' in this SQL';
+    var h = '<div class="cx-attn ' + tone + ' cyg-coll-banner">';
+    h += '<div class="cx-h-sm">' + esc(title) + '</div>';
+    h += '<ul class="cyg-coll-list">';
+    clashes.slice(0, MAX_BANNER_ROWS).forEach(function (c) {
+      h += '<li><span class="cyg-coll-ln">line ' + c.line + '</span>'
+        + '<span class="cyg-coll-sql">' + esc(c.expression) + '</span> — '
+        + esc(c.leftCollation || '?') + ' against ' + esc(c.rightCollation || '?')
+        + '. <span class="cyg-coll-fix">Fix: ' + esc(c.fix) + '</span></li>';
+    });
+    h += '</ul>';
+    if (clashes.length > MAX_BANNER_ROWS) {
+      h += '<div class="cyg-coll-fix" style="font-size:13px;margin-top:4px">and ' + (clashes.length - MAX_BANNER_ROWS) + ' more.</div>';
+    }
+    h += '<div class="cyg-coll-fix" style="font-size:13px;margin-top:6px">'
+      + 'Nothing has been changed. ' + (opts.link === false ? '' : '<a href="' + LINK + '">Open the Collation card</a> to set what should happen.')
+      + '</div></div>';
+    return h;
+  }
+
+  /* Fill an element with the banner, or hide it when there is nothing to
+     say. Returns the clashes so a caller can log or count them. */
+  function renderBanner(el, sql, opts) {
+    var node = typeof el === 'string' ? (typeof document !== 'undefined' ? document.getElementById(el) : null) : el;
+    if (!node) return [];
+    injectWireStyles();
+    var res = lint(sql, opts);
+    if (!res.clashes.length) { node.innerHTML = ''; node.style.display = 'none'; return []; }
+    node.innerHTML = bannerHtml(res.clashes, opts);
+    node.style.display = '';
+    return res.clashes;
+  }
+
+  /* The per-pair badge for Object Mapping. Green when the two columns agree,
+     amber when the difference is only accent or collation version, red when
+     it is the kind that errors or loses data. */
+  function badgeFor(srcRef, tgtRef, opts) {
+    var m = modelOr(opts && opts.model);
+    if (!m) return null;
+    var ctx = contextFor(opts);
+    var byKey = {};
+    (ctx && ctx.columns || []).forEach(function (c) {
+      byKey[(c.side + '|' + c.schema + '.' + c.table + '.' + c.column).toLowerCase()] = c;
+    });
+    var look = function (side, r) {
+      if (!r || !r.column) return null;
+      return byKey[(side + '|' + r.schema + '.' + r.table + '.' + r.column).toLowerCase()] || null;
+    };
+    var s = look('src', srcRef), t = look('tgt', tgtRef);
+    var sc = s ? s.collation : (m.source && m.source.dbCollation) || '';
+    var tc = t ? t.collation : (m.target && m.target.dbCollation) || '';
+    /* A pair we have never read, on a side we have never detected, gets no
+       badge at all rather than a green one. */
+    if (!sc || !tc) return null;
+    if (s && s.dataType && !isTextType(s.dataType)) return null;
+    if (t && t.dataType && !isTextType(t.dataType)) return null;
+
+    var diff = collationDiff(sc, tc);
+    var state = !diff.length ? 'ok' : (isSoftDiff(diff) ? 'warn' : 'fail');
+    var word = state === 'ok' ? 'Collation' : state === 'warn' ? 'Collation' : 'Collation';
+    /* A High finding recorded against this target column outranks the name
+       comparison: a code page difference can exist between two collations
+       that differ only softly by name. */
+    var key = tgtRef ? (tgtRef.schema + '.' + tgtRef.table + '.' + tgtRef.column).toLowerCase() : '';
+    var ack = {};
+    (m.acknowledged || []).forEach(function (k) { ack[k] = true; });
+    ((m.lastScan && m.lastScan.findings) || []).forEach(function (f) {
+      if (!f || f.severity !== 'high' || ack[f.id]) return;
+      if (String(f.object || '').toLowerCase() === key) state = 'fail';
+    });
+
+    var resolved = resolvedCollation(m);
+    var title = state === 'ok'
+      ? 'Both sides are ' + sc + '.'
+      : 'Source ' + sc + ' against target ' + tc + ' (' + diff.join(', ') + '). '
+        + (resolved ? 'Fix: COLLATE ' + resolved + '.' : 'Detect the collations to get a fix.');
+    return { state: state, word: word, title: title, sourceCollation: sc, targetCollation: tc,
+             diff: diff, resolved: resolved,
+             html: '<span class="cyg-coll-badge ' + state + '" title="' + esc(title) + '">' + esc(word) + '</span>' };
+  }
+
+  /* The one-line summary Object Mapping puts at the top of its screen. */
+  function summaryLine(pairs, opts) {
+    var m = modelOr(opts && opts.model);
+    if (!m) return null;
+    var counts = { ok: 0, warn: 0, fail: 0 };
+    (pairs || []).forEach(function (p) {
+      var b = badgeFor(p.src, p.tgt, opts);
+      if (b) counts[b.state]++;
+    });
+    var total = counts.ok + counts.warn + counts.fail;
+    if (!total) return null;
+    var state = counts.fail ? 'fail' : counts.warn ? 'warn' : 'ok';
+    var text = state === 'ok'
+      ? 'All ' + total + ' mapped text column' + (total === 1 ? '' : 's') + ' share a collation.'
+      : (counts.fail ? counts.fail + ' mapped column' + (counts.fail === 1 ? '' : 's') + ' will not compare cleanly' : '')
+        + (counts.fail && counts.warn ? ', and ' : '')
+        + (counts.warn ? counts.warn + ' differ' + (counts.warn === 1 ? 's' : '') + ' only in accent or version' : '')
+        + '. Resolved collation: ' + (resolvedCollation(m) || 'not set') + '.';
+    return { state: state, counts: counts, total: total, text: text, link: LINK };
+  }
+
   /* Called by switchConnTab('databases'). Idempotent: the first call builds
      the card, later ones re-read the profile so a connection saved since is
      reflected. */
@@ -1234,6 +1384,12 @@
   }
 
   return {
+    // The Stage B API: the four questions the rest of the product asks.
+    settings: settings, resolve: resolve, findClashes: findClashes, gate: gate,
+    // and the helpers that let a module report a clash in three lines.
+    lint: lint, bannerHtml: bannerHtml, renderBanner: renderBanner,
+    badgeFor: badgeFor, summaryLine: summaryLine, contextFor: contextFor,
+    summariseClashes: Rules.summariseClashes, LINK: LINK,
     // lifecycle
     init: init, open: openCard, refresh: refresh, render: render,
     detect: detect, scan: scan, save: save, exportExcel: exportExcel,

@@ -194,9 +194,15 @@ check('and reports it in the run log',
 check('the tally resets per step, so one step is not blamed for another',
   /resetValueChanges\(\);/.test(runner));
 
+// Matched on the SCRIPT TAG rather than the bare filename: the page also
+// mentions project-builder-app.js in a comment above the markup, and a bare
+// indexOf found that comment instead of the tag and read the order backwards.
+const tagAt = (file) => page.indexOf('<script src="/' + file + '"') >= 0
+  ? page.indexOf('<script src="/' + file + '"')
+  : page.indexOf('<script src="/' + file + '?');
 check('the page loads the shared module before the code that uses it',
-  page.indexOf('cygenix-transform.js') > -1
-  && page.indexOf('cygenix-transform.js') < page.indexOf('project-builder-app.js'));
+  tagAt('cygenix-transform.js') > -1
+  && tagAt('cygenix-transform.js') < tagAt('project-builder-app.js'));
 check('and before preflight, which also calls it',
   page.indexOf('cygenix-transform.js') > page.indexOf('cygenix-preflight.js')
   || page.indexOf('cygenix-transform.js') < page.indexOf('project-builder-app.js'));

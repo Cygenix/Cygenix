@@ -208,9 +208,16 @@ const app  = read('public', 'project-builder-app.js');
 check('the page has a Load batch button', /id="batch-load-btn"[\s\S]{0,120}openBatchPicker\(\)/.test(page));
 check('and a Save as batch button', /openSaveBatchPrompt\(\)/.test(page));
 check('the picker modal exists', page.includes('id="batch-modal"') && page.includes('id="batch-list"'));
+// Matched on the SCRIPT TAG rather than the bare filename: the page also
+// mentions project-builder-app.js in a comment above the markup, and a
+// bare indexOf found that comment instead of the tag and read the order
+// backwards.
+const tagAt = (file) => page.indexOf('<script src="/' + file + '"') >= 0
+  ? page.indexOf('<script src="/' + file + '"')
+  : page.indexOf('<script src="/' + file + '?');
 check('the engine loads before the page script that calls it',
-  page.indexOf('cygenix-batches.js') > -1
-  && page.indexOf('cygenix-batches.js') < page.indexOf('project-builder-app.js'));
+  tagAt('cygenix-batches.js') > -1
+  && tagAt('cygenix-batches.js') < tagAt('project-builder-app.js'));
 
 check('loading builds steps with the same builder as adding a job by hand',
   /function stepFromJob\(job\)/.test(app)

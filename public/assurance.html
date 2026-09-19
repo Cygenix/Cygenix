@@ -1799,6 +1799,10 @@ function renderBreaches(){
         + fmtInt(failed) + ' failing. <a href="#" onclick="asExportRows(\'' + b.id + '\');return false" style="color:var(--color-accent-700)">Export sampled rows to CSV</a></div>'
       : '') + '</details>'
     + '<details id="as-bd-sql"><summary style="display:none"></summary>'
+    // Collation lint, directly above the SQL the reader asked to see. A rule
+    // that joins a source table to a target table is the same clash the
+    // migration would hit, found by the check rather than by the load.
+    + (sql ? asCollationBanner(sql) : '')
     + (sql ? '<div class="dry" style="margin:0 0 12px">' + esc(sql) + '</div>' : '') + '</details>'
     + '<div class="diag"><div class="diag-h">Diagnosis <span class="chip info">from the engine\'s own signals</span></div>'
     + '<div class="diag-b">' + esc(prose || 'No signal stands out.')
@@ -1821,6 +1825,19 @@ function renderBreaches(){
 }
 /* the rows and the SQL are folded until asked for; the fold is a <details>
    so it survives a re-render only as long as the breach stays selected */
+// Collation lint (Stage B). Returns the banner markup for a rule's generated
+// SQL, or '' when there is nothing to say — the breach drawer is rebuilt by
+// innerHTML on every render, so the banner is part of that string rather
+// than something injected afterwards. Reporting only.
+function asCollationBanner(sql){
+  try {
+    if (!window.cygCollation || !window.cygCollation.lint) return '';
+    const res = window.cygCollation.lint(sql);
+    if (!res.clashes.length) return '';
+    return '<div style="margin:0 0 12px">' + window.cygCollation.bannerHtml(res.clashes) + '</div>';
+  } catch (e) { return ''; }
+}
+
 function asBdToggle(id){
   const d = $(id);
   if (d) d.open = !d.open;
@@ -2315,6 +2332,9 @@ document.addEventListener('DOMContentLoaded', () => {
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
+<!-- Collation. The rules load first; see the note in object_mapping.html. -->
+<script src="/cygenix-collation-rules.js?v=806430dd57" defer></script>
+<script src="/cygenix-collation.js?v=3071689281" defer></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=7810d9c217"></script>

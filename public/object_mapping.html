@@ -557,7 +557,7 @@ body.cyg-collapsed{padding-left:54px}
 <!-- Map groups: the rules about the group list. Pure, no DOM, no network;
      loaded before the app so the app can rely on it. -->
 <script src="/cygenix-map-groups.js?v=08330317a2" defer></script>
-<script src="/object-mapping-app.js?v=f6b62874a7" defer></script>
+<script src="/object-mapping-app.js?v=0ad8998387" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=f10cd57fe4" defer></script>
@@ -665,6 +665,11 @@ document.addEventListener('DOMContentLoaded', function(){
     <span class="conn-label" id="tgt-label">Target: not configured</span>
     <a href="/dashboard#goto=connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none">Manage connections</a>
   </div>
+
+  <!-- Collation summary. One line about the mapped text columns, with a link
+       into the Collation card on Connections. Static, so the mapping table
+       re-rendering on every keystroke cannot wipe it. -->
+  <div id="om-collation-summary" style="display:none"></div>
 
   <!-- Status -->
   <div class="status-bar" id="status-bar"></div>
@@ -1025,6 +1030,12 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
         </div>
         <div class="panel-body">
+          <!-- Collation clashes in the SQL just generated. A sibling of
+               #sql-output rather than a child, because showSQLOutput and
+               showSQLTab only set that element's textContent — a banner
+               inside it would be wiped on every regeneration and every tab
+               switch. Filled by omRenderCollation() in object-mapping-app.js. -->
+          <div id="om-collation-banner" style="display:none"></div>
           <div class="sql-box" id="sql-output"></div>
           <!-- Warnings -->
           <div id="sql-warnings" style="display:none;margin-top:0.75rem">
@@ -1197,6 +1208,11 @@ document.addEventListener('DOMContentLoaded', function(){
 <script src="/cookie-consent.js?v=d15e88322f" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
+<!-- Collation. The rules load first — the card module refuses to define
+     itself without them, because a half-loaded linter that silently reports
+     nothing is worse than one that is plainly absent. -->
+<script src="/cygenix-collation-rules.js?v=806430dd57" defer></script>
+<script src="/cygenix-collation.js?v=3071689281" defer></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>

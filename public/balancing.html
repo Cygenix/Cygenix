@@ -2614,7 +2614,23 @@ function cbRenderSqlSection(r, idx){
     +   '</label>'
     +   (!useRaw && !buildErr ? '<button class="cb-add-btn" onclick="cbCopyToRaw(' + idx + ')"><i class="ic ic-clipboard"></i> Copy to raw editor</button>' : '')
     + '</div>'
+    // Collation lint above the SQL. A custom balancing report joins tables a
+    // person picked, and the whole point of the report is that the two sides
+    // agree — a collation difference changes which rows match.
+    + balCollationBanner(buildErr ? '' : built)
     + display;
+}
+
+// Collation lint (Stage B). Returns banner markup, or '' when there is
+// nothing to say. Part of the rendered string because every card list on this
+// page is rebuilt by innerHTML. Reporting only; nothing is rewritten.
+function balCollationBanner(sql){
+  try {
+    if (!sql || !window.cygCollation || !window.cygCollation.lint) return '';
+    const res = window.cygCollation.lint(sql);
+    if (!res.clashes.length) return '';
+    return '<div style="margin:0 0 0.5rem">' + window.cygCollation.bannerHtml(res.clashes) + '</div>';
+  } catch (e) { return ''; }
 }
 
 function cbToggleRaw(idx, checked){
@@ -3199,6 +3215,9 @@ function cbAiApplySql(idx, mid){
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
+<!-- Collation. The rules load first; see the note in object_mapping.html. -->
+<script src="/cygenix-collation-rules.js?v=806430dd57" defer></script>
+<script src="/cygenix-collation.js?v=3071689281" defer></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=7810d9c217"></script>

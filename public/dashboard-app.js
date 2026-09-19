@@ -2445,6 +2445,9 @@ function _validateRewriteForCrossDb(sql, sourceTableFull, srcDb){
 async function startValidate(){
   if (_validate.running) return;
   if (!_validate.queue.length) return;
+  // A fresh run starts with a clean banner; clashes accumulate across the
+  // jobs in this run, not across every run since the page loaded.
+  _cygLintReset('validate-collation-banner');
 
   // Need both connections: target to RUN against, source to PROBE for db
   // name (and as fallback for cross-server data movement).
@@ -2549,6 +2552,11 @@ async function startValidate(){
       } catch(saveErr) { console.warn('Could not save rewritten SQL:', saveErr.message); }
     }
     const wrapped = buildValidationSQL(rewritten, sampleSize);
+    // Collation lint, on the SQL that is actually about to run. Validate is
+    // where a job's two-part names become a cross-database query, so this is
+    // the first place a collation conflict can bite. Reporting only — the
+    // run proceeds and SQL Server raises its own error if it means to.
+    _cygLintCollation('validate-collation-banner', wrapped, { append: true });
 
     try {
       _validate.abortController = new AbortController();
@@ -3812,6 +3820,7 @@ function _pkgUpdateRow(jobId, status, message){
 async function startExportPackage(){
   if (_pkg.running) return;
   if (!_pkg.queue.length) return;
+  _cygLintReset('pkg-collation-banner');
 
   const srcConn = (typeof impGetConn === 'function') ? impGetConn('src') : '';
   if (!srcConn){
@@ -3854,6 +3863,10 @@ async function startExportPackage(){
     try {
       _pkg.abortController = new AbortController();
       const sql = await _pkgBuildJobPackage(job, mode, srcConn, srcDb, { minimal });
+      // A package joins a staging table built from SOURCE column types to
+      // TARGET columns, inside the target database — the same collision as a
+      // live run, shipped as a file somebody may run weeks later.
+      _cygLintCollation('pkg-collation-banner', sql, { append: true });
       const safe = (job.name||job.id).replace(/[^a-z0-9]/gi, '_');
       const fname = safe + '_package.sql';
       fileMap.set(fname, sql);
@@ -12036,6 +12049,41 @@ async function rstBringOnline(){
   } catch (e) {
     status.innerHTML = '<span style="color:var(--red)">✕ ' + escHtml(e.message) + '</span>';
   }
+}
+
+// ── Collation lint (Stage B) ────────────────────────────────────────────────
+// One helper for every module on this page that produces SQL a user will run:
+// Validate and Export package today. It reports and changes nothing.
+//
+// `append` accumulates across a multi-job run rather than replacing, because
+// Validate and Export both loop over the selected jobs and the clash in the
+// third one matters as much as the clash in the first.
+//
+// Silent when cygenix-collation.js is absent or no profile carries collation
+// settings. A linter that can break a migration run is not a safety feature.
+const _cygLintSeen = {};
+function _cygLintCollation(hostId, sql, opts){
+  const host = document.getElementById(hostId);
+  if (!host) return [];
+  try {
+    if (!window.cygCollation || !window.cygCollation.lint) { host.style.display = 'none'; return []; }
+    const res = window.cygCollation.lint(sql);
+    const append = !!(opts && opts.append);
+    const bag = append ? (_cygLintSeen[hostId] = _cygLintSeen[hostId] || []) : (_cygLintSeen[hostId] = []);
+    res.clashes.forEach(c => {
+      const k = c.kind + '|' + c.expression + '|' + c.leftCollation + '|' + c.rightCollation;
+      if (!bag.some(x => x._k === k)) { c._k = k; bag.push(c); }
+    });
+    if (!bag.length) { host.innerHTML = ''; host.style.display = 'none'; return []; }
+    host.innerHTML = window.cygCollation.bannerHtml(bag);
+    host.style.display = '';
+    return bag;
+  } catch (e) { host.style.display = 'none'; return []; }
+}
+function _cygLintReset(hostId){
+  _cygLintSeen[hostId] = [];
+  const host = document.getElementById(hostId);
+  if (host) { host.innerHTML = ''; host.style.display = 'none'; }
 }
 
 function switchConnTab(tab){

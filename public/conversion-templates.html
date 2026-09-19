@@ -410,6 +410,11 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
         <th>Order</th><th>Module</th><th>Staging table</th><th>Cols</th><th>Status</th><th>Result</th>
       </tr></thead><tbody></tbody></table></div>
       <label class="form-label" for="ct-stage-sql" style="margin-top:0.8rem">The SQL that will run</label>
+      <!-- Collation clashes in the staging DDL. A staging table mirrors the
+           TARGET column types into a separate database, so a text column
+           declared with no COLLATE inherits that database's collation rather
+           than the one the migration resolved. Filled by renderStage(). -->
+      <div id="ct-collation-banner" style="display:none;margin:0 0 0.5rem"></div>
       <textarea id="ct-stage-sql" class="form-input mono" readonly rows="10" style="width:100%;resize:vertical;white-space:pre" spellcheck="false"></textarea>
       <div style="display:flex;gap:0.4rem;margin-top:0.4rem;flex-wrap:wrap">
         <button class="btn btn-sm" onclick="ctStageCopy()"><i class="ic ic-clipboard"></i> Copy SQL</button>
@@ -1685,10 +1690,19 @@ function renderStage(){
     : '<tr><td colspan="6" class="empty">Nothing to create. Tick Include beside the modules this version covers, or none of them has tables yet.</td></tr>';
 
   const ST = window.CygenixTemplateStaging;
-  $('ct-stage-sql').value = ST ? ST.planScript(plan, {
+  const stageSql = ST ? ST.planScript(plan, {
     templateName: CT.tpl.name, version: CT.tpl.version, by: userName(),
     connectionLabel: stageSideLabel(stageSide()), now: new Date(),
   }) : '';
+  $('ct-stage-sql').value = stageSql;
+  // Collation lint on the staging DDL, reporting only. A staging table that
+  // declares its text columns with no COLLATE takes the staging database's,
+  // which is not necessarily the one the migration resolved.
+  try {
+    if (window.cygCollation && window.cygCollation.renderBanner) {
+      window.cygCollation.renderBanner('ct-collation-banner', stageSql);
+    }
+  } catch (e) { /* the plan still shows its SQL */ }
   const go = $('ct-stage-go');
   go.disabled = !!CT.staging || !plan.toCreate;
   go.textContent = CT.staging ? 'Creating…' : (plan.toCreate ? 'Create ' + plan.toCreate + ' table' + (plan.toCreate === 1 ? '' : 's') : 'Nothing to create');
@@ -1850,6 +1864,9 @@ window.addEventListener('storage', (e) => { if (e && e.key === ES_STORE && CT.tp
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
+<!-- Collation. The rules load first; see the note in object_mapping.html. -->
+<script src="/cygenix-collation-rules.js?v=806430dd57" defer></script>
+<script src="/cygenix-collation.js?v=3071689281" defer></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=7810d9c217"></script>

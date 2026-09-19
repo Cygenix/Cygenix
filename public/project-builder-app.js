@@ -2918,6 +2918,53 @@ function captureExecutedSQL(sql, context) {
   window._lastExecutedSQLContext = context || '';
   const btn = document.getElementById('copy-last-sql-btn');
   if (btn) btn.disabled = false;
+  pbLintCollation(sql, context);
+}
+
+// ── Collation lint (Stage B) ────────────────────────────────────────────────
+// Every statement this page dispatches passes through captureExecutedSQL, so
+// one hook covers the migration batches, the one-to-many cursor scripts, the
+// ad-hoc SQL steps and the aggregate queries alike. Reporting only: the run
+// is never held up and no SQL is rewritten.
+//
+// Two guards make it safe to sit on that path. A batch INSERT can be
+// megabytes of inlined literals, so anything past PB_LINT_MAX_CHARS is
+// skipped — a row-value list has no column references to clash anyway. And a
+// paginated run sends the same statement shape hundreds of times, so each
+// shape is linted once.
+const PB_LINT_MAX_CHARS = 200000;
+let _pbLintSeen = {};
+let _pbLintFound = [];
+
+function pbLintReset() {
+  _pbLintSeen = {};
+  _pbLintFound = [];
+  const host = document.getElementById('pb-collation-banner');
+  if (host) { host.innerHTML = ''; host.style.display = 'none'; }
+}
+
+function pbLintCollation(sql, context) {
+  const host = document.getElementById('pb-collation-banner');
+  if (!host) return;
+  try {
+    if (!window.cygCollation || !window.cygCollation.lint) return;
+    if (sql.length > PB_LINT_MAX_CHARS) return;
+    // A cheap shape key: the head of the statement and its rough length.
+    const key = sql.slice(0, 300) + '|' + Math.floor(sql.length / 1000);
+    if (_pbLintSeen[key]) return;
+    _pbLintSeen[key] = 1;
+    const res = window.cygCollation.lint(sql);
+    if (!res.clashes.length) return;
+    res.clashes.forEach(c => {
+      const k = c.kind + '|' + c.expression + '|' + c.leftCollation + '|' + c.rightCollation;
+      if (_pbLintFound.some(x => x._k === k)) return;
+      c._k = k;
+      c.where = context || '';
+      _pbLintFound.push(c);
+    });
+    host.innerHTML = window.cygCollation.bannerHtml(_pbLintFound);
+    host.style.display = '';
+  } catch (e) { /* the run continues; a linter never stops a migration */ }
 }
 
 // Format a SQL statement as a compact, bordered block for inclusion in the
@@ -3380,7 +3427,26 @@ function renderPreflightReport(report) {
   }).join('');
 
   box.style.display = '';
+  // Preflight builds an EXISTS probe that compares source key literals
+  // against a target column, so its own SQL carries the clash it is meant to
+  // find. Linted here, above the report it produced.
+  let pfCollation = '';
+  try {
+    if (window.cygCollation && window.cygCollation.lint) {
+      const probes = (report.jobs || []).map(j => j && j.probeSql).filter(Boolean);
+      const found = [];
+      probes.forEach(p => {
+        window.cygCollation.lint(p).clashes.forEach(c => {
+          const k = c.kind + '|' + c.expression;
+          if (!found.some(x => x._k === k)) { c._k = k; found.push(c); }
+        });
+      });
+      if (found.length) pfCollation = '<div style="margin:0 0 10px">' + window.cygCollation.bannerHtml(found) + '</div>';
+    }
+  } catch (e) { /* the report still renders */ }
+
   box.innerHTML = '<div class="pf-panel">'
+    + pfCollation
     + '<div class="pf-banner ' + report.verdict + '"><span>' + icon + '</span><span>' + title
     + ' <span class="sub">— ' + subtitle + '</span></span>'
     + '<span style="margin-left:auto;font-weight:400;font-size:11.5px;font-family:var(--mono)">'
@@ -3468,6 +3534,8 @@ async function runProject() {
   document.getElementById('run-btn').textContent = 'Running…';
   document.getElementById('stop-btn').style.display = 'inline-flex';
   abortRequested = false;
+
+  pbLintReset();
 
   const log = (msg, type) => {
     const ts = new Date().toLocaleTimeString();
