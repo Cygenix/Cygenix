@@ -344,6 +344,48 @@ function matchedCollation(base) {
     clean.length === 0 && !(await page.isVisible('#sqled-collation-banner')));
   await shot('collation-b2-sqleditor.png');
 
+  // ── 3b. Stage C: the offer, the preview, and Cancel ─────────────────────
+  console.log('\n3b. Apply collation fix');
+  const CROSS = 'SELECT * FROM SRC.dbo.Ledger a\nJOIN TGT.fin.ledger_entry b ON a.Code = b.code';
+  await page.evaluate((sql) => {
+    // The results pane starts collapsed to 36px, which leaves the banner in
+    // the DOM but not clickable. Expanding it is what a real run does.
+    if (typeof window.autoExpandResultsPane === 'function') window.autoExpandResultsPane();
+    document.getElementById('sql-editor').value = sql;
+    window.sqlEdLintCollation(sql);
+  }, CROSS);
+  await page.waitForTimeout(200);
+  check('the banner offers to apply the fix',
+    await page.isVisible('#sqled-collation-fix')
+    && /not changed until you confirm/.test(await page.textContent('#sqled-collation-banner')));
+
+  await page.click('#sqled-collation-fix');
+  await page.waitForSelector('#sqled-collation-modal', { timeout: 5000 });
+  const dlg = await page.textContent('#sqled-collation-modal');
+  check('THE DIALOG SHOWS A BEFORE AND AN AFTER',
+    /Before/.test(dlg) && /After/.test(dlg)
+    && dlg.indexOf('a.Code = b.code') !== -1
+    && dlg.indexOf('a.Code COLLATE SQL_Latin1_General_CP1_CI_AS = b.code') !== -1);
+  check('and says nothing is written until Apply', /Nothing is written until you choose Apply/.test(dlg));
+
+  await page.click('#sqled-collation-cancel');
+  await page.waitForTimeout(150);
+  check('CANCEL LEAVES THE SQL EXACTLY AS IT WAS',
+    await page.evaluate(() => document.getElementById('sql-editor').value) === CROSS
+    && (await page.$$('#sqled-collation-modal')).length === 0);
+
+  await page.click('#sqled-collation-fix');
+  await page.waitForSelector('#sqled-collation-modal', { timeout: 5000 });
+  await page.click('#sqled-collation-apply');
+  await page.waitForTimeout(250);
+  const applied = await page.evaluate(() => document.getElementById('sql-editor').value);
+  check('Apply rewrites the query, and only then',
+    applied === 'SELECT * FROM SRC.dbo.Ledger a\nJOIN TGT.fin.ledger_entry b ON a.Code COLLATE SQL_Latin1_General_CP1_CI_AS = b.code',
+    applied);
+  check('the dialog closes', (await page.$$('#sqled-collation-modal')).length === 0);
+  check('and the re-lint finds nothing left to warn about',
+    !(await page.isVisible('#sqled-collation-banner')));
+
   // ── 4. No false warnings ────────────────────────────────────────────────
   console.log('\n4. Matching collations say nothing');
   const matched = matchedCollation(JSON.parse(JSON.stringify({

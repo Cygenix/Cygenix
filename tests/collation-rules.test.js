@@ -306,18 +306,41 @@ check('every page that asks also loads the rules, before the card that needs the
 /* ── 10. Stage B reports. It does not act. ──────────────────────────────── */
 section('10. Reporting only — Stage B changes no SQL');
 
-check('no module rewrites the SQL it linted',
-  !/insertSQL\s*=\s*.*COLLATE/.test(read('public', 'object-mapping-app.js'))
-  && !/editor\.value\s*=/.test(read('public', 'sql-editor-app.js').slice(
-      read('public', 'sql-editor-app.js').indexOf('function sqlEdLintCollation'),
-      read('public', 'sql-editor-app.js').indexOf('function renderResults'))));
+// Stage C changed this rule, and the assertion changing with it is the
+// point: the editor IS written now, but only from inside the Apply handler
+// of the before/after dialog. Linting still writes nothing.
+{
+  const ED = read('public', 'sql-editor-app.js');
+  const lintFn = ED.slice(ED.indexOf('function sqlEdLintCollation'), ED.indexOf('function sqlEdOfferCollationFix'));
+  check('linting rewrites nothing — the offer is a button, not an edit',
+    !/editor\.value\s*=/.test(lintFn));
+  check('and the one write to the editor sits inside the Apply handler, after a preview',
+    (ED.match(/editor\.value = res\.sql;/g) || []).length === 1
+    && /sqled-collation-apply'\)\.addEventListener\('click', \(\) => \{\s*editor\.value = res\.sql;/.test(ED));
+  check('Cancel closes without touching it',
+    /sqled-collation-cancel'\)\.addEventListener\('click', close\)/.test(ED)
+    && /const close = \(\) => \{ try \{ wrap\.remove\(\)/.test(ED));
+}
+check('no generator rewrites finished SQL — the clause goes in where the SQL is built',
+  !/insertSQL\s*=\s*.*COLLATE/.test(read('public', 'object-mapping-app.js')));
 check('the generators still emit no COLLATE of their own — that is Stage C',
   !/COLLATE/.test(read('public', 'object-mapping-app.js').slice(
     read('public', 'object-mapping-app.js').indexOf('function generateSingleSQL'),
     read('public', 'object-mapping-app.js').indexOf('function generateOTMSQL'))));
-check('and the Task Agent reports without refusing anything',
-  /Reporting only/.test(read('azure-function', 'src', 'run-migration.js'))
-  && !/gateWith\(/.test(read('azure-function', 'src', 'run-migration.js')));
+// Stage C added the gate, so this rule changed with it: the runner still
+// reports every clash it lints, and now also refuses a run when — and only
+// when — an operator set a rule to block and a matching High finding is
+// unacknowledged.
+{
+  const RUN_SRC = read('azure-function', 'src', 'run-migration.js');
+  check('the Task Agent still lints every statement without refusing on that alone',
+    /Reporting only/.test(RUN_SRC) && /lintCollation\(step\.insertSQL \|\| step\.sql/.test(RUN_SRC));
+  check('and the gate refuses BEFORE the first statement rather than part way through',
+    RUN_SRC.indexOf('collationRules.gateWith(collationModel)') > 0
+    && RUN_SRC.indexOf('collationRules.gateWith(collationModel)') < RUN_SRC.indexOf('for (let i = 0; i < stepsToRun.length'));
+  check('a gate that throws does not stop work',
+    /catch \(e\) \{ collGate = \{ ok: true, reasons: \[\], warnings: \[\] \}; \}/.test(RUN_SRC));
+}
 check('EVERY CALLER IS WRAPPED — a linter cannot break the screen it lints',
   [['public', 'object-mapping-app.js'], ['public', 'sql-editor-app.js'], ['public', 'project-builder-app.js'],
    ['public', 'balancing.html'], ['public', 'assurance.html'], ['public', 'conversion-templates.html']]

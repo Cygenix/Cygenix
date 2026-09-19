@@ -1063,13 +1063,86 @@ function renderDMLResult(affected, ms, sql) {
 // Silent when cygenix-collation.js is absent or no profile carries collation
 // settings: an editor that threw while linting would be an editor that would
 // not run queries.
+let _sqlEdCollationClashes = [];
+let _sqlEdCollationSql = '';
+
 function sqlEdLintCollation(sql) {
   const host = document.getElementById('sqled-collation-banner');
   if (!host) return [];
   try {
     if (!window.cygCollation || !window.cygCollation.renderBanner) { host.style.display = 'none'; return []; }
-    return window.cygCollation.renderBanner(host, sql);
+    const clashes = window.cygCollation.renderBanner(host, sql);
+    _sqlEdCollationClashes = clashes;
+    _sqlEdCollationSql = sql;
+    // Stage C: the offer. Only in offer_fix mode, only when something here
+    // can actually be fixed by adding a suffix, and never as an automatic
+    // edit — the button opens a before/after preview and the SQL changes
+    // only when the user says so.
+    if (clashes.length && window.cygCollation.userMode && window.cygCollation.userMode() === 'offer_fix') {
+      const preview = window.cygCollation.applyFix(sql, clashes);
+      if (preview.applied > 0) {
+        const bar = document.createElement('div');
+        bar.style.cssText = 'margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+        bar.innerHTML = '<button type="button" id="sqled-collation-fix" class="btn btn-sm">Apply collation fix</button>'
+          + '<span style="font-size:12px;color:var(--text3,#777)">Shows a before and after first. Your SQL is not changed until you confirm.</span>';
+        host.appendChild(bar);
+        const btn = bar.querySelector('#sqled-collation-fix');
+        if (btn) btn.addEventListener('click', sqlEdOfferCollationFix);
+      }
+    }
+    return clashes;
   } catch (e) { host.style.display = 'none'; return []; }
+}
+
+// The before/after preview. Nothing is written to the editor from here; the
+// Apply button inside the dialog is the only thing that touches it, and
+// Cancel leaves the text exactly as it was.
+function sqlEdOfferCollationFix() {
+  try {
+    const editor = document.getElementById('sql-editor');
+    if (!editor || !window.cygCollation) return;
+    const before = _sqlEdCollationSql || editor.value;
+    const res = window.cygCollation.applyFix(before, _sqlEdCollationClashes);
+    if (!res.applied) return;
+
+    const esc = (s) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const wrap = document.createElement('div');
+    wrap.id = 'sqled-collation-modal';
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:9000;background:var(--modal-scrim,rgba(0,0,0,0.45));'
+      + 'display:flex;align-items:center;justify-content:center;padding:24px';
+    const pane = 'font-family:var(--mono,monospace);font-size:12px;line-height:1.6;white-space:pre-wrap;'
+      + 'word-break:break-word;background:var(--color-neutral-100,var(--bg3,#f4f4f4));'
+      + 'border:1px solid var(--color-divider,var(--border,#ddd));padding:10px 12px;max-height:34vh;overflow:auto';
+    wrap.innerHTML = '<div style="background:var(--color-bg,var(--bg,#fff));border:1px solid var(--color-divider,var(--border,#ddd));'
+      + 'max-width:900px;width:100%;max-height:86vh;overflow:auto;padding:20px 22px">'
+      + '<div class="cx-h-sm" style="margin-bottom:6px">Apply collation fix</div>'
+      + '<p style="font-size:14px;line-height:1.5;color:var(--color-neutral-800,var(--text2,#444));margin:0 0 14px;max-width:80ch">'
+      + res.applied + ' COLLATE clause' + (res.applied === 1 ? '' : 's') + ' would be added to '
+      + (res.applied === 1 ? 'one comparison' : 'comparisons') + ' that mix two collations.'
+      + (res.skipped ? ' ' + res.skipped + ' other finding' + (res.skipped === 1 ? '' : 's')
+          + ' cannot be fixed by adding a clause and are left alone.' : '')
+      + ' Nothing is written until you choose Apply.</p>'
+      + '<div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600,var(--text3,#777));margin-bottom:4px">Before</div>'
+      + '<div style="' + pane + '">' + esc(before) + '</div>'
+      + '<div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600,var(--text3,#777));margin:12px 0 4px">After</div>'
+      + '<div style="' + pane + '">' + esc(res.sql) + '</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
+      + '<button type="button" class="btn btn-ghost btn-sm" id="sqled-collation-cancel">Cancel</button>'
+      + '<button type="button" class="btn btn-primary btn-sm" id="sqled-collation-apply">Apply</button>'
+      + '</div></div>';
+    document.body.appendChild(wrap);
+
+    const close = () => { try { wrap.remove(); } catch (e) { /* already gone */ } };
+    wrap.querySelector('#sqled-collation-cancel').addEventListener('click', close);
+    wrap.addEventListener('click', (ev) => { if (ev.target === wrap) close(); });
+    wrap.querySelector('#sqled-collation-apply').addEventListener('click', () => {
+      editor.value = res.sql;
+      try { editor.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { /* older browser */ }
+      close();
+      sqlEdLintCollation(res.sql);
+    });
+  } catch (e) { /* the query still runs; the offer is the only thing lost */ }
 }
 
 function renderResults(rows, ms, sql) {

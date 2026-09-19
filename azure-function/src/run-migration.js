@@ -1193,6 +1193,29 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   try { collationModel = await loadCollationSettings(userId); }
   catch (e) { ctx.log('[collation] settings unavailable:', e.message); }
 
+  /* The collation gate (Stage C). Blocking is opt-in per rule on the
+     Collation card, so the default answer is yes with the warnings written
+     into the run log. A refusal happens only where somebody set caseRule or
+     codePageRule to "block" and a matching High finding is still
+     unacknowledged — the two cases where carrying on means a duplicate-key
+     failure part way through a load, or characters silently replaced.
+
+     Refused BEFORE the first statement: a scheduled run nobody is watching
+     is exactly where "it half worked" is most expensive. */
+  if (collationModel) {
+    var collGate;
+    try { collGate = collationRules.gateWith(collationModel); }
+    catch (e) { collGate = { ok: true, reasons: [], warnings: [] }; }
+    (collGate.warnings || []).forEach(function (w) { ctx.log('[collation] warning:', w); });
+    if (!collGate.ok) {
+      var why = 'Collation check blocked this run: ' + collGate.reasons.join('; ')
+        + '. Fix or acknowledge these on the Collation card (Connections > Database connections).';
+      ctx.log('[collation]', why);
+      await markRunFailed(containers, run, why, ctx);
+      return;
+    }
+  }
+
   try {
     for (let i = 0; i < stepsToRun.length; i++) {
       const step = stepsToRun[i];

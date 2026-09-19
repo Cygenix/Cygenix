@@ -2248,10 +2248,22 @@ const StagingArea = (function(){
     // disallows it. Failures will surface at load time, not stage time,
     // which is where the audit log expects them.
     const mappedTgtCols = new Set((mapping || []).map(m => (m.tgtCol || '').toLowerCase()));
+    // Collation (Stage C). The staging table is joined to the target in
+    // loadToTarget and to a table variable in the rollback, so its text
+    // columns decide whether those comparisons are legal. Pinned here, where
+    // the column is declared. Returns '' in warn mode, with no settings, and
+    // on a profile whose collations already agree.
+    const stageColl = (c) => {
+      try {
+        return window.cygCollation
+          ? window.cygCollation.tempCollate(String(c.type || '').replace(/\(.*$/, '').trim().toLowerCase())
+          : '';
+      } catch (e) { return ''; }
+    };
     const dataColDdl = targetCols
       .filter(c => mappedTgtCols.has(c.name.toLowerCase()))
       .filter(c => !identityColumns.has(c.name.toLowerCase()))  // identity columns: target's IDENTITY generates them
-      .map(c => '[' + c.name + '] ' + c.type + ' NULL');
+      .map(c => '[' + c.name + '] ' + c.type + stageColl(c) + ' NULL');
 
     if (!dataColDdl.length){
       throw new Error('No mapped columns to mirror in staging — check column mapping for ' + tgtFullName);
@@ -2932,6 +2944,32 @@ function captureExecutedSQL(sql, context) {
 // skipped — a row-value list has no column references to clash anyway. And a
 // paginated run sends the same statement shape hundreds of times, so each
 // shape is linted once.
+// The gate itself. Shared by the run button and anything else that starts
+// work against the target. Returns true when the run may proceed.
+//
+// With both rules on "warn" — the default — this always returns true and
+// merely logs what it saw. A refusal only happens when somebody set a rule
+// to "block" and a matching High finding is still unacknowledged, which is
+// the one case where carrying on means a duplicate-key failure part way
+// through a load or characters silently replaced by question marks.
+function cygCollationGate(whatFor) {
+  try {
+    if (!window.cygCollation || !window.cygCollation.gate) return true;
+    const g = window.cygCollation.gate();
+    if (g.ok) return true;
+    const link = window.cygCollation.LINK || '/dashboard#goto=connections/databases';
+    alert('Collation check blocked ' + (whatFor || 'this run') + ':\n\n'
+      + g.reasons.map((r) => '• ' + r).join('\n')
+      + '\n\nOpen the Collation card on Connections → Database connections to fix or acknowledge these:\n'
+      + link);
+    try { window.open(link, '_blank'); } catch (e) { /* popup blocked: the address is in the message */ }
+    return false;
+  } catch (e) {
+    // A gate that throws must not be a gate that stops work.
+    return true;
+  }
+}
+
 const PB_LINT_MAX_CHARS = 200000;
 let _pbLintSeen = {};
 let _pbLintFound = [];
@@ -3485,6 +3523,11 @@ async function runProject() {
   const srcConn = effectiveSrcConn();
   const tgtConn = effectiveTgtConn();
   if (!tgtConn) { alert('Please enter a target connection.'); return; }
+
+  // Collation gate (Stage C). Blocking is opt-in per rule on the Collation
+  // card, so this refuses only what an operator asked it to refuse, and an
+  // acknowledged finding is their decision and does not count.
+  if (!cygCollationGate('this migration')) return;
 
   // Count groups that have at least one selected step
   const selectedGroups = new Set(selectedFlat.map(x => x.gi));

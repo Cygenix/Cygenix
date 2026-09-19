@@ -2374,6 +2374,24 @@ body.cyg-collapsed .topbar{left:54px}
       alert('Please describe what the agent should do (at least a sentence).');
       return;
     }
+    // Collation gate (Stage C). The agent plans and then writes, so the
+    // check belongs before it starts rather than after it has. Blocking is
+    // opt-in per rule on the Collation card; with both on "warn" this always
+    // allows the run.
+    try {
+      if (window.cygCollation && window.cygCollation.gate) {
+        const g = window.cygCollation.gate();
+        if (!g.ok) {
+          const link = window.cygCollation.LINK || '/dashboard#goto=connections/databases';
+          alert('Collation check blocked this migration:\n\n'
+            + g.reasons.map((r) => '• ' + r).join('\n')
+            + '\n\nOpen the Collation card on Connections → Database connections to fix or acknowledge these:\n'
+            + link);
+          try { window.open(link, '_blank'); } catch (e) { /* popup blocked */ }
+          return;
+        }
+      }
+    } catch (e) { /* a gate that throws must not stop work */ }
     stopConnectionWatcher();
     renderLoading('Starting agent…');
     try {
@@ -3043,6 +3061,10 @@ body.cyg-collapsed .topbar{left:54px}
 </script>
 
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
+<!-- Collation. The rules load first; see the note in object_mapping.html.
+     Needed here for the run gate in startRun. -->
+<script src="/cygenix-collation-rules.js?v=200b93a61d" defer></script>
+<script src="/cygenix-collation.js?v=d0ee30400b" defer></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>

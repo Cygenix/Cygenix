@@ -3541,8 +3541,32 @@ function _pkgFormatSqlLiteral(value, type){
 // A re-run of the same script would then fail with "There is already an
 // object…". We pre-emptively DROP IF EXISTS using OBJECT_ID against tempdb
 // — the canonical idiom for global-temp existence checks.
+// The bare type name out of a rebuilt type string: NVARCHAR(50) → nvarchar.
+// The collation helpers only pin TEXT columns, and they decide that from the
+// base type rather than from a formatted declaration.
+function _pkgBaseType(type){
+  return String(type || '').replace(/\(.*$/, '').trim().toLowerCase();
+}
+
 function _pkgBuildCreateStaging(srcSchema, stagingName){
-  const cols = srcSchema.map(c => '  ['+c.name+'] '+c.type+' '+(c.nullable?'NULL':'NOT NULL'));
+  // Collation (Stage C). This table mirrors SOURCE column types but is
+  // created inside the TARGET database, and the package's migration then
+  // joins it to target columns — which is the collation conflict, built by
+  // hand. Pinning the text columns here fixes it where the SQL is
+  // constructed rather than by rewriting the finished script.
+  //
+  // tempCollate() returns '' in warn mode, with no settings, and on a
+  // profile whose collations already agree, so this line is a no-op unless
+  // there is something to neutralise.
+  const coll = (c) => {
+    try { return window.cygCollation ? window.cygCollation.tempCollate(_pkgBaseType(c.type)) : ''; }
+    catch (e) { return ''; }
+  };
+  const mark = (s) => (s ? '  ' + window.cygCollation.MARKER : '');
+  const cols = srcSchema.map(c => {
+    const cl = coll(c);
+    return '  ['+c.name+'] '+c.type+cl+' '+(c.nullable?'NULL':'NOT NULL')+mark(cl);
+  });
   const isGlobalTemp = stagingName.startsWith('[##');
   const dropGuard = isGlobalTemp
     ? "IF OBJECT_ID('tempdb.." + stagingName.replace(/^\[|\]$/g,'') + "') IS NOT NULL DROP TABLE " + stagingName + ";\n"
@@ -3777,8 +3801,20 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb, opts){
     ? sepLine + '\n-- Section 5: Cleanup\n' + sepLine + '\nDROP TABLE ' + stagingName + ';\n'
     : '';
 
-  return [banner, targetSchema, stagingCreate, dataSection, migration, cleanup]
+  // Collation (Stage C). The header goes on only when the package actually
+  // carries fixes, and the count is read back out of the assembled script so
+  // it reports what is there rather than what was intended. A package with
+  // nothing to fix is byte-identical to one built before this feature.
+  const assembled = [banner, targetSchema, stagingCreate, dataSection, migration, cleanup]
     .filter(Boolean).join(goSep);
+  try {
+    if (window.cygCollation && window.cygCollation.MARKER) {
+      const fixes = assembled.split(window.cygCollation.MARKER).length - 1;
+      const head = window.cygCollation.appliedHeader(fixes);
+      if (head) return head + '\n' + assembled;
+    }
+  } catch (e) { /* the package is still the package */ }
+  return assembled;
 }
 
 // ── Progress list helpers ─────────────────────────────────────────────────
@@ -3987,9 +4023,25 @@ function jobsTableHTML(jobs) {
 }
 
 // The status vocabulary — four words, exactly, plus the transient Running.
+// Was this job's SQL generated under the collation settings in force now?
+// A job with no stamp predates the feature or has nothing collation-related
+// about it, and is never called stale — telling somebody to regenerate a
+// script that was correct when it was made and has no work to do would be
+// noise, and noise is how a real warning gets ignored.
+function jobCollationStale(j){
+  try {
+    if (!j || !j.insertSQL) return false;
+    if (!window.cygCollation || !window.cygCollation.stampIsCurrent) return false;
+    return !window.cygCollation.stampIsCurrent(j.collationStamp || '');
+  } catch (e) { return false; }
+}
+
 function jobStatusWord(j){
   const raw = String((j && (j.executionStatus || j.status)) || '').toLowerCase();
   if (raw === 'running') return { key: 'running', word: 'Running' };
+  // A stale script outranks "SQL ready", because it is not ready: it was
+  // built under different collation settings and has not been rebuilt.
+  if (jobCollationStale(j)) return { key: 'regenerate', word: 'Regenerate' };
   const b = jobBucket(j);
   if (b === 'complete') return { key: 'complete', word: 'Complete' };
   if (b === 'failed')   return { key: 'failed',   word: 'Failed' };
@@ -4055,6 +4107,16 @@ function renderJobSide(shown){
     '<div class="cx-kicker">Selected job</div>'
     + '<div class="jb-side-name">' + escapeHtml(j.name || '') + '</div>'
     + '<div class="jb-side-pair">' + escapeHtml(j.sourceTable || j.source || '—') + ' → ' + escapeHtml(j.target || '—') + '</div>'
+    // Collation (Stage C). Never auto-regenerated: the operator decides when
+    // a script is rebuilt, because regenerating one silently would change
+    // SQL somebody may already have reviewed.
+    + (jobCollationStale(j)
+      ? '<div class="cx-attn cx-attn-warn"><div class="cx-h-sm">Collation settings changed — regenerate</div>'
+        + '<p>This script was generated under different collation settings. Open the mapping and generate it again '
+        + 'so the SQL matches what the profile says now.</p>'
+        + '<div class="jb-side-acts"><button class="btn btn-ghost btn-sm" onclick="editJob(\'' + j.id + '\')">Open mapping</button>'
+        + '<a class="btn btn-ghost btn-sm" href="/dashboard#goto=connections/databases">Collation settings</a></div></div>'
+      : '')
     + (st.key === 'failed'
       ? '<div class="cx-attn cx-attn-fail"><div class="cx-h-sm">Failed' + (j.lastRun ? ' · ' + escapeHtml(jobUpdatedText(j)) : '') + '</div>'
         + '<p>' + (err ? escapeHtml(err) : 'The run reported a failure with no message. Open the run in Packages for the log.') + '</p>'

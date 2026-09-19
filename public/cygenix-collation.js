@@ -1345,6 +1345,72 @@
     return { state: state, counts: counts, total: total, text: text, link: LINK };
   }
 
+  /* ════════════════════════════════════════════════════════════════════════
+     APPLYING A FIX (Stage C) — the generator-facing half
+     ────────────────────────────────────────────────────────────────────────
+     Every one of these returns a SUFFIX, so a generator concatenates it
+     unconditionally:
+
+         'CREATE TABLE #s (' + name + ' ' + type + cygCollation.tempCollate(type) + ')'
+
+     With no settings, in warn mode, or on a profile whose collations already
+     agree, they all return '' and the generated SQL is byte-identical to
+     what it was before this feature existed. That is the point of the
+     shape: no generator grows a branch it can get wrong.
+
+     Each one also COUNTS what it emitted, so the script's header comment can
+     say how many fixes it carries without the generator tracking it.
+     ════════════════════════════════════════════════════════════════════════ */
+  var _applied = { count: 0 };
+  function resetApplied() { _applied.count = 0; return _applied.count; }
+  function appliedCount() { return _applied.count; }
+  function tally(s) { if (s) _applied.count++; return s; }
+
+  /* Is this profile going to change any SQL at all? Modules ask before they
+     bother building a header. */
+  function applyMode() {
+    var m = settings();
+    if (!m) return null;
+    return Rules.applies(m) ? 'apply' : m.generatedSqlMode;
+  }
+  /* The clause for one column in a comparison the generator is building. */
+  function collateFor(side, schema, table, column, currentCollation) {
+    return tally(Rules.collateForColumn(settings(), side, schema, table, column, currentCollation));
+  }
+  /* The clause for a text column in a temp or staging table. */
+  function tempCollate(dataType) {
+    return tally(Rules.collateForTempColumn(settings(), dataType));
+  }
+  /* Both sides of a comparison at once. */
+  function comparisonCollate(left, right) {
+    var r = Rules.collateForComparison(settings(), left, right);
+    if (r.left) _applied.count++;
+    if (r.right) _applied.count++;
+    return r;
+  }
+  /* The header line for a script that carries fixes, or '' for one that does
+     not. Call after generating, when the count is known. */
+  function appliedHeader(count) {
+    var n = count == null ? _applied.count : count;
+    if (!n) return '';
+    var m = settings();
+    var st = store();
+    var p = activeProfile(st);
+    return Rules.headerComment(p ? (p.name || p.id) : '', n, resolvedCollation(m));
+  }
+  /* The fingerprint of the settings a script was generated under. Stored on
+     the job so a later settings change can mark it for regeneration. */
+  function stamp() { return Rules.settingsStamp(settings()); }
+  /* Was this script generated under the settings in force now? A script with
+     no stamp predates the feature and is not called stale — nobody should be
+     told to regenerate something that was correct when it was made and has
+     no collation work to do. */
+  function stampIsCurrent(saved) {
+    var now = stamp();
+    if (!saved) return !now;
+    return saved === now;
+  }
+
   /* Called by switchConnTab('databases'). Idempotent: the first call builds
      the card, later ones re-read the profile so a connection saved since is
      reflected. */
@@ -1390,6 +1456,14 @@
     lint: lint, bannerHtml: bannerHtml, renderBanner: renderBanner,
     badgeFor: badgeFor, summaryLine: summaryLine, contextFor: contextFor,
     summariseClashes: Rules.summariseClashes, LINK: LINK,
+    // Stage C: applying a fix where the SQL is built.
+    applyMode: applyMode, collateFor: collateFor, tempCollate: tempCollate,
+    comparisonCollate: comparisonCollate, appliedHeader: appliedHeader,
+    resetApplied: resetApplied, appliedCount: appliedCount,
+    stamp: stamp, stampIsCurrent: stampIsCurrent, MARKER: Rules.MARKER,
+    // Rewriting SQL a person wrote — only ever behind a confirmation.
+    applyFix: function (sql, clashes) { return Rules.applyFix(sql, clashes, settings()); },
+    userMode: function () { var m = settings(); return m ? m.userSqlMode : null; },
     // lifecycle
     init: init, open: openCard, refresh: refresh, render: render,
     detect: detect, scan: scan, save: save, exportExcel: exportExcel,

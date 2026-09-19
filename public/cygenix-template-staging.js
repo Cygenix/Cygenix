@@ -259,8 +259,19 @@ function createTableSql(t, opts) {
   if (!cols.length) return '';
   var nl = o.nl || '\n';
   var full = quoteIdent(schema, dialect) + '.' + quoteIdent(t.stagingTable, dialect);
+  /* Collation (Stage C). `collateFor` is supplied by the caller — this
+     module stays pure and testable, and the page decides from the saved
+     profile. It returns a suffix (' COLLATE X') or '', so a profile with
+     nothing to neutralise produces byte-identical DDL to before.
+     SQL Server only: PostgreSQL spells collation differently and this
+     feature does not claim to support it. */
+  var collateFor = (dialect === 'mssql' && typeof o.collateFor === 'function')
+    ? o.collateFor : function () { return ''; };
+  var marker = o.marker || '';
   var body = cols.map(function (c, i) {
-    return '    ' + quoteIdent(c.name, dialect) + ' ' + typeFor(c, dialect).sql + ' NULL' + (i < cols.length - 1 ? ',' : '');
+    var cl = collateFor(c) || '';
+    return '    ' + quoteIdent(c.name, dialect) + ' ' + typeFor(c, dialect).sql + cl + ' NULL'
+      + (i < cols.length - 1 ? ',' : '') + (cl && marker ? '  ' + marker : '');
   }).join(nl);
 
   if (dialect === 'postgres') {
@@ -329,9 +340,9 @@ function stagingPlan(tpl, opts) {
         row.status = 'no-columns';
       } else if (existing && existing[lower(t.stagingTable)]) {
         row.status = 'exists';
-        row.sql = createTableSql({ stagingTable: t.stagingTable, columns: cols }, { dialect: dialect, schema: schema });
+        row.sql = createTableSql({ stagingTable: t.stagingTable, columns: cols }, { dialect: dialect, schema: schema, collateFor: o.collateFor, marker: o.marker });
       } else {
-        row.sql = createTableSql({ stagingTable: t.stagingTable, columns: cols }, { dialect: dialect, schema: schema });
+        row.sql = createTableSql({ stagingTable: t.stagingTable, columns: cols }, { dialect: dialect, schema: schema, collateFor: o.collateFor, marker: o.marker });
       }
       creatable.forEach(function (c) {
         if (!typeFor(c, dialect).known) {
@@ -385,6 +396,10 @@ function planScript(plan, opts) {
   out.push('   Create only. Nothing here drops, truncates or alters anything, and an');
   out.push('   existing table is left exactly as it is, contents included.');
   out.push('   ========================================================================= */');
+  /* Collation (Stage C). One line, only when the script actually carries
+     fixes, so a script with nothing to say reads exactly as it did before
+     this feature existed. The caller supplies it; this module stays pure. */
+  if (o.collationHeader) { out.push(''); out.push(str(o.collationHeader)); }
   out.push('');
   plan.tables.forEach(function (t) {
     var head = '/* ' + t.module + ' · ' + t.targetTable + (t.loadOrder ? ' · load order ' + t.loadOrder : '');

@@ -461,7 +461,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- Create staging tables: the CREATE TABLE builder, the existence scan and
      the one-table-per-call runner. Create-only by construction and by an
      assertion it runs over its own output before anything is sent. -->
-<script src="/cygenix-template-staging.js?v=0e957babd4" defer></script>
+<script src="/cygenix-template-staging.js?v=1b07fb7b6f" defer></script>
 <!-- The Object Mapping bridge: turning a module's staging→target pairs into
      tagged draft jobs, and taking only those back out again. -->
 <script src="/cygenix-template-mapping.js?v=97560b5f32" defer></script>
@@ -1639,6 +1639,19 @@ function ctStagePlan(){
     dialect: ST.dialectOf(conn),
     schema: schema,
     existing: (CT.stagePlan && CT.stagePlan.existingFor === side + '|' + schema) ? CT.stagePlan.existing : null,
+    // Collation (Stage C). A staging table mirrors the target's columns into
+    // a different database, so its text columns decide whether a later
+    // comparison against the target is legal. The staging module stays pure
+    // and asks this function; it returns '' in warn mode, with no settings,
+    // and on a profile whose collations already agree.
+    collateFor: (c) => {
+      try {
+        return window.cygCollation
+          ? window.cygCollation.tempCollate(String((c && c.type) || '').replace(/\(.*$/, '').trim().toLowerCase())
+          : '';
+      } catch (e) { return ''; }
+    },
+    marker: (window.cygCollation && window.cygCollation.MARKER) || '',
   });
   plan.existing = (CT.stagePlan && CT.stagePlan.existingFor === side + '|' + schema) ? CT.stagePlan.existing : null;
   plan.existingFor = plan.existing ? side + '|' + schema : '';
@@ -1690,9 +1703,20 @@ function renderStage(){
     : '<tr><td colspan="6" class="empty">Nothing to create. Tick Include beside the modules this version covers, or none of them has tables yet.</td></tr>';
 
   const ST = window.CygenixTemplateStaging;
+  // Count the fixes the plan's DDL actually carries, so the header reports a
+  // measured number rather than an intention.
+  let collationHeader = '';
+  try {
+    if (window.cygCollation && window.cygCollation.MARKER) {
+      const n = plan.tables.reduce((sum, t) =>
+        sum + (String(t.sql || '').split(window.cygCollation.MARKER).length - 1), 0);
+      collationHeader = window.cygCollation.appliedHeader(n);
+    }
+  } catch (e) { collationHeader = ''; }
   const stageSql = ST ? ST.planScript(plan, {
     templateName: CT.tpl.name, version: CT.tpl.version, by: userName(),
     connectionLabel: stageSideLabel(stageSide()), now: new Date(),
+    collationHeader: collationHeader,
   }) : '';
   $('ct-stage-sql').value = stageSql;
   // Collation lint on the staging DDL, reporting only. A staging table that
@@ -1865,8 +1889,8 @@ window.addEventListener('storage', (e) => { if (e && e.key === ES_STORE && CT.tp
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <!-- Collation. The rules load first; see the note in object_mapping.html. -->
-<script src="/cygenix-collation-rules.js?v=806430dd57" defer></script>
-<script src="/cygenix-collation.js?v=3071689281" defer></script>
+<script src="/cygenix-collation-rules.js?v=200b93a61d" defer></script>
+<script src="/cygenix-collation.js?v=d0ee30400b" defer></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=7810d9c217"></script>

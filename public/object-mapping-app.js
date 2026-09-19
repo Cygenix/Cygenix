@@ -1889,6 +1889,11 @@ function persistMappingToSavedJob(){
       srcWhereConditions: (whereConds||[]).map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
       srcGroupByCols:     (groupByCols||[]).slice(),
       srcGroupBy:         ($('src-groupby')?.value || '').trim(),
+      // Collation (Stage C). The fingerprint of the settings this SQL was
+      // generated under, so a later change to them can mark the script for
+      // regeneration rather than silently leaving it wrong. '' when there
+      // is nothing collation-related about it, which is most jobs.
+      collationStamp: (function(){ try { return window.cygCollation ? window.cygCollation.stamp() : ''; } catch (e) { return ''; } })(),
       insertSQL: generatedSQL.insert || existing.insertSQL,
       schemaSQL: generatedSQL.schema || existing.schemaSQL,
       verifySQL: generatedSQL.verify || existing.verifySQL,
@@ -4699,6 +4704,11 @@ function saveAsJob(){
       srcGroupByCols:     groupByCols.slice(),
       srcGroupBy:         ($('src-groupby')?.value || '').trim(),
       joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
+      // Collation (Stage C). The fingerprint of the settings this SQL was
+      // generated under, so a later change to them can mark the script for
+      // regeneration rather than silently leaving it wrong. '' when there
+      // is nothing collation-related about it, which is most jobs.
+      collationStamp: (function(){ try { return window.cygCollation ? window.cygCollation.stamp() : ''; } catch (e) { return ''; } })(),
       insertSQL: generatedSQL.insert,
       schemaSQL: generatedSQL.schema,
       verifySQL: generatedSQL.verify,
@@ -4779,6 +4789,11 @@ function saveAsJob(){
       // see through it. Empty for a table source.
       sourceBaseObjects: (srcTable.objType === 'view') ? _srcBaseObjects.slice() : [],
       target: targetTables.map(t=>t.fullName).join(', '),
+      // Collation (Stage C). The fingerprint of the settings this SQL was
+      // generated under, so a later change to them can mark the script for
+      // regeneration rather than silently leaving it wrong. '' when there
+      // is nothing collation-related about it, which is most jobs.
+      collationStamp: (function(){ try { return window.cygCollation ? window.cygCollation.stamp() : ''; } catch (e) { return ''; } })(),
       insertSQL: generatedSQL.insert,
       // WHERE clause — saved structurally so re-opening the OTM editor
       // restores it into the input. Note: OTM's runner pre-generates the

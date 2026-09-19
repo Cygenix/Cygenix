@@ -521,8 +521,16 @@
       if (!l || !r) continue;
       if (!collationsClash(l.collation, r.collation)) continue;
       var kind = /\bon\b[^()]*$/i.test(clean.slice(Math.max(0, m.index - 120), m.index)) ? 'join' : 'comparison';
-      add(clash(kind, 'high', lineOf(m.index), raw.substr(m.index, m[0].length), l, r, model,
-        'SQL Server raises "Cannot resolve the collation conflict" when this runs.'));
+      var c = clash(kind, 'high', lineOf(m.index), raw.substr(m.index, m[0].length), l, r, model,
+        'SQL Server raises "Cannot resolve the collation conflict" when this runs.');
+      /* Where each operand ENDS in the original text. applyFix splices the
+         COLLATE clause in at one of these, so a clash carries the position
+         as well as the diagnosis — without it, applying a fix would mean
+         finding the expression again by searching, which goes wrong the
+         moment the same comparison appears twice. */
+      c.leftEnd = m.index + m[1].length;
+      c.rightEnd = m.index + m[0].length;
+      add(c);
     }
 
     /* 2. IN lists and IN (SELECT …). */
@@ -668,6 +676,183 @@
     return out;
   }
 
+  /* ════════════════════════════════════════════════════════════════════════
+     APPLYING A FIX (Stage C)
+     ────────────────────────────────────────────────────────────────────────
+     Every helper below returns a SUFFIX — ' COLLATE X' or the empty string —
+     so a generator can concatenate it unconditionally and read normally:
+
+         out.push(quoteIdent(c.name) + ' ' + type + collateForTempColumn(m));
+
+     That shape is deliberate. The brief's last verification line is that a
+     migration on a profile whose collations already match must produce SQL
+     byte-identical to before this feature existed. A generator that had to
+     ask "do I need a COLLATE here?" would grow a branch at every site and
+     get one of them wrong; a helper that returns '' when there is nothing to
+     neutralise cannot.
+
+     WHEN THERE IS SOMETHING TO NEUTRALISE
+
+     needsWork() is the single gate: the two database collations differ, or
+     tempdb differs from the resolved collation. If neither is true, adding
+     COLLATE would change the text of every script to say exactly what the
+     database already meant — noise in a diff, and a promise to maintain
+     forever. So nothing is emitted.
+
+     A column override is the one thing that overrides that: somebody who
+     pinned a column asked for it explicitly, and gets it even when the
+     databases agree.
+     ════════════════════════════════════════════════════════════════════════ */
+
+  var MARKER = '-- cyg:collation';
+
+  function hasOverrides(model) {
+    return !!(model && model.columnOverrides && Object.keys(model.columnOverrides).length);
+  }
+  function needsWork(model) {
+    if (!model) return false;
+    var src = (model.source && model.source.dbCollation) || '';
+    var tgt = (model.target && model.target.dbCollation) || '';
+    var resolved = resolvedCollation(model);
+    var tempdb = (model.target && model.target.tempdbCollation) || '';
+    if (src && tgt && collationsClash(src, tgt)) return true;
+    if (tempdb && resolved && collationsClash(tempdb, resolved)) return true;
+    return hasOverrides(model);
+  }
+  /* Is this model allowed to change SQL at all? Only in apply mode, only
+     with a collation to apply, and only when there is something to fix. */
+  function applies(model) {
+    var m = model ? normalise(model) : null;
+    if (!m) return false;
+    if (m.generatedSqlMode !== 'apply') return false;
+    if (!resolvedCollation(m)) return false;
+    return needsWork(m);
+  }
+
+  function suffix(collation) { return collation ? (' COLLATE ' + collation) : ''; }
+
+  /* The clause for ONE column reference in a comparison. `currentCollation`
+     is what that column already carries; when it already matches what we
+     would apply, nothing is emitted. */
+  function collateForColumn(model, side, schema, table, column, currentCollation) {
+    if (!applies(model)) return '';
+    var want = resolveWith(model, side, schema, table, column);
+    if (!want) return '';
+    if (currentCollation && !collationsClash(currentCollation, want)) return '';
+    return suffix(want);
+  }
+
+  /* A text column in a temp table or a staging table. DATABASE_DEFAULT is a
+     pseudo-collation that evaluates to whatever the connection's database
+     declares, which is how you neutralise a comparison without naming a
+     collation; the named form pins it instead. Which one is the operator's
+     choice, saved on the profile. */
+  function collateForTempColumn(model, dataType) {
+    if (!applies(model)) return '';
+    if (dataType && !isTextType(dataType)) return '';
+    var m = normalise(model);
+    if (m.tempTables === 'database_default') return ' COLLATE DATABASE_DEFAULT';
+    return suffix(resolvedCollation(m));
+  }
+
+  /* Both sides of a comparison at once. The side that already carries the
+     resolved collation is left alone; when neither does, both are pinned,
+     which is what makes the comparison legal whatever the two columns are. */
+  function collateForComparison(model, left, right) {
+    var none = { left: '', right: '' };
+    if (!applies(model)) return none;
+    var want = resolvedCollation(model);
+    if (!want) return none;
+    var lc = left && left.collation, rc = right && right.collation;
+    var lWant = left ? resolveWith(model, left.side, left.schema, left.table, left.column) : want;
+    var rWant = right ? resolveWith(model, right.side, right.schema, right.table, right.column) : want;
+    var out = {
+      left: (lc && !collationsClash(lc, lWant)) ? '' : suffix(lWant),
+      right: (rc && !collationsClash(rc, rWant)) ? '' : suffix(rWant),
+    };
+    /* Two columns that already agree with each other need nothing, even if
+       neither is the resolved collation — the comparison is already legal
+       and rewriting it would change results for no reason. */
+    if (lc && rc && !collationsClash(lc, rc) && lWant === rWant) return none;
+    return out;
+  }
+
+  /* The header a generated script carries when anything was applied. */
+  function headerComment(profileName, count, resolved) {
+    return '-- Collation fixes applied from profile ' + (profileName || '(unnamed)')
+      + ': ' + count + ' (resolved collation ' + (resolved || 'none') + ')';
+  }
+
+  /* A short, stable fingerprint of everything that can change generated SQL.
+     A script stamped with a different one was built under different
+     settings and should be regenerated. FNV-1a rather than a real hash: it
+     runs in a browser with no crypto import, and this is a cache key, not a
+     security claim. */
+  function settingsStamp(model) {
+    if (!model) return '';
+    var m = normalise(model);
+    if (!needsWork(m) && m.generatedSqlMode !== 'apply') return '';
+    var keys = Object.keys(m.columnOverrides || {}).sort();
+    var canonical = JSON.stringify({
+      resolved: resolvedCollation(m),
+      strategy: m.strategy,
+      explicit: m.explicitCollation || '',
+      temp: m.tempTables,
+      mode: m.generatedSqlMode,
+      src: (m.source && m.source.dbCollation) || '',
+      tgt: (m.target && m.target.dbCollation) || '',
+      tempdb: (m.target && m.target.tempdbCollation) || '',
+      overrides: keys.map(function (k) { return k + '=' + (m.columnOverrides[k] || {}).collation; }),
+    });
+    var h = 0x811c9dc5;
+    for (var i = 0; i < canonical.length; i++) {
+      h ^= canonical.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return ('0000000' + h.toString(16)).slice(-8);
+  }
+
+  /* ── Rewriting SQL somebody else wrote ────────────────────────────────────
+     The one place this feature edits finished text rather than building it.
+     A generator gets its COLLATE at construction; a query a person typed
+     cannot, so this splices the clause in — and only ever behind an explicit
+     confirmation, which is the caller's job to obtain.
+
+     Only comparisons and join predicates are rewritten. They are the clashes
+     that carry an operand position, they are the ones that actually fail at
+     runtime, and they can be fixed by adding a suffix without changing what
+     the query means. A UNION or a CASE would need the select list rewritten
+     to stay correct, and guessing at that in somebody's query is worse than
+     telling them where the problem is.
+
+     Splices run back to front so an earlier offset is still valid after a
+     later one has been applied. */
+  function applyFix(sql, clashes, model) {
+    var raw = String(sql == null ? '' : sql);
+    var m = model ? normalise(model) : null;
+    var edits = [];
+    (clashes || []).forEach(function (c) {
+      if (!c || (c.kind !== 'comparison' && c.kind !== 'join')) return;
+      if (!c.fixCollation) return;
+      var clause = ' COLLATE ' + c.fixCollation;
+      if (c.fixSide === 'left' || c.fixSide === 'both') {
+        if (typeof c.leftEnd === 'number') edits.push({ at: c.leftEnd, text: clause });
+      }
+      if (c.fixSide === 'right' || c.fixSide === 'both') {
+        if (typeof c.rightEnd === 'number') edits.push({ at: c.rightEnd, text: clause });
+      }
+    });
+    if (!edits.length) return { sql: raw, applied: 0, skipped: (clashes || []).length };
+    edits.sort(function (a, b) { return b.at - a.at; });
+    var out = raw;
+    edits.forEach(function (e) { out = out.slice(0, e.at) + e.text + out.slice(e.at); });
+    var handled = (clashes || []).filter(function (c) {
+      return c && (c.kind === 'comparison' || c.kind === 'join') && c.fixCollation;
+    }).length;
+    return { sql: out, applied: edits.length, skipped: (clashes || []).length - handled,
+             mode: m ? m.userSqlMode : null };
+  }
+
   /* A one-line summary for a banner. Kept here so the browser and the Function
      App word it the same way in a log and on a screen. */
   function summariseClashes(clashes) {
@@ -772,6 +957,54 @@
     { name: 'empty SQL is not an error', sql: '', context: CTX, expect: [] },
   ];
 
+  /* The apply-side fixtures, shared by both copies exactly as SHARED_CASES
+     is. `want` is the suffix a generator should concatenate. */
+  var APPLY_MODEL = {
+    source: { database: 'SRC', dbCollation: 'Latin1_General_CS_AS', tempdbCollation: 'Latin1_General_CS_AS' },
+    target: { database: 'TGT', dbCollation: 'SQL_Latin1_General_CP1_CI_AS', tempdbCollation: 'SQL_Latin1_General_CP1_CI_AS' },
+    strategy: 'target', tempTables: 'resolved', generatedSqlMode: 'apply',
+  };
+  var MATCHED_APPLY = {
+    source: { database: 'SRC', dbCollation: 'Latin1_General_CI_AS', tempdbCollation: 'Latin1_General_CI_AS' },
+    target: { database: 'TGT', dbCollation: 'Latin1_General_CI_AS', tempdbCollation: 'Latin1_General_CI_AS' },
+    strategy: 'target', tempTables: 'resolved', generatedSqlMode: 'apply',
+  };
+  var APPLY_CASES = [
+    { name: 'a temp text column gets the resolved collation',
+      fn: 'collateForTempColumn', args: [APPLY_MODEL, 'varchar'], want: ' COLLATE SQL_Latin1_General_CP1_CI_AS' },
+    { name: 'and DATABASE_DEFAULT when that is what the profile says',
+      fn: 'collateForTempColumn',
+      args: [{ source: APPLY_MODEL.source, target: APPLY_MODEL.target, strategy: 'target', tempTables: 'database_default', generatedSqlMode: 'apply' }, 'varchar'],
+      want: ' COLLATE DATABASE_DEFAULT' },
+    { name: 'a non-text column never gets one',
+      fn: 'collateForTempColumn', args: [APPLY_MODEL, 'int'], want: '' },
+    { name: 'WARN MODE CHANGES NOTHING',
+      fn: 'collateForTempColumn',
+      args: [{ source: APPLY_MODEL.source, target: APPLY_MODEL.target, strategy: 'target', tempTables: 'resolved', generatedSqlMode: 'warn' }, 'varchar'],
+      want: '' },
+    { name: 'MATCHING COLLATIONS CHANGE NOTHING — the SQL stays byte-identical',
+      fn: 'collateForTempColumn', args: [MATCHED_APPLY, 'varchar'], want: '' },
+    { name: 'no settings at all change nothing',
+      fn: 'collateForTempColumn', args: [null, 'varchar'], want: '' },
+    { name: 'a column already carrying the resolved collation is left alone',
+      fn: 'collateForColumn', args: [APPLY_MODEL, 'tgt', 'dbo', 'B', 'Code', 'SQL_Latin1_General_CP1_CI_AS'], want: '' },
+    { name: 'and one that is not gets it',
+      fn: 'collateForColumn', args: [APPLY_MODEL, 'src', 'dbo', 'A', 'Code', 'Latin1_General_CS_AS'],
+      want: ' COLLATE SQL_Latin1_General_CP1_CI_AS' },
+    { name: 'AN OVERRIDE WINS over the strategy',
+      fn: 'collateForColumn',
+      args: [{ source: APPLY_MODEL.source, target: APPLY_MODEL.target, strategy: 'target', generatedSqlMode: 'apply',
+               columnOverrides: { 'dbo.A.Code': { collation: 'Latin1_General_BIN2' } } },
+             'src', 'dbo', 'A', 'Code', 'Latin1_General_CS_AS'],
+      want: ' COLLATE Latin1_General_BIN2' },
+    { name: 'and an override applies even when the two databases already agree',
+      fn: 'collateForColumn',
+      args: [{ source: MATCHED_APPLY.source, target: MATCHED_APPLY.target, strategy: 'target', generatedSqlMode: 'apply',
+               columnOverrides: { 'dbo.A.Code': { collation: 'Latin1_General_BIN2' } } },
+             'src', 'dbo', 'A', 'Code', 'Latin1_General_CI_AS'],
+      want: ' COLLATE Latin1_General_BIN2' },
+  ];
+
   return {
     VERSION: VERSION, ISSUE: ISSUE,
     parseCollation: parseCollation, collationDiff: collationDiff, isSoftDiff: isSoftDiff,
@@ -780,6 +1013,11 @@
     resolveWith: resolveWith, gateWith: gateWith,
     findClashes: findClashes, summariseClashes: summariseClashes,
     blankNoise: blankNoise, refParts: refParts,
-    SHARED_CASES: SHARED_CASES,
+    // Stage C: applying a fix at the point the SQL is built.
+    MARKER: MARKER, needsWork: needsWork, applies: applies,
+    collateForColumn: collateForColumn, collateForTempColumn: collateForTempColumn,
+    collateForComparison: collateForComparison,
+    headerComment: headerComment, settingsStamp: settingsStamp, applyFix: applyFix,
+    SHARED_CASES: SHARED_CASES, APPLY_CASES: APPLY_CASES,
   };
 });
