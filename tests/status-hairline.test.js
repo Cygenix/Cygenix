@@ -168,15 +168,18 @@ check('the hover catcher is wider than the line it protects — 2px is not hitta
 
 // body padding follows the RESTING height. If it followed the open height the
 // whole page would jump every time the pointer crossed the top edge.
-check('body padding is driven by one variable, set from restHeight',
-  /padding-top:var\(--cyg-hairline-h\)/.test(SRC)
+// The masthead (console redesign, Sep-2026) sits under the hairline, so the
+// reserved strip is the hairline's resting height PLUS the masthead's — one
+// variable each, summed in one place, never the open height.
+check('body padding is driven by one variable, set from restHeight, plus the masthead',
+  /padding-top:calc\(var\(--cyg-hairline-h\) \+ var\(--cx-masthead-h,0px\)\)/.test(SRC)
   && /--cyg-hairline-h['"]?,\s*s\.restHeight/.test(SRC.replace(/\s+/g, ' ')),
   'the reserved strip must be the resting height, never the open one');
 check('opening changes only the element\'s own height, via a class',
   /#cyg-envbar\.is-open,#cyg-envbar\.is-locked\{height:'\+H_OPEN\+'px/.test(SRC.replace(/\s+/g, '')),
   'nothing outside the element may change size when it opens');
-check('and the sidebar follows the same variable instead of hard-coding 22px',
-  /\.cyg-sidebar\{top:var\(--cyg-hairline-h\)/.test(SRC.replace(/\s+/g, '')));
+check('and the sidebar follows the same variables instead of hard-coding 22px',
+  /\.cyg-sidebar\{top:calc\(var\(--cyg-hairline-h\)\+var\(--cx-masthead-h,0px\)\)/.test(SRC.replace(/\s+/g, '')));
 
 check('the collapsed line does not intercept clicks at all',
   /#cyg-envbar\{[^}]*pointer-events:none/.test(SRC.replace(/\s+/g, '')),
@@ -265,8 +268,13 @@ section('4c. A level must look identical wherever you see it');
     const a = src.match(/--amber:\s*(#[0-9a-fA-F]+)/); if (a) ambers.add(a[1].toLowerCase());
     const r = src.match(/--red:\s*(#[0-9a-fA-F]+)/);   if (r) reds.add(r[1].toLowerCase());
   });
-  check('the pages really do disagree about --green, so this cannot be left to them',
-    greens.size > 1, [...greens].join(', ') + ' across ' + pages.length + ' pages');
+  // They used to: three different greens across 26 pages. The console
+  // redesign stripped every page's copy of the palette — the pages declare
+  // no --green at all now, and cygenix-console.css is the one place it is
+  // set. The hairline still paints from its own inline values, because a
+  // page could grow a palette back and the line must not follow it.
+  check('no page carries its own --green any more — the palette has one home',
+    greens.size === 0, [...greens].join(', ') + ' across ' + pages.length + ' pages');
 
   // Only the declarations matter; the comment above PALETTE names the old
   // tokens on purpose, to say what was wrong.
@@ -275,8 +283,8 @@ section('4c. A level must look identical wherever you see it');
     !/background:\s*var\(--green/.test(DECLS) && !/background:\s*var\(--amber/.test(DECLS)
     && !/background:\s*var\(--red/.test(DECLS),
     'a page style block must not be able to change what a level looks like');
-  check('it carries its own palette instead',
-    /var PALETTE = \{ green: '#3F7D4E', amber: '#B26A00', red: '#C0392B' \};/.test(SRC));
+  check('it carries its own palette instead — the console\'s status trio, as literals',
+    /var PALETTE = \{ green: '#3f6b52', amber: '#9a6b1f', red: '#9c3f38' \};/.test(SRC));
   check('applied INLINE on the root element, which outranks any stylesheet :root',
     /root\.style\.setProperty\('--cyg-status-green', PALETTE\.green\)/.test(SRC));
   check('and the bar paints from those, not from the page\'s',
@@ -319,9 +327,9 @@ section('4b. Something legible always says which database this is');
 {
   const SIDE = read('public', 'cygenix-sidebar.js');
   check('the rail carries a profile chip', /id="cyg-prof-chip"/.test(SIDE));
-  check('it is pinned above the scroll area, not inside a collapsible group',
-    /return head \+ buildProfilePill\(\) \+ buildDriveButton\(\)/.test(SIDE),
-    'the Project group can be folded away; the database a run will touch cannot be');
+  check('it is pinned above the scroll area, not inside anything that can be folded away',
+    /return head \+ buildProfilePill\(\) \+ `<div class="cyg-sidebar-scroll">/.test(SIDE),
+    'the database a run will touch must never be hidden');
   check('it links to the Profiles page', /class="cyg-prof-chip" id="cyg-prof-chip"\s*href="\/profiles"/.test(SIDE.replace(/\s+/g, ' ')));
   check('it renders from the hairline\'s state function, not from a second read of the store',
     /CygenixStatusHairline/.test(SIDE) && !/cygenix_profiles_v1/.test(SIDE),
@@ -330,12 +338,15 @@ section('4b. Something legible always says which database this is');
     /cygenix:profile-status/.test(SRC) && typeof H.current === 'function');
   check('and the rail both takes the current value and subscribes — script order is not guaranteed',
     /H\.current\(\)\)/.test(SIDE) && /addEventListener\('cygenix:profile-status'/.test(SIDE));
+  // The environment badge is a bordered tag now (console redesign): the level
+  // is its text and its border, not a fill — a filled amber block on the
+  // light rail read as a button.
   check('the level colours the dot and the environment badge',
     /\.cyg-prof-chip\.lv-red\s+\.cyg-prof-dot\{background:var\(--cyg-status-red/.test(SIDE.replace(/\{\s+/g, '{'))
-    && /\.cyg-prof-chip\.lv-amber\s+\.cyg-prof-env\{background:var\(--cyg-status-amber/.test(SIDE.replace(/\{\s+/g, '{')));
+    && /\.cyg-prof-chip\.lv-amber\s+\.cyg-prof-env\{color:var\(--cyg-status-amber[^}]*border-color:var\(--cyg-status-amber/.test(SIDE.replace(/\{\s+/g, '{')));
   check('the collapsed rail keeps the dot — 54px has no room for a name, but PRD must still show',
-    /\.cyg-sidebar\.collapsed \.cyg-prof-id,\s*\.cyg-sidebar\.collapsed \.cyg-prof-env\{ display:none/.test(SIDE)
-    && !/\.cyg-sidebar\.collapsed \.cyg-prof-dot\{ display:none/.test(SIDE));
+    /\.cyg-sidebar\.collapsed \.cyg-prof-id,\s*\.cyg-sidebar\.collapsed \.cyg-prof-env\{\s*display:none/.test(SIDE)
+    && !/\.cyg-sidebar\.collapsed \.cyg-prof-dot\{\s*display:none/.test(SIDE));
   check('and before any profile exists the chip is hidden, like everything else about profiles',
     /if \(!s \|\| s\.level === 'off'\)\{ area\.hidden = true; return; \}/.test(SIDE));
 }

@@ -160,7 +160,9 @@ function readState() {
    test is deliberately narrow: it only drops a step whose selector is a
    sidebar or assistant selector AND is absent. */
 function isChromeSelector(sel) {
-  return /^\[data-(key|parent)=|^\.cyg-drive-btn|^\.cyga-/.test(sel || '');
+  // Rail items, the masthead's controls (search, project switcher, account,
+  // Files) and the assistant — everything that is on every console page.
+  return /^\[data-(key|parent)=|^\.cyg-drive-btn|^#cx-mh-|^#cyg-proj-btn|^#cyg-user-chip|^\.cyga-/.test(sel || '');
 }
 function stepAvailable(s) {
   if (!s.target || !isChromeSelector(s.target)) return true;

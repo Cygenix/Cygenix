@@ -333,7 +333,10 @@ const prof = (id) => store().profiles.filter((p) => p.id === id)[0];
     && !/prd/.test(U.profilePill({ profileId: 'FIN_UAT' }, store())));
   check('the CSS uses the environment bar\'s own red token, with its palette value as the fallback',
     (() => { const css = read('public', 'cygenix-datastream.css'); const bar = read('public', 'cygenix-status-hairline.js');
-      return /\.ds-prd[^}]*var\(--cyg-status-red, #C0392B\)/.test(css) && /red:\s*'#C0392B'/.test(bar) && /--cyg-status-red/.test(bar); })());
+      // The value is read off the hairline rather than spelled here, so the
+      // pin is that the two AGREE — which is the point — not what the red is.
+      const red = (bar.match(/red:\s*'(#[0-9a-f]{6})'/i) || [])[1];
+      return !!red && new RegExp('\\.ds-prd[^}]*var\\(--cyg-status-red, ' + red + '\\)').test(css) && /--cyg-status-red/.test(bar); })());
   check('the start confirm says production is coming when it is',
     /PRODUCTION/.test(U.confirmText('start', { name: 'x', connection: 'a', destination: 'b', prodProfileId: 'FIN_PRD' }))
     && !/PRODUCTION/.test(U.confirmText('start', { name: 'x', connection: 'a', destination: 'b' })));

@@ -22,22 +22,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/cygenix-console.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
-  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
-  --text:#1A1D21;--text2:#2A2F38;--text3:#363D49;
-  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
-  --green:#3F7D4E;--green-bg:rgba(63,125,78,0.10);
-  --amber:#B26A00;--amber-bg:rgba(178,106,0,0.10);
-  --red:#C0392B;--red-bg:rgba(192,57,43,0.10);
-  --teal:#0F6E6C;--teal-bg:rgba(23,130,124,0.1);
-  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
-  --r:10px;--r-lg:14px;
+  /* The console palette lives in cygenix-console.css. Only what is this
+     page's own is declared here. */
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:216px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
 
 /* ── Layout ── */
@@ -500,12 +492,13 @@ body.cyg-collapsed{padding-left:54px}
 <!-- Sidebar: data-active matches the new 'report-builder' key in cygenix-sidebar.js -->
 <div id="cyg-sidebar-mount" data-active="report-builder"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
-<script src="/cygenix-status-hairline.js?v=73f52fed9d" defer></script>
-<script src="/cygenix-sidebar.js?v=cd02f9a4e8" defer></script>
+<script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
+<script src="/cygenix-sidebar.js?v=a39bbf4be2" defer></script>
 
 <div class="page">
 
   <!-- Page header -->
+<div id="cyg-subnav-mount"></div>
   <div class="page-header">
     <div>
       <div class="page-title"><i class="ic ic-chart"></i> Report Builder</div>
@@ -675,8 +668,8 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
-<script src="/cygenix-tour-steps.js?v=f90de981cf"></script>
-<script src="/cygenix-tour.js?v=936b3fb471"></script>
+<script src="/cygenix-tour-steps.js?v=35e59b2611"></script>
+<script src="/cygenix-tour.js?v=7810d9c217"></script>
 <script>CygenixAssistant.registerPage('report-builder');</script>
 </body>
 </html>

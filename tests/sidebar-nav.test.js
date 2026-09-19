@@ -1,8 +1,13 @@
-// Structural tests for the redesigned sidebar navigation.
+// Structural tests for the console navigation — the five-group rail, the
+// masthead, the tab strips and the aliases (design review, Sep-2026).
+//
 // Loads the real cygenix-sidebar.js under a minimal DOM stub and asserts the
-// NAV tree still covers every destination the pages reference — the failure
-// mode of a nav restructure is a page whose data-active key no longer exists,
-// or a destination that silently fell out of the rail.
+// nav still covers every destination the pages reference. The failure mode of
+// a nav restructure is a page whose data-active key no longer resolves, or a
+// destination that silently fell out of the product. The redesign moved
+// twenty-odd destinations out of the rail and into tab strips and the account
+// menu; every one of them must still be reachable and must still light the
+// right rail item when its page mounts.
 const fs = require('fs');
 const vm = require('vm');
 
@@ -23,7 +28,8 @@ const sandbox = {
 sandbox.window.document = sandbox.document;
 sandbox.window.localStorage = sandbox.localStorage;
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8'), sandbox);
+const src = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
+vm.runInContext(src, sandbox);
 
 const SB = sandbox.window.CygenixSidebar;
 let pass = 0, fail = 0;
@@ -33,346 +39,216 @@ const check = (label, ok, extra) => {
 };
 
 console.log('Sidebar navigation — structure\n');
-check('sidebar module loads and exports the nav tree', !!(SB && SB.__nav && SB.__accountNav));
+check('sidebar module loads and exports the nav tree, the tabs and the aliases',
+  !!(SB && SB.__nav && SB.__accountNav && SB.__tabs && SB.__aliases && SB.railKeyFor));
 
-const NAV = SB.__nav, ACCT = SB.__accountNav;
+const NAV = SB.__nav, ACCT = SB.__accountNav, TABS = SB.__tabs, ALIASES = SB.__aliases;
+const railKeys = [];
+for (const sec of NAV) for (const it of sec.items) railKeys.push(it.key);
 
-// 1. Every key that existed before the restructure must still resolve —
-//    pages mount with these in data-active, and dashboard code targets them.
-//    'supported', 'project-plan', 'insights', 'project-summary-document' and
-//    'coworker' are deliberately absent: the Supported Formats menu option,
-//    the Project Planner, Data Insights (superseded by the Schema Explorer's
-//    Data map) and Project Summary were removed on request, and AI Workspace
-//    was replaced by the docked Assistant panel (coworker.html redirects).
+/* ── 1. Nothing fell out ──────────────────────────────────────────────────
+   Every key that existed before the restructure must still resolve — pages
+   mount with these in data-active, dashboard code targets them, the tour
+   navigates to them. 'supported', 'project-plan', 'insights',
+   'project-summary-document' and 'coworker' are deliberately absent, as
+   before: removed on request, or replaced. */
 const LEGACY_KEYS = ['dashboard','search','project-settings','connections','performance',
   'system-parameters','privacy-security','integrations','object-mapping',
   'sql-editor','agentive-migration','data-quality','data-cleansing',
   'validation','jobs','project-builder','server-migration','inventory','task-agent',
-  'report-builder','reports','audit','diagnostics',
-  'help','accessibility'];
+  'report-builder','reports','audit','diagnostics','help','accessibility',
+  'profiles','schema-explorer','analytics','conversion-templates','data-enrichment',
+  'data-stream','data-stream-store','data-stream-events','data-stream-monitor',
+  'effort-estimator','project-plan-grid','user-roles','notifications','assurance'];
 const missing = LEGACY_KEYS.filter(k => !SB.__findItem(k));
 check('every pre-redesign key still resolves (' + LEGACY_KEYS.length + ')', missing.length === 0,
   'missing: ' + missing.join(', '));
 
-// 2. No duplicate keys anywhere in the tree.
-const allKeys = [];
-for (const sec of NAV) for (const it of sec.items) {
-  allKeys.push(it.key);
-  if (it.children) for (const c of it.children) allKeys.push(c.key);
-}
-ACCT.forEach(it => allKeys.push(it.key));
-const dupes = allKeys.filter((k, i) => allKeys.indexOf(k) !== i);
-check('no duplicate keys', dupes.length === 0, 'dupes: ' + dupes.join(', '));
-
-// 3. Parents are pure expanders: children but no destination of their own.
-const badParents = [];
-for (const sec of NAV) for (const it of sec.items) {
-  if (it.children && (it.href || it.view || it.action)) badParents.push(it.key);
-  if (it.children && it.children.length === 0) badParents.push(it.key + ' (empty)');
-}
-check('group parents are pure expanders with children', badParents.length === 0,
-  badParents.join(', '));
-
-// 4. Every leaf has exactly one destination (href, view, or action).
-const badLeaves = [];
-const leafCheck = (it) => {
-  const n = ['href','view','action'].filter(k => it[k]).length;
-  if (n !== 1) badLeaves.push(it.key + ' (' + n + ' destinations)');
-};
-for (const sec of NAV) for (const it of sec.items) {
-  if (it.children) it.children.forEach(leafCheck); else leafCheck(it);
-}
-ACCT.forEach(leafCheck);
-check('every leaf has exactly one destination', badLeaves.length === 0, badLeaves.join(', '));
-
-// 5. Lifecycle order: Connect → Insight → Map & Build → Run → Validate
-//    → Report & Govern.
-//
-//    Insight is named that way on purpose: 'Analyse' is already a stage of
-//    the migration pipeline, and a second thing wearing that word would read
-//    as a step in the lifecycle rather than a lens over it.
-//
-//    It used to sit between Validate and Report & Govern, because when it
-//    held Analytics alone there was nothing to look at until something had
-//    run. It moved up in Sep-2026 (on request) when the Schema Explorer
-//    joined it: that is the screen you open BEFORE you map anything, to find
-//    out what is in the databases you have just connected. Connect → look at
-//    what you connected → map it.
-//
-//    Analytics is the half that still belongs late. It stays here because it
-//    is one item, it is the second item, and splitting the section in two to
-//    place them separately would spend a rail heading to save a scroll.
+/* ── 2. Five groups, in the order the work happens ───────────────────────── */
 const sections = NAV.map(s => s.section).filter(Boolean);
-check('sections follow the lifecycle order',
-  JSON.stringify(sections) === JSON.stringify(['Connect','Insight','Map & Build','Run','Validate','Report & Govern']),
+check('the rail is five groups — Connect, Model, Run, Quality, Govern — after Home',
+  JSON.stringify(sections) === JSON.stringify(['Connect','Model','Run','Quality','Govern'])
+  && NAV[0].section === null && NAV[0].items.length === 1 && NAV[0].items[0].key === 'dashboard',
   'got: ' + sections.join(' → '));
-// The move is only defensible while the Explorer leads the section — see the
-// comment above the section in cygenix-sidebar.js. If Analytics ever came
-// first, Insight would be sitting between Connect and Map & Build opening on
-// a dashboard of runs that have not happened yet.
-check('and Insight still leads with the Schema Explorer, which is what justifies its position',
-  NAV.find(s => s.section === 'Insight').items[0].key === 'schema-explorer',
-  NAV.find(s => s.section === 'Insight').items.map(i => i.key).join(','));
+check('and it is thirteen destinations, not thirty',
+  railKeys.length === 13, railKeys.length + ': ' + railKeys.join(','));
 
-// 6. The renames from the review landed, and the old branded labels are gone.
-const labels = [];
-for (const sec of NAV) for (const it of sec.items) {
-  labels.push(it.label);
-  if (it.children) it.children.forEach(c => labels.push(c.label));
+/* ── 3. No expanders, no decoration ───────────────────────────────────────
+   Finding 04: the per-item colour was decoration using the status palette.
+   There is no `color` on any item any more, and no `children` either —
+   every former child is a tab inside its destination screen. */
+const decorated = [];
+for (const sec of NAV) for (const it of sec.items) { if ('color' in it) decorated.push(it.key); if (it.children) decorated.push(it.key + ' (children)'); }
+check('no rail item carries a colour or a fold-out', decorated.length === 0, decorated.join(', '));
+check('the source has no per-item colour left at all', !/color:\s*'var\(--/.test(src.slice(0, src.indexOf('function svg('))));
+
+/* ── 4. Every leaf has exactly one destination ───────────────────────────── */
+const badLeaves = [];
+const leafCheck = (it, where) => {
+  const n = ['href','view','action'].filter(k => it[k]).length;
+  if (n !== 1) badLeaves.push(where + ':' + it.key + ' (' + n + ' destinations)');
+};
+for (const sec of NAV) for (const it of sec.items) leafCheck(it, 'rail');
+for (const k in TABS) TABS[k].forEach(t => leafCheck(t, 'tab'));
+ACCT.forEach(it => leafCheck(it, 'account'));
+check('every rail item, tab and account item has exactly one destination', badLeaves.length === 0, badLeaves.join(', '));
+
+/* ── 5. Tabs belong to rail items, and lead the strip with their owner ───── */
+const badTabs = [];
+for (const k in TABS) {
+  if (!railKeys.includes(k)) badTabs.push(k + ' is not on the rail');
+  if (!TABS[k].length || TABS[k][0].key !== k) badTabs.push(k + ' does not lead its own strip');
+  const keys = TABS[k].map(t => t.key);
+  keys.forEach((t, i) => { if (keys.indexOf(t) !== i) badTabs.push(k + ' repeats ' + t); });
 }
-check('"AI Assist" replaces "Agentive Migration"',
-  labels.includes('AI Assist') && !labels.includes('Agentive Migration'));
-check('cookie preferences moved out of the rail',
-  !labels.includes('Cookie preferences') && !ACCT.some(i => i.key === 'cookie-prefs'));
+check('every tab strip hangs off a rail item and starts with it', badTabs.length === 0, badTabs.join('; '));
 
-// 6b. Supported Formats removed from the menu entirely (requested).
-check('Supported Formats is gone from nav and account menu',
-  !SB.__findItem('supported') && !labels.includes('Supported Formats'));
+// A key may be a rail item AND the first tab of its own strip; it may not
+// appear anywhere else twice.
+const seen = new Map();
+const dupes = [];
+railKeys.forEach(k => seen.set(k, 'rail'));
+for (const k in TABS) TABS[k].forEach(t => {
+  if (t.key === k) return;
+  if (seen.has(t.key)) dupes.push(t.key + ' (' + seen.get(t.key) + ' + tab of ' + k + ')');
+  seen.set(t.key, 'tab of ' + k);
+});
+ACCT.forEach(it => { if (seen.has(it.key)) dupes.push(it.key + ' (account + ' + seen.get(it.key) + ')'); seen.set(it.key, 'account'); });
+check('no key lives in two places', dupes.length === 0, dupes.join(', '));
 
-// 6c. Help + Accessibility live in the account menu, not the rail.
-const acctKeys = ACCT.map(i => i.key);
-check('Help and Accessibility are in the account menu',
-  acctKeys.includes('help') && acctKeys.includes('accessibility'));
-check('Help and Accessibility are NOT in the workflow rail',
-  !allNavKeys().includes('help') && !allNavKeys().includes('accessibility'));
-// The accessibility panel's outside-click handler skips `.a11y-trigger`;
-// losing that class in the move would make the panel close as it opens.
-check('accessibility item keeps its a11y-trigger class',
-  (ACCT.find(i => i.key === 'accessibility') || {}).navClass === 'a11y-trigger');
+/* ── 6. Where everything went, per the handoff table ─────────────────────── */
+const under = (rail, key) => (TABS[rail] || []).some(t => t.key === key);
+check('Profiles & integrations: profiles + integrations', under('profiles', 'integrations'));
+check('Object mapping: conversion templates and AI assist as tabs', under('object-mapping', 'conversion-templates') && under('object-mapping', 'agentive-migration'));
+check('Jobs & packages: packages, server migration, analytics', under('jobs', 'project-builder') && under('jobs', 'server-migration') && under('jobs', 'analytics'));
+check('Data stream: store, change events, monitor', under('data-stream', 'data-stream-store') && under('data-stream', 'data-stream-events') && under('data-stream', 'data-stream-monitor'));
+check('Assurance: quality review and validation', under('assurance', 'data-quality') && under('assurance', 'validation'));
+check('Cleansing & enrichment: enrichment', under('data-cleansing', 'data-enrichment'));
+check('Reports: report builder, conversion report, artifacts, configurator, project plan',
+  ['reports','inventory','effort-estimator','project-plan-grid'].every(k => under('report-builder', k)));
+check('Audit log: performance and diagnostics', under('audit', 'performance') && under('audit', 'diagnostics'));
+check('Settings and governance live in the account menu',
+  ['project-settings','notifications','system-parameters','user-roles','privacy-security'].every(k => ACCT.some(i => i.key === k)));
+check('Help and Accessibility are still in the account menu, and accessibility keeps its a11y-trigger class',
+  ACCT.some(i => i.key === 'help') && (ACCT.find(i => i.key === 'accessibility') || {}).navClass === 'a11y-trigger');
+check('Search is the masthead field, not a rail item — but the key still resolves',
+  !railKeys.includes('search') && SB.__findItem('search') && SB.__findItem('search').view === 'search'
+  && /id="cx-mh-search"/.test(src) && /cyg_search_q/.test(src));
+check('AI assist keeps its feature flag on the way into the tab strip',
+  (TABS['object-mapping'].find(t => t.key === 'agentive-migration') || {}).requiresAiEnabled === true);
+check('the Audit log keeps its role gate', (SB.__findItem('audit') || {}).requiresAuditRead === true);
 
-function allNavKeys(){
-  const out = [];
-  for (const sec of NAV) for (const it of sec.items){
-    out.push(it.key); (it.children || []).forEach(c => out.push(c.key));
-  }
-  return out;
-}
+/* ── 7. Every former key lights the right rail item ─────────────────────── */
+const expectRail = {
+  'validation':'assurance', 'data-quality':'assurance', 'data-enrichment':'data-cleansing',
+  'conversion-templates':'object-mapping', 'agentive-migration':'object-mapping',
+  'project-builder':'jobs', 'server-migration':'jobs', 'analytics':'jobs',
+  'data-stream-store':'data-stream', 'data-stream-events':'data-stream', 'data-stream-monitor':'data-stream',
+  'integrations':'profiles', 'reports':'report-builder', 'inventory':'report-builder',
+  'effort-estimator':'report-builder', 'project-plan-grid':'report-builder',
+  'performance':'audit', 'diagnostics':'audit',
+  'search':'dashboard', 'project-summary-document':'dashboard', 'insights':'schema-explorer', 'data-analyser':'connections',
+  'dashboard':'dashboard', 'jobs':'jobs', 'assurance':'assurance',
+};
+const wrong = Object.keys(expectRail).filter(k => SB.railKeyFor(k) !== expectRail[k]).map(k => k + '→' + SB.railKeyFor(k));
+check('railKeyFor maps every moved key to its owner (' + Object.keys(expectRail).length + ')', wrong.length === 0, wrong.join(', '));
+check('an account-menu key lights nothing rather than something wrong',
+  SB.railKeyFor('project-settings') === '' && SB.railKeyFor('user-roles') === '' && SB.railKeyFor('nonsense') === '');
+check('every alias points at a real rail item',
+  Object.values(ALIASES).every(v => railKeys.includes(v)), JSON.stringify(ALIASES));
+check('tabsFor returns the strip for a tab key and for its owner alike',
+  (SB.tabsFor('validation') || []).map(t => t.key).join(',') === 'assurance,data-quality,validation'
+  && (SB.tabsFor('assurance') || []).length === 3 && SB.tabsFor('sql-editor') === null);
 
-// 7. Jobs promoted: the Run section must come before Validate and contain jobs.
-const runIdx = NAV.findIndex(s => s.section === 'Run');
-const runKeys = [];
-NAV[runIdx].items.forEach(it => { runKeys.push(it.key); (it.children||[]).forEach(c => runKeys.push(c.key)); });
-check('Run group holds jobs + execute + task manager',
-  ['jobs','project-builder','task-agent'].every(k => runKeys.includes(k)), runKeys.join(','));
+/* ── 8. The masthead ──────────────────────────────────────────────────────── */
+check('the masthead is built by the sidebar module: logo, wordmark, project switcher, search, Files, region, avatar',
+  /function buildMasthead\(\)/.test(src) && /class="cx-logo"/.test(src) && /class="cx-wordmark"/.test(src)
+  && /id="cyg-proj-btn"/.test(src) && /id="cx-mh-search"/.test(src) && /id="cyg-drive-btn"/.test(src)
+  && /id="cx-mh-region"/.test(src) && /id="cyg-user-chip"/.test(src));
+check('the logo keeps its own indigo gradient — it is the brand mark and does not take the theme',
+  /#6d5df2/.test(src) && /#4a7cf3/.test(src) && /rx="7"/.test(src));
+check('the project switcher is wired on the masthead, not the rail',
+  /wireProjectSwitcher\(masthead\)/.test(src) && !/buildProjectSwitcher\(\)/.test(src));
+check('the account menu opens from the avatar, below it',
+  /wireUserChip\(masthead\)/.test(src) && /menu\.style\.top\s*=\s*\(r\.bottom \+ 6\)/.test(src));
+check('the rail is 216 wide under a 60px masthead',
+  /WIDTH_OPEN\s*=\s*216/.test(src) && /MASTHEAD_H\s*=\s*60/.test(src)
+  && /top:calc\(var\(--cyg-hairline-h,0px\) \+ \$\{MASTHEAD_H\}px\)/.test(src));
+check('the open rail is text; icons are for the collapsed rail only',
+  /\.cyg-nav-icon\{[^}]*display:none\}/.test(src) && /\.cyg-sidebar\.collapsed \.cyg-nav-icon\{display:block\}/.test(src));
+check('the active item is an accent-100 ground with a 2px accent bar, in ink — no white-on-dark rail',
+  /\.cyg-nav-item\.active\{[^}]*var\(--color-accent-100/.test(src)
+  && /border-left-color:var\(--color-accent/.test(src) && !/--cyg-ink:#14161f/.test(src));
 
-// 9. Project Planner is gone: the item, its page, and the nav group that
-//    existed only to hold it alongside Schedules.
-check('Project Planner is gone from the nav', !SB.__findItem('project-plan'));
-check('the Planner & Schedules group is gone with it', !SB.__findItem('plan-group'));
+/* ── 9. The tab strip ─────────────────────────────────────────────────────── */
+check('the strip renders into #cyg-subnav-mount and nowhere else',
+  /getElementById\('cyg-subnav-mount'\)/.test(src) && /class="cx-subnav"/.test(src)
+  && !/insertBefore\(strip|prepend\(strip/.test(src));
+check('setActive re-renders it, so a dashboard view switch moves the current tab',
+  /function updateActive\(key\)\{[\s\S]*?renderSubnav\(key\)/.test(src));
+check('a tab click goes through handleClick — the one place that knows views from pages',
+  /a\.addEventListener\('click'[\s\S]{0,200}handleClick\(item\)/.test(src));
+
+/* ── 10. Favourites still ride along ─────────────────────────────────────── */
+check('the favourites block is appended and exports its surface',
+  typeof SB.getPins === 'function' && typeof SB.togglePin === 'function'
+  && typeof SB.refreshPins === 'function');
+check('an empty store means no pins, never a throw', Array.isArray(SB.getPins()) && SB.getPins().length === 0);
+check('pins store per user, capped at eight, with the P shortcut and drag reorder',
+  /cygenix_sidebar_pinned_v1/.test(src) && /MAX_PINS\s*=\s*8/.test(src)
+  && /cyg-fav-dragging/.test(src) && /e\.key !== 'p' && e\.key !== 'P'/.test(src));
+check('pinned rows are clones that delegate to the real row — no duplicated nav logic',
+  /data-favkey/.test(src) && /target\.click\(\)/.test(src));
+
+/* ── 11. Every page that loads the rail must have somewhere to mount it ──── */
 {
-  const ta = SB.__findItem('task-agent');
-  check('the remaining item is renamed Task Manager',
-    ta && ta.label === 'Task Manager', ta && ta.label);
-  check('it keeps the task-agent key that pages and showView target',
-    ta && ta.view === 'task-agent' && !ta.href);
-  // A single-child expander is worse than a plain item, so it was flattened.
-  check('Task Manager is a top-level item, not the sole child of a group',
-    NAV[runIdx].items.some(i => i.key === 'task-agent'),
-    NAV[runIdx].items.map(i => i.key).join(','));
-}
-check('nothing still links to the deleted planner page',
-  !allNavKeys().includes('project-plan') &&
-  !JSON.stringify(NAV).includes('project-plan.html'));
-
-// 8. Notifications sits under Settings and points at the dashboard view that
-//    controls which run events fire.
-const notif = SB.__findItem('notifications');
-check('Notifications exists in the nav', !!notif);
-check('Notifications opens a dashboard view, not a separate page',
-  notif && notif.view === 'notifications' && !notif.href);
-check('Notifications is labelled plainly', notif && notif.label === 'Notifications');
-{
-  const settings = SB.__findItem('settings-group');
-  const kids = (settings && settings.children || []).map(c => c.key);
-  check('Notifications is a child of Settings', kids.includes('notifications'), kids.join(','));
-  check('the existing Settings children are still there',
-    kids.includes('project-settings') && kids.includes('system-parameters'), kids.join(','));
-}
-
-// 10. The Schema Explorer sits in Insight, not under Object Mapping.
-//
-//     It was a child of an `objmap-group` expander, on the reading that you
-//     explore a schema in order to map it. Moved on request (Sep-2026): it
-//     reads a database and shows what is in it, which is a lens over an
-//     estate rather than a step in building a mapping. The product already
-//     agreed — cygenix-pipeline.js sends Home's ANALYSE stage there — and so
-//     did the nav's own history: the 'Data Insights' item removed in Aug-2026
-//     was dropped because "the Schema Explorer's Data map now covers schema
-//     discovery", and Insight is where that item had been.
-//
-//     Two things this must not break, and they are why the checks below are
-//     about keys rather than about position:
-//
-//       * `object-mapping` is mounted as data-active on object_mapping.html
-//         and used by dashboard deep links. It was deliberately put on the
-//         CHILD rather than the expander so the group could be dissolved
-//         without touching a link, and dissolving it is exactly what happened.
-//       * a one-child expander earns nothing but an extra click, so
-//         objmap-group is gone rather than left holding Mapping alone — the
-//         same call made when Project Planner left Planner & Schedules.
-{
-  check('the objmap-group expander is gone, not left wrapping a single child',
-    SB.__findItem('objmap-group') === null || SB.__findItem('objmap-group') === undefined);
-
-  const mapping = SB.__findItem('object-mapping');
-  check('the object-mapping key still resolves, so no page loses its highlight',
-    !!mapping && mapping.href === '/object-mapping', mapping && mapping.href);
-  check('and it is named for what it is again, now that nothing sits above it',
-    mapping && mapping.label === 'Object Mapping', mapping && mapping.label);
-
-  const build = NAV.find(s => s.section === 'Map & Build');
-  // Conversion Templates (Sep-2026) leads the group: the template decides
-  // which tables exist to be mapped, so it comes before the mapping.
-  check('Map & Build is four flat items, in order, Conversion Templates directly above Object Mapping',
-    JSON.stringify(build.items.map(i => i.key)) ===
-      JSON.stringify(['conversion-templates', 'object-mapping', 'sql-editor', 'agentive-migration']),
-    build.items.map(i => i.key).join(','));
-  const ct = SB.__findItem('conversion-templates');
-  check('Conversion Templates opens its clean address and is labelled for people',
-    !!ct && ct.href === '/conversion-templates' && ct.label === 'Conversion Templates', ct && ct.href);
-  check('and none of them is an expander any more',
-    build.items.every(i => !i.children));
-
-  const insight = NAV.find(s => s.section === 'Insight');
-  check('Insight leads with the Schema Explorer, then Analytics',
-    JSON.stringify(insight.items.map(i => i.key)) ===
-      JSON.stringify(['schema-explorer', 'analytics']),
-    insight.items.map(i => i.key).join(','));
-
-  const se = SB.__findItem('schema-explorer');
-  check('the schema-explorer key and href are unchanged by the move',
-    se && se.href === '/schema-explorer', se && se.href);
-  check('it keeps its own icon rather than inheriting Analytics\' chart',
-    se && se.icon !== SB.__findItem('analytics').icon);
-  check('and it is a flat item, not a submenu of one',
-    se && !se.children);
-}
-
-// ── Search order + sidebar favourites ───────────────────────────────────────
-{
-  const top = NAV[0].items.map(i => i.key);
-  check('Search sits between Home and Project',
-    top.indexOf('dashboard') === 0 && top.indexOf('search') === 1
-    && top.indexOf('project-group') === 2, top.join(','));
-
-  const src = require('fs').readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
-  check('the favourites block is appended and exports its surface',
-    typeof SB.getPins === 'function' && typeof SB.togglePin === 'function'
-    && typeof SB.refreshPins === 'function');
-  check('an empty store means no pins, never a throw', Array.isArray(SB.getPins()) && SB.getPins().length === 0);
-  check('pins store per user, capped at eight, with the P shortcut and drag reorder',
-    /cygenix_sidebar_pinned_v1/.test(src) && /MAX_PINS\s*=\s*8/.test(src)
-    && /cyg-fav-dragging/.test(src) && /e\.key !== 'p' && e\.key !== 'P'/.test(src));
-  check('pinned rows are clones that delegate to the real row — no duplicated nav logic',
-    /data-favkey/.test(src) && /target\.click\(\)/.test(src));
-  check('the first-run hint exists and is dismissable',
-    /Hover a menu item and click/.test(src) && /cygenix_sidebar_pinned_hint_v1/.test(src));
-  check('group expanders never get a star — nothing to pin on a folder',
-    /item\.querySelector\('\.cyg-nav-chev'\)\) return;/.test(src));
-  check('the favourites CSS rides in the sidebar\'s own style block',
-    /cyg-fav-star/.test(src) && /cyg-fav-section/.test(src)
-    && /collapsed \.cyg-fav-star/.test(src));
-}
-
-// ── The active-project switcher lives under the Project group ───────────────
-{
-  const src = require('fs').readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
-  check('the switcher renders inside the Project group, not pinned above the nav',
-    /item\.key === 'project-group' \? buildProjectSwitcher\(\) : ''/.test(src)
-    && !/head \+ buildProjectSwitcher\(\)/.test(src));
-  check('the Project group starts open so the project is never hidden',
-    /DEFAULT_OPEN_GROUPS = \['project-group'\]/.test(src)
-    && /function isGroupOpen/.test(src) && /cygenix_sidebar_closed_groups/.test(src));
-  check('an explicit collapse of that group is still remembered',
-    /shut\.add\(key\)/.test(src) && /getClosedGroups\(\)\.includes\(key\)/.test(src));
-  check('the collapsed rail keeps the project chip and hides only its sibling rows',
-    /collapsed \.cyg-nav-children\[data-children="project-group"\]\{ display:block/.test(src)
-    && /collapsed \.cyg-nav-children\[data-children="project-group"\] \.cyg-nav-item\{ display:none/.test(src));
-  check('refresh() re-wires the switcher — its dropdown used to go dead',
-    /wireProjectSwitcher\(replacement\)/.test(src));
-}
-
-// ── Every page that loads the rail must have somewhere to mount it ──────────
-// projects.html shipped without a mount element and silently lost its whole
-// navigation; nothing caught it, so this does.
-{
-  const fs2 = require('fs'), path2 = require('path');
+  const path2 = require('path');
   const dir = path2.join(__dirname, '..', 'public');
-  const pages = fs2.readdirSync(dir).filter(f => f.endsWith('.html'));
+  const pages = fs.readdirSync(dir).filter(f => f.endsWith('.html'));
   const missing = pages.filter(f => {
-    const html = fs2.readFileSync(path2.join(dir, f), 'utf8');
+    const html = fs.readFileSync(path2.join(dir, f), 'utf8');
     return /cygenix-sidebar\.js/.test(html) && !/id="cyg-sidebar-mount"/.test(html);
   });
   check('every page loading cygenix-sidebar.js declares a mount point',
     missing.length === 0, missing.join(', '));
 
-  const projects = fs2.readFileSync(path2.join(dir, 'projects.html'), 'utf8');
+  const projects = fs.readFileSync(path2.join(dir, 'projects.html'), 'utf8');
   check('the Projects page mounts the rail and leaves room for it',
-    /id="cyg-sidebar-mount"/.test(projects) && /padding-left:230px/.test(projects)
+    /id="cyg-sidebar-mount"/.test(projects) && /padding-left:216px/.test(projects)
     && /body\.cyg-collapsed\{padding-left:54px\}/.test(projects)
     && !/<div class="sidebar" id="sidebar">/.test(projects));
 
-  const src2 = fs2.readFileSync(path2.join(dir, 'cygenix-sidebar.js'), 'utf8');
   check('a missing mount self-heals instead of dropping the navigation',
-    /mounting at the top of <body>/.test(src2)
-    && /cyg-sidebar-autopad/.test(src2));
+    /mounting at the top of <body>/.test(src) && /cyg-sidebar-autopad/.test(src));
 }
 
-/* ── The nav has to know what page it is on ─────────────────────────────────
-   The "am I on the dashboard" test was a regex written against
-   /dashboard.html. When the addresses went extensionless it silently became
-   always-false, and all fifteen view: items stopped switching views while the
-   href: ones carried on — a half-dead menu with no error anywhere.
-
-   The browser proof is tests/browser/sidebar-nav.smoke.js, which is the only
-   thing that can really check a path test against a served URL. These are the
-   two properties that can be pinned without one. */
+/* ── 12. The nav has to know what page it is on ─────────────────────────── */
 {
-  const fs3 = require('fs'), path3 = require('path');
+  const path3 = require('path');
   const dir3 = path3.join(__dirname, '..', 'public');
-  const nav = fs3.readFileSync(path3.join(dir3, 'cygenix-sidebar.js'), 'utf8');
-  const app = fs3.readFileSync(path3.join(dir3, 'dashboard-app.js'), 'utf8');
+  const app = fs.readFileSync(path3.join(dir3, 'dashboard-app.js'), 'utf8');
 
   check('the nav decides what page it is on by normalising, not by matching .html',
-    /location\.pathname\.replace\(\/\\\.html\$\/, ''\)/.test(nav)
-    && /onDashboard = here === '\/dashboard'/.test(nav)
-    && !/\/\\\/dashboard\\\.html\?\$\|/.test(nav),
+    /location\.pathname\.replace\(\/\\\.html\$\/, ''\)/.test(src)
+    && /onDashboard = here === '\/dashboard'/.test(src)
+    && !/\/\\\/dashboard\\\.html\?\$\|/.test(src),
     'the stale /dashboard.html regex is back');
-
   check('and normalises it the same way auth-gate.js does, so the two agree',
-    /\.replace\(\/\\\.html\$\/, ''\)\.replace\(\/\\\/\+\$\/, ''\) \|\| '\/'/.test(nav)
+    /\.replace\(\/\\\.html\$\/, ''\)\.replace\(\/\\\/\+\$\/, ''\) \|\| '\/'/.test(src)
     && /\.replace\(\/\\\.html\$\/, ''\)\.replace\(\/\\\/\+\$\/, ''\) \|\| '\/'/
-        .test(fs3.readFileSync(path3.join(dir3, 'auth-gate.js'), 'utf8')));
-
+        .test(fs.readFileSync(path3.join(dir3, 'auth-gate.js'), 'utf8')));
   check('the fallback forces a real load rather than a silent hash change',
-    /window\.location\.reload\(\)/.test(nav) && /differs only in the hash/.test(nav),
-    'assigning a URL that differs only in the hash does not reload the page');
-
-  // Both transports need a reader, or every /dashboard#goto= link in the
-  // product lands on Home.
+    /window\.location\.reload\(\)/.test(src) && /differs only in the hash/.test(src));
   check('the dashboard reads a #goto= deep link', /goto=\(\[\^&\]\+\)/.test(app));
   check('and the cyg_goto key as the other transport', /getItem\('cyg_goto'\)/.test(app));
-  check('it validates the view before switching to it',
-    /getElementById\('view-' \+ view\)/.test(app));
+  check('it validates the view before switching to it', /getElementById\('view-' \+ view\)/.test(app));
   check('it clears both, so a refresh does not re-fire the deep link',
     /removeItem\('cyg_goto'\)/.test(app) && /history\.replaceState/.test(app));
-  // The reader also takes ?goto= from the query string now (the old
-  // /data-analyser address redirects that way), and the same rule holds for
-  // both: nothing is rewritten unless goto= is actually present.
   check('it only rewrites the address when goto= is in it, leaving #assistant alone',
     /var inHash = \/\(\?:\^\|\[#&\]\)goto=\/\.test\(location\.hash \|\| ''\)/.test(app)
     && /if \(!inHash && !inSearch\) return;/.test(app));
-  check('and waits for DOMContentLoaded, not a guessed timer',
-    /addEventListener\('DOMContentLoaded', go\)/.test(app)
-    && !/showView\(goto\); \}, 300\)/.test(app),
-    'a view injected by a later deferred script does not exist yet at parse time');
-
-  // Every producer of the hash form needs the reader to exist.
-  const producers = fs3.readdirSync(dir3)
-    .filter((f) => /\.(js|html)$/.test(f))
-    .filter((f) => /\/dashboard#goto=/.test(fs3.readFileSync(path3.join(dir3, f), 'utf8')));
-  check('the pages that link to /dashboard#goto= are worth having a reader for',
-    producers.length >= 5, producers.join(', '));
+  check('the masthead search hands its query to the Search view, which consumes it',
+    /sessionStorage\.getItem\('cyg_search_q'\)/.test(app) && /removeItem\('cyg_search_q'\)/.test(app));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

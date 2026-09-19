@@ -630,11 +630,16 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
   });
 
   const sidebar = read('public', 'cygenix-sidebar.js');
-  check('Data Stream is a group in the RUN section',
-    /key:'datastream-group'/.test(sidebar) && /label:'Data Stream'/.test(sidebar));
-  check('with all four children pointing at their pages',
-    ['data-stream', 'data-stream-store', 'data-stream-events', 'data-stream-monitor']
-      .every(h => sidebar.indexOf("href:'/" + h + "'") !== -1));
+  // Since the console redesign (Sep-2026) Data stream is one RUN item and its
+  // four screens are the tab strip on that item — no expander to open.
+  check('Data stream is an item in the RUN section',
+    /section: 'Run'[\s\S]*?key:'data-stream',\s*label:'Data stream',\s*href:'\/data-stream'/.test(sidebar));
+  check('with all four screens as its tabs, pointing at their pages',
+    (() => {
+      const strip = /'data-stream': \[([\s\S]*?)\],/.exec(sidebar);
+      return !!strip && ['data-stream', 'data-stream-store', 'data-stream-events', 'data-stream-monitor']
+        .every(h => strip[1].indexOf("href:'/" + h + "'") !== -1);
+    })());
 
   // The Designer is reachable, shareable and refreshable — but not a rail
   // entry, because it is a step inside the Streams workflow.
@@ -643,10 +648,10 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
     /\/data-stream-designer\b/.test(read('public', 'data_stream.html')));
 
   // Placement: between Jobs and Task Manager, per the brief.
-  const runSection = sidebar.slice(sidebar.indexOf("section: 'Run'"), sidebar.indexOf("section: 'Validate'"));
-  check('it sits after Jobs and before Task Manager',
-    runSection.indexOf('jobs-group') < runSection.indexOf('datastream-group')
-    && runSection.indexOf('datastream-group') < runSection.indexOf('task-agent'));
+  const runSection = sidebar.slice(sidebar.indexOf("section: 'Run'"), sidebar.indexOf("section: 'Quality'"));
+  check('it sits after Jobs and before Schedules',
+    runSection.indexOf("key:'jobs'") < runSection.indexOf("key:'data-stream'")
+    && runSection.indexOf("key:'data-stream'") < runSection.indexOf("key:'task-agent'"));
 }
 
 {
@@ -1478,7 +1483,15 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
       // renderDelivery() before the an-kpis block is appended.
       const dash = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
       const an   = fs.readFileSync(path.join(__dirname, '..', 'public', 'analytics-app.js'), 'utf8');
-      return dash.indexOf('id="dash-bandhost"') < dash.indexOf('id="dash-readiness"')
+      // Home (redesigned Sep-2026) no longer carries a band above its numbers:
+      // a blocked stream is an item in the needs-you queue, built from the
+      // SAME blockedStreams()/blockedConsequence() the page uses, and the
+      // queue leads the attention column. What is pinned is that Home reads
+      // the incident from the one builder rather than describing it its own way.
+      const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8');
+      return /CygenixDataStream\.blockedStreams\(st, Date\.now\(\)\)/.test(app)
+        && /CygenixDataStream\.blockedConsequence\(st, e\.stream\)/.test(app)
+        && /id="home-root"/.test(dash)
         && an.indexOf('U.blockedBand(') < an.indexOf('an-kpis');
     })(),
     'below the numbers, the numbers get read first — and they are the misleading part');

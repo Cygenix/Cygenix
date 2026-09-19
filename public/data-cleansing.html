@@ -7,6 +7,7 @@
 <!-- Site-wide theme overrides (Financial palette + future themes).
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-console.css">
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
 <script src="/cygenix-model.js?v=0c71915777"></script>
@@ -45,26 +46,17 @@
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/connections.js?v=375b15ec07" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
-<script src="/cygenix-status-hairline.js?v=73f52fed9d" defer></script>
-<script src="/cygenix-sidebar.js?v=cd02f9a4e8" defer></script>
+<script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
+<script src="/cygenix-sidebar.js?v=a39bbf4be2" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
-  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
-  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
-  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
-  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
-  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
-  --r:10px;--r-lg:14px;
+  /* The console palette lives in cygenix-console.css. Only what is this
+     page's own is declared here. */
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:216px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
 .logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
@@ -73,7 +65,7 @@ body.cyg-collapsed{padding-left:54px}
 .back-link:hover{color:var(--text2)}
 .user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
 .avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
-.container{max-width:min(1600px,calc(100vw - 230px - 32px));margin:0 auto;padding:1.5rem;box-sizing:border-box}
+.container{max-width:min(1600px,calc(100vw - 216px - 32px));margin:0 auto;padding:1.5rem;box-sizing:border-box}
 body.cyg-collapsed .container{max-width:min(1600px,calc(100vw - 54px - 32px))}
 .page-head{margin-bottom:1.25rem}
 .page-title{font-size:1.5rem;font-weight:600;margin-bottom:0.25rem}
@@ -210,6 +202,7 @@ body.cyg-collapsed .container{max-width:min(1600px,calc(100vw - 54px - 32px))}
 
 <div class="container">
 
+<div id="cyg-subnav-mount"></div>
   <div class="page-head">
     <div class="page-title"><i class="ic ic-broom"></i> Data Cleansing · Dedup detection</div>
     <div class="page-sub">
@@ -1450,8 +1443,8 @@ function showToast(msg){
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
-<script src="/cygenix-tour-steps.js?v=f90de981cf"></script>
-<script src="/cygenix-tour.js?v=936b3fb471"></script>
+<script src="/cygenix-tour-steps.js?v=35e59b2611"></script>
+<script src="/cygenix-tour.js?v=7810d9c217"></script>
 <script>CygenixAssistant.registerPage('data-cleansing');</script>
 </body>
 </html>

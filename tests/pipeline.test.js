@@ -296,9 +296,13 @@ check('and no Anthropic call happens on an analytics render',
   'the call bills the user\'s own key — spending it on a page load is not a thing to do quietly');
 check('a cached AI narrative still replaces the deterministic line when there is one',
   /readAiNarrative\(model\.project\.id\)/.test(an) && /ai \? ai\.text : model\.narrative/.test(an));
+// Home was rebuilt (console redesign, Sep-2026); the control is drawn by the
+// Home renderer in dashboard-app.js now rather than by static markup, and
+// Home's own state sentence reads the cached narrative the same way.
 check('and a regenerate control remains, on the screen that authors it',
-  /refreshProjectNarrative/.test(app) && /id="ps-ai-btn"/.test(dash) && /↻/.test(dash),
-  'Analytics is read-only, so the key-spending control stays with Project Status');
+  /refreshProjectNarrative/.test(app) && /id="ps-ai-btn"/.test(app)
+  && /localStorage\.getItem\('cygenix_ps_ai_' \+ activeId\)/.test(app),
+  'Analytics is read-only, so the key-spending control stays with Home');
 
 check('the confidence tile is taken apart with the pipeline\'s own drivers',
   /PL\.confidenceDrivers\(c\)/.test(an),

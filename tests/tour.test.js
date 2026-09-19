@@ -46,12 +46,21 @@ vm.runInContext(read('public', 'cygenix-sidebar.js'), sandbox);
 const SB = sandbox.window.CygenixSidebar;
 
 const NAV = SB.__nav;
+// A step may navigate to anything the rail module can route: a rail item, a
+// tab inside a destination screen, an account-menu item, or the masthead
+// search. The rail has no fold-out groups any more (console redesign,
+// Sep-2026), so parentKeys stays empty and a `data-parent` target is a
+// mistake this test will name.
 const navKeys = new Set();
 const parentKeys = new Set();
 NAV.forEach((sec) => sec.items.forEach((it) => {
   if (it.children) { parentKeys.add(it.key); it.children.forEach((c) => navKeys.add(c.key)); }
   else navKeys.add(it.key);
 }));
+Object.keys(SB.__tabs || {}).forEach((k) => SB.__tabs[k].forEach((t) => navKeys.add(t.key)));
+(SB.__accountNav || []).forEach((it) => navKeys.add(it.key));
+Object.keys(SB.__aliases || {}).forEach((k) => navKeys.add(k));
+navKeys.add('search');
 
 /* ── 1. The steps are well formed ───────────────────────────────────────── */
 

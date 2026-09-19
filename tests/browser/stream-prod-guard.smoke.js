@@ -124,7 +124,7 @@ const server = http.createServer((req, res) => {
     red: getComputedStyle(document.querySelector('.ds-prd')).backgroundColor,
   }));
   check('every row under the PRD profile carries the marker, in red, saying PRD',
-    marks.rows > 0 && marks.marked === marks.rows && marks.text === 'PRD' && /rgb\(192, 57, 43\)/.test(marks.red),
+    marks.rows > 0 && marks.marked === marks.rows && marks.text === 'PRD' && /rgb\(156, 63, 56\)/.test(marks.red),   // --state-fail, the console's one red
     JSON.stringify(marks));
 
   const target = await page.evaluate(() => {

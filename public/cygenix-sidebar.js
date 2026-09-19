@@ -31,10 +31,13 @@
   const MOUNT_ID      = 'cyg-sidebar-mount';
   const ICON_BY_KEY   = {}; // populated from NAV_ITEMS
   // Keep these in lockstep with the hard-coded content offsets on app pages
-  // (padding-left / left:230px when open, 54px when collapsed). Changing them
-  // here without updating every page's offset would misalign the content.
-  const WIDTH_OPEN    = 230;
+  // (padding-left / left:216px when open, 54px when collapsed) and with the
+  // --cx-rail-w / --cx-masthead-h tokens in cygenix-console.css. Changing one
+  // without the others misaligns every page; tests/console-design.test.js
+  // pins all three to each other.
+  const WIDTH_OPEN    = 216;
   const WIDTH_CLOSED  = 54;
+  const MASTHEAD_H    = 60;
 
   // ── Nav structure ───────────────────────────────────────────────────────
   // `key` is the identifier used for both `data-active` matching and dashboard showView.
@@ -48,208 +51,168 @@
   //
   // `requiresAiEnabled` (optional) hides the item when AI features are disabled
   // for this tenant or user.
-  // ── Structure (2026-08 navigation review) ───────────────────────────────
-  // One organising axis — the migration lifecycle: Connect → Map & Build →
-  // Run → Validate → Report & Govern. Duplicate clusters (jobs, quality,
-  // reports, monitoring, settings) collapse into a parent with sub-items, so
-  // every existing destination keeps its page and its key; only grouping,
-  // order and labels change. Utilities are docked in a footer (see
-  // FOOTER_NAV) and cookie preferences live in the account menu, so the
-  // workflow rail fits without scrolling.
+  // ── Structure (Sep-2026 design review) ──────────────────────────────────
+  // FIVE GROUPS, NO EXPANDERS. The previous rail carried roughly thirty
+  // destinations across seven sections and six fold-out groups, and the
+  // comment history on it — Configurator, Packages, Insight moved up,
+  // Planner flattened — was the symptom: a rail being asked to carry
+  // orientation that the landing screen should provide. The review's
+  // finding 03 named the cost. Analytics, Assurance, Quality Review,
+  // Validation and Data Quality all promised the same answer; Reports,
+  // Report Builder, Conversion Report and Project Artifacts all promised a
+  // document. A person cannot choose between names that mean the same
+  // thing, so they click through several.
   //
-  // Parents with `children` are pure expanders (no href/view/action). All
-  // child keys are unchanged from the old flat rail, so pages' data-active
-  // attributes and dashboard badge/view wiring keep working.
+  // So the rail is now one destination per job. Every former expander child
+  // becomes a TAB inside its destination screen (see TABS below), which
+  // means no URL and no data-active key disappears: a page that mounts
+  // with data-active="validation" still resolves, still highlights the
+  // right rail item (Assurance, through ALIASES), and still shows Validation
+  // as the current tab on that screen.
+  //
+  // MONOCHROME, deliberately. Items used to carry a per-item `color:` — teal,
+  // green, amber, purple, red — purely as decoration, while the same five
+  // hues carry meaning in badges and charts. When green means both
+  // "Connections" and "passed", it has stopped signalling. The rail is ink;
+  // hue is reserved for state. This is finding 04 and it is a data change:
+  // there is no `color` property on any item any more, and a test refuses
+  // one being added back.
+  //
+  // `key` is the identifier used for data-active matching and dashboard
+  // showView. `href` means a separate page; `view` a dashboard view. Icons
+  // are kept for the collapsed 54px rail only — the open rail is text.
   const NAV = [
-    { section: null, items: [
-      { key:'dashboard', label:'Home',   view:'dashboard', icon: iconDashboard() },
-      // Search sits between Home and Project (moved on request, 21-Aug-2026).
-      { key:'search',    label:'Search', view:'search',    icon: iconSearch() },
-      // Project sits directly below Home (moved out of Reports on request,
-      // 21-Aug-2026): the estimate is where an engagement starts, and the
-      // plan follows straight from it. Estimator first, then the Planner.
-      { key:'project-group', label:'Project', icon: iconEstimator(), children: [
-        // Renamed 'Configurator' on request (21-Aug-2026); the key and page
-        // filename stay effort-estimator / effort_estimator.html so every
-        // data-active mount and bookmark keeps working.
-        { key:'effort-estimator',  label:'Configurator',     href:'/configurator', color:'var(--teal)',  icon: iconEstimator() },
-        { key:'project-plan-grid', label:'Project Plan',     href:'/project-plan',     color:'var(--green)', icon: iconPlanGrid() },
-      ]},
+    { section: null, group: 'home', items: [
+      { key:'dashboard', label:'Home', view:'dashboard', icon: iconDashboard() },
     ]},
     { section: 'Connect', group:'connect', items: [
-      { key:'connections',  label:'Connections',  view:'connections',  color:'var(--green)', icon: iconPlug() },
-      { key:'profiles',     label:'Profiles',     href:'/profiles', color:'var(--amber, #f59e0b)', icon: iconShield() },
-      // The Data Analyser was briefly its own item here, at /data-analyser.
-      // It now lives INSIDE Connections, on the Data import tab: that tab is
-      // where a file arrives, and "what is this file and what will break"
-      // is the question to answer before importing it. /data-analyser still
-      // redirects there (scripts/build-routes.js), so nothing bookmarked
-      // breaks. Do not add it back as an item — one place for files.
-      { key:'integrations', label:'Integrations', view:'integrations', color:'var(--teal)',  icon: iconIntegrations() },
-      { key:'settings-group', label:'Settings', icon: iconSettings(), children: [
-        { key:'project-settings',  label:'General',           view:'project-settings',  color:'var(--amber)',  icon: iconSettings() },
-        { key:'notifications',     label:'Notifications',     view:'notifications',     color:'var(--teal)',   icon: iconBell() },
-        { key:'system-parameters', label:'System Parameters', view:'system-parameters', color:'var(--accent)', icon: iconParams() },
-        { key:'user-roles',        label:'Users & Roles',     href:'/user-roles',  color:'var(--accent)', icon: iconUsers() },
-      ]},
+      { key:'connections', label:'Connections',             view:'connections', icon: iconPlug() },
+      { key:'profiles',    label:'Profiles & integrations', href:'/profiles',   icon: iconShield() },
     ]},
-    // Its own section, deliberately, and deliberately NOT called 'Analyse'.
-    // 'Analyse' is already a stage of the migration pipeline on Home — the one
-    // where a schema gets profiled — and a rail item sharing that word would
-    // read as a step in the lifecycle rather than a lens over it.
-    //
-    // MOVED UP (Sep-2026, on request) from between Validate and Report &
-    // Govern. It sat there when it held Analytics alone, on the reading that
-    // there is nothing to look at until something has run. The Schema
-    // Explorer arriving changed what the section is: its first item is the
-    // screen you open before you map anything, to find out what is in the
-    // databases you just connected. Connect → look at what you connected →
-    // map it is the order the work actually happens in, and a section whose
-    // first item belongs at the start does not belong two thirds of the way
-    // down the rail.
-    //
-    // Analytics is the awkward half — it reports on runs, so it genuinely
-    // belongs late — but it is one item, it is the SECOND item, and nobody
-    // hunts for a dashboard by position. Splitting Insight in two to place
-    // them separately would cost a rail section to save a scroll.
-    { section: 'Insight', group:'insight', items: [
-      // Schema Explorer first: the two answer the same kind of question at
-      // opposite ends of a migration, and this is the order you ask them in —
-      // what is in these databases, then what happened when we moved them.
-      // Its being first is also what justifies the section's new position, so
-      // the two decisions have to move together.
-      { key:'schema-explorer', label:'Schema Explorer', href:'/schema-explorer', color:'var(--purple)', icon: iconGraph() },
-      { key:'analytics', label:'Analytics', href:'/analytics', color:'var(--accent)', icon: iconChart() },
-    ]},
-    { section: 'Map & Build', group:'build', items: [
-      // The Schema Explorer moved to Insight (Sep-2026, on request). It reads
-      // a schema and shows what is there — including relationships it infers
-      // rather than reads — which is a lens over a database, not a step in
-      // building a mapping. The Home pipeline already treated it that way:
-      // cygenix-pipeline.js sends the ANALYSE stage to /schema-explorer.
-      //
-      // That left `objmap-group` holding one child, and a one-child expander
-      // earns nothing but a click — the same reason Planner & Schedules was
-      // flattened when Project Planner went. So it is a plain item again.
-      //
-      // The key is `object-mapping`, as it has always been: pages mount with
-      // data-active="object-mapping" and dashboard deep links use it. It sat
-      // on the child rather than the expander precisely so this could happen
-      // without breaking a single link.
-      // Conversion Templates (Sep-2026): the cut-down copy of the target
-      // schema a client builds a staging database to. It sits ABOVE Object
-      // Mapping because it is decided before any mapping is drawn — the
-      // template says which tables exist to be mapped to. Same colour as
-      // its neighbours: it is a Map & Build step, not a new kind of thing.
-      { key:'conversion-templates', label:'Conversion Templates', href:'/conversion-templates', color:'var(--teal)', icon: iconGrid() },
-      { key:'object-mapping', label:'Object Mapping', href:'/object-mapping', color:'var(--teal)', icon: iconArrows() },
-      { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor',         color:'var(--teal)',   icon: iconCode() },
-      { key:'agentive-migration', label:'AI Assist',      href:'/agentive-migration', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
-      // AI Workspace (coworker.html) was replaced by the docked Assistant
-      // panel, which is present on every app screen (Ctrl+/ or the launcher).
-      // /coworker redirects there and migrates its saved artifacts.
+    { section: 'Model', group:'model', items: [
+      { key:'schema-explorer', label:'Schema explorer', href:'/schema-explorer', icon: iconGraph() },
+      { key:'object-mapping',  label:'Object mapping',  href:'/object-mapping',  icon: iconArrows() },
+      { key:'sql-editor',      label:'SQL editor',      href:'/sql-editor',      icon: iconCode() },
     ]},
     { section: 'Run', group:'run', items: [
-      { key:'jobs-group', label:'Jobs', icon: iconPlay(), children: [
-        { key:'jobs',            label:'All Jobs', view:'jobs',                  icon: iconList() },
-        // The key stays 'project-builder' — pages set data-active on it and the
-        // dashboard routes from it. Only the visible name has ever changed:
-        // Execute Migration, then Batches, then Pipelines, now Packages. The
-        // screen is where you arrange jobs into an ordered run and save that
-        // arrangement by name; "package" is what you have when you do. It also
-        // frees "pipeline", which is wanted for something else.
-        //
-        // TWO WORDS THIS SCREEN SHARES WITH SOMETHING ELSE. Both are older
-        // than the rename and neither is this screen:
-        //
-        //   "batch"    — the multi-row INSERT batches the runner emits, and
-        //                db-connect's `action:'batch'`. Where that meaning was
-        //                user-visible it now reads "Writes" (the conversion
-        //                report column, the run log's per-write lines): calling
-        //                it Batches, or Pipelines, or Packages would have made
-        //                the report say something untrue.
-        //
-        //   "package"  — Export Deployable Package on the dashboard (a job as a
-        //                self-contained .sql file), SSIS packages in server-
-        //                object migration, and "Package selected jobs as a task"
-        //                on this very screen. Those are all a different word
-        //                that happens to be spelled the same, and renaming them
-        //                to match would make each one less accurate, not more.
-        //
-        // So: grep for the label, not for the word.
-        { key:'project-builder', label:'Packages',  href:'/project-builder', color:'var(--purple)', icon: iconPlay() },
-      ]},
-      // Data Stream sits between Jobs and Task Manager because that is the
-      // order of the question it answers: packages move the bulk, streams move
-      // the changes, and the Task Manager schedules both. Streams are
-      // run-time objects, so they belong in RUN rather than in a section of
-      // their own.
-      { key:'datastream-group', label:'Data Stream', icon: iconStream(), children: [
-        { key:'data-stream',         label:'Streams',       href:'/data-stream',         color:'var(--teal)',   icon: iconStream() },
-        { key:'data-stream-store',   label:'Stream Store',  href:'/data-stream-store',   color:'var(--accent)', icon: iconStore() },
-        { key:'data-stream-events',  label:'Change Events', href:'/data-stream-events',  color:'var(--green)',  icon: iconBolt() },
-        { key:'data-stream-monitor', label:'Stream Monitor',href:'/data-stream-monitor', color:'var(--purple)', icon: iconChart() },
-      ]},
-      // Project Planner was removed along with its page. With one child left
-      // the "Planner & Schedules" expander earned nothing, so this is a plain
-      // top-level item. The key stays `task-agent` — pages set
-      // data-active="task-agent" and dashboard.html routes showView on it.
-      { key:'task-agent', label:'Task Manager', view:'task-agent', color:'var(--yellow)', icon: iconClock() },
-      { key:'server-migration', label:'Server Migration', view:'server-migration', color:'var(--accent)', icon: iconServerMigration() },
+      { key:'jobs',        label:'Jobs & packages', view:'jobs',        icon: iconPlay() },
+      { key:'data-stream', label:'Data stream',     href:'/data-stream', icon: iconStream() },
+      // The key stays `task-agent` — pages set data-active on it and the
+      // dashboard routes showView on it. Only the label has ever changed.
+      { key:'task-agent',  label:'Schedules',       view:'task-agent',  icon: iconClock() },
     ]},
-    { section: 'Validate', group:'validate', items: [
-      { key:'quality-group', label:'Data Quality', icon: iconQuality(), children: [
-        // Assurance leads: it is the continuous layer the three one-off
-        // pages feed — validation rules promote INTO it, breaches hand off
-        // to Cleansing, and Quality Review stays the pre-flight pass.
-        { key:'assurance',      label:'Assurance',      href:'/assurance',      color:'var(--accent)', icon: iconCheck() },
-        { key:'data-quality',   label:'Quality Review', href:'/data-quality',   color:'var(--green)', icon: iconQuality() },
-        { key:'data-cleansing', label:'Cleansing',      href:'/data-cleansing', color:'var(--teal)',  icon: iconClean() },
-        // After Cleansing, before Validation — the operator sequence is
-        // de-duplicate → enrich → validate: don't enrich three copies of the
-        // same person, and have the enriched values in place before the
-        // validation report is generated.
-        { key:'data-enrichment', label:'Data Enrichment', href:'/data-enrichment', color:'var(--purple, #a888d0)', icon: iconEnrich() },
-        { key:'validation',     label:'Validation',     href:'/validation',     color:'var(--amber)', icon: iconCheck() },
-      ]},
-      // 'Data Insights' was removed on request (16-Aug-2026): the Schema
-      // Explorer's Data map now covers schema discovery. The page itself
-      // still answers at /insights for old bookmarks.
+    { section: 'Quality', group:'quality', items: [
+      { key:'assurance',      label:'Assurance',              href:'/assurance',      icon: iconCheck() },
+      { key:'data-cleansing', label:'Cleansing & enrichment', href:'/data-cleansing', icon: iconClean() },
     ]},
-    { section: 'Report & Govern', group:'govern', items: [
-      { key:'reports-group', label:'Reports', icon: iconReport(), children: [
-        { key:'report-builder',           label:'Report Builder',    href:'/reports',            color:'var(--amber)',  icon: iconReportBuilder() },
-        { key:'reports',                  label:'Conversion Report', view:'reports',                  color:'var(--purple)', icon: iconReport() },
-        // The Effort Estimator and Project Plan moved to the top-level
-        // Project group below Home (21-Aug-2026). Their keys are unchanged
-        // ('project-plan-grid' — NOT 'project-plan', which belongs to the
-        // retired Planner & Schedules page and whose removal is pinned).
-        // 'Project Summary' was removed on request (17-Aug-2026). The view
-        // itself still loads on dashboard.html and answers to
-        // #goto=project-summary-document for old bookmarks.
-      ]},
-      { key:'inventory',        label:'Project Artifacts', view:'inventory',        icon: iconGrid() },
-      { key:'privacy-security', label:'Governance',        view:'privacy-security', color:'var(--red)',   icon: iconShield() },
-      { key:'audit',            label:'Audit Log',         view:'audit',            color:'var(--text2)', icon: iconAuditLog(), requiresAuditRead:true },
-      { key:'monitoring-group', label:'Monitoring', icon: iconChart(), children: [
-        { key:'performance', label:'Performance', href:'/performance', color:'var(--teal)',  icon: iconChart() },
-        { key:'diagnostics', label:'Diagnostics', view:'diagnostics',       color:'var(--text2)', icon: iconPulse() },
-      ]},
+    { section: 'Govern', group:'govern', items: [
+      { key:'report-builder', label:'Reports',   href:'/reports', icon: iconReport() },
+      { key:'audit',          label:'Audit log', view:'audit',    icon: iconAuditLog(), requiresAuditRead:true },
     ]},
   ];
 
-  // Utility destinations that live in the ACCOUNT MENU rather than the rail
-  // (with Cookie preferences and Subscription), keeping the workflow rail to
-  // workflow only. Rendered by buildUserMenu; still reachable through
-  // findItem so keys resolve for tests and setActive.
+  // ── Where every former destination went ─────────────────────────────────
+  // TABS: one entry per rail destination that absorbed others. Rendered as a
+  // tab strip at the top of the destination screen (into #cyg-subnav-mount,
+  // or above the first header if a page has not declared one). Each tab is a
+  // real destination with its own key, so `findItem`, `navigate` and the
+  // structural tests treat it exactly like a rail item — it has simply moved
+  // from the rail into the screen it belongs to.
   //
-  // `navClass:'a11y-trigger'` must survive the move: cygenix-a11y.js's
-  // outside-click handler skips elements matching it, otherwise the same
-  // click that opens the panel would immediately close it again.
+  // A tab marked `away:true` leaves the current page rather than switching a
+  // panel in place; it renders in accent-700 so the reader knows before
+  // clicking (the Data generator tab on Connections is the model for this).
+  const TABS = {
+    'profiles': [
+      { key:'profiles',     label:'Profiles',     href:'/profiles' },
+      { key:'integrations', label:'Integrations', view:'integrations' },
+    ],
+    'object-mapping': [
+      { key:'object-mapping',       label:'Object mapping',       href:'/object-mapping' },
+      { key:'conversion-templates', label:'Conversion templates', href:'/conversion-templates' },
+      // AI Assist is an action inside Object Mapping in the redesign, not a
+      // destination. Until that page absorbs it, it stays reachable here and
+      // keeps its feature flag.
+      { key:'agentive-migration',   label:'AI assist',            href:'/agentive-migration', requiresAiEnabled:true },
+    ],
+    'jobs': [
+      { key:'jobs',             label:'Jobs',             view:'jobs' },
+      { key:'project-builder',  label:'Packages',         href:'/project-builder' },
+      { key:'server-migration', label:'Server migration', view:'server-migration' },
+      // Analytics reports on runs, so it sits with them. Home carries the
+      // readiness figure itself; the analysis stays on its own page.
+      { key:'analytics',        label:'Analytics',        href:'/analytics' },
+    ],
+    'data-stream': [
+      { key:'data-stream',         label:'Streams',        href:'/data-stream' },
+      { key:'data-stream-store',   label:'Stream store',   href:'/data-stream-store' },
+      { key:'data-stream-events',  label:'Change events',  href:'/data-stream-events' },
+      { key:'data-stream-monitor', label:'Stream monitor', href:'/data-stream-monitor' },
+    ],
+    'assurance': [
+      { key:'assurance',    label:'Assurance',      href:'/assurance' },
+      { key:'data-quality', label:'Quality review', href:'/data-quality' },
+      { key:'validation',   label:'Validation',     href:'/validation' },
+    ],
+    'data-cleansing': [
+      { key:'data-cleansing',  label:'Cleansing',  href:'/data-cleansing' },
+      { key:'data-enrichment', label:'Enrichment', href:'/data-enrichment' },
+    ],
+    'report-builder': [
+      { key:'report-builder',    label:'Report builder',    href:'/reports' },
+      { key:'reports',           label:'Conversion report', view:'reports' },
+      { key:'inventory',         label:'Project artifacts', view:'inventory' },
+      // The estimate and the plan are documents about the project, which is
+      // what this screen is for. Keys unchanged: effort-estimator and
+      // project-plan-grid are what the pages mount with.
+      { key:'effort-estimator',  label:'Configurator',      href:'/configurator' },
+      { key:'project-plan-grid', label:'Project plan',      href:'/project-plan' },
+    ],
+    'audit': [
+      { key:'audit',       label:'Audit log',   view:'audit' },
+      { key:'performance', label:'Performance', href:'/performance' },
+      { key:'diagnostics', label:'Diagnostics', view:'diagnostics' },
+    ],
+  };
+
+  // ALIASES: former key → the rail item that now owns it, so setActive(key)
+  // on any page that mounts with an old data-active still lights the right
+  // row. Keys that resolve to a TABS entry are derived; the ones listed here
+  // are the destinations that moved somewhere with no tab of their own.
+  const ALIASES = {
+    'search':                   'dashboard',   // the masthead field
+    'project-summary-document': 'dashboard',
+    'insights':                 'schema-explorer',
+    // The Data Analyser was briefly its own rail item, at /data-analyser. It
+    // lives INSIDE Connections, on the Data import tab: that tab is where a
+    // file arrives, and "what is this file and what will break" is the
+    // question to answer before importing it. /data-analyser still redirects
+    // there (scripts/build-routes.js), so nothing bookmarked breaks. Do not
+    // add it back as an item — one place for files.
+    'data-analyser':            'connections',
+  };
+
+  // Settings and governance live in the ACCOUNT MENU rather than the rail,
+  // with Help, Accessibility, Cookies and Subscription. Still reachable
+  // through findItem so keys resolve for tests, setActive and the tour.
+  //
+  // `navClass:'a11y-trigger'` must survive: cygenix-a11y.js's outside-click
+  // handler skips elements matching it, otherwise the same click that opens
+  // the panel would immediately close it again.
   const ACCOUNT_NAV = [
-    { key:'help',          label:'Help Guide',    action:'open-help',     color:'var(--accent)', icon: iconHelp() },
-    { key:'accessibility', label:'Accessibility', action:'accessibility', color:'var(--text3)',  icon: iconA11y(), navClass:'a11y-trigger' },
+    { key:'project-settings',  label:'General settings',  view:'project-settings',  icon: iconSettings() },
+    { key:'notifications',     label:'Notifications',     view:'notifications',     icon: iconBell() },
+    { key:'system-parameters', label:'System parameters', view:'system-parameters', icon: iconParams() },
+    { key:'user-roles',        label:'Users & roles',     href:'/user-roles',       icon: iconUsers() },
+    { key:'privacy-security',  label:'Governance',        view:'privacy-security',  icon: iconShield() },
+    { key:'help',              label:'Help guide',        action:'open-help',       icon: iconHelp() },
+    { key:'accessibility',     label:'Accessibility',     action:'accessibility',   icon: iconA11y(), navClass:'a11y-trigger' },
   ];
+
+  // The masthead's region label. The Function App, Cosmos account and blob
+  // storage are in UK South; the residency claim is the product's, and this
+  // is where the product states it.
+  const REGION_LABEL = 'UK South';
 
   // ── Icons (returns SVG string) ──────────────────────────────────────────
   function svg(body){ return '<svg class="cyg-nav-icon" viewBox="0 0 16 16" fill="none">'+body+'</svg>'; }
@@ -433,359 +396,223 @@
     const style = document.createElement('style');
     style.id = 'cyg-sidebar-styles';
     style.textContent = `
-      /* ── Cygenix redesigned console sidebar ────────────────────────────
-         Ink-dark rail, independent of the workspace theme so it reads the
-         same in light and dark. Brand mark up top, grouped nav, indigo
-         active rail, collapsible to an icon-only strip. */
+      /* ── Console chrome: masthead + rail (design review, Sep-2026) ──────
+         The rail used to be an ink-dark column carrying the brand, a
+         project switcher, a Drive button, a profile chip, seven sections of
+         coloured items and an account footer. The brand, the project, the
+         search, the Files button and the account now live in a 60px
+         masthead across the top; the rail beneath it is monochrome text on
+         the page ground with a 2px accent bar on the active item — hue is
+         reserved for state, so the only colour on the rail is the profile
+         chip's status square, which IS state. All values come from the
+         tokens in cygenix-console.css; the fallbacks here exist so the rail
+         still renders on a page that has not loaded that file. */
+      .cx-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+      .cx-masthead{
+        position:fixed;top:var(--cyg-hairline-h,0px);left:0;right:0;height:${MASTHEAD_H}px;
+        /* Under the status hairline (z 54/55), which sits at the very top and
+           must stay hoverable; over page content. The rail does not overlap
+           it, so their order does not matter. */
+        z-index:50;
+        background:var(--color-accent-900,#1d2d3d);color:var(--color-bg,#f2f2f3);
+        display:flex;align-items:center;gap:18px;padding:0 20px 0 16px;
+        font-family:var(--font-body,'Barlow',system-ui,sans-serif);
+        -webkit-font-smoothing:antialiased;
+      }
+      .cx-mh-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;flex:0 0 auto}
+      .cx-logo{width:26px;height:26px;display:block;flex:0 0 auto;border-radius:7px}
+      .cx-wordmark{font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;font-size:21px;
+        letter-spacing:.18em;text-transform:uppercase;color:var(--color-bg,#f2f2f3);line-height:1}
+      .cx-mh-div{width:1px;height:24px;background:rgba(255,255,255,.25);flex:0 0 auto}
+      .cx-mh-proj{display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;cursor:pointer;
+        font:inherit;padding:6px 8px;min-width:0;text-align:left}
+      .cx-mh-proj:hover{background:rgba(255,255,255,.06)}
+      .cx-mh-proj-lbl{opacity:.7;font-size:14px;white-space:nowrap}
+      .cx-mh-proj-name{font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;font-size:17px;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
+      .cx-mh-proj-chev{opacity:.6;font-size:10px}
+      .cx-mh-spacer{flex:1 1 auto;min-width:8px}
+      .cx-mh-form{display:flex;margin:0}
+      .cx-mh-search{width:250px;height:32px;border:1px solid rgba(255,255,255,.3);background:transparent;
+        color:var(--color-bg,#f2f2f3);font:inherit;font-size:14px;padding:0 10px;border-radius:0}
+      .cx-mh-search::placeholder{color:rgba(255,255,255,.75)}
+      .cx-mh-search::-webkit-search-cancel-button{-webkit-appearance:none}
+      .cx-mh-search:focus{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px;border-color:rgba(255,255,255,.6)}
+      .cx-mh-btn{height:32px;padding:0 12px;border:1px solid rgba(255,255,255,.3);background:transparent;
+        color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;
+        font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;border-radius:0}
+      .cx-mh-btn:hover{background:rgba(255,255,255,.08)}
+      .cx-mh-region{font-size:14px;opacity:.8;white-space:nowrap}
+      .cx-mh-av{width:30px;height:30px;border:1px solid rgba(255,255,255,.35);background:transparent;
+        color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;
+        font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;border-radius:0;flex:0 0 auto}
+      .cx-mh-av:hover{background:rgba(255,255,255,.08)}
+      .cx-masthead :focus-visible{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px}
+
+      /* ── The rail ── */
       .cyg-sidebar{
-        --cyg-ink:#14161f;
-        --cyg-fg:rgba(255,255,255,0.62);
-        --cyg-fg-strong:#ffffff;
-        --cyg-muted:rgba(255,255,255,0.32);
-        background:var(--cyg-ink);
-        border-right:1px solid rgba(255,255,255,0.06);
-        padding:0 0 0.5rem;
+        background:var(--color-bg,#f2f2f3);
+        border-right:1px solid var(--color-divider,rgba(29,31,32,.16));
+        padding:8px 0 24px;
         width:${WIDTH_OPEN}px;
-        display:flex;
-        flex-direction:column;
-        overflow:hidden;
-        transition:width 0.22s cubic-bezier(.4,0,.2,1);
-        position:fixed;
-        top:0;
-        left:0;
-        bottom:0;
-        height:100vh;
+        display:flex;flex-direction:column;overflow:hidden;
+        transition:width .22s cubic-bezier(.4,0,.2,1);
+        position:fixed;left:0;bottom:0;
+        top:calc(var(--cyg-hairline-h,0px) + ${MASTHEAD_H}px);
         z-index:90;
-        font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+        font-family:var(--font-body,'Barlow',system-ui,sans-serif);
         -webkit-font-smoothing:antialiased;
       }
       .cyg-sidebar.collapsed{ width:${WIDTH_CLOSED}px; }
 
-      /* Brand header */
-      .cyg-sidebar-head{
-        display:flex;
-        align-items:center;
-        gap:8px;
-        height:64px;
-        min-height:64px;
-        padding:0 10px 0 14px;
-        flex-shrink:0;
-        overflow:hidden;
-      }
-      .cyg-sidebar.collapsed .cyg-sidebar-head{ justify-content:center;padding:0; }
-      /* When collapsed, the brand steps aside so the expand toggle is the
-         single, always-visible control in the header (otherwise there is no
-         way to re-open the menu). */
-      .cyg-sidebar.collapsed .cyg-brand{ display:none; }
-      .cyg-brand{ display:flex;align-items:center;gap:10px;min-width:0;flex:1;overflow:hidden;text-decoration:none; }
-      .cyg-brand-mark{
-        width:34px;height:34px;min-width:34px;border-radius:9px;
-        background:linear-gradient(140deg,#6d5df2,#4a7cf3);
-        display:flex;align-items:center;justify-content:center;
-        box-shadow:0 4px 14px -4px rgba(74,91,214,0.6);
-      }
-      .cyg-brand-mark svg{ width:21px;height:21px;display:block; }
-      .cyg-brand-word{ display:flex;flex-direction:column;line-height:1.15;overflow:hidden; }
-      .cyg-brand-word b{ display:flex;align-items:center;gap:7px;
-        font-size:16px;font-weight:700;letter-spacing:-0.01em;color:var(--cyg-fg-strong); }
-      /* Direct child: the badge below lives INSIDE the <b>, and this rule —
-         which styles the "Migration Console" strapline — would otherwise catch
-         it and render it as a second strapline. */
-      .cyg-brand-word > span{ font-size:10px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--cyg-muted);white-space:nowrap; }
-      /* Beta mark. Outlined rather than filled: the brand mark beside it is
-         already a saturated gradient, and a second solid block turns the
-         lockup into two competing shapes. Same wording and weight as the
-         Assistant panel's badge so the product says "beta" one way. */
-      .cyg-brand-beta{
-        font-size:9px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;
-        padding:2px 6px;border-radius:99px;line-height:1.5;
-        color:rgba(255,255,255,0.62);
-        border:1px solid rgba(255,255,255,0.22);
-        background:rgba(255,255,255,0.05);
-        white-space:nowrap;flex:0 0 auto;
-      }
-      .cyg-sidebar.collapsed .cyg-brand-word{ display:none; }
-
+      /* One control in the head: the collapse toggle. The brand is in the
+         masthead now, so the head has nothing else to hold. */
+      .cyg-sidebar-head{display:flex;align-items:center;justify-content:flex-end;padding:0 8px 4px;flex-shrink:0}
+      .cyg-sidebar.collapsed .cyg-sidebar-head{justify-content:center;padding:0 0 4px}
       .cyg-sidebar-toggle{
-        margin-left:auto;
-        background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);cursor:pointer;
-        color:rgba(255,255,255,0.6);
-        width:28px;height:28px;border-radius:8px;
-        display:flex;align-items:center;justify-content:center;
-        font-size:13px;line-height:1;
-        transition:color 0.15s,background 0.15s;
+        background:transparent;border:1px solid var(--color-divider,rgba(29,31,32,.16));cursor:pointer;
+        color:var(--color-neutral-700,#5d5d60);width:26px;height:26px;border-radius:0;
+        display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;
       }
-      .cyg-sidebar-toggle:hover{ color:#fff; background:rgba(255,255,255,0.12); }
-      /* Stay visible & centered when collapsed so the menu can always be
-         re-expanded (the arrow flips to ❯ via JS). */
-      .cyg-sidebar.collapsed .cyg-sidebar-toggle{ margin-left:0;width:32px;height:32px;font-size:14px; }
+      .cyg-sidebar-toggle:hover{color:var(--color-text,#1d1f20);background:color-mix(in srgb,var(--color-text,#1d1f20) 4%,transparent)}
 
-      .cyg-sidebar-scroll{
-        flex:1 1 auto;
-        overflow-y:auto;
-        overflow-x:hidden;
-        padding:2px 12px 12px;
-        scrollbar-width:thin;
-        scrollbar-color:rgba(255,255,255,0.14) transparent;
-      }
-      .cyg-sidebar-scroll::-webkit-scrollbar{ width:6px; }
-      .cyg-sidebar-scroll::-webkit-scrollbar-thumb{ background:rgba(255,255,255,0.14); border-radius:3px; }
-      .cyg-sidebar-scroll::-webkit-scrollbar-track{ background:transparent; }
+      .cyg-sidebar-scroll{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:0 0 12px;
+        scrollbar-width:thin;scrollbar-color:var(--color-neutral-300,#d4d4d7) transparent}
+      .cyg-sidebar-scroll::-webkit-scrollbar{width:6px}
+      .cyg-sidebar-scroll::-webkit-scrollbar-thumb{background:var(--color-neutral-300,#d4d4d7)}
 
-      .cyg-nav-section{ margin-top:14px; }
-      .cyg-nav-section:first-child{ margin-top:6px; }
+      .cyg-nav-section{margin:0}
       .cyg-nav-label{
-        font-size:10px;font-weight:600;color:var(--cyg-muted);
-        text-transform:uppercase;letter-spacing:0.09em;
-        padding:0 12px 7px;
+        font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;font-size:13px;line-height:1.2;
+        letter-spacing:.16em;text-transform:uppercase;color:var(--color-neutral-700,#5d5d60);
+        padding:16px 10px 5px;
       }
-
       .cyg-nav-item{
-        display:flex;align-items:center;gap:13px;
-        padding:9px 12px;
-        margin:2px 0;
-        border-radius:9px;
-        font-size:13.5px;font-weight:500;color:var(--cyg-fg);
-        cursor:pointer;
-        transition:color 0.15s,background 0.15s;
-        position:relative;
-        user-select:none;
-        white-space:nowrap;
+        display:flex;align-items:center;gap:10px;
+        padding:7px 10px;margin:0;border-radius:0;
+        border-left:2px solid transparent;
+        font-size:14px;line-height:1.2;font-weight:400;color:var(--color-neutral-700,#5d5d60);
+        cursor:pointer;position:relative;user-select:none;white-space:nowrap;
+        transition:background .12s,color .12s;
       }
-      .cyg-nav-item:hover{ color:#fff; background:rgba(255,255,255,0.09); }
-      .cyg-nav-item.active{ color:var(--cyg-fg-strong); background:rgba(255,255,255,0.10); font-weight:600; }
-      .cyg-nav-item.active::before{
-        content:'';position:absolute;left:-12px;top:50%;transform:translateY(-50%);
-        width:3px;height:20px;border-radius:0 3px 3px 0;background:var(--accent);
-      }
-      .cyg-nav-icon{ width:18px;height:18px;opacity:0.9;flex-shrink:0;color:currentColor; }
-      .cyg-nav-item:hover .cyg-nav-icon{ opacity:1; }
-      .cyg-nav-item.active .cyg-nav-icon{ opacity:1;color:#fff; }
-
+      .cyg-nav-item:hover{color:var(--color-text,#1d1f20);background:color-mix(in srgb,var(--color-text,#1d1f20) 4%,transparent)}
+      .cyg-nav-item.active{color:var(--color-accent-900,#1d2d3d);background:var(--color-accent-100,#eef6ff);border-left-color:var(--color-accent,#5980a6)}
+      .cyg-nav-item:focus-visible{outline:2px solid var(--color-accent,#5980a6);outline-offset:-2px}
+      /* Icons are for the 54px rail only; the open rail is text. */
+      .cyg-nav-icon{width:18px;height:18px;flex-shrink:0;color:currentColor;display:none}
+      .cyg-sidebar.collapsed .cyg-nav-icon{display:block}
       .cyg-sidebar.collapsed .cyg-nav-label,
-      .cyg-sidebar.collapsed .cyg-nav-item-label{ display:none; }
-      .cyg-sidebar.collapsed .cyg-nav-item{ justify-content:center;padding:9px 0;gap:0; }
-      .cyg-sidebar.collapsed .cyg-nav-item.active::before{ left:-12px; }
+      .cyg-sidebar.collapsed .cyg-nav-item-label{display:none}
+      .cyg-sidebar.collapsed .cyg-nav-item{justify-content:center;padding:9px 0;gap:0;border-left-width:2px}
 
-      /* Notification badge — small red pill with count, anchored to the right */
+      /* Count badge on an item — a failure count, which is state. */
       .cyg-nav-badge{
-        margin-left:auto;
-        min-width:19px;height:19px;
-        padding:0 5px;
-        border-radius:10px;
-        background:var(--red,#e5484d);
-        color:#fff;
-        font-size:10.5px;font-weight:600;
-        line-height:19px;
-        text-align:center;
-        display:none;
-        flex-shrink:0;
+        margin-left:auto;min-width:19px;height:19px;padding:0 5px;border-radius:0;
+        background:var(--state-fail,#9c3f38);color:#fff;font-size:12px;font-weight:600;line-height:19px;
+        text-align:center;display:none;flex-shrink:0;font-variant-numeric:tabular-nums;
       }
-      .cyg-nav-badge.show{ display:inline-block; }
-      /* Collapsed sidebar: show as a small dot in the top-right corner of the icon */
-      .cyg-sidebar.collapsed .cyg-nav-badge{
-        position:absolute;
-        top:5px;right:16px;
-        margin:0;padding:0;
-        min-width:8px;width:8px;height:8px;
-        border-radius:50%;
-        font-size:0;line-height:0;
-      }
+      .cyg-nav-badge.show{display:inline-block}
+      .cyg-sidebar.collapsed .cyg-nav-badge{position:absolute;top:5px;right:12px;margin:0;padding:0;
+        min-width:8px;width:8px;height:8px;font-size:0;line-height:0}
 
-      body.cyg-collapsed{ --cyg-sidebar-w:${WIDTH_CLOSED}px; }
-      body:not(.cyg-collapsed){ --cyg-sidebar-w:${WIDTH_OPEN}px; }
+      body.cyg-collapsed{--cyg-sidebar-w:${WIDTH_CLOSED}px}
+      body:not(.cyg-collapsed){--cyg-sidebar-w:${WIDTH_OPEN}px}
       /* Applied only when mount() had to create its own mount point: the page
          has no padding rule of its own, so keep its content clear of the rail. */
-      body.cyg-sidebar-autopad{ padding-left:var(--cyg-sidebar-w);transition:padding-left 0.2s ease; }
+      body.cyg-sidebar-autopad{padding-left:var(--cyg-sidebar-w);transition:padding-left .2s ease}
 
-      /* Pinned footer — user chip + accessibility control (always visible). */
-      .cyg-sidebar-foot{
-        flex-shrink:0;
-        border-top:1px solid rgba(255,255,255,0.07);
-        padding:10px 12px;
-        display:flex;flex-direction:column;gap:4px;
-      }
-      .cyg-user-chip{
-        display:flex;align-items:center;gap:11px;width:100%;
-        padding:8px;border:none;background:none;border-radius:10px;cursor:pointer;
-        font:inherit;text-align:left;
-        transition:background 0.15s;text-decoration:none;
-      }
-      .cyg-user-chip:hover{ background:rgba(255,255,255,0.07); }
-      .cyg-user-chev{ margin-left:auto;display:flex;color:rgba(255,255,255,0.4);flex-shrink:0; }
-      .cyg-user-chev svg{ width:16px;height:16px; }
-      .cyg-sidebar.collapsed .cyg-user-chev{ display:none; }
-
-      /* Account menu — light popover, appended to <body> so it escapes the
-         sidebar's overflow:hidden and can open above the footer chip. */
+      /* ── Account and project menus: popovers below the masthead ── */
       .cyg-user-menu{
-        position:fixed;z-index:1000;min-width:222px;
-        background:#fff;border:1px solid #e4e7ee;border-radius:12px;
-        box-shadow:0 14px 36px -10px rgba(20,24,40,0.38);
-        padding:6px;display:none;
-        font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+        position:fixed;z-index:1000;min-width:232px;
+        background:var(--color-bg,#f2f2f3);border:1px solid var(--color-divider,rgba(29,31,32,.16));border-radius:0;
+        box-shadow:var(--shadow-strong,0 12px 32px rgba(43,43,45,.22));
+        padding:4px 0;display:none;
+        font-family:var(--font-body,'Barlow',system-ui,sans-serif);
       }
-      .cyg-user-menu.open{ display:block;animation:cygMenuIn .12s ease; }
-      @keyframes cygMenuIn{ from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
-      .cyg-user-menu-email{ padding:9px 10px 7px;font-size:12px;color:#7a8090;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-      .cyg-user-menu-sep{ height:1px;background:#f0f1f5;margin:4px 2px; }
-      .cyg-user-menu-item{ display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
-        padding:9px 10px;border:none;background:none;cursor:pointer;font:inherit;font-size:13px;
-        color:#2a2e3a;border-radius:8px;text-align:left;text-decoration:none; }
-      .cyg-user-menu-item:hover{ background:#f4f5f8;color:#2a2e3a; }
-      .cyg-user-menu-item.danger{ color:#c0392b; }
-      .cyg-user-menu-item.danger:hover{ background:rgba(192,57,43,0.08);color:#c0392b; }
-      .cyg-user-av{
-        width:32px;height:32px;min-width:32px;border-radius:8px;
-        background:#4a5bd6;
-        display:flex;align-items:center;justify-content:center;
-        font-size:12.5px;font-weight:600;color:#fff;
-      }
-      .cyg-user-meta{ display:flex;flex-direction:column;line-height:1.25;overflow:hidden;flex:1;min-width:0; }
-      .cyg-user-meta b{ font-size:12.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-      .cyg-user-meta span{ font-size:10.5px;color:rgba(255,255,255,0.42);white-space:nowrap; }
-      .cyg-sidebar.collapsed .cyg-user-meta{ display:none; }
-      .cyg-sidebar.collapsed .cyg-user-chip{ justify-content:center;padding:8px 0; }
+      .cyg-user-menu.open{display:block;animation:cygMenuIn .12s ease}
+      @keyframes cygMenuIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+      .cyg-user-menu-email{padding:9px 14px 7px;font-size:13px;color:var(--color-neutral-700,#5d5d60);
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .cyg-user-menu-label{padding:10px 14px 3px;font-family:var(--font-heading,'Barlow Condensed',sans-serif);
+        font-weight:600;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--color-neutral-700,#5d5d60)}
+      .cyg-user-menu-sep{height:1px;background:var(--color-divider,rgba(29,31,32,.16));margin:4px 0}
+      .cyg-user-menu-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+        padding:8px 14px;border:none;background:none;cursor:pointer;font:inherit;font-size:14px;
+        color:var(--color-text,#1d1f20);border-radius:0;text-align:left;text-decoration:none}
+      .cyg-user-menu-item:hover{background:color-mix(in srgb,var(--color-text,#1d1f20) 4%,transparent);color:var(--color-text,#1d1f20)}
+      .cyg-user-menu-item.danger{color:var(--state-fail,#9c3f38)}
 
-      /* Permanent Drive shortcut — pinned under the brand header. */
-      /* ── Expandable groups (nav redesign) ─────────────────────────── */
-      .cyg-nav-parent .cyg-nav-chev{
-        margin-left:auto;font-size:10px;color:var(--cyg-fg-dim,#8b90a0);
-        transition:transform 0.15s;
-      }
-      .cyg-nav-parent.child-active{ color:var(--cyg-fg-strong,#fff); }
-      .cyg-nav-children{ display:none; }
-      .cyg-nav-children.open{ display:block; }
-      .cyg-nav-child{
-        padding-left:38px;font-size:13px;
-      }
-      .cyg-nav-child::before{
-        content:'';position:absolute;left:22px;top:0;bottom:0;width:1px;
-        background:rgba(255,255,255,0.10);
-      }
-      .cyg-sidebar.collapsed .cyg-nav-children{ display:none !important; }
-      .cyg-sidebar.collapsed .cyg-nav-parent .cyg-nav-chev{ display:none; }
-      /* ── Project switcher ─────────────────────────────────────────── */
-      /* The switcher sits inside the Project group's children, so it indents
-         with them rather than spanning the rail's full width. */
-      .cyg-proj-area{ flex-shrink:0;padding:2px 0 4px 18px; }
-      .cyg-proj-btn{
-        display:flex;align-items:center;gap:9px;width:100%;
-        background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);
-        border-radius:9px;padding:8px 10px;
-        font-size:12.5px;font-weight:500;color:var(--cyg-fg,#cbd0dc);
-        cursor:pointer;text-align:left;font-family:inherit;
-      }
-      .cyg-proj-btn:hover{ background:rgba(255,255,255,0.09); }
-      .cyg-proj-btn .cyg-nav-item-label{ flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-      .cyg-proj-chev{ color:var(--cyg-fg-dim,#8b90a0);font-size:10px; }
-      .cyg-proj-ic{ font-size:12px; }
-      .cyg-sidebar.collapsed .cyg-proj-area{ padding:8px 6px 0; }
-      .cyg-sidebar.collapsed .cyg-proj-btn{ justify-content:center;padding:8px 0;gap:0; }
-      .cyg-sidebar.collapsed .cyg-proj-btn .cyg-nav-item-label,
-      .cyg-sidebar.collapsed .cyg-proj-btn .cyg-proj-chev{ display:none; }
-      /* Collapsed rail: group children are hidden, but the active project is
-         global context and must stay reachable — keep the Project group's
-         wrapper alive for the chip alone, and hide its nav rows. */
-      .cyg-sidebar.collapsed .cyg-nav-children[data-children="project-group"]{ display:block !important; }
-      .cyg-sidebar.collapsed .cyg-nav-children[data-children="project-group"] .cyg-nav-item{ display:none; }
-      /* Profile chip — pinned, never inside a collapsible group. */
-      .cyg-prof-area{ flex-shrink:0;padding:2px 12px 4px; }
+      /* ── Profile chip: which databases this session is pointed at ──
+         Pinned above the nav where nothing can fold it away. Its square is
+         the one coloured thing on the rail, because it is the one thing on
+         the rail that is state. Colours come from the hairline's inline
+         variables so the dot and the line can never disagree. */
+      .cyg-prof-area{flex-shrink:0;padding:4px 10px 6px}
       .cyg-prof-chip{
         display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;
-        padding:7px 10px;border-radius:9px;text-decoration:none;
-        background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);
+        padding:6px 8px;border-radius:0;text-decoration:none;
+        border:1px solid var(--color-divider,rgba(29,31,32,.16));background:transparent;
         font-family:var(--mono,'IBM Plex Mono',ui-monospace,monospace);
-        font-size:11px;letter-spacing:0.04em;color:var(--cyg-fg-strong,#fff);
-        transition:background 0.15s,border-color 0.15s;
+        font-size:12px;letter-spacing:.02em;color:var(--color-text,#1d1f20);
+        transition:background .15s,border-color .15s;
       }
-      .cyg-prof-chip:hover{ background:rgba(255,255,255,0.10);border-color:rgba(255,255,255,0.22); }
-      /* The status colours come from the hairline, which sets them inline on
-         the root element — this page's own --green is a different green (26
-         of the 27 pages redefine it, and they disagree). The dot and the line
-         must always mean the same thing. */
-      .cyg-prof-dot{ flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--cyg-status-green,#3F7D4E); }
-      .cyg-prof-id{ flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600; }
+      .cyg-prof-chip:hover{background:color-mix(in srgb,var(--color-text,#1d1f20) 4%,transparent)}
+      .cyg-prof-dot{flex:0 0 auto;width:8px;height:8px;border-radius:0;background:var(--cyg-status-green,#3f6b52)}
+      .cyg-prof-id{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
       .cyg-prof-env{
-        flex:0 0 auto;padding:1px 6px;border-radius:6px;font-size:9.5px;font-weight:600;
-        letter-spacing:0.08em;background:rgba(255,255,255,0.10);color:rgba(255,255,255,0.82);
+        flex:0 0 auto;padding:1px 6px;border-radius:0;
+        font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;font-size:12px;letter-spacing:.1em;
+        border:1px solid var(--color-divider,rgba(29,31,32,.16));color:var(--color-neutral-700,#5d5d60);
       }
-      /* The level, in one place: the dot and the environment badge. Red also
-         brightens the border, because a red dot on a dark rail is small. */
-      .cyg-prof-chip.lv-green .cyg-prof-dot{ background:var(--cyg-status-green,#3F7D4E); }
-      .cyg-prof-chip.lv-amber .cyg-prof-dot{ background:var(--cyg-status-amber,#B26A00); }
-      .cyg-prof-chip.lv-red   .cyg-prof-dot{ background:var(--cyg-status-red,#C0392B); }
-      .cyg-prof-chip.lv-amber .cyg-prof-env{ background:var(--cyg-status-amber,#B26A00);color:#fff; }
-      .cyg-prof-chip.lv-red   .cyg-prof-env{ background:var(--cyg-status-red,#C0392B);color:#fff; }
-      .cyg-prof-chip.lv-red{ border-color:rgba(192,57,43,0.55);background:rgba(192,57,43,0.12); }
-      /* Collapsed rail: the dot alone. 54px has no room for a name, and the
-         one bit that has to survive is whether this is production. */
-      .cyg-sidebar.collapsed .cyg-prof-area{ padding:2px 6px 4px; }
-      .cyg-sidebar.collapsed .cyg-prof-chip{ justify-content:center;padding:8px 0;gap:0; }
+      .cyg-prof-chip.lv-green .cyg-prof-dot{background:var(--cyg-status-green,#3f6b52)}
+      .cyg-prof-chip.lv-amber .cyg-prof-dot{background:var(--cyg-status-amber,#9a6b1f)}
+      .cyg-prof-chip.lv-red   .cyg-prof-dot{background:var(--cyg-status-red,#9c3f38)}
+      .cyg-prof-chip.lv-amber .cyg-prof-env{color:var(--cyg-status-amber,#9a6b1f);border-color:var(--cyg-status-amber,#9a6b1f)}
+      .cyg-prof-chip.lv-red   .cyg-prof-env{color:var(--cyg-status-red,#9c3f38);border-color:var(--cyg-status-red,#9c3f38)}
+      .cyg-prof-chip.lv-red{border-color:var(--cyg-status-red,#9c3f38)}
+      .cyg-sidebar.collapsed .cyg-prof-area{padding:4px 6px 6px}
+      .cyg-sidebar.collapsed .cyg-prof-chip{justify-content:center;padding:8px 0;gap:0;border-color:transparent}
       .cyg-sidebar.collapsed .cyg-prof-id,
-      .cyg-sidebar.collapsed .cyg-prof-env{ display:none; }
-      .cyg-sidebar.collapsed .cyg-prof-dot{ width:9px;height:9px; }
-      .cyg-drive-area{ flex-shrink:0;padding:6px 12px 2px; }
-      .cyg-drive-btn{
-        display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;
-        padding:11px 13px;border-radius:11px;
-        border:1px solid rgba(255,255,255,0.12);
-        background:rgba(255,255,255,0.04);
-        color:var(--cyg-fg-strong);
-        font-size:14px;font-weight:600;letter-spacing:-0.01em;
-        text-decoration:none;cursor:pointer;
-        transition:background 0.15s,border-color 0.15s;
-      }
-      .cyg-drive-btn:hover{ background:rgba(255,255,255,0.10);border-color:rgba(255,255,255,0.22); }
-      .cyg-drive-btn .cyg-nav-icon{ width:18px;height:18px;flex-shrink:0;opacity:0.95; }
-      .cyg-sidebar.collapsed .cyg-drive-area{ padding:6px 0 2px; }
-      .cyg-sidebar.collapsed .cyg-drive-btn{ justify-content:center;padding:11px 0;gap:0; }
-      .cyg-sidebar.collapsed .cyg-drive-btn .cyg-nav-item-label{ display:none; }
+      .cyg-sidebar.collapsed .cyg-prof-env{display:none}
+      .cyg-sidebar.collapsed .cyg-prof-dot{width:9px;height:9px}
 
-      /* ── Sidebar favourites ("Pinned") ──────────────────────────────────
-         Pinned rows reuse .cyg-nav-item, so hover, active and collapsed-rail
-         styling are inherited rather than redefined. */
-      .cyg-sidebar-scroll .cyg-nav-item > .cyg-nav-item-label{
-        flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
-      }
+      /* ── Sidebar favourites ("Pinned") ── */
+      .cyg-sidebar-scroll .cyg-nav-item > .cyg-nav-item-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
       .cyg-fav-star{
         flex:0 0 auto;margin-left:auto;width:20px;height:20px;padding:0;
-        border:0;border-radius:6px;background:transparent;color:var(--cyg-muted);
+        border:0;border-radius:0;background:transparent;color:var(--color-neutral-500,#98989b);
         font-size:13px;line-height:18px;text-align:center;cursor:pointer;
         opacity:0;transition:opacity .12s,color .12s,background .12s;
       }
       .cyg-nav-item:hover > .cyg-fav-star,
       .cyg-nav-item:focus-visible > .cyg-fav-star,
       .cyg-fav-star:focus-visible,
-      .cyg-fav-star.on{ opacity:1; }
-      .cyg-fav-star:hover{ background:rgba(255,255,255,.09);color:var(--accent); }
-      .cyg-fav-star.on{ color:var(--accent); }
-      @media (hover: none){
-        .cyg-sidebar-scroll .cyg-fav-star{ opacity:.55; }
-      }
-      .cyg-fav-item{ cursor:pointer; }
-      .cyg-fav-item.cyg-fav-dragging{ opacity:.4; }
-      .cyg-fav-item.cyg-fav-drop-before{ box-shadow:inset 0  2px 0 0 var(--accent); }
-      .cyg-fav-item.cyg-fav-drop-after { box-shadow:inset 0 -2px 0 0 var(--accent); }
-      .cyg-fav-hint{
-        position:relative;margin:2px 0 6px;padding:8px 24px 8px 12px;
-        border:1px dashed rgba(255,255,255,.14);border-radius:9px;
-        font-size:11.5px;line-height:1.45;color:var(--cyg-muted);
-      }
-      .cyg-fav-hint-x{
-        position:absolute;top:3px;right:4px;padding:2px 5px;border:0;border-radius:5px;
-        background:transparent;color:var(--cyg-muted);font-size:14px;line-height:1;cursor:pointer;
-      }
-      .cyg-fav-hint-x:hover{ color:var(--cyg-fg); }
+      .cyg-fav-star.on{opacity:1}
+      .cyg-fav-star:hover{color:var(--color-accent-700,#416180)}
+      .cyg-fav-star.on{color:var(--color-accent-700,#416180)}
+      @media (hover: none){ .cyg-sidebar-scroll .cyg-fav-star{opacity:.55} }
+      .cyg-fav-item{cursor:pointer}
+      .cyg-fav-item.cyg-fav-dragging{opacity:.4}
+      .cyg-fav-item.cyg-fav-drop-before{box-shadow:inset 0  2px 0 0 var(--color-accent,#5980a6)}
+      .cyg-fav-item.cyg-fav-drop-after {box-shadow:inset 0 -2px 0 0 var(--color-accent,#5980a6)}
+      .cyg-fav-hint{position:relative;margin:2px 10px 6px;padding:8px 24px 8px 10px;
+        border:1px dashed var(--color-divider,rgba(29,31,32,.16));border-radius:0;
+        font-size:13px;line-height:1.45;color:var(--color-neutral-700,#5d5d60)}
+      .cyg-fav-hint-x{position:absolute;top:3px;right:4px;padding:2px 5px;border:0;border-radius:0;
+        background:transparent;color:var(--color-neutral-600,#7a7a7d);font-size:14px;line-height:1;cursor:pointer}
+      .cyg-fav-hint-x:hover{color:var(--color-text,#1d1f20)}
       .cyg-sidebar.collapsed .cyg-fav-star,
-      .cyg-sidebar.collapsed .cyg-fav-hint{ display:none; }
-      /* The "Pinned" heading is hidden in the rail, so mark the block with a
-         rule instead — otherwise the pinned icons read as part of the nav. */
-      .cyg-sidebar.collapsed .cyg-fav-section{
-        margin-bottom:6px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.10);
-      }
-      @media (prefers-reduced-motion: reduce){
-        .cyg-fav-star{ transition:none; }
+      .cyg-sidebar.collapsed .cyg-fav-hint{display:none}
+      .cyg-sidebar.collapsed .cyg-fav-section{margin-bottom:6px;padding-bottom:8px;border-bottom:1px solid var(--color-divider,rgba(29,31,32,.16))}
+      @media (prefers-reduced-motion: reduce){ .cyg-fav-star{transition:none} }
+
+      /* Below ~900px the rail is a drawer (cygenix-mobile.css) opened from a
+         button the masthead leaves room for; the search and the region go. */
+      @media (max-width: 820px){
+        .cx-masthead{padding-left:56px;gap:10px}
+        .cx-mh-form,.cx-mh-region,.cx-mh-div,.cx-mh-proj-lbl{display:none}
+        .cx-mh-proj-name{max-width:150px}
       }
     `;
     document.head.appendChild(style);
@@ -813,30 +640,67 @@
     if (cb) s.addEventListener('load', cb, { once: true });
   }
 
-  function buildFooter(){
-    const chev = svg('<path d="M5 6.5l3-3 3 3M5 9.5l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>');
-    // Utilities (Help, Accessibility, Cookies) live in the account menu — the
-    // rail below the workflow groups is now just the account chip.
-    return `<div class="cyg-sidebar-foot">
-      <button type="button" class="cyg-user-chip" id="cyg-user-chip" aria-haspopup="menu" aria-expanded="false" title="Account">
-
-        <span class="cyg-user-av" id="cyg-user-av">CY</span>
-        <span class="cyg-user-meta"><b id="cyg-user-name">Account</b><span id="cyg-user-sub">Migration Console</span></span>
-        <span class="cyg-user-chev">${chev}</span>
+  // ── The masthead ────────────────────────────────────────────────────────
+  // 60px, accent-900 ground. Left to right: the logo (favicon.svg, unmodified,
+  // keeping its own indigo — it is the brand mark and does not take the
+  // theme), the wordmark, a divider, the project switcher, then pushed right
+  // the search field, the Files button, the region and the account avatar.
+  // Everything that used to be pinned at the top and the bottom of the rail
+  // is here, which is what lets the rail be nothing but the five groups.
+  function buildMasthead(){
+    const name = activeProjectName();
+    return `<header class="cx-masthead" id="cx-masthead" role="banner">
+      <a class="cx-mh-brand" href="/dashboard" aria-label="Cygenix — Home">
+        <svg class="cx-logo" viewBox="0 0 32 32" aria-hidden="true">
+          <defs><linearGradient id="cxLogoBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6d5df2"/><stop offset="1" stop-color="#4a7cf3"/></linearGradient></defs>
+          <rect width="32" height="32" rx="7" fill="url(#cxLogoBg)"/>
+          <g fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 10.5 14 16 9 21.5" stroke="#ffffff" stroke-opacity="0.45"/>
+            <path d="M13 10.5 18 16 13 21.5" stroke="#ffffff" stroke-opacity="0.72"/>
+            <path d="M17 10.5 22 16 17 21.5" stroke="#ffffff"/>
+          </g>
+        </svg>
+        <span class="cx-wordmark">Cygenix</span>
+      </a>
+      <span class="cx-mh-div" aria-hidden="true"></span>
+      <button type="button" class="cx-mh-proj" id="cyg-proj-btn" aria-haspopup="menu" aria-expanded="false"
+              title="Active project — everything below acts on this project">
+        <span class="cx-mh-proj-lbl">Project</span>
+        <span class="cx-mh-proj-name" id="cyg-proj-name">${escapeHtml(name || 'No project selected')}</span>
+        <span class="cx-mh-proj-chev" aria-hidden="true">▾</span>
       </button>
-    </div>`;
+      <span class="cx-mh-spacer"></span>
+      <form class="cx-mh-form" id="cx-mh-search-form" role="search">
+        <input class="cx-mh-search" id="cx-mh-search" type="search" placeholder="Search objects, jobs, runs"
+               aria-label="Search objects, jobs and runs" autocomplete="off">
+      </form>
+      <a class="cx-mh-btn cyg-drive-btn" id="cyg-drive-btn" href="/dashboard#drive"
+         title="Your files — the shared Drive, available on every machine you sign in on">${iconDrive()}Files</a>
+      <span class="cx-mh-region" id="cx-mh-region" title="Where this console and its data are hosted">${REGION_LABEL}</span>
+      <button type="button" class="cx-mh-av" id="cyg-user-chip" aria-haspopup="menu" aria-expanded="false" title="Account">
+        <span id="cyg-user-av">CY</span>
+        <span class="cx-sr" id="cyg-user-name">Account</span>
+        <span class="cx-sr" id="cyg-user-sub"></span>
+      </button>
+    </header>`;
   }
 
-  // Permanent Files shortcut, pinned at the very top of the rail (under the
-  // brand header). Opens the shared virtual Drive from anywhere in the app.
-  // Labelled "Files" (nav review): "Drive" collided with the Co-Worker page
-  // and read as a branded term; this is literally where your files live.
-  function buildDriveButton(){
-    return `<div class="cyg-drive-area">
-      <a class="cyg-drive-btn" id="cyg-drive-btn" href="/dashboard#drive" title="Your files — the shared Drive, available on every machine you sign in on">
-        ${iconDrive()}<span class="cyg-nav-item-label">Files</span>
-      </a>
-    </div>`;
+  /* The masthead search. It is a way INTO the dashboard's Search view rather
+     than a second search: the query is stashed and the view opens with it
+     already run, so the one implementation of "search everything" stays the
+     one implementation. On the dashboard itself the view switches in place. */
+  function wireSearch(root){
+    const form = root.querySelector('#cx-mh-search-form');
+    const input = root.querySelector('#cx-mh-search');
+    if (!form || !input) return;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const q = input.value.trim();
+      if (!q) return;
+      try { sessionStorage.setItem('cyg_search_q', q); } catch {}
+      const item = findItem('search');
+      if (item) handleClick(item);
+    });
   }
 
   // ── Project switcher (nav review) ───────────────────────────────────────
@@ -851,17 +715,6 @@
       const p = projects.find(x => x && x.id === id) || projects[0];
       return p && p.name ? p.name : '';
     } catch { return ''; }
-  }
-  function buildProjectSwitcher(){
-    const name = activeProjectName();
-    return `<div class="cyg-proj-area">
-      <button type="button" class="cyg-proj-btn" id="cyg-proj-btn" aria-haspopup="menu" aria-expanded="false"
-              title="Active project — everything below acts on this project">
-        <span class="cyg-proj-ic"><i class="ic ic-factory"></i> </span>
-        <span class="cyg-nav-item-label" id="cyg-proj-name">${escapeHtml(name || 'No project selected')}</span>
-        <span class="cyg-proj-chev">▾</span>
-      </button>
-    </div>`;
   }
   function wireProjectSwitcher(root){
     const btn = root.querySelector('#cyg-proj-btn');
@@ -909,20 +762,14 @@
   }
 
   // ── HTML build ──────────────────────────────────────────────────────────
+  // The rail: a collapse toggle, the profile chip, the five groups. Nothing
+  // else — see buildMasthead for where the rest went.
   function buildHTML(activeKey){
     const head = `<div class="cyg-sidebar-head">
-      <a class="cyg-brand" href="/dashboard" aria-label="Cygenix (beta) — Migration Console">
-        <span class="cyg-brand-mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span>
-        <span class="cyg-brand-word"><b>Cygenix<span class="cyg-brand-beta">Beta</span></b><span>Migration Console</span></span>
-      </a>
-      <button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Collapse sidebar">❮</button>
+      <button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Collapse sidebar" title="Collapse the rail">❮</button>
     </div>`;
     const body = NAV.map(sec => buildSection(sec, activeKey)).join('');
-    // The project switcher is no longer pinned above the scroll area — it is
-    // rendered inside the Project group (see buildParent), which also gives
-    // the nav list back that vertical space.
-    return head + buildProfilePill() + buildDriveButton()
-      + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter(activeKey);
+    return head + buildProfilePill() + `<div class="cyg-sidebar-scroll">${body}</div>`;
   }
 
   /* ── Which databases is this session pointed at ─────────────────────────
@@ -984,12 +831,13 @@
   }
 
   // Read the signed-in user (stored by auth flow as cygenix_user) and fill the
-  // footer chip. Falls back to a neutral label so the chip never shows blanks.
+  // masthead avatar. The name and email go into visually-hidden spans so the
+  // account menu (and a screen reader) can read them off the same element.
   function populateUser(root){
     const nameEl = root.querySelector('#cyg-user-name');
     const subEl  = root.querySelector('#cyg-user-sub');
     const avEl   = root.querySelector('#cyg-user-av');
-    if (!nameEl) return;
+    if (!avEl && !nameEl) return;
     let name = 'Account', email = '', plan = 'Migration Console';
     try {
       const raw = sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user');
@@ -1006,9 +854,11 @@
       }
     } catch {}
     const initials = name.trim().split(/\s+/).map(w => w[0]).join('').slice(0,2).toUpperCase() || 'CY';
-    nameEl.textContent = name;
+    if (nameEl) nameEl.textContent = name;
     if (subEl) subEl.textContent = email || plan;
     if (avEl) avEl.textContent = initials;
+    const chip = root.querySelector('#cyg-user-chip');
+    if (chip) chip.title = 'Account — ' + (email || name);
   }
 
   // ── Account menu (moved here from the old top-right topbar pill) ──────────
@@ -1021,20 +871,27 @@
     menu.className = 'cyg-user-menu';
     menu.id = 'cyg-user-menu';
     menu.setAttribute('role', 'menu');
+    const acct = (keys) => ACCOUNT_NAV.filter(it => keys.indexOf(it.key) !== -1).filter(isItemVisible).map(it =>
+      `<button class="cyg-user-menu-item${it.navClass ? ' ' + it.navClass : ''}" role="menuitem" type="button"` +
+      `${it.action === 'accessibility' ? ' aria-haspopup="dialog" aria-expanded="false"' : ''}` +
+      ` data-acct-key="${it.key}">${escapeHtml(it.label)}</button>`
+    ).join('');
     menu.innerHTML =
       '<div class="cyg-user-menu-email" id="cyg-user-menu-email"></div>' +
       '<div class="cyg-user-menu-sep"></div>' +
       '<a class="cyg-user-menu-item" role="menuitem" href="/projects">My projects</a>' +
       '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-sub">Subscription</button>' +
+      // Sync exists on the dashboard only (it is that page's own cloud pull);
+      // elsewhere the item would be a dead button, so it is not rendered.
+      (typeof window.syncFromCloud === 'function'
+        ? '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-sync">Sync from cloud</button>' : '') +
+      '<a class="cyg-user-menu-item" role="menuitem" href="/admin" id="cyg-user-menu-admin" hidden>Admin panel</a>' +
       '<div class="cyg-user-menu-sep"></div>' +
-      // Help / Accessibility, moved out of the rail. Rendered from
-      // ACCOUNT_NAV so the item definitions (and the a11y-trigger class the
-      // accessibility panel depends on) stay in one place.
-      ACCOUNT_NAV.filter(isItemVisible).map(it =>
-        `<button class="cyg-user-menu-item${it.navClass ? ' ' + it.navClass : ''}" role="menuitem" type="button"` +
-        `${it.action === 'accessibility' ? ' aria-haspopup="dialog" aria-expanded="false"' : ''}` +
-        ` data-acct-key="${it.key}">${escapeHtml(it.label)}</button>`
-      ).join('') +
+      // Settings: the four former rail children, as the review moved them.
+      '<div class="cyg-user-menu-label">Settings</div>' +
+      acct(['project-settings', 'notifications', 'system-parameters', 'user-roles', 'privacy-security']) +
+      '<div class="cyg-user-menu-sep"></div>' +
+      acct(['help', 'accessibility']) +
       '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-cookies">Cookie preferences</button>' +
       '<div class="cyg-user-menu-sep"></div>' +
       '<button class="cyg-user-menu-item danger" role="menuitem" type="button" id="cyg-user-menu-signout">Sign out</button>';
@@ -1053,6 +910,8 @@
       e.preventDefault(); closeUserMenu();
       if (typeof window.openCookiePreferences === 'function') window.openCookiePreferences();
     });
+    const sync = menu.querySelector('#cyg-user-menu-sync');
+    if (sync) sync.addEventListener('click', (e) => { e.preventDefault(); closeUserMenu(); try { window.syncFromCloud(); } catch(_){} });
     menu.querySelector('#cyg-user-menu-sub').addEventListener('click', (e) => {
       e.preventDefault(); closeUserMenu();
       if (typeof window.openBillingPortal === 'function') { try { window.openBillingPortal(e.currentTarget); return; } catch(_){} }
@@ -1064,12 +923,15 @@
     return menu;
   }
 
+  // Below the avatar, right-aligned to it — the menu opens from the masthead
+  // now, not up from a footer chip.
   function positionUserMenu(menu, chip){
     const r = chip.getBoundingClientRect();
-    menu.style.left   = Math.max(8, r.left) + 'px';
-    menu.style.bottom = (window.innerHeight - r.top + 8) + 'px';
-    menu.style.top    = 'auto';
-    menu.style.maxWidth = Math.max(180, window.innerWidth - r.left - 16) + 'px';
+    menu.style.top    = (r.bottom + 6) + 'px';
+    menu.style.right  = Math.max(8, window.innerWidth - r.right) + 'px';
+    menu.style.left   = 'auto';
+    menu.style.bottom = 'auto';
+    menu.style.maxWidth = Math.max(180, r.right - 16) + 'px';
   }
 
   function openUserMenu(chip){
@@ -1178,87 +1040,24 @@
     const visibleItems = (sec.items || []).filter(isItemVisible);
     if (!visibleItems.length) return '';
     const labelHtml = sec.section
-      ? `<div class="cyg-nav-label">${sec.section}</div>`
+      ? `<div class="cyg-nav-label">${escapeHtml(sec.section)}</div>`
       : '';
-    const itemsHtml = visibleItems.map(it =>
-      it.children ? buildParent(it, activeKey) : buildItem(it, activeKey)
-    ).join('');
-    return `<div class="cyg-nav-section">${labelHtml}${itemsHtml}</div>`;
+    // The rail highlights the item that OWNS the current key: a page mounted
+    // with data-active="validation" lights Assurance (see railKeyFor).
+    const rail = railKeyFor(activeKey);
+    const itemsHtml = visibleItems.map(it => buildItem(it, rail)).join('');
+    return `<div class="cyg-nav-section" data-group="${escapeHtml(sec.group || '')}">${labelHtml}${itemsHtml}</div>`;
   }
 
-  // ── Expandable groups (secondary navigation) ────────────────────────────
-  // Parents render a chevron and toggle their children open/closed; the open
-  // set persists per browser. A group holding the active page is always
-  // forced open so the current location is never hidden.
-  const OPEN_KEY = 'cygenix_sidebar_open_groups';
-  function getOpenGroups(){
-    try { const a = JSON.parse(localStorage.getItem(OPEN_KEY) || '[]'); return Array.isArray(a) ? a : []; }
-    catch { return []; }
-  }
-  function setGroupOpen(key, open){
-    const set = new Set(getOpenGroups());
-    if (open) set.add(key); else set.delete(key);
-    try { localStorage.setItem(OPEN_KEY, JSON.stringify([...set])); } catch {}
-    const shut = new Set(getClosedGroups());
-    if (open) shut.delete(key); else shut.add(key);
-    try { localStorage.setItem(CLOSED_KEY, JSON.stringify([...shut])); } catch {}
-  }
-  // Groups that start open. The Project group holds the active-project
-  // switcher, so a first-time user must never have to hunt for it — but an
-  // explicit collapse is still remembered, hence the closed list.
-  const DEFAULT_OPEN_GROUPS = ['project-group'];
-  const CLOSED_KEY = 'cygenix_sidebar_closed_groups';
-  function getClosedGroups(){
-    try { const a = JSON.parse(localStorage.getItem(CLOSED_KEY) || '[]'); return Array.isArray(a) ? a : []; }
-    catch { return []; }
-  }
-  function isGroupOpen(key){
-    if (getOpenGroups().includes(key)) return true;
-    return DEFAULT_OPEN_GROUPS.includes(key) && !getClosedGroups().includes(key);
-  }
-
-  function buildParent(item, activeKey){
-    const kids = (item.children || []).filter(isItemVisible);
-    if (!kids.length) return '';
-    const childActive = kids.some(k => k.key === activeKey);
-    const open = childActive || isGroupOpen(item.key);
-    const chev = `<span class="cyg-nav-chev">${open ? '▾' : '▸'}</span>`;
-    // The active-project switcher lives INSIDE the Project group (moved from
-    // the fixed top area on request, 21-Aug-2026) — the project is what the
-    // Configurator and the Planner act on, so it belongs with them.
-    const kidsHtml = (item.key === 'project-group' ? buildProjectSwitcher() : '')
-      + kids.map(k => buildItem(k, activeKey, true)).join('');
-    return `
-      <div class="cyg-nav-item cyg-nav-parent${childActive ? ' child-active' : ''}"
-           data-parent="${item.key}" tabindex="0"
-           aria-expanded="${open ? 'true' : 'false'}">
-        ${item.icon || ''}
-        <span class="cyg-nav-item-label">${escapeHtml(item.label)}</span>
-        ${chev}
-      </div>
-      <div class="cyg-nav-children${open ? ' open' : ''}" data-children="${item.key}">
-        ${kidsHtml}
-      </div>`;
-  }
-
-  function buildItem(item, activeKey, isChild){
+  function buildItem(item, activeKey){
     const isActive = item.key === activeKey ? ' active' : '';
-    const childCls = isChild ? ' cyg-nav-child' : '';
-    // Oracle look: monochrome nav icons (neutral grey), red only on the
-    // active item. We intentionally ignore the per-item accent colour so the
-    // sidebar reads as one calm, professional column rather than a rainbow.
-    const styleAttr = '';
     const badgeHtml = item.badgeId
       ? `<span class="cyg-nav-badge" id="${item.badgeId}" aria-live="polite"></span>`
       : '';
-    // Optional extra class (e.g. `a11y-trigger` so the accessibility panel's
-    // outside-click handler recognises this item as its own toggle).
-    const extraCls  = item.navClass ? ' ' + item.navClass : '';
-    const extraAttr = item.action === 'accessibility' ? ' aria-haspopup="dialog" aria-expanded="false"' : '';
     return `
-      <div class="cyg-nav-item${isActive}${extraCls}${childCls}"
+      <div class="cyg-nav-item${isActive}"
            data-key="${item.key}"
-           tabindex="0"${styleAttr}${extraAttr}>
+           tabindex="0" role="link" title="${escapeHtml(item.label)}">
         ${item.icon || ''}
         <span class="cyg-nav-item-label">${escapeHtml(item.label)}</span>
         ${badgeHtml}
@@ -1273,27 +1072,6 @@
   function wireItemClicks(sidebarEl){
     sidebarEl.querySelectorAll('.cyg-nav-item').forEach(el => {
       el.addEventListener('click', () => {
-        // Group parents toggle their children rather than navigating.
-        const parentKey = el.dataset.parent;
-        if (parentKey){
-          // In the collapsed rail there is nowhere to show children —
-          // expand the rail first so the toggle has a visible effect.
-          if (sidebarEl.classList.contains('collapsed')){
-            sidebarEl.classList.remove('collapsed');
-            setCollapsed(false);
-            document.body.classList.remove('cyg-collapsed');
-            const t = sidebarEl.querySelector('#cyg-sidebar-toggle');
-            if (t) t.textContent = '❮';
-          }
-          const kids = sidebarEl.querySelector(`.cyg-nav-children[data-children="${parentKey}"]`);
-          const nowOpen = kids ? !kids.classList.contains('open') : true;
-          if (kids) kids.classList.toggle('open', nowOpen);
-          el.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
-          const chev = el.querySelector('.cyg-nav-chev');
-          if (chev) chev.textContent = nowOpen ? '▾' : '▸';
-          setGroupOpen(parentKey, nowOpen);
-          return;
-        }
         const key = el.dataset.key;
         const item = findItem(key);
         if (item) handleClick(item);
@@ -1320,14 +1098,15 @@
 
   function findItem(key){
     for (const sec of NAV){
-      for (const it of sec.items){
-        if (it.key === key) return it;
-        if (it.children){
-          for (const c of it.children){ if (c.key === key) return c; }
-        }
-      }
+      for (const it of sec.items){ if (it.key === key) return it; }
+    }
+    for (const railKey in TABS){
+      for (const t of TABS[railKey]){ if (t.key === key) return t; }
     }
     for (const it of ACCOUNT_NAV){ if (it.key === key) return it; }
+    // The masthead search is not an item anyone renders, but it is a
+    // destination the tour and the search form navigate to.
+    if (key === 'search') return { key:'search', label:'Search', view:'search' };
     return null;
   }
 
@@ -1391,27 +1170,61 @@
     }
   }
 
-  function updateActive(key){
-    const sidebar = document.querySelector('.cyg-sidebar');
-    if (!sidebar) return;
-    sidebar.querySelectorAll('.cyg-nav-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.key === key);
+  // Which rail item owns a key. A rail item owns itself, every tab under it,
+  // and every alias that points at it. Anything else — the account-menu
+  // items, an unknown key — owns nothing, and the rail shows no highlight
+  // rather than a wrong one.
+  function railKeyFor(key){
+    if (!key) return '';
+    for (const sec of NAV){ for (const it of sec.items){ if (it.key === key) return key; } }
+    for (const railKey in TABS){ if (TABS[railKey].some(t => t.key === key)) return railKey; }
+    return ALIASES[key] || '';
+  }
+
+  function tabsFor(key){
+    const rail = railKeyFor(key);
+    const tabs = rail && TABS[rail];
+    return tabs ? tabs.filter(isItemVisible) : null;
+  }
+
+  let _activeKey = '';
+
+  /* The tab strip. Rendered into #cyg-subnav-mount when the current key
+     belongs to a destination that absorbed others; cleared otherwise. A page
+     that has not declared a mount gets none — a strip guessed into the wrong
+     place is worse than a strip that is missing, and every page that needs
+     one declares one (tests/console-design.test.js checks). */
+  function renderSubnav(key){
+    const host = document.getElementById('cyg-subnav-mount');
+    if (!host) return;
+    const tabs = tabsFor(key);
+    if (!tabs || tabs.length < 2){ host.innerHTML = ''; host.hidden = true; return; }
+    host.hidden = false;
+    host.innerHTML = '<nav class="cx-subnav" aria-label="Sections of this screen">' + tabs.map(t => {
+      const href = t.href || ('/dashboard#goto=' + encodeURIComponent(t.view || ''));
+      const cls = (t.key === key ? 'on' : '') + (t.away ? ' away' : '');
+      return `<a href="${href}" data-key="${t.key}" class="${cls.trim()}"${t.key === key ? ' aria-current="page"' : ''}>${escapeHtml(t.label)}</a>`;
+    }).join('') + '</nav>';
+    host.querySelectorAll('a[data-key]').forEach(a => {
+      a.addEventListener('click', (e) => {
+        const item = findItem(a.dataset.key);
+        if (!item) return;
+        e.preventDefault();
+        handleClick(item);
+      });
     });
-    // If the newly-active item is inside a group, force that group open and
-    // flag its parent — the current location must never be hidden.
-    sidebar.querySelectorAll('.cyg-nav-parent').forEach(p => p.classList.remove('child-active'));
-    const activeEl = sidebar.querySelector(`.cyg-nav-item[data-key="${key}"]`);
-    const kidsWrap = activeEl && activeEl.closest('.cyg-nav-children');
-    if (kidsWrap){
-      kidsWrap.classList.add('open');
-      const parent = sidebar.querySelector(`.cyg-nav-parent[data-parent="${kidsWrap.dataset.children}"]`);
-      if (parent){
-        parent.classList.add('child-active');
-        parent.setAttribute('aria-expanded', 'true');
-        const chev = parent.querySelector('.cyg-nav-chev');
-        if (chev) chev.textContent = '▾';
-      }
+  }
+
+  function updateActive(key){
+    _activeKey = key || '';
+    const rail = railKeyFor(key);
+    const sidebar = document.querySelector('.cyg-sidebar');
+    if (sidebar){
+      sidebar.querySelectorAll('.cyg-nav-item[data-key]').forEach(el => {
+        el.classList.toggle('active', el.dataset.key === rail);
+      });
     }
+    renderSubnav(key);
   }
 
   // ── Mount ───────────────────────────────────────────────────────────────
@@ -1505,6 +1318,18 @@
       document.body.classList.add('cyg-sidebar-autopad');
     }
     const activeKey = host.dataset.active || '';
+    _activeKey = activeKey;
+
+    // The masthead, once, as the first thing in <body>. It is fixed, so
+    // where it sits in the DOM only matters for reading order.
+    let masthead = document.getElementById('cx-masthead');
+    if (!masthead){
+      const tmp = document.createElement('div');
+      tmp.innerHTML = buildMasthead();
+      masthead = tmp.firstElementChild;
+      document.body.insertBefore(masthead, document.body.firstChild);
+    }
+
     const aside = document.createElement('aside');
     const collapsed = isCollapsed();
     aside.className = 'cyg-sidebar' + (collapsed ? ' collapsed' : '');
@@ -1517,14 +1342,16 @@
     if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
 
     wireItemClicks(aside);
-    populateUser(aside);
-    wireUserChip(aside);
-    wireDriveButton(aside);
-    wireProjectSwitcher(aside);
+    populateUser(masthead);
+    wireUserChip(masthead);
+    wireDriveButton(masthead);
+    wireProjectSwitcher(masthead);
+    wireSearch(masthead);
     wireProfilePill(aside);
     hideTopbarUserPill();
     ensureA11y();
     wireMobileDrawer(aside);
+    renderSubnav(activeKey);
     // The status hairline mounts itself — see the note above renderEnvBanner's
     // grave. Nudged here only so a page that finished its own DOM after the
     // hairline booted still gets the rail offset applied.
@@ -1568,6 +1395,10 @@
     // Exposed for structural tests (tests/sidebar-nav.test.js): the nav tree
     // and footer as data, so key coverage can be asserted without a DOM.
     __nav: NAV, __accountNav: ACCOUNT_NAV, __findItem: findItem,
+    __tabs: TABS, __aliases: ALIASES, railKeyFor, tabsFor,
+    // Re-render the tab strip for the current key — for a page whose mount
+    // point appears after the rail booted.
+    renderSubnav: () => renderSubnav(_activeKey),
     setCollapsed: (on) => {
       const el = document.querySelector('.cyg-sidebar');
       if (el) el.classList.toggle('collapsed', !!on);
@@ -1580,22 +1411,16 @@
     refresh: () => {
       const existing = document.querySelector('.cyg-sidebar');
       if (!existing) return;
-      const activeKey = existing.querySelector('.cyg-nav-item.active');
-      const key = activeKey ? activeKey.dataset.key : '';
       const collapsed = existing.classList.contains('collapsed');
       const replacement = document.createElement('aside');
       replacement.className = 'cyg-sidebar' + (collapsed ? ' collapsed' : '');
-      replacement.innerHTML = buildHTML(key);
+      replacement.innerHTML = buildHTML(_activeKey);
       existing.replaceWith(replacement);
       const toggle = replacement.querySelector('#cyg-sidebar-toggle');
       if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
       wireItemClicks(replacement);
-      populateUser(replacement);
-      wireUserChip(replacement);
-      wireDriveButton(replacement);
-      // refresh() rebuilds the markup, so the switcher needs re-wiring too —
-      // without this its dropdown went dead after a feature-flag refresh.
-      wireProjectSwitcher(replacement);
+      wireProfilePill(replacement);
+      renderSubnav(_activeKey);
       hideTopbarUserPill();
     }
   };

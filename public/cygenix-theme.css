@@ -1,9 +1,10 @@
-/* cygenix-theme.css — Site-wide theme overrides.
+/* cygenix-theme.css — the NAMED themes a signed-in user can pick.
  *
- * The Cygenix base palette lives in dashboard.html (and matched copies in
- * other pages) inside :root and html[data-theme="light"]. This file adds
- * additional named themes that anyone can switch to via the existing
- * cygenix_app_prefs.theme setting (Settings → Theme dropdown).
+ * The console's default palette lives in cygenix-console.css. This file adds
+ * the alternatives — selectable through the existing cygenix_app_prefs.theme
+ * setting (Settings → Theme dropdown) — as remaps of the same tokens. It is
+ * loaded AFTER cygenix-console.css, which is all a theme needs to win: a
+ * later rule at the same :root specificity, no doubled selectors.
  *
  * How it works:
  *   - Every page already has a pre-paint <script> that reads
@@ -71,163 +72,28 @@ html[data-theme="financial"]{
   --shadow-soft:0 6px 24px rgba(80,50,30,0.12);
 }
 
-/* Topbar styling for Financial — cream-on-cream with warm border separation.
- * The dashboard's light-mode rules force light-on-dark topbar text, which
- * would be unreadable on our cream topbar; we override those here. */
-html[data-theme="financial"] .topbar{
-  background:var(--topbar-bg);
-  color:var(--topbar-text);
-  border-bottom-color:var(--border2);
-}
-html[data-theme="financial"] .topbar .logo{ color:var(--topbar-text); }
-html[data-theme="financial"] .topbar .logo span{ color:var(--accent2); }
-html[data-theme="financial"] .topbar .logo-console{ color:var(--text3); }
-html[data-theme="financial"] .topbar .back-link{ color:var(--text2); }
-html[data-theme="financial"] .topbar .back-link:hover{ color:var(--text); }
-
-/* Active-row text on a pale pink accent halo can wash out — bump active
- * nav items to dark text when on Financial, keeping the pink as the
- * background highlight. */
-html[data-theme="financial"] .cyg-nav-item.active{
-  color:var(--text);
-  background:var(--accent-glow);
-  border-left-color:var(--accent2);
-}
-html[data-theme="financial"] .cyg-nav-item.active .cyg-nav-icon{
-  color:var(--text);
+/* The financial theme used to patch the topbar, the active nav item, the
+ * active-project pill, the focus ring and the modal shadow after remapping
+ * its tokens. Those rules are gone: the masthead, the rail and the focus
+ * ring read the tokens directly now, so a remap is the whole theme. */
+html[data-theme="financial"]{
+  --color-bg:#FFF1E5; --color-text:#33302E;
+  --color-divider:rgba(80,50,30,0.16);
+  --color-neutral-100:#FFF8F0; --color-neutral-200:#F2DFCE;
+  --color-accent-900:#4A2E1C; --color-accent-100:rgba(252,208,177,0.35);
+  --topbar-bg:var(--color-accent-900);
 }
 
-/* Buttons / pills that hard-code white text on --accent (e.g. .dash-proj-active-pill)
- * become unreadable on pale pink. Force dark text wherever the accent is
- * used as a solid fill. Keep this list in sync with any new pill classes. */
-html[data-theme="financial"] .dash-proj-active-pill{ color:var(--text); }
-
-/* Form focus ring — the default --accent-glow is now warm pink, which is
- * already correct, but ensure the focused border is visible on cream by
- * switching to the darker variant. */
-html[data-theme="financial"] .form-input:focus{
-  border-color:var(--accent2);
-  box-shadow:0 0 0 3px var(--accent-glow);
-}
-
-/* Modals look better on the warmer scrim already, but boost the panel
- * shadow so the cream-on-cream contrast doesn't lose the modal edge. */
-html[data-theme="financial"] .modal,
-html[data-theme="financial"] .dg-modal,
-html[data-theme="financial"] #user-menu,
-html[data-theme="financial"] .rc-chips-menu{
-  box-shadow:var(--shadow-strong);
-}
-
-
-/* ═══════════════════════════════════════════════════════════════════════
- * Oracle — clean enterprise palette modelled on oracle.com / Redwood.
- * ───────────────────────────────────────────────────────────────────────
- * Cool white surfaces, a light grey workspace, a single Oracle red accent
- * (#4A5BD6), a WHITE masthead like oracle.com, clean neutral sans-serif
- * type, softly-rounded white cards with a subtle shadow. No gradients, no
- * glow, no animation, no rainbow icons — sleek, quiet, corporate.
- *
- * IMPLEMENTATION NOTE — why the doubled attribute selector:
- *   Each app page ships its own inline  html[data-theme="light"]{…}
- *   palette in a <style> block that loads AFTER this stylesheet. At equal
- *   specificity the inline block would win on source order. Repeating the
- *   attribute — [data-theme="light"][data-theme="light"] — raises the
- *   specificity to (0,2,1), just above the inline (0,1,1), so these values
- *   win everywhere WITHOUT editing 22 pages' palettes. Every existing
- *   light-mode structural rule (.topbar, .form-input, table headers,
- *   modals …) already keys off  data-theme="light"  and simply consumes
- *   these re-tuned variables.
- *
- * The default theme was switched from 'dark' to 'light' in each page's
- * pre-paint script (with a one-time migration of the old 'dark' default),
- * so this Oracle light palette is what users see first.
- * ═══════════════════════════════════════════════════════════════════════ */
-html[data-theme="light"][data-theme="light"]{
-  /* Surfaces — cool, clean, oracle.com-style. Light grey workspace, white
-   * cards. Not warm/cream — Oracle reads cool and neutral. */
-  --bg:#F3F4F5;        /* main workspace — cool light grey */
-  --bg2:#FFFFFF;       /* cards, panels, sidebar */
-  --bg3:#ECEEF0;       /* sub-panel / hover surface */
-  --bg4:#E1E4E7;       /* inset / pressed / chips */
-
-  /* Borders — cool grey hairlines, flat */
-  --border:rgba(22,26,32,0.10);
-  --border2:rgba(22,26,32,0.16);
-
-  /* Text — cool near-black neutral ramp.
-   * text2/text3 deliberately kept DARK (not light grey) so secondary text and
-   * card labels stay high-contrast and easy to read on the white workspace. */
-  --text:#1A1D21;
-  --text2:#2A2F38;
-  --text3:#363D49;
-
-  /* Accent — Oracle red. One accent, used sparingly. */
-  --accent:#4A5BD6;
-  --accent2:#3D4EC4;                         /* darker — hover / pressed */
-  --accent-glow:rgba(74,91,214,0.14);        /* soft focus ring only */
-
-  /* Status colours — muted, professional (no neon) */
-  --green:#3F7D4E;   --green-bg:rgba(63,125,78,0.10);
-  --amber:#B26A00;   --amber-bg:rgba(178,106,0,0.10);
-  --red:#C0392B;     --red-bg:rgba(192,57,43,0.10);
-  --purple:#6B4E8E;  --purple-bg:rgba(107,78,142,0.10);
-  --teal:#0F6E6C;    --teal-bg:rgba(15,110,108,0.10);
-
-  /* Typography — clean neutral sans everywhere (Oracle is all-sans, not
-   * serif). --serif is remapped to the sans stack so every heading that
-   * referenced it now renders in the same clean face. */
-  --serif:'IBM Plex Sans','Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
-  --sans:'IBM Plex Sans','Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
-  --mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
-
-  /* Masthead — WHITE, like oracle.com's header, with dark text. */
-  --topbar-bg:#FFFFFF;
-  --topbar-text:#1A1D21;
-
-  /* Softer, rounder cards — Oracle uses ~10-16px radii + a light shadow. */
-  --r:10px;
-  --r-lg:16px;
-
-  /* Tints, scrims, shadows — cool, soft, subtle (short throw, low alpha) */
-  --hover-tint:rgba(22,26,32,0.04);
-  --code-tint:rgba(22,26,32,0.06);
-  --modal-scrim:rgba(15,20,28,0.42);
-  --shadow-strong:0 10px 34px rgba(22,26,32,0.14);
-  --shadow-soft:0 1px 3px rgba(22,26,32,0.09),0 1px 2px rgba(22,26,32,0.06);
-}
-
-/* ── White masthead overrides ──────────────────────────────────────────
- * The base light-mode rules assume a DARK topbar and hard-code white text
- * (rgba(255,255,255,…)) for the console label, back-link and avatar. On the
- * new white masthead those would be invisible, so re-point them to the dark
- * neutral ramp. */
-html[data-theme="light"][data-theme="light"] .topbar{ border-bottom-color:var(--border); }
-html[data-theme="light"][data-theme="light"] .topbar .logo{ color:var(--topbar-text); }
-html[data-theme="light"][data-theme="light"] .topbar .logo span{ color:var(--accent); }
-html[data-theme="light"][data-theme="light"] .topbar .logo-console{ color:var(--text3); }
-html[data-theme="light"][data-theme="light"] .topbar .back-link{ color:var(--text2); }
-html[data-theme="light"][data-theme="light"] .topbar .back-link:hover{ color:var(--text); }
-html[data-theme="light"][data-theme="light"] .topbar .avatar{
-  background:var(--bg3); border-color:var(--border2); color:var(--text);
-}
-
-/* Focus ring — red halo on the darker accent border */
-html[data-theme="light"][data-theme="light"] .form-input:focus{
-  border-color:var(--accent);
-  box-shadow:0 0 0 3px var(--accent-glow);
-}
-
-/* Card polish — give the app's panels/cards Oracle's soft lift + round.
- * These class names cover the common card surfaces across the app. */
-html[data-theme="light"][data-theme="light"] .card,
-html[data-theme="light"][data-theme="light"] .panel,
-html[data-theme="light"][data-theme="light"] .stat-card,
-html[data-theme="light"][data-theme="light"] .dash-card,
-html[data-theme="light"][data-theme="light"] .kpi-card,
-html[data-theme="light"][data-theme="light"] .proj-card{
-  box-shadow:var(--shadow-soft);
-}
+/* ── The default theme ─────────────────────────────────────────────────
+ * There used to be a block here: the light palette, written with its
+ * selector doubled (the light attribute written twice) so it
+ * could out-specify the inline :root every page carried, followed by
+ * hand-patches for the topbar, the active nav item, the focus ring and the
+ * card shadow. The default console look now lives in cygenix-console.css,
+ * at plain :root, and the pages no longer carry a competing palette, so
+ * nothing needs out-specifying and nothing needs patching. data-theme="light"
+ * is still set by every page's pre-paint script and still means "the
+ * default"; it simply has no rules of its own any more. */
 
 /* ── Account menu moved to the sidebar ──────────────────────────────────
  * The top-right topbar user pill is retired on every page that renders the

@@ -9,6 +9,7 @@
 <!-- Site-wide theme overrides (Financial palette + future themes).
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-console.css">
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-mobile.css">
@@ -109,24 +110,10 @@
      If dashboard.html changes its :root vars, change them here too.
      ───────────────────────────────────────────────────────────────────────── */
   *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
-    --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-    --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
-    --accent:#4A5BD6;--accent2:#3D4EC4;--accent-glow:rgba(74,91,214,0.15);
-    --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
-    --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
-    --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-    --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-    --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
-    --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
-    --mono:'IBM Plex Mono',monospace;
-    --r:10px;--r-lg:14px;
-    --hover-tint:rgba(255,255,255,0.02);
-    --code-tint:rgba(0,0,0,0.2);
-    --shadow-strong:0 20px 60px rgba(0,0,0,0.4);
-    --shadow-soft:0 6px 24px rgba(0,0,0,0.35);
-  }
+  :root{
+  /* The console palette lives in cygenix-console.css. Only what is this
+     page's own is declared here. */
+}
   html[data-theme="light"] {
     --bg:#eef0f4;
     --bg2:#ffffff;
@@ -158,7 +145,7 @@
     font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-    padding-left: 230px;
+    padding-left: 216px;
     transition: padding-left 0.2s ease;
   }
   body.cyg-collapsed { padding-left: 54px; }
@@ -166,9 +153,9 @@
   .page {
     padding: 1.5rem 2rem 4rem 2rem;
     /* Use the full viewport up to a generous cap, but subtract the sidebar
-       (230px expanded / 54px collapsed) plus a small right gutter so the
+       (216px expanded / 54px collapsed) plus a small right gutter so the
        page never spills past the right edge. */
-    max-width: min(1800px, calc(100vw - 230px - 32px));
+    max-width: min(1800px, calc(100vw - 216px - 32px));
     box-sizing: border-box;
     /* Safety net: if any descendant tries to grow wider than this page,
        clip it rather than letting it trigger a page-level scrollbar. */
@@ -1031,6 +1018,7 @@
 
   <main class="page">
 
+<div id="cyg-subnav-mount"></div>
     <h1>Data Quality Review</h1>
     <p class="lede">Pre-flight checks on a source database. Save reports for the project, export to Excel for sharing.</p>
 
@@ -1306,8 +1294,8 @@
 
   <!-- Sidebar (auto-mounts on DOMContentLoaded) -->
   <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
-<script src="/cygenix-status-hairline.js?v=73f52fed9d" defer></script>
-<script src="/cygenix-sidebar.js?v=cd02f9a4e8" defer></script>
+<script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
+<script src="/cygenix-sidebar.js?v=a39bbf4be2" defer></script>
 
   <!-- Toast -->
   <div id="toast"></div>
@@ -4391,8 +4379,8 @@
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
-<script src="/cygenix-tour-steps.js?v=f90de981cf"></script>
-<script src="/cygenix-tour.js?v=936b3fb471"></script>
+<script src="/cygenix-tour-steps.js?v=35e59b2611"></script>
+<script src="/cygenix-tour.js?v=7810d9c217"></script>
 <script>CygenixAssistant.registerPage('data-quality');</script>
 </body>
 </html>

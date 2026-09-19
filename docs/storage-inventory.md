@@ -30,7 +30,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_pending_token` | Auth token in transit between pages | short-lived; clear on consume | index.html |
 | `cygenix_src_conn_string` | Source connection string, in plain text | WI-10: move to a Key Vault reference | connect.html, project-builder-app.js |
 
-## A — Authoritative — losing it loses customer work (18)
+## A — Authoritative — losing it loses customer work (19)
 
 > These need a server source of truth. `cygenix-cosmos-sync.js` mirrors the keys marked
 > *synced* to Cosmos on a 3-second write-behind; the rest are local-only and are WI-1's
@@ -38,6 +38,7 @@ mechanism that stops an unclassified key being added quietly.
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
+| `cygenix_assurance_v1` | The Assurance store: rules, runs, breaches, tags, suggestions | NOT SYNCED — WI-1; Home reads its open breaches for the needs-you queue | dashboard-app.js |
 | `cygenix_backup_history` | Restore-module backup history | NOT SYNCED — WI-1 | dashboard-app.js |
 | `cygenix_conv_project` | The currently-open project blob | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, cygenix-schema-graph.js |
 | `cygenix_datagen_runs` | Which rows each Data Generator run inserted | synced (SYNC_KEYS), union-merged — the only record of what a run put there | data-generator.html |
@@ -47,7 +48,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-integrations.js, cygenix-project-summary.js +15 |
 | `cygenix_map_groups` | Object Mapping group names and colours | synced (SYNC_KEYS) | object-mapping-app.js |
 | `cygenix_objmap_wip_` | Object-mapping work in progress | NOT SYNCED — WI-1 | schema_explorer.html |
-| `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js |
+| `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js, dashboard-app.js |
 | `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_project_settings` | Per-project settings | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, conversion-templates.html, cygenix-integrations.js +6 |
@@ -70,11 +71,12 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data_stream_designer.html, data_stream_store.html |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
-## C — Preference — per-viewer convenience (27)
+## C — Preference — per-viewer convenience (28)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
 | `cyg_goto` | Cross-page navigation intent | — | connect.html, cygenix-sidebar.js, dashboard-app.js +2 |
+| `cyg_search_q` | A query typed in the masthead, handed to the Search view once | — | cygenix-sidebar.js, dashboard-app.js |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
 | `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +16 |
 | `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-cosmos-sync.js, cygenix-sidebar.js +3 |
@@ -104,4 +106,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_60 classified key(s) across `public/`._
+_62 classified key(s) across `public/`._

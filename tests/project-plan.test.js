@@ -341,15 +341,18 @@ const check = (name, ok, detail) => {
     /pf-today/.test(html) && /pf-flag/.test(html) && /pfTodayWeek/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
-  check('the Project group sits below Home: Estimator first, then the Planner',
+  // The Configurator and the Project plan used to sit in a Project expander
+  // under Home. The console redesign (Sep-2026) dissolved the expanders: both
+  // are tabs on the Reports screen now — documents about the project, next
+  // to the other documents — Configurator first, then the plan, and their
+  // keys are unchanged so this page's data-active still resolves.
+  check('the Configurator and the Project plan are tabs on Reports, Configurator first',
     (() => {
-      const grp = /key:'project-group',\s*label:'Project'[\s\S]*?\]\}/.exec(sidebar);
+      const grp = /'report-builder': \[[\s\S]*?\],/.exec(sidebar);
       if (!grp) return false;
       const est = grp[0].indexOf("key:'effort-estimator'");
       const pln = grp[0].indexOf("key:'project-plan-grid'");
-      return est > -1 && pln > -1 && est < pln
-        && sidebar.indexOf("key:'dashboard'") < sidebar.indexOf("key:'project-group'")
-        && sidebar.indexOf("key:'project-group'") < sidebar.indexOf("section: 'Connect'");
+      return est > -1 && pln > -1 && est < pln && !/key:'project-group'/.test(sidebar);
     })());
   check('and neither module is listed under Reports any more',
     !/reports-group[\s\S]{0,900}key:'project-plan-grid'/.test(sidebar)

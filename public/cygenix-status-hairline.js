@@ -114,7 +114,10 @@
      set INLINE on the root element — an inline declaration beats any
      stylesheet :root rule, including one loaded after us. The rail's profile
      chip reads the same three, so the dot and the line can never disagree. */
-  var PALETTE = { green: '#3F7D4E', amber: '#B26A00', red: '#C0392B' };
+  // The console's status trio (cygenix-console.css --state-ok/warn/fail).
+  // Written here as literals as well because this module sets them INLINE
+  // on <html> so that no page's own :root can disagree with the line.
+  var PALETTE = { green: '#3f6b52', amber: '#9a6b1f', red: '#9c3f38' };
 
   /* Read through the literal below, not through this constant: the storage
      inventory scanner (scripts/storage-inventory.js) matches a literal inside
@@ -291,9 +294,13 @@
 
       /* The reserved strip. Overlay expansion never touches this, so nothing
          on the page moves when the pointer crosses the top edge. */
-      'body.cyg-envbar-pad{padding-top:var(--cyg-hairline-h)}',
-      'body.cyg-envbar-pad .cyg-sidebar{top:var(--cyg-hairline-h);',
-      '  height:calc(100vh - var(--cyg-hairline-h))}',
+      /* The masthead (cygenix-sidebar.js, 60px) sits under the hairline and
+         the rail sits under the masthead. cygenix-console.css pads the body
+         by masthead + hairline; this rule exists for a page that loads the
+         hairline without that stylesheet and must say the same sum. */
+      'body.cyg-envbar-pad{padding-top:calc(var(--cyg-hairline-h) + var(--cx-masthead-h,0px))}',
+      'body.cyg-envbar-pad .cyg-sidebar{top:calc(var(--cyg-hairline-h) + var(--cx-masthead-h,0px));',
+      '  height:auto}',
       /* Only when locked does the assistant move: two fixed panels at top 0
          is exactly the collision this file exists to end, and at 2px it does
          not matter. The selector is body-qualified so it outranks .cyga's own

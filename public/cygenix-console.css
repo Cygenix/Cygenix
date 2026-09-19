@@ -1,0 +1,473 @@
+/* ============================================================================
+   cygenix-console.css — the one token file for the signed-in console.
+   ----------------------------------------------------------------------------
+   WHY THIS EXISTS (design review, Sep-2026, finding 05)
+   Three palettes coexisted. Every app page carried its own inline :root with
+   the original dark values; dashboard.html carried a light block on top; and
+   cygenix-theme.css won over both by writing its selector twice —
+   html[data-theme="light"][data-theme="light"] — because at equal specificity
+   the page's own <style> loads later and wins. Each theme then patched the
+   topbar, the active nav item, the pills and the focus ring by hand, because
+   the base rules had hard-coded colours the variables could not reach.
+
+   That is a theme layer out-specifying itself, and it is what happens when a
+   value has twenty-eight homes. This file is the home. The pages' inline
+   blocks have been stripped of every variable defined here (a script did it,
+   and tests/console-design.test.js keeps it that way); what a page still
+   declares in :root is genuinely its own — the Schema Explorer's data-map
+   ramp, for instance — and is left alone.
+
+   WHAT THE VALUES ARE
+   The Industry palette from the design handoff: a steel-blue accent ramp, a
+   neutral ramp, and exactly three status colours. Hue is reserved for STATE.
+   The rail is monochrome, the tags are bordered ink, and the only things that
+   carry a colour are a result, a breach, a failed run and a PROD marker — so
+   that when green appears it still means something.
+
+   Two sets of names are defined for the same values. The --color-* names are
+   the handoff's, used by everything built after it. The old names — --bg,
+   --text2, --accent, --green and the rest — are what twenty-eight pages and
+   seventy modules already consume, and re-pointing them is what retones the
+   whole console in one file rather than page by page. They are aliases, not a
+   second palette: a value is written once and the old name reads it.
+
+   THIS IS NOT cygenix-brand.css
+   That file is loaded by the public pages — index, login, pricing, register,
+   help — and holds only what is identical on both sides of the sign-in (the
+   indigo the logo keeps, the type stacks the marketing pages use). This file
+   is loaded by the console pages only. The two must never be merged: a console
+   retheme that reached the landing page would be a redesign nobody asked for,
+   and the brief for this one said in so many words not to touch it.
+
+   FONTS ARE SELF-HOSTED
+   Barlow and Barlow Condensed, latin subset, in /fonts. Forty-eight pages
+   each calling Google Fonts for the same two families would be forty-eight
+   third-party requests on every load; five files here are fetched once and
+   cached. The public pages keep IBM Plex from Google as before.
+
+   LOAD ORDER
+   One line in <head>, after the page's own <style> block's dependencies are
+   irrelevant because these rules sit at :root and the page's :root no longer
+   competes. cygenix-theme.css, if the page loads it, goes AFTER this file so
+   a named theme can remap roles on top. A theme does not need to out-specify
+   anything any more; it only needs to come later.
+   ========================================================================== */
+
+/* ── Fonts ─────────────────────────────────────────────────────────────── */
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/fonts/barlow-400-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 500; font-display: swap;
+  src: url('/fonts/barlow-500-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('/fonts/barlow-600-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/fonts/barlow-condensed-400-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('/fonts/barlow-condensed-600-latin.woff2') format('woff2'); }
+
+/* ── Tokens ────────────────────────────────────────────────────────────── */
+:root {
+  /* Ground and ink */
+  --color-bg:            #f2f2f3;
+  --color-text:          #1d1f20;
+  --color-divider:       color-mix(in srgb, #1d1f20 16%, transparent);
+
+  /* Neutral ramp. 500 is for placeholder text inside inputs only — it is the
+     one step that does not reach 4.5:1 on the ground, so it is never body. */
+  --color-neutral-100:   #f5f5f8;
+  --color-neutral-200:   #e7e7ea;
+  --color-neutral-300:   #d4d4d7;
+  --color-neutral-400:   #b7b7ba;
+  --color-neutral-500:   #98989b;
+  --color-neutral-600:   #7a7a7d;
+  --color-neutral-700:   #5d5d60;
+  --color-neutral-800:   #424244;
+  --color-neutral-900:   #2b2b2d;
+
+  /* Accent ramp — steel */
+  --color-accent:        #5980a6;
+  --color-accent-100:    #eef6ff;
+  --color-accent-200:    #d6ebff;
+  --color-accent-300:    #b5d9fd;
+  --color-accent-400:    #94bce3;
+  --color-accent-500:    #749dc4;
+  --color-accent-600:    #597ea3;
+  --color-accent-700:    #416180;
+  --color-accent-800:    #2c455d;
+  --color-accent-900:    #1d2d3d;
+
+  /* Status — semantic only. A 3px rule, a result cell, an 8px square, a
+     failure number. Never navigation, never decoration, never a category. */
+  --state-ok:            #3f6b52;
+  --state-warn:          #9a6b1f;
+  --state-fail:          #9c3f38;
+
+  --font-heading:        'Barlow Condensed', system-ui, sans-serif;
+  --font-heading-weight: 600;
+  --font-body:           'Barlow', system-ui, sans-serif;
+
+  /* Chrome geometry the rail, the masthead and the pages agree on. The rail
+     module reads the same numbers from its own constants; a change here
+     without one there misaligns every page, so the test pins both. */
+  --cx-masthead-h:       60px;
+  --cx-rail-w:           216px;
+  --cx-rail-w-closed:    54px;
+  --cx-right-col-w:      360px;
+
+  /* ── The old names, re-pointed ──────────────────────────────────────────
+     Everything below is an alias. Nothing here is a colour of its own. */
+  --bg:                  var(--color-bg);
+  /* Panels are line drawings on the ground, not filled surfaces, so the
+     "card" ground IS the ground. Modals and menus, which do need a solid
+     surface over the scrim, set their own below. */
+  --bg2:                 var(--color-bg);
+  --bg3:                 var(--color-neutral-100);
+  --bg4:                 var(--color-neutral-200);
+  --border:              var(--color-divider);
+  --border2:             color-mix(in srgb, #1d1f20 24%, transparent);
+  --text:                var(--color-text);
+  --text2:               var(--color-neutral-700);
+  --text3:               var(--color-neutral-600);
+  --accent:              var(--color-accent);
+  --accent2:             var(--color-accent-600);
+  --accent-glow:         var(--color-accent-100);
+  --green:               var(--state-ok);
+  --green-bg:            color-mix(in srgb, var(--state-ok) 10%, transparent);
+  --amber:               var(--state-warn);
+  --amber-bg:            color-mix(in srgb, var(--state-warn) 10%, transparent);
+  --red:                 var(--state-fail);
+  --red-bg:              color-mix(in srgb, var(--state-fail) 10%, transparent);
+  /* Purple and teal were categorical decoration — a nav item, a badge kind.
+     Category is not state, so they resolve to accent text and accent tint:
+     still distinguishable from the status trio, no longer pretending to be
+     one of it. */
+  --purple:              var(--color-accent-700);
+  --purple-bg:           var(--color-accent-100);
+  --teal:                var(--color-accent-700);
+  --teal-bg:             var(--color-accent-100);
+  --yellow:              var(--state-warn);
+  --serif:               var(--font-body);
+  --sans:                var(--font-body);
+  --mono:                'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --r:                   0;
+  --r-lg:                0;
+  --topbar-bg:           var(--color-accent-900);
+  --topbar-text:         var(--color-bg);
+  --hover-tint:          color-mix(in srgb, var(--color-text) 4%, transparent);
+  --code-tint:           var(--color-neutral-100);
+  --modal-scrim:         color-mix(in srgb, var(--color-neutral-900) 45%, transparent);
+  --shadow-strong:       0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
+  --shadow-soft:         none;
+  /* The status hairline paints from these; they used to be spelled out in
+     the hairline module because the pages' own --green disagreed with each
+     other. They agree now, but the names stay so nothing has to change. */
+  --cyg-status-green:    var(--state-ok);
+  --cyg-status-amber:    var(--state-warn);
+  --cyg-status-red:      var(--state-fail);
+  color-scheme: light;
+}
+
+/* ── Type ──────────────────────────────────────────────────────────────── */
+body {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
+
+/* ── Shape ─────────────────────────────────────────────────────────────
+   Border radius 0 on every component. The only rounded object on any screen
+   is the logo tile. The old pages set radii on their own classes in a dozen
+   spellings, so the rule is written once against the shapes, with the two
+   things that keep their corners excepted. */
+button:not(.cx-logo), input, select, textarea,
+.btn, .panel, .card, .badge, .tag, .pill, .chip, .form-input, .modal, .dg-modal,
+.dg-btn, .dg-panel, .dg-badge, .preset, .conn-badge, .dash-status, .dash-proj-card,
+.cyg-nav-item, .cyg-user-menu, .cyg-user-menu-item, .cyg-user-av, .cyg-proj-btn,
+.cyg-prof-chip, .cyg-prof-env, .rm-card, .rm-chip, .mg-pill, .file-item, .target-card,
+.upload-zone, .code-block, .inv-doc-card, .inv-folder, .steps-bar, .tab, .step-tab,
+.progress-bar, .progress-fill, .badge-green, .badge-amber, .badge-red, .badge-blue,
+.badge-purple, .badge-teal, .badge-gray, [class*="-pill"], [class*="-chip"],
+[class*="-badge"], [class*="-card"], [class*="-panel"] {
+  border-radius: 0;
+}
+.cx-logo, .cyg-brand-mark { border-radius: 7px; }
+.cyg-nav-badge { border-radius: 0; }
+
+/* ── Panels are transparent line drawings ───────────────────────────────
+   Finding 01: every block on Home was a filled .panel with the same hairline,
+   the same 13px title and the same ghost buttons, so the eye read them in a
+   line. Panels lose their fill and their shadow here; hierarchy comes from
+   type, from the one blueprint frame per screen, and from the 3px status
+   rule on the things that need a person. */
+.panel, .card, .dg-panel, .dash-proj-card, .inv-doc-card, .inv-folder {
+  background: transparent;
+  border: 1px solid var(--color-divider);
+  box-shadow: none;
+}
+.panel-title {
+  font-family: var(--font-heading); font-weight: 600;
+  font-size: 22px; line-height: 1.05; text-transform: uppercase; letter-spacing: normal;
+  color: var(--color-text);
+}
+.panel-sub { font-size: 14px; line-height: 1.5; color: var(--color-neutral-700); margin-top: 3px; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.btn, .dg-btn {
+  font-family: var(--font-heading); font-weight: 600; font-size: 14px; line-height: 1.2;
+  height: 32px; padding: 0 15px; border: 1px solid transparent; border-radius: 0;
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.btn-sm, .dg-btn.btn-sm { height: 30px; padding: 0 13px; font-size: 14px; }
+.btn-primary, .dg-btn-primary { background: var(--color-accent); color: #fff; }
+.btn-primary:hover, .dg-btn-primary:hover { background: var(--color-accent-600); }
+.btn-primary:active, .dg-btn-primary:active { background: var(--color-accent-700); }
+.btn-ghost, .btn-teal, .dg-btn-ghost {
+  background: transparent; color: var(--color-text); border-color: var(--color-divider);
+}
+.btn-ghost:hover, .btn-teal:hover, .dg-btn-ghost:hover {
+  background: color-mix(in srgb, var(--color-text) 4%, transparent); color: var(--color-text);
+}
+.btn-ghost:active, .dg-btn-ghost:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
+.btn-amber { background: transparent; color: var(--state-warn); border-color: var(--state-warn); }
+.btn-danger, .dg-btn-danger { background: transparent; color: var(--state-fail); border-color: var(--state-fail); }
+.btn:disabled, .dg-btn:disabled, button:disabled { opacity: .45; cursor: not-allowed; }
+.btn-full { width: 100%; justify-content: center; height: 38px; }
+
+/* ── Focus: never the browser default ────────────────────────────────── */
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.form-input:focus, input:focus, select:focus, textarea:focus {
+  border-color: var(--color-accent) !important; box-shadow: none !important; outline: none;
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────── */
+.form-input, input[type="text"], input[type="search"], input[type="number"],
+input[type="password"], input[type="email"], select, textarea {
+  font-family: var(--font-body); font-size: 14px; color: var(--color-text);
+  background: var(--color-bg); border: 1px solid var(--color-divider);
+}
+::placeholder { color: var(--color-neutral-500); }
+.form-label, label.form-label { font-size: 13px; color: var(--color-neutral-700); }
+
+/* ── Tags: the environment tag is the model for every tag ───────────── */
+.badge, .conn-badge, .dash-status, .dg-badge, .inv-type-pill {
+  font-family: var(--font-heading); font-weight: 600; font-size: 12px; letter-spacing: .1em;
+  text-transform: uppercase; padding: 2px 8px; border: 1px solid var(--color-divider);
+  background: transparent; color: var(--color-neutral-700); line-height: 1.4;
+}
+.badge-green, .conn-badge.ok, .dash-status-complete { color: var(--state-ok); border-color: var(--state-ok); background: transparent; }
+.badge-amber, .conn-badge.checking { color: var(--state-warn); border-color: var(--state-warn); background: transparent; }
+.badge-red, .conn-badge.err { color: var(--state-fail); border-color: var(--state-fail); background: transparent; }
+.badge-blue, .badge-purple, .badge-teal, .dash-status-active {
+  color: var(--color-accent-800); border-color: var(--color-accent-300); background: var(--color-accent-100);
+}
+.badge-gray, .dash-status-inactive, .dash-status-draft, .dash-status-archived {
+  color: var(--color-neutral-700); border-color: var(--color-divider); background: transparent;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────── */
+.jobs-table th, .wasis-table th, table.cx-table th {
+  font-family: var(--font-body); font-weight: 400; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  background: transparent; border-bottom: 1px solid var(--color-divider);
+}
+.jobs-table td, .wasis-table td { font-size: 13px; line-height: 1.4; border-bottom: 1px solid var(--color-divider); }
+.jobs-table tr:hover td, .wasis-table tr:hover td { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+
+/* ── Tabs (the in-page kind pages already have) ──────────────────────── */
+.tabs { border-bottom: 1px solid var(--color-divider); }
+.tab {
+  font-family: var(--font-heading); font-weight: 600; font-size: 16px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--color-neutral-600); padding: 8px 14px;
+  border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--color-text); }
+.tab.active { color: var(--color-text); border-bottom-color: var(--color-accent); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Components from the handoff. Prefixed cx- so they cannot collide with
+   the forty-odd class vocabularies the pages already use.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Page header: kicker over an uppercase title, a sentence beneath */
+.cx-kicker {
+  font-family: var(--font-heading); font-weight: 600; font-size: 13px; line-height: 1.2;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--color-accent-700);
+}
+.cx-title {
+  font-family: var(--font-heading); font-weight: 600; font-size: 40px; line-height: .95;
+  text-transform: uppercase; color: var(--color-text); margin: 6px 0 0;
+}
+.cx-title.cx-title-project { font-size: 46px; letter-spacing: -.005em; }
+.cx-sub { font-size: 16px; line-height: 1.5; color: var(--color-neutral-800); max-width: 86ch; margin-top: 10px; }
+.cx-sub.cx-sub-lg { font-size: 17px; }
+.cx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.cx-head-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding-top: 22px; }
+
+/* Section label — 15px Condensed, tracked, neutral-700 */
+.cx-section {
+  font-family: var(--font-heading); font-weight: 600; font-size: 15px; line-height: 1.2;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--color-neutral-700);
+  display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
+}
+.cx-section .cx-count-fail { color: var(--state-fail); }
+.cx-section a { color: var(--color-accent-700); text-decoration: none; margin-left: auto; letter-spacing: normal; text-transform: none; font-family: var(--font-body); font-size: 13px; }
+
+/* Panel / sub-panel headings */
+.cx-h { font-family: var(--font-heading); font-weight: 600; font-size: 22px; line-height: 1.05; text-transform: uppercase; color: var(--color-text); }
+.cx-h-sm { font-family: var(--font-heading); font-weight: 600; font-size: 17px; line-height: 1.2; text-transform: uppercase; color: var(--color-text); }
+.cx-h-md { font-family: var(--font-heading); font-weight: 600; font-size: 20px; line-height: 1.1; text-transform: uppercase; color: var(--color-text); }
+.cx-h-lg { font-family: var(--font-heading); font-weight: 600; font-size: 26px; line-height: 1.0; text-transform: uppercase; color: var(--color-text); }
+
+/* Body and meta */
+.cx-body { font-size: 15px; line-height: 1.5; color: var(--color-neutral-800); }
+.cx-meta { font-size: 13px; line-height: 1.5; color: var(--color-neutral-700); }
+.cx-meta-lg { font-size: 14px; line-height: 1.5; color: var(--color-neutral-700); }
+.cx-num { font-variant-numeric: tabular-nums; }
+
+/* Panel: a bordered, transparent box. Blueprint: the same, with the four
+   registration marks — reserved for the single most important object on
+   a screen, never on every panel. */
+.cx-panel { border: 1px solid var(--color-divider); padding: 18px 20px; background: transparent; }
+.cx-panel-tight { padding: 12px 14px; }
+.cx-blueprint { position: relative; border: 1px solid var(--color-divider); background: transparent; }
+.cx-blueprint > .cx-corner {
+  position: absolute; width: 11px; height: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.cx-blueprint > .cx-corner::before, .cx-blueprint > .cx-corner::after {
+  content: ''; position: absolute; background: currentColor;
+}
+.cx-blueprint > .cx-corner::before { left: 5px; top: 0; width: 1px; height: 11px; }
+.cx-blueprint > .cx-corner::after  { top: 5px; left: 0; width: 11px; height: 1px; }
+.cx-blueprint > .cx-corner.tl { top: -6px; left: -6px; }
+.cx-blueprint > .cx-corner.tr { top: -6px; right: -6px; }
+.cx-blueprint > .cx-corner.bl { bottom: -6px; left: -6px; }
+.cx-blueprint > .cx-corner.br { bottom: -6px; right: -6px; }
+
+/* Buttons in the new vocabulary */
+.cx-btn {
+  font-family: var(--font-heading); font-weight: 600; font-size: 14px; line-height: 1.2;
+  height: 32px; padding: 0 15px; border: 1px solid var(--color-divider); background: transparent;
+  color: var(--color-text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  text-decoration: none; white-space: nowrap; transition: background .12s, color .12s;
+}
+.cx-btn:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); color: var(--color-text); }
+.cx-btn:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
+.cx-btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.cx-btn-primary:hover { background: var(--color-accent-600); border-color: var(--color-accent-600); color: #fff; }
+.cx-btn-primary:active { background: var(--color-accent-700); }
+.cx-btn-sm { height: 30px; padding: 0 13px; }
+.cx-btn-lg { height: 38px; padding: 0 20px; font-size: 16px; }
+.cx-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Segmented control */
+.cx-seg { display: inline-flex; border: 1px solid var(--color-divider); }
+.cx-seg > span, .cx-seg > button, .cx-seg > a {
+  padding: 7px 18px; font-family: var(--font-heading); font-weight: 600; font-size: 15px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--color-neutral-600);
+  background: transparent; border: 0; cursor: pointer; text-decoration: none; line-height: 1.2;
+}
+.cx-seg > .on { background: var(--color-accent-900); color: var(--color-bg); }
+
+/* Tag */
+.cx-tag {
+  display: inline-block; font-family: var(--font-heading); font-weight: 600; font-size: 12px;
+  letter-spacing: .1em; text-transform: uppercase; padding: 2px 8px; line-height: 1.4;
+  border: 1px solid var(--color-divider); color: var(--color-neutral-700); white-space: nowrap;
+}
+.cx-tag-accent { color: var(--color-accent-800); border-color: var(--color-accent-300); background: var(--color-accent-100); }
+.cx-tag-fail { color: var(--state-fail); border-color: var(--state-fail); }
+.cx-tag-ok { color: var(--state-ok); border-color: var(--state-ok); }
+.cx-tag-warn { color: var(--state-warn); border-color: var(--state-warn); }
+
+/* Status square + word */
+.cx-dot { display: inline-block; width: 8px; height: 8px; background: var(--color-neutral-400); vertical-align: middle; margin-right: 8px; flex: 0 0 auto; }
+.cx-dot-ok { background: var(--state-ok); }
+.cx-dot-warn { background: var(--state-warn); }
+.cx-dot-fail { background: var(--state-fail); }
+.cx-dot-accent { background: var(--color-accent); }
+.cx-ok { color: var(--state-ok); }
+.cx-warn { color: var(--state-warn); }
+.cx-fail { color: var(--state-fail); }
+
+/* Attention item — a 3px left rule in its severity colour */
+.cx-attn { border-left: 3px solid var(--state-warn); padding: 2px 0 2px 12px; }
+.cx-attn-fail { border-left-color: var(--state-fail); }
+.cx-attn-warn { border-left-color: var(--state-warn); }
+.cx-attn-ok { border-left-color: var(--state-ok); }
+.cx-attn .cx-h-sm { margin-bottom: 4px; }
+.cx-attn p { font-size: 14px; line-height: 1.45; color: var(--color-neutral-800); margin: 0 0 10px; }
+
+/* Table in the new vocabulary */
+.cx-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.4; }
+.cx-table th {
+  text-align: left; font-weight: 400; font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); padding: 6.8px 10px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.cx-table td { padding: 6.8px 10px; border-bottom: 1px solid var(--color-divider); color: var(--color-text); vertical-align: middle; }
+.cx-table tr:hover td { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+.cx-table .r { text-align: right; font-variant-numeric: tabular-nums; }
+.cx-table .cx-th-name { font-family: var(--font-heading); font-weight: 600; font-size: 15px; text-transform: none; }
+
+/* Measures: hairline-separated cells */
+.cx-measures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--color-divider); border: 1px solid var(--color-divider); }
+.cx-measure { background: var(--color-bg); padding: 16px 20px 18px; }
+.cx-measure-label { font-size: 13px; letter-spacing: .10em; text-transform: uppercase; color: var(--color-neutral-600); }
+.cx-measure-value { font-family: var(--font-heading); font-weight: 600; font-size: 44px; line-height: .9; margin-top: 10px; font-variant-numeric: tabular-nums; color: var(--color-text); display: flex; align-items: baseline; gap: 4px; }
+.cx-measure-unit { font-size: 20px; color: var(--color-neutral-600); }
+.cx-measure-note { font-size: 13px; color: var(--color-neutral-700); margin-top: 8px; }
+
+/* Progress track */
+.cx-track { height: 8px; background: var(--color-neutral-300); overflow: hidden; }
+.cx-track > i { display: block; height: 100%; background: var(--color-accent); }
+
+/* Shimmer for a cell whose value is outstanding. Never a panel that says
+   "Loading…": the frame, the labels and the units paint immediately. */
+.cx-shimmer { display: inline-block; min-width: 3ch; height: 1em; background: var(--color-neutral-200); animation: cx-shimmer 1.2s ease-in-out infinite; vertical-align: middle; }
+@keyframes cx-shimmer { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cx-shimmer { animation: none; } }
+
+/* Numbered steps — the empty state */
+.cx-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; margin-top: 30px; }
+.cx-step-n { font-family: var(--font-heading); font-weight: 600; font-size: 52px; line-height: .9; color: var(--color-accent-400); }
+.cx-step-t { font-family: var(--font-heading); font-weight: 600; font-size: 22px; line-height: 1.05; text-transform: uppercase; margin-top: 12px; color: var(--color-text); }
+.cx-step-p { font-size: 15px; line-height: 1.5; color: var(--color-neutral-800); margin: 8px 0 14px; }
+.cx-step.dim { opacity: .5; }
+.cx-step.dim .cx-step-n { color: var(--color-neutral-400); }
+
+/* Sub-navigation tabs: where a former expander's children went. Rendered
+   by cygenix-sidebar.js into #cyg-subnav-mount on the destination page. */
+.cx-subnav { display: flex; gap: 0; border-bottom: 1px solid var(--color-divider); margin: 0 0 22px; flex-wrap: wrap; }
+.cx-subnav a {
+  font-family: var(--font-heading); font-weight: 600; font-size: 16px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--color-neutral-600); padding: 8px 14px 9px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; cursor: pointer;
+}
+.cx-subnav a:hover { color: var(--color-text); }
+.cx-subnav a.on { color: var(--color-text); border-bottom-color: var(--color-accent); }
+.cx-subnav a.away { color: var(--color-accent-700); }
+.cx-subnav:empty { display: none; }
+
+/* ── The rail and the masthead offset every page ─────────────────────── */
+/* The masthead is fixed at the top, the rail sits beneath it, and the page
+   pads itself clear of both. The status hairline, when a profile exists,
+   adds its own height above the masthead through --cyg-hairline-h; the
+   hairline module owns that variable and this file only reads it. */
+body { padding-top: calc(var(--cx-masthead-h) + var(--cyg-hairline-h, 0px)); }
+
+/* Old page topbars. The dashboard's has been removed from the markup; the
+   rest stay as page action bars (Validation's run buttons live in one) but
+   lose the brand mark, the back link and the user pill the masthead now
+   carries. */
+.topbar .logo, .topbar .back-link, .topbar .user-pill, .topbar #user-pill,
+.topbar .logo-console { display: none !important; }
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+  .cx-measures { grid-template-columns: repeat(2, 1fr); }
+  .cx-steps { grid-template-columns: 1fr; }
+}

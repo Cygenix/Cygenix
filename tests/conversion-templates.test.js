@@ -197,10 +197,14 @@ const estimate = (ticks) => ({
 /* ── 7. Sidebar, routes, audit, storage ─────────────────────────────────── */
 {
   const sb = read('public', 'cygenix-sidebar.js');
-  const i = sb.indexOf("key:'conversion-templates'"), j = sb.indexOf("key:'object-mapping'");
-  check('the sidebar item is in Map & Build, directly above Object Mapping, with a clean href',
-    i > 0 && j > i && sb.slice(i, j).split('\n').filter(l => /key:'/.test(l)).length === 1
-    && /href:'\/conversion-templates'/.test(sb) && sb.indexOf("section: 'Map & Build'") < i);
+  // Conversion Templates is a tab on the Object mapping screen (console
+  // redesign, Sep-2026): the strip leads with Object mapping and Conversion
+  // Templates is the tab directly beside it, with the same clean address.
+  const strip = (/'object-mapping': \[([\s\S]*?)\],/.exec(sb) || [])[1] || '';
+  const i = strip.indexOf("key:'object-mapping'"), j = strip.indexOf("key:'conversion-templates'");
+  check('the tab sits on Object mapping, directly beside it, with a clean href',
+    i >= 0 && j > i && strip.slice(i, j).split('\n').filter(l => /key:'/.test(l)).length === 1
+    && /href:'\/conversion-templates'/.test(strip) && /section: 'Model'[\s\S]*?key:'object-mapping'/.test(sb));
   const redirects = read('public', '_redirects');
   check('the clean address is generated, and the .html form redirects to it',
     /^\/conversion-templates\s+\/conversion-templates\.html\s+200$/m.test(redirects)

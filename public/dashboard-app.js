@@ -4503,50 +4503,252 @@ function showToast(msg) {
 // band), is the cutover in trouble (one readiness line), and what am I working
 // on (projects, schedules, project status).
 function renderDashboard() {
-  // Still called for the projects card it renders; the stat cards it used to
-  // fill are gone and every write in it is null-guarded.
+  // Still called for the projects card it renders elsewhere; every write in
+  // it is null-guarded.
   updateStats();
-  renderStreamBand();
-  renderReadinessStrip();
-  renderProjectStatus();
-  // Schedules need a network round trip, so they fill in behind the rest
-  // rather than holding the whole view up.
+  renderHome();
+  // The two network reads fill their cells in behind the frame. Neither may
+  // hold the paint: the right column is drawn from local state first.
   loadDashboardSchedules();
+  homeLoadApprovals();
 }
 
-// ── Readiness, in one line ────────────────────────────────────────────────
-// The single figure that survived the move, because it is the one a person
-// opens Home to check. It calls pfConfidence() — the same function the
-// Analytics tile and the readiness breakdown call — so there is no second
-// calculation that could drift from the first. Everything else about the
-// score, including which component is costing it points, is one click away.
-function renderReadinessStrip() {
-  const host = document.getElementById('dash-readiness');
-  if (!host || typeof CygenixPreflight === 'undefined') return;
+// ══════════════════════════════════════════════════════════════════════════
+// HOME — the operations sheet
+// ══════════════════════════════════════════════════════════════════════════
+// The model is cygenix-home.js (pure, tested); this is the renderer. It draws
+// the whole view from local state in one pass and redraws when a slow read
+// lands. It knows nothing about jobs beyond how to gather them.
+//
+// NEVER "LOADING…". The frame, the labels and the units paint immediately;
+// a cell whose value is outstanding shows a shimmer, and only that cell.
 
-  let preflight = null;
-  try { preflight = CygenixPreflight.pfLoad(localStorage.getItem('cygenix_active_project_id') || 'default'); } catch {}
-  const c = CygenixPreflight.pfConfidence({ jobs: liveJobs(state.jobs), preflight });
+const HOME_REGION = 'UK South';
+let _homeApprovals = null;          // null = not asked yet / in flight; [] = none
+let _homeApprovalsAt = 0;
+let _dashSchedLoaded = false;
 
-  // No signals at all is not a zero — it is a project that has not started
-  // being gradeable yet, and a strip claiming "0" would be a false alarm.
-  if (!c || c.score === null) { host.style.display = 'none'; return; }
+function homeInput(){
+  const projects = safeArr('cygenix_projects');
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  const project  = projects.find(p => p && p.id === activeId) || null;
+  const all  = liveJobs(state.jobs);
+  const jobs = project ? all.filter(j => j.projectId === project.id) : all;
+  const c = (window.CygenixConnections && CygenixConnections.get && CygenixConnections.get()) || {};
+  const connections = { source: !!(c.srcConnString || c.srcFnUrl), target: !!(c.tgtConnString || c.tgtFnUrl || c.fnUrl) };
 
-  const COLOR = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)' };
-  const LABEL = { green: 'Ready', amber: 'Caution', red: 'Not ready' };
-  host.style.display = '';
-  host.innerHTML = `
-    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-      <div style="min-width:0">
-        <div style="font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em;color:var(--text3)">Cutover readiness</div>
-        <div style="display:flex;align-items:baseline;gap:0.5rem;margin-top:2px">
-          <span style="font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;color:${COLOR[c.grade]}">${c.score}</span>
-          <span style="font-size:12px;color:var(--text2)">${escHtml(LABEL[c.grade] || '')}</span>
+  // Readiness calls the SAME pfConfidence() the Analytics tile calls; there
+  // is no second calculation to drift.
+  let confidence = null, pipeline = null;
+  try {
+    const preflight = CygenixPreflight.pfLoad(activeId || 'default');
+    confidence = CygenixPreflight.pfConfidence({ jobs, preflight });
+  } catch {}
+  try {
+    pipeline = CygenixPipeline.toPipelineModel({ project, jobs, connections, quality: {}, reports: {}, confidence });
+  } catch {}
+
+  // Open breaches, joined to their rule so the queue can say what the check
+  // proves rather than quote a rule id.
+  let breaches = [];
+  try {
+    const st = JSON.parse(localStorage.getItem('cygenix_assurance_v1') || 'null');
+    if (st && Array.isArray(st.breaches)) {
+      const rules = {};
+      (st.rules || []).forEach(r => { if (r && r.id) rules[r.id] = r; });
+      breaches = st.breaches.filter(b => b && b.state !== 'resolved').map(b => {
+        const r = rules[b.ruleId] || {};
+        const t = r.binding && r.binding.targets && r.binding.targets[0];
+        return Object.assign({}, b, { proves: r.proves, ruleName: r.name, table: t ? t.table : null });
+      });
+    }
+  } catch {}
+
+  // Blocked streams, from the same builder the Data Stream page uses.
+  let blockedStreams = [];
+  try {
+    const st = streamState();
+    if (st && typeof CygenixDataStream.blockedStreams === 'function') {
+      blockedStreams = CygenixDataStream.blockedStreams(st, Date.now()).map(e => ({
+        name: e.stream.name || e.stream.id, level: e.blocked.level,
+        stoppedForSeconds: e.blocked.stoppedForSeconds,
+        consequence: typeof CygenixDataStream.blockedConsequence === 'function'
+          ? CygenixDataStream.blockedConsequence(st, e.stream) : '',
+      }));
+    }
+  } catch {}
+
+  let prodCount = 0;
+  try {
+    const pr = JSON.parse(localStorage.getItem('cygenix_profiles_v1') || 'null');
+    prodCount = ((pr && pr.profiles) || []).filter(p => /^PR(O)?D$/i.test(p.envClass || '')).length;
+  } catch {}
+
+  // The AI-written summary, if the user has asked for one — the same record
+  // analytics-app.js reads (readAiNarrative), so both screens tell it alike.
+  let aiNarrative = null;
+  try { aiNarrative = JSON.parse(localStorage.getItem('cygenix_ps_ai_' + activeId) || 'null'); } catch {}
+
+  return {
+    now: Date.now(), project, projects, jobs, connections, pipeline, confidence, aiNarrative,
+    approvals: _homeApprovals || [], approvalsPending: _homeApprovals === null,
+    breaches, blockedStreams,
+    schedules: _dashSchedLoaded ? (TA.schedules || []) : null,
+    region: HOME_REGION, prodCount,
+  };
+}
+
+/* The two-person queue lives behind rbac-admin. Anyone in the tenant may
+   read it; acting on it is the gated part. Cached for a minute so a tab
+   switch does not re-ask, and a failure — no token, no tenant, 403 — leaves
+   the queue empty and says nothing: an approvals read that cannot happen is
+   not an incident on Home. */
+async function homeLoadApprovals(){
+  if (_homeApprovals !== null && Date.now() - _homeApprovalsAt < 60000) return;
+  let token = '';
+  try { token = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : ''; } catch {}
+  if (!token) { _homeApprovals = []; _homeApprovalsAt = Date.now(); renderHome(); return; }
+  try {
+    const r = await fetch('/.netlify/functions/rbac-admin?what=approvals', { headers: { Authorization: 'Bearer ' + token } });
+    const d = r.ok ? await r.json() : null;
+    _homeApprovals = (d && Array.isArray(d.approvals)) ? d.approvals.filter(a => a && !a.approvedBy) : [];
+  } catch { _homeApprovals = []; }
+  _homeApprovalsAt = Date.now();
+  renderHome();
+}
+
+// Called by renderDashboardSchedules once the Task Agent list has arrived.
+function renderHomeNextScheduled(){
+  _dashSchedLoaded = true;
+  renderHome();
+}
+
+function renderHome(){
+  const root = document.getElementById('home-root');
+  if (!root || typeof CygenixHome === 'undefined') return;
+  const m = CygenixHome.homeModel(homeInput());
+  const esc = escapeHtml;
+  const tone = t => 'hm-tone-' + (t || 'text');
+
+  if (m.empty) {
+    root.className = 'hm-grid hm-empty';
+    root.innerHTML = `
+      <div class="hm-main">
+        <div class="cx-kicker">${esc(m.kicker)}</div>
+        <h1 class="cx-title cx-title-project">${esc(m.title)}</h1>
+        <p class="cx-sub cx-sub-lg">${esc(m.sentence)}</p>
+        <div class="cx-steps">${m.steps.map(s => `
+          <div class="cx-step${s.live ? '' : ' dim'}">
+            <div class="cx-step-n">${s.n}</div>
+            <div class="cx-step-t">${esc(s.title)}</div>
+            <p class="cx-step-p">${esc(s.text)}</p>
+            ${s.done ? `<span class="cx-tag cx-tag-ok">${esc(s.cta)}</span>`
+                     : `<a class="cx-btn${s.live ? ' cx-btn-primary' : ''}" href="${esc(s.href)}"${s.live ? '' : ' aria-disabled="true" tabindex="-1"'}>${esc(s.cta)}</a>`}
+          </div>`).join('')}
+        </div>
+        <div class="hm-foot" style="margin-top:40px">${esc(m.footer.line)}</div>
+      </div>`;
+    return;
+  }
+
+  root.className = 'hm-grid';
+  const planHtml = m.plan.map(r => {
+    const style = r.fill === 'done' ? '' : r.fill === 'part'
+      ? ` style="background:linear-gradient(to right, var(--color-accent) ${r.pct}%, var(--color-neutral-300) ${r.pct}%)"` : '';
+    return `<div class="hm-plan-l"><a href="${esc(r.href || '#')}" title="${esc(r.reason || '')}">${esc(r.label)}</a></div>
+      <div class="hm-bar${r.fill === 'done' ? ' done' : ''}"${style} role="img" aria-label="${esc(r.label)} ${r.pct}%"></div>
+      <div class="hm-plan-w ${tone(r.tone)}">${esc(r.word)}</div>`;
+  }).join('');
+
+  const ms = m.measures;
+  const measuresHtml = `
+    <div class="cx-measures">
+      <div class="cx-measure"><div class="cx-measure-label">Readiness</div>
+        <div class="cx-measure-value">${ms.readiness.pending ? '<span class="cx-shimmer" style="width:2ch"></span>' : esc(ms.readiness.value)}<span class="cx-measure-unit">${esc(ms.readiness.unit)}</span></div>
+        <div class="cx-measure-note">${ms.readiness.grade ? esc({ green: 'Ready', amber: 'Caution', red: 'Not ready' }[ms.readiness.grade] || '') : 'not gradeable yet'} · <a href="/analytics?tab=delivery" style="color:var(--color-accent-700);text-decoration:none">why</a></div></div>
+      <div class="cx-measure"><div class="cx-measure-label">Objects</div>
+        <div class="cx-measure-value">${esc(ms.objects.value)}<span class="cx-measure-unit">${esc(ms.objects.unit)}</span></div>
+        <div class="cx-measure-note">jobs run to completion</div></div>
+      <div class="cx-measure"><div class="cx-measure-label">Rows today</div>
+        <div class="cx-measure-value">${esc(ms.rowsToday.value)}<span class="cx-measure-unit">${esc(ms.rowsToday.unit)}</span></div>
+        <div class="cx-measure-note">${esc(ms.rowsToday.note)}</div></div>
+    </div>`;
+
+  const runsHtml = m.runs.length ? `
+    <table class="cx-table hm-runs">
+      <thead><tr><th>Run</th><th>Started</th><th>Duration</th><th class="r">Rows</th><th class="r">Result</th></tr></thead>
+      <tbody>${m.runs.map(r => `<tr>
+        <td class="hm-name">${esc(r.name)}</td><td>${esc(r.started)}</td><td>${esc(r.duration)}</td>
+        <td class="r">${esc(r.rows)}</td><td class="r ${tone(r.tone)}">${esc(r.result)}</td></tr>`).join('')}
+      </tbody></table>`
+    : `<div class="hm-quiet">Nothing has run yet. The first run of any job appears here.</div>`;
+
+  const needsHtml = m.needs.length ? m.needs.map(n => `
+    <div class="cx-attn cx-attn-${n.severity === 'fail' ? 'fail' : 'warn'}">
+      <div class="cx-h-sm">${esc(n.title)}</div>
+      <p>${esc(n.text)}</p>
+      <a class="cx-btn cx-btn-sm${n.primary ? ' cx-btn-primary' : ''}" href="${esc(n.href)}">${esc(n.cta)}</a>
+    </div>`).join('')
+    : `<div class="hm-quiet">Nothing needs you${m.needsPending ? ' from local state — checking approvals <span class="cx-shimmer" style="width:4ch"></span>' : '. No approvals waiting, no open breaches, no failed jobs, no blocked streams'}.</div>`;
+
+  const f = m.inFlight;
+  const flightHtml = f ? `
+    <div class="cx-h-md">${esc(f.name)}</div>
+    <div class="hm-flight-meta">${esc(f.meta)}</div>
+    <div class="cx-track"><i style="width:${f.pct == null ? 0 : f.pct}%"></i></div>
+    <div class="hm-flight-row"><span>${esc(f.elapsed)} elapsed</span><span>${esc(f.eta ? f.eta + ' left' : '')}</span></div>`
+    : `<div class="hm-quiet">Nothing in flight.</div>`;
+
+  const nextHtml = m.nextPending
+    ? `<div class="hm-next"><div><span><span class="cx-shimmer" style="width:12ch"></span></span><span class="w"><span class="cx-shimmer" style="width:6ch"></span></span></div></div>`
+    : (m.next.length ? `<div class="hm-next">${m.next.map(s => `<div><span>${esc(s.name)}</span><span class="w">${esc(s.when)}</span></div>`).join('')}</div>`
+       : `<div class="hm-quiet">Nothing scheduled. <a href="#" onclick="showView('task-agent');return false" style="color:var(--color-accent-700)">Create a schedule</a>.</div>`);
+
+  root.innerHTML = `
+    <div class="hm-main">
+      <div class="cx-head">
+        <div style="min-width:0">
+          <div class="cx-kicker">${esc(m.kicker)}</div>
+          <h1 class="cx-title cx-title-project">${esc(m.title)}</h1>
+          <p class="cx-sub cx-sub-lg">${esc(m.sentence)}</p>
+        </div>
+        <div class="hm-head-actions">
+          <!-- The written summary is authored here and read on /analytics
+               beside the pipeline card. It stays on this side because the
+               call bills the user's own Anthropic key, and Analytics is
+               read-only — a page that spends someone's money on a render is
+               not a thing to build. -->
+          <button type="button" class="cx-btn" id="ps-ai-btn" onclick="refreshProjectNarrative()"
+                  title="Rewrite the project summary with Claude, using your own API key">Rewrite summary</button>
+          <a class="cx-btn" href="/analytics?tab=delivery">Preflight</a>
+          <a class="cx-btn cx-btn-primary" href="/dashboard#goto=jobs" onclick="showView('jobs');return false">Open jobs</a>
         </div>
       </div>
-      <a class="btn btn-ghost btn-sm" style="margin-left:auto"
-         href="/analytics?tab=delivery">Open Analytics →</a>
-    </div>`;
+      <div class="hm-block">
+        <div class="cx-section">Plan</div>
+        <div class="hm-plan">${planHtml}</div>
+      </div>
+      <div class="hm-block">${measuresHtml}</div>
+      <div class="hm-block">
+        <div class="cx-section">Recent runs <a href="#" onclick="showView('jobs');return false">All jobs</a></div>
+        ${runsHtml}
+      </div>
+    </div>
+    <aside class="hm-side" aria-label="Needs you, in flight and next scheduled">
+      <div class="hm-block">
+        <div class="cx-section">Needs you${m.needs.length ? ` <span class="cx-count-fail">${m.needs.length}</span>` : ''}</div>
+        <div class="hm-needs">${needsHtml}</div>
+      </div>
+      <div class="hm-block">
+        <div class="cx-section">In flight</div>
+        ${flightHtml}
+      </div>
+      <div class="hm-block">
+        <div class="cx-section">Next scheduled <a href="#" onclick="showView('task-agent');return false">Schedules</a></div>
+        ${nextHtml}
+      </div>
+      <div class="hm-foot">${esc(m.footer.audit)}<br>${esc(m.footer.line)}</div>
+    </aside>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -4606,7 +4808,9 @@ let _dashSchedLoading = false;
 async function loadDashboardSchedules(){
   const list = document.getElementById('dashboard-schedules-list');
   const sub  = document.getElementById('dashboard-schedules-sub');
-  if (!list) return;
+  // Home no longer carries the table this filled, but the fetch is still the
+  // one place the schedules arrive from — so it runs without the list and
+  // only the writes into it are skipped.
   if (_dashSchedLoading) return;          // Refresh double-click
   _dashSchedLoading = true;
   if (sub) sub.textContent = 'Loading…';
@@ -4620,8 +4824,9 @@ async function loadDashboardSchedules(){
   } catch (e) {
     // Not being able to reach the scheduler is not a broken dashboard — say
     // what happened, keep it small, and let the rest of the page stand.
+    if (typeof renderHomeNextScheduled === 'function') renderHomeNextScheduled([]);
     if (sub) sub.textContent = 'Could not load';
-    list.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:0.5rem 0">'
+    if (list) list.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:0.5rem 0">'
       + 'Could not reach the scheduler: ' + escapeHtml(e && e.message || 'unknown error')
       + ' · <a href="#" onclick="loadDashboardSchedules();return false" style="color:var(--accent)">retry</a></div>';
   } finally {
@@ -4630,6 +4835,9 @@ async function loadDashboardSchedules(){
 }
 
 function renderDashboardSchedules(schedules){
+  // Home's "Next scheduled" block draws from the same list. Guarded, because
+  // this module is also run on its own under test.
+  if (typeof renderHomeNextScheduled === 'function') renderHomeNextScheduled(schedules);
   const list = document.getElementById('dashboard-schedules-list');
   const sub  = document.getElementById('dashboard-schedules-sub');
   if (!list) return;
@@ -5725,6 +5933,8 @@ async function refreshProjectNarrative(){
   try {
     await generateProjectAiSummary({ silent: true });
     renderProjectStatus();
+    // Home's state sentence reads the same record; redraw it.
+    if (typeof renderHome === 'function') renderHome();
   } catch (e) {
     alert('Could not rewrite the summary: ' + (e && e.message ? e.message : 'unknown error'));
   } finally {
@@ -6222,10 +6432,9 @@ function initUserAndProject() {
       // (typically the post-migration "My first project") get replaced.
       try { sessionStorage.setItem('cygenix_active_project', JSON.stringify(proj)); } catch {}
     }
-    if (proj && proj.name) {
-      $('project-name-badge').textContent = proj.name;
-      $('project-name-badge').style.display = 'block';
-    }
+    // The topbar badge this filled is gone — the masthead names the project.
+    const pnb = $('project-name-badge');
+    if (pnb && proj && proj.name) { pnb.textContent = proj.name; pnb.style.display = 'block'; }
   } catch {}
 }
 
@@ -6307,6 +6516,9 @@ function toggleUserMenu() {
       if (data.role === 'admin') {
         const adm = document.getElementById('user-menu-admin-link');
         if (adm) adm.style.display = 'block';
+        // …and in the masthead's account menu, which is where the menu is now.
+        const adm2 = document.getElementById('cyg-user-menu-admin');
+        if (adm2) adm2.hidden = false;
       }
 
       // 2. Tier badge in the Subscription row
@@ -6883,6 +7095,12 @@ async function initGlobalSearch() {
   const input = document.getElementById('search-input');
   const res   = document.getElementById('search-results');
   const sum   = document.getElementById('search-summary');
+  // The masthead search field (cygenix-sidebar.js) stashes its query and
+  // opens this view; the query is consumed here so a refresh does not
+  // re-run it, and the view runs it as if it had been typed in.
+  let handed = '';
+  try { handed = sessionStorage.getItem('cyg_search_q') || ''; sessionStorage.removeItem('cyg_search_q'); } catch {}
+  if (input && handed) { input.value = handed; setTimeout(() => { try { runGlobalSearch(); } catch {} }, 0); return; }
   if (input) { setTimeout(() => input.focus(), 50); }
   if (res) res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, artifacts, and saved reports.</p></div>';
   if (sum) sum.textContent = '';
@@ -8232,7 +8450,10 @@ async function syncFromCloud(){
 // now `defer`red (they used to block first paint), and deferred scripts run
 // before DOMContentLoaded — so their globals are guaranteed here.
 document.addEventListener('DOMContentLoaded', () => {
-try { $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); } catch(e){ console.error('[init] today-date:', e); }
+// The dated subtitle went with the old Home header; the element is kept
+// optional so a page that still carries one is dated and one that does not
+// is not an error.
+try { const td = $('today-date'); if (td) td.textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); } catch(e){ console.error('[init] today-date:', e); }
 try { window.sconnSecretsMigrationOnce && window.sconnSecretsMigrationOnce(); } catch(e){ console.error('[init] sconn-migration:', e); }
 try { renderDashboard();           } catch(e){ console.error('[init] renderDashboard:', e); }
 try { checkHealth();               } catch(e){ console.error('[init] checkHealth:', e); }

@@ -9,6 +9,7 @@
 <!-- Site-wide theme overrides (Financial palette + future themes).
      This must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-console.css">
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
 <link rel="stylesheet" href="/cygenix-datastream.css">
@@ -59,31 +60,17 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
-  --accent:#4A5BD6;--accent2:#3D4EC4;--accent-glow:rgba(74,91,214,0.15);
-  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
-  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
-  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
-  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
-  --mono:'IBM Plex Mono',monospace;
-  --r:10px;--r-lg:14px;
+  /* The console palette lives in cygenix-console.css. Only what is this
+     page's own is declared here. */
   /* Topbar uses its own pair of vars so it stays dark in light mode (Boomi-style),
      while the rest of the UI flips to light backgrounds. In dark mode they're the
      same as --bg2 / --text. */
   --topbar-bg:#13161d;
-  --topbar-text:#e8eaf0;
   /* Subtle row-hover and inline-code tints. In dark mode these are white/black
-     overlays; in light mode they need to flip to dark/light overlays so they
+     overlays;
+  in light mode they need to flip to dark/light overlays so they
      stay visible on the new backgrounds. */
   --hover-tint:rgba(255,255,255,0.02);
-  --code-tint:rgba(0,0,0,0.2);
-  --modal-scrim:rgba(0,0,0,0.8);
-  --shadow-strong:0 20px 60px rgba(0,0,0,0.4);
-  --shadow-soft:0 6px 24px rgba(0,0,0,0.35);
 }
 
 /* ── LIGHT THEME ──────────────────────────────────────────────────────────────
@@ -94,33 +81,7 @@
    Visual reference: the Boomi Integration UI — dark navy topbar over a light
    workspace with white panels, soft grey borders, dark slate text. The accent
    blue stays the same so brand colour is consistent across themes. */
-html[data-theme="light"]{
-  --bg:#eef0f4;
-  --bg2:#ffffff;
-  --bg3:#fafbfc;
-  --bg4:#eef0f3;
-  --border:rgba(15,23,42,0.08);
-  --border2:rgba(15,23,42,0.14);
-  --text:#1a2332;
-  --text2:#4b5563;
-  --text3:#363D49;
-  --accent-glow:rgba(74,91,214,0.10);
-  --green-bg:rgba(34,201,122,0.12);
-  --amber-bg:rgba(245,158,11,0.12);
-  --red-bg:rgba(240,70,70,0.10);
-  --purple-bg:rgba(107,78,142,0.14);
-  --teal-bg:rgba(23,130,124,0.14);
-  /* Topbar is white in light mode to match the Cygenix Console template. */
-  --topbar-bg:#ffffff;
-  --topbar-text:#191c24;
-  /* Flip overlay tints so hovers and inline code remain visible. */
-  --hover-tint:rgba(15,23,42,0.04);
-  --code-tint:rgba(15,23,42,0.06);
-  --modal-scrim:rgba(15,23,42,0.45);
-  --shadow-strong:0 20px 60px rgba(15,23,42,0.12);
-  --shadow-soft:0 6px 24px rgba(15,23,42,0.10);
-  color-scheme:light;
-}
+/* The light palette that stood here is cygenix-console.css now. */
 
 /* The styles below were originally written with hardcoded rgba(255,255,255,…)
    or rgba(0,0,0,…) values, which can't be flipped by changing CSS vars alone.
@@ -169,9 +130,9 @@ html[data-theme="light"] .form-input:focus{border-color:var(--accent);box-shadow
 html[data-theme="light"] .upload-zone{background:var(--bg2);border-color:var(--border2)}
 
 html,body{height:100%;overflow:hidden}
-body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-left:216px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
-.app{display:grid;grid-template-columns:1fr;grid-template-rows:52px 1fr;height:100vh;width:calc(100vw - 230px);transition:width 0.2s ease}
+.app{display:grid;grid-template-columns:1fr;grid-template-rows:1fr;height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));width:calc(100vw - 216px);transition:width 0.2s ease}
 body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
 /* TOPBAR */
@@ -192,7 +153,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
    (position:fixed). Body padding-left reserves space for it. */
 
 /* MAIN */
-.main{padding:1.75rem;overflow-y:auto;background:var(--bg);min-width:0;grid-column:1;grid-row:2}
+.main{padding:28px 32px 34px;overflow-y:auto;background:var(--bg);min-width:0;grid-column:1;grid-row:1}
 .main::-webkit-scrollbar{width:4px}
 .main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
@@ -216,6 +177,41 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dash-status-complete{background:rgba(34,201,122,0.08);color:var(--green);border-color:rgba(34,201,122,0.35)}
 .dash-status-draft{background:var(--bg4);color:var(--text2);border-color:var(--border2)}
 .dash-status-archived{background:var(--bg4);color:var(--text3);border-color:var(--border)}
+
+/* HOME — see #view-dashboard. The right column is a permanent 360px
+   attention column on the neutral-100 ground: it sticks inside the .main
+   scroller so the needs-you queue stays visible at any scroll position. The
+   negative margins let the two panes reach the edges of .main, whose own
+   padding is what every other view uses. */
+.hm-grid{display:grid;grid-template-columns:minmax(0,1fr) var(--cx-right-col-w,360px);margin:-28px -32px -34px;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px))}
+.hm-grid.hm-empty{grid-template-columns:1fr}
+.hm-main{padding:28px 32px 34px;min-width:0}
+.hm-side{background:var(--color-neutral-100);border-left:1px solid var(--color-divider);padding:28px 24px;position:sticky;top:0;align-self:start;display:flex;flex-direction:column;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));max-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));overflow:auto}
+.hm-block{margin-top:30px}
+.hm-side .hm-block:first-child{margin-top:0}
+.hm-head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-top:26px}
+.hm-plan{display:grid;grid-template-columns:148px minmax(0,1fr) 92px;row-gap:12px;column-gap:16px;align-items:center;padding:18px 20px;border:1px solid var(--color-divider)}
+.hm-plan-l{font-family:var(--font-heading);font-weight:600;font-size:16px;line-height:1.2;text-transform:uppercase;color:var(--color-text)}
+.hm-plan-l a{color:inherit;text-decoration:none}
+.hm-bar{height:14px;background:var(--color-neutral-300)}
+.hm-bar.done{background:var(--color-accent-700)}
+.hm-plan-w{font-size:14px;line-height:1.3;white-space:nowrap}
+.hm-tone-ok{color:var(--state-ok)}.hm-tone-warn{color:var(--state-warn)}.hm-tone-fail{color:var(--state-fail)}
+.hm-tone-accent{color:var(--color-accent-700)}.hm-tone-muted{color:var(--color-neutral-600)}.hm-tone-text{color:var(--color-text)}
+.hm-needs{display:flex;flex-direction:column;gap:14px}
+.hm-flight-meta{font-size:14px;color:var(--color-neutral-700);margin:2px 0 10px}
+.hm-flight-row{display:flex;justify-content:space-between;font-size:13px;color:var(--color-neutral-700);margin-top:6px}
+.hm-next{display:flex;flex-direction:column}
+.hm-next > div{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--color-divider)}
+.hm-next > div:last-child{border-bottom:0}
+.hm-next .w{color:var(--color-neutral-700);white-space:nowrap;font-variant-numeric:tabular-nums}
+.hm-foot{margin-top:auto;padding-top:18px;border-top:1px solid var(--color-divider);font-size:13px;line-height:1.6;color:var(--color-neutral-700)}
+.hm-quiet{font-size:14px;color:var(--color-neutral-700);line-height:1.5}
+.hm-runs td.hm-name{font-family:var(--font-heading);font-weight:600;font-size:15px}
+@media (max-width:1200px){
+  .hm-grid{grid-template-columns:1fr}
+  .hm-side{position:static;max-height:none;min-height:0;border-left:0;border-top:1px solid var(--color-divider)}
+}
 
 /* PANELS */
 .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
@@ -1340,41 +1336,20 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <div class="app">
 
   <!-- TOPBAR -->
-  <div class="topbar">
-    <div style="display:flex;align-items:center;gap:1.25rem">
-      <a href="/projects" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
-    </div>
-    <div class="topbar-right">
-      <div class="conn-badge checking" id="conn-badge">Checking…</div>
-      <button id="sync-btn" onclick="syncFromCloud()" title="Pull latest data from cloud" style="display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:3px 10px;font-size:11px;color:var(--text3);cursor:pointer;font-family:var(--serif);transition:all 0.15s" onmouseover="this.style.color='var(--teal)';this.style.borderColor='var(--teal)'" onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border2)'">↻ Sync</button>
-      <div id="project-name-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:3px 10px;background:var(--bg3);border-radius:100px;border:0.5px solid var(--border);display:none"></div>
-      <div class="user-pill" id="user-pill" onclick="toggleUserMenu()" style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer;position:relative">
-        <div class="avatar" id="user-avatar" style="background:var(--accent-glow);border-color:rgba(74,91,214,0.4);color:var(--accent)">?</div>
-        <span style="font-size:12px;color:var(--text2)" id="user-name">Loading…</span>
-        <div id="user-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:0.5rem;min-width:180px;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.4)">
-          <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem 0.25rem" id="user-email-menu"></div>
-          <div style="height:0.5px;background:var(--border);margin:0.4rem 0"></div>
-          <a href="/projects" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">My projects</a>
-          <a href="#" id="user-menu-subscription" style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'" onclick="event.preventDefault(); openBillingPortal(this);">
-            <span>Subscription</span>
-            <span id="user-menu-tier-badge" style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3);padding:2px 7px;border-radius:100px"></span>
-          </a>
-          <a href="/admin" id="user-menu-admin-link" style="display:none;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'"><i class="ic ic-cog"></i> Admin panel</a>
-          <div onclick="signOut()" style="padding:0.5rem;font-size:13px;color:var(--red);cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">Sign out</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
+  <!-- The topbar that stood here — logo, connection badge, Sync, project
+       badge, user pill — is the masthead now, rendered by cygenix-sidebar.js
+       on every console page. Sync lives in the account menu; the connection
+       state is the profile chip and the status hairline. -->
 
   <!-- SIDEBAR — rendered by /cygenix-sidebar.js; data-active matches the
        initial showView in startup code. Updated dynamically via
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
-<script src="/cygenix-status-hairline.js?v=73f52fed9d" defer></script>
-<script src="/cygenix-sidebar.js?v=cd02f9a4e8" defer></script>
+<script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
+<script src="/cygenix-sidebar.js?v=a39bbf4be2" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
+  <script src="/cygenix-home.js?v=22a62c9cae" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
   <script src="/cygenix-datastream.js?v=cf1b2702f0" defer></script>
   <script src="/cygenix-datastream-ui.js?v=a0e01de431" defer></script>
@@ -1400,113 +1375,27 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=519f4c989c" defer></script>
-  <script src="/dashboard-app.js?v=29506b19df" defer></script>
+  <script src="/dashboard-app.js?v=07beae754e" defer></script>
 
 
   <!-- MAIN -->
   <div class="main">
+    <div id="cyg-subnav-mount"></div>
 
     <!-- DASHBOARD -->
     <div id="view-dashboard" class="view active">
-      <div class="panel-header">
-        <div><div class="panel-title">SQL Migration Overview</div><div class="panel-sub" id="today-date"></div></div>
-      </div>
+      <!-- HOME — the operations sheet. Rendered whole by renderHome() in
+           dashboard-app.js from the model cygenix-home.js builds, in reading
+           order: project header, plan, three measures, recent runs; and in
+           the permanent right column, needs-you, in flight, next scheduled,
+           the footer facts. With no project the main pane is the three-step
+           empty state instead. The frame paints from local state at once;
+           the two network reads (approvals, schedules) fill their cells in
+           behind it and never hold the screen up.
 
-      <!-- Blocked streams, in the same words as the Data Stream page. An
-           operator who opens Home and clicks nothing has to be able to say
-           which stream is broken, that nothing is reaching the destination,
-           roughly why, what is at risk and how long they have. -->
-      <!-- data-tour marks the block the guided tour draws a dashed region
-           around on its Home stop. It is the ONLY tour hook in the markup:
-           every other target the tour points at already has a stable selector
-           the sidebar or the assistant emits, and a second set of names would
-           be a second set to keep in step. -->
-      <div data-tour="home-cards">
-
-      <div id="dash-bandhost"></div>
-
-      <!-- The one number that stayed. The pipeline strip, the tile row and the
-           job-status ring moved to /analytics — Home is the landing page, not
-           the analysis — but readiness is the figure a person opens Home to
-           check, so it stays as a single line with a way through to the rest.
-           It calls the SAME pfConfidence() the Analytics tile does; there is no
-           second calculation to drift. Rendered by renderReadinessStrip(). -->
-      <div class="panel" id="dash-readiness" style="display:none;margin-bottom:1.75rem;padding:0.75rem 1rem"></div>
-
-      <!-- ACTIVE PROJECT SUMMARY — read-only snapshot of the currently
-           active project so the user always knows which one they're working
-           on. Click "Edit details" to jump to /projects. Hidden when no
-           project is active. Rendered by renderActiveProjectSummary(). -->
-      <div class="panel" id="dashboard-active-summary" style="display:none;margin-bottom:1.75rem;border-color:rgba(74,91,214,0.4)">
-        <div class="panel-header" style="margin-bottom:0.85rem">
-          <div style="display:flex;align-items:center;gap:0.65rem">
-            <span style="font-size:9px;padding:2px 8px;border-radius:100px;background:var(--accent);color:#fff;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em">active</span>
-            <div>
-              <div class="panel-title" style="font-size:13px" id="das-name">—</div>
-              <div class="panel-sub" id="das-sub">—</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:0.5rem">
-            <a href="/projects" class="btn btn-ghost btn-sm" id="das-edit-btn">Edit details →</a>
-          </div>
-        </div>
-        <div id="das-meta-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem"></div>
-      </div>
-
-      <!-- PROJECTS CARD — overview of every project ("conversion") with
-           status, jobs, artifacts and dates. Cards link to /projects for
-           CRUD; the "+ New Project" button deep-links to /projects?new=1
-           which opens the new-project modal on arrival. -->
-      <div class="panel" id="dashboard-projects-panel" style="margin-bottom:1.75rem">
-        <div class="panel-header" style="margin-bottom:0.85rem">
-          <div>
-            <div class="panel-title" style="font-size:13px">Projects</div>
-            <div class="panel-sub" id="dashboard-projects-sub">Loading…</div>
-          </div>
-          <div style="display:flex;gap:0.5rem">
-            <a href="/projects?new=1" class="btn btn-primary btn-sm">+ New Project</a>
-            <a href="/projects" class="btn btn-ghost btn-sm">Manage projects →</a>
-          </div>
-        </div>
-        <div id="dashboard-projects-list">
-          <div style="font-size:12px;color:var(--text3);font-family:var(--mono);padding:0.5rem 0">No projects yet</div>
-        </div>
-      </div>
-
-      <!-- Schedules — a read-only summary of the Task Agent. Loaded lazily
-           because it needs an authenticated call to the scheduler function;
-           the rest of this view paints from localStorage and must not wait. -->
-      <div class="panel" id="dashboard-schedules-panel" style="margin-bottom:1.75rem">
-        <div class="panel-header" style="margin-bottom:0.85rem">
-          <div>
-            <div class="panel-title" style="font-size:13px">Schedules</div>
-            <div class="panel-sub" id="dashboard-schedules-sub">Loading…</div>
-          </div>
-          <div style="display:flex;gap:0.5rem">
-            <button class="btn btn-ghost btn-sm" onclick="loadDashboardSchedules()" title="Reload schedules">↻ Refresh</button>
-            <button class="btn btn-ghost btn-sm" onclick="showView('task-agent')">Open Task Agent →</button>
-          </div>
-        </div>
-        <div id="dashboard-schedules-list"></div>
-      </div>
-
-      <div class="panel-header" style="margin-top:1.5rem">
-        <div>
-          <div class="panel-title">Project Status</div>
-          <div class="panel-sub" id="ps-sub">Live snapshot of the active project</div>
-        </div>
-        <div style="display:flex;gap:0.5rem">
-          <!-- The written summary is authored here and read on /analytics beside
-               the pipeline card. It stays on this side because the call bills
-               the user's own Anthropic key, and Analytics is read-only — a page
-               that spends someone's money on a render is not a thing to build. -->
-          <button id="ps-ai-btn" class="btn btn-ghost btn-sm" onclick="refreshProjectNarrative()"
-                  title="Rewrite the project summary with Claude, using your own API key">↻ Rewrite summary</button>
-          <button id="ps-refresh-btn" class="btn btn-ghost btn-sm" onclick="renderProjectStatus()" title="Refresh project status">↻ Refresh</button>
-        </div>
-      </div>
-      <div id="dashboard-project-status" class="ps-wrap"></div>
-      </div><!-- /data-tour="home-cards" -->
+           data-tour marks the block the guided tour draws a dashed region
+           around on its Home stop. It is the ONLY tour hook in the markup. -->
+      <div id="home-root" class="hm-grid" data-tour="home-cards"></div>
     </div>
 
     <!-- NEW JOB -->
@@ -4427,8 +4316,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
-<script src="/cygenix-tour-steps.js?v=f90de981cf"></script>
-<script src="/cygenix-tour.js?v=936b3fb471"></script>
+<script src="/cygenix-tour-steps.js?v=35e59b2611"></script>
+<script src="/cygenix-tour.js?v=7810d9c217"></script>
 <script>CygenixAssistant.registerPage('dashboard');</script>
 </body>
 </html>

@@ -108,39 +108,101 @@ const server = http.createServer((req, res) => {
   console.log('Dashboard sidebar — the nav actually changes the view\n');
 
   await open('/dashboard');
-  check('the dashboard is served at the extensionless address and the nav renders',
-    (await page.evaluate(() => document.querySelectorAll('.cyg-nav-item').length)) > 20);
+  check('the dashboard is served at the extensionless address and the five-group rail renders',
+    (await page.evaluate(() => document.querySelectorAll('.cyg-nav-item[data-key]').length)) === 13
+    && (await page.evaluate(() => Array.from(document.querySelectorAll('.cyg-nav-label')).map(l => l.textContent.trim())
+          .filter(l => l !== 'Pinned').join(',')))
+       === 'Connect,Model,Run,Quality,Govern');
+  check('the masthead is on the page: logo, project, search, region, avatar',
+    await page.evaluate(() => !!document.querySelector('#cx-masthead .cx-logo') && !!document.getElementById('cyg-proj-btn')
+      && !!document.getElementById('cx-mh-search') && !!document.getElementById('cx-mh-region') && !!document.getElementById('cyg-user-chip')));
   check('and the address really is /dashboard, with no extension',
     (await page.evaluate(() => location.pathname)) === '/dashboard');
 
-  /* ── 1. Every view: item switches the view ──────────────────────────────── */
+  /* ── 1. Every view: destination switches the view ───────────────────────── */
   const VIEWS = await page.evaluate(() =>
     Array.from(document.querySelectorAll('.cyg-nav-item[data-key]'))
       .map((el) => el.dataset.key));
 
-  // The fifteen the bug killed, by their view name.
-  const EXPECTED = ['dashboard', 'search', 'connections', 'integrations', 'project-settings',
-    'notifications', 'system-parameters', 'jobs', 'task-agent', 'server-migration',
-    'reports', 'inventory', 'privacy-security', 'audit', 'diagnostics'];
-
-  const keyForView = await page.evaluate(() => {
-    const map = {};
-    (window.__navPairs || []).forEach((p) => { map[p.view] = p.key; });
-    return map;
-  });
+  // The fifteen the bug killed, by their view name — now spread across the
+  // rail, the tab strips and the account menu. Each is reached the way a
+  // person reaches it: a rail click, a tab click on the owning screen, or
+  // the account menu. Search is the masthead field.
+  const RAIL   = ['dashboard', 'connections', 'jobs', 'task-agent', 'audit'];
+  const TABBED = { 'integrations': 'profiles', 'server-migration': 'jobs', 'reports': 'report-builder',
+                   'inventory': 'report-builder', 'diagnostics': 'audit' };
+  const ACCOUNT = ['project-settings', 'notifications', 'system-parameters', 'privacy-security'];
 
   const broken = [];
-  for (const view of EXPECTED) {
-    // Nav keys and view names differ for some items; find the item whose click
-    // lands on this view by trying its own key first, then the view name.
-    const key = keyForView[view] || view;
+  for (const view of RAIL) {
     await open('/dashboard');
-    const clicked = await clickNav(key);
+    const clicked = await clickNav(view);
     const now = await activeView();
-    if (!clicked || now !== view) broken.push(view + ' (key=' + key + ', landed on ' + now + ')');
+    if (!clicked || now !== view) broken.push(view + ' (rail, landed on ' + now + ')');
   }
-  check('all fifteen view: items switch the view when clicked',
-    broken.length === 0, broken.join(' | '));
+  check('every rail view: item switches the view when clicked', broken.length === 0, broken.join(' | '));
+
+  const brokenTabs = [];
+  for (const view of Object.keys(TABBED)) {
+    await open('/dashboard');
+    // The owning rail item first — a tab is inside its destination screen.
+    const owner = TABBED[view];
+    const ownerItem = await page.evaluate((k) => !!document.querySelector('.cyg-nav-item[data-key="' + k + '"]'), owner);
+    if (ownerItem) { await clickNav(owner); await page.waitForTimeout(400); }
+    else { await page.goto(url('/dashboard#goto=' + owner), { waitUntil: 'domcontentloaded' }); await page.waitForTimeout(700); }
+    const clicked = await page.evaluate((k) => {
+      const a = document.querySelector('#cyg-subnav-mount a[data-key="' + k + '"]');
+      if (!a) return false; a.click(); return true;
+    }, view);
+    // A tab whose owner is its own page (Reports lives at /reports) reaches a
+    // dashboard view by navigating there, which is a real load and a deep
+    // link, not an in-place switch — so wait for the view rather than a timer.
+    await page.waitForFunction((k) => {
+      const el = document.querySelector('.view.active');
+      return !!el && el.id === 'view-' + k;
+    }, view, { timeout: 8000 }).catch(() => {});
+    const now = await activeView();
+    if (!clicked || now !== view) brokenTabs.push(view + ' (tab of ' + owner + ', landed on ' + now + ')');
+  }
+  check('every view: item that became a tab still switches the view from its strip', brokenTabs.length === 0, brokenTabs.join(' | '));
+
+  const brokenAcct = [];
+  for (const view of ACCOUNT) {
+    await open('/dashboard');
+    await page.click('#cyg-user-chip');
+    await page.waitForTimeout(150);
+    const clicked = await page.evaluate((k) => {
+      const b = document.querySelector('#cyg-user-menu [data-acct-key="' + k + '"]');
+      if (!b) return false; b.click(); return true;
+    }, view);
+    await page.waitForTimeout(250);
+    const now = await activeView();
+    if (!clicked || now !== view) brokenAcct.push(view + ' (account menu, landed on ' + now + ')');
+  }
+  check('every view: item that moved to the account menu still switches the view', brokenAcct.length === 0, brokenAcct.join(' | '));
+
+  await open('/dashboard');
+  await page.fill('#cx-mh-search', 'ledger');
+  await page.press('#cx-mh-search', 'Enter');
+  await page.waitForTimeout(400);
+  check('the masthead search opens the Search view with the query in it',
+    (await activeView()) === 'search' && (await page.evaluate(() => document.getElementById('search-input').value)) === 'ledger');
+
+  // The tab strip lights the current tab, and the rail lights the owner.
+  // (A same-document hash change would not run the deep-link reader — see
+  // the note on coldLoad further down — so this goes somewhere else first.)
+  const coldLoad = async (target) => {
+    await page.goto(url('/sql-editor'), { waitUntil: 'domcontentloaded' });
+    await page.goto(url(target), { waitUntil: 'domcontentloaded' });
+  };
+  await coldLoad('/dashboard#goto=server-migration');
+  await page.waitForFunction(() => !!document.querySelector('#cyg-subnav-mount a.on'), null, { timeout: 8000 }).catch(() => {});
+  check('a tabbed view lights its own tab and its owner on the rail',
+    await page.evaluate(() => {
+      const on = document.querySelector('#cyg-subnav-mount a.on');
+      const rail = document.querySelector('.cyg-nav-item.active');
+      return !!on && on.dataset.key === 'server-migration' && !!rail && rail.dataset.key === 'jobs';
+    }));
 
   /* ── 1b. …in place, without reloading the whole application ─────────────── */
   //
@@ -160,12 +222,12 @@ const server = http.createServer((req, res) => {
 
   /* ── 2. The same item twice ─────────────────────────────────────────────── */
   await open('/dashboard');
-  await clickNav('integrations');
+  await clickNav('connections');
   const first = await activeView();
-  await clickNav('integrations');
+  await clickNav('connections');
   const second = await activeView();
   check('clicking the same item twice stays on that view',
-    first === 'integrations' && second === 'integrations', first + ' then ' + second);
+    first === 'connections' && second === 'connections', first + ' then ' + second);
   check('and does not leave a stale goto in the address',
     !/goto=/.test(await page.evaluate(() => location.hash)));
 
@@ -176,11 +238,6 @@ const server = http.createServer((req, res) => {
   // very trap this bug was made of, and the first draft of this test fell into
   // it — the deep-link checks passed on a view left over from the previous
   // one. Every cold load below goes somewhere else first.
-  const coldLoad = async (target) => {
-    await page.goto(url('/sql-editor'), { waitUntil: 'domcontentloaded' });
-    await page.goto(url(target), { waitUntil: 'domcontentloaded' });
-  };
-
   await coldLoad('/dashboard#goto=integrations');
   await page.waitForFunction(() => !!document.querySelector('.view.active'), null, { timeout: 15000 });
   await page.waitForTimeout(700);
@@ -248,6 +305,9 @@ const server = http.createServer((req, res) => {
   check('and the rest of the rail is untouched by that',
     (await page.evaluate(() =>
       document.querySelectorAll('.cyg-nav-item[data-key]').length)) === VIEWS.length - 1);
+  // The audit tab strip goes with it: Performance and Diagnostics belong to
+  // the Audit log screen, and an Engineer is not offered a strip for a
+  // screen they cannot open.
 
   await page.evaluate(() => sessionStorage.setItem('cygenix_rbac_me', JSON.stringify({
     at: Date.now(), me: { oid: 'x', email: 'you@example.test', roles: ['AU'] } })));
@@ -292,8 +352,9 @@ const server = http.createServer((req, res) => {
   check('the hairline renders once a profile exists',
     (await page.evaluate(() => !!document.getElementById('cyg-envbar'))));
   check('and rests at 2px, not the old 22', (await barBox()) === 2, await barBox());
-  check('reserving only those 2px of the page',
-    (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '2px');
+  check('reserving those 2px of the page above the 60px masthead',
+    (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '62px',
+    await page.evaluate(() => getComputedStyle(document.body).paddingTop));
 
   // 1. The assistant panel's buttons are clickable to their topmost pixel.
   await page.evaluate(() => window.CygenixAssistant && window.CygenixAssistant.open());
@@ -399,7 +460,7 @@ const server = http.createServer((req, res) => {
   });
   const onDash = await barColour();
   check('the dashboard paints the green level from the fixed status palette',
-    onDash === 'rgb(63, 125, 78)', onDash);
+    onDash === 'rgb(63, 107, 82)', onDash);
   await open('/profiles');
   await page.waitForTimeout(400);
   const onProf = await barColour();
@@ -442,7 +503,8 @@ const server = http.createServer((req, res) => {
   await page.waitForTimeout(400);
   check('a PRD profile locks the bar open at 22px', (await barBox()) === 22, await barBox());
   check('the page concedes the space — production owns it',
-    (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '22px');
+    (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '82px',
+    await page.evaluate(() => getComputedStyle(document.body).paddingTop));
   check('and the assistant panel starts BELOW the bar rather than under it',
     (await page.evaluate(() => getComputedStyle(document.querySelector('.cyga')).top)) === '22px');
   {
@@ -475,9 +537,9 @@ const server = http.createServer((req, res) => {
   await page.evaluate(() => localStorage.removeItem('cygenix_profiles_v1'));
   await open('/dashboard');
   await page.waitForTimeout(400);
-  check('with no profiles at all there is no bar and no reserved space',
+  check('with no profiles at all there is no bar and only the masthead is reserved',
     !(await page.evaluate(() => !!document.getElementById('cyg-envbar')))
-    && (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '0px');
+    && (await page.evaluate(() => getComputedStyle(document.body).paddingTop)) === '60px');
   check('and no chip either — before adoption the console looks exactly as it did',
     (await chip()).hidden === true, JSON.stringify(await chip()));
 

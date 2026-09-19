@@ -223,9 +223,9 @@
    palette value, so the two cannot drift even on a page without the bar).
    The pill turns that red for a PRD profile, and the marker beside a row's
    name says PRD in it — the bar's word, not a new one. */
-.ds-profile.prd { color:#fff; background:var(--cyg-status-red, #C0392B); }
+.ds-profile.prd { color:#fff; background:var(--cyg-status-red, #9c3f38); }
 .ds-prd { display:inline-block; font-size:9px; font-weight:600; letter-spacing:0.08em; padding:1px 5px;
-  border-radius:3px; color:#fff; background:var(--cyg-status-red, #C0392B); font-family:var(--mono);
+  border-radius:3px; color:#fff; background:var(--cyg-status-red, #9c3f38); font-family:var(--mono);
   vertical-align:middle; margin-left:0.35rem; white-space:nowrap; }
 /* Where a destination lives: on the stream itself, or in the saved store. */
 .ds-tag.inline { color:var(--amber); border-color:rgba(245,158,11,0.4); }

@@ -260,8 +260,10 @@ const sidebar = read('public', 'cygenix-sidebar.js');
 check('the sidebar item says Packages', /label:'Packages'/.test(sidebar));
 // The key is what pages set data-active on and what the dashboard routes from;
 // renaming a label must not rename an identifier.
+// Packages is a tab on Jobs & packages since the console redesign (Sep-2026);
+// the key survived the move, as it survived every rename before it.
 check('its key is unchanged, so nothing that routes on it breaks',
-  /key:'project-builder', label:'Packages'/.test(sidebar));
+  /key:'project-builder',\s+label:'Packages'/.test(sidebar));
 check('the dashboard link says Packages too',
   />Packages<\/a>/.test(read('public', 'dashboard.html')));
 

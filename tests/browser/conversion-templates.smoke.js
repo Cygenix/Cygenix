@@ -195,11 +195,19 @@ const U = 'you@example.test';
   await open();
   const shell = await page.evaluate(() => {
     const items = Array.from(document.querySelectorAll('.cyg-nav-item[data-key]')).map((n) => n.getAttribute('data-key'));
-    return { items, active: (document.querySelector('.cyg-nav-item.active') || {}).getAttribute ? document.querySelector('.cyg-nav-item.active').getAttribute('data-key') : null,
+    const tabs = Array.from(document.querySelectorAll('#cyg-subnav-mount a[data-key]')).map((n) => n.getAttribute('data-key'));
+    const on = document.querySelector('#cyg-subnav-mount a.on');
+    return { items, tabs, on: on ? on.getAttribute('data-key') : null,
+      active: (document.querySelector('.cyg-nav-item.active') || {}).getAttribute ? document.querySelector('.cyg-nav-item.active').getAttribute('data-key') : null,
       hairline: !!document.getElementById('cyg-envbar'), assistant: !!document.getElementById('cygaLaunch'), title: document.title };
   });
-  check('the sidebar shows Conversion Templates directly above Object Mapping',
-    shell.items.indexOf('conversion-templates') >= 0 && shell.items.indexOf('object-mapping') === shell.items.indexOf('conversion-templates') + 1, shell.items.join(','));
+  // Conversion Templates is a tab on the Object mapping screen since the
+  // console redesign (Sep-2026): the rail lights Object mapping, the strip
+  // lights this tab, and Object mapping is the tab beside it.
+  check('the rail lights Object mapping and the strip lights Conversion Templates beside it',
+    shell.active === 'object-mapping' && shell.on === 'conversion-templates'
+    && shell.tabs.indexOf('object-mapping') === 0 && shell.tabs.indexOf('conversion-templates') === 1,
+    JSON.stringify({ active: shell.active, on: shell.on, tabs: shell.tabs }));
   check('the page opens at its clean address with the sidebar, the status hairline and the Ask Cygenix launcher',
     /Conversion Templates/.test(shell.title) && shell.hairline && shell.assistant && page.url().endsWith('/conversion-templates'));
 

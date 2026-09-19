@@ -9,6 +9,7 @@
 <!-- Site-wide theme overrides (Financial palette + future themes).
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-console.css">
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
 <script src="/cygenix-model.js?v=0c71915777"></script>
@@ -65,26 +66,17 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
-  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
-  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
-  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
-  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
-  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
-  --r:10px;--r-lg:14px;
+  /* The console palette lives in cygenix-console.css. Only what is this
+     page's own is declared here. */
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:216px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
 
-.topbar{position:fixed;top:0;right:0;left:230px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem;transition:left 0.2s ease}
+.topbar{position:fixed;top:calc(var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;left:216px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem;transition:left 0.2s ease}
 body.cyg-collapsed .topbar{left:54px}
 .logo{font-size:1.05rem;font-weight:700;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
-.page{display:grid;grid-template-rows:52px 1fr;height:100vh;padding-left:0}
-.editor-layout{display:flex;flex-direction:row;height:calc(100vh - 52px);overflow:hidden;margin-top:52px}
+.page{display:grid;grid-template-rows:52px 1fr;height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));padding-left:0}
+.editor-layout{display:flex;flex-direction:row;height:calc(100vh - 52px - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));overflow:hidden;margin-top:52px}
 .col-resize-handle{width:5px;flex-shrink:0;background:var(--border);cursor:col-resize;transition:background 0.15s;position:relative;z-index:10}
 .col-resize-handle:hover,.col-resize-handle.dragging{background:var(--accent)}
 .col-resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:40px;border-radius:1px;background:var(--text3);opacity:0.5}
@@ -454,8 +446,8 @@ body.fullscreen .script-panel { display:none }
 
 <div id="cyg-sidebar-mount" data-active="sql-editor"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
-<script src="/cygenix-status-hairline.js?v=73f52fed9d" defer></script>
-<script src="/cygenix-sidebar.js?v=cd02f9a4e8" defer></script>
+<script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
+<script src="/cygenix-sidebar.js?v=a39bbf4be2" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
 <script src="/cygenix-sql-windows.js?v=f82927b246"></script>
 <script src="/sql-editor-app.js?v=837c22f4cc" defer></script>
@@ -691,8 +683,8 @@ body.fullscreen .script-panel { display:none }
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
-<script src="/cygenix-tour-steps.js?v=f90de981cf"></script>
-<script src="/cygenix-tour.js?v=936b3fb471"></script>
+<script src="/cygenix-tour-steps.js?v=35e59b2611"></script>
+<script src="/cygenix-tour.js?v=7810d9c217"></script>
 <script>CygenixAssistant.registerPage('sql-editor');</script>
 </body>
 </html>

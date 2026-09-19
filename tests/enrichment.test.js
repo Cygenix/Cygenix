@@ -340,10 +340,13 @@ check('bracket-quoted input is accepted and echoed in the catalogue\'s casing',
 const PAGE = fs.existsSync(__dirname + '/../public/data-enrichment.html')
   ? fs.readFileSync(__dirname + '/../public/data-enrichment.html', 'utf8') : '';
 const SIDE = fs.readFileSync(__dirname + '/../public/cygenix-sidebar.js', 'utf8');
-check('the sidebar offers Data Enrichment after Cleansing, before Validation',
-  /key:'data-enrichment'/.test(SIDE)
-  && SIDE.indexOf("key:'data-cleansing'") < SIDE.indexOf("key:'data-enrichment'")
-  && SIDE.indexOf("key:'data-enrichment'") < SIDE.indexOf("key:'validation'"));
+// The console redesign (Sep-2026) put Enrichment where the operator sequence
+// says it goes: a tab on Cleansing & enrichment, after Cleansing. Validation
+// is a tab on Assurance, so the old "before Validation" reads as: the
+// Cleansing strip comes before the Assurance strip's validation entry.
+check('the sidebar offers Enrichment as a tab after Cleansing, and both keys still resolve',
+  /'data-cleansing': \[[\s\S]*?key:'data-cleansing'[\s\S]*?key:'data-enrichment'/.test(SIDE)
+  && /key:'validation'/.test(SIDE));
 check('the page exists, loads the engine and mounts the sidebar under its key',
   /cygenix-enrichment\.js/.test(PAGE) && /data-active="data-enrichment"/.test(PAGE));
 check('the five steps and the four result tabs are present',
