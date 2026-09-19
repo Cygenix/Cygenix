@@ -102,7 +102,14 @@ check('the guardrail note appears whenever either side resolves to PROD, and say
   && /note\.style\.display = prodSides\.length \? '' : 'none';/.test(APP)
   && /'Both sides are classified PROD'/.test(APP)
   && /A connection nobody has classified is treated as PROD/.test(APP)
-  && /connRenderEnv\(\);\n\}/.test(APP));
+  // The claim is that opening the view refreshes the environment tags, so it
+  // is measured INSIDE initConnectionsView. It used to be anchored on
+  // connRenderEnv() being the closing line of that function, which broke the
+  // moment anything else was added after it — an anchor about position
+  // standing in for a claim about behaviour.
+  && /connRenderEnv\(\);/.test(APP.slice(
+      APP.indexOf('function initConnectionsView()'),
+      APP.indexOf('function connRenderEnv('))));
 // The masking contract from tests/connection-masking.test.js still holds on
 // the shipped slice — run the shipped functions against a stub once more.
 (() => {

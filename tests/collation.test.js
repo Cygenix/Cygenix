@@ -349,6 +349,13 @@ check('the module loads after dashboard-app.js, deferred and cache-busted',
 check('switching to the Database connections tab mounts it',
   /if \(tab === 'databases' && window\.cygCollation\)/.test(APP)
   && /window\.cygCollation\.init\('cyg-collation-mount'\)/.test(APP));
+// The bug this pins: Database connections is the DEFAULT tab, so opening the
+// Connections view shows it without anyone clicking a tab, and switchConnTab
+// never fires. Mounting only from there left the card invisible to anybody
+// who navigated straight to the page — which is everybody.
+check('AND SO DOES SIMPLY OPENING THE CONNECTIONS VIEW, because that tab is the default',
+  (APP.match(/window\.cygCollation\.init\('cyg-collation-mount'\)/g) || []).length === 2
+  && /connRenderEnv\(\);\s*\/\/ The Collation card mounts here as well as in switchConnTab\./.test(APP));
 check('the card carries the stable anchor other modules will deep-link to, and an open() that scrolls to it',
   /id="cyg-collation-card"/.test(SRC) && /function openCard\(\)/.test(SRC) && /scrollIntoView/.test(SRC));
 check('the header carries the four buttons the brief names',

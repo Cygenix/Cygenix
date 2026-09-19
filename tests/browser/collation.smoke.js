@@ -229,8 +229,12 @@ function dbAnswer(body) {
     await page.evaluate(() => {
       window.getCygenixIdToken = () => 'smoke-token';
       window.getCygenixIdTokenAsync = async () => localStorage.getItem('cygenix_token');
+      // showView ONLY — exactly what clicking Connections in the rail does.
+      // Calling switchConnTab here as well is what hid a real bug: Database
+      // connections is the default tab, so a person arriving at this page
+      // never fires it, and the card mounted only from there was invisible
+      // to everybody who did not first click away to another tab and back.
       window.showView('connections');
-      window.switchConnTab('databases');
     });
     await page.waitForSelector('#cyg-collation-card', { timeout: 10000 });
   };

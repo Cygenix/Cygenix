@@ -10144,6 +10144,15 @@ function initConnectionsView() {
   renderConnLock('tgt');
   connProfileLines();
   connRenderEnv();
+  // The Collation card mounts here as well as in switchConnTab. Database
+  // connections is the DEFAULT tab — it is already marked active in the
+  // markup — so arriving at this view shows it without anyone clicking a
+  // tab, and switchConnTab never fires. Mounting only there meant the card
+  // was invisible until you clicked away to another tab and back, which is
+  // exactly how it reads to somebody looking straight at the right page.
+  if (window.cygCollation) {
+    try { window.cygCollation.init('cyg-collation-mount'); } catch(e){ console.warn('[collation] init:', e); }
+  }
 }
 
 /* ── The environment tag and the guardrail note (Phase 4, Sep-2026) ──────
