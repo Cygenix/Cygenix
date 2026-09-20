@@ -168,6 +168,7 @@ check('a brace-quoted password is hidden whole, not half',
   B.mask(semi).indexOf('pa;ss=word') === -1, B.mask(semi));
 check('masking something with no password at all does not mangle it',
   B.mask('Server=a;Database=b') === 'Server=a;Database=b');
+// The mssql:// case is in section 6, with the rest of that spelling.
 
 /* ── 5. Wiring ───────────────────────────────────────────────────────────── */
 
@@ -208,11 +209,15 @@ check('with the cursor in the first field of the form, not in a hidden input',
   /getElementById\(side \+ '-b-host'\)/.test(app));
 check('and opening it does NOT rewrite the stored string — only editing does',
   /function connBuildChanged\(side, engineChanged, quiet\)/.test(app)
-  && /if \(target && !quiet\) target\.value = cs;/.test(app)
+  && /!quiet[^\n]*target\.value = cs;/.test(app)
   && /connBuildChanged\(side, false, true\)/.test(app),
   'a form that silently trims a keyword it does not model is worse than no form');
+check('AND AN INCOMPLETE FORM NEVER ERASES A STORED CONNECTION',
+  /if \(target && !quiet && \(cs \|\| !target\.value\)\) target\.value = cs;/.test(app),
+  'compose() returns "" until the form has a host and a database; writing that '
+  + 'through deleted the connection the user had opened in order to edit it');
 check('and the preview shows the string that is really stored, not the recomposed one',
-  /var shown = quiet && target && target\.value \? target\.value : cs;/.test(app));
+  /var shown = \(quiet && stored\) \? stored : \(cs \|\| stored\);/.test(app));
 check('a side with nothing configured gets the same default, without pressing Edit',
   /setConnEntry\('src', connEntry\.src\)/.test(app) && /setConnEntry\('tgt', connEntry\.tgt\)/.test(app));
 check('the preview is the masked form, so a password is never drawn on screen',
@@ -222,6 +227,112 @@ check('and the form writes through to the string field on every keystroke',
 check('the engine choice only replaces a port the user has not chosen',
   /portEl\.value === other/.test(app),
   'retyping a deliberate port would be the form arguing with the user');
+
+/* ── 6. SQL Server's OTHER spelling, and what not knowing it cost ────────────
+   db-connect.js has always accepted mssql:// URLs — its own error message
+   advertises the form — and a great many saved connections on this product
+   are written that way. This parser did not know it. Every field came back
+   empty, so the Settings form showed a blank connection, and one keystroke
+   composed that blank back over the field of record. A working connection
+   was replaced with nothing, silently, and the next Save persisted it.
+
+   The round-trip below runs against the REAL server parser, lifted from
+   db-connect.js, for the same reason the postgres one does.               */
+const serverMssql = new Function(lift('parseMssqlConnectionString') + '\nreturn parseMssqlConnectionString;')();
+
+const MS_URL = 'mssql://svc_fin:S3cret-pw@fin-dm.database.windows.net:1433/FIN_DM';
+const msUrlF = B.parse(MS_URL);
+check('AN mssql:// URL PARSES INTO ITS PARTS instead of coming back empty',
+  msUrlF.host === 'fin-dm.database.windows.net' && msUrlF.port === '1433'
+  && msUrlF.database === 'FIN_DM' && msUrlF.user === 'svc_fin' && msUrlF.password === 'S3cret-pw',
+  JSON.stringify(msUrlF));
+check('sqlserver:// is the same string by another name',
+  B.parse(MS_URL.replace(/^mssql/, 'sqlserver')).host === 'fin-dm.database.windows.net');
+check('AND COMPOSING IT BACK RETURNS THE SAME STRING, byte for byte',
+  B.compose(msUrlF) === MS_URL, B.compose(msUrlF));
+check('a URL-form connection is not silently rewritten into keyword form',
+  B.compose(msUrlF).indexOf('mssql://') === 0 && msUrlF.form === 'url'
+  && B.parse(msString).form === 'kv');
+check('and a keyword-form connection is not turned into a URL either',
+  B.compose(B.parse(msString)).indexOf('Server=') === 0);
+check('the server reads what we compose — host, database and credentials all arrive',
+  (() => {
+    const c = serverMssql(B.compose(msUrlF));
+    return c.server === 'fin-dm.database.windows.net' && c.port === 1433
+      && c.database === 'FIN_DM' && c.user === 'svc_fin' && c.password === 'S3cret-pw';
+  })(), JSON.stringify(serverMssql(B.compose(msUrlF))));
+check('a password with a URL-significant character survives the round trip',
+  (() => {
+    const f = { ...msUrlF, password: 'p@ss/w:rd?&x' };
+    return serverMssql(B.compose(f)).password === 'p@ss/w:rd?&x';
+  })());
+check('encrypt=false is carried through, and the server agrees the cert is not being checked',
+  (() => {
+    const f = B.parse(MS_URL + '?encrypt=false');
+    const c = serverMssql(B.compose(f));
+    return f.encrypt === false && f.trustCert === true
+      && c.options.encrypt === false && c.options.trustServerCertificate === true;
+  })());
+check('trustServerCertificate=true alone is carried through as well',
+  serverMssql(B.compose(B.parse(MS_URL + '?trustServerCertificate=true')))
+    .options.trustServerCertificate === true);
+check('the defaults are left off, because spelling them out changes nothing',
+  B.compose(msUrlF).indexOf('?') === -1);
+check('a URL with no port still names one, so the form is not blank where the server has a default',
+  B.parse('mssql://h.example/DB').port === '1433');
+
+/* The preview named postgres by name, so the commonest URL shape on this
+   product printed its password in full — in the one place this function
+   exists to stop that happening. It went unnoticed because the form could
+   not read an mssql:// URL at all, so nobody ever saw the preview of one. */
+check('AN mssql:// PASSWORD IS HIDDEN TOO, not only a postgres one',
+  B.mask(MS_URL).indexOf('S3cret-pw') === -1
+  && B.mask(MS_URL).indexOf('fin-dm.database.windows.net') !== -1
+  && B.mask(MS_URL).indexOf('svc_fin') !== -1, B.mask(MS_URL));
+check('and a URL carrying no credentials is left exactly as it is',
+  B.mask('mssql://h.example:1433/DB') === 'mssql://h.example:1433/DB');
+
+/* ── 7. A value that is not a connection never reaches the store ──────────── */
+const LC = B.looksLikeConnection;
+check('a label is not a connection, however confidently it was typed',
+  LC('API') === false && LC('Finance source') === false && LC('') === false
+  && LC(null) === false && LC('   ') === false);
+check('every shape this product actually dials IS one',
+  LC(MS_URL) && LC(msString) && LC(pgString)
+  && LC('https://cygenix-db-api.azurewebsites.net/api/db')
+  && LC('Data Source=db1;Initial Catalog=Sales;') && LC('host=h dbname=d'));
+check('SAVING REFUSES A VALUE THAT IS NOT A CONNECTION, and says what the shapes are',
+  /const connLooksReal = /.test(app)
+  && /if \(!connLooksReal\(cs\)\)\{/.test(app)
+  && /That is not a connection string/.test(app)
+  && /mssql:\/\/user:pass@host:1433\/database/.test(app),
+  'one profile reached production holding the word "API" in this field');
+check('and an Azure Function entry is refused unless it carries a URL',
+  /if \(!\/\^https\?:\\\/\\\/\/i\.test\(url\)\)\{/.test(app));
+check('the refusal happens before anything is written, not after',
+  app.indexOf('const connLooksReal =') < app.indexOf('entry.connString = cs;')
+  && app.indexOf("if (!connLooksReal(cs)){") < app.indexOf('entry.connString = cs;'));
+check('a saved entry holding a label is drawn as broken rather than vouched for as MSSQL',
+  /function sconnUsability\(entry\)\{/.test(app)
+  && /return 'Not a connection — re-save it';/.test(app)
+  && /if \(sconnUsability\(entry\) === 'bad'\) return 'CHECK';/.test(app));
+
+/* The collation card carries its own copy of this check, because it runs on
+   pages where the builder is not loaded. Two copies of one rule drift, so
+   they are held to the same answers here — the same arrangement as the
+   collation rules module and its Function App twin. */
+const collation = read('public', 'cygenix-collation.js');
+const collLooks = new Function(
+  collation.slice(collation.indexOf('function looksLikeConnection(value)'),
+                  collation.indexOf('function isSqlServer(engine)'))
+    .replace(/\/\* Which engine[\s\S]*$/, '')
+  + '\nreturn looksLikeConnection;')();
+const SHARED = [MS_URL, msString, pgString, 'https://x.azurewebsites.net/api/db',
+  'Data Source=db1;Initial Catalog=Sales;', 'host=h dbname=d', 'sqlserver://h/db',
+  'API', 'Finance source', '', '   ', 'db.example.com', 'localhost:1433'];
+const disagree = SHARED.filter((v) => !!LC(v) !== !!collLooks(v));
+check('THE TWO COPIES OF THE CHECK AGREE, on every shape either one will meet',
+  disagree.length === 0, disagree.join(' | '));
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);

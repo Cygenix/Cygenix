@@ -9979,6 +9979,15 @@ window.connHide   = connHide;
    paste. */
 var connEntry = { src: 'build', tgt: 'build' };
 
+/* Which spelling the stored string was written in — SQL Server has two and
+   this product uses both. The form has no field for it, so it is remembered
+   here between reading the string and writing it back; without that, editing
+   one field of an mssql:// connection rewrote it into keyword form, which is
+   a change nobody asked for in the one value that must not be ambiguous.
+   Set by connBuildLoadFromString, which is the only thing that reads the
+   stored string into the form. */
+var connBuildForm = { src: '', tgt: '' };
+
 function connBuildFields(side) {
   var g = function (suffix) { return document.getElementById(side + '-b-' + suffix); };
   var val = function (suffix) { var el = g(suffix); return el ? el.value : ''; };
@@ -9989,6 +9998,7 @@ function connBuildFields(side) {
     user: val('user'), password: val('pw'), schema: val('schema'),
     sslmode: val('ssl') || 'auto',
     encrypt: chk('encrypt'), trustCert: chk('trust'),
+    form: connBuildForm[side] || 'kv',
   };
 }
 
@@ -10031,12 +10041,23 @@ function connBuildChanged(side, engineChanged, quiet) {
 
   var cs = B.compose(f);
   var target = document.getElementById('proj-' + side + '-cs');
-  if (target && !quiet) target.value = cs;
+  /* compose() returns '' for a form that is not yet a connection — no host,
+     or no database. Writing that through would delete a working connection
+     on the way to editing it, which is what happened to anyone who opened
+     Settings on a string this builder could not read: every field blank, one
+     keystroke, and the stored string was gone. An incomplete form is not an
+     instruction to erase; it is a form that is not finished. Clearing a
+     connection on purpose is Paste mode, where the field is the field. */
+  if (target && !quiet && (cs || !target.value)) target.value = cs;
 
   // Preview the string that is actually stored. While the form is only being
   // read (quiet), that is still the original — showing the recomposed one
-  // would promise a rewrite that has not happened.
-  var shown = quiet && target && target.value ? target.value : cs;
+  // would promise a rewrite that has not happened. The same holds when the
+  // form is too incomplete to compose: the stored string is still the stored
+  // string, and saying "Fill in a host and a database" over the top of one
+  // would claim a connection had been lost when it has not.
+  var stored = target ? target.value : '';
+  var shown = (quiet && stored) ? stored : (cs || stored);
   var prev = document.getElementById(side + '-b-preview');
   if (prev) {
     prev.textContent = shown ? B.mask(shown) : 'Fill in a host and a database.';
@@ -10050,6 +10071,7 @@ function connBuildLoadFromString(side) {
   var target = document.getElementById('proj-' + side + '-cs');
   if (!B || !target) return;
   var f = B.parse(target.value);
+  connBuildForm[side] = f.form || 'kv';
   var set = function (suffix, v) { var el = document.getElementById(side + '-b-' + suffix); if (el) el.value = v; };
   var tick = function (suffix, v) { var el = document.getElementById(side + '-b-' + suffix); if (el) el.checked = !!v; };
   set('engine', f.engine); set('host', f.host); set('port', f.port);
@@ -10617,7 +10639,31 @@ try {
 // still put the host, port and username in a tooltip that appears on hover —
 // enough to hand someone half a credential. The chip already shows the
 // nickname the user chose, so the tooltip only adds the database name.
+/* Does this saved entry still hold something dialable? Entries saved before
+   sconnSaveAs checked, or synced in from another machine, can hold a label
+   or a fragment; and an entry whose secret half has not reached this browser
+   holds nothing at all. The two cases read differently, so they are told
+   apart rather than both being drawn as a working connection. */
+function sconnUsability(entry){
+  const e = entry || {};
+  if (e.mode === 'azure') {
+    if (/^https?:\/\//i.test(String(e.fnUrl || '').trim())) return 'ok';
+    return String(e.fnUrl || '').trim() ? 'bad' : 'absent';
+  }
+  const cs = String(e.connString || '').trim();
+  if (!cs) return 'absent';
+  const B = (typeof window !== 'undefined') ? window.CygenixConnBuilder : null;
+  if (B && typeof B.looksLikeConnection === 'function' && !B.looksLikeConnection(cs)) return 'bad';
+  return 'ok';
+}
+
 function sconnPreview(entry){
+  const use = sconnUsability(entry);
+  // Say which of the two it is. "Not on this browser" is normal and fixable
+  // by importing the secrets; "not a connection" means the entry itself is
+  // wrong and re-saving is the only thing that helps.
+  if (use === 'bad') return 'Not a connection — re-save it';
+  if (use === 'absent') return entry.mode === 'azure' ? 'No URL saved' : 'Not on this browser';
   if (entry.mode === 'azure') return 'Azure Function';
   const desc = (typeof parseDbConnection === 'function')
     ? parseDbConnection(entry.connString || '')
@@ -10627,6 +10673,9 @@ function sconnPreview(entry){
 
 // Dialect label for the chip (pure display).
 function sconnDialectLabel(entry){
+  // An entry holding a label is not an MSSQL connection, and saying MSSQL
+  // over the top of one is how it stayed invisible: the chip vouched for it.
+  if (sconnUsability(entry) === 'bad') return 'CHECK';
   if (entry.mode === 'azure') return 'AZURE';
   const cs = (entry.connString || '').trim().toLowerCase();
   if (cs.startsWith('postgres://') || cs.startsWith('postgresql://')) return 'PG';
@@ -11048,11 +11097,36 @@ function sconnSaveAs(side){
   const mode = side === 'src' ? srcMode : tgtMode;
   const entry = { side, mode, savedAt: new Date().toISOString() };
 
+  // What goes in here is what every job, schedule and agent run will dial
+  // for as long as this entry exists, and a value that is not a connection
+  // fails much later and much further away — as a raw driver error on a
+  // screen that has nothing to do with connections. One profile reached
+  // production holding the word "API" where its connection string should
+  // have been. Refuse it at the point of saving, where the person who typed
+  // it is still looking at it.
+  const connLooksReal = (v) => {
+    const B = window.CygenixConnBuilder;
+    if (B && typeof B.looksLikeConnection === 'function') return B.looksLikeConnection(v);
+    // The builder is on every page that draws this form; if it somehow is
+    // not, the save still happens rather than being blocked by a missing
+    // script. The collation card's own check catches it later.
+    return true;
+  };
+
   if (mode === 'direct'){
     const csEl = document.getElementById('proj-' + side + '-cs');
     const cs = (csEl?.value || '').trim();
     if (!cs){
       alert('Enter a connection string before saving.');
+      return;
+    }
+    if (!connLooksReal(cs)){
+      alert('That is not a connection string, so saving it would leave this connection unusable.\n\n'
+        + 'Cygenix reads three shapes:\n'
+        + '  Server=host;Database=db;User Id=user;Password=pass;\n'
+        + '  mssql://user:pass@host:1433/database\n'
+        + '  postgres://user:pass@host:5432/database\n\n'
+        + 'Use Settings to build one from the parts if you are reading them off a page.');
       return;
     }
     entry.connString = cs;
@@ -11062,6 +11136,11 @@ function sconnSaveAs(side){
     const url = (urlEl?.value || '').trim();
     if (!url){
       alert('Enter an Azure Function URL before saving.');
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)){
+      alert('An Azure Function connection needs the function\'s URL, starting with https://.\n\n'
+        + 'A name or a key on its own is not enough to reach it.');
       return;
     }
     entry.fnUrl = url;

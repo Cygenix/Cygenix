@@ -70,6 +70,25 @@ function unMssqlValue(v) {
  * enough to build one, rather than a half-formed string that would fail with a
  * confusing error if somebody pressed Test.
  */
+/* Is this string something a database layer could dial at all? The form
+   writes into the one field of record, and Save as… persists whatever is in
+   it, so a value that is not a connection — a label, a nickname, half a
+   hostname — must never get that far. Deliberately generous: it asks whether
+   the string has the SHAPE of a connection, not whether the credentials in
+   it are right, which only the server can answer.
+
+   The mssql:// branch carries its weight. A great many saved connections on
+   this product are driver URLs with no semicolons and no `server=` in them,
+   so a check written only for key=value strings would reject the very
+   connections that work. */
+function looksLikeConnection(v) {
+  var raw = s(v);
+  if (!raw) return false;
+  if (/^(https?|mssql|sqlserver|postgres|postgresql):\/\//i.test(raw)) return true;
+  if (/(^|;|\s)(server|data source|host|addr|address)\s*=/i.test(raw)) return true;
+  return false;
+}
+
 function compose(f) {
   f = f || {};
   var engine = f.engine === 'postgres' ? 'postgres' : 'mssql';
@@ -100,6 +119,30 @@ function compose(f) {
     return url + (q.length ? '?' + q.join('&') : '');
   }
 
+  /* SQL Server has two spellings and this product uses both. A string that
+     arrived as a driver URL goes back out as one: rewriting somebody's
+     mssql:// connection into keyword form the first time they touch a field
+     is a change they did not ask for, in the one value that must not be
+     ambiguous. The server reads either (parseMssqlConnectionString), so the
+     choice is purely about leaving what is stored recognisable. */
+  if (f.form === 'url') {
+    var msAuth = '';
+    if (user) {
+      msAuth = encodeURIComponent(user);
+      if (password) msAuth += ':' + encodeURIComponent(password);
+      msAuth += '@';
+    }
+    var msPort = port && String(parseInt(port, 10)) === port ? port : String(defaultPort('mssql'));
+    var msUrl = 'mssql://' + msAuth + host + ':' + msPort + '/' + encodeURIComponent(database);
+    var msQ = [];
+    // Only the non-defaults are written. The server reads a missing encrypt
+    // as true, and treats an unencrypted connection as trusting the cert, so
+    // spelling those out would add noise that changes nothing.
+    if (f.encrypt === false) msQ.push('encrypt=false');
+    else if (f.trustCert) msQ.push('trustServerCertificate=true');
+    return msUrl + (msQ.length ? '?' + msQ.join('&') : '');
+  }
+
   var parts = [];
   parts.push('Server=' + mssqlValue(host + (port && port !== '1433' ? ',' + port : '')));
   parts.push('Database=' + mssqlValue(database));
@@ -113,44 +156,89 @@ function compose(f) {
 /* ── parse ───────────────────────────────────────────────────────────────── */
 
 /** Take a connection string apart into the same fields compose() takes. */
+/* Split a driver URL into credentials, host, port and database. Shared by the
+   two URL branches below because they differ only in their defaults, and
+   written to match netlify/functions/db-connect.js — credentials before the
+   LAST '@' (a password may contain one), the port after the LAST ':' unless
+   the host is bracketed IPv6, everything after the first '/' the database. */
+function splitUrl(rest, defPort) {
+  var out = { user: '', password: '', host: '', port: '', database: '', query: '' };
+  var q = rest.indexOf('?');
+  var base = q >= 0 ? rest.slice(0, q) : rest;
+  out.query = q >= 0 ? rest.slice(q + 1) : '';
+  var at = base.lastIndexOf('@');
+  if (at >= 0) {
+    var creds = base.slice(0, at);
+    var c = creds.indexOf(':');
+    out.user = decodeURIComponent(c >= 0 ? creds.slice(0, c) : creds);
+    out.password = c >= 0 ? decodeURIComponent(creds.slice(c + 1)) : '';
+  }
+  var hostPart = at >= 0 ? base.slice(at + 1) : base;
+  var slash = hostPart.indexOf('/');
+  var hostPort = slash >= 0 ? hostPart.slice(0, slash) : hostPart;
+  out.database = slash >= 0 ? decodeURIComponent(hostPart.slice(slash + 1)) : '';
+  var lastColon = hostPort.lastIndexOf(':');
+  if (lastColon >= 0 && hostPort.indexOf('[') === -1) {
+    out.host = hostPort.slice(0, lastColon);
+    out.port = hostPort.slice(lastColon + 1);
+  } else {
+    out.host = hostPort;
+    out.port = String(defPort);
+  }
+  return out;
+}
+function eachQueryPair(query, fn) {
+  String(query || '').split('&').forEach(function (pair) {
+    if (!pair) return;
+    var eq = pair.indexOf('=');
+    var k = decodeURIComponent(eq >= 0 ? pair.slice(0, eq) : pair).toLowerCase();
+    var v = eq >= 0 ? decodeURIComponent(pair.slice(eq + 1)) : '';
+    fn(k, v);
+  });
+}
+
 function parse(cs) {
   var raw = s(cs);
-  var out = { engine: 'mssql', host: '', port: '', database: '', user: '', password: '',
+  /* `form` records which of SQL Server's two spellings this string was
+     written in, so compose() can hand back the same one. Without it, the
+     form was a one-way door: open it on a driver URL and the next keystroke
+     replaced the URL with a keyword string. */
+  var out = { engine: 'mssql', form: 'kv', host: '', port: '', database: '', user: '', password: '',
               schema: '', sslmode: 'auto', encrypt: true, trustCert: false };
   if (!raw) return out;
 
+  /* SQL Server's URL spelling. db-connect.js has accepted it since the
+     beginning and its own error message advertises it, but this parser did
+     not know it: every field came back empty, the form showed a blank
+     connection, and one keystroke composed that blank back over the string.
+     A working connection was replaced by nothing at all, silently, and the
+     next Save persisted it. */
+  if (/^(mssql|sqlserver):\/\//i.test(raw)) {
+    out.form = 'url';
+    var u = splitUrl(raw.replace(/^(mssql|sqlserver):\/\//i, ''), defaultPort('mssql'));
+    out.user = u.user; out.password = u.password;
+    out.host = u.host; out.port = u.port; out.database = u.database;
+    eachQueryPair(u.query, function (k, v) {
+      if (k === 'encrypt') out.encrypt = !/^false$/i.test(v);
+      else if (k === 'trustservercertificate') out.trustCert = /^true$/i.test(v);
+      else if ((k === 'database' || k === 'initial catalog') && !out.database) out.database = v;
+    });
+    // The server treats an unencrypted connection as one that cannot be
+    // checking a certificate either. The form says the same thing rather
+    // than showing a box the connection does not honour.
+    if (!out.encrypt) out.trustCert = true;
+    if (!/^\d+$/.test(out.port)) out.port = String(defaultPort('mssql'));
+    return out;
+  }
+
   if (/^(postgres|postgresql):\/\//i.test(raw)) {
     out.engine = 'postgres';
+    out.form = 'url';
     out.sslmode = 'auto';
-    var rest = raw.replace(/^(postgres|postgresql):\/\//i, '');
-    var qIdx = rest.indexOf('?');
-    var query = qIdx >= 0 ? rest.slice(qIdx + 1) : '';
-    var base = qIdx >= 0 ? rest.slice(0, qIdx) : rest;
-
-    var at = base.lastIndexOf('@');
-    if (at >= 0) {
-      var creds = base.slice(0, at);
-      var c = creds.indexOf(':');
-      out.user = decodeURIComponent(c >= 0 ? creds.slice(0, c) : creds);
-      out.password = c >= 0 ? decodeURIComponent(creds.slice(c + 1)) : '';
-    }
-    var hostPart = at >= 0 ? base.slice(at + 1) : base;
-    var slash = hostPart.indexOf('/');
-    var hostPort = slash >= 0 ? hostPart.slice(0, slash) : hostPart;
-    out.database = slash >= 0 ? decodeURIComponent(hostPart.slice(slash + 1)) : '';
-    var lastColon = hostPort.lastIndexOf(':');
-    if (lastColon >= 0 && hostPort.indexOf('[') === -1) {
-      out.host = hostPort.slice(0, lastColon);
-      out.port = hostPort.slice(lastColon + 1);
-    } else {
-      out.host = hostPort;
-      out.port = String(defaultPort('postgres'));
-    }
-    query.split('&').forEach(function (pair) {
-      if (!pair) return;
-      var eq = pair.indexOf('=');
-      var k = decodeURIComponent(eq >= 0 ? pair.slice(0, eq) : pair).toLowerCase();
-      var v = eq >= 0 ? decodeURIComponent(pair.slice(eq + 1)) : '';
+    var pg = splitUrl(raw.replace(/^(postgres|postgresql):\/\//i, ''), defaultPort('postgres'));
+    out.user = pg.user; out.password = pg.password;
+    out.host = pg.host; out.port = pg.port; out.database = pg.database;
+    eachQueryPair(pg.query, function (k, v) {
       if (k === 'sslmode') out.sslmode = v.toLowerCase();
       if (k === 'options') {
         var m = /search_path\s*=\s*([^\s,]+)/i.exec(v);
@@ -196,8 +284,14 @@ function parse(cs) {
 function mask(cs) {
   var raw = s(cs);
   if (!raw) return '';
-  if (/^(postgres|postgresql):\/\//i.test(raw)) {
-    return raw.replace(/^((?:postgres|postgresql):\/\/[^:@/]+):[^@]*@/i, '$1:••••••@');
+  /* Every driver URL this product uses, not only the postgres one. The first
+     version named postgres alone, so an mssql:// connection — the commonest
+     shape here — had its password printed in full in the preview, which is
+     the one place the comment above promises it never appears. The scheme is
+     matched generically because the next one added would have had the same
+     hole. */
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+    return raw.replace(/^([a-z][a-z0-9+.-]*:\/\/[^:@/]+):[^@/]*@/i, '$1:••••••@');
   }
   return raw.replace(/(\b(?:password|pwd)\s*=\s*)(\{(?:[^}]|\}\})*\}|[^;]*)/gi, '$1••••••');
 }
@@ -213,6 +307,7 @@ return {
   parse: parse,
   mask: mask,
   isComplete: isComplete,
+  looksLikeConnection: looksLikeConnection,
   defaultPort: defaultPort,
   __core: { mssqlValue: mssqlValue, unMssqlValue: unMssqlValue },
 };
