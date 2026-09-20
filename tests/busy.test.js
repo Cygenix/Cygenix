@@ -139,7 +139,9 @@ check('the reveal one-shot is set even when the tick is already running',
 
 /* ── 7. Wiring: every start has a release on every path ─────────────────── */
 
-const WIRED = ['object-mapping-app.js', 'mapper.html', 'one-to-many.html',
+// mapper.html was in this list until it was retired — /mapper now redirects
+// to /object-mapping, so there is one mapping journey rather than two.
+const WIRED = ['object-mapping-app.js', 'one-to-many.html',
                'project-builder-app.js', 'cygenix-assistant.js'];
 for (const f of WIRED) {
   const src = read('public', f);

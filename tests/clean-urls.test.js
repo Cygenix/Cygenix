@@ -125,6 +125,48 @@ check('the sign-in callback address is SERVED, not redirected',
   && (ruleFor('/' + routes.CALLBACK_PAGE) || {}).to === '/' + routes.CALLBACK_PAGE,
   'a 301 here breaks sign-in — the auth fragment does not survive it');
 
+/* ── 3c. Retired pages ───────────────────────────────────────────────────────
+   An address whose page has been removed must still go somewhere useful.
+   These live in the generator's LEGACY list, which is the one place that
+   decides where a URL goes — putting them in netlify.toml instead would
+   split that decision across two files that can disagree.
+
+   The Mapper is the case that matters most: it was a SECOND copy of the
+   Object Mapping journey, at a second address, doing the same job — connect,
+   map, generate the migration SQL, save it — with nothing in the product
+   linking to it. Two copies of one journey is how one of them stops being
+   maintained, and that is what happened: every improvement to mapping landed
+   on the other one. */
+section('3c. A retired page keeps its address pointing somewhere useful');
+const RETIRED = [
+  ['/mapper',             '/object-mapping', 'mapper.html'],
+  ['/mapper.html',        '/object-mapping', 'mapper.html'],
+  ['/data-analyser',      '/dashboard?goto=connections/import', 'data-analyser.html'],
+  ['/data-analyser.html', '/dashboard?goto=connections/import', 'data-analyser.html'],
+];
+for (const [from, to, file] of RETIRED) {
+  const r = ruleFor(from);
+  check(from + ' permanently redirects to ' + to,
+    !!r && r.to === to && r.status === '301!', JSON.stringify(r));
+  check('and ' + file + ' is really gone, so nothing serves it',
+    !fs.existsSync(path.join(PUB, file)));
+}
+check('THE MAPPER LANDS ON THE MAPPING SCREEN THAT IS KEPT UP TO DATE',
+  (ruleFor('/mapper') || {}).to === routes.addressOf('object_mapping.html'));
+check('and the redirect is declared in the generator, not hand-added to the output',
+  /\['\/mapper',\s+'\/object-mapping'\]/.test(
+    fs.readFileSync(path.join(ROOT, 'scripts', 'build-routes.js'), 'utf8')),
+  'public/_redirects is generated — a hand-edit there is lost on the next build');
+// A retired address is only retired if nothing still sends anyone to it.
+const stillLinking = [];
+for (const f of fs.readdirSync(PUB)) {
+  if (!/\.(html|js)$/.test(f)) continue;
+  const src = fs.readFileSync(path.join(PUB, f), 'utf8');
+  if (/href=["']\/mapper\b|location\.(href|replace)\(\s*['"]\/mapper\b/.test(src)) stillLinking.push(f);
+}
+check('nothing in the product still links to the retired address',
+  stillLinking.length === 0, stillLinking.join(', '));
+
 // ── 4. Nothing in the product still points at a .html address ───────────────
 section('4. No link, script or redirect hands a visitor a .html address');
 const offenders = [];

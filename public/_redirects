@@ -12,6 +12,8 @@
 /home                 /                     301!
 /data-analyser        /dashboard?goto=connections/import 301!
 /data-analyser.html   /dashboard?goto=connections/import 301!
+/mapper               /object-mapping       301!
+/mapper.html          /object-mapping       301!
 
 # The sign-in callback. Entra sends the browser back to this exact
 # address with the code in the fragment, so it is served rather than
@@ -45,7 +47,6 @@
 /help.html                /help                   301!
 /insights.html            /insights               301!
 /job-editor.html          /job-editor             301!
-/mapper.html              /mapper                 301!
 /object_mapping.html      /object-mapping         301!
 /one-to-many.html         /one-to-many            301!
 /performance.html         /performance            301!
@@ -111,7 +112,6 @@
 /insights                 /insights.html          200
 /job-editor               /job-editor.html        200
 /login                    /login.html             200
-/mapper                   /mapper.html            200
 /object-mapping           /object_mapping.html    200
 /one-to-many              /one-to-many.html       200
 /performance              /performance.html       200

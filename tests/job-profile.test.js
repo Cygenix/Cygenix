@@ -2,11 +2,12 @@
 //
 // Requested: show the profile on every row of the Migration Jobs list, and
 // link every NEW job to one when it is created. A job had no profile field at
-// all, and nineteen places in twelve files mint a job.
+// all, and seventeen places in eleven files mint a job. (It was nineteen in
+// twelve until mapper.html was retired and its two went with it.)
 //
 // Three things make this worth pinning rather than reading once:
 //
-//   * NINETEEN CALL SITES. The value of a shared helper is entirely in
+//   * SEVENTEEN CALL SITES. The value of a shared helper is entirely in
 //     everybody using it. A creation point that forgets produces a job with
 //     no profile, which looks exactly like a job made before the feature
 //     existed — so the gap is invisible for as long as you care to look.
@@ -157,7 +158,7 @@ check('label() is the one-line form the table uses',
     JP.activeProfile(s).id === CP.cpBannerInfo(s).profileId);
 }
 
-/* ── 5. Wiring — nineteen creation points ───────────────────────────────── */
+/* ── 5. Wiring — seventeen creation points ──────────────────────────────── */
 //
 // A helper nobody calls is not a feature. These are every place a job id is
 // minted, from the audit in the report that preceded this work.
@@ -165,7 +166,8 @@ check('label() is the one-line form the table uses',
 const CREATORS = [
   ['dashboard-app.js', 1],          // + New Migration
   ['object-mapping-app.js', 2],     // simple map, one-to-many
-  ['mapper.html', 2],
+  // mapper.html minted two more until it was retired; /mapper redirects to
+  // /object-mapping now, and those two creation points went with the page.
   ['one-to-many.html', 1],
   ['sql-editor-app.js', 1],
   ['project-builder-app.js', 2],    // file import, composite task
@@ -185,8 +187,8 @@ for (const [file, want] of CREATORS) {
 }
 check('every browser creation point stamps the job (' + CREATORS.length + ' files)',
   missing.length === 0, missing.join(' | '));
-check('and that is nineteen calls in total, not a subset that happens to pass',
-  counts.reduce((t, c) => t + Number(c.split(':')[1]), 0) === 19, counts.join(' '));
+check('and that is seventeen calls in total, not a subset that happens to pass',
+  counts.reduce((t, c) => t + Number(c.split(':')[1]), 0) === 17, counts.join(' '));
 // Every call is guarded on the global: these pages load the module with defer
 // and the creation code is inline, so a page that somehow renders without it
 // must still create the job.

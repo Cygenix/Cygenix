@@ -54,15 +54,19 @@ console loads scripts from cdnjs.
 
 ### AI provider keys — `localStorage`, and widely
 
-`cygenix_api_key` holds the user's Anthropic key. It is written from **twelve** files:
+`cygenix_api_key` holds the user's Anthropic key. It is written from **eleven** files:
 
 ```
 public/one-to-many.html:1228, 1794      public/connect.html:841, 3194, 3526
 public/insights.html:594, 986           public/data-generator.html:1232
 public/object-mapping-app.js:1579, 5571 public/sql-editor-app.js:1818
 public/job-editor.html:594              public/data-cleansing.html:708
-public/mapper.html:782, 2135            public/dashboard-app.js:85, 9287, 9288
+public/dashboard-app.js:85, 9287, 9288
 ```
+
+It was twelve. `public/mapper.html` wrote it at two more places and has since
+been retired — `/mapper` redirects to `/object-mapping` — so those two writes
+are gone with the page rather than fixed.
 
 `dashboard-app.js:9287-9288` writes it to **both** `localStorage` and `sessionStorage`.
 `anthropic_api_key` and `cygenix_anthropic_key` are legacy spellings of the same thing,

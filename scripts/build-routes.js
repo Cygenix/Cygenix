@@ -115,6 +115,18 @@ const LEGACY = [
   // the generated .html→clean rule below no longer exists for it.
   ['/data-analyser',      '/dashboard?goto=connections/import'],
   ['/data-analyser.html', '/dashboard?goto=connections/import'],
+  // The Mapper was the Object Mapping journey before object-mapping-app.js
+  // replaced it: 2,000 lines of inline script doing the same job — connect,
+  // map, generate the migration SQL, save it — at a second address, with
+  // nothing in the product linking to it. Two copies of one journey is how
+  // one of them stops being maintained, and it is exactly what happened:
+  // every improvement to mapping landed on the other one, and this page went
+  // on generating SQL for whoever still had the bookmark. It is retired, and
+  // its address sends them to the screen that is kept up to date. Both forms
+  // are listed because, with the page gone, the generated .html→clean rule
+  // no longer exists for it.
+  ['/mapper',             '/object-mapping'],
+  ['/mapper.html',        '/object-mapping'],
 ];
 
 function pages() {

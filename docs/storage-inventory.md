@@ -24,7 +24,7 @@ mechanism that stops an unclassified key being added quietly.
 |---|---|---|---|
 | `anthropic_api_key` | Anthropic API key (legacy key name) | WI-10: server-side proxy | reports-app.js |
 | `cygenix_anthropic_key` | Anthropic API key | WI-10: server-side proxy | reports-app.js |
-| `cygenix_api_key` | User-supplied API key | WI-10 | balancing.html, connect.html, cygenix-assistant.js +10 |
+| `cygenix_api_key` | User-supplied API key | WI-10 | balancing.html, connect.html, cygenix-assistant.js +9 |
 | `cygenix_conn_string` | Target connection string, in plain text | WI-10: move to a Key Vault reference | connect.html, project-builder-app.js |
 | `cygenix_fn_key` | Azure Function key for a user-supplied endpoint | WI-10 | connect.html, project-builder-app.js |
 | `cygenix_pending_token` | Auth token in transit between pages | short-lived; clear on consume | index.html |
@@ -45,7 +45,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_datagen_selection` | Which tables the Data Generator had selected, per profile | synced (SYNC_KEYS) | data-generator.html |
 | `cygenix_effort_estimates_v1` | Saved Configurator estimates | NOT SYNCED — WI-1 | project_plan.html |
 | `cygenix_inventory` | Project artifact inventory | synced (SYNC_KEYS) | dashboard-app.js, projects.html, report.html +1 |
-| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-collation.js, cygenix-diagnostics.js +17 |
+| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-collation.js, cygenix-diagnostics.js +16 |
 | `cygenix_map_groups` | Object Mapping group names and colours | synced (SYNC_KEYS) | object-mapping-app.js |
 | `cygenix_objmap_wip_` | Object-mapping work in progress | NOT SYNCED — WI-1 | schema_explorer.html |
 | `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js, dashboard-app.js |
@@ -81,7 +81,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +17 |
 | `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-collation.js, cygenix-cosmos-sync.js +5 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
-| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +35 |
+| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +34 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |
@@ -100,7 +100,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_panel_collapsed` | SQL panel collapsed | — | sql-editor-app.js |
 | `cygenix_src_conn_mode` | Source connection mode | — | connect.html |
 | `cygenix_src_fn_url` | Source function URL | — | connect.html |
-| `cygenix_token` | Session marker | MSAL holds the real token | admin.html, agentive_migration.html, connect.html +18 |
+| `cygenix_token` | Session marker | MSAL holds the real token | admin.html, agentive_migration.html, connect.html +17 |
 | `cygenix_user` | Signed-in user (email, name) | — | agentive_migration.html, assurance.html, connect.html +19 |
 | `cygenix_user_email` | Signed-in email | — | validation.html |
 
