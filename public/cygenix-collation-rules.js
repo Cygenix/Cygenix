@@ -853,6 +853,115 @@
              mode: m ? m.userSqlMode : null };
   }
 
+  /* ════════════════════════════════════════════════════════════════════════
+     MATCHING TWO VALUES IN JAVASCRIPT
+     ────────────────────────────────────────────────────────────────────────
+     Four places in Cygenix compare a source figure with a target figure
+     WITHOUT a database in between: the Trial Balance and the GL balancing
+     check read each side separately and merge them in a Map; a migration
+     run's grouped reconciliation does the same with its group keys; and the
+     evidence mapper measures how much of a source sample appears in a target
+     sample. No COLLATE clause can reach any of them, because there is no
+     SQL statement — the comparison is `===` in a browser.
+
+     That matters because `===` is neither of the things a database does. It
+     is always case-sensitive and always accent-sensitive, so under a
+     case-insensitive profile — which is most of them — ACC001 and acc001 are
+     reported as an account missing from one side AND an unexpected account
+     on the other. Two false differences, on a screen whose entire job is to
+     say whether the two sides agree. In the other direction the evidence
+     mapper folded case unconditionally, so under a case-sensitive profile it
+     counted values as overlapping that the database would keep apart.
+
+     So: one folding function, driven by the same resolved collation
+     everything else uses, applied at each of those four places.
+
+       · case-insensitive collation  → fold case
+       · accent-insensitive          → fold accents (NFD, drop the marks)
+       · trailing spaces             → always folded, because SQL Server's =
+                                       pads char and varchar operands to the
+                                       same length before comparing, so
+                                       'ACC1' and 'ACC1  ' ARE equal to it
+       · anything else, or no settings at all → the value, unchanged
+
+     The last line is the important one. With no collation configured these
+     screens behave exactly as they did before this existed, which is what
+     makes the change safe to make everywhere at once.
+
+     What this is NOT: a reimplementation of SQL Server's collation
+     algorithm. Width sensitivity, kana sensitivity, locale-specific
+     casing and the sort ORDER of a collation are not modelled — folding
+     changes which values are considered EQUAL, and nothing here claims to
+     order them. `describeFold` exists so a screen can say which rule it
+     applied rather than quietly applying one.                              */
+
+  /* Unicode combining marks: é (e + U+0301) after NFD, and the rest of the
+     block. Written as a range rather than \p{M} because this file has to
+     load in whatever the Function App's Node gives it. */
+  var COMBINING = /[̀-ͯ᪰-᫿᷀-᷿⃐-⃰︠-︯]/g;
+
+  /* How the resolved collation treats two text values. `known` is false when
+     nothing has been detected, which is the signal to fold nothing. */
+  function matchRules(model) {
+    var out = { known: false, caseInsensitive: false, accentInsensitive: false, collation: '' };
+    if (!model) return out;
+    var name = resolvedCollation(model);
+    if (!name) return out;
+    var p = parseCollation(name);
+    if (!p.known) return out;
+    out.known = true;
+    out.collation = name;
+    // A binary collation distinguishes everything, including case and
+    // accent, so it folds neither — and says so rather than falling into
+    // the unknown branch, which would read as "no settings".
+    if (p.bin) return out;
+    out.caseInsensitive = p.cs === false;
+    out.accentInsensitive = p.accent === false;
+    return out;
+  }
+
+  /* One value, as the resolved collation would see it for an equality test. */
+  function foldKey(value, model) {
+    if (value == null) return '';
+    var v = String(value);
+    var r = model && model.__matchRules ? model.__matchRules : matchRules(model);
+    if (!r.known) return v;
+    v = v.replace(/[ ]+$/, '');            // the = operator pads; so do we
+    if (r.accentInsensitive && String.prototype.normalize) {
+      v = v.normalize('NFD').replace(COMBINING, '').normalize('NFC');
+    }
+    if (r.caseInsensitive) v = v.toUpperCase().toLowerCase();
+    return v;
+  }
+  function keysEqual(a, b, model) { return foldKey(a, model) === foldKey(b, model); }
+
+  /* A ready-made folder, so a caller in a loop parses the collation once.
+     `applied` is what a screen tests before saying anything to the user;
+     `label` is the sentence to say. */
+  function keyFolder(model) {
+    var r = matchRules(model);
+    var carrier = { __matchRules: r };
+    return {
+      applied: r.known && (r.caseInsensitive || r.accentInsensitive),
+      known: r.known,
+      caseInsensitive: r.caseInsensitive,
+      accentInsensitive: r.accentInsensitive,
+      collation: r.collation,
+      label: describeFold(r),
+      fold: function (v) { return foldKey(v, carrier); },
+      equal: function (a, b) { return foldKey(a, carrier) === foldKey(b, carrier); },
+    };
+  }
+
+  function describeFold(r) {
+    if (!r || !r.known) return '';
+    var parts = [];
+    if (r.caseInsensitive) parts.push('ignoring case');
+    if (r.accentInsensitive) parts.push('ignoring accents');
+    if (!parts.length) return 'Matched exactly, as ' + r.collation + ' requires.';
+    return 'Matched ' + parts.join(' and ') + ', to agree with ' + r.collation + '.';
+  }
+
   /* A one-line summary for a banner. Kept here so the browser and the Function
      App word it the same way in a log and on a screen. */
   function summariseClashes(clashes) {
@@ -1005,6 +1114,49 @@
       want: ' COLLATE Latin1_General_BIN2' },
   ];
 
+  /* The matching cases, run against both copies for the same reason the
+     clash cases are: a browser screen and a scheduled run must call the
+     same two account codes the same thing. `model` is named rather than
+     inlined so a reader can see which profile each answer belongs to. */
+  var CI_MODEL = { source: { dbCollation: 'Latin1_General_CI_AS' },
+                   target: { dbCollation: 'Latin1_General_CI_AS' }, strategy: 'target' };
+  var CS_MODEL = { source: { dbCollation: 'Latin1_General_CS_AS' },
+                   target: { dbCollation: 'Latin1_General_CS_AS' }, strategy: 'target' };
+  var AI_MODEL = { source: { dbCollation: 'Latin1_General_CI_AI' },
+                   target: { dbCollation: 'Latin1_General_CI_AI' }, strategy: 'target' };
+  var BIN_MODEL = { source: { dbCollation: 'Latin1_General_BIN2' },
+                    target: { dbCollation: 'Latin1_General_BIN2' }, strategy: 'target' };
+  var NONE_MODEL = { source: { dbCollation: '' }, target: { dbCollation: '' }, strategy: 'target' };
+
+  var MATCH_CASES = [
+    { name: 'a case-insensitive profile treats two spellings of an account code as one',
+      model: CI_MODEL, a: 'ACC001', b: 'acc001', equal: true },
+    { name: 'and a case-sensitive one keeps them apart',
+      model: CS_MODEL, a: 'ACC001', b: 'acc001', equal: false },
+    { name: 'an accent-insensitive profile matches across an accent',
+      model: AI_MODEL, a: 'Café', b: 'Cafe', equal: true },
+    { name: 'a case-insensitive but accent-SENSITIVE profile does not',
+      model: CI_MODEL, a: 'Café', b: 'Cafe', equal: false },
+    { name: 'a binary collation distinguishes everything, so it folds nothing',
+      model: BIN_MODEL, a: 'ACC001', b: 'acc001', equal: false },
+    { name: 'trailing spaces never separate two values, because = pads them',
+      model: CI_MODEL, a: 'ACC001', b: 'ACC001   ', equal: true },
+    { name: 'and that holds under a case-sensitive profile too',
+      model: CS_MODEL, a: 'ACC001', b: 'ACC001 ', equal: true },
+    { name: 'a LEADING space is a different value, and stays one',
+      model: CI_MODEL, a: 'ACC001', b: ' ACC001', equal: false },
+    { name: 'WITH NO COLLATION DETECTED NOTHING IS FOLDED — today\'s behaviour, exactly',
+      model: NONE_MODEL, a: 'ACC001', b: 'acc001', equal: false },
+    { name: 'nor is a trailing space forgiven when nothing has been detected',
+      model: NONE_MODEL, a: 'ACC001', b: 'ACC001 ', equal: false },
+    { name: 'two genuinely different codes stay different, whatever the profile',
+      model: CI_MODEL, a: 'ACC001', b: 'ACC002', equal: false },
+    { name: 'null and empty are the same key, so neither becomes a phantom group',
+      model: CI_MODEL, a: null, b: '', equal: true },
+    { name: 'a Turkish dotted I folds the same way in both directions',
+      model: CI_MODEL, a: 'İSTANBUL', b: 'i̇stanbul', equal: true },
+  ];
+
   return {
     VERSION: VERSION, ISSUE: ISSUE,
     parseCollation: parseCollation, collationDiff: collationDiff, isSoftDiff: isSoftDiff,
@@ -1018,6 +1170,9 @@
     collateForColumn: collateForColumn, collateForTempColumn: collateForTempColumn,
     collateForComparison: collateForComparison,
     headerComment: headerComment, settingsStamp: settingsStamp, applyFix: applyFix,
-    SHARED_CASES: SHARED_CASES, APPLY_CASES: APPLY_CASES,
+    // Matching two values where there is no SQL to put a COLLATE into.
+    matchRules: matchRules, foldKey: foldKey, keysEqual: keysEqual,
+    keyFolder: keyFolder, describeFold: describeFold,
+    SHARED_CASES: SHARED_CASES, APPLY_CASES: APPLY_CASES, MATCH_CASES: MATCH_CASES,
   };
 });

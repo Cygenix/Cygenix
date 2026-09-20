@@ -76,7 +76,27 @@
 
   const SET_CAP = 800;
 
-  function emProfile(values) {
+  /* How a sampled value is keyed before the two sets are intersected.
+     emOverlap is a source-vs-target comparison with no SQL in between, so
+     no COLLATE clause can reach it — and this used to fold case
+     unconditionally, which is right for a case-insensitive database and
+     wrong for a case-sensitive one, where it counted values as overlapping
+     that the database keeps apart. A mapping proposed on that evidence is
+     a mapping proposed on a match that will not happen.
+
+     When the profile's collation is known, its own folding rule is used.
+     When it is not, the original lowercase fold stands: an overlap score is
+     a heuristic for ranking candidates, and with nothing to go on, treating
+     CUST01 and cust01 as the same value is the better guess. */
+  function emValueFold(folder) {
+    if (folder && folder.known && typeof folder.fold === 'function') {
+      return (s) => folder.fold(s);
+    }
+    return (s) => s.toLowerCase();
+  }
+
+  function emProfile(values, folder) {
+    const foldValue = emValueFold(folder);
     const p = { n: values.length, nonNull: 0, nullRate: 0, distinct: 0, distinctRatio: 0,
                 typeGuess: 'empty', lenMin: Infinity, lenMax: 0, lenAvg: 0,
                 patterns: [], set: new Set() };
@@ -93,7 +113,7 @@
       typeCounts[t] = (typeCounts[t] || 0) + 1;
       const pat = emFingerprint(s);
       patCounts[pat] = (patCounts[pat] || 0) + 1;
-      if (p.set.size < SET_CAP) p.set.add(s.toLowerCase());
+      if (p.set.size < SET_CAP) p.set.add(foldValue(s));
     }
     if (!p.nonNull) { p.lenMin = 0; return p; }
     p.nullRate = (p.n - p.nonNull) / p.n;
@@ -325,21 +345,42 @@
       tgtRows = tgtR.recordset || [];
     } catch (e) { /* unreadable target (permissions, view) — schema-only evidence */ }
 
+    // Both sides are keyed the same way, by the profile's resolved
+    // collation when there is one. Passing the same folder to both is the
+    // whole point: two sets folded by different rules cannot be intersected
+    // and mean anything.
+    const folder = opts.folder || emCollationFolder();
+
     const srcProfiles = {}, tgtProfiles = {};
-    for (const c of srcCols) srcProfiles[c] = emProfile(srcRows.map(r => r[c]));
-    for (const c of tgtCols) tgtProfiles[c.name] = emProfile(tgtRows.map(r => r[c.name]));
+    for (const c of srcCols) srcProfiles[c] = emProfile(srcRows.map(r => r[c]), folder);
+    for (const c of tgtCols) tgtProfiles[c.name] = emProfile(tgtRows.map(r => r[c.name]), folder);
 
     const proposals = emPropose(srcProfiles, tgtCols, tgtProfiles, opts);
     return {
       proposals, srcProfiles, tgtProfiles,
       sampledSrc: srcRows.length, sampledTgt: tgtRows.length,
       tgtHasData: tgtRows.length > 0,
+      // Which rule decided two sampled values were the same value. Empty
+      // when the collation is unknown and the lowercase default was used.
+      matchNote: (folder && folder.known && folder.label) || '',
       generatedAt: new Date().toISOString(),
     };
   }
 
+  /* The orchestrator is the half that is allowed to reach for a global; the
+     pure core above takes the folder as an argument so the test suite can
+     load this file on its own. Guarded: mapping must work on a page where
+     the collation module is not loaded. */
+  function emCollationFolder() {
+    try {
+      const C = (typeof window !== 'undefined') && window.cygCollation;
+      if (C && typeof C.matcher === 'function') return C.matcher();
+    } catch (e) { /* schema-only evidence is still evidence */ }
+    return null;
+  }
+
   const api = {
-    emFingerprint, emDescribePattern, emProfile, emOverlap,
+    emFingerprint, emDescribePattern, emProfile, emOverlap, emValueFold,
     emNameScore, emTypeCompat, emScorePair, emPropose, emGrade,
     emSampleSql, emRun,
   };

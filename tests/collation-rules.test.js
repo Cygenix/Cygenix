@@ -82,6 +82,52 @@ R.SHARED_CASES.forEach((c) => {
   }
 });
 
+/* ── 2b. Matching two values where there is no SQL ──────────────────────── */
+section('2b. The matching cases — every one run twice');
+
+check('the matching fixtures travel with the rules as well',
+  Array.isArray(R.MATCH_CASES) && R.MATCH_CASES.length >= 12
+  && JSON.stringify(R.MATCH_CASES) === JSON.stringify(AR.MATCH_CASES));
+
+R.MATCH_CASES.forEach((c) => {
+  check(c.name + ' — browser', R.keysEqual(c.a, c.b, c.model) === c.equal);
+  check(c.name + ' — Function App', AR.keysEqual(c.a, c.b, c.model) === c.equal);
+  check(c.name + ' — both copies fold to the same string',
+    R.foldKey(c.a, c.model) === AR.foldKey(c.a, c.model)
+    && R.foldKey(c.b, c.model) === AR.foldKey(c.b, c.model));
+});
+
+/* The property the four call sites depend on: with nothing detected, the
+   folder is the identity and `applied` is false, so a screen that wires it
+   unconditionally behaves exactly as it did before it existed. */
+const NO_MODEL = { source: { dbCollation: '' }, target: { dbCollation: '' }, strategy: 'target' };
+const noFold = R.keyFolder(NO_MODEL);
+check('WITH NO COLLATION THE FOLDER CHANGES NOTHING, and says it changed nothing',
+  noFold.applied === false && noFold.known === false && noFold.label === ''
+  && noFold.fold('AbC  ') === 'AbC  ' && noFold.fold(null) === '');
+check('and keyFolder(null) is safe, because a caller may have no profile at all',
+  R.keyFolder(null).fold('AbC') === 'AbC' && R.keyFolder(null).applied === false);
+
+const ciFold = R.keyFolder({ source: { dbCollation: 'Latin1_General_CI_AS' },
+                             target: { dbCollation: 'Latin1_General_CI_AS' }, strategy: 'target' });
+check('a folding profile says which rule it applied, in words a report can carry',
+  ciFold.applied === true && /ignoring case/.test(ciFold.label)
+  && /Latin1_General_CI_AS/.test(ciFold.label), ciFold.label);
+const CI_MODEL = { source: { dbCollation: 'Latin1_General_CI_AS' },
+                   target: { dbCollation: 'Latin1_General_CI_AS' }, strategy: 'target' };
+check('the folder and the one-shot function agree, so a caller can use either',
+  ciFold.fold('ACC001') === R.foldKey('ACC001', CI_MODEL)
+  && ciFold.equal('ACC001', 'acc001') === R.keysEqual('ACC001', 'acc001', CI_MODEL));
+check('a folded key is only ever used for matching — folding is not claimed to ORDER anything',
+  !/localeCompare|\.sort\(/.test(RULES_SRC.slice(RULES_SRC.indexOf('function foldKey'),
+                                                 RULES_SRC.indexOf('function keysEqual'))));
+check('the resolved collation is what drives it, not either side on its own',
+  R.keyFolder({ source: { dbCollation: 'Latin1_General_CS_AS' },
+                target: { dbCollation: 'Latin1_General_CI_AS' }, strategy: 'target' }).caseInsensitive === true
+  && R.keyFolder({ source: { dbCollation: 'Latin1_General_CS_AS' },
+                   target: { dbCollation: 'Latin1_General_CI_AS' }, strategy: 'source' }).caseInsensitive === false,
+  'strategy target resolves to the target collation; strategy source to the source one');
+
 /* ── 3. What a clash carries ────────────────────────────────────────────── */
 section('3. The shape of a finding');
 

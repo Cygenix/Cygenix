@@ -577,7 +577,7 @@ select.inp{cursor:pointer}
 <script src="/cygenix-subject-harvest.js?v=223a1d8144" defer></script>
 <script src="/cygenix-integrations.js?v=9d508375a5" defer></script>
 <script src="/cygenix-map-context.js?v=f006e965b8" defer></script>
-<script src="/cygenix-assurance.js?v=c4ac6abaa4" defer></script>
+<script src="/cygenix-assurance.js?v=aafd3874e0" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
 <script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
@@ -788,6 +788,18 @@ async function buildCatalog(){
   return catalog;
 }
 
+/* The folder for a recon pair that has to be compared as text. Guarded:
+   Assurance must run whether or not the collation module is on the page,
+   and with no collation detected it folds nothing. */
+function asCollationFolder(){
+  try {
+    if (window.cygCollation && typeof window.cygCollation.matcher === 'function') {
+      return window.cygCollation.matcher();
+    }
+  } catch (e) { /* the rule still runs, comparing exactly */ }
+  return null;
+}
+
 /* ---------- the executor: counts first, samples on a hit, everything logged */
 async function execSide(side, sql){
   const res = await CygenixSchemaGraph.execute(side, sql);
@@ -814,9 +826,16 @@ async function asRunRule(rule, opts){
       const qa = A.asCompile(rule, a, dialectOf('src'), cap);
       const qb = A.asCompile(rule, b, dialectOf('tgt'), cap);
       const ra = await execSide('src', qa.countSql), rb = await execSide('tgt', qb.countSql);
-      const va = Number(ra[0] && (ra[0].n ?? ra[0].N) || 0), vb = Number(rb[0] && (rb[0].n ?? rb[0].N) || 0);
-      const v = A.asEvaluatePair(rule, va, vb);
-      status = v.status; why = v.why; measure = Math.abs(va - vb);
+      // The raw value, not Number(...) — recon.column_aggregate offers MIN
+      // and MAX, and MIN of a varchar is text. Coercing it produced NaN on
+      // both sides, which defaulted to 0 on both sides, which passed every
+      // time. asEvaluatePair decides which comparison this pair needs and
+      // carries the collation folder for the text case, because this is a
+      // source-vs-target comparison with no SQL to put a COLLATE into.
+      const va = ra[0] ? (ra[0].n ?? ra[0].N ?? 0) : 0;
+      const vb = rb[0] ? (rb[0].n ?? rb[0].N ?? 0) : 0;
+      const v = A.asEvaluatePair(rule, va, vb, asCollationFolder());
+      status = v.status; why = v.why; measure = v.measure;
       perTarget.push({ target: tName(a), value: va, generatedSql: qa.countSql });
       perTarget.push({ target: tName(b), value: vb, generatedSql: qb.countSql });
     } else {
@@ -2333,8 +2352,8 @@ document.addEventListener('DOMContentLoaded', () => {
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <!-- Collation. The rules load first; see the note in object_mapping.html. -->
-<script src="/cygenix-collation-rules.js?v=200b93a61d" defer></script>
-<script src="/cygenix-collation.js?v=0a89baaf32" defer></script>
+<script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
+<script src="/cygenix-collation.js?v=a080ddf2eb" defer></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=7810d9c217"></script>

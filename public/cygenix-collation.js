@@ -1264,6 +1264,19 @@
     return Rules.resolveWith(m, side, schema, table, column);
   }
 
+  /* A folder for matching two text values where there is no SQL to put a
+     COLLATE into — the Trial Balance, the GL check, a run's grouped
+     reconciliation, the evidence mapper. See the long note in the rules
+     module for why those four need one.
+
+     Always returns a folder. With no settings it folds nothing and
+     `applied` is false, so a caller can wire it unconditionally and the
+     screen behaves exactly as it did before. */
+  function matcher(profileId) {
+    try { return Rules.keyFolder(settings(profileId)); }
+    catch (e) { return Rules.keyFolder(null); }
+  }
+
   /* May a job run? Blocking is opt-in per rule, so this answers yes with
      warnings unless the operator asked for a block. */
   function gate(profileId) {
@@ -1582,6 +1595,9 @@
   return {
     // The Stage B API: the four questions the rest of the product asks.
     settings: settings, resolve: resolve, findClashes: findClashes, gate: gate,
+    // Matching two values with no SQL in between.
+    matcher: matcher, foldKey: Rules.foldKey, keysEqual: Rules.keysEqual,
+    keyFolder: Rules.keyFolder, matchRules: Rules.matchRules,
     // and the helpers that let a module report a clash in three lines.
     lint: lint, bannerHtml: bannerHtml, renderBanner: renderBanner,
     badgeFor: badgeFor, summaryLine: summaryLine, contextFor: contextFor,

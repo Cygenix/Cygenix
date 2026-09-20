@@ -3962,19 +3962,34 @@ async function runReconAfter(step, tgtConn, preResult) {
     };
   }
 
-  // Grouped case: outer-join source/target by group key, compute per-group delta
+  // Grouped case: outer-join source/target by group key, compute per-group delta.
+  //
+  // The two sides are read by two separate queries against two databases and
+  // joined HERE, so no COLLATE clause can reach the match — there is no
+  // statement to put one in. A raw === is always case- and accent-sensitive,
+  // which under a case-insensitive profile turned one group into two: a
+  // source group with no target and a target group with no source, both
+  // failing, on a post-migration reconciliation that is meant to say the
+  // data arrived. The key is folded the way the resolved collation would
+  // fold it; with no collation detected it folds nothing and this behaves
+  // exactly as it did before.
+  const fold = reconKeyFolder();
   const srcGroups = preResult?.sourceGroups || [];
   const tgtGroups = tgt || [];
-  const srcMap = new Map(srcGroups.map(g => [g.key, g.value]));
-  const tgtMap = new Map(tgtGroups.map(g => [g.key, g.value]));
+  // The label kept beside the value is what gets shown. The folded key is
+  // for matching only — reporting a lower-cased account code back to
+  // somebody reading a reconciliation would be its own small lie.
+  const srcMap = new Map(srcGroups.map(g => [fold.fold(g.key), { value: g.value, label: g.key }]));
+  const tgtMap = new Map(tgtGroups.map(g => [fold.fold(g.key), { value: g.value, label: g.key }]));
   const allKeys = Array.from(new Set([...srcMap.keys(), ...tgtMap.keys()])).sort();
 
-  const groupDeltas = allKeys.map(key => {
-    const s = srcMap.has(key) ? srcMap.get(key) : null;
-    const t = tgtMap.has(key) ? tgtMap.get(key) : null;
+  const groupDeltas = allKeys.map(k => {
+    const sHit = srcMap.get(k), tHit = tgtMap.get(k);
+    const s = sHit ? sHit.value : null;
+    const t = tHit ? tHit.value : null;
     const delta = (s != null && t != null) ? (t - s) : null;
     const passed = delta != null ? Math.abs(delta) <= tol : false;
-    return { key, sourceValue: s, targetValue: t, delta, passed };
+    return { key: (sHit ? sHit.label : tHit.label), sourceValue: s, targetValue: t, delta, passed };
   });
 
   // Overall pass = every group passes
@@ -3988,8 +4003,23 @@ async function runReconAfter(step, tgtConn, preResult) {
     grouped: true,
     tolerance: tol,
     groups: groupDeltas,
+    // Which matching rule produced these groups, for the run log and the
+    // report. Empty when nothing was folded.
+    matchNote: fold.applied ? fold.label : '',
     passed: overallPass,
   };
+}
+
+/* The folder for a grouped reconciliation. Guarded: a migration run has to
+   proceed whether or not the collation module is on the page, and with no
+   collation detected this folds nothing. */
+function reconKeyFolder(){
+  try {
+    if (window.cygCollation && typeof window.cygCollation.matcher === 'function') {
+      return window.cygCollation.matcher();
+    }
+  } catch (e) { /* the run continues without it */ }
+  return { applied: false, label: '', fold: (v) => (v == null ? '' : String(v)) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4257,6 +4287,9 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
                 add('Reconciliation : source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
               }
             }
+            // Which rule decided two group keys were the same group. Only
+            // said when something was actually folded.
+            if (res.matchNote) add(res.matchNote);
           }
         } catch (e) { console.warn('[recon] post-check failed:', e.message); }
       }
@@ -4389,6 +4422,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
                 add('Reconciliation : source=' + fmt(rr.sourceValue) + ', target=' + fmt(rr.targetValue) + ', delta=' + fmt(rr.delta) + ' (tolerance ' + fmt(rr.tolerance) + ')');
               }
             }
+            if (rr.matchNote) add(rr.matchNote);
           }
         } catch (e) { console.warn('[recon] post-check failed:', e.message); }
       }
@@ -4999,6 +5033,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
             add('Reconciliation : source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
           }
         }
+        if (res.matchNote) add(res.matchNote);
       }
     } catch (e) { console.warn('[recon] post-check failed:', e.message); }
   }

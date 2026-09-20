@@ -709,14 +709,51 @@ function asEvaluateMeasure(rule, measure, baselineValues) {
   function maxAgeHours(pp) { return num(pp.maxAgeHours, 26); }
 }
 
-/* recon pair: compare source and target numbers with a tolerance */
-function asEvaluatePair(rule, a, b) {
+/* recon pair: compare a source figure with a target figure.
+
+   Numbers with a tolerance, as before. But recon.column_aggregate also
+   offers MIN and MAX, and MIN of a varchar is text — at which point the old
+   code coerced both sides with Number(), got NaN on each, defaulted both to
+   0, found a difference of 0 and PASSED. A reconciliation that cannot fail
+   is worse than no reconciliation, because somebody reads the green.
+
+   So a pair where either side is text is compared as text, and it is
+   compared through the collation folder, because this is one of the
+   comparisons that happens in JavaScript with no SQL to put a COLLATE into:
+   under a case-insensitive profile the database considers ACC001 and acc001
+   the same value, and MIN() on either side may return either spelling.
+   With no folder, or no collation detected, the comparison is exact —
+   which is what it was before this existed. */
+function asEvaluatePair(rule, a, b, folder) {
   var tol = num((rule.params || {}).tolerance, 0);
-  var diff = Math.abs(num(a, 0) - num(b, 0));
-  return diff > tol
-    ? { status: 'fail', why: 'source ' + a + ' vs target ' + b + ' (Δ ' + diff + ')' }
-    : { status: 'pass', why: null };
+  if (asBothNumeric(a, b)) {
+    var diff = Math.abs(num(a, 0) - num(b, 0));
+    return diff > tol
+      ? { status: 'fail', measure: diff, why: 'source ' + a + ' vs target ' + b + ' (Δ ' + diff + ')' }
+      : { status: 'pass', measure: diff, why: null };
+  }
+  var fold = (folder && typeof folder.fold === 'function')
+    ? folder.fold
+    : function (v) { return v == null ? '' : String(v); };
+  var same = fold(a) === fold(b);
+  return same
+    ? { status: 'pass', measure: 0, why: null }
+    : { status: 'fail', measure: 1,
+        why: 'source ' + asShowValue(a) + ' vs target ' + asShowValue(b)
+           + ' (text comparison' + (folder && folder.applied ? ', ' + folder.label.replace(/^Matched /, '').replace(/\.$/, '') : '')
+           + '; a tolerance does not apply)' };
 }
+/* null counts as numeric, as it always did — num(null, 0) is 0 — so a pair
+   of empty sides stays the pass it was rather than becoming a text
+   comparison of two empty strings that happens to agree anyway. */
+function asIsNumeric(v) {
+  if (v == null) return true;
+  if (typeof v === 'number') return isFinite(v);
+  if (typeof v === 'string') return v.trim() !== '' && isFinite(Number(v));
+  return false;
+}
+function asBothNumeric(a, b) { return asIsNumeric(a) && asIsNumeric(b); }
+function asShowValue(v) { return v == null ? '(none)' : String(v); }
 
 /* =======================================================================
    Store — one JSON document, shaped for localStorage but owned here
@@ -2137,7 +2174,7 @@ return {
   asResolveBinding: asResolveBinding,
   asEvaluate: asEvaluate,
   asEvaluateMeasure: asEvaluateMeasure,
-  asEvaluatePair: asEvaluatePair,
+  asEvaluatePair: asEvaluatePair, asIsNumeric: asIsNumeric,
 
   asNewStore: asNewStore,
   asDefaultGroups: asDefaultGroups,

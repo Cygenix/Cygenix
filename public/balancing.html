@@ -1220,29 +1220,35 @@ async function balRunOne(type, idx){
       const sR = await balExec('source', balSqlGlBalance(c, 'source'));
       const tR = await balExec('target', balSqlGlBalance(c, 'target'));
       const tol = +(c.tolerance || 0);
-      const key = r => String(r.period) + '|' + String(r.account);
-      const tMap = new Map(tR.map(r => [key(r), parseFloat(r.balance || 0)]));
+      // Same merge, same reason as the Trial Balance: the two sides are
+      // matched here rather than joined in SQL, so the key is folded to the
+      // resolved collation and the row travels with its figure instead of
+      // being reconstructed by splitting the key on '|'.
+      const fold = balKeyFolder();
+      const key = r => fold.fold(r.period) + '|' + fold.fold(r.account);
+      const tMap = new Map(tR.map(r => [key(r), { balance: parseFloat(r.balance || 0), period: r.period, account: r.account }]));
       const offenders = [];
       for (const r of sR) {
         const sv = parseFloat(r.balance || 0);
-        const tv = tMap.has(key(r)) ? tMap.get(key(r)) : null;
+        const hit = tMap.get(key(r));
+        const tv = hit ? hit.balance : null;
         if (tv === null || Math.abs(sv - tv) > tol) {
           offenders.push({ period: r.period, account: r.account, source: sv, target: tv, variance: tv === null ? null : sv - tv });
         }
         tMap.delete(key(r));
       }
-      for (const [k, tv] of tMap.entries()) {
-        const [period, account] = k.split('|');
-        offenders.push({ period: period, account: account, source: null, target: tv, variance: null });
+      for (const hit of tMap.values()) {
+        offenders.push({ period: hit.period, account: hit.account, source: null, target: hit.balance, variance: null });
       }
       runs[c.id] = {
         ts: Date.now(),
         pass: offenders.length === 0,
-        detail: offenders.length === 0
+        detail: (offenders.length === 0
           ? 'Balanced. ' + sR.length + ' (period, account) row(s) checked.'
           : offenders.length + ' mismatch(es):\n'
             + offenders.slice(0, 15).map(r => JSON.stringify(r)).join('\n')
-            + (offenders.length > 15 ? '\n…and ' + (offenders.length - 15) + ' more' : '')
+            + (offenders.length > 15 ? '\n…and ' + (offenders.length - 15) + ' more' : ''))
+          + (fold.applied ? '\n' + fold.label : '')
       };
     }
     showStatus(runs[c.id].pass ? 'Passed' : 'Failed', runs[c.id].pass ? 'ok' : 'err');
@@ -1603,7 +1609,13 @@ function tbRenderPreview(run){
     +   (totals.mismatches > 0
         ? '<div class="tb-summary-item warn"><strong>' + totals.mismatches.toLocaleString() + '</strong> mismatching account-rows</div>'
         : '<div class="tb-summary-item ok"><strong>0</strong> mismatching account-rows</div>')
-    + '</div>';
+    + '</div>'
+    // Said once, under the figures: two account codes that differ only in
+    // case were treated as one account, and whoever signs this report needs
+    // to know that rule was applied rather than discover it later.
+    + (run.matchNote
+        ? '<div style="font-size:11px;color:var(--text3);margin:-4px 0 8px">' + escapeHtml(run.matchNote) + '</div>'
+        : '');
 
   const tableHtml = '<div class="tb-preview-wrap">'
     +   '<table class="tb-preview"><thead><tr>'
@@ -1710,6 +1722,31 @@ function tbBuildWhereClause(s, period){
   return parts.length ? ' WHERE ' + parts.map(p => '(' + p + ')').join(' AND ') : '';
 }
 
+/* How two text keys are matched when the two sides are merged HERE rather
+   than joined in SQL.
+
+   The Trial Balance and the GL check each read their own side and merge the
+   two in a JavaScript Map, so no COLLATE clause can reach the comparison —
+   there is no statement to put one in. `===` is always case-sensitive and
+   always accent-sensitive, which is not what most of these databases are:
+   under a case-insensitive profile ACC001 and acc001 came out as an account
+   missing from one side AND an unexpected account on the other. Two
+   fabricated differences, on the screen whose whole purpose is to say
+   whether the two sides agree.
+
+   The folder comes from the active profile's resolved collation. With no
+   collation detected it folds nothing and `applied` is false, so this page
+   behaves exactly as it did before. Guarded because Balancing has to run
+   whether or not the collation module loaded. */
+function balKeyFolder(){
+  try {
+    if (window.cygCollation && typeof window.cygCollation.matcher === 'function') {
+      return window.cygCollation.matcher();
+    }
+  } catch (e) { /* the page still balances without it */ }
+  return { applied: false, label: '', fold: (v) => (v == null ? '' : String(v)) };
+}
+
 // ── Run ──────────────────────────────────────────────────────────────────────
 async function tbRun(idx){
   const reports = tbLoadReports();
@@ -1729,14 +1766,28 @@ async function tbRun(idx){
 
     // Merge by (period, account). Outer-style: include accounts present
     // on either side, with NULL on the missing side and NULL variance.
-    const key = (row) => String(row.period == null ? '' : row.period) + '|' + String(row.account == null ? '' : row.account);
-    const tMap = new Map(tgtRows.map(row => [key(row), parseFloat(row.balance == null ? 0 : row.balance) || 0]));
+    //
+    // The key is folded to the resolved collation (see balKeyFolder) so the
+    // two sides are matched the way the database would match them. The row
+    // itself is kept beside the figure rather than the key being taken
+    // apart afterwards: the folded key is not what anybody wants to read in
+    // the Account column, and splitting it on '|' lost any account code
+    // that happened to contain one.
+    const fold = balKeyFolder();
+    const key = (row) => fold.fold(row.period == null ? '' : row.period)
+                       + '|' + fold.fold(row.account == null ? '' : row.account);
+    const tMap = new Map(tgtRows.map(row => [key(row), {
+      balance: parseFloat(row.balance == null ? 0 : row.balance) || 0,
+      period: row.period == null ? '' : row.period,
+      account: row.account == null ? '' : row.account,
+    }]));
     const merged = [];
 
     for (const row of srcRows) {
       const sBal = parseFloat(row.balance == null ? 0 : row.balance) || 0;
       const k = key(row);
-      const tBal = tMap.has(k) ? tMap.get(k) : null;
+      const hit = tMap.get(k);
+      const tBal = hit ? hit.balance : null;
       merged.push({
         period: row.period == null ? '' : row.period,
         account: row.account == null ? '' : row.account,
@@ -1747,13 +1798,12 @@ async function tbRun(idx){
       tMap.delete(k);
     }
     // Anything left in tMap exists in target only
-    for (const [k, tBal] of tMap.entries()) {
-      const [period, account] = k.split('|');
+    for (const hit of tMap.values()) {
       merged.push({
-        period: period,
-        account: account,
+        period: hit.period,
+        account: hit.account,
         source: null,
-        target: tBal,
+        target: hit.balance,
         variance: null
       });
     }
@@ -1769,6 +1819,10 @@ async function tbRun(idx){
       ts: Date.now(),
       rows: merged,
       totals: tbComputeTotals(merged),
+      // Which matching rule produced these rows. A trial balance is read as
+      // evidence, so the rule that decided two codes were the same account
+      // belongs on the report rather than only in the code.
+      matchNote: fold.applied ? fold.label : '',
       srcSql: srcSql,
       tgtSql: tgtSql
     };
@@ -3216,8 +3270,8 @@ function cbAiApplySql(idx, mid){
 <script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <!-- Collation. The rules load first; see the note in object_mapping.html. -->
-<script src="/cygenix-collation-rules.js?v=200b93a61d" defer></script>
-<script src="/cygenix-collation.js?v=0a89baaf32" defer></script>
+<script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
+<script src="/cygenix-collation.js?v=a080ddf2eb" defer></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=7810d9c217"></script>
