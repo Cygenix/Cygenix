@@ -314,6 +314,14 @@ const WIRED = [
   ['Object Mapping', 'public/object-mapping-app.js', /omCollationBadge\(m\)/, /window\.cygCollation\.badgeFor/],
   ['Object Mapping summary', 'public/object-mapping-app.js', /omRenderCollationSummary\(\)/, /window\.cygCollation\.summaryLine/],
   ['Object Mapping SQL panel', 'public/object-mapping-app.js', /omLintSQL\(/, /renderBanner\('om-collation-banner'/],
+  /* mapper.html is the older Object Mapping screen. It is still routed and
+     still generates cross-database INSERT…SELECT, and it was left out of
+     the Stage B wiring — so the part of the product that exists to say
+     "these two columns will not compare cleanly" was silent on a page whose
+     whole job is mapping columns between two databases. */
+  ['Mapper badges', 'public/mapper.html', /mapCollationBadge\(m\)/, /window\.cygCollation\.badgeFor/],
+  ['Mapper summary', 'public/mapper.html', /mapRenderCollationSummary\(\)/, /window\.cygCollation\.summaryLine/],
+  ['Mapper SQL panel', 'public/mapper.html', /mapLintSQL\(/, /renderBanner\('map-collation-banner'/],
   ['SQL editor', 'public/sql-editor-app.js', /sqlEdLintCollation\(sql\)/, /window\.cygCollation\.renderBanner/],
   ['Validate', 'public/dashboard-app.js', /_cygLintCollation\('validate-collation-banner'/, /window\.cygCollation\.lint/],
   ['Export package', 'public/dashboard-app.js', /_cygLintCollation\('pkg-collation-banner'/, /window\.cygCollation\.bannerHtml/],
@@ -335,13 +343,14 @@ const MOUNTS = [
   ['public/dashboard.html', 'validate-collation-banner'], ['public/dashboard.html', 'pkg-collation-banner'],
   ['public/project-builder.html', 'pb-collation-banner'],
   ['public/conversion-templates.html', 'ct-collation-banner'],
+  ['public/mapper.html', 'map-collation-banner'], ['public/mapper.html', 'map-collation-summary'],
 ];
 MOUNTS.forEach(([file, id]) => {
   check('and ' + file.replace('public/', '') + ' has a mount for it that survives a re-render: #' + id,
     new RegExp('id="' + id + '"').test(read(...file.split('/'))));
 });
 check('every page that asks also loads the rules, before the card that needs them',
-  ['object_mapping', 'sql-editor', 'project-builder', 'conversion-templates', 'balancing', 'assurance', 'dashboard']
+  ['object_mapping', 'mapper', 'sql-editor', 'project-builder', 'conversion-templates', 'balancing', 'assurance', 'dashboard']
     .every((p) => {
       const h = read('public', p + '.html');
       const r = h.indexOf('cygenix-collation-rules.js'), c = h.indexOf('cygenix-collation.js?');

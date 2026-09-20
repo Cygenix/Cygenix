@@ -204,6 +204,14 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=f10cd57fe4" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
+<!-- Collation matching. This page is the older Object Mapping screen and it
+     was left out of the Stage B wiring, which meant the one part of the
+     product that exists to say "these two columns will not compare cleanly"
+     was silent on a page that maps columns and generates cross-database
+     INSERT…SELECT. Rules first: the card module refuses to load without
+     them. -->
+<script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
+<script src="/cygenix-collation.js?v=1688ff44f7" defer></script>
 
 <div class="page">
   <!-- Page header -->
@@ -386,6 +394,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
                 <button class="btn btn-ghost btn-sm" onclick="clearMapFilter()" title="Clear filter">✕ Clear</button>
                 <span id="map-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
               </div>
+              <!-- The one-line collation summary, above the mapping it is
+                   about. Empty and hidden until there is something to say,
+                   so a profile whose two sides already agree sees nothing. -->
+              <div id="map-collation-summary" style="display:none"></div>
               <div style="overflow-x:auto">
                 <table class="map-table" id="mapping-table">
                   <thead><tr>
@@ -460,6 +472,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
             <button class="sql-tab" id="tab-verify" onclick="showSQLTab('verify')" style="display:none">Verify</button>
           </div>
           <div class="sql-box" id="sql-output"></div>
+          <!-- Collation clashes in the SQL on screen. This page builds its
+               JOIN predicates from whatever the user picked, so the join a
+               person writes here is exactly the construct that raises
+               "Cannot resolve the collation conflict" at run time. -->
+          <div id="map-collation-banner" style="display:none;margin-top:0.75rem"></div>
           <!-- Warnings -->
           <div id="sql-warnings" style="display:none;margin-top:0.75rem">
             <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:0.4rem"><i class="ic ic-warning"></i> Warnings</div>
@@ -783,8 +800,15 @@ function quickMap(colName){
 // ── Single-map column mapping ─────────────────────────────────────────────────
 async function buildMappingIfReady(){
   if(!srcTable||!tgtTable) return;
-  const apiKey = ($('api-key')?.value||localStorage.getItem('cygenix_api_key')||'').trim();
-  if(apiKey) localStorage.setItem('cygenix_api_key',apiKey);
+  // Same key, read the same way as remapWithClaude — session first, then
+  // local. Only a key TYPED HERE is written to localStorage: a key the
+  // operator put in sessionStorage was put there so it would not outlive
+  // the session, and copying it out would quietly undo that choice.
+  const typed = ($('api-key')?.value || '').trim();
+  const stored = (window.CygenixModel && CygenixModel.userKey) ? CygenixModel.userKey()
+                 : (localStorage.getItem('cygenix_api_key') || '');
+  const apiKey = typed || stored;
+  if(typed) localStorage.setItem('cygenix_api_key', typed);
 
   showStatus('Building column mapping…','info');
   if(apiKey){
@@ -805,7 +829,13 @@ async function buildMappingIfReady(){
 }
 
 async function remapWithClaude(){
-  const apiKey = ($('api-key')?.value||localStorage.getItem('cygenix_api_key')||'').trim();
+  // CygenixModel.userKey() reads sessionStorage FIRST and localStorage
+  // after. Reading localStorage alone, as this did, meant an operator who
+  // set their key on the Connect page — which stores it in sessionStorage —
+  // was told to enter a key they had already entered.
+  const stored = (window.CygenixModel && CygenixModel.userKey) ? CygenixModel.userKey()
+                 : (localStorage.getItem('cygenix_api_key') || '');
+  const apiKey = ($('api-key')?.value || stored || '').trim();
   if(!apiKey){ alert('Enter your Anthropic API key in the options panel.'); return; }
   if(!srcTable){ alert('Select a source table first.'); return; }
   if(!tgtTable){ alert('Select a target table first.'); return; }
@@ -958,8 +988,87 @@ function autoMap(src, tgt){
 }
 
 // Parse numeric length from SQL type e.g. NVARCHAR(50)->50, NVARCHAR(MAX)->Infinity
-function parseTypeLen(t){ const m=(t||'').match(/\((MAX|\d+)\)/i); if(!m) return Infinity; return m[1].toUpperCase()==='MAX'?Infinity:parseInt(m[1]); }
+/* The declared length of a char type, or Infinity when it has no limit.
+
+   This was declared twice in this file, with different bodies, and in a
+   classic script the LAST declaration wins for every caller — so the one
+   written here was dead and the one further down (matching `\((-?\d+)`)
+   was what actually ran. The two disagreed in both directions: this one
+   read VARCHAR(MAX) as unlimited and DECIMAL(18,2) as unlimited too; that
+   one read DECIMAL(18,2) as 18, and read NVARCHAR(-1) — which is how
+   sys.columns reports MAX — as a length of MINUS ONE. A negative length
+   reaching the truncation check below emits LEFT(expr, -1), which SQL
+   Server rejects outright.
+
+   One declaration now, handling every spelling of "no limit". */
+function parseTypeLen(t){
+  const m = String(t || '').match(/\(\s*(MAX|-?\d+)/i);
+  if(!m) return Infinity;
+  if(m[1].toUpperCase() === 'MAX') return Infinity;
+  const n = parseInt(m[1], 10);
+  return (!isFinite(n) || n < 0) ? Infinity : n;   // -1 is how MAX arrives from sys.columns
+}
 function isCharType(t){ return /^(N?VARCHAR|N?CHAR|TEXT|NTEXT)/i.test(t||''); }
+
+/* ── Collation (Stage B, wired here late) ─────────────────────────────────────
+   This page maps columns between two databases and generates the SQL that
+   moves the data, which is every one of the places a collation difference
+   bites — and it was left out when the rest of the product was wired, so it
+   said nothing at all. It reports; it rewrites nothing.
+
+   Each helper is wrapped and each one answers "nothing to say" when the
+   collation module is absent or no profile has been detected, because a
+   mapping screen that cannot render because a linter failed is a worse
+   screen than one with no linter. */
+function mapCollationRefs(m){
+  if(!srcTable || !tgtTable || !m || !m.srcCol || !m.tgtCol) return null;
+  return { src: { schema: srcTable.schema, table: srcTable.name, column: m.srcCol },
+           tgt: { schema: tgtTable.schema, table: tgtTable.name, column: m.tgtCol } };
+}
+function mapCollationBadge(m){
+  try {
+    if(!window.cygCollation || !window.cygCollation.badgeFor) return '';
+    const refs = mapCollationRefs(m);
+    if(!refs) return '';
+    const b = window.cygCollation.badgeFor(refs.src, refs.tgt);
+    return b ? b.html : '';
+  } catch(e){ return ''; }
+}
+function mapRenderCollationSummary(){
+  const host = $('map-collation-summary');
+  if(!host) return;
+  try {
+    if(!window.cygCollation || !window.cygCollation.summaryLine){ host.style.display='none'; return; }
+    const pairs = (columnMapping||[]).map(mapCollationRefs).filter(Boolean);
+    const s = window.cygCollation.summaryLine(pairs);
+    if(!s){ host.innerHTML=''; host.style.display='none'; return; }
+    /* This page predates the console stylesheet, so it has no cx-attn class
+       to borrow — reusing that markup here rendered as bare unstyled text.
+       It is drawn in the idiom this page already uses for its own warnings,
+       from this page's own variables. */
+    const colour = s.state==='fail' ? 'var(--red)' : s.state==='warn' ? 'var(--amber)' : 'var(--teal)';
+    const wash   = s.state==='fail' ? 'var(--red-bg)' : s.state==='warn' ? 'var(--amber-bg)' : 'var(--teal-bg)';
+    host.innerHTML = '<div style="margin:0 0 0.75rem;padding:0.6rem 0.75rem;background:'+wash
+      + ';border-left:2px solid '+colour+';font-size:12px;line-height:1.7;color:var(--text2)">'
+      + '<span style="font-weight:600;color:'+colour+'">Collation</span> — '+esc(s.text)
+      + ' <a href="'+s.link+'" style="color:'+colour+'">Open the Collation card</a>.</div>';
+    host.style.display='';
+  } catch(e){ host.style.display='none'; }
+}
+function mapLintSQL(sql){
+  try {
+    if(!window.cygCollation || !window.cygCollation.renderBanner) return;
+    window.cygCollation.renderBanner('map-collation-banner', sql || '');
+  } catch(e){ /* the SQL panel still shows its SQL */ }
+}
+/* The fingerprint of the collation settings a script was generated under,
+   so a later change to them can mark the job for regeneration. Jobs saved
+   from this page carried no stamp, which made them the one kind of job the
+   Jobs screen could never tell you to regenerate. */
+function mapCollationStamp(){
+  try { return window.cygCollation ? window.cygCollation.stamp() : ''; }
+  catch(e){ return ''; }
+}
 
 function renderMappingTable(){
   if(!tgtTable) return;
@@ -979,6 +1088,10 @@ function renderMappingTable(){
       && (m.transform==='NONE'||m.transform==='TRIM')
       && parseTypeLen(srcType) > parseTypeLen(tgtType);
     const truncLen = willTruncate ? parseTypeLen(tgtType) : 0;
+    // The collation badge for this pair: green when both sides agree, amber
+    // when the difference only changes ordering, red when it errors or loses
+    // characters. Empty for a pair nothing has been detected for.
+    const collBadge = hasFixed ? '' : mapCollationBadge(m);
     const rowBg = hasFixed ? 'rgba(23,130,124,0.04)' : willTruncate ? 'rgba(245,158,11,0.04)' : '';
     return `<tr style="${rowBg?'background:'+rowBg:''}">
       <td>
@@ -991,7 +1104,7 @@ function renderMappingTable(){
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
       <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${esc(m.tgtCol)}</td>
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
-        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})"><i class="ic ic-warning"></i> LEFT(${truncLen})</span>`:''}
+        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})"><i class="ic ic-warning"></i> LEFT(${truncLen})</span>`:''}${collBadge?'<br>'+collBadge:''}
       </td>
       <td><select class="map-select" style="width:80px" onchange="updateTransform(${i},this.value)">
         ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
@@ -1011,6 +1124,9 @@ function renderMappingTable(){
   _hidingUnmapped = false;
   const btn = $('btn-toggle-unmapped');
   if(btn){ btn.textContent='Hide Unmapped'; btn.style.color=''; btn.style.borderColor=''; }
+  // The summary is rebuilt with the table it summarises, so it can never
+  // describe a mapping that has since changed.
+  mapRenderCollationSummary();
   // Re-apply any active filter after re-render
   applyMapFilter();
 }
@@ -1447,8 +1563,10 @@ async function aiMapOTM(ti){
 }
 
 // ── OTM SQL generation ────────────────────────────────────────────────────────
-function parseTypeLen(t){ const m=(t||'').match(/\((-?\d+)/); return m?parseInt(m[1]):Infinity; }
-function isCharType(t){ return /^(N?VARCHAR|N?CHAR|TEXT|NTEXT)/i.test(t||''); }
+// parseTypeLen and isCharType were declared a second time here. The later
+// declaration silently replaced the earlier one for the whole file, which is
+// why they had drifted apart without anything failing; both now live once,
+// above, beside the single-table generator that also uses them.
 function safeVarName(c){ return '@src_'+c.replace(/[^a-z0-9]/gi,'_'); }
 
 function generateOTMSQL(){
@@ -1629,6 +1747,7 @@ function showSQLOutput(sql, warnings=[], scroll=false){
   } else {
     $('sql-warnings').style.display='none';
   }
+  mapLintSQL(sql);
   if(scroll) $('sql-panel').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
@@ -1636,6 +1755,10 @@ function showSQLTab(tab){
   currentSQLTab=tab;
   ['sql','schema','verify'].forEach(t=>{ $('tab-'+t)?.classList.toggle('active',t===tab); });
   $('sql-output').textContent = tab==='sql'?generatedSQL.insert:tab==='schema'?generatedSQL.schema:generatedSQL.verify;
+  // The banner follows the tab. Leaving it on the migration SQL's clashes
+  // while the verify script is on screen would attribute them to the wrong
+  // statement.
+  mapLintSQL($('sql-output').textContent);
 }
 
 function copySQL(){
@@ -1681,6 +1804,11 @@ function saveAsJob(){
       totalRows: srcTable.rowCount||0,
       status:'ready',
       created: new Date().toISOString(),
+      // The collation settings this SQL was generated under. Without it the
+      // Jobs screen has nothing to compare against, so a job saved from this
+      // page could never be marked for regeneration when those settings
+      // changed — the one kind of job that was invisible to that check.
+      collationStamp: mapCollationStamp(),
       warnings: _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen)
     };
     // Profile stamp: new job gets the active one, an edit keeps the one it
@@ -1714,6 +1842,11 @@ function saveAsJob(){
       totalRows: srcTable.rowCount||0,
       status:'ready',
       created: new Date().toISOString(),
+      // The collation settings this SQL was generated under. Without it the
+      // Jobs screen has nothing to compare against, so a job saved from this
+      // page could never be marked for regeneration when those settings
+      // changed — the one kind of job that was invisible to that check.
+      collationStamp: mapCollationStamp(),
       warnings: _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen)
     };
     // Profile stamp: new job gets the active one, an edit keeps the one it

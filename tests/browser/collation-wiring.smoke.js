@@ -262,6 +262,11 @@ function matchedCollation(base) {
 
   const badges = await page.$$('#mapping-tbody .cyg-coll-badge');
   check('EVERY MAPPED TEXT COLUMN PAIR CARRIES A BADGE', badges.length === 3, badges.length + ' badges');
+  // The stylesheet used to be injected only when a BANNER was drawn, which
+  // happens when SQL is generated — so a mapping table looked at before
+  // anything had been generated showed these as bare unstyled words.
+  check('and it is drawn as a badge, without waiting for a banner to bring the stylesheet',
+    await page.$eval('#mapping-tbody .cyg-coll-badge', (e) => getComputedStyle(e).display) === 'inline-flex');
   check('all three pairs differ in a way that errors, so all three are red',
     (await page.$$('#mapping-tbody .cyg-coll-badge.fail')).length === 3,
     (await page.$$('#mapping-tbody .cyg-coll-badge.fail')).length + ' red');

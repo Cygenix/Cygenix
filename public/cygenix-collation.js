@@ -1425,6 +1425,12 @@
   function badgeFor(srcRef, tgtRef, opts) {
     var m = modelOr(opts && opts.model);
     if (!m) return null;
+    /* The badge's stylesheet is injected here, where the badge's HTML is
+       made. It used to be injected only by renderBanner, which runs when
+       there is SQL on screen — so a mapping table drawn before anything had
+       been generated showed the badges as bare unstyled words, on both
+       Object Mapping screens. Idempotent, and a no-op outside a browser. */
+    injectWireStyles();
     var ctx = contextFor(opts);
     var byKey = {};
     (ctx && ctx.columns || []).forEach(function (c) {
