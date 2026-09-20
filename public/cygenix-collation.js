@@ -63,6 +63,36 @@
 
    · Every step is wrapped, and the real message is shown. A collation check
      that fails silently is worse than no collation check.
+
+   CONNECTION VALUES ARE NOT TRUSTED (added in VERSION 2)
+
+   A saved connection entry does not always hold a connection. One live
+   profile had the word "API" in the field cpConnValue reads, and this card
+   posted that word to the SQL driver: the card showed "Invalid connection
+   string: Could not find server/host in connection string", which is a
+   true sentence about the wrong problem. Three faults stacked up to make
+   that happen, and all three are fixed here.
+
+   · The value is checked against `looksLikeConnection` before it is used.
+     An http(s) endpoint, a driver URL or a key=value string is a
+     connection; a label word is not. Both forms matter — a source
+     connection is frequently an mssql:// URL with no `server=` in it at
+     all, so a validator built only for key=value strings would reject the
+     connections that work.
+   · The fallback to the ambient project connection used to run only when
+     the profile value was empty. A junk value is not empty, so it blocked
+     the fallback even where impGetConn was handing back a working URL.
+     Now anything unusable is treated as nothing and the fallback runs.
+   · engineOf used to end in `return 'mssql'`, so anything unrecognised was
+     assumed to be SQL Server and dialled. It now returns no engine.
+
+   AND ONE SIDE NEVER KILLS THE OTHER
+
+   Detect ran both sides inside one try/catch, so a source that could not be
+   reached aborted the run before the target was queried and both panels came
+   back blank. Each side now succeeds or fails on its own and says which it
+   was; an Azure Function App target is read even when the source is broken,
+   and vice versa.
    ============================================================================ */
 (function (root, factory) {
   'use strict';
@@ -82,7 +112,10 @@
   'use strict';
 
   /* ── Constants a reader will want to find ────────────────────────────── */
-  var VERSION = 1;
+  /* 2 — a saved connection value is validated before it is dialled, and
+     each side detects independently of the other. See the CONNECTION
+     VALUES note in the header. */
+  var VERSION = 2;
   var UI_KEY = 'cygenix_collation_ui_v1';   // per-user card state (collapsed, filter)
   var MIN_RUN_INTERVAL_MS = 3000;           // Detect / Scan cannot fire more often
   var CALL_TIMEOUT_MS = 20000;              // per database call
@@ -177,12 +210,42 @@
     return (h || d) ? (h + '|' + d) : '';
   }
 
+  /* Is this string something the database layer could actually dial?
+
+     This exists because a saved connection entry does not always hold a
+     connection. impDbCall dispatches on the shape of the value — an http(s)
+     URL goes to the Azure Function App, anything else is posted to
+     db-connect as a connection string — and it has no way to tell a real
+     connection string from a word. A profile whose entry held the label
+     "API" sent that word to the SQL driver, which answered "Invalid
+     connection string: Could not find server/host in connection string.",
+     and the card printed a raw driver error for a problem that was really
+     "this saved connection has nothing usable in it".
+
+     The mssql:// branch carries its weight: a real source connection on
+     this product is often an mssql:// URL with no semicolons and no
+     server= at all, so a validator that only recognised key=value strings
+     would reject the very connections that work. */
+  function looksLikeConnection(value) {
+    var v = String(value || '').trim();
+    if (!v) return false;
+    if (/^(https?|mssql|sqlserver|postgres|postgresql):\/\//i.test(v)) return true;
+    if (/(^|;|\s)(server|data source|host|addr|address)\s*=/i.test(v)) return true;
+    return false;
+  }
+
   /* Which engine a saved connection value points at. An https URL is the
      Azure Function App, which only ever reaches the one database it is
-     bound to — it is SQL Server, but not a database this card chose. */
+     bound to — it is SQL Server, but not a database this card chose.
+
+     The unusable-value check comes first and returns '' — no engine —
+     rather than falling through to the mssql catch-all at the bottom.
+     That catch-all is what let a label word be treated as a SQL Server
+     connection and posted to the driver. */
   function engineOf(value) {
     var v = String(value || '').trim();
     if (!v) return '';
+    if (!looksLikeConnection(v)) return '';
     if (/^https?:\/\//i.test(v)) return 'azure';
     if (/^(postgres|postgresql):\/\//i.test(v)) return 'postgres';
     if (/(^|;|\s)driver\s*=\s*postgres/i.test(v)) return 'postgres';
@@ -456,18 +519,45 @@
   }
   /* The two connection values this profile resolves to. Falls back to the
      ambient project connections when no profile has been made yet, so the
-     card works before anybody has adopted profiles. */
+     card works before anybody has adopted profiles.
+
+     The profile value is no longer taken on trust. cpConnValue returns
+     entry.connString for anything that is not an Azure entry, and a
+     save-path bug elsewhere can put a label into that field; the first
+     version of this function handed whatever came back straight to the SQL
+     driver. Worse, it only fell back to the ambient connection when the
+     profile value was FALSY — so a junk word, being truthy, blocked the
+     fallback even on a page where impGetConn('src') was returning a
+     perfectly good mssql:// URL.
+
+     So: a value that is not dialable is rejected rather than used, the
+     ambient fallback runs whenever the profile gave us nothing usable, and
+     the card is told which of those happened. The two extra flags per side
+     are additive — refresh() still reads .src and .tgt and nothing else. */
   function connectionsFor(profile) {
-    var out = { src: '', tgt: '' };
+    var out = { src: '', tgt: '',
+                srcFallback: false, tgtFallback: false,
+                srcRejected: false, tgtRejected: false };
     var P = root.CygenixProfiles;
     if (profile && P && P.cpConnValue) {
       var byId = {};
       savedConns().forEach(function (c) { byId[c.id] = c; });
-      if (byId[profile.srcConnId]) out.src = P.cpConnValue(byId[profile.srcConnId]) || '';
-      if (byId[profile.tgtConnId]) out.tgt = P.cpConnValue(byId[profile.tgtConnId]) || '';
+      ['src', 'tgt'].forEach(function (side) {
+        var id = side === 'src' ? profile.srcConnId : profile.tgtConnId;
+        if (!byId[id]) return;
+        var v = '';
+        try { v = P.cpConnValue(byId[id]) || ''; } catch (e) { v = ''; }
+        if (looksLikeConnection(v)) out[side] = v;
+        else if (String(v).trim()) out[side + 'Rejected'] = true;
+      });
     }
-    if (!out.src && typeof root.impGetConn === 'function') { try { out.src = root.impGetConn('src') || ''; } catch (e) { /* ignore */ } }
-    if (!out.tgt && typeof root.impGetConn === 'function') { try { out.tgt = root.impGetConn('tgt') || ''; } catch (e) { /* ignore */ } }
+    ['src', 'tgt'].forEach(function (side) {
+      if (out[side] || typeof root.impGetConn !== 'function') return;
+      var v = '';
+      try { v = root.impGetConn(side) || ''; } catch (e) { v = ''; }
+      if (looksLikeConnection(v)) { out[side] = v; out[side + 'Fallback'] = true; }
+      else if (String(v).trim()) out[side + 'Rejected'] = true;
+    });
     return out;
   }
 
@@ -519,31 +609,57 @@
     render();
     try {
       var sides = ['src', 'tgt'];
+      /* Each side is attempted on its own and reports its own reason. One
+         try/catch around the whole loop meant a source that could not be
+         dialled aborted the run before the target was ever queried, and
+         both panels came back blank for a fault in one of them. The
+         failures are collected rather than thrown so the side that works
+         still gets read and still gets drawn. */
+      var errs = [];
       for (var i = 0; i < sides.length; i++) {
         var side = sides[i];
         var conn = state.conns[side];
         var field = side === 'src' ? 'source' : 'target';
-        if (!conn) { state.model[field] = sideDefaults(); continue; }
-        if (!isSqlServer(state.engines[side])) { state.model[field] = sideDefaults(); continue; }
-        var rows = await runQuery(conn, SERVER_QUERY);
-        var r = rows[0] || {};
-        var pc = parseCollation(r.db_collation);
-        state.model[field] = {
-          server: hostOf(conn),
-          database: r.database_name || databaseOf(conn),
-          serverCollation: r.server_collation || '',
-          dbCollation: r.db_collation || '',
-          tempdbCollation: r.tempdb_collation || '',
-          codePage: r.code_page == null ? null : Number(r.code_page),
-          cs: pc.cs, as: pc.accent, utf8: pc.utf8,
-          productVersion: r.product_version || '',
-          detectedAt: new Date().toISOString(),
-        };
-        state.model.fingerprint[field] = fingerprintOf(conn);
+        var label = side === 'src' ? 'Source' : 'Target';
+        if (!conn) {
+          state.model[field] = sideDefaults();
+          errs.push(label + ': ' + (state.conns[side + 'Rejected']
+            ? 'the connection saved on this profile is not a usable connection string or endpoint.'
+            : 'no connection is configured.'));
+          continue;
+        }
+        if (!isSqlServer(state.engines[side])) {
+          state.model[field] = sideDefaults();
+          errs.push(label + ': collation matching supports SQL Server connections only.');
+          continue;
+        }
+        try {
+          var rows = await runQuery(conn, SERVER_QUERY);
+          var r = rows[0] || {};
+          var pc = parseCollation(r.db_collation);
+          state.model[field] = {
+            server: hostOf(conn),
+            database: r.database_name || databaseOf(conn),
+            serverCollation: r.server_collation || '',
+            dbCollation: r.db_collation || '',
+            tempdbCollation: r.tempdb_collation || '',
+            codePage: r.code_page == null ? null : Number(r.code_page),
+            cs: pc.cs, as: pc.accent, utf8: pc.utf8,
+            productVersion: r.product_version || '',
+            detectedAt: new Date().toISOString(),
+          };
+          state.model.fingerprint[field] = fingerprintOf(conn);
+        } catch (e) {
+          state.model[field] = sideDefaults();
+          errs.push(label + ': ' + ((e && e.message) || String(e)));
+        }
       }
       state.model.resolvedCollation = resolvedCollation(state.model);
       state.dirty = true;
-      state.note = 'Collations detected. Run Scan to grade the mapped columns, then Save to profile.';
+      state.error = errs.join('  |  ');
+      state.note = errs.length
+        ? ''
+        : 'Collations detected. Run Scan to grade the mapped columns, then Save to profile.';
     } catch (e) {
       state.error = (e && e.message) || String(e);
     } finally {
@@ -829,7 +945,13 @@
     var engine = state.engines[which];
     var conn = state.conns[which];
     var h = '<div class="col-side"><h4>' + label + '</h4>';
-    if (!conn) return h + '<div class="col-empty">No ' + label.toLowerCase() + ' connection is configured.</div></div>';
+    /* "Rejected" is a different fault from "missing" and needs a different
+       sentence: the connection IS configured, it simply does not hold
+       anything the database layer could dial, and the fix is to re-save it
+       rather than to create one. */
+    if (!conn) return h + '<div class="col-empty">' + (state.conns[which + 'Rejected']
+      ? 'The ' + label.toLowerCase() + ' connection saved on this profile isn\'t a usable connection string or endpoint. Re-save it under Connections &rsaquo; Database connections.'
+      : 'No ' + label.toLowerCase() + ' connection is configured.') + '</div></div>';
     if (!isSqlServer(engine)) return h + '<div class="col-empty">Collation matching supports SQL Server connections only.</div></div>';
     if (!m.dbCollation) return h + '<div class="col-empty">Not detected yet. Use <b>Detect collations</b>.</div></div>';
     var pc = parseCollation(m.dbCollation);
@@ -960,8 +1082,16 @@
     var m = state.model;
     var drift = driftedSides();
     var chip = drift.length ? { key: 'none', word: 'Not checked' } : chipOf(m, state.findings);
-    var bothSql = isSqlServer(state.engines.src) && isSqlServer(state.engines.tgt);
+    /* "Not SQL Server" means a connection we can read that points at another
+       engine. A side holding nothing usable has no engine at all, and that
+       is a missing or unreadable connection rather than a PostgreSQL one —
+       sideHtml names it per side. Testing isSqlServer('') here instead made
+       one unreadable side answer "SQL Server only" for the whole card and
+       hide the other side, which was working. */
+    var nonSql = ['src', 'tgt'].filter(function (s) { return state.engines[s] && !isSqlServer(state.engines[s]); });
+    var bothSql = !nonSql.length;
     var anyConn = state.conns.src || state.conns.tgt;
+    var anyRejected = !!(state.conns.srcRejected || state.conns.tgtRejected);
 
     var h = '<section class="cx-blueprint' + (state.open ? '' : ' closed') + '" id="cyg-collation-card">';
     h += '<span class="cx-corner tl"></span><span class="cx-corner tr"></span><span class="cx-corner bl"></span><span class="cx-corner br"></span>';
@@ -980,7 +1110,7 @@
 
     h += '<div class="col-body" id="col-body">';
 
-    if (!anyConn) {
+    if (!anyConn && !anyRejected) {
       h += '<div class="col-empty">Configure a source and target above, then detect their collations.</div>';
     } else if (!bothSql) {
       h += '<div class="cx-attn cx-attn-warn"><div class="cx-h-sm">SQL Server only</div><p>Collation matching supports SQL Server connections only. '
@@ -997,7 +1127,7 @@
       h += '<div class="col-note col-msg" id="col-note">' + esc(state.note) + '</div>';
     }
 
-    if (anyConn && bothSql) {
+    if ((anyConn || anyRejected) && bothSql) {
       h += '<div class="col-sec"><div class="col-sec-h">Detected</div><div class="col-sides">' + sideHtml('src') + sideHtml('tgt') + '</div></div>';
       h += '<div class="col-sec"><div class="col-sec-h">Settings</div>' + settingsHtml() + '</div>';
       h += '<div class="col-sec">' + findingsHtml() + '</div>';
@@ -1479,7 +1609,7 @@
     buildFindings: buildFindings, summarise: summarise, chipOf: chipOf,
     columnQuery: columnQuery, splitObject: splitObject,
     hostOf: hostOf, databaseOf: databaseOf, fingerprintOf: fingerprintOf, engineOf: engineOf,
-    isSqlServer: isSqlServer, labelsFor: labelsFor,
+    isSqlServer: isSqlServer, looksLikeConnection: looksLikeConnection, labelsFor: labelsFor,
     _state: state,
   };
 });

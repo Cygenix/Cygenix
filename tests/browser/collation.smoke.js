@@ -103,18 +103,24 @@ const SEED = (a) => {
     { id: 'c_src', name: 'Ledger source', side: 'src', mode: 'direct' },
     { id: 'c_tgt', name: 'Finance target', side: 'tgt', mode: 'direct' },
     { id: 'c_pg', name: 'Postgres target', side: 'tgt', mode: 'direct' },
+    // The pair that found the bug: a source entry holding a LABEL where the
+    // connection string should be, and an Azure Function App target.
+    { id: 'c_junk', name: 'Broken source', side: 'src', mode: 'direct' },
+    { id: 'c_az', name: 'Azure target', side: 'tgt', mode: 'azure', fnUrl: a.AZ },
   ];
   localStorage.setItem('cygenix_saved_connections', JSON.stringify(saved));
   localStorage.setItem('cygenix_saved_conn_secrets', JSON.stringify({
     c_src: { connString: 'mssql://sa:' + a.S[0] + '@src.example.internal:1433/SRC' },
     c_tgt: { connString: 'Server=tcp:tgt.example.internal,1433;Database=TGT;User Id=loader;Password=' + a.S[1] + ';' },
     c_pg: { connString: 'postgres://pg:' + a.S[2] + '@pg.example.internal:5432/tgtdb' },
+    c_junk: { connString: 'API' },
   }));
   localStorage.setItem('cygenix_profiles_v1', JSON.stringify({
     v: 1, createdAt: Date.now(), connMeta: {}, bindings: [], runRecords: [], events: [],
     profiles: [
       { id: 'FIN-DEV-01', name: 'Conv_DM to Azure', envClass: 'DEV', status: 'active', srcConnId: 'c_src', tgtConnId: 'c_tgt', updatedAt: 1 },
       { id: 'PG-DEV-02', name: 'Ledger to Postgres', envClass: 'DEV', status: 'active', srcConnId: 'c_src', tgtConnId: 'c_pg', updatedAt: 1 },
+      { id: 'AZ-JUNK-03', name: 'FIN-DM to Azure', envClass: 'DEV', status: 'active', srcConnId: 'c_junk', tgtConnId: 'c_az', updatedAt: 1 },
     ],
     settings: { envClasses: [], activeProfileId: 'FIN-DEV-01', selectedAt: 1 },
   }));
@@ -147,7 +153,7 @@ const TGT_COLS = [
   { schema_name: 'fin', table_name: 'ledger_entry', column_name: 'code', data_type: 'varchar', max_length: 20, collation_name: 'SQL_Latin1_General_CP1_CI_AS', code_page: 1252, in_unique_key: 1 },
 ];
 
-const world = { calls: [], srcDb: 'SRC', tgtDb: 'TGT' };
+const world = { calls: [], azCalls: [], srcDb: 'SRC', tgtDb: 'TGT' };
 
 function whichSide(cs) {
   if (String(cs).indexOf(SECRETS[0]) !== -1) return 'src';
@@ -202,6 +208,18 @@ function dbAnswer(body) {
       // page load" would take an empty document as the truth and wipe the seed.
       return route.abort();
     }
+    // The Azure Function App, which impDbCall posts to DIRECTLY rather than
+    // through db-connect. It always reaches the one database it is bound to,
+    // so it answers as the target and ignores any connection string.
+    if (/\/api\/db(\?|$)/.test(u)) {
+      let body = {};
+      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { body = {}; }
+      world.azCalls.push(body);
+      if (/SERVERPROPERTY\('Collation'\)/.test(String(body.sql || ''))) {
+        return json(200, { success: true, recordset: [Object.assign({}, TGT_DB, { database_name: 'AZTGT' })] });
+      }
+      return json(200, { success: true, recordset: [] });
+    }
     if (/functions\/db-connect/.test(u)) {
       let body = {};
       try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { body = {}; }
@@ -222,7 +240,7 @@ function dbAnswer(body) {
     consoleText.push(m.text());
     if (m.type() === 'error' && !/ERR_|Failed to load resource|CygenixSync/.test(m.text())) errors.push(m.text());
   });
-  await page.addInitScript(SEED, { U, S: SECRETS });
+  await page.addInitScript(SEED, { U, S: SECRETS, AZ: 'http://localhost:' + PORT + '/api/db' });
 
   const openTab = async () => {
     await page.waitForFunction(() => !!window.cygCollation && typeof window.showView === 'function', null, { timeout: 20000 });
@@ -532,6 +550,96 @@ function dbAnswer(body) {
     const o = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     check('no horizontal overflow at ' + w, o <= 2, 'overflow ' + o);
   }
+
+  // ── 11. A saved connection that is not a connection, and an Azure target ─
+  // Found on a live profile: the source entry held the word "API" where the
+  // connection string should be. The card posted that word to the SQL driver
+  // and printed "Invalid connection string: Could not find server/host in
+  // connection string" — true, and about the wrong thing — while the ambient
+  // source connection on the same page was a working mssql:// URL. Then the
+  // single try/catch around both sides meant the Azure target came back blank
+  // as well, for a fault that was entirely on the source.
+  console.log('\n11. A junk connection value, and an Azure Function target');
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  // Section 8 left the card collapsed and that preference survives a reload,
+  // which is correct behaviour and useless for a screenshot.
+  const expand = async () => {
+    if (await page.$eval('#cyg-collation-card', (e) => e.classList.contains('closed'))) {
+      await page.click('#col-toggle');
+      await page.waitForTimeout(150);
+    }
+  };
+  await page.evaluate((s) => {
+    localStorage.setItem('cygenix_project_connections', JSON.stringify({
+      cygenix_src_conn_mode: 'direct',
+      cygenix_src_conn_string: 'mssql://sa:' + s + '@src.example.internal:1433/SRC',
+    }));
+    const st = JSON.parse(localStorage.getItem('cygenix_profiles_v1'));
+    st.settings.activeProfileId = 'AZ-JUNK-03';
+    localStorage.setItem('cygenix_profiles_v1', JSON.stringify(st));
+  }, SECRETS[0]);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await openTab();
+
+  const conns = await page.evaluate(() => {
+    const s = window.cygCollation._state;
+    return { src: String(s.conns.src).slice(0, 8), srcFallback: s.conns.srcFallback,
+             srcRejected: s.conns.srcRejected, tgt: s.conns.tgt,
+             tgtRejected: s.conns.tgtRejected, engines: s.engines };
+  });
+  check('THE JUNK VALUE IS REJECTED AND THE AMBIENT SOURCE IS USED INSTEAD',
+    conns.src === 'mssql://' && conns.srcRejected === true && conns.srcFallback === true,
+    JSON.stringify(conns));
+  check('the Azure Function target is taken from the profile and read as a SQL Server side',
+    /\/api\/db$/.test(conns.tgt) && conns.tgtRejected === false
+    && conns.engines.src === 'mssql' && conns.engines.tgt === 'azure');
+  check('so the card does not claim this is a PostgreSQL profile',
+    !/supports SQL Server connections only/.test(await cardText()));
+
+  const azBefore = world.azCalls.length;
+  await page.click('#col-detect');
+  await settle(() => {
+    const m = window.cygCollation._state.model;
+    return !!m.source.detectedAt && !!m.target.detectedAt;
+  });
+  check('DETECT FILLS BOTH SIDES — the Azure side was dialled directly, not through db-connect',
+    world.azCalls.length === azBefore + 1
+    && /SERVERPROPERTY/.test(String(world.azCalls[world.azCalls.length - 1].sql || '')));
+  const azText = await cardText();
+  check('and the target database it actually reached is on screen',
+    /AZTGT/.test(azText) && /SQL_Latin1_General_CP1_CI_AS/.test(azText) && /SRC/.test(azText));
+  check('with no error at all', await page.evaluate(() => window.cygCollation._state.error) === '',
+    await page.evaluate(() => window.cygCollation._state.error));
+  await expand();
+  await shot('collation-6-azure.png');
+
+  // Now take the ambient fallback away, so the source is rejected and there
+  // is nothing to fall back to. The target must still detect.
+  await page.evaluate(() => localStorage.removeItem('cygenix_project_connections'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await openTab();
+  const rejectText = await cardText();
+  check('a rejected connection is named as one, in plain words rather than a driver error',
+    /isn.t a usable connection string or endpoint/.test(rejectText)
+    && !/Could not find server\/host/.test(rejectText), rejectText.slice(0, 200));
+  check('and the target panel is still drawn beside it rather than hidden',
+    (await page.$$('#cyg-collation-card .col-side')).length === 2);
+
+  const azBefore2 = world.azCalls.length;
+  await page.click('#col-detect');
+  await settle(() => !!window.cygCollation._state.model.target.detectedAt);
+  check('ONE BROKEN SIDE NO LONGER BLANKS THE OTHER — the Azure target detected anyway',
+    world.azCalls.length === azBefore2 + 1
+    && await page.evaluate(() => window.cygCollation._state.model.target.dbCollation) === 'SQL_Latin1_General_CP1_CI_AS');
+  check('and the failure is reported against the side it belongs to',
+    /^Source: the connection saved on this profile is not a usable connection string or endpoint\.$/
+      .test(await page.evaluate(() => window.cygCollation._state.error)),
+    await page.evaluate(() => window.cygCollation._state.error));
+  check('no credential reached the card on either pass',
+    SECRETS.every((s) => (rejectText + azText).indexOf(s) === -1));
+  check('and nothing broke', errors.length === 0, errors.slice(0, 3).join(' | '));
+  await expand();
+  await shot('collation-7-rejected.png');
 
   await browser.close();
   server.close();

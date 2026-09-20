@@ -385,5 +385,114 @@ check('the export has a header row and one row per finding, in the brief\'s colu
 check('it writes a real workbook when SheetJS is on the page and a CSV Excel opens natively when it is not',
   /var X = root\.XLSX;/.test(SRC) && /X\.writeFile\(wb, name \+ '\.xlsx'\)/.test(SRC) && /'\\ufeff' \+ body/.test(SRC));
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+/* ── 17. A saved connection value is not a connection ───────────────────────
+   Found live on a real profile: the field cpConnValue reads held the word
+   "API". The card posted it to the SQL driver and printed "Invalid
+   connection string: Could not find server/host in connection string" — a
+   true sentence about the wrong problem — while the ambient connection on
+   the same page was a perfectly good mssql:// URL that the old fallback
+   refused to use, because it only ran when the profile value was EMPTY and
+   a junk word is not empty. Then the single try/catch around both sides
+   meant that one failure blanked the target as well.
+
+   These cases are that bug, in four parts: the validator, the fallback, the
+   engine, and one side not killing the other.                             */
+const LC = C.looksLikeConnection;
+check('a label word is not a connection, however truthy it is',
+  LC('API') === false && LC('direct') === false && LC('  ') === false && LC('') === false
+  && LC(null) === false && LC(undefined) === false);
+check('AN mssql:// URL IS — it has no semicolons and no server=, and it is what half the real profiles hold',
+  LC('mssql://sa:pw@host.example.internal:1433/SRC') === true
+  && LC('sqlserver://host/db') === true);
+check('so is an Azure Function endpoint, which is how the Azure side of a profile is configured',
+  LC('https://cygenix-db-api.azurewebsites.net/api/db') === true
+  && LC('http://localhost:7071/api/db') === true);
+check('and so is a key=value connection string, in any of the spellings SQL Server accepts',
+  LC('Server=tcp:h,1433;Database=D;') === true && LC('Data Source=h;Initial Catalog=D;') === true
+  && LC('host=h dbname=d') === true && LC('Address=h;Database=D;') === true);
+check('engineOf answers "no engine" for anything it cannot dial, instead of assuming SQL Server',
+  C.engineOf('API') === '' && C.engineOf('direct') === '' && C.engineOf('') === ''
+  && C.isSqlServer(C.engineOf('API')) === false);
+check('and every engine it could read before, it still reads',
+  C.engineOf('mssql://sa:pw@h:1433/DB') === 'mssql' && C.engineOf('Server=x;Database=y;') === 'mssql'
+  && C.engineOf('https://x/api/db') === 'azure' && C.engineOf('postgres://a:b@c/d') === 'postgres'
+  && C.engineOf('host=h dbname=d') === 'postgres');
+
+/* The same four parts, executed rather than read. refresh() and detect()
+   need a browser's globals and nothing else, so they are stubbed here: a
+   profile whose source connection holds "API" and whose target is an Azure
+   Function App, which is exactly the live profile that failed. */
+const GOOD_SRC = 'mssql://sa:pw@src.example.internal:1433/SRC';
+const AZURE_TGT = 'https://cygenix-db-api.azurewebsites.net/api/db';
+const store = {
+  profiles: [{ id: 'P1', name: 'FIN to Azure', srcConnId: 'c_src', tgtConnId: 'c_tgt' }],
+  settings: { activeProfileId: 'P1' },
+};
+const conns = [{ id: 'c_src', connString: 'API' }, { id: 'c_tgt', mode: 'azure', fnUrl: AZURE_TGT }];
+globalThis.document = { getElementById: () => null };
+globalThis.localStorage = { getItem: () => null, setItem: () => {} };
+globalThis.CygenixProfiles = {
+  cpLoad: () => store,
+  cpConnValue: (e) => (e.mode === 'azure' && e.fnUrl ? e.fnUrl : (e.connString || '')),
+};
+globalThis.sconnGetAll = () => conns;
+globalThis.impGetConn = (side) => (side === 'src' ? GOOD_SRC : '');
+
+C.refresh();
+const st = C._state;
+check('THE JUNK VALUE IS REJECTED AND THE AMBIENT CONNECTION IS USED INSTEAD',
+  st.conns.src === GOOD_SRC && st.conns.srcRejected === true && st.conns.srcFallback === true,
+  JSON.stringify(st.conns));
+check('and the card can tell the two apart: the Azure target came from the profile, unflagged',
+  st.conns.tgt === AZURE_TGT && st.conns.tgtRejected === false && st.conns.tgtFallback === false);
+check('THE AZURE SIDE IS A SQL SERVER SIDE, so a profile pointing at the Function App is detectable',
+  st.engines.src === 'mssql' && st.engines.tgt === 'azure'
+  && C.isSqlServer(st.engines.src) && C.isSqlServer(st.engines.tgt));
+check('nothing secret leaks into the fingerprint of either side',
+  C.fingerprintOf(GOOD_SRC) === 'src.example.internal|SRC'
+  && C.fingerprintOf(GOOD_SRC).indexOf('pw') === -1
+  && C.fingerprintOf(AZURE_TGT) === 'cygenix-db-api.azurewebsites.net|');
+
+/* One side fails, the other must still be read. */
+const dialled = [];
+globalThis.impDbCall = async (conn) => {
+  dialled.push(conn);
+  if (conn === GOOD_SRC) throw new Error('Login failed for user.');
+  return { recordset: [{ server_collation: 'Latin1_General_CI_AS', db_collation: 'Latin1_General_CI_AS',
+    tempdb_collation: 'Latin1_General_CI_AS', code_page: 1252, database_name: 'TGT', product_version: '16.0.1' }] };
+};
+(async () => {
+  st.lastDetectAt = 0;
+  await C.detect();
+  check('ONE BROKEN SIDE NO LONGER BLANKS THE OTHER — both were dialled',
+    dialled.length === 2 && dialled[1] === AZURE_TGT, JSON.stringify(dialled));
+  check('the Azure target detected in full even though the source threw',
+    st.model.target.dbCollation === 'Latin1_General_CI_AS' && !!st.model.target.detectedAt
+    && st.model.source.dbCollation === '');
+  check('and the failure is reported against the side it belongs to, with the real message',
+    /^Source: Login failed for user\.$/.test(st.error), st.error);
+
+  /* Neither side usable: each says which fault it has, and neither claims
+     the other's. */
+  globalThis.impGetConn = () => '';
+  store.profiles[0].tgtConnId = 'gone';
+  C.refresh();
+  st.lastDetectAt = 0;
+  await C.detect();
+  check('a rejected side and a missing side are two different sentences',
+    /Source: the connection saved on this profile is not a usable connection string or endpoint\./.test(st.error)
+    && /Target: no connection is configured\./.test(st.error), st.error);
+  check('and the card says so per side rather than printing a driver error',
+    /isn\\'t a usable connection string or endpoint/.test(SRC)
+    && /No ' \+ label\.toLowerCase\(\) \+ ' connection is configured\./.test(SRC));
+
+  /* The guards the brief insists on are untouched by any of this. */
+  check('the in-flight guard, the minimum interval and the one-shot rule all survive',
+    /if \(state\.detecting\) return false;/.test(SRC)
+    && /if \(now - state\.lastDetectAt < MIN_RUN_INTERVAL_MS\) return false;/.test(SRC)
+    && /\} finally \{[\s\S]{0,200}state\.detecting = false;/.test(SRC));
+  check('the version is bumped, so a stale cached copy is obvious', C.VERSION === 2);
+
+  console.log('\n' + pass + ' passed, ' + fail + ' failed');
+  process.exit(fail ? 1 : 0);
+})();
