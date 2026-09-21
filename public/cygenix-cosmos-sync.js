@@ -430,6 +430,62 @@ const CygenixSync = (() => {
     return merged;
   }
 
+  /* ── The live connection pair's credentials stay on the device ───────────
+     cygenix_project_connections is the user's active source and target, and
+     it syncs — the modes and the URLs are exactly what a second machine
+     needs. Its four credential fields are not: for a long time they went to
+     Cosmos in plain text with the rest of the blob. Two functions, one rule:
+
+       stripConnectionSecrets   on the way OUT, every save: the four fields
+                                are removed from what is sent. The Function
+                                App strips them again, so an older client
+                                cannot put them back.
+       keepLocalConnectionSecrets  on the way IN, every load: the cloud copy
+                                has no credentials, and "cloud wins" must not
+                                blank the ones this device holds. They are
+                                carried across, per user slice.
+
+     Where a new device gets them from is the encrypted store
+     (cygenix-saved-conn-secrets.js, ids sconn_live_src/tgt), which
+     connections.js fills from. Both the per-user shape and the legacy flat
+     one are handled; azure-function/src/index.js has the same list. */
+  const LIVE_SECRET_FIELDS = new Set([
+    'srcConnString', 'tgtConnString', 'srcFnKey', 'tgtFnKey',
+    'cygenix_src_conn_string', 'cygenix_tgt_conn_string', 'cygenix_conn_string',
+    'cygenix_src_fn_key', 'cygenix_fn_key',
+  ]);
+  function stripConnectionSecrets(conns) {
+    if (!conns || typeof conns !== 'object' || Array.isArray(conns)) return conns;
+    const out = {};
+    for (const [k, v] of Object.entries(conns)) {
+      if (LIVE_SECRET_FIELDS.has(k)) continue;
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        const slice = {};
+        for (const [f, fv] of Object.entries(v)) if (!LIVE_SECRET_FIELDS.has(f)) slice[f] = fv;
+        out[k] = slice;
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  }
+  function keepLocalConnectionSecrets(incoming) {
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return incoming;
+    let local = {};
+    try { local = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch { local = {}; }
+    const out = {};
+    for (const [uid, slice] of Object.entries(incoming)) {
+      if (!slice || typeof slice !== 'object' || Array.isArray(slice)) { out[uid] = slice; continue; }
+      const mine = (local[uid] && typeof local[uid] === 'object') ? local[uid] : {};
+      const merged = Object.assign({}, slice);
+      for (const f of LIVE_SECRET_FIELDS) {
+        if (!merged[f] && mine[f]) merged[f] = mine[f];
+      }
+      out[uid] = merged;
+    }
+    return out;
+  }
+
   // Decide how to merge cloud and local for a given field.
   //   'union'   strategy + id-shape arrays → union by id, local wins on collision
   //   'replace' strategy or non-id arrays  → local wins entirely (deletions propagate)
@@ -492,6 +548,7 @@ const CygenixSync = (() => {
     if (!Object.keys(payload).length) {
       return { ok: false, error: 'no-local-data' };
     }
+    if (payload.connections) payload.connections = stripConnectionSecrets(payload.connections);
     const r = await callApiResult('save', 'POST', payload);
     if (!r.ok) {
       // The code is the useful part: 'config' means somebody has to set an
@@ -551,6 +608,7 @@ const CygenixSync = (() => {
       }
     }
     if (!Object.keys(payload).length) { if (dirty) dirty.forEach(k => _dirtyKeys.delete(k)); return null; }
+    if (payload.connections) payload.connections = stripConnectionSecrets(payload.connections);
     const r = await callApiResult('save', 'POST', payload);
     if (r.ok && r.data && r.data.saved) {
       console.log('[CygenixSync] Saved to Cosmos DB', r.data.updatedAt,
@@ -688,8 +746,14 @@ const CygenixSync = (() => {
     }
 
     let applied = 0;
-    for (const [, localKey, value] of present) {
+    for (const [, localKey, rawValue] of present) {
       try {
+        // The live connection pair arrives WITHOUT its credentials — they are
+        // stripped before upload and never stored — and "cloud wins" must not
+        // read that as "the password is now blank". Whatever this device holds
+        // for those four fields is carried over; everything else is the cloud's.
+        const value = localKey === 'cygenix_project_connections'
+          ? keepLocalConnectionSecrets(rawValue) : rawValue;
         // _orig, not localStorage.setItem: this is cloud-to-local hydration,
         // not a user edit, and must not schedule a save of what we just read.
         _orig(localKey, JSON.stringify(value));

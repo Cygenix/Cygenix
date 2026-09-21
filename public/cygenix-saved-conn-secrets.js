@@ -80,6 +80,10 @@
 
   const KEY = 'cygenix_saved_conn_secrets';
   const SECRET_FIELDS = ['connString', 'fnKey', 'secret'];
+  // The live source/target pair's credentials live here too, under two
+  // reserved ids (connections.js mirrors them in). They are not saved
+  // connections, so a prune to the saved list must never take them.
+  const LIVE_IDS = ['sconn_live_src', 'sconn_live_tgt'];
   const MIN_FLUSH_INTERVAL_MS = 3000;   // never more than one flush per 3s
   const DEBOUNCE_MS = 800;              // coalesce a burst of edits into one flush
   const MIN_SYNC_INTERVAL_MS = 3000;
@@ -164,7 +168,7 @@
   // deleting a saved connection also removes its orphaned secret — here
   // and, when something was actually removed, in the cloud.
   function pruneTo(keepIds) {
-    const keep = new Set(keepIds || []);
+    const keep = new Set((keepIds || []).concat(LIVE_IDS));
     const all = readAll();
     let changed = false;
     for (const id of Object.keys(all)) {
@@ -487,6 +491,7 @@
     sync,
     synced: () => _syncedOnce,
     KEY,
+    LIVE_IDS,
     // For the tests — not for pages.
     _flushNow: flush,
     _pendingSize: () => _pending.size,

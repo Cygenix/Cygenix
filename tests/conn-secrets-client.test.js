@@ -152,8 +152,14 @@ const flag = 'cygenix_conn_secrets_uploaded_v1::alice-oid';
   store.set(KEY, JSON.stringify(Object.assign(raw(), { sconn_gone: { connString: 'z', updatedAt: 1 } })));
   S.pruneTo(['sconn_a', 'sconn_b']);
   await S._flushNow();
+  // The keep list always carries the two live-pair ids (sconn_live_src/tgt):
+  // connections.js mirrors the active pair's credentials under them, and a
+  // prune driven by the SAVED list must never sweep the live pair away.
+  const pruneCall = calls.find((c) => c.action === 'secrets-prune');
   check('a prune that removed something locally prunes the cloud to the same keep list',
-    !raw().sconn_gone && calls.some((c) => c.action === 'secrets-prune' && c.body.keepConnIds.join() === 'sconn_a,sconn_b'), JSON.stringify(calls));
+    !raw().sconn_gone && !!pruneCall && pruneCall.body.keepConnIds.slice(0, 2).join() === 'sconn_a,sconn_b', JSON.stringify(calls));
+  check('and the keep list carries the live-pair ids, so a saved-list prune cannot remove them',
+    !!pruneCall && S.LIVE_IDS.every((id) => pruneCall.body.keepConnIds.includes(id)), JSON.stringify(pruneCall));
 
   /* ── 5. sync(): pull and merge ───────────────────────────────────────── */
   section('5. Pulling the cloud copy');

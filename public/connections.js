@@ -241,7 +241,8 @@ var CygenixConnections = (function () {
     }
     migrateLegacyBlob(LS_ACTIVE);
     const blob = readBlob(LS_ACTIVE);
-    const mine = (blob[uid] && typeof blob[uid] === 'object') ? blob[uid] : {};
+    let mine = (blob[uid] && typeof blob[uid] === 'object') ? blob[uid] : {};
+    mine = fillLiveSecrets(uid, blob, mine);
     return {
       srcConnString: mine.srcConnString || '',
       srcConnMode  : mine.srcConnMode   || 'direct',
@@ -285,6 +286,78 @@ var CygenixConnections = (function () {
     return { cs, mode: m, url, key: url ? key : key };
   }
 
+  // ── The live pair's credentials ───────────────────────────────────────────
+  //
+  // The active blob syncs to Cosmos (it is in SYNC_KEYS), and for a long time
+  // it went up with srcConnString, tgtConnString, srcFnKey and tgtFnKey in it
+  // — the passwords, in plain text, in the cloud. Two things fix that and
+  // both live here because this is the one file that reads and writes the
+  // blob:
+  //
+  //   · on the way OUT, cygenix-cosmos-sync.js strips those four fields, and
+  //     the Function App strips them again on save, so nothing this file
+  //     writes can reach Cosmos readable;
+  //   · on the way BACK, the credential for the live pair comes from the
+  //     encrypted store (cygenix-saved-conn-secrets.js) under two reserved
+  //     ids, sconn_live_src and sconn_live_tgt, which setActive() mirrors
+  //     into on every save and get() fills from when the blob has none.
+  //
+  // Locally the blob still holds the credential, exactly as before: every
+  // reader on every page keeps working, on this device, without the secrets
+  // module even being loaded. What changed is what leaves the device, and
+  // what a NEW device can recover.
+  const LIVE_SECRET_ID = { src: 'sconn_live_src', tgt: 'sconn_live_tgt' };
+  function secretsStore() { return (typeof window !== 'undefined') && window.CygenixSavedConnSecrets; }
+
+  // A side's credential as a bundle for the store: the string for a direct
+  // connection, the key for a function URL. Empty when the side has neither.
+  function liveBundle(side) {
+    const b = {};
+    if (side.cs) b.connString = side.cs;
+    if (side.key) b.fnKey = side.key;
+    return Object.keys(b).length ? b : null;
+  }
+  function mirrorLiveSecrets(s, t) {
+    const S = secretsStore();
+    if (!S || typeof S.set !== 'function') return;
+    try {
+      S.set(LIVE_SECRET_ID.src, liveBundle(s));
+      S.set(LIVE_SECRET_ID.tgt, liveBundle(t));
+    } catch { /* the blob is written regardless; the mirror is best effort */ }
+  }
+  // Fill a missing credential from the store. Cheap on the common path: the
+  // store is only consulted for a side whose mode needs a credential the blob
+  // does not hold, which after a cloud load on a new device is exactly the
+  // case this exists for. What it finds is written back into the blob so the
+  // next read — and every reader that never learned about the store — sees it.
+  function fillLiveSecrets(uid, blob, mine) {
+    const S = secretsStore();
+    if (!S || typeof S.get !== 'function') return mine;
+    const needSrc = (mine.srcConnMode !== 'azure' && !mine.srcConnString && !mine.srcFnUrl)
+                 || (mine.srcFnUrl && !mine.srcFnKey);
+    const needTgt = (mine.tgtConnMode !== 'azure' && !mine.tgtConnString && !mine.tgtFnUrl)
+                 || (mine.tgtFnUrl && !mine.tgtFnKey);
+    if (!needSrc && !needTgt) return mine;
+    let changed = false;
+    const next = Object.assign({}, mine);
+    try {
+      if (needSrc) {
+        const b = S.get(LIVE_SECRET_ID.src) || {};
+        if (!next.srcConnString && b.connString && !next.srcFnUrl) { next.srcConnString = b.connString; changed = true; }
+        if (next.srcFnUrl && !next.srcFnKey && b.fnKey) { next.srcFnKey = b.fnKey; changed = true; }
+      }
+      if (needTgt) {
+        const b = S.get(LIVE_SECRET_ID.tgt) || {};
+        if (!next.tgtConnString && b.connString && !next.tgtFnUrl) { next.tgtConnString = b.connString; changed = true; }
+        if (next.tgtFnUrl && !next.tgtFnKey && b.fnKey) { next.tgtFnKey = b.fnKey; changed = true; }
+      }
+    } catch { return mine; }
+    if (!changed) return mine;
+    blob[uid] = next;
+    writeBlob(LS_ACTIVE, blob);
+    return next;
+  }
+
   function setActive(fields) {
     const uid = currentUserTag();
     if (!uid) return false;
@@ -297,6 +370,7 @@ var CygenixConnections = (function () {
       tgtConnString: t.cs,  tgtConnMode: t.mode, tgtFnUrl: t.url, tgtFnKey: t.key,
     };
     writeBlob(LS_ACTIVE, blob);
+    mirrorLiveSecrets(s, t);
     return true;
   }
 
@@ -355,6 +429,11 @@ var CygenixConnections = (function () {
     if (blob[uid]) {
       delete blob[uid];
       writeBlob(LS_ACTIVE, blob);
+    }
+    // Clearing the pair clears its credentials everywhere, not only here.
+    const S = secretsStore();
+    if (S && typeof S.set === 'function') {
+      try { S.set(LIVE_SECRET_ID.src, null); S.set(LIVE_SECRET_ID.tgt, null); } catch {}
     }
   }
 

@@ -49,7 +49,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_map_groups` | Object Mapping group names and colours | synced (SYNC_KEYS) | object-mapping-app.js |
 | `cygenix_objmap_wip_` | Object-mapping work in progress | NOT SYNCED — WI-1 | schema_explorer.html |
 | `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js, dashboard-app.js |
-| `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | dashboard-app.js |
+| `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, dashboard-app.js |
 | `cygenix_project_settings` | Per-project settings | synced (SYNC_KEYS) | dashboard-app.js |
 | `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, conversion-templates.html, cygenix-diagnostics.js +7 |
 | `cygenix_report` | Generated conversion report | NOT SYNCED — WI-1 | connect.html, dashboard-app.js, project-builder-app.js +2 |

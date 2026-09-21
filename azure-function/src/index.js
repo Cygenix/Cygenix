@@ -131,6 +131,42 @@ function hashSnapshot(obj) {
 // msg } on failure so callers can return the appropriate HTTP error. Used to
 // gate destructive admin-only endpoints (e.g. extend-membership) so a normal
 // user cannot self-promote or self-extend by hitting the endpoint directly.
+// ── The live connection pair's credentials never reach Cosmos ────────────────
+// `connections` (cygenix_project_connections) is the user's active source and
+// target. For a long time it was stored exactly as the browser sent it, and
+// the browser sent srcConnString, tgtConnString, srcFnKey and tgtFnKey — the
+// passwords, in plain text, in every user's document. The client now strips
+// them before upload and the encrypted conn_secrets store carries them
+// instead; this strips them AGAIN on every save, so an older client, or any
+// other caller of this route, cannot put them back. Both the per-user shape
+// { "<uid>": { srcConnString, … } } and the legacy flat one are covered.
+// Returns the stripped value and how many populated fields went, so a caller
+// can log a COUNT — never a value.
+const LIVE_SECRET_FIELDS = new Set([
+  'srcConnString', 'tgtConnString', 'srcFnKey', 'tgtFnKey',
+  'cygenix_src_conn_string', 'cygenix_tgt_conn_string', 'cygenix_conn_string',
+  'cygenix_src_fn_key', 'cygenix_fn_key',
+]);
+function stripConnectionSecrets(conns) {
+  if (!conns || typeof conns !== 'object' || Array.isArray(conns)) return { value: conns, stripped: 0 };
+  let stripped = 0;
+  const out = {};
+  for (const [k, v] of Object.entries(conns)) {
+    if (LIVE_SECRET_FIELDS.has(k)) { if (v) stripped++; continue; }
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const slice = {};
+      for (const [f, fv] of Object.entries(v)) {
+        if (LIVE_SECRET_FIELDS.has(f)) { if (fv) stripped++; continue; }
+        slice[f] = fv;
+      }
+      out[k] = slice;
+    } else {
+      out[k] = v;
+    }
+  }
+  return { value: out, stripped };
+}
+
 async function requireAdmin(callerUserId) {
   if (!callerUserId) return { ok: false, code: 401, msg: 'x-user-id header is required' };
   try {
@@ -1092,6 +1128,15 @@ app.http('data', {
             return ok({ saved: false, reason: 'no-syncable-fields', updatedAt: existing.updatedAt || null });
           }
 
+          // The live pair's credentials are stripped on every save, whatever
+          // the client sent and whatever was already stored. A count in the
+          // log, never a value.
+          if (merged.connections) {
+            const s = stripConnectionSecrets(merged.connections);
+            merged.connections = s.value;
+            if (s.stripped) ctx.log(`save: stripped ${s.stripped} live connection credential field(s) from the document`);
+          }
+
           // Enforce ownership and metadata regardless of what the client sent
           merged.id        = userId;
           merged.userId    = userId;
@@ -1405,6 +1450,38 @@ app.http('data', {
 
         // ── LIST all users from Cosmos DB ────────────────────────────────────
         // GET /api/data/admin-users
+        // ── SCRUB live connection credentials from every stored document ────
+        // POST /api/data/scrub-connection-secrets   (admin)
+        // One-off, for what was stored before the strip on save existed. Reads
+        // every projects document, strips the four fields from `connections`,
+        // and replaces only the documents that had something to strip. Safe to
+        // run again: a clean document is left alone. Reports counts only.
+        case 'scrub-connection-secrets': {
+          const gate = await requireAdmin(userId);
+          if (!gate.ok) return err(gate.code, gate.msg);
+          if (req.method !== 'POST') return err(405, 'scrub-connection-secrets is POST');
+          const container = getCosmosContainer('projects');
+          const { resources } = await container.items.query('SELECT * FROM c').fetchAll();
+          let scanned = 0, scrubbed = 0, fieldsRemoved = 0;
+          const failed = [];
+          for (const doc of resources || []) {
+            scanned++;
+            if (!doc || !doc.connections) continue;
+            const s = stripConnectionSecrets(doc.connections);
+            if (!s.stripped) continue;
+            try {
+              doc.connections = s.value;
+              doc.updatedAt = new Date().toISOString();
+              await container.item(doc.id, doc.id).replace(doc);
+              scrubbed++; fieldsRemoved += s.stripped;
+            } catch (e) {
+              failed.push(doc.id);
+            }
+          }
+          ctx.log(`scrub-connection-secrets: ${scanned} scanned, ${scrubbed} scrubbed, ${fieldsRemoved} field(s) removed, ${failed.length} failed`);
+          return ok({ scanned, scrubbed, fieldsRemoved, failed });
+        }
+
         case 'admin-users': {
           const gate = await requireAdmin(userId);
           if (!gate.ok) return err(gate.code, gate.msg);

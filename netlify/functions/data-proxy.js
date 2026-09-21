@@ -108,6 +108,9 @@ const ALLOWED = new Set([
   // Administration — gated again on the Function App by requireAdmin, which
   // is only trustworthy now that the identity reaching it is a verified one.
   'admin-users', 'extend-membership', 'delete-account',
+  // One-off scrub of live connection credentials stored before the strip on
+  // save existed. Admin-gated on the Function App; counts only come back.
+  'scrub-connection-secrets',
   // 'invite' is gone: it called Netlify Identity's GoTrue admin endpoint,
   // which made that a second identity provider. Invitations are issued by
   // the product now — see netlify/functions/lib/tenancy.js.
