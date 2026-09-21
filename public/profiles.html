@@ -147,8 +147,10 @@ tr.cp-inuse-row td{background:var(--green-bg)}
         <div class="fld"><label>Environment class</label><select class="inp" id="cp-f-env"></select></div>
       </div>
       <div class="grid2">
-        <div class="fld"><label>Source connection</label><select class="inp" id="cp-f-src"></select></div>
-        <div class="fld"><label>Target connection</label><select class="inp" id="cp-f-tgt"></select></div>
+        <div class="fld"><label>Source connection</label><select class="inp" id="cp-f-src" onchange="renderConnSecretStatus()"></select>
+          <div class="muted" id="cp-f-src-secret" style="font-size:10.5px;margin-top:4px"></div></div>
+        <div class="fld"><label>Target connection</label><select class="inp" id="cp-f-tgt" onchange="renderConnSecretStatus()"></select>
+          <div class="muted" id="cp-f-tgt-secret" style="font-size:10.5px;margin-top:4px"></div></div>
       </div>
       <div class="grid3">
         <div class="fld"><label>Cygenix project</label><select class="inp" id="cp-f-project"></select></div>
@@ -234,7 +236,7 @@ tr.cp-inuse-row td{background:var(--green-bg)}
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=f10cd57fe4" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
-<script src="/cygenix-saved-conn-secrets.js?v=42c16863e0" defer></script>
+<script src="/cygenix-saved-conn-secrets.js?v=da48f7c99d" defer></script>
 <script src="/cygenix-profiles.js?v=cf4e02a1a3" defer></script>
 <script src="/cygenix-profile-apply.js?v=fbedee4630" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
@@ -389,6 +391,37 @@ function renderProfiles(){
   $('cp-f-tgt').innerHTML = opts('tgt') || '<option value="">(no saved target connections)</option>';
   $('cp-f-project').innerHTML = '<option value="">(none)</option>'
     + projects().map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('');
+  renderConnSecretStatus();
+}
+
+/* Under each connection picker: whether the credential for the chosen
+   connection is on this device. A profile that points at a connection with
+   no password behind it is a profile that cannot run here, and that is
+   better said beside the picker than discovered at run time. Azure Function
+   mode has no password to be missing. */
+function renderConnSecretStatus(){
+  const S = window.CygenixSavedConnSecrets;
+  ['src', 'tgt'].forEach(side => {
+    const el = $('cp-f-' + side + '-secret');
+    if (!el) return;
+    const id = $('cp-f-' + side).value;
+    const c = savedConns().find(x => x.id === id);
+    if (!c || !S || typeof S.status !== 'function' || c.mode === 'azure') { el.innerHTML = ''; return; }
+    const st = S.status(id);
+    if (st === 'ok') { el.innerHTML = ''; return; }
+    const word = st === 'undecryptable' ? 'Couldn\'t decrypt — re-enter' : 'Password needed on this device';
+    el.innerHTML = '<span style="color:var(--amber)">' + word + '</span> · '
+      + '<a href="#" onclick="cpReenterSecret(\'' + esc(id) + '\');return false">enter it now</a>';
+  });
+}
+function cpReenterSecret(id){
+  const c = savedConns().find(x => x.id === id);
+  const S = window.CygenixSavedConnSecrets;
+  if (!c || !S || typeof S.set !== 'function') return;
+  const cs = prompt('Connection string for "' + (c.name || id) + '":', '');
+  if (cs == null || !String(cs).trim()) return;
+  S.set(id, { connString: String(cs).trim() });
+  renderConnSecretStatus();
 }
 
 function cpCreateProfile(){
@@ -568,6 +601,9 @@ document.addEventListener('DOMContentLoaded', () => {
   /* connections.js resolves the signed-in user a beat after DOMContentLoaded
      on a cold load — re-render once so the register fills in */
   setTimeout(renderAll, 600);
+  /* and again when the secrets store has pulled the cloud copy, so a
+     "Password needed on this device" line clears itself once it is not true */
+  window.addEventListener('cygenix:conn-secrets-synced', () => { try { renderAll(); } catch (e) {} });
 });
 </script>
 <script src="/cookie-consent.js?v=d15e88322f" defer></script>

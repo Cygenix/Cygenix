@@ -129,6 +129,28 @@ function loadProxy(key) {
   check('a POST body reaches the Function App unchanged',
     post.statusCode === 200 && lastReq.headers['content-type'] === 'application/json');
 
+  /* ── The encrypted secrets store: a separate route, reached by action ── */
+  // azure-function/src/conn-secrets.js lives at /api/secrets/{action}, not
+  // under /api/data. The browser still asks by action name — the only
+  // shape CygenixDataApi speaks — and the proxy maps it to the route.
+  lastReq = null;
+  r = await call({ q: { action: 'secrets-list' } });
+  check('secrets-list is forwarded to the Function App\'s /api/secrets/list route',
+    r.statusCode === 200 && lastReq.url.indexOf('/api/secrets/list?') === 0, lastReq && lastReq.url);
+  check('and the caller\'s token goes with it — that route verifies it itself and answers 401 without one',
+    lastReq.headers.authorization === 'Bearer GOOD');
+  lastReq = null;
+  await call({ method: 'POST', q: { action: 'secrets-put' }, body: '{"connId":"sconn_1","bundle":{"connString":"x"},"updatedAt":1}' });
+  check('secrets-put is a POST to /api/secrets/put with the body intact',
+    lastReq.url.indexOf('/api/secrets/put?') === 0 && lastReq.headers['content-type'] === 'application/json', lastReq.url);
+  for (const a of ['secrets-delete', 'secrets-prune']) {
+    lastReq = null;
+    await call({ method: 'POST', q: { action: a }, body: '{}' });
+    check(a + ' reaches /api/secrets/' + a.slice(8), lastReq.url.indexOf('/api/secrets/' + a.slice(8) + '?') === 0, lastReq.url);
+  }
+  check('the proxy never handles a secret itself — no secrets action is served locally like blob-credential is',
+    !/action === 'secrets-/.test(require('fs').readFileSync(PROXY_PATH, 'utf8')));
+
   /* ── Failure modes ─────────────────────────────────────────────────── */
   {
     const noKey = loadProxy('');

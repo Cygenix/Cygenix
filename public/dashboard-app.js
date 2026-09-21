@@ -9953,6 +9953,10 @@ window.connHide   = connHide;
   // sandbox whose window has no event API; listening is optional there.
   if (typeof window.addEventListener !== 'function') return;
   window.addEventListener('cygenix:connections-applied', refillIfShowing);
+  // The secrets store has pulled the cloud copy: a chip that read "Password
+  // needed on this device" a moment ago may now have its credential, and a
+  // profile line that could not name a database now can.
+  window.addEventListener('cygenix:conn-secrets-synced', refillIfShowing);
   window.addEventListener('storage', function (e) {
     if (e && e.key === 'cygenix_project_connections') refillIfShowing();
   });
@@ -11217,15 +11221,58 @@ function sconnRender(side){
     const preview = sconnPreview(entry);
     const nameEsc = (entry.name || '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
     const previewEsc = preview.replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    const need = sconnNeedsSecret(entry);
+    const needHtml = need
+      ? `<button type="button" class="sconn-needs-secret" onclick="sconnReenterSecret('${entry.id}')" title="${need.title}">${need.word}</button>`
+      : '';
     return `<span class="sconn-chip" title="${previewEsc}" data-sconn-id="${entry.id}">
       <span class="sconn-dialect">${dialect}</span>
-      <span onclick="sconnLoad('${entry.id}')">${nameEsc}</span>
+      <span onclick="sconnLoad('${entry.id}')">${nameEsc}</span>${needHtml}
       <span class="sconn-actions">
         <button class="sconn-action-btn" onclick="sconnRename('${entry.id}')" title="Rename"><i class="ic ic-edit"></i> </button>
         <button class="sconn-action-btn danger" onclick="sconnDelete('${entry.id}')" title="Delete">✕</button>
       </span>
     </span>`;
   }).join('');
+}
+
+/* "Password needed on this device". A direct-mode connection is only usable
+   with its connection string, and that string is the one thing the synced
+   blob deliberately does not carry. The secrets store now pulls an encrypted
+   copy from the cloud; when it has nothing for this entry, or the server
+   could not open what it has, the chip says so and offers a way to type it
+   again. Azure Function mode never shows this: the URL is in the blob and
+   the key is optional. */
+function sconnNeedsSecret(entry){
+  const S = window.CygenixSavedConnSecrets;
+  if (!S || typeof S.status !== 'function') return null;
+  if (!entry || entry.mode === 'azure') return null;
+  const st = S.status(entry.id);
+  if (st === 'ok') return null;
+  return st === 'undecryptable'
+    ? { word: 'Couldn\'t decrypt — re-enter', title: 'The cloud copy of this connection string could not be opened on the server (its sealing key has changed). Re-enter it here and it will be sealed again.' }
+    : { word: 'Password needed on this device', title: 'The connection string for this saved connection is not on this device and has not been synced. Click to enter it.' };
+}
+function sconnReenterSecret(id){
+  const all = sconnGetAll();
+  const entry = all.find(s => s.id === id);
+  if (!entry) return;
+  const S = window.CygenixSavedConnSecrets;
+  if (!S || typeof S.set !== 'function') return;
+  const cs = prompt('Connection string for "' + (entry.name || id) + '":\n\n'
+    + 'Server=host;Database=db;User Id=user;Password=pass;\n'
+    + 'or  mssql://user:pass@host:1433/database', '');
+  if (cs == null) return;
+  const v = String(cs).trim();
+  if (!v) return;
+  const B = window.CygenixConnBuilder;
+  if (B && typeof B.looksLikeConnection === 'function' && !B.looksLikeConnection(v)) {
+    alert('That is not a connection string, so it would not connect. Nothing was saved.');
+    return;
+  }
+  S.set(id, { connString: v });          // local now, sealed and synced shortly
+  sconnRender(entry.side);
+  if (typeof connProfileLines === 'function') connProfileLines();
 }
 
 // Load a saved connection into the live fields. Switches mode if needed.

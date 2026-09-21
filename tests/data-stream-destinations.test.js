@@ -377,8 +377,15 @@ const prof = (id) => store().profiles.filter((p) => p.id === id)[0];
     /sconnRender\('tgt'\);\s*\n[\s\S]{0,400}sdstRender\(\);/.test(dashApp) && /function sdstRender\(\)\{\s*\n\s*try/.test(dashApp));
 
   const secrets = read('public', 'cygenix-saved-conn-secrets.js');
+  // hasSecret used to spell the three fields out inline; since the encrypted
+  // cloud sync (Sep-2026) the module names them once, in SECRET_FIELDS, and
+  // every check reads that list — so `secret` is reported wherever the other
+  // two are, by construction rather than by three separate expressions.
   check('the secrets module strips, rehydrates and reports `secret` alongside connString and fnKey',
-    /'secret' in sanitised/.test(secrets) && /sec\.secret\s+&& !e\.secret/.test(secrets) && /s\.connString \|\| s\.fnKey \|\| s\.secret/.test(secrets));
+    /'secret' in sanitised/.test(secrets) && /sec\.secret\s+&& !e\.secret/.test(secrets)
+    && /SECRET_FIELDS = \['connString', 'fnKey', 'secret'\]/.test(secrets)
+    && /function hasSecret\(id\) \{[\s\S]{0,120}hasAny\(/.test(secrets)
+    && /SECRET_FIELDS\.some\(/.test(secrets));
 
   // The one-shot flag rule: nothing here resets a one-shot flag from inside
   // its own callback. prodConfirmedId is set by a person, read by a save.

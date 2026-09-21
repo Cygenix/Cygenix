@@ -115,7 +115,20 @@ const ALLOWED = new Set([
   // Handled HERE, never forwarded: returns the Function App key to a
   // verified caller for the Drive's blob relay. See the handler below.
   'blob-credential',
+  // Saved-connection credentials, sealed by the Function App before they are
+  // stored (azure-function/src/conn-secrets.js). These are actions to the
+  // browser and a separate ROUTE on the Function App — /api/secrets/{action},
+  // not /api/data — so they are mapped by name in SECRET_ROUTES below. The
+  // Function App verifies the forwarded token itself and keys the records on
+  // the token's oid; the host key this proxy appends grants nothing there.
+  'secrets-list', 'secrets-put', 'secrets-delete', 'secrets-prune',
 ]);
+const SECRET_ROUTES = {
+  'secrets-list':   '/secrets/list',
+  'secrets-put':    '/secrets/put',
+  'secrets-delete': '/secrets/delete',
+  'secrets-prune':  '/secrets/prune',
+};
 
 // `waitlist` is deliberately absent: it is the one genuinely anonymous
 // action, it is served straight from the register page, and routing it
@@ -230,6 +243,8 @@ exports.handler = async function (event) {
     // The agent routes carry their own path (and may carry their own query
     // string, e.g. /agent/scope?projectId=…), so append rather than encode.
     ? AGENT_ROOT + agentPath + (agentPath.includes('?') ? '&' : '?') + qs
+    : SECRET_ROUTES[action]
+    ? AGENT_ROOT + SECRET_ROUTES[action] + '?' + qs
     : API_BASE + '/' + encodeURIComponent(action) + '?' + qs;
 
   const headers = {

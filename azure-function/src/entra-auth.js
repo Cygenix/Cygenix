@@ -173,4 +173,9 @@ function logErr(ctx, ...args) {
   } catch { /* logging must never affect the response */ }
 }
 
-module.exports = { enforceAuth, checkDispatchKey, requireTokenAuth, logWarn, logErr };
+// verifyJwt is exported for the one route family that must ALWAYS enforce a
+// token rather than follow the REQUIRE_TOKEN_AUTH rollout: conn-secrets.js,
+// which hands back decrypted credentials and has no legacy header to fall
+// back to. Same verifier, same JWKS cache, same issuer and audience rules —
+// one way of checking a token, used strictly there and leniently here.
+module.exports = { enforceAuth, checkDispatchKey, requireTokenAuth, verifyJwt, logWarn, logErr };

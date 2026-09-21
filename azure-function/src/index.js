@@ -18,6 +18,9 @@ require('./profile-builder');
 require('./project-memory');
 require('./agent-dependency-planner');
 require('./agent-scope');
+// Encrypted sync for saved-connection credentials — /api/secrets/{action}.
+// Anonymous at the host, strict Entra JWT in code; see the file's header.
+require('./conn-secrets');
 
 // ── Process-level safety net ─────────────────────────────────────────────────
 // Node 15+ terminates the worker on unhandled promise rejections by default,

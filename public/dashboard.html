@@ -610,6 +610,16 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   display:flex;gap:2px;margin-left:0.25rem;opacity:0.5;transition:opacity 0.15s;
 }
 #view-connections .sconn-chip:hover .sconn-actions{ opacity:1; }
+/* "Password needed on this device" — the credential for a saved connection
+   is not on this device and has not been synced. Amber, from the shared
+   tokens, so it reads as a warning in whichever theme is active; a button,
+   because clicking it is how the string gets re-entered. */
+#view-connections .sconn-chip .sconn-needs-secret{
+  font-family:var(--font-heading);font-weight:600;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--state-warn);background:transparent;border:1px solid var(--state-warn);
+  padding:1px 6px;margin-left:6px;cursor:pointer;white-space:nowrap;
+}
+#view-connections .sconn-chip .sconn-needs-secret:hover{ background:var(--state-warn);color:var(--color-bg); }
 #view-connections .sconn-chip .sconn-action-btn{
   background:none;border:none;color:var(--text3);cursor:pointer;
   padding:2px 4px;font-size:11px;line-height:1;border-radius:3px;
@@ -1371,7 +1381,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 </style>
 <script src="/connections.js?v=375b15ec07" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
-<script src="/cygenix-saved-conn-secrets.js?v=42c16863e0" defer></script>
+<script src="/cygenix-saved-conn-secrets.js?v=da48f7c99d" defer></script>
 <script src="/cygenix-stream-destinations.js?v=ecc5fb8edf" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
@@ -1459,7 +1469,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=a736f5c51a" defer></script>
-  <script src="/dashboard-app.js?v=a7bc9b7d16" defer></script>
+  <script src="/dashboard-app.js?v=31cec33547" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->

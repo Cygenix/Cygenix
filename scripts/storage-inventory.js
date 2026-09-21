@@ -130,6 +130,12 @@ const CLASSES = {
   'cygenix_active_user':    ['C', 'Signed-in user tag', ''],
   'cygenix_entra_account':  ['C', 'MSAL account record', ''],
   'cygenix_agentive_migration': ['B', 'Agentive migration run state', 'server-side run is the truth'],
+  // The encrypted cloud sync for saved-connection credentials
+  // (public/cygenix-saved-conn-secrets.js). The credentials themselves are
+  // under cygenix_saved_conn_secrets, which the scanner cannot see because
+  // that file reads it through a constant — see credential-storage-audit.md.
+  'cygenix_conn_secrets_uploaded_v1::*': ['C', 'Per-user marker that this device has done its one-time upload of local credentials to the encrypted store', 'set once; never cleared by the code that runs after an upload'],
+  'cygenix_conn_secrets_dirty_v1':       ['B', 'Ids of credentials whose last cloud write failed, retried on the next page load', 'the cloud store is the truth; this only remembers what to resend'],
 };
 
 const CLASS_NAME = {
