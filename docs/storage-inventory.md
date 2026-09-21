@@ -71,7 +71,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data_stream_designer.html, data_stream_store.html |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
-## C — Preference — per-viewer convenience (28)
+## C — Preference — per-viewer convenience (29)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
@@ -93,6 +93,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_jobs_panel_collapsed` | Jobs panel collapsed | — | project-builder-app.js |
 | `cygenix_just_signed_out` | Sign-out flag | — | auth-gate.js, cygenix-sidebar.js, dashboard-app.js +6 |
 | `cygenix_onboarded` | Onboarding completed | — | dashboard-app.js, dashboard.html |
+| `cygenix_profiles_show_retired` | Profiles page: whether retired profiles are shown in the table | read and written in try/catch; the page renders without it | profiles.html |
 | `cygenix_project_name` | Display name of the open project | — | projects.html |
 | `cygenix_redirect_after_login` | Post-login destination | — | auth-gate.js, login.html |
 | `cygenix_redirect_after_plan` | Post-checkout destination | — | auth-gate.js |
@@ -106,4 +107,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_62 classified key(s) across `public/`._
+_63 classified key(s) across `public/`._

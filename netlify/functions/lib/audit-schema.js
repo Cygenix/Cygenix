@@ -209,6 +209,11 @@ const CLIENT_ACTIONS = {
   // settings (cygenix-profile-apply.js). Names only in the detail — never a
   // value — which is why it can go in a chain.
   'profile.applied':      'connections',
+  // Deleting a retired profile that nothing ever referenced (Sep-2026).
+  // The detail names the profile, its environment and its two connections'
+  // standard names — never a connection value. A PRD profile's deletion
+  // arrives with env:'PROD' and is re-filed under the always-on category.
+  'profile.delete':       'connections',
   // The API key lives only in the browser — there is no server that ever
   // sees it, so there is no server-side place to observe it being set or
   // cleared from. Letting the browser assert these two is a deliberate

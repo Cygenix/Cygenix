@@ -68,6 +68,12 @@ function cpNewStore(now) {
     bindings: [],          /* { artifactType, artifactId, profileId, boundAt, boundBy, lastVerifiedAt } */
     runRecords: [],
     events: [],
+    /* Tombstones for deleted profiles: { id, at, by }. The store syncs by
+       MERGE (cygenix-profile-merge.js), and a merge is a union — remove a
+       record from one copy and the next machine's copy puts it straight
+       back. The tombstone is what the merge honours instead. See
+       cpDeleteProfile for the only writer. */
+    deleted: [],
     settings: { envClasses: ENV_CLASSES.slice(0, 5), activeProfileId: null },
   };
 }
@@ -255,6 +261,77 @@ function cpRetireProfile(store, id, user, now) {
   p.updatedAt = now || 0;
   if (store.settings.activeProfileId === id) cpSelectProfile(store, null, user, now);
   cpEvent(store, { type: 'profile.retired', profileId: id, by: user }, now);
+  return p;
+}
+
+/* =======================================================================
+   Deleting a retired profile — the one removal this store allows.
+
+   The register grew a "retired" row for every superseded pairing and there
+   was no way off the list. Retired stays the archive state: a profile that
+   any artifact was bound to, or that any run record names, is history and
+   history is kept — a run record that names a profile nobody can look up
+   is a hole in the evidence. So Delete is for the retired profile NOTHING
+   ever referenced: the mis-typed id, the pairing created and abandoned.
+
+   Three things make it safe:
+     · eligibility is a function of the store, computed again at the moment
+       of deletion — not read off the button that was rendered a while ago;
+     · the removal leaves a tombstone, because the store syncs by union and
+       a plain removal would be undone by the next machine's upload;
+     · saved connections are not touched. A retired profile never locked
+       them (cpIsConnLocked) and connMeta is classification, not profile
+       state — deleting the profile renames, deletes and reclassifies
+       nothing.
+   The Function App applies the same rule to the cloud copy (its own
+   connection-profile-delete action), and the merge itself keeps a profile
+   whose tombstone arrives alongside a run record or binding for it.
+   ======================================================================= */
+var DELETED_CAP = 200;
+
+function cpProfileUsage(store, id) {
+  var bindings = (store.bindings || []).filter(function (b) { return b.profileId === id; }).length;
+  var runs = (store.runRecords || []).filter(function (r) { return r.profileId === id; }).length;
+  return { bindings: bindings, runs: runs };
+}
+
+/* Why a retired profile cannot be deleted, in the words the button shows. */
+function cpUsageText(u) {
+  var parts = [];
+  if (u.runs) parts.push(u.runs + ' run record' + (u.runs === 1 ? '' : 's'));
+  if (u.bindings) parts.push(u.bindings + ' binding' + (u.bindings === 1 ? '' : 's'));
+  return parts.join(', ');
+}
+
+function cpDeleteEligibility(store, id) {
+  var p = profileOf(store, id);
+  if (!p) return { ok: false, code: 'missing', why: 'No profile ' + id + '.', bindings: 0, runs: 0, profile: null };
+  var u = cpProfileUsage(store, id);
+  if (p.status !== 'retired') {
+    return { ok: false, code: 'status', why: 'Profile ' + id + ' is ' + p.status + ' — only a retired profile can be deleted. Retire it first.',
+      bindings: u.bindings, runs: u.runs, profile: p };
+  }
+  if (u.bindings || u.runs) {
+    return { ok: false, code: 'history', why: 'Kept for audit: ' + cpUsageText(u),
+      bindings: u.bindings, runs: u.runs, profile: p };
+  }
+  return { ok: true, code: 'ok', why: '', bindings: 0, runs: 0, profile: p };
+}
+
+function cpDeleteProfile(store, id, user, now) {
+  var e = cpDeleteEligibility(store, id);
+  if (!e.ok) throw new Error(e.why);
+  var p = e.profile;
+  store.profiles = store.profiles.filter(function (x) { return x.id !== id; });
+  if (!Array.isArray(store.deleted)) store.deleted = [];
+  store.deleted = store.deleted.filter(function (d) { return d && d.id !== id; });
+  store.deleted.push({ id: id, at: now || 0, by: user || '' });
+  if (store.deleted.length > DELETED_CAP) store.deleted.splice(0, store.deleted.length - DELETED_CAP);
+  /* cannot normally be the selection (a retired profile cannot be selected),
+     but a merge from another machine can leave it named — clear without a
+     selection event, since nothing was chosen */
+  if (store.settings && store.settings.activeProfileId === id) store.settings.activeProfileId = null;
+  cpEvent(store, { type: 'profile.deleted', profileId: id, name: p.name, envClass: p.envClass, by: user }, now);
   return p;
 }
 
@@ -703,6 +780,10 @@ return {
   cpSaveProfile: cpSaveProfile,
   cpActivateProfile: cpActivateProfile,
   cpRetireProfile: cpRetireProfile,
+  cpProfileUsage: cpProfileUsage,
+  cpUsageText: cpUsageText,
+  cpDeleteEligibility: cpDeleteEligibility,
+  cpDeleteProfile: cpDeleteProfile,
   cpSelectProfile: cpSelectProfile,
 
   cpBind: cpBind,

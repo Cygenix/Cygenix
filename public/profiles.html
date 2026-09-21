@@ -92,6 +92,14 @@ tr.cp-inuse-row td{background:var(--green-bg)}
   clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 .legend{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .legend .ic{color:var(--green)}
+/* Delete sits beside Retire and looks like it, in red: the same button, the
+   destructive colour. Disabled keeps the colour at the shared disabled
+   opacity so the row still reads "this is the delete slot, and it is off";
+   the reason is the wrapping span's title, because a disabled button's own
+   title is not shown by every browser. */
+.btn-danger:disabled{color:var(--red)}
+.cp-hold{display:inline-block;cursor:not-allowed}
+.cp-toggle{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline}
 </style>
 </head>
 <body>
@@ -139,6 +147,9 @@ tr.cp-inuse-row td{background:var(--green-bg)}
       <tr><th>Selected</th><th>Profile</th><th>Env</th><th>Source</th><th>Target</th><th>Project</th>
         <th>Service account</th><th>Status</th><th></th></tr>
     </thead><tbody></tbody></table></div>
+    <!-- Retired rows are hidden by default; this shows/hides them. Hidden
+         itself while there are none. The choice is this browser's. -->
+    <div class="note" id="cp-retired-note" style="display:none"></div>
     <div class="panel-body" style="border-top:0.5px solid var(--border)">
       <div id="cp-prof-errors"></div>
       <div class="grid3">
@@ -233,11 +244,11 @@ tr.cp-inuse-row td{background:var(--green-bg)}
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/connections.js?v=95bdd3b577" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
-<script src="/cygenix-profile-merge.js?v=80aea8ba8c" defer></script>
+<script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=41a8e68a2c" defer></script>
 <script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=1a5a1cf13d" defer></script>
-<script src="/cygenix-profiles.js?v=cf4e02a1a3" defer></script>
+<script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
 <script src="/cygenix-profile-apply.js?v=fbedee4630" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
@@ -355,16 +366,65 @@ function projectName(id){
   return p ? p.name : (id || '—');
 }
 
+/* ── Retired rows ──────────────────────────────────────────────────────────
+   A retired profile is the archive: it stays so that every run record and
+   binding that names it can still be read. But every superseded pairing
+   is one more row on the working list, so retired rows are hidden by
+   default and shown on request. The summary line still counts them —
+   "3 active · 0 draft · 1 retired" is the true state of the register, and
+   the toggle says how many are folded away. The choice is per browser,
+   and reading it must never break the page on a browser that blocks
+   storage, hence the try/catch. */
+function cpShowRetired(){
+  try { return localStorage.getItem('cygenix_profiles_show_retired') === '1'; } catch (e) { return false; }
+}
+function cpToggleRetired(){
+  const next = cpShowRetired() ? '0' : '1';
+  try { localStorage.setItem('cygenix_profiles_show_retired', next); } catch (e) { /* not remembered, still shown */ }
+  renderProfiles();
+}
+/* Delete, for a retired row only. Enabled when nothing references the
+   profile; otherwise the slot is there but off, with the reason as the
+   tooltip — the same words the engine refuses with, so the button and the
+   refusal never disagree. Draft and active rows never get the slot. */
+function deleteControl(p){
+  if (p.status !== 'retired') return '';
+  const e = P.cpDeleteEligibility(store, p.id);
+  if (e.ok) {
+    return ' <button class="btn btn-danger" onclick="cpDeleteProfile(\'' + esc(p.id) + '\')">Delete</button>';
+  }
+  return ' <span class="cp-hold" title="' + esc(e.why) + '"><button class="btn btn-danger" disabled '
+    + 'aria-label="' + esc('Delete — ' + e.why) + '">Delete</button></span>';
+}
+
 function renderProfiles(){
   $('cp-prof-sub').textContent = store.profiles.length
     ? store.profiles.filter(p => p.status === 'active').length + ' active · '
       + store.profiles.filter(p => p.status === 'draft').length + ' draft · '
       + store.profiles.filter(p => p.status === 'retired').length + ' retired'
     : 'none yet';
+  const retiredCount = store.profiles.filter(p => p.status === 'retired').length;
+  const showRetired = cpShowRetired();
+  const note = $('cp-retired-note');
+  if (retiredCount) {
+    note.style.display = '';
+    note.innerHTML = '<button type="button" class="cp-toggle" id="cp-retired-toggle" onclick="cpToggleRetired()">'
+      + (showRetired ? 'Hide retired' : 'Show ' + retiredCount + ' retired') + '</button>'
+      + (showRetired ? ' <span class="muted">Retired profiles are kept so run records and bindings that name them still '
+        + 'read. Delete is offered only where nothing does.</span>' : '');
+  } else {
+    note.style.display = 'none';
+    note.innerHTML = '';
+  }
+  const rows = store.profiles.filter(p => showRetired || p.status !== 'retired');
   const tb = $('cp-profiles').querySelector('tbody');
-  tb.innerHTML = store.profiles.length ? store.profiles.map(p =>
-    '<tr>'
-    + '<td><input type="radio" name="cp-active" ' + (store.settings.activeProfileId === p.id ? 'checked' : '')
+  tb.innerHTML = rows.length ? rows.map(p =>
+    '<tr data-profile-id="' + esc(p.id) + '" data-status="' + esc(p.status) + '">'
+    /* the radio is checked only for an ACTIVE profile that is the selection:
+       a retired one can be named by a merge from another machine, and
+       showing it checked would claim a selection that cannot stand. Nothing
+       is written — the engine's guard already blocks writes under it. */
+    + '<td><input type="radio" name="cp-active" ' + (store.settings.activeProfileId === p.id && p.status === 'active' ? 'checked' : '')
     + (p.status === 'active' ? '' : ' disabled title="Only an active profile can be selected"')
     + ' onchange="cpSelectActive(\'' + esc(p.id) + '\')"></td>'
     + '<td><b class="mono">' + esc(p.id) + '</b><div class="muted" style="font-size:10.5px">' + esc(p.name || '') + '</div></td>'
@@ -379,9 +439,12 @@ function renderProfiles(){
     + '<td style="white-space:nowrap">'
     + (p.status === 'draft' ? '<button class="btn" onclick="cpActivate(\'' + esc(p.id) + '\')">Activate</button> ' : '')
     + (p.status !== 'retired' ? '<button class="btn btn-danger" onclick="cpRetire(\'' + esc(p.id) + '\')">Retire</button>' : '')
+    + deleteControl(p)
     + '</td></tr>'
-  ).join('') : '<tr><td colspan="9" class="empty">No profiles yet — create the first one below and the '
-    + 'ambient-connection era ends.</td></tr>';
+  ).join('') : (store.profiles.length
+    ? '<tr><td colspan="9" class="empty">Every profile is retired — ' + retiredCount + ' folded away below.</td></tr>'
+    : '<tr><td colspan="9" class="empty">No profiles yet — create the first one below and the '
+    + 'ambient-connection era ends.</td></tr>');
 
   $('cp-f-env').innerHTML = store.settings.envClasses.map(e => '<option>' + e + '</option>').join('');
   const conns = savedConns();
@@ -453,6 +516,123 @@ function cpRetire(id){
   if (!confirm('Retire ' + id + '? Artifacts bound to it will refuse to run until re-bound to its successor.')) return;
   P.cpRetireProfile(store, id, userName(), Date.now());
   saveStore(); renderAll();
+}
+
+/* ── Delete a retired profile ─────────────────────────────────────────────
+   The order matters. Eligibility is computed again here, from a fresh read
+   of the store, not from the button that was rendered a while ago. The
+   confirmation is the PRD pattern from cygenix-profile-apply.js — a prompt
+   that must be answered with the exact id, a mismatch refuses and says so.
+   Then the CLOUD copy goes first: the Function App applies the same rule to
+   the copy this page cannot see and refuses with a 409 if a run record or
+   binding on another machine names the profile; only after it agrees is
+   the local copy changed. The local removal leaves a tombstone, which the
+   normal debounced save carries up and the merge honours, so a machine
+   that still holds the profile cannot put it back. Saved connections are
+   never read or written on this path.
+
+   POSTs are guarded: one in flight at a time, and never two within three
+   seconds. `_delInFlight` is cleared in finally, by the function that set
+   it, and by nothing the request itself calls back into. */
+let _delInFlight = false;
+let _delLastAt = 0;
+const DEL_MIN_INTERVAL_MS = 3000;
+
+function cloudReason(err){
+  try { const j = JSON.parse(err.detail || ''); if (j && j.error) return String(j.error); } catch (e) { /* not JSON */ }
+  if (err && err.code === 'network') return 'the cloud could not be reached — nothing was changed.';
+  return (err && err.message) ? err.message : 'the cloud refused — nothing was changed.';
+}
+function showDeleteMsg(html, tone){
+  const box = $('cp-apply-msg');
+  if (!box) return;
+  box.style.display = 'block';
+  box.style.borderColor = tone === 'bad' ? 'rgba(240,70,70,0.4)' : tone === 'warn' ? 'rgba(245,158,11,0.5)' : 'rgba(63,125,78,0.5)';
+  box.innerHTML = html;
+}
+
+async function cpDeleteProfile(id){
+  if (_delInFlight) return;
+  if (Date.now() - _delLastAt < DEL_MIN_INTERVAL_MS) return;
+  store = P.cpLoad();
+  const first = P.cpDeleteEligibility(store, id);
+  if (!first.ok) { alert(first.why); renderAll(); return; }
+  const p = first.profile;
+  const typed = prompt('Delete profile ' + id + (p.name && p.name !== id ? ' (' + p.name + ')' : '') + ' — ' + p.envClass + '?\n\n'
+    + 'This removes the profile record from this browser and from your account\'s cloud copy. '
+    + 'It has no bindings and no run records, so nothing refers to it. '
+    + 'Saved connections are not touched.\n\nType the profile id to confirm:');
+  if (typed == null) return;
+  if (String(typed).trim() !== id) {
+    alert('Confirmation did not match ' + id + ' — nothing was changed.');
+    return;
+  }
+  _delInFlight = true;
+  _delLastAt = Date.now();
+  try {
+    /* the names for the audit entry, read while the profile still exists */
+    const srcName = connLabel(p.srcConnId), tgtName = connLabel(p.tgtConnId);
+
+    /* re-check at delete time, on a fresh read */
+    store = P.cpLoad();
+    const again = P.cpDeleteEligibility(store, id);
+    if (!again.ok) { alert(again.why); renderAll(); return; }
+
+    /* the cloud copy first */
+    let cloud = 'not-synced';
+    const D = window.CygenixDataApi;
+    if (D && typeof D.callResult === 'function' && D.isSignedIn && D.isSignedIn()) {
+      /* the retirement may still be in the debounce window — flush it, so
+         the cloud copy is judged on the same status this page shows */
+      if (window.CygenixSync && typeof CygenixSync.saveNow === 'function') {
+        try { await CygenixSync.saveNow(); } catch (e) { /* the delete call decides */ }
+      }
+      const r = await D.callResult('connection-profile-delete', { method: 'POST', body: { profileId: id } });
+      if (!r.ok) {
+        showDeleteMsg('<b>Not deleted.</b> ' + esc(cloudReason(r.error)), 'bad');
+        renderAll();
+        return;
+      }
+      cloud = (r.data && r.data.deleted) ? 'deleted' : 'tombstoned';
+    }
+
+    /* then this browser — the engine leaves the tombstone */
+    store = P.cpLoad();
+    let gone;
+    try { gone = P.cpDeleteProfile(store, id, userName(), Date.now()); }
+    catch (e) { showDeleteMsg('<b>Not deleted.</b> ' + esc(String(e.message || e)), 'bad'); renderAll(); return; }
+    saveStore();
+    renderAll();
+
+    /* the trail: id, name, environment, both standard names. The actor and
+       the UTC stamp are the server's, from the token. A PRD profile goes
+       under env PROD, where a failed write is reported, not swallowed. */
+    let auditOk = true;
+    try {
+      if (window.CygenixAudit && typeof CygenixAudit.record === 'function') {
+        const res = await CygenixAudit.record({
+          action: 'profile.delete', category: 'connections',
+          target: { type: 'profile', id: gone.id, label: 'Profile: ' + gone.id },
+          summary: 'Deleted retired profile ' + gone.id + ' (' + gone.envClass + ')',
+          detail: { profileId: gone.id, name: gone.name || '', envClass: gone.envClass,
+            srcConnId: gone.srcConnId, tgtConnId: gone.tgtConnId,
+            srcStandardName: srcName, tgtStandardName: tgtName,
+            bindings: 0, runs: 0, cloud: cloud, deletedAtUtc: new Date().toISOString() },
+          env: gone.envClass === 'PRD' ? 'PROD' : null,
+        });
+        if (res && res.ok === false && res.fatal) auditOk = false;
+      }
+    } catch (e) { /* recording is best-effort outside PROD */ }
+
+    showDeleteMsg('<b>Deleted ' + esc(gone.id) + '.</b> '
+      + (cloud === 'not-synced' ? 'Removed from this browser; the cloud copy will follow when you are signed in.'
+        : 'Removed from this browser and from the cloud copy.')
+      + ' Saved connections were not changed.'
+      + (auditOk ? '' : '<div style="margin-top:0.3rem;color:var(--red)">The audit entry could not be written.</div>'),
+      auditOk ? 'ok' : 'warn');
+  } finally {
+    _delInFlight = false;
+  }
 }
 /* Selecting a profile LOADS it (Sep-2026): its saved source and target are
    copied into the live connections every tool reads, through
@@ -535,14 +715,25 @@ function cpUnbind(type, id){
   saveStore(); renderAll();
 }
 
+/* The sentinel picker lists profiles a database could be registered to,
+   which a retired one is not. The default is the first ACTIVE profile;
+   a choice that has since been retired falls back to it too. This is a
+   picker for generated SQL, not the selection — nothing here writes. */
+function sentinelChoices(){
+  return store.profiles.filter(p => p.status !== 'retired');
+}
 function cpRenderSentinel(){
   const sel = $('cp-s-profile');
+  const choices = sentinelChoices();
   if (!sel.options.length || sel.dataset.stale === '1'){
-    sel.innerHTML = store.profiles.map(p => '<option value="' + esc(p.id) + '">' + esc(p.id) + '</option>').join('')
+    const keep = sel.value;
+    sel.innerHTML = choices.map(p => '<option value="' + esc(p.id) + '">' + esc(p.id) + '</option>').join('')
       || '<option value="">(no profiles)</option>';
+    const fallback = (choices.find(x => x.status === 'active') || choices[0] || {}).id || '';
+    sel.value = choices.some(x => x.id === keep) ? keep : fallback;
     sel.dataset.stale = '0';
   }
-  const p = store.profiles.find(x => x.id === sel.value) || store.profiles[0];
+  const p = choices.find(x => x.id === sel.value) || choices.find(x => x.status === 'active') || choices[0];
   const role = $('cp-s-role').value, dialect = $('cp-s-dialect').value;
   if (!p){
     $('cp-s-install').textContent = $('cp-s-assert').textContent = '-- create a profile first';

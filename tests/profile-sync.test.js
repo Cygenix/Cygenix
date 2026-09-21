@@ -350,7 +350,10 @@ const INDEX = read('azure-function', 'src', 'index.js');
 check('connection_profiles is in the SYNCABLE whitelist — the server drops unknown fields silently',
   /const SYNCABLE = \[[\s\S]*?'connection_profiles'[\s\S]*?\];/.test(INDEX));
 check('the save handler merges that field with the existing document instead of replacing it',
-  /key === 'connection_profiles' && body\[key\] && existing\[key\][\s\S]{0,200}mergeProfileStores\(existing\[key\], body\[key\]\)/.test(INDEX));
+  // The sender's copy passes through guardProfileTombstones first (Sep-2026:
+  // a tombstone can only stand for a profile the cloud holds as retired, or
+  // not at all) and is then merged with the existing document.
+  /key === 'connection_profiles' && body\[key\] && existing\[key\][\s\S]{0,900}guardProfileTombstones\(existing\[key\], body\[key\]\)[\s\S]{0,300}mergeProfileStores\(existing\[key\], guard\.value\)/.test(INDEX));
 check('a merge failure falls back to the sender\'s copy rather than failing the whole save',
   /merge failed[\s\S]{0,120}merged\[key\] = body\[key\]/.test(INDEX));
 check('a null body value bypasses the merge — the one way to wipe (what nuke sends)',

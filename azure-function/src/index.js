@@ -83,7 +83,44 @@ const { enforceAuth, logWarn, logErr } = require('./entra-auth');
 // Connection profiles are merged on save, not replaced — the only synced
 // field treated that way. Same bytes as public/cygenix-profile-merge.js;
 // tests/profile-sync.test.js keeps the two identical.
-const { mergeProfileStores } = require('./profile-merge');
+const { mergeProfileStores, applyTombstones } = require('./profile-merge');
+
+// The uploaded store's tombstones, minus any that name a profile the cloud
+// copy holds as draft or active. See the save action for why.
+function guardProfileTombstones(cloudStore, incoming) {
+  if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.deleted) || !incoming.deleted.length) {
+    return { value: incoming, dropped: 0 };
+  }
+  const status = {};
+  for (const p of (cloudStore && Array.isArray(cloudStore.profiles)) ? cloudStore.profiles : []) {
+    if (p && p.id) status[p.id] = p.status;
+  }
+  const kept = incoming.deleted.filter(d => d && d.id && (!(d.id in status) || status[d.id] === 'retired'));
+  const dropped = incoming.deleted.length - kept.length;
+  return { value: dropped ? { ...incoming, deleted: kept } : incoming, dropped };
+}
+
+// The eligibility rule for deleting a connection profile, on the cloud copy.
+// Mirrors cpDeleteEligibility in public/cygenix-profiles.js; the wording of
+// `why` is what the page shows, so the two are kept in step by
+// tests/profile-delete.test.js.
+function profileDeleteCheck(store, id) {
+  const profiles = (store && Array.isArray(store.profiles)) ? store.profiles : [];
+  const p = profiles.find(x => x && x.id === id) || null;
+  if (!p) return { ok: false, code: 'missing', why: `No profile ${id}.`, bindings: 0, runs: 0, profile: null };
+  const bindings = ((store.bindings || []).filter(b => b && b.profileId === id)).length;
+  const runs = ((store.runRecords || []).filter(r => r && r.profileId === id)).length;
+  if (p.status !== 'retired') {
+    return { ok: false, code: 'status', why: `Profile ${id} is ${p.status} — only a retired profile can be deleted. Retire it first.`, bindings, runs, profile: p };
+  }
+  if (bindings || runs) {
+    const parts = [];
+    if (runs) parts.push(`${runs} run record${runs === 1 ? '' : 's'}`);
+    if (bindings) parts.push(`${bindings} binding${bindings === 1 ? '' : 's'}`);
+    return { ok: false, code: 'history', why: `Kept for audit: ${parts.join(', ')}`, bindings, runs, profile: p };
+  }
+  return { ok: true, code: 'ok', why: '', bindings: 0, runs: 0, profile: p };
+}
 
 // Every Anthropic key used anywhere in this app comes from the caller, through
 // this one door. process.env.ANTHROPIC_API_KEY was removed on 2026-08-28.
@@ -1110,7 +1147,16 @@ app.http('data', {
             if (Object.prototype.hasOwnProperty.call(body, key)) {
               if (key === 'connection_profiles' && body[key] && existing[key]) {
                 try {
-                  merged[key] = mergeProfileStores(existing[key], body[key]);
+                  // A tombstone in the upload can only stand for a profile
+                  // the cloud copy already has as retired, or does not have
+                  // at all. The page deletes through connection-profile-
+                  // delete, which checks the same thing and refuses with a
+                  // 409; this closes the other door, where a hand-built
+                  // store is uploaded through the ordinary save. Dropped
+                  // tombstones are counted in the log, not named.
+                  const guard = guardProfileTombstones(existing[key], body[key]);
+                  if (guard.dropped) ctx.log(`save: dropped ${guard.dropped} tombstone(s) for profiles the cloud copy holds as not retired`);
+                  merged[key] = mergeProfileStores(existing[key], guard.value);
                 } catch (e) {
                   ctx.log('connection_profiles merge failed — using the sender\'s copy:', e.message, e.stack);
                   merged[key] = body[key];
@@ -1456,6 +1502,67 @@ app.http('data', {
         // every projects document, strips the four fields from `connections`,
         // and replaces only the documents that had something to strip. Safe to
         // run again: a clean document is left alone. Reports counts only.
+        // ── CONNECTION-PROFILE-DELETE: one retired profile off the cloud copy ─
+        // POST /api/data/connection-profile-delete   Body: { profileId }
+        //
+        // The page has already refused anything the rule refuses; this is
+        // the rule applied to the copy the page cannot see, so a stale tab
+        // or a hand-made request cannot delete a profile that a run record
+        // on another machine still names. 409 with the reason in words.
+        // The removal leaves a tombstone, because every later save is a
+        // merge and a merge is a union — without it the next upload from a
+        // machine that still holds the profile would put it back. A profile
+        // the cloud copy does not hold is tombstoned all the same, so a
+        // deletion made before this device's copy reached the cloud still
+        // sticks. Saved connections are not read or written here.
+        case 'connection-profile-delete': {
+          if (req.method !== 'POST') return err(405, 'connection-profile-delete is POST');
+          const body = await req.json().catch(() => null);
+          const profileId = body && typeof body.profileId === 'string' ? body.profileId.trim() : '';
+          if (!profileId) return err(400, 'profileId is required');
+          const container = getCosmosContainer('projects');
+          let existing = null;
+          try {
+            const { resource } = await container.item(userId, userId).read();
+            existing = resource || null;
+          } catch (e) {
+            if (e.code !== 404) throw e;
+          }
+          const store = (existing && existing.connection_profiles && typeof existing.connection_profiles === 'object')
+            ? existing.connection_profiles : null;
+          const at = Date.now();
+          const tombstone = { id: profileId, at, by: userId };
+          if (!store || !(store.profiles || []).some(p => p && p.id === profileId)) {
+            // Nothing to remove here; record the tombstone so a copy that
+            // arrives later is dropped by the merge.
+            const next = Object.assign({ v: 1, profiles: [], bindings: [], runRecords: [], events: [], connMeta: {}, settings: {} }, store || {});
+            next.deleted = (Array.isArray(next.deleted) ? next.deleted : []).filter(d => d && d.id !== profileId).concat([tombstone]);
+            const doc = Object.assign({}, existing || {}, { id: userId, userId, connection_profiles: next, updatedAt: new Date(at).toISOString() });
+            await container.items.upsert(doc);
+            ctx.log(`connection-profile-delete: ${profileId} not in the cloud copy — tombstoned`);
+            return ok({ deleted: false, tombstoned: true, profileId });
+          }
+          const check = profileDeleteCheck(store, profileId);
+          if (!check.ok) {
+            ctx.log(`connection-profile-delete: refused ${profileId} (${check.code})`);
+            return err(409, check.why);
+          }
+          const next = Object.assign({}, store);
+          next.profiles = store.profiles.filter(p => !(p && p.id === profileId));
+          next.deleted = (Array.isArray(store.deleted) ? store.deleted : []).filter(d => d && d.id !== profileId).concat([tombstone]);
+          if (next.settings && next.settings.activeProfileId === profileId) {
+            next.settings = Object.assign({}, next.settings, { activeProfileId: null });
+          }
+          const doc = Object.assign({}, existing, { id: userId, userId, connection_profiles: next, updatedAt: new Date(at).toISOString() });
+          await container.items.upsert(doc);
+          await getCosmosContainer('audit').items.create({
+            id: `${userId}-${at}`, userId, action: 'connection-profile-delete',
+            timestamp: doc.updatedAt, profileId,
+          }).catch(e => ctx.log('Audit write failed (non-fatal):', e.message));
+          ctx.log(`connection-profile-delete: removed ${profileId}`);
+          return ok({ deleted: true, tombstoned: true, profileId });
+        }
+
         case 'scrub-connection-secrets': {
           const gate = await requireAdmin(userId);
           if (!gate.ok) return err(gate.code, gate.msg);
