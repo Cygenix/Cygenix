@@ -100,6 +100,51 @@ function guardProfileTombstones(cloudStore, incoming) {
   return { value: dropped ? { ...incoming, deleted: kept } : incoming, dropped };
 }
 
+// The stored shape of one sign-in, from the entry the edge function sent.
+// A named function rather than an inline object so the rules that matter —
+// which fields are capped, that a missing field is null rather than absent,
+// that the partition key is the person who signed in, and that a nonsense
+// ttl is dropped instead of stored — can be tested without a Cosmos account.
+// `now` is a parameter so the id is reproducible in a test.
+function buildSigninDoc(body, now) {
+  const str = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null);
+  const userId = String(body.userId).trim();
+  const doc = {
+    id: `${userId}-signin-${now}`,
+    userId,                                   // the partition key: /userId
+    action: 'signin',
+    type: 'signin',
+    timestamp: String(body.timestamp).trim(),
+    email: str(body.email, 320),
+    idp: str(body.idp, 64) || 'local',
+    ip: str(body.ip, 64),
+    city: str(body.city, 128),
+    region: str(body.region, 128),
+    country: str(body.country, 128),
+    countryCode: str(body.countryCode, 8),
+    userAgent: str(body.userAgent, 300),
+  };
+  // Per-item TTL, in seconds. It only takes effect once the container has
+  // TTL switched on (defaultTtl = -1); until then Cosmos ignores the field
+  // and the row is kept, which is the safe direction for a setting that is
+  // not yet configured. A missing, zero, negative or non-numeric ttl means
+  // no expiry rather than an immediate one.
+  const ttl = Number(body.ttl);
+  if (Number.isFinite(ttl) && ttl > 0) doc.ttl = Math.floor(ttl);
+  return doc;
+}
+
+// Why a sign-in entry is not acceptable, in the words the 400 carries.
+// Returns null when it is fine.
+function signinRejection(body) {
+  if (!body || typeof body !== 'object') return 'Invalid JSON body';
+  if (body.type !== 'signin') return "type must be 'signin'";
+  if (typeof body.userId !== 'string' || !body.userId.trim()) return 'userId is required';
+  const ts = typeof body.timestamp === 'string' ? body.timestamp.trim() : '';
+  if (!ts || isNaN(Date.parse(ts))) return 'timestamp must be an ISO date';
+  return null;
+}
+
 // The eligibility rule for deleting a connection profile, on the cloud copy.
 // Mirrors cpDeleteEligibility in public/cygenix-profiles.js; the wording of
 // `why` is what the page shows, so the two are kept in step by
@@ -861,7 +906,14 @@ app.http('data', {
     // Public actions don't require x-user-id (e.g. waitlist submissions from
     // anonymous visitors on /register.html). Every other action still enforces
     // it. Keep this list tight — anything added here is callable by anyone.
-    const PUBLIC_ACTIONS = ['waitlist'];
+    // `audit-signin` is here because its caller is the login-audit EDGE
+    // function, which sends the signing-in user's identity in the body and
+    // cannot send an x-user-id header — at the moment it fires, the browser
+    // has a token but the account may never have called this API before.
+    // It is not open: the handler refuses anything without a matching
+    // x-audit-ingest-key, which only the edge function holds. That check is
+    // the gate; this list only decides whether the header is demanded first.
+    const PUBLIC_ACTIONS = ['waitlist', 'audit-signin'];
 
     const userId = getUserId(req);
     if (!PUBLIC_ACTIONS.includes(action) && !userId) {
@@ -1502,6 +1554,55 @@ app.http('data', {
         // every projects document, strips the four fields from `connections`,
         // and replaces only the documents that had something to strip. Safe to
         // run again: a clean document is left alone. Reports counts only.
+        // ── AUDIT-SIGNIN: record one interactive sign-in ────────────────────
+        // POST /api/data/audit-signin
+        // Body: { type:'signin', timestamp, userId, email, idp, ip, city,
+        //         region, country, countryCode, userAgent, ttl }
+        //
+        // Written only by netlify/edge-functions/login-audit.js. The browser
+        // must never reach this directly: a page that could write its own
+        // sign-in rows could write a sign-in that never happened, from an
+        // address it was never at, which is worse than having no record.
+        // The shared secret is what distinguishes the two callers — a user
+        // token proves a person, this proves the request came through the
+        // edge function with geo that function resolved.
+        //
+        // The comparison is length-safe but not constant-time. The value is
+        // a 256-bit random string compared on a network round trip; timing
+        // it across that noise is not the attack anyone runs, and reaching
+        // for crypto.timingSafeEqual here would need equal-length buffers
+        // and add a failure mode for a threat that is not present.
+        case 'audit-signin': {
+          if (req.method !== 'POST') return err(405, 'audit-signin is POST');
+          const expected = process.env.AUDIT_INGEST_KEY || '';
+          if (!expected) {
+            logErr(ctx, 'audit-signin called but AUDIT_INGEST_KEY is not set');
+            return err(500, 'AUDIT_INGEST_KEY is not configured on the Function App');
+          }
+          const presented = req.headers.get('x-audit-ingest-key') || '';
+          if (presented !== expected) {
+            ctx.log('audit-signin: refused — ingest key missing or wrong');
+            return err(403, 'This endpoint is not callable directly');
+          }
+
+          try {
+            const body = await req.json().catch(() => null);
+            // The container's shape, extended rather than reinvented: id,
+            // userId, action and timestamp are what every other row here
+            // carries, so one query reads the lot.
+            const bad = signinRejection(body);
+            if (bad) return err(400, bad);
+            const doc = buildSigninDoc(body, Date.now());
+
+            await getCosmosContainer('audit').items.create(doc);
+            ctx.log(`audit-signin: recorded ${doc.id} (idp ${doc.idp}, ${doc.countryCode || 'no country'})`);
+            return ok({ recorded: true, id: doc.id });
+          } catch (e) {
+            logErr(ctx, 'audit-signin failed:', e.message);
+            return err(500, `audit-signin failed: ${e.message}\n${e.stack || ''}`);
+          }
+        }
+
         // ── CONNECTION-PROFILE-DELETE: one retired profile off the cloud copy ─
         // POST /api/data/connection-profile-delete   Body: { profileId }
         //

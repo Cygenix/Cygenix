@@ -219,6 +219,65 @@ const msalConfig = {
 // msalInstance is set after MSAL.js CDN script loads and initializes
 let msalInstance = null;
 
+/* ── Recording the sign-in ───────────────────────────────────────────────────
+   One audit entry per INTERACTIVE sign-in, with the address and place it came
+   from. /api/login-audit is an edge function: it verifies the token, adds the
+   city and country only the edge can see, and forwards the entry to be stored.
+
+   Four things about how this is called, each of which was a way to get it
+   wrong:
+
+   Only a real sign-in. handleRedirectPromise() returns a result ONLY when the
+   browser has just come back from Entra having actually signed somebody in.
+   It returns null for an ordinary page load, a silent token refresh and a
+   reopened session, and this is called from the one branch where it did not.
+
+   Never awaited. The caller is a sign-in that has already succeeded; the
+   person is going to the dashboard whether or not this lands. It is fired and
+   dropped, and a failure is a console warning and nothing else. keepalive is
+   what lets the request outlive the navigation that follows it — without it
+   the browser cancels the fetch on unload and the entry is lost roughly as
+   often as it is kept.
+
+   Fired once. Two guards, deliberately different in scope: an in-flight flag
+   for this page load, and a sessionStorage key naming this exact sign-in (the
+   result's own id and the token's issued-at) so a reload of the redirect URL
+   cannot record a second entry for the same event. Neither is reset by the
+   request's own callback — a one-shot flag a callback clears is not a
+   one-shot flag, and this one guards a write to an audit log.
+
+   Not on the way out. A sign-out sets cygenix_just_signed_out; init() reads
+   and clears it before we get here, so the flag is passed in rather than
+   re-read. */
+let _signinAuditInFlight = false;
+
+function recordSignin(result) {
+  if (_signinAuditInFlight) return;
+  try {
+    const claims = result.idTokenClaims || {};
+    const stamp = String(result.uniqueId || claims.oid || claims.sub || '') + ':' + String(claims.iat || '');
+    if (sessionStorage.getItem('cygenix_signin_audited') === stamp) return;
+    const token = result.idToken;
+    if (!token) return;                       // nothing to authenticate with
+
+    _signinAuditInFlight = true;              // set here, cleared nowhere
+    sessionStorage.setItem('cygenix_signin_audited', stamp);
+
+    fetch('/api/login-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: '{}',
+      keepalive: true,
+    }).then((r) => {
+      if (!r.ok) console.warn('[Auth] Sign-in audit returned ' + r.status);
+    }).catch((e) => {
+      console.warn('[Auth] Sign-in audit did not send:', e && e.message);
+    });
+  } catch (e) {
+    console.warn('[Auth] Sign-in audit skipped:', e && e.message);
+  }
+}
+
 // ── Handle redirect after login ──────────────────────────────────────────────
 async function init() {
   // If user just signed out, skip silent re-login and show the login UI
@@ -228,7 +287,10 @@ async function init() {
   try {
     const result = await msalInstance.handleRedirectPromise();
     if (result) {
-      // Came back from Entra login redirect
+      // Came back from Entra login redirect — a real interactive sign-in.
+      // Recorded before the navigation, and never on the way out of a
+      // sign-out; the request carries keepalive so it survives the redirect.
+      if (!justSignedOut) recordSignin(result);
       saveSession(result);
       redirectAfterLogin();
       return;

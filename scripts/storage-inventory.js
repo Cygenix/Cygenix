@@ -94,6 +94,7 @@ const CLASSES = {
   'cygenix_diag_selection_v1':         ['C', 'Diagnostics tab: ticked tests, side toggle, report format and last run time, per user', ''],
   'cygenix_collation_ui_v1':           ['C', 'Collation card: collapsed state and severity filter, per user', 'synced (SYNC_KEYS), local-wins — the collation SETTINGS are not here, they live on the connection profile inside cygenix_profiles_v1'],
   'cygenix_profiles_show_retired':     ['C', 'Profiles page: whether retired profiles are shown in the table', 'read and written in try/catch; the page renders without it'],
+  'cygenix_signin_audited':            ['C', 'sessionStorage: the sign-in already recorded in the audit log, as its result id and token issued-at', 'a one-shot guard, never cleared by the request it guards; session-scoped so a new sign-in records again'],
   'cygenix_sidebar_closed_groups':     ['C', 'Collapsed nav groups', ''],
   'cygenix_jobs_panel_collapsed':      ['C', 'Jobs panel collapsed', ''],
   'cygenix_sql_panel_collapsed':       ['C', 'SQL panel collapsed', ''],

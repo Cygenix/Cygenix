@@ -26,9 +26,16 @@ const JWKS = createRemoteJWKSet(
   new URL(`https://${AUTHORITY_HOST}/${TENANT_ID}/discovery/v2.0/keys`)
 );
 
-// Verify the request's Authorization header. Returns { email, name, oid }
-// from verified claims, or throws.
-export async function verifyRequestAuth(request) {
+// The whole verified payload. Added alongside verifyRequestAuth rather than
+// widening it, because that function's three-field return is what the two AI
+// endpoints destructure and this one must not change under them.
+//
+// The sign-in audit needs claims the narrow shape drops: `idp`, which names
+// the federated provider on a Google sign-in and is absent on a local one,
+// and `emails`, which is where Entra External ID puts the address for some
+// user flows instead of `email`. A caller that wants a claim asks for the
+// payload and reads it; nothing here decides in advance which claims matter.
+export async function verifyRequestClaims(request) {
   const raw = request.headers.get('authorization') || '';
   const m = /^Bearer\s+(.+)$/i.exec(raw.trim());
   if (!m) throw new Error('Missing Authorization header — sign in first');
@@ -37,13 +44,24 @@ export async function verifyRequestAuth(request) {
     audience: CLIENT_ID,
     issuer: VALID_ISSUERS,
   });
+  return payload;
+}
 
-  const email = String(
-    payload.email || payload.preferred_username || payload.upn || ''
-  ).trim().toLowerCase();
+// The address, from whichever claim this user flow populated. Shared so the
+// audit entry and the AI endpoints cannot disagree about who someone is.
+export function emailFromClaims(payload) {
+  const p = payload || {};
+  const first = Array.isArray(p.emails) && p.emails.length ? p.emails[0] : '';
+  return String(p.email || p.preferred_username || p.upn || first || '')
+    .trim().toLowerCase();
+}
 
+// Verify the request's Authorization header. Returns { email, name, oid }
+// from verified claims, or throws.
+export async function verifyRequestAuth(request) {
+  const payload = await verifyRequestClaims(request);
   return {
-    email,
+    email: emailFromClaims(payload),
     name: payload.name || '',
     oid:  payload.oid || payload.sub || '',
   };

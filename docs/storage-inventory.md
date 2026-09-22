@@ -71,7 +71,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data_stream_designer.html, data_stream_store.html |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
-## C — Preference — per-viewer convenience (29)
+## C — Preference — per-viewer convenience (30)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
@@ -98,6 +98,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_redirect_after_login` | Post-login destination | — | auth-gate.js, login.html |
 | `cygenix_redirect_after_plan` | Post-checkout destination | — | auth-gate.js |
 | `cygenix_schemaexp_atlas_smfilters` | Schema Explorer filter state | — | schema_explorer.html |
+| `cygenix_signin_audited` | sessionStorage: the sign-in already recorded in the audit log, as its result id and token issued-at | a one-shot guard, never cleared by the request it guards; session-scoped so a new sign-in records again | login.html |
 | `cygenix_sql_panel_collapsed` | SQL panel collapsed | — | sql-editor-app.js |
 | `cygenix_src_conn_mode` | Source connection mode | — | connect.html |
 | `cygenix_src_fn_url` | Source function URL | — | connect.html |
@@ -107,4 +108,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_63 classified key(s) across `public/`._
+_64 classified key(s) across `public/`._
