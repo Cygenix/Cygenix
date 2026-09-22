@@ -37,7 +37,7 @@ const sandbox = {
   esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
         c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
   _getAllSavedJobs: () => JOBS,
-  _getProjectList: () => [{ id:'p-demo', name:'Demo' }, { id:'p-dentons', name:'Dentons ROW' }],
+  _getProjectList: () => [{ id:'p-demo', name:'Demo' }, { id:'p-legal', name:'Legal Sample' }],
   editJobId: null,
   confirm: () => CONFIRMED,
   showStatus: (msg) => STATUS.push(msg),
@@ -265,8 +265,8 @@ const PROJ_KEY = 'cygenix_active_project_id';
 JOBS = [
   { id:'d1', name:'Cases',            projectId:'p-demo',    source:'dbo.Cases',    target:'dbo.cases',    created: iso(1), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
   { id:'d2', name:'Addresses',        projectId:'p-demo',    source:'dbo.addresses',target:'dbo.addresses',created: iso(2), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
-  { id:'x1', name:'timekeeper_dm',    projectId:'p-dentons', source:'dbo.Timekeeper_DM', target:'dbo.Timekeeper', created: iso(3), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
-  { id:'x2', name:'tkprrate_to_adj',  projectId:'p-dentons', source:'dbo.TkprRate_DM',   target:'dbo.TkprRate',   created: iso(4), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+  { id:'x1', name:'timekeeper_dm',    projectId:'p-legal', source:'dbo.Timekeeper_DM', target:'dbo.Timekeeper', created: iso(3), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+  { id:'x2', name:'tkprrate_to_adj',  projectId:'p-legal', source:'dbo.TkprRate_DM',   target:'dbo.TkprRate',   created: iso(4), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
   { id:'u1', name:'Legacy unassigned',                       source:'dbo.Old',      target:'dbo.New',      created: iso(5), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
 ];
 
@@ -287,7 +287,7 @@ check('"Browse all" still counts every map across projects',
   /Browse all 5 /.test(mkEl('rm-browse-all').textContent));
 
 // Switching project switches the grid.
-store[PROJ_KEY] = 'p-dentons';
+store[PROJ_KEY] = 'p-legal';
 sandbox.renderRecentMaps('');
 g = gridHtml();
 check('switching project shows that project\'s maps instead',
