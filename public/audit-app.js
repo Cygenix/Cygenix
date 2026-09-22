@@ -60,6 +60,14 @@
     verifyResult: null,
     purging: false,
     purgeResult: null,
+    // The Sign-ins tab. It reads a different store from the rest of this
+    // screen — the Cosmos `audit` container rather than the hash chain —
+    // so it keeps its own loading state and is fetched only when the tab is
+    // first opened, rather than on every visit to the audit screen.
+    signins: {
+      loaded: false, loading: false, error: null, denied: false,
+      rows: [], scope: 'mine', days: 30, triedAll: false,
+    },
   };
 
   var mount = null;
@@ -213,6 +221,13 @@
       '.cyg-a-in,.cyg-a-sel{height:34px;border:1px solid var(--color-divider);background:var(--color-bg);color:var(--color-text);padding:0 10px;font-family:var(--font-body);font-size:14px}',
       '.cyg-a-in{min-width:220px;flex:0 1 260px}',
       '.cyg-a-count{margin-left:auto;font-size:14px;color:var(--color-neutral-700);font-variant-numeric:tabular-nums}',
+      /* Sign-ins tab: the standing note under the table, and the two-letter
+         country beside a place. The country code is a quiet confirmation of
+         the place name, not a second copy of it, so it is small and grey. */
+      '.cyg-a-note{font-size:13px;color:var(--color-neutral-700);line-height:1.6;margin:12px 0 0;max-width:70ch}',
+      '.cyg-a-note.err{color:var(--state-fail)}',
+      '.cyg-a-cc{margin-left:7px;font-size:11px;letter-spacing:.06em;color:var(--color-neutral-600);' +
+        'border:1px solid var(--color-divider);padding:1px 5px;vertical-align:1px}',
       '.cyg-a-sp{flex:1}',
       '.cyg-a-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}',
       '.cyg-a-chip{border:1px solid var(--color-divider);background:transparent;color:var(--color-neutral-700);padding:4px 10px;font-family:var(--font-body);font-size:13px;cursor:pointer;line-height:1.2}',
@@ -425,6 +440,8 @@
       headerHtml() + tabsHtml() + bandHtml() + bannerHtml() + statusHtml() + kpiHtml() +
       '<div id="cyg-a-panel-events" role="tabpanel" aria-labelledby="cyg-a-tab-events"' +
         (state.tab === 'events' ? '' : ' hidden') + '></div>' +
+      '<div id="cyg-a-panel-signins" role="tabpanel" aria-labelledby="cyg-a-tab-signins"' +
+        (state.tab === 'signins' ? '' : ' hidden') + '></div>' +
       '<div id="cyg-a-panel-settings" role="tabpanel" aria-labelledby="cyg-a-tab-settings"' +
         (state.tab === 'settings' ? '' : ' hidden') + '></div>' +
       '<div id="cyg-a-panel-integrity" role="tabpanel" aria-labelledby="cyg-a-tab-integrity"' +
@@ -432,6 +449,7 @@
       '<div id="cyg-a-panel-retention" role="tabpanel" aria-labelledby="cyg-a-tab-retention"' +
         (state.tab === 'retention' ? '' : ' hidden') + '></div>';
     renderEventsPanel();
+    renderSigninsPanel();
     renderSettingsPanel();
     renderIntegrityPanel();
     renderRetentionPanel();
@@ -602,6 +620,7 @@
 
   var TABS = [
     { key: 'events', label: 'Events' },
+    { key: 'signins', label: 'Sign-ins' },
     { key: 'settings', label: 'Capture settings' },
     { key: 'integrity', label: 'Integrity' },
     { key: 'retention', label: 'Retention' },
@@ -952,6 +971,227 @@
   }
 
   // ── Settings tab ────────────────────────────────────────────────────────
+
+  // ── Sign-ins tab ────────────────────────────────────────────────────────
+  //
+  // Every interactive sign-in, with the address and the place it came from.
+  // Recorded by netlify/edge-functions/login-audit.js — the edge is the only
+  // part of the stack that can see a city — and stored in the Cosmos `audit`
+  // container, which is why this tab talks to the data proxy while the rest
+  // of this screen talks to the audit function.
+  //
+  // Two scopes. Your own history is not an administrative privilege: seeing
+  // a sign-in from a city you have never been to is the reason this exists,
+  // and a control only an administrator can look at cannot do that job. The
+  // whole organisation's is admin-gated on the server, and the toggle here
+  // simply disappears when the server says no.
+
+  // The identity provider, in the words a person would use.
+  function idpLabel(idp) {
+    var s = String(idp || 'local').toLowerCase();
+    if (s === 'local' || !s) return 'Password';
+    if (s.indexOf('google') !== -1) return 'Google';
+    if (s.indexOf('microsoft') !== -1 || s.indexOf('live.com') !== -1) return 'Microsoft';
+    if (s.indexOf('facebook') !== -1) return 'Facebook';
+    if (s.indexOf('apple') !== -1) return 'Apple';
+    return idp;
+  }
+
+  // A user agent string is unreadable and the useful part of it is two words.
+  // Order matters: Edge and Opera both claim to be Chrome, and Chrome claims
+  // to be Safari, so the most specific name has to be tested first.
+  function browserLabel(ua) {
+    var s = String(ua || '');
+    if (!s) return '—';
+    var name = /Edg\//.test(s) ? 'Edge'
+      : /OPR\/|Opera/.test(s) ? 'Opera'
+      : /Firefox\//.test(s) ? 'Firefox'
+      : /Chrome\//.test(s) ? 'Chrome'
+      : /Safari\//.test(s) ? 'Safari'
+      : '';
+    var os = /Windows/.test(s) ? 'Windows'
+      : /Mac OS X|Macintosh/.test(s) ? 'macOS'
+      : /Android/.test(s) ? 'Android'
+      : /iPhone|iPad|iOS/.test(s) ? 'iOS'
+      : /Linux/.test(s) ? 'Linux'
+      : '';
+    if (!name && !os) return 'Unknown';
+    return (name + (name && os ? ' on ' : '') + os) || 'Unknown';
+  }
+
+  // City, region and country, skipping whichever are missing, and never
+  // repeating a region that is just the city again.
+  function placeLabel(r) {
+    var parts = [];
+    if (r.city) parts.push(r.city);
+    if (r.region && r.region !== r.city) parts.push(r.region);
+    if (r.country && r.country !== r.region) parts.push(r.country);
+    return parts.length ? parts.join(', ') : 'Unknown location';
+  }
+
+  function loadSignins(opts) {
+    var o = opts || {};
+    var s = state.signins;
+    if (s.loading) return;                       // one request at a time
+    var api2 = root.CygenixDataApi;
+    if (!api2 || typeof api2.callResult !== 'function') {
+      s.error = 'The data layer is not loaded on this page.';
+      s.loaded = true; renderSigninsPanel(); return;
+    }
+    // `denied` is deliberately NOT cleared here. A refused scope=all is
+    // followed immediately by a fallback load of the caller's own history,
+    // and clearing the flag at the top of that second load would erase the
+    // sentence explaining why the scope changed — the reader would press
+    // Everyone, see their own rows, and be told nothing. It is cleared when
+    // they press a scope button, which is the point at which they have
+    // asked a new question.
+    s.loading = true; s.error = null;
+    renderSigninsPanel();
+
+    var scope = o.scope || s.scope;
+    var days = o.days || s.days;
+    api2.callResult('audit-signins', { method: 'GET', query: { scope: scope, days: days } })
+      .then(function (r) {
+        if (r.ok) {
+          var d = r.data || {};
+          s.rows = d.signins || [];
+          s.scope = d.scope || scope;
+          s.days = d.days || days;
+          return;
+        }
+        // A refused scope=all is not an error to shout about: it means this
+        // account is not an administrator, which is a normal answer. Fall
+        // back to their own history rather than showing them a failure.
+        var code = (r.error && r.error.status) || 0;
+        if (scope === 'all' && (code === 403 || code === 401)) {
+          s.denied = true; s.scope = 'mine';
+          return;
+        }
+        s.error = (r.error && r.error.message) || 'Could not load the sign-in history.';
+      })
+      .catch(function (e) { s.error = e && e.message ? e.message : String(e); })
+      .then(function () {
+        s.loading = false; s.loaded = true;
+        // The refused case re-asks for the narrower scope, once. triedAll
+        // stops that becoming a loop if the server keeps refusing.
+        if (s.denied && !s.triedAll) { s.triedAll = true; renderSigninsPanel(); loadSignins({ scope: 'mine' }); return; }
+        renderSigninsPanel();
+      });
+  }
+
+  function signinsTableHtml() {
+    var s = state.signins;
+    var all = s.scope === 'all';
+    var head = '<tr>' +
+      '<th>When</th>' +
+      (all ? '<th>Who</th>' : '') +
+      '<th>Where</th><th>IP address</th><th>Signed in with</th><th>Browser</th></tr>';
+    if (!s.rows.length) {
+      return '<table class="cyg-a-table"><thead>' + head + '</thead><tbody>' +
+        '<tr><td colspan="' + (all ? 6 : 5) + '" class="cyg-a-empty">' +
+        (s.days === 30 ? 'No sign-ins recorded yet.' : 'No sign-ins in this period.') +
+        '<div style="margin-top:6px;font-size:13px">Sign-ins are recorded from the moment the feature ' +
+        'was deployed. Anything before that is not here.</div></td></tr></tbody></table>';
+    }
+    var body = s.rows.map(function (r) {
+      return '<tr>' +
+        '<td class="cyg-a-when">' + esc(fmt(r.timestamp)) +
+          '<div style="color:var(--color-neutral-700);font-size:12px">' + esc(rel(r.timestamp)) + '</div></td>' +
+        (all ? '<td>' + esc(r.email || r.userId || '—') + '</td>' : '') +
+        '<td>' + esc(placeLabel(r)) +
+          (r.countryCode ? '<span class="cyg-a-cc">' + esc(r.countryCode) + '</span>' : '') + '</td>' +
+        '<td class="cyg-a-seq">' + esc(r.ip || '—') + '</td>' +
+        '<td>' + esc(idpLabel(r.idp)) + '</td>' +
+        '<td>' + esc(browserLabel(r.userAgent)) + '</td>' +
+        '</tr>';
+    }).join('');
+    return '<table class="cyg-a-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
+  }
+
+  function renderSigninsPanel() {
+    var el = document.getElementById('cyg-a-panel-signins');
+    if (!el) return;
+    var s = state.signins;
+
+    if (!s.loaded && !s.loading) {
+      el.innerHTML = '<div class="cyg-a-empty">Open this tab to load the sign-in history.</div>';
+      return;
+    }
+
+    var places = {}, people = {};
+    s.rows.forEach(function (r) {
+      places[placeLabel(r)] = 1;
+      people[r.email || r.userId || '?'] = 1;
+    });
+    var nPlaces = Object.keys(places).length;
+
+    var summary = s.loading ? 'Loading…'
+      : s.rows.length + (s.rows.length === 1 ? ' sign-in' : ' sign-ins') +
+        ' in the last ' + s.days + ' days' +
+        (nPlaces ? ', from ' + nPlaces + (nPlaces === 1 ? ' place' : ' places') : '') +
+        (s.scope === 'all' ? ', across ' + Object.keys(people).length + ' people' : '');
+
+    var toolbar = '<div class="cyg-a-toolbar">' +
+      '<div class="cyg-a-seg" role="group" aria-label="Whose sign-ins">' +
+        '<button type="button" data-si-scope="mine" class="' + (s.scope !== 'all' ? 'on' : '') +
+          '" aria-pressed="' + (s.scope !== 'all') + '">Mine</button>' +
+        '<button type="button" data-si-scope="all" class="' + (s.scope === 'all' ? 'on' : '') +
+          '" aria-pressed="' + (s.scope === 'all') + '">Everyone</button>' +
+      '</div>' +
+      '<select id="cyg-a-si-days" aria-label="Period">' +
+        [7, 30, 90, 365].map(function (d) {
+          return '<option value="' + d + '"' + (s.days === d ? ' selected' : '') + '>Last ' + d + ' days</option>';
+        }).join('') +
+      '</select>' +
+      '<button type="button" id="cyg-a-si-refresh"' + (s.loading ? ' disabled' : '') + '>Refresh</button>' +
+      '<span class="cyg-a-count">' + esc(summary) + '</span>' +
+      '</div>';
+
+    var notes = '';
+    if (s.denied) {
+      notes += '<div class="cyg-a-note">Only an administrator can see everyone\'s sign-ins. ' +
+        'Showing your own.</div>';
+    }
+    if (s.error) {
+      notes += '<div class="cyg-a-note err">' + esc(s.error) + '</div>';
+    }
+
+    el.innerHTML = toolbar + notes +
+      (s.loading && !s.rows.length ? '<div class="cyg-a-empty">Loading the sign-in history…</div>' : signinsTableHtml()) +
+      '<div class="cyg-a-note">Recorded at the edge, which is the only part of the stack that can see a ' +
+      'city. A missing location means the address could not be placed — a corporate network or a VPN — ' +
+      'and the sign-in is recorded either way. Entries are kept for 30 days.' +
+      // The integrity band at the top of this screen describes the hash
+      // chain, and these rows are not in it. Leaving that unsaid would let a
+      // reader carry "verified" across from the band to this table, which is
+      // exactly the kind of unearned assurance an audit screen must not give.
+      '<br><b>These entries are stored separately from the hash-chained trail above and are not covered ' +
+      'by its verification.</b></div>';
+
+    wireSignins();
+  }
+
+  function wireSignins() {
+    var panel = document.getElementById('cyg-a-panel-signins');
+    if (!panel) return;
+    panel.querySelectorAll('[data-si-scope]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var next = b.getAttribute('data-si-scope');
+        if (next === state.signins.scope) return;          // already there
+        state.signins.triedAll = false;
+        state.signins.denied = false;
+        state.signins.scope = next;
+        loadSignins({ scope: next });
+      });
+    });
+    var days = panel.querySelector('#cyg-a-si-days');
+    if (days) days.addEventListener('change', function () {
+      state.signins.days = parseInt(days.value, 10) || 30;
+      loadSignins({ days: state.signins.days });
+    });
+    var ref = panel.querySelector('#cyg-a-si-refresh');
+    if (ref) ref.addEventListener('click', function () { loadSignins({}); });
+  }
 
   function renderSettingsPanel() {
     var el = document.getElementById('cyg-a-panel-settings');
@@ -1413,6 +1653,13 @@
 
   function selectTab(key) {
     state.tab = key;
+    // The sign-in history is a second backend and a second round trip, so it
+    // is fetched when somebody first asks to see it rather than on every
+    // visit to this screen. Guarded on `loaded` AND on `loading`, so opening
+    // the tab twice while the first request is in flight does not start a
+    // second one, and a tab that loaded and found nothing does not re-ask on
+    // every click. Refresh is the way to look again.
+    if (key === 'signins' && !state.signins.loaded && !state.signins.loading) loadSignins({});
     TABS.forEach(function (t) {
       var tab = document.getElementById('cyg-a-tab-' + t.key);
       var panel = document.getElementById('cyg-a-panel-' + t.key);

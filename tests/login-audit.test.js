@@ -86,10 +86,24 @@ section('1. The entry — verified claims in, every location field optional');
     { ip: '203.0.113.9', geo: { city: 'Leeds', subdivision: { name: 'England' }, country: { name: 'United Kingdom', code: 'GB' } } },
     'Mozilla/5.0 (X11)', NOW);
   check('a complete sign-in carries the lot',
-    full.type === 'signin' && full.timestamp === NOW && full.userId === 'oid-1'
+    full.type === 'signin' && full.timestamp === NOW
     && full.ip === '203.0.113.9' && full.city === 'Leeds' && full.region === 'England'
     && full.country === 'United Kingdom' && full.countryCode === 'GB', JSON.stringify(full));
   check('the address is lower-cased, so the same person is one person', full.email === 'someone@example.test');
+
+  // The container is partitioned on /userId and everywhere else in this
+  // system that field holds the email. A row keyed by the Entra object id
+  // would sit in a partition nothing else can address, so "my sign-ins"
+  // would find nothing and the rows would look lost rather than misfiled.
+  check('THE PARTITION KEY IS THE EMAIL, matching every other row in the container',
+    full.userId === 'someone@example.test', full.userId);
+  check('and the Entra object id is kept alongside, as the identifier that survives an address change',
+    full.oid === 'oid-1');
+  check('a token with an object id but no address still keys on something',
+    build({ oid: 'oid-only' }, {}, '', NOW).userId === 'oid-only');
+  check('and an address with no object id keys on the address, with a null oid',
+    build({ email: 'e@x.test' }, {}, '', NOW).userId === 'e@x.test'
+    && build({ email: 'e@x.test' }, {}, '', NOW).oid === null);
   check('a federated sign-in names its provider', full.idp === 'google.com');
   check('the ttl is 30 days in seconds', full.ttl === 2592000);
 
@@ -98,10 +112,10 @@ section('1. The entry — verified claims in, every location field optional');
     bare.userId === 'sub-only' && bare.ip === null && bare.city === null
     && bare.region === null && bare.country === null && bare.countryCode === null, JSON.stringify(bare));
   check('every missing field is null, never absent — a column that vanishes is a column nobody can query',
-    ['email', 'ip', 'city', 'region', 'country', 'countryCode', 'userAgent'].every((k) => k in bare));
+    ['email', 'oid', 'ip', 'city', 'region', 'country', 'countryCode', 'userAgent'].every((k) => k in bare));
   check('a sign-in Entra itself authenticated is idp "local"', bare.idp === 'local');
   check('oid is preferred over sub, and sub is the fallback',
-    build({ oid: 'a', sub: 'b' }, {}, '', NOW).userId === 'a' && bare.userId === 'sub-only');
+    build({ oid: 'a', sub: 'b' }, {}, '', NOW).oid === 'a' && bare.oid === 'sub-only');
 
   const partial = build({ oid: 'x' }, { geo: { country: { name: 'Ireland' } } }, 'UA', NOW);
   check('a half-resolved geo keeps what it has and nulls the rest',
@@ -140,8 +154,9 @@ section('2. The edge function — what it refuses, and what it never shows the c
   check('OPTIONS is answered, so a browser preflight does not fail the call', /request\.method === 'OPTIONS'/.test(edgeCode));
   check('the token is verified before anything else happens, and a bad one is 401',
     /await verifyRequestClaims\(request\)[\s\S]{0,200}return json\(401/.test(edgeCode));
-  check('a token with no subject is 401 too — an entry with no user is not an entry',
-    /if \(!userId\) return json\(401/.test(edgeCode));
+  check('a token carrying neither a subject nor an address is 401 — an entry with no user is not an entry',
+    /Token carries neither a subject nor an address/.test(edgeCode)
+    && /return json\(401, \{ error: 'Token carries neither/.test(edgeCode));
   check('the identity comes from the CLAIMS, never from the request body',
     /buildSigninEntry\(\s*\n?\s*claims, context/.test(edgeCode) && !/JSON\.parse\(await request\.text/.test(edgeCode));
 
@@ -273,6 +288,91 @@ section('4. The page — an interactive sign-in only, fired once, never waited o
   check('the body carries no identity — the server reads that from the token', /body: '\{\}'/.test(fn));
   check('the new sessionStorage key is classified in the storage inventory',
     /'cygenix_signin_audited'/.test(read('scripts', 'storage-inventory.js')));
+}
+
+/* ── 4b. Reading them back: the action and the tab ───────────────────────── */
+section('4b. The view — the read action, its two scopes, and the Sign-ins tab');
+{
+  const act = (idxCode.match(/case 'audit-signins': \{[\s\S]*?\n {8}\}/) || [''])[0];
+  check('the read action exists and is GET', act.length > 0 && /req\.method !== 'GET'\) return err\(405/.test(act));
+  check('the default scope is the caller\'s own history', /String\(req\.query\.get\('scope'\) \|\| 'mine'\)/.test(act));
+  check('MINE IS SCOPED TO THE VERIFIED IDENTITY — there is no parameter that names somebody else',
+    /c\.userId = @uid[\s\S]{0,300}\{ name: '@uid', value: userId \}/.test(act)
+    && !/req\.query\.get\('userId'\)|req\.query\.get\('email'\)/.test(act));
+  check('reading your OWN sign-ins is not an admin act — requireAdmin guards only scope=all',
+    /if \(scope === 'all'\) \{\s*\n\s*const gate = await requireAdmin\(userId\);/.test(act)
+    && act.lastIndexOf('requireAdmin') < act.indexOf("c.userId = @uid"));
+  check('both queries are restricted to sign-in rows, so the tab cannot read the rest of the container',
+    (act.match(/c\.type = 'signin'/g) || []).length === 2);
+  check('the period and the row count are bounded, so a hand-made query cannot ask for a full scan',
+    /Math\.min\(365, Math\.max\(1,/.test(act) && /Math\.min\(1000, Math\.max\(1,/.test(act));
+  check('a bad days or limit falls back to a default rather than NaN',
+    /Number\.isFinite\(rawDays\) \? rawDays : 30/.test(act) && /Number\.isFinite\(rawLimit\) \? rawLimit : 200/.test(act));
+  check('failures carry message and stack, as the other actions here do',
+    /audit-signins failed: \$\{e\.message\}\\n\$\{e\.stack \|\| ''\}/.test(act));
+  check('the proxy forwards the action', /'audit-signins'/.test(code(read('netlify', 'functions', 'data-proxy.js'))));
+
+  const APP = read('public', 'audit-app.js');
+  const app = code(APP);
+  check('the audit screen has a Sign-ins tab, second, beside Events',
+    /\{ key: 'events', label: 'Events' \},\s*\{ key: 'signins', label: 'Sign-ins' \},/.test(app));
+  check('it has a panel, a renderer and a loader',
+    /id="cyg-a-panel-signins" role="tabpanel"/.test(app)
+    && /function renderSigninsPanel\(\)/.test(app) && /function loadSignins\(opts\)/.test(app));
+  check('the panel is rendered with the others, so switching tabs does not refetch',
+    /renderEventsPanel\(\);\s*\n\s*renderSigninsPanel\(\);/.test(app));
+
+  check('IT LOADS ONCE, WHEN THE TAB IS FIRST OPENED — not on every visit to the audit screen',
+    /if \(key === 'signins' && !state\.signins\.loaded && !state\.signins\.loading\) loadSignins\(\{\}\);/.test(app));
+  check('and a second request cannot start while one is in flight', /if \(s\.loading\) return;/.test(app));
+  check('the in-flight flag is cleared where the request settles, not in a branch that can be skipped',
+    /\.then\(function \(\) \{\s*\n\s*s\.loading = false; s\.loaded = true;/.test(app));
+  check('a refused scope=all falls back to the caller\'s own history ONCE, not in a loop',
+    /if \(s\.denied && !s\.triedAll\) \{ s\.triedAll = true;/.test(app));
+  check('the refusal is explained rather than shown as a failure',
+    /Only an administrator can see everyone\\?'s sign-ins/.test(app));
+  check('it reads through the data layer, not by assembling a URL with a key in it',
+    /callResult\('audit-signins', \{ method: 'GET', query: \{ scope: scope, days: days \} \}\)/.test(app)
+    && !/azurewebsites\.net/.test(APP));
+
+  // The three label helpers are pure; run them rather than reading them.
+  const idp = lift(APP, /function idpLabel\(idp\) \{[\s\S]*?\n {2}\}/, 'idpLabel');
+  const br = lift(APP, /function browserLabel\(ua\) \{[\s\S]*?\n {2}\}/, 'browserLabel');
+  const place = lift(APP, /function placeLabel\(r\) \{[\s\S]*?\n {2}\}/, 'placeLabel');
+  check('the three label helpers lift out and run',
+    typeof idp === 'function' && typeof br === 'function' && typeof place === 'function');
+  check('the provider is named in a person\'s words, and local means a password',
+    idp('local') === 'Password' && idp('google.com') === 'Google' && idp('') === 'Password');
+  check('an unrecognised provider is shown as it came, not hidden', idp('okta.example') === 'okta.example');
+  const UA = {
+    edge: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36 Edg/120',
+    chrome: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+    safari: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1 Version/17 Safari/605.1',
+    firefox: 'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  };
+  check('EDGE IS NOT REPORTED AS CHROME, AND CHROME IS NOT REPORTED AS SAFARI — the specific name wins',
+    br(UA.edge) === 'Edge on Windows' && br(UA.chrome) === 'Chrome on Windows' && br(UA.safari) === 'Safari on macOS',
+    [br(UA.edge), br(UA.chrome), br(UA.safari)].join(' | '));
+  check('Firefox on Linux reads as itself', br(UA.firefox) === 'Firefox on Linux');
+  check('a missing user agent is a dash, and an unrecognised one is Unknown',
+    br('') === '—' && br('curl/8.0') === 'Unknown');
+  check('the place skips what is missing and never repeats itself',
+    place({ city: 'Leeds', region: 'England', country: 'United Kingdom' }) === 'Leeds, England, United Kingdom'
+    && place({ city: 'Dublin', country: 'Ireland' }) === 'Dublin, Ireland'
+    && place({ city: 'Berlin', region: 'Berlin', country: 'Germany' }) === 'Berlin, Germany');
+  check('no location at all says so plainly rather than showing an empty cell',
+    place({}) === 'Unknown location');
+
+  check('the Who column appears only when looking at everyone',
+    /\(all \? '<th>Who<\/th>' : ''\)/.test(app));
+  check('the empty state explains that history starts at deployment, not at the beginning of time',
+    /Sign-ins are recorded from the moment the feature/.test(app));
+  check('the standing note says a missing location is a VPN, not a fault, and names the 30-day window',
+    /A missing location means the address could not be placed/.test(app) && /kept for 30 days/.test(app));
+  // The integrity band sits above every tab on this screen. A reader must not
+  // carry "verified" across from it to a table it does not cover.
+  check('AND SAYS THESE ROWS ARE NOT COVERED BY THE CHAIN\'S VERIFICATION',
+    /stored separately from the hash-chained trail above and are not covered/.test(app));
 }
 
 /* ── 5. Nothing leaks ────────────────────────────────────────────────────── */

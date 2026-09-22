@@ -115,6 +115,10 @@ const ALLOWED = new Set([
   // The Function App refuses (409) unless the profile is retired and no
   // binding or run record names it — the same rule the page applies.
   'connection-profile-delete',
+  // The sign-in history. Reading your OWN is not an admin act — noticing a
+  // sign-in from a city you have never been to is the point of recording
+  // it. scope=all is gated on requireAdmin by the Function App.
+  'audit-signins',
   // 'invite' is gone: it called Netlify Identity's GoTrue admin endpoint,
   // which made that a second identity provider. Invitations are issued by
   // the product now — see netlify/functions/lib/tenancy.js.

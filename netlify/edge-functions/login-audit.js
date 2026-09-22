@@ -69,16 +69,35 @@ const json = (status, obj) => new Response(JSON.stringify(obj), {
 // missing and becomes null rather than disappearing, the user agent is
 // capped, and `idp` falls back to 'local' when Entra itself held the
 // credential rather than a federated provider.
+//
+// ── Why userId is the EMAIL and not the oid ───────────────────────────────
+//
+// The `audit` container is partitioned on /userId, and everywhere else in
+// this system that field holds the lower-cased email address: data-proxy
+// derives `x-user-id` from the verified email claim, and every Cosmos query
+// in the Function App reads it that way. A sign-in row keyed by the Entra
+// object id would sit in a partition nothing else can address — "show me my
+// sign-ins" would query the email partition and find nothing, and the rows
+// would look lost rather than misfiled.
+//
+// So userId follows the container it lives in, and the object id is kept
+// alongside as `oid`. That is the stable identifier if somebody's address
+// ever changes, and it costs one field to keep the link.
 export function buildSigninEntry(claims, ctx, userAgent, nowIso) {
   const c = claims || {};
   const geo = (ctx && ctx.geo) || {};
   const emails = Array.isArray(c.emails) && c.emails.length ? c.emails[0] : '';
   const email = String(c.email || c.preferred_username || c.upn || emails || '')
     .trim().toLowerCase();
+  const oid = String(c.oid || c.sub || '').trim();
   return {
     type: 'signin',
     timestamp: nowIso,
-    userId: String(c.oid || c.sub || '').trim(),
+    // The address if there is one; the object id only when a user flow
+    // issued a token without an address at all, so the row is never
+    // written with an empty partition key.
+    userId: email || oid,
+    oid: oid || null,
     email: email || null,
     idp: c.idp ? String(c.idp) : 'local',
     ip: (ctx && ctx.ip) || null,
@@ -102,8 +121,10 @@ export default async function handler(request, context) {
   } catch (e) {
     return json(401, { error: 'Not authenticated: ' + e.message });
   }
-  const userId = String(claims.oid || claims.sub || '').trim();
-  if (!userId) return json(401, { error: 'Token carries no subject' });
+  if (!String(claims.oid || claims.sub || '').trim()
+      && !String(claims.email || claims.preferred_username || claims.upn || '').trim()) {
+    return json(401, { error: 'Token carries neither a subject nor an address' });
+  }
 
   // 2. Where. Every one of these can be missing — a corporate VPN, an IPv6
   //    range Netlify cannot place, a local dev request. A missing field is

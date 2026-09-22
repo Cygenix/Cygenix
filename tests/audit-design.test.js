@@ -55,8 +55,10 @@ check('the header is rendered first, then the tabs, then the band — and a read
   && /Export needs the Platform Administrator or Auditor role/.test(VIEW));
 
 /* ── 2. Tabs ────────────────────────────────────────────────────────────── */
-check('four tabs, in the handoff\'s order, drawn as the console strip',
-  /\{ key: 'events', label: 'Events' \},\s*\{ key: 'settings', label: 'Capture settings' \},\s*\{ key: 'integrity', label: 'Integrity' \},\s*\{ key: 'retention', label: 'Retention' \},/.test(VIEW)
+// Five since Sep-2026: Sign-ins sits second, beside Events, because both
+// answer "what happened" and the three after it are configuration.
+check('the tabs, in the handoff\'s order with Sign-ins added, drawn as the console strip',
+  /\{ key: 'events', label: 'Events' \},\s*\{ key: 'signins', label: 'Sign-ins' \},\s*\{ key: 'settings', label: 'Capture settings' \},\s*\{ key: 'integrity', label: 'Integrity' \},\s*\{ key: 'retention', label: 'Retention' \},/.test(VIEW)
   && /'\.cyg-a-tab\{[^']*font-family:var\(--font-heading\)[^']*font-size:16px[^']*text-transform:uppercase/.test(CSS)
   && /'\.cyg-a-tab\[aria-selected="true"\]\{color:var\(--color-text\);border-color:var\(--color-accent\)\}'/.test(CSS)
   && /id="cyg-a-panel-retention" role="tabpanel"/.test(VIEW)

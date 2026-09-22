@@ -339,13 +339,19 @@ function statusBody() {
 
   // ── 2. Tabs ─────────────────────────────────────────────────────────────
   console.log('\n2. Tabs, from a keyboard');
-  check('the tablist is a real tablist — four tabs: Events, Capture settings, Integrity, Retention',
-    (await page.$$('[role="tab"]')).length === 4);
+  // Five since Sep-2026, Sign-ins added second. That tab's own behaviour is
+  // covered by tests/browser/signins.smoke.js; what matters here is that the
+  // widget is still a conformant tablist with one more tab in it.
+  check('the tablist is a real tablist — five tabs: Events, Sign-ins, Capture settings, Integrity, Retention',
+    (await page.$$('[role="tab"]')).length === 5);
   check('only the selected tab is in the tab order',
     (await page.$$('[role="tab"][tabindex="0"]')).length === 1);
   await page.focus('#cyg-a-tab-events');
   await page.keyboard.press('ArrowRight');
   check('arrow keys move between tabs',
+    await page.getAttribute('#cyg-a-tab-signins', 'aria-selected') === 'true');
+  await page.keyboard.press('ArrowRight');
+  check('and again, to the tab after it',
     await page.getAttribute('#cyg-a-tab-settings', 'aria-selected') === 'true');
   check('and the matching panel is the only one shown',
     !(await page.getAttribute('#cyg-a-panel-settings', 'hidden')) &&

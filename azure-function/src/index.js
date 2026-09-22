@@ -115,6 +115,10 @@ function buildSigninDoc(body, now) {
     action: 'signin',
     type: 'signin',
     timestamp: String(body.timestamp).trim(),
+    // The Entra object id travels alongside the address. userId is the
+    // address because that is what /userId means in every other row here;
+    // oid is the identifier that survives somebody changing it.
+    oid: str(body.oid, 64),
     email: str(body.email, 320),
     idp: str(body.idp, 64) || 'local',
     ip: str(body.ip, 64),
@@ -1600,6 +1604,59 @@ app.http('data', {
           } catch (e) {
             logErr(ctx, 'audit-signin failed:', e.message);
             return err(500, `audit-signin failed: ${e.message}\n${e.stack || ''}`);
+          }
+        }
+
+        // ── AUDIT-SIGNINS: read the sign-in history ─────────────────────────
+        // GET /api/data/audit-signins?days=30[&scope=all]
+        //
+        // Two scopes, and the difference is the whole authorisation model:
+        //
+        //   mine (default)  the caller's own sign-ins. One partition, keyed
+        //                   on the verified identity the proxy derived — a
+        //                   caller cannot ask for somebody else's, because
+        //                   there is no parameter that would let them.
+        //   all             every user's. Cross-partition, and gated on
+        //                   requireAdmin. "Where has everyone signed in
+        //                   from" is an administrative question.
+        //
+        // Reading your own sign-in history is deliberately NOT an admin act.
+        // A person noticing a sign-in from a city they have never been to is
+        // the point of recording this, and a control only an administrator
+        // can look at cannot do that job.
+        case 'audit-signins': {
+          if (req.method !== 'GET') return err(405, 'audit-signins is GET');
+          const scope = String(req.query.get('scope') || 'mine').toLowerCase();
+          // Bounded so a hand-made query cannot ask for an unbounded scan.
+          const rawDays = parseInt(req.query.get('days') || '30', 10);
+          const days = Math.min(365, Math.max(1, Number.isFinite(rawDays) ? rawDays : 30));
+          const since = new Date(Date.now() - days * 86400000).toISOString();
+          const rawLimit = parseInt(req.query.get('limit') || '200', 10);
+          const limit = Math.min(1000, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 200));
+          const container = getCosmosContainer('audit');
+
+          try {
+            if (scope === 'all') {
+              const gate = await requireAdmin(userId);
+              if (!gate.ok) return err(gate.code, gate.msg);
+              const { resources } = await container.items.query({
+                query: `SELECT TOP @lim * FROM c WHERE c.type = 'signin' AND c.timestamp >= @since
+                        ORDER BY c.timestamp DESC`,
+                parameters: [{ name: '@lim', value: limit }, { name: '@since', value: since }],
+              }).fetchAll();
+              return ok({ signins: resources || [], scope: 'all', days, limit });
+            }
+            const { resources } = await container.items.query({
+              query: `SELECT TOP @lim * FROM c WHERE c.userId = @uid AND c.type = 'signin'
+                      AND c.timestamp >= @since ORDER BY c.timestamp DESC`,
+              parameters: [{ name: '@lim', value: limit },
+                           { name: '@uid', value: userId },
+                           { name: '@since', value: since }],
+            }).fetchAll();
+            return ok({ signins: resources || [], scope: 'mine', days, limit });
+          } catch (e) {
+            logErr(ctx, 'audit-signins failed:', e.message);
+            return err(500, `audit-signins failed: ${e.message}\n${e.stack || ''}`);
           }
         }
 
