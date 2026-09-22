@@ -137,6 +137,9 @@ tr.cp-inuse-row td{background:var(--green-bg)}
       Connections referenced by a non-retired profile are <b>locked</b> — rename and delete are
       refused on the Connections page, because editing in place would rewrite the meaning of every artifact
       that ever ran under them. A changed endpoint is a new saved connection and a new profile.</div>
+    <!-- The credential store's own health, said here because this page is
+         where "Password needed on this device" appears. Hidden while fine. -->
+    <div class="errbox" id="cp-cloud-status" role="alert" style="display:none;margin:0.6rem 0.9rem 0.8rem"></div>
   </div>
 
   <!-- 2. Profiles -->
@@ -242,12 +245,12 @@ tr.cp-inuse-row td{background:var(--green-bg)}
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/connections.js?v=95bdd3b577" defer></script>
+<script src="/connections.js?v=156cd54c07" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
-<script src="/cygenix-cosmos-sync.js?v=41a8e68a2c" defer></script>
-<script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
-<script src="/cygenix-saved-conn-secrets.js?v=1a5a1cf13d" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
+<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
 <script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
 <script src="/cygenix-profile-apply.js?v=fbedee4630" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
@@ -773,9 +776,24 @@ function renderRuns(){
     + 'write a record here on every run — expected identity, actual identity, and the assertion outcome.</td></tr>';
 }
 
+/* The credential store's health, from the module that keeps it. A missing
+   server key used to be a console.warn and a chip that said "Password needed
+   on this device" — true, and pointing at the wrong cause. */
+function renderCloudStatus(){
+  const el = $('cp-cloud-status');
+  if (!el) return;
+  const S = window.CygenixSavedConnSecrets;
+  const cs = S && typeof S.cloudStatus === 'function' ? S.cloudStatus() : null;
+  if (!cs || (cs.state !== 'unavailable' && cs.state !== 'error')) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = '';
+  el.textContent = (cs.state === 'unavailable' ? 'Credentials are not syncing. ' : 'Credentials could not be synced. ')
+    + (cs.message || 'The credential store did not answer.');
+}
+
 function renderAll(){
   renderAdoption();
   renderConns();
+  renderCloudStatus();
   renderProfiles();
   renderBindings();
   $('cp-s-profile').dataset.stale = '1';
@@ -795,6 +813,9 @@ document.addEventListener('DOMContentLoaded', () => {
   /* and again when the secrets store has pulled the cloud copy, so a
      "Password needed on this device" line clears itself once it is not true */
   window.addEventListener('cygenix:conn-secrets-synced', () => { try { renderAll(); } catch (e) {} });
+  /* and when it could NOT pull it: only the status line changes — a full
+     re-render would reset the create-profile form somebody is typing in */
+  window.addEventListener('cygenix:conn-secrets-error', () => { try { renderCloudStatus(); } catch (e) {} });
 });
 </script>
 <script src="/cookie-consent.js?v=d15e88322f" defer></script>

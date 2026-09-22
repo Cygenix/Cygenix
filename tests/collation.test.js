@@ -355,7 +355,9 @@ check('switching to the Database connections tab mounts it',
 // who navigated straight to the page — which is everybody.
 check('AND SO DOES SIMPLY OPENING THE CONNECTIONS VIEW, because that tab is the default',
   (APP.match(/window\.cygCollation\.init\('cyg-collation-mount'\)/g) || []).length === 2
-  && /connRenderEnv\(\);\s*\/\/ The Collation card mounts here as well as in switchConnTab\./.test(APP));
+  // connCloudStatus() (Sep-2026) renders between the env note and the mount;
+  // the card still mounts on every open of the view, which is the claim.
+  && /connRenderEnv\(\);\s*(connCloudStatus\(\);\s*)?\/\/ The Collation card mounts here as well as in switchConnTab\./.test(APP));
 check('the card carries the stable anchor other modules will deep-link to, and an open() that scrolls to it',
   /id="cyg-collation-card"/.test(SRC) && /function openCard\(\)/.test(SRC) && /scrollIntoView/.test(SRC));
 check('the header carries the four buttons the brief names',

@@ -358,6 +358,154 @@ var CygenixConnections = (function () {
     return next;
   }
 
+  // ── The product's own Function App key ────────────────────────────────────
+  //
+  // A connection in "azure" mode is a URL on a Function App, and the browser
+  // POSTs to it directly (no Netlify function in the path, so no 26-second
+  // cap on a 9,000-table schema read). That route is authLevel 'function':
+  // it wants a key in ?code=, and until now that key had to be TYPED into the
+  // Connections page and lived only in this browser's credential store.
+  //
+  // After a cookie clear the store is empty, the URL comes back from the
+  // cloud without its key, and every call answers 401 — which Object Mapping
+  // rendered as "Target: Non-JSON (401)". Nobody should have to know a host
+  // key to use the product's own Function App.
+  //
+  // So when a side points at the PRODUCT'S host and holds no key, the key is
+  // fetched from the data proxy's blob-credential action — the same hand-off
+  // the Drive's upload relay already uses, served only to a verified Entra
+  // token — and written into the live pair, where every reader already looks.
+  // Another Function App (a customer's own) is left alone: its key is theirs
+  // to enter.
+  //
+  // Guards, because this posts: one request in flight, three seconds between
+  // attempts, and no request at all when neither side needs one. The state
+  // below is written by the request's own outcome ONLY so the Connections
+  // page can show why a key could not be had; it never gates a retry, so a
+  // callback cannot reset a flag that decides whether it runs again.
+  //
+  // This hands the host key to a signed-in browser. That is the exposure the
+  // product already accepts for the Drive relay and exactly what the typed
+  // key was; it is not new. The server-held model in
+  // docs/design/server-held-connections.md is where it goes away.
+  const PRODUCT_FN_HOST = 'cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net';
+  const FN_CRED_MIN_INTERVAL_MS = 3000;
+  function hostOf(u) { try { return new URL(String(u || '')).host.toLowerCase(); } catch { return ''; } }
+  function productHost() {
+    try {
+      const s = (typeof window !== 'undefined') && window.CygenixSync;
+      if (s && s.apiBase) return hostOf(s.apiBase) || PRODUCT_FN_HOST;
+    } catch { /* fall through */ }
+    return PRODUCT_FN_HOST;
+  }
+  function sideNeedsProductKey(mine, side, host) {
+    const url = mine && mine[side + 'FnUrl'], key = mine && mine[side + 'FnKey'];
+    return !!url && !key && hostOf(url) === (host || productHost());
+  }
+  let _fnCredInflight = null;
+  let _fnCredLastAt = 0;
+  const _fnCred = { state: 'idle', code: '', message: '', at: 0, filled: [] };
+  function noteFnCred(state, code, message, filled) {
+    _fnCred.state = state; _fnCred.code = code || ''; _fnCred.message = message || '';
+    _fnCred.at = Date.now(); _fnCred.filled = filled || [];
+  }
+  function fnKeyStatus() { return Object.assign({}, _fnCred, { filled: _fnCred.filled.slice() }); }
+
+  function ensureFnKeys(opts) {
+    const o = opts || {};
+    const uid = currentUserTag();
+    if (!uid) return Promise.resolve({ ok: false, code: 'no-user' });
+    const blob = readBlob(LS_ACTIVE);
+    const mine = (blob[uid] && typeof blob[uid] === 'object') ? blob[uid] : {};
+    const need = ['src', 'tgt'].filter((s) => sideNeedsProductKey(mine, s));
+    if (!need.length) return Promise.resolve({ ok: true, code: 'not-needed', filled: [] });
+
+    const D = (typeof window !== 'undefined') && window.CygenixDataApi;
+    if (!D || typeof D.callResult !== 'function') {
+      noteFnCred('unavailable', 'no-api', 'The data layer is not loaded on this page, so the Function App key cannot be fetched.');
+      return Promise.resolve({ ok: false, code: 'no-api' });
+    }
+    if (typeof D.isSignedIn === 'function' && !D.isSignedIn()) {
+      return Promise.resolve({ ok: false, code: 'no-token' });
+    }
+    if (_fnCredInflight) return _fnCredInflight;
+    if (!o.force && Date.now() - _fnCredLastAt < FN_CRED_MIN_INTERVAL_MS) {
+      return Promise.resolve({ ok: false, code: 'throttled' });
+    }
+    _fnCredLastAt = Date.now();
+    _fnCredInflight = (async () => {
+      try {
+        const r = await D.callResult('blob-credential', { method: 'GET' });
+        if (!r.ok) {
+          const e = r.error || {};
+          const why = e.serverCode === 'no-fn-key'
+            ? 'CYGENIX_DATA_FN_KEY is not set on this deployment, so the site cannot supply the Function App key.'
+            : e.code === 'network' ? 'Could not reach the server.'
+            : e.code === 'auth' ? 'Your session has expired — sign in again.'
+            : 'The server returned ' + (e.status || e.code || 'an error') + ' when asked for the Function App key.';
+          noteFnCred('error', e.serverCode || e.code || 'error', why);
+          return { ok: false, code: e.code || 'error', message: why };
+        }
+        const code = r.data && typeof r.data.code === 'string' ? r.data.code.trim() : '';
+        if (!code) {
+          noteFnCred('error', 'empty', 'The server answered but returned no Function App key.');
+          return { ok: false, code: 'empty' };
+        }
+        const host = hostOf(r.data.base) || productHost();
+        // Re-read: the blob may have changed during the round trip.
+        const blob2 = readBlob(LS_ACTIVE);
+        const mine2 = Object.assign({}, (blob2[uid] && typeof blob2[uid] === 'object') ? blob2[uid] : {});
+        const filled = [];
+        for (const s of ['src', 'tgt']) {
+          if (sideNeedsProductKey(mine2, s, host)) { mine2[s + 'FnKey'] = code; filled.push(s); }
+        }
+        if (filled.length) {
+          blob2[uid] = mine2;
+          writeBlob(LS_ACTIVE, blob2);
+          // Mirror into the credential store under the live ids, so the key
+          // survives this page the way a typed one would.
+          const S = secretsStore();
+          if (S && typeof S.set === 'function') {
+            for (const s of filled) {
+              try {
+                const cur = (typeof S.get === 'function' && S.get(LIVE_SECRET_ID[s])) || {};
+                S.set(LIVE_SECRET_ID[s], Object.assign({}, cur, { fnKey: code }));
+              } catch { /* the blob holds it regardless */ }
+            }
+          }
+          try {
+            window.dispatchEvent(new CustomEvent('cygenix:connections-applied', {
+              detail: { source: 'fn-credential', filled },
+            }));
+          } catch { /* no event API */ }
+        }
+        noteFnCred('ok', '', '', filled);
+        return { ok: true, filled };
+      } finally {
+        _fnCredInflight = null;
+      }
+    })();
+    return _fnCredInflight;
+  }
+
+  // Once per page load, and again whenever the blob or the credential store
+  // may have changed under us: a cloud load can bring a URL with no key, and
+  // a credential sync can too. Every trigger lands on the same guarded
+  // function, which makes no request when nothing needs one. Nothing that
+  // ensureFnKeys() itself dispatches is listened to here, so it cannot
+  // call itself.
+  function autoEnsureFnKeys() {
+    try {
+      if (typeof document === 'undefined' || typeof window === 'undefined') return;
+      if (typeof window.addEventListener !== 'function') return;
+      const go = () => setTimeout(() => { try { ensureFnKeys(); } catch { /* next trigger */ } }, 900);
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go, { once: true });
+      else go();
+      window.addEventListener('cygenix-sync-loaded', () => { try { ensureFnKeys(); } catch { /* next trigger */ } });
+      window.addEventListener('cygenix:conn-secrets-synced', () => { try { ensureFnKeys(); } catch { /* next trigger */ } });
+    } catch { /* never block the page */ }
+  }
+
   function setActive(fields) {
     const uid = currentUserTag();
     if (!uid) return false;
@@ -594,7 +742,10 @@ var CygenixConnections = (function () {
     savedGetAll, savedSetAll, savedAdd, savedDelete, savedUpdate, savedGetById,
     on, off, onChange, pingAll,
     currentUserTag,
+    // Sep-2026: the product's own Function App key, fetched rather than typed.
+    ensureFnKeys, fnKeyStatus,
   };
+  autoEnsureFnKeys();
   Object.defineProperty(api, 'srcConn', {
     get() {
       const c = get();

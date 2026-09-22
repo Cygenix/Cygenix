@@ -550,7 +550,16 @@ async function dbCall(conn, body){
   const payload = isFn(conn) ? body : {...body, connectionString: conn};
   const res = await gfetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(60000)});
   const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
-  if(!res.ok) throw new Error(data.error||res.statusText);
+  if(!res.ok){
+    // A 401 from a Function App URL is one thing only: no key, or the wrong
+    // key, on that connection. "Non-JSON (401)" told the person nothing.
+    if(res.status===401 && isFn(conn)) {
+      throw new Error('The Function App refused the request (401): this connection has no function key, or the key is wrong. '
+        + 'Open Connections and press Test on this side — the product\'s own Function App key is filled in for you; '
+        + 'another Function App needs its key entered.');
+    }
+    throw new Error(data.error||res.statusText);
+  }
   // Application-level error: the Azure /api/db Function returns HTTP 200 with
   // `{ success: false, error: 'Unknown action: schema-tables' }` for unknown
   // actions. Without this check, the smart-fallback in _fetchSchemaSmart() can't

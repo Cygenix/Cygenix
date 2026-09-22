@@ -9957,6 +9957,16 @@ window.connHide   = connHide;
   // needed on this device" a moment ago may now have its credential, and a
   // profile line that could not name a database now can.
   window.addEventListener('cygenix:conn-secrets-synced', refillIfShowing);
+  // The store could not be reached: nothing arrived, so nothing is refilled
+  // — a refill mid-edit closes the builder and resets what was typed. Only
+  // the red status box changes.
+  window.addEventListener('cygenix:conn-secrets-error', function () {
+    try {
+      const v = document.getElementById('view-connections');
+      if (!v || v.style.display === 'none' || v.offsetParent === null) return;
+      if (typeof connCloudStatus === 'function') connCloudStatus();
+    } catch (e) { /* the box renders on the next open */ }
+  });
   window.addEventListener('storage', function (e) {
     if (e && e.key === 'cygenix_project_connections') refillIfShowing();
   });
@@ -10170,6 +10180,7 @@ function initConnectionsView() {
   renderConnLock('tgt');
   connProfileLines();
   connRenderEnv();
+  connCloudStatus();
   // The Collation card mounts here as well as in switchConnTab. Database
   // connections is the DEFAULT tab — it is already marked active in the
   // markup — so arriving at this view shows it without anyone clicking a
@@ -10233,6 +10244,50 @@ function connRenderEnv(){
     + (unclassified
       ? 'A connection nobody has classified is treated as PROD — classify it on the Profiles page if this pair is a rehearsal rather than the real cutover.'
       : 'Reclassify on the Profiles page if this pair is a rehearsal rather than the real cutover.');
+}
+
+/* ── Credential plumbing that is not working (Sep-2026) ───────────────────
+   Two facts this view must never keep to itself:
+
+     · the encrypted credential store on the server is not configured or not
+       reachable, so passwords and function keys stay on this device and will
+       not follow the person to another machine — CygenixSavedConnSecrets
+       .cloudStatus() knows, and it used to be a console.warn;
+     · the product's own Function App key could not be fetched, so an
+       azure-mode side is going to answer 401 — CygenixConnections
+       .fnKeyStatus() knows.
+
+   Both go in one red box above the guardrail note, with the setting named
+   when the cause is configuration, because "Password needed on this device"
+   is a true sentence that points at the wrong cause. Read-only: it renders
+   from state two other modules keep, and dispatches nothing. */
+function connCloudStatus(){
+  const box = document.getElementById('conn-cloud-status');
+  if (!box) return;
+  const title = document.getElementById('conn-cloud-status-title');
+  const text = document.getElementById('conn-cloud-status-text');
+  const lines = [];
+  let heading = '';
+  try {
+    const S = window.CygenixSavedConnSecrets;
+    const cs = S && typeof S.cloudStatus === 'function' ? S.cloudStatus() : null;
+    if (cs && (cs.state === 'unavailable' || cs.state === 'error')) {
+      heading = cs.state === 'unavailable' ? 'Credentials are not syncing' : 'Credentials could not be synced';
+      lines.push(cs.message || 'The credential store did not answer.');
+    }
+  } catch (e) { /* the box is optional */ }
+  try {
+    const C = window.CygenixConnections;
+    const fs = C && typeof C.fnKeyStatus === 'function' ? C.fnKeyStatus() : null;
+    if (fs && (fs.state === 'error' || fs.state === 'unavailable')) {
+      heading = heading || 'The Function App key could not be fetched';
+      lines.push('Function App key: ' + (fs.message || 'not available') + ' An azure-mode connection will answer 401 until this is fixed.');
+    }
+  } catch (e) { /* the box is optional */ }
+  if (!lines.length) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  if (title) title.textContent = heading;
+  if (text) text.textContent = lines.join(' ');
 }
 
 /* ── Where the live values came from (Sep-2026) ───────────────────────────
@@ -10308,6 +10363,30 @@ function updateConnDots() {
 async function testProjConn(which) {
   const resultEl = document.getElementById(which+'-conn-result');
   resultEl.textContent='Connecting…'; resultEl.style.color='var(--accent)';
+  // An azure-mode side on the product's own Function App with no key in the
+  // box: fetch the key rather than send a request that can only answer 401.
+  // A press of Test is the one user action that may retry a failed fetch,
+  // which is why force is passed here and nowhere else.
+  try {
+    const mode = which === 'src' ? srcMode : tgtMode;
+    const keyEl = document.getElementById('proj-' + which + '-fn-key');
+    const C = window.CygenixConnections;
+    if (mode === 'azure' && keyEl && !keyEl.value.trim() && C && typeof C.ensureFnKeys === 'function') {
+      resultEl.textContent = 'Fetching the Function App key…';
+      const r = await C.ensureFnKeys({ force: true });
+      const got = C.get()[which + 'FnKey'];
+      if (got) { keyEl.value = got; }
+      else if (r && r.code !== 'not-needed') {
+        resultEl.textContent = 'No function key for this Function App URL. ' + (r.message || 'The server could not supply one.')
+          + ' Enter the key, or ask an administrator.';
+        resultEl.style.color = 'var(--red)';
+        connTestResult[which] = 'fail'; connSetStatus(which, 'fail');
+        connCloudStatus();
+        return;
+      }
+      connCloudStatus();
+    }
+  } catch (e) { /* fall through to the ordinary test, which will say what it finds */ }
   let conn = '';
   if (which==='src') {
     conn = srcMode==='direct'

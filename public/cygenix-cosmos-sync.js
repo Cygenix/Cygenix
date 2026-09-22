@@ -557,7 +557,9 @@ const CygenixSync = (() => {
       return { ok: false, error: r.message, code: r.code, retryable: r.retryable };
     }
     if (!r.data || !r.data.saved) {
-      return { ok: false, error: 'server-rejected: ' + JSON.stringify(r.data), code: 'rejected' };
+      const h = rejectionHealth(r.data);
+      setHealth(h);
+      return { ok: false, error: h.lastError, code: h.reason, ignored: (r.data && r.data.ignored) || [] };
     }
     console.log('[CygenixSync] Saved to Cosmos DB', r.data.updatedAt);
     _dirtyKeys.clear();
@@ -639,8 +641,7 @@ const CygenixSync = (() => {
       // A verified answer that refused the write — a server-side rejection,
       // not a transport fault. Retrying the identical payload will not help.
       console.error('[CygenixSync] save rejected by the server:', JSON.stringify(r.data));
-      setHealth({ degraded: true, reason: 'rejected',
-        lastError: 'The server refused the save.' });
+      setHealth(rejectionHealth(r.data));
     } else if (r.retryable !== false) {
       scheduleRetry();
     }
@@ -664,6 +665,32 @@ const CygenixSync = (() => {
   }
 
   /** Flush the queue now — what the banner's Retry button calls. */
+  /* A 200 that did not save is two different things, and the banner said
+     the same words for both.
+
+       reason:'no-syncable-fields'   the server does not KNOW the field(s) the
+                                     browser sent. Version skew: the client
+                                     gained a synced key and the Function App
+                                     was not redeployed with it. Nothing is
+                                     refused; the field is dropped on the
+                                     floor. The fix is a deploy, not a retry,
+                                     and the banner has to say which field.
+       anything else                 a genuine refusal.
+
+     This was found the hard way: a collation-card toggle dirtied one key the
+     server did not list, the save came back 200 saved:false, and the banner
+     said "the server refused the change" under a network tab full of 200s. */
+  function rejectionHealth(data) {
+    const d = data || {};
+    if (d.reason === 'no-syncable-fields') {
+      const names = Array.isArray(d.ignored) && d.ignored.length ? d.ignored.join(', ') : '(unnamed)';
+      return { degraded: true, reason: 'unknown-fields',
+        lastError: 'This deployment does not sync ' + names + ' yet. The change is kept on this device; '
+          + 'it will upload once the server is updated. Nothing else is affected.' };
+    }
+    return { degraded: true, reason: 'rejected', lastError: 'The server refused the save.' };
+  }
+
   async function retryPending() {
     if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
     _saveFailures = 0;

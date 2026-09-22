@@ -48,6 +48,11 @@
     network: 'this device is offline or the connection dropped',
     server: 'the server is not responding',
     rejected: 'the server refused the change',
+    // Version skew between browser and Function App: a field this build
+    // sends that the deployed server does not list. The sync layer puts the
+    // field names in lastError; the banner shows that sentence instead of
+    // this one, because "which field" is the whole answer.
+    'unknown-fields': 'the server does not recognise one of the fields this page saves',
     'suspect-empty': 'the cloud returned an empty account while this device holds data, so nothing was overwritten',
     'no-data-api': 'the data layer did not load on this page',
   };
@@ -104,7 +109,9 @@
                  : 'Changes are waiting to be saved.');
     msg.appendChild(head);
 
-    var detail = h.degraded ? 'Because ' + reasonText(h.reason) + '.' : '';
+    var detail = h.degraded
+      ? (h.reason === 'unknown-fields' && h.lastError ? h.lastError : 'Because ' + reasonText(h.reason) + '.')
+      : '';
     if (h.pendingSaves) {
       detail += (detail ? ' ' : '')
         + h.pendingSaves + ' change' + (h.pendingSaves === 1 ? '' : 's')

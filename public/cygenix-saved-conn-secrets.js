@@ -247,6 +247,69 @@
     return 'missing';
   }
 
+  // ── The cloud store's own health ─────────────────────────────────────────
+  //
+  // Found the hard way (Sep-2026): CONN_SECRETS_KEY was never set on the
+  // Function App, so every list and every put answered 503 from the day the
+  // feature shipped, no credential was ever persisted, and the only trace
+  // was a console.warn. After a cookie clear the connection chips simply
+  // read "Password needed on this device" — a true sentence that pointed at
+  // the wrong cause. A store that cannot reach its cloud half has to SAY so,
+  // where somebody is looking, in words that name what to fix.
+  //
+  //   'unknown'      nothing attempted yet
+  //   'ok'           the last list succeeded
+  //   'signed-out'   nothing attempted — not a fault
+  //   'unavailable'  the server answered and said it cannot serve; `code` and
+  //                  `message` say why, and `message` names the setting when
+  //                  the reason is configuration
+  //   'error'        transport or an unexpected status
+  const _cloud = { state: 'unknown', code: '', message: '', status: 0, at: 0 };
+  function noteCloud(state, code, message, status) {
+    _cloud.state = state; _cloud.code = code || ''; _cloud.message = message || '';
+    _cloud.status = status || 0; _cloud.at = Date.now();
+  }
+  function cloudStatus() { return Object.assign({}, _cloud); }
+  // The reason in a person's words. The server code is the authority; the
+  // HTTP status is the fallback; the raw error message is the last resort.
+  function describeFailure(err) {
+    const e = err || {};
+    const sc = e.serverCode || '';
+    if (sc === 'no-secrets-key') {
+      return ['unavailable', sc, 'The encrypted credential store is not configured on the server: '
+        + 'CONN_SECRETS_KEY is missing or invalid on the Function App. Passwords and function keys '
+        + 'are kept on this device only until an administrator sets it.'];
+    }
+    if (sc === 'no-fn-key') {
+      return ['unavailable', sc, 'The site cannot reach its data service: CYGENIX_DATA_FN_KEY is not set on '
+        + 'this deployment. An administrator needs to set it.'];
+    }
+    if (e.code === 'no-api') return ['unavailable', 'no-api', 'The data layer is not loaded on this page.'];
+    if (e.code === 'network') return ['error', 'network', 'Could not reach the server. Credentials are kept on this device.'];
+    if (e.status) return ['error', e.code || 'http', 'The credential store returned HTTP ' + e.status + '.'];
+    return ['error', e.code || 'unknown', e.message || 'The credential store did not answer.'];
+  }
+  // Two events, on purpose.
+  //   cygenix:conn-secrets-synced   the store CHANGED — credentials arrived.
+  //                                 Pages refill their forms from it.
+  //   cygenix:conn-secrets-error    the store could NOT be reached — nothing
+  //                                 changed. Pages update their status line
+  //                                 and nothing else.
+  // They were one event for about an hour. A failure then refilled the
+  // Connections form 600ms into a page load, which closed the builder
+  // somebody had just opened and reset what they had typed — a refill is
+  // only right when there is something new to fill in with.
+  function announce(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent('cygenix:conn-secrets-synced', { detail }));
+    } catch { /* no event API in this environment */ }
+  }
+  function announceError(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent('cygenix:conn-secrets-error', { detail }));
+    } catch { /* no event API in this environment */ }
+  }
+
   // ── Identity, for the per-user upload flag ───────────────────────────────
   // The oid is read from the ID token the app already holds; the flag is
   // per user per device so two people sharing a browser do not share a
@@ -359,6 +422,11 @@
           if (_batchIds && _batchIds.has(id)) _batchFailed = true;
           if (r && r.error && r.error.code !== 'no-token' && r.error.code !== 'auth') {
             console.warn('[saved-conn-secrets] cloud ' + effective + ' failed:', r.error.code || r.error.message);
+            // A write refused for configuration is the same fact a failed
+            // list would report; record it so a page that only ever writes
+            // still learns that nothing is leaving this device.
+            const d = describeFailure(r.error);
+            if (d[0] === 'unavailable') noteCloud(d[0], d[1], d[2], r.error.status);
           }
         }
       }
@@ -406,14 +474,24 @@
   }
 
   async function _sync() {
-    if (!signedIn()) return { ok: false, code: 'no-token' };
+    if (!signedIn()) { noteCloud('signed-out', 'no-token', ''); return { ok: false, code: 'no-token' }; }
     const r = await callCloud('secrets-list');
     if (!r.ok) {
-      if (r.error && r.error.code !== 'no-token' && r.error.code !== 'auth') {
-        console.warn('[saved-conn-secrets] cloud list failed:', r.error.code || r.error.message);
+      const code = (r.error && r.error.code) || 'unknown';
+      if (code === 'no-token' || code === 'auth') {
+        noteCloud('signed-out', code, '');
+        return { ok: false, code };
       }
-      return { ok: false, code: (r.error && r.error.code) || 'unknown' };
+      console.warn('[saved-conn-secrets] cloud list failed:', code, r.error && r.error.serverCode || '');
+      const d = describeFailure(r.error);
+      noteCloud(d[0], d[1], d[2], r.error && r.error.status);
+      // Loud, not silent: the pages that show credentials listen for this
+      // and update their status line. Its own event, NOT the synced one —
+      // nothing arrived, so nothing should be refilled (see announceError).
+      announceError({ ok: false, state: d[0], code: d[1], message: d[2] });
+      return { ok: false, code, serverCode: d[1], message: d[2] };
     }
+    noteCloud('ok', '', '', 200);
     const cloud = (r.data && r.data.secrets && typeof r.data.secrets === 'object') ? r.data.secrets : {};
     const undecryptable = Array.isArray(r.data && r.data.undecryptable) ? r.data.undecryptable : [];
 
@@ -458,11 +536,7 @@
     if (_pending.size) schedule(0);
 
     _syncedOnce = true;
-    try {
-      window.dispatchEvent(new CustomEvent('cygenix:conn-secrets-synced', {
-        detail: { pulled, undecryptable: [..._undecryptable], queued: toUpload.size },
-      }));
-    } catch { /* no event API in this environment */ }
+    announce({ ok: true, state: 'ok', pulled, undecryptable: [..._undecryptable], queued: toUpload.size });
     return { ok: true, pulled, undecryptable: [..._undecryptable], queued: toUpload.size };
   }
 
@@ -489,13 +563,14 @@
     // Sep-2026: the cloud half.
     status,
     sync,
+    cloudStatus,
     synced: () => _syncedOnce,
     KEY,
     LIVE_IDS,
     // For the tests — not for pages.
     _flushNow: flush,
     _pendingSize: () => _pending.size,
-    _reset: () => { _pending.clear(); _prunePending = null; _lastFlushAt = 0; _lastSyncAt = 0; _syncPromise = null; _batchIds = null; _batchFailed = false; _undecryptable.clear(); _syncedOnce = false; if (_debounce) { clearTimeout(_debounce); _debounce = null; } },
+    _reset: () => { _pending.clear(); _prunePending = null; _lastFlushAt = 0; _lastSyncAt = 0; _syncPromise = null; _batchIds = null; _batchFailed = false; _undecryptable.clear(); _syncedOnce = false; noteCloud('unknown', '', '', 0); if (_debounce) { clearTimeout(_debounce); _debounce = null; } },
   };
 
   autoStart();

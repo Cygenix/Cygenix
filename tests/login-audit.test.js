@@ -382,9 +382,14 @@ section('5. No secret reaches the browser');
     /AUDIT_INGEST_KEY/.test(edgeCode) && /AUDIT_INGEST_KEY/.test(idxCode)
     && !/AUDIT_INGEST_KEY/.test(read('public', 'login.html')));
   const pub = fs.readdirSync(path.join(ROOT, 'public'));
+  // The ingest key and its header must not appear in client CODE at all. The
+  // Function App key's NAME may: since Sep-2026 the Connections page names
+  // CYGENIX_DATA_FN_KEY in the sentence that tells an administrator what to
+  // set. Naming a variable is not holding its value — what a client must
+  // never do is READ it, which only an environment lookup could.
   const leaked = pub.filter((f) => /\.(js|html)$/.test(f)
-    && /AUDIT_INGEST_KEY|x-audit-ingest-key|CYGENIX_DATA_FN_KEY/.test(noComments(read('public', f))));
-  check('no page or script in public/ can SEND any of the three secrets (comments about them are fine)',
+    && /AUDIT_INGEST_KEY|x-audit-ingest-key|process\.env\.CYGENIX_DATA_FN_KEY|Netlify\.env|Deno\.env/.test(noComments(read('public', f))));
+  check('no page or script in public/ can SEND the ingest key or READ the Function App key (naming it in a message is fine)',
     leaked.length === 0, leaked.join(', '));
   check('and the generated ingest key value is nowhere in the repository\'s tracked source',
     !/UGl-oNz53HVX7Vt4zqVyh7WKOLmTKefXVG0RLnLv9QY/.test(read('public', 'login.html') + edgeCode + idxCode));

@@ -1379,14 +1379,14 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .rc-chips-menu-item input{pointer-events:none;margin:0}
 .rc-chips-menu-empty{padding:10px;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
 </style>
-<script src="/connections.js?v=95bdd3b577" defer></script>
+<script src="/connections.js?v=156cd54c07" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
-<script src="/cygenix-saved-conn-secrets.js?v=1a5a1cf13d" defer></script>
+<script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
 <script src="/cygenix-stream-destinations.js?v=ecc5fb8edf" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
-<script src="/cygenix-cosmos-sync.js?v=41a8e68a2c" defer></script>
-<script src="/cygenix-sync-banner.js?v=dba7da2fc6" defer></script>
+<script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
+<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
 <script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
 <script src="/cygenix-integrations.js?v=9d508375a5" defer></script>
@@ -1469,7 +1469,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=228d3222f7" defer></script>
-  <script src="/dashboard-app.js?v=31cec33547" defer></script>
+  <script src="/dashboard-app.js?v=8ddce0f1da" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
@@ -2883,6 +2883,17 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             </div>
           </div>
         </div>
+        <!-- Credential plumbing that is NOT working, said here rather than in
+             a console. Two facts can land in it: the encrypted credential
+             store on the server is not configured (so passwords stay on this
+             device), and the product's own Function App key could not be
+             fetched (so an azure-mode side will answer 401). Rendered by
+             connCloudStatus. Hidden while everything is fine. -->
+        <div id="conn-cloud-status" class="cx-attn cx-attn-fail conn-guardrail" style="display:none" role="alert">
+          <div class="cx-h-sm" id="conn-cloud-status-title">Credentials are not syncing</div>
+          <p id="conn-cloud-status-text"></p>
+        </div>
+
         <!-- The guardrail note: shown whenever either side resolves to PROD,
              including the default case where a connection is simply
              unclassified. Rendered by connRenderEnv. -->

@@ -1180,7 +1180,25 @@ app.http('data', {
             // Connection profiles (cygenix_profiles_v1). Added Sep-2026. The
             // ONE field that is merged rather than replaced — see below.
             'connection_profiles',
+            // Sep-2026. Four fields the browser had been sending for months
+            // that this list did not know. A save carrying ONLY one of them
+            // (a collation card toggle, a map group edit) came back
+            // `saved:false, reason:'no-syncable-fields'`, and the browser
+            // read that as "the server refused the change" and showed the
+            // red banner — while the network tab showed 200 OK. The two
+            // lists are now pinned equal by tests/connection-recovery.test.js
+            // so a field can never again be added on one side only.
+            'map_groups',         // cygenix_map_groups
+            'datagen_selection',  // cygenix_datagen_selection
+            'datagen_runs',       // cygenix_datagen_runs
+            'collation_ui',       // cygenix_collation_ui_v1
           ];
+
+          // What the client sent that this deployment does not sync. Named
+          // in the response so the browser can say WHICH field was dropped
+          // rather than "the server refused" — an unknown field is a version
+          // skew between the two ends, and the fix is a deploy, not a retry.
+          const ignored = Object.keys(body).filter(k => !SYNCABLE.includes(k));
 
           // Only overwrite fields explicitly present in the payload.
           //
@@ -1226,8 +1244,8 @@ app.http('data', {
 
           // If the client didn't send ANY recognised field, don't churn Cosmos
           if (touched.length === 0) {
-            ctx.log('Save request with no syncable fields — ignored');
-            return ok({ saved: false, reason: 'no-syncable-fields', updatedAt: existing.updatedAt || null });
+            ctx.log(`Save request with no syncable fields — ignored (${ignored.join(', ') || 'empty body'})`);
+            return ok({ saved: false, reason: 'no-syncable-fields', ignored, updatedAt: existing.updatedAt || null });
           }
 
           // The live pair's credentials are stripped on every save, whatever
@@ -1256,7 +1274,7 @@ app.http('data', {
             keys:      touched
           }).catch(e => ctx.log('Audit write failed (non-fatal):', e.message));
 
-          return ok({ saved: true, updatedAt: merged.updatedAt, fields: touched });
+          return ok({ saved: true, updatedAt: merged.updatedAt, fields: touched, ignored });
         }
 
         // ── LOAD project data ───────────────────────────────────────────────
