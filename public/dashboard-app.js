@@ -9970,6 +9970,16 @@ window.connHide   = connHide;
   window.addEventListener('storage', function (e) {
     if (e && e.key === 'cygenix_project_connections') refillIfShowing();
   });
+  // The organisation register changed (a list that differed, a create, a
+  // retire): redraw that section only. Drawing reads the module's cache and
+  // fetches nothing, so this cannot loop.
+  window.addEventListener('cygenix:org-connections-changed', function () {
+    try {
+      const v = document.getElementById('view-connections');
+      if (!v || v.style.display === 'none' || v.offsetParent === null) return;
+      if (typeof orgConnRender === 'function') orgConnRender();
+    } catch (e) { /* drawn on the next open */ }
+  });
 })();
 
 /* ── Connection entry: paste a string, or build one ────────────────────────
@@ -10181,6 +10191,12 @@ function initConnectionsView() {
   connProfileLines();
   connRenderEnv();
   connCloudStatus();
+  orgConnRender();
+  orgConnEnsureRoles();
+  // The list is fetched through a cached, single-flight call, so opening
+  // the view repeatedly costs one request per thirty seconds at most; the
+  // module announces a change and the listener below redraws.
+  try { if (window.CygenixOrgConnections) window.CygenixOrgConnections.list().then(orgConnRender); } catch (e) { /* drawn from cache */ }
   // The Collation card mounts here as well as in switchConnTab. Database
   // connections is the DEFAULT tab — it is already marked active in the
   // markup — so arriving at this view shows it without anyone clicking a
@@ -10244,6 +10260,136 @@ function connRenderEnv(){
     + (unclassified
       ? 'A connection nobody has classified is treated as PROD — classify it on the Profiles page if this pair is a rehearsal rather than the real cutover.'
       : 'Reclassify on the Profiles page if this pair is a rehearsal rather than the real cutover.');
+}
+
+/* ── The organisation register (Phase A, Sep-2026) ─────────────────────────
+   Connections set up once for the organisation, held on the server, listed
+   beside the per-browser saved lists. Metadata only until Phase B; nothing
+   here can run a query. Read-only rendering from CygenixOrgConnections'
+   cache; the module fetches and announces, this draws. The New and Retire
+   controls show for a Platform Administrator, and the server refuses anyone
+   else regardless of what the page shows. */
+function orgConnIsPA(){
+  try { const R = window.CygenixRBAC; return !!(R && typeof R.has === 'function' && R.has('PA')); }
+  catch (e) { return false; }
+}
+// Roles arrive from rbac-admin?what=me, cached in sessionStorage by
+// CygenixRBAC for five minutes and shared with the register request by
+// nothing — so the first render may run before they resolve. Ask once, and
+// redraw when the answer lands; a second call while one is pending returns
+// the same promise, so this cannot fan out.
+let _orgConnRolesAsked = false;
+function orgConnEnsureRoles(){
+  const R = window.CygenixRBAC;
+  if (!R || typeof R.me !== 'function' || _orgConnRolesAsked) return;
+  _orgConnRolesAsked = true;
+  try { R.me().then(() => orgConnRender()).catch(() => {}); } catch (e) { /* stays hidden */ }
+}
+function orgConnEsc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function orgConnRender(){
+  const list = document.getElementById('orgconn-list');
+  if (!list) return;
+  const O = window.CygenixOrgConnections;
+  const counter = document.getElementById('orgconn-count');
+  const newBtn = document.getElementById('orgconn-new-btn');
+  const statusEl = document.getElementById('orgconn-status');
+  const pa = orgConnIsPA();
+  if (newBtn) newBtn.style.display = pa ? '' : 'none';
+  if (!O) { list.innerHTML = '<div class="orgconn-empty">The register module did not load on this page.</div>'; return; }
+  const rows = O.cached();
+  if (counter) counter.textContent = rows.length;
+  const st = O.status();
+  if (statusEl) {
+    if (st.state === 'error' || st.state === 'denied') {
+      statusEl.style.display = '';
+      statusEl.style.color = 'var(--state-fail)';
+      statusEl.textContent = st.state === 'denied'
+        ? 'You can see this register but not change it: ' + st.message
+        : 'The organisation register could not be read: ' + st.message;
+    } else { statusEl.style.display = 'none'; statusEl.textContent = ''; }
+  }
+  if (!rows.length) {
+    list.innerHTML = '<div class="orgconn-empty">' + (st.state === 'unknown' ? 'Loading the organisation register…'
+      : 'No organisation connections yet.' + (pa ? ' Add the first one above.' : ' A Platform Administrator adds them.')) + '</div>';
+    return;
+  }
+  list.innerHTML = '<table class="orgconn-table"><thead><tr>' +
+    '<th>Name</th><th>Side</th><th>Kind</th><th>Endpoint</th><th>Env</th><th>Auth</th><th>Secret</th><th></th></tr></thead><tbody>' +
+    rows.map(c => {
+      const secret = c.secretRef
+        ? 'Saved · ' + (c.secretUpdatedAt ? new Date(c.secretUpdatedAt).toLocaleDateString() : '') + (c.secretUpdatedBy ? ' by ' + orgConnEsc(c.secretUpdatedBy) : '')
+        : 'None yet';
+      return '<tr data-orgconn-id="' + orgConnEsc(c.id) + '">' +
+        '<td><b>' + orgConnEsc(c.name) + '</b>' + (c.aliases && c.aliases.length ? '<div class="orgconn-secret">also ' + orgConnEsc(c.aliases.join(', ')) + '</div>' : '') + '</td>' +
+        '<td class="mono">' + orgConnEsc((c.side || '').toUpperCase()) + '</td>' +
+        '<td>' + orgConnEsc(O.KIND_LABELS[c.kind] || c.kind) + '</td>' +
+        '<td class="mono">' + orgConnEsc(O.endpointOf(c)) + (c.userName ? '<div class="orgconn-secret">as ' + orgConnEsc(c.userName) + '</div>' : '') + '</td>' +
+        '<td><span class="cx-tag' + (c.envClass === 'PRD' || c.envClass === 'UNKNOWN' ? ' cx-tag-fail' : '') + '">' + orgConnEsc(c.envClass) + '</span></td>' +
+        '<td>' + orgConnEsc(O.AUTH_LABELS[c.authType] || c.authType) + '</td>' +
+        '<td class="orgconn-secret">' + secret + '</td>' +
+        '<td style="white-space:nowrap">' + (pa ? '<button class="btn btn-ghost btn-sm" onclick="orgConnRetire(\'' + orgConnEsc(c.id) + '\')" title="Retire — refused while a profile binds it">Retire</button>' : '') + '</td>' +
+        '</tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function orgConnToggleForm(show){
+  const f = document.getElementById('orgconn-form');
+  if (!f) return;
+  const on = show === undefined ? f.style.display === 'none' : !!show;
+  f.style.display = on ? '' : 'none';
+  const err = document.getElementById('orgconn-form-err');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+  if (on) { orgConnKindChanged(); const n = document.getElementById('orgconn-f-name'); if (n) n.focus(); }
+}
+function orgConnKindChanged(){
+  const kind = (document.getElementById('orgconn-f-kind') || {}).value || 'sqlserver';
+  document.querySelectorAll('#orgconn-form .orgconn-sql').forEach(el => { el.style.display = kind === 'azurefn' ? 'none' : ''; });
+  document.querySelectorAll('#orgconn-form .orgconn-fn').forEach(el => { el.style.display = kind === 'azurefn' ? '' : 'none'; });
+  const port = document.getElementById('orgconn-f-port');
+  if (port) port.placeholder = kind === 'postgres' ? '5432' : '1433';
+}
+function orgConnFormError(msg){
+  const err = document.getElementById('orgconn-form-err');
+  if (!err) return;
+  err.style.display = msg ? '' : 'none';
+  err.textContent = msg || '';
+}
+async function orgConnSubmit(ev){
+  if (ev && ev.preventDefault) ev.preventDefault();
+  const O = window.CygenixOrgConnections;
+  if (!O) return false;
+  const v = id => ((document.getElementById(id) || {}).value || '').trim();
+  const kind = v('orgconn-f-kind');
+  const rec = { name: v('orgconn-f-name'), side: v('orgconn-f-side'), kind, envClass: v('orgconn-f-env') };
+  if (kind === 'azurefn') { rec.endpoint = v('orgconn-f-endpoint'); rec.authType = 'key'; }
+  else { rec.server = v('orgconn-f-server'); rec.port = v('orgconn-f-port') || undefined; rec.database = v('orgconn-f-database');
+         rec.authType = v('orgconn-f-auth'); rec.userName = v('orgconn-f-user'); }
+  const btn = document.getElementById('orgconn-save-btn');
+  if (btn) btn.disabled = true;
+  orgConnFormError('');
+  try {
+    const r = await O.create(rec);
+    if (!r.ok) { orgConnFormError(r.message || 'Not saved.'); return false; }
+    ['orgconn-f-name','orgconn-f-server','orgconn-f-port','orgconn-f-database','orgconn-f-user','orgconn-f-endpoint'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    orgConnToggleForm(false);
+    orgConnRender();
+  } finally { if (btn) btn.disabled = false; }
+  return false;
+}
+async function orgConnRetire(id){
+  const O = window.CygenixOrgConnections;
+  if (!O) return;
+  const c = O.cached().find(x => x.id === id);
+  if (!confirm('Retire ' + (c ? c.name : id) + ' from the organisation register?\n\nIt is refused while any non-retired profile binds it. Nothing about the database itself changes.')) return;
+  const r = await O.retire(id);
+  const statusEl = document.getElementById('orgconn-status');
+  if (!r.ok && statusEl) {
+    statusEl.style.display = ''; statusEl.style.color = 'var(--state-fail)';
+    statusEl.textContent = (r.code === 'locked' ? 'Not retired. ' : 'Not retired: ') + (r.message || '');
+    return;
+  }
+  orgConnRender();
 }
 
 /* ── Credential plumbing that is not working (Sep-2026) ───────────────────

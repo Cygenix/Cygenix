@@ -149,6 +149,111 @@ function signinRejection(body) {
   return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The organisation connection register (Phase A of
+// docs/design/server-held-connections.md)
+//
+// A connection set up once for the organisation, bound to profiles, used by
+// any member with rights to the profile. This container holds the METADATA
+// half only — server, database, user name, environment — and the record
+// carries a `secretRef` that Phase B fills. No connection string, password
+// or key is ever stored or accepted here; a body that carries one is
+// refused, because the whole design is that the browser stops sending them.
+//
+// Partitioned on /tenantId, which is the first org-scoped shape in a
+// database where everything else is keyed by email. The tenant comes from
+// the `x-cygenix-tenant` header, which ONLY netlify/functions/org-connections.js
+// sets, after verifying the token and resolving the tenant from Netlify
+// Blobs: the data proxy neither sets nor forwards it, and these actions are
+// not on the proxy's allow-list, so a browser cannot reach them at all. A
+// direct caller holding the host key could set it — the same pre-existing
+// exposure as spoofing x-user-id, closed by REQUIRE_TOKEN_AUTH and key
+// rotation, not by anything here.
+// ─────────────────────────────────────────────────────────────────────────────
+const ORG_CONN_CONTAINER = 'org_connections';
+const ORG_CONN_KINDS = ['sqlserver', 'postgres', 'azurefn'];
+const ORG_CONN_SIDES = ['src', 'tgt'];
+const ORG_CONN_AUTH  = ['sql', 'entra', 'key'];
+const ORG_CONN_ENVS  = ['DEV', 'TEST', 'UAT', 'PRD', 'SANDBOX', 'UNKNOWN'];
+// Field names that mean "a secret is being sent". Refused on sight.
+const ORG_CONN_FORBIDDEN = ['connString', 'connectionString', 'password', 'fnKey', 'key', 'secret', 'pwd'];
+
+let _orgConnEnsured = null;
+function orgConnContainer() {
+  // Same lazy create-on-first-use as conn-secrets.js: nothing else in this
+  // app provisions containers by hand, and the owner should not have to.
+  const db = (() => {
+    if (!_cosmos) {
+      const { CosmosClient } = require('@azure/cosmos');
+      _cosmos = new CosmosClient({ endpoint: process.env.COSMOS_ENDPOINT, key: process.env.COSMOS_KEY });
+    }
+    return _cosmos.database(process.env.COSMOS_DATABASE || 'cygenix');
+  })();
+  if (!_orgConnEnsured) {
+    _orgConnEnsured = db.containers.createIfNotExists({ id: ORG_CONN_CONTAINER, partitionKey: { paths: ['/tenantId'] } })
+      .catch((e) => { _orgConnEnsured = null; throw e; });
+  }
+  return _orgConnEnsured.then(() => db.container(ORG_CONN_CONTAINER));
+}
+
+// The record a create request must satisfy. Returns { ok:true, value } or
+// { ok:false, why }. Pure, so it is tested without a database.
+function validateOrgConnection(body) {
+  const b = body && typeof body === 'object' ? body : {};
+  const str = (v) => (typeof v === 'string' ? v.trim() : '');
+  for (const k of Object.keys(b)) {
+    if (ORG_CONN_FORBIDDEN.includes(k)) return { ok: false, why: `The register holds no secrets: remove "${k}". The password or key is entered separately once the secret store exists.` };
+  }
+  const name = str(b.name);
+  if (!name || name.length > 120) return { ok: false, why: 'name is required (1-120 characters)' };
+  const side = str(b.side).toLowerCase();
+  if (!ORG_CONN_SIDES.includes(side)) return { ok: false, why: "side must be 'src' or 'tgt'" };
+  const kind = str(b.kind).toLowerCase();
+  if (!ORG_CONN_KINDS.includes(kind)) return { ok: false, why: 'kind must be one of ' + ORG_CONN_KINDS.join(', ') };
+  const envClass = (str(b.envClass) || 'UNKNOWN').toUpperCase();
+  if (!ORG_CONN_ENVS.includes(envClass)) return { ok: false, why: 'envClass must be one of ' + ORG_CONN_ENVS.join(', ') };
+  const authType = (str(b.authType) || (kind === 'azurefn' ? 'key' : 'sql')).toLowerCase();
+  if (!ORG_CONN_AUTH.includes(authType)) return { ok: false, why: 'authType must be one of ' + ORG_CONN_AUTH.join(', ') };
+  const aliases = Array.isArray(b.aliases) ? b.aliases.map(str).filter(Boolean).slice(0, 10) : [];
+  const value = { name, side, kind, envClass, authType, aliases, userName: str(b.userName).slice(0, 128) || null };
+  if (kind === 'azurefn') {
+    const endpoint = str(b.endpoint);
+    if (!/^https:\/\/[^\s/?#]+(\/[^\s?#]*)?$/i.test(endpoint) || endpoint.length > 400) return { ok: false, why: 'endpoint must be an https:// URL' };
+    if (/[?&]code=/i.test(endpoint)) return { ok: false, why: 'endpoint must not carry a ?code= key' };
+    Object.assign(value, { endpoint, server: null, port: null, database: null });
+  } else {
+    const server = str(b.server);
+    if (!server || server.length > 253 || /[\s;]/.test(server)) return { ok: false, why: 'server is required (a host name, no spaces)' };
+    const database = str(b.database);
+    if (!database || database.length > 128 || /[;]/.test(database)) return { ok: false, why: 'database is required' };
+    const port = b.port === undefined || b.port === null || b.port === '' ? (kind === 'postgres' ? 5432 : 1433) : Number(b.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, why: 'port must be 1-65535' };
+    Object.assign(value, { server, port, database, endpoint: null });
+  }
+  return { ok: true, value };
+}
+
+// Only these may change after creation, and only while not retired. The
+// endpoint fields are immutable: a changed endpoint is a new connection.
+const ORG_CONN_PATCHABLE = ['name', 'aliases', 'envClass'];
+function validateOrgConnectionPatch(patch) {
+  const p = patch && typeof patch === 'object' ? patch : {};
+  const out = {};
+  for (const k of Object.keys(p)) {
+    if (ORG_CONN_FORBIDDEN.includes(k)) return { ok: false, why: `The register holds no secrets: remove "${k}".` };
+    if (!ORG_CONN_PATCHABLE.includes(k)) return { ok: false, why: `"${k}" cannot be changed in place — a changed endpoint is a new connection` };
+  }
+  if ('name' in p) { const n = typeof p.name === 'string' ? p.name.trim() : ''; if (!n || n.length > 120) return { ok: false, why: 'name is required (1-120 characters)' }; out.name = n; }
+  if ('aliases' in p) { if (!Array.isArray(p.aliases)) return { ok: false, why: 'aliases must be an array' }; out.aliases = p.aliases.map((a) => (typeof a === 'string' ? a.trim() : '')).filter(Boolean).slice(0, 10); }
+  if ('envClass' in p) { const e = String(p.envClass || '').trim().toUpperCase(); if (!ORG_CONN_ENVS.includes(e)) return { ok: false, why: 'envClass must be one of ' + ORG_CONN_ENVS.join(', ') }; out.envClass = e; }
+  if (!Object.keys(out).length) return { ok: false, why: 'nothing to change' };
+  return { ok: true, value: out };
+}
+
+function orgConnId(now) {
+  return 'conn_' + now.toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
 // The eligibility rule for deleting a connection profile, on the cloud copy.
 // Mirrors cpDeleteEligibility in public/cygenix-profiles.js; the wording of
 // `why` is what the page shows, so the two are kept in step by
@@ -1576,6 +1681,97 @@ app.http('data', {
         // every projects document, strips the four fields from `connections`,
         // and replaces only the documents that had something to strip. Safe to
         // run again: a clean document is left alone. Reports counts only.
+        // ── ORG-CONNECTION-*: the organisation register (Phase A) ───────────
+        // Reached only from netlify/functions/org-connections.js, which has
+        // already checked the role and resolved the tenant. See the block
+        // comment above validateOrgConnection for the trust model.
+        case 'org-connection-list':
+        case 'org-connection-get':
+        case 'org-connection-create':
+        case 'org-connection-update':
+        case 'org-connection-retire': {
+          const tenantId = String(req.headers.get('x-cygenix-tenant') || '').trim();
+          if (!tenantId) return err(403, 'The organisation register is reached through the Cygenix site, not directly');
+          const container = await orgConnContainer();
+          const now = new Date();
+          try {
+            if (action === 'org-connection-list') {
+              if (req.method !== 'GET') return err(405, 'org-connection-list is GET');
+              const includeRetired = req.query.get('includeRetired') === '1';
+              const { resources } = await container.items.query({
+                query: 'SELECT * FROM c WHERE c.tenantId = @t' + (includeRetired ? '' : ' AND IS_NULL(c.retiredAt)') + ' ORDER BY c.name',
+                parameters: [{ name: '@t', value: tenantId }],
+              }, { partitionKey: tenantId }).fetchAll();
+              return ok({ connections: resources || [], includeRetired });
+            }
+            const body = req.method === 'POST' ? await req.json().catch(() => null) : {};
+            if (action === 'org-connection-get') {
+              const id = String((body && body.id) || req.query.get('id') || '').trim();
+              if (!id) return err(400, 'id is required');
+              try {
+                const { resource } = await container.item(id, tenantId).read();
+                if (!resource) return err(404, 'No such connection');
+                return ok({ connection: resource });
+              } catch (e) { if (e.code === 404) return err(404, 'No such connection'); throw e; }
+            }
+            if (req.method !== 'POST') return err(405, action + ' is POST');
+            if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
+
+            if (action === 'org-connection-create') {
+              const v = validateOrgConnection(body.connection || body);
+              if (!v.ok) return err(400, v.why);
+              const doc = Object.assign({}, v.value, {
+                id: orgConnId(now.getTime()), tenantId,
+                secretRef: null, secretUpdatedAt: null, secretUpdatedBy: null,
+                createdAt: now.toISOString(), createdBy: userId,
+                updatedAt: now.toISOString(), updatedBy: userId,
+                retiredAt: null, retiredBy: null,
+              });
+              await container.items.create(doc);
+              ctx.log(`org-connection-create: ${doc.id} (${doc.kind}, ${doc.side}, ${doc.envClass}) for tenant ${tenantId}`);
+              return ok({ connection: doc });
+            }
+
+            const id = String(body.id || '').trim();
+            if (!id) return err(400, 'id is required');
+            let existing;
+            try { existing = (await container.item(id, tenantId).read()).resource; }
+            catch (e) { if (e.code === 404) return err(404, 'No such connection'); throw e; }
+            if (!existing) return err(404, 'No such connection');
+
+            if (action === 'org-connection-update') {
+              if (existing.retiredAt) return err(409, 'A retired connection cannot be changed');
+              const v = validateOrgConnectionPatch(body.patch || {});
+              if (!v.ok) return err(400, v.why);
+              const next = Object.assign({}, existing, v.value, { updatedAt: now.toISOString(), updatedBy: userId });
+              await container.item(id, tenantId).replace(next);
+              return ok({ connection: next, changed: Object.keys(v.value) });
+            }
+
+            // retire. Idempotent, and refused while any non-retired profile in
+            // the organisation still binds it — the lock rule, enforced where
+            // every member's profile store can be seen rather than in one
+            // browser. Profiles live inside each user's projects document.
+            if (existing.retiredAt) return ok({ connection: existing, alreadyRetired: true });
+            const { resources: holders } = await getCosmosContainer('projects').items.query({
+              query: `SELECT c.id FROM c WHERE IS_DEFINED(c.connection_profiles)
+                      AND EXISTS(SELECT VALUE p FROM p IN c.connection_profiles.profiles
+                                 WHERE p.status != 'retired' AND (p.srcConnId = @id OR p.tgtConnId = @id))`,
+              parameters: [{ name: '@id', value: id }],
+            }).fetchAll();
+            if (holders && holders.length) {
+              return err(409, `Locked: ${holders.length} member${holders.length === 1 ? '' : 's'} still ha${holders.length === 1 ? 's' : 've'} a non-retired profile bound to this connection. Retire those profiles first.`);
+            }
+            const retired = Object.assign({}, existing, { retiredAt: now.toISOString(), retiredBy: userId, updatedAt: now.toISOString(), updatedBy: userId });
+            await container.item(id, tenantId).replace(retired);
+            ctx.log(`org-connection-retire: ${id} for tenant ${tenantId}`);
+            return ok({ connection: retired });
+          } catch (e) {
+            logErr(ctx, `${action} failed:`, e.message);
+            return err(500, `${action} failed: ${e.message}\n${e.stack || ''}`);
+          }
+        }
+
         // ── AUDIT-SIGNIN: record one interactive sign-in ────────────────────
         // POST /api/data/audit-signin
         // Body: { type:'signin', timestamp, userId, email, idp, ip, city,

@@ -495,12 +495,10 @@
   }
 
   function getFunctionKey() {
-    // CygenixSync.funcCode is the canonical source. Never hardcode the key
-    // here — if it ever rotates, both files would need editing. By going
-    // through CygenixSync, the rotation only happens once.
-    if (window.CygenixSync && window.CygenixSync.funcCode) {
-      return window.CygenixSync.funcCode;
-    }
+    // There is no key in the browser to return. CygenixSync.funcCode was
+    // removed when the host key left the client; the data proxy holds it now
+    // and appends it server-side. This stays as a function so the caller
+    // below keeps its shape, and always answers empty.
     return '';
   }
 

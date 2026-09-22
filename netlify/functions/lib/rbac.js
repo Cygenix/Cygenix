@@ -93,6 +93,14 @@ const MATRIX = {
   'connection.edit':       { PA: 'F', ML: 'F', EN: 'L' },              // non-PROD; PROD collapses to PA via evaluate below
   'connection.classify':   { PA: 'F' },                                 // R-15: immutable to authoring roles
   'connection.test':       { PA: 'F', ML: 'F', EN: 'F', VA: 'F' },
+  // The organisation register (docs/design/server-held-connections.md,
+  // Phase A). A connection is set up once for the organisation and bound to
+  // profiles; the Platform Administrator creates and retires it and, from
+  // Phase B, holds its secret — and has no grant to USE it, which is the
+  // separation the PA role exists for. `connection.use` arrives with the
+  // grant bridge in Phase C; nothing runs against an org connection yet.
+  'connection.create':     { PA: 'F' },
+  'connection.retire':     { PA: 'F' },
   // Map & Build (6.2) — schema metadata is "view maps, schema and SQL"
   'schema.read':           { OW: 'R', ML: 'F', EN: 'F', AP: 'R', DO: 'R', VA: 'R', AU: 'R' },
   'sql.read':              { ML: 'F', EN: 'F', VA: 'F' },               // PROD → L (logged) via environment rule

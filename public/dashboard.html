@@ -676,6 +676,18 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .conn-foot-acts{ display:flex;gap:8px;margin-left:auto; }
 #view-connections .conn-saved{ margin-top:16px;padding-top:14px;border-top:1px solid var(--color-divider); }
 #view-connections .conn-saved-h{ font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--color-neutral-700);margin-bottom:8px;display:flex;align-items:center;gap:8px; }
+/* The organisation register (Phase A): a table, because a register is read
+   across rows — name, side, endpoint, environment, whether a secret exists —
+   and chips hide everything but the name. */
+#view-connections .orgconn-grid{ display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 12px;margin-bottom:6px; }
+#view-connections .orgconn-grid label{ display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-700); }
+#view-connections .orgconn-grid input,#view-connections .orgconn-grid select{ font:inherit;font-size:13px;letter-spacing:0;text-transform:none;color:var(--color-text);background:var(--color-bg);border:1px solid var(--color-divider);padding:6px 8px; }
+#view-connections .orgconn-table{ width:100%;border-collapse:collapse;font-size:13px;line-height:1.4; }
+#view-connections .orgconn-table th{ text-align:left;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-700);padding:6px 8px;border-bottom:1px solid var(--color-divider);white-space:nowrap; }
+#view-connections .orgconn-table td{ padding:7px 8px;border-bottom:1px solid var(--color-divider);vertical-align:top; }
+#view-connections .orgconn-table td.mono{ font-family:var(--font-mono,monospace);font-size:12px; }
+#view-connections .orgconn-empty{ padding:14px 0;color:var(--color-neutral-700);font-size:13px; }
+#view-connections .orgconn-secret{ color:var(--color-neutral-600);font-size:12px; }
 #view-connections .conn-count{ font-family:var(--font-body);font-size:12px;letter-spacing:0;color:var(--color-neutral-700);border:1px solid var(--color-divider);padding:0 6px; }
 #view-connections .conn-chips{ display:flex;flex-wrap:wrap;gap:6px;min-height:20px; }
 #view-connections .conn-guardrail{ margin:0 0 26px; }
@@ -1382,6 +1394,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/connections.js?v=156cd54c07" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
+<!-- The organisation's connection register (Phase A). Metadata only; the
+     server decides who may add or retire, this only asks. The RBAC mirror
+     is loaded so the New and Retire controls show only to a Platform
+     Administrator — a courtesy, never a control; the server refuses anyone
+     else regardless. -->
+<script src="/cygenix-rbac.js?v=78965846c4" defer></script>
+<script src="/cygenix-org-connections.js?v=c1dd02d6df" defer></script>
 <script src="/cygenix-stream-destinations.js?v=ecc5fb8edf" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
@@ -1469,7 +1488,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=228d3222f7" defer></script>
-  <script src="/dashboard-app.js?v=8ddce0f1da" defer></script>
+  <script src="/dashboard-app.js?v=d820d2ebec" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
@@ -2883,6 +2902,41 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             </div>
           </div>
         </div>
+        <!-- ORGANISATION REGISTER (Phase A of docs/design/server-held-
+             connections.md). Connections set up once for the organisation and
+             bound to profiles, held on the server and listed here beside —
+             not instead of — the per-browser saved lists above. Metadata
+             only: no password, string or key is entered or shown here until
+             the secret store lands in Phase B. Rendered by orgConnRender. -->
+        <div class="conn-saved" id="orgconn-panel" style="border-top:0;margin-top:0">
+          <div class="conn-saved-h">Organisation connections <span class="conn-count" id="orgconn-count">0</span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto;display:none" id="orgconn-new-btn" onclick="orgConnToggleForm()" title="Add a connection the whole organisation can bind to">+ New organisation connection…</button>
+          </div>
+          <div class="conn-hint" style="margin-bottom:8px;max-width:84ch">Set up once for the organisation, bound to profiles, used by any member with rights to the profile.
+            This is the metadata half — server, database, user name, environment. The password or key is entered separately
+            once the server-held secret store exists; nothing here can run a query yet.</div>
+          <div id="orgconn-status" class="conn-facts" role="status" style="display:none;margin-bottom:8px"></div>
+          <form id="orgconn-form" class="orgconn-form" style="display:none" onsubmit="return orgConnSubmit(event)" autocomplete="off">
+            <div class="orgconn-grid">
+              <label>Name<input id="orgconn-f-name" maxlength="120" required placeholder="Finance prod source"></label>
+              <label>Side<select id="orgconn-f-side"><option value="src">Source</option><option value="tgt">Target</option></select></label>
+              <label>Kind<select id="orgconn-f-kind" onchange="orgConnKindChanged()"><option value="sqlserver">SQL Server</option><option value="postgres">PostgreSQL</option><option value="azurefn">Azure Function</option></select></label>
+              <label>Environment<select id="orgconn-f-env"><option>DEV</option><option>TEST</option><option>UAT</option><option>PRD</option><option>SANDBOX</option><option>UNKNOWN</option></select></label>
+              <label class="orgconn-sql">Server<input id="orgconn-f-server" maxlength="253" placeholder="sqlprod01.internal"></label>
+              <label class="orgconn-sql">Port<input id="orgconn-f-port" inputmode="numeric" placeholder="1433"></label>
+              <label class="orgconn-sql">Database<input id="orgconn-f-database" maxlength="128" placeholder="Conversion_DM"></label>
+              <label class="orgconn-sql">Auth<select id="orgconn-f-auth"><option value="sql">SQL login</option><option value="entra">Entra ID</option></select></label>
+              <label class="orgconn-sql">User name<input id="orgconn-f-user" maxlength="128" placeholder="svc_cyg_fin"></label>
+              <label class="orgconn-fn" style="display:none">Function URL<input id="orgconn-f-endpoint" maxlength="400" placeholder="https://…azurewebsites.net/api/db"></label>
+            </div>
+            <div class="conn-hint" style="margin:6px 0 8px">No password here, by design. It is entered once, by a Platform Administrator, when the secret store lands, and never shown again.</div>
+            <div id="orgconn-form-err" class="conn-facts" style="display:none;color:var(--state-fail);margin-bottom:8px"></div>
+            <button type="submit" class="btn btn-primary btn-sm" id="orgconn-save-btn">Save to organisation</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="orgConnToggleForm(false)">Cancel</button>
+          </form>
+          <div id="orgconn-list"></div>
+        </div>
+
         <!-- Credential plumbing that is NOT working, said here rather than in
              a console. Two facts can land in it: the encrypted credential
              store on the server is not configured (so passwords stay on this
@@ -4514,4 +4568,4 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
 
 
-<script src="/cygenix-project-summary.js?v=ce0b4fa4f2" defer></script>
+<script src="/cygenix-project-summary.js?v=b044cb5d87" defer></script>

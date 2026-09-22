@@ -106,6 +106,12 @@ Module.prototype.require = function (id) {
 
 process.env.NETLIFY_SITE_ID = process.env.NETLIFY_SITE_ID || 'site-test';
 process.env.NETLIFY_API_TOKEN = process.env.NETLIFY_API_TOKEN || 'token-test';
+// org-connections refuses with 503 before its gate when the Function App key
+// is unset, which would let a broken gate pass this file unnoticed. Give it
+// a key and a Function App that says yes to everything, so the ONLY thing
+// that can refuse is the gate itself.
+process.env.CYGENIX_DATA_FN_KEY = process.env.CYGENIX_DATA_FN_KEY || 'route-test-key';
+global.fetch = async () => ({ status: 200, ok: true, text: async () => JSON.stringify({ connections: [], connection: { id: 'conn_x', name: 'x', kind: 'sqlserver', side: 'src', envClass: 'DEV' } }) });
 
 const authz = realRequire.call(module, path.join(FN_DIR, 'lib', 'authz.js'));
 const tenancy = realRequire.call(module, path.join(FN_DIR, 'lib', 'tenancy.js'));
@@ -135,6 +141,9 @@ const CALL = {
   'reports':     { httpMethod: 'GET',  queryStringParameters: {} },
   'scheduler':   { httpMethod: 'GET',  queryStringParameters: { action: 'list' } },
   'send-email':  { httpMethod: 'POST', body: JSON.stringify({ to: 'x@y.z', subject: 's', text: 't' }) },
+  // A CREATE, deliberately: the organisation register's write is PA-only,
+  // and a roleless caller must not reach even the read.
+  'org-connections': { httpMethod: 'POST', body: JSON.stringify({ op: 'create', connection: { name: 'x', side: 'src', kind: 'sqlserver', envClass: 'DEV', server: 'h', database: 'd' } }) },
 };
 
 async function invoke(name, event) {
@@ -210,6 +219,7 @@ const is2xx = (r) => r && typeof r.statusCode === 'number' && r.statusCode >= 20
     'projects':   { MB: 'allow', EN: 'allow', AU: 'allow' },        // project.read
     'rbac-admin': { OW: 'allow', PA: 'allow', EN: 'deny', MB: 'deny' },  // admin.read
     'db-connect': { ML: 'allow', EN: 'deny', PA: 'deny', MB: 'deny' },   // sql.write on PROD
+    'org-connections': { PA: 'allow', OW: 'deny', ML: 'deny', EN: 'deny', MB: 'deny' },  // connection.create
   };
   const refused = (r) => r && (r.statusCode === 401 || r.statusCode === 403);
 
