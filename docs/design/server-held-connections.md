@@ -185,12 +185,33 @@ decrypts locally with AES-256-GCM.
 org-level values the product itself needs (SMTP, Stripe), not for customer
 connection secrets.
 
-What this needs from Azure, none of it code: a Key Vault in UK South, a key
-(`conn-kek`, RSA-3072 or AES-256 with wrap/unwrap), the Function App's managed
-identity granted **Key Vault Crypto User** on it, and `@azure/keyvault-keys`
-added to the Function App. I could not confirm from the repository whether a
-vault exists — nothing imports a Key Vault SDK today — so this is an open
-item, the same one CLAUDE.md lists as open question 2.
+What this needs from Azure, none of it code. The owner checked the Portal on
+22 Sep 2026, which settles what was CLAUDE.md's open question 2:
+
+- **No Key Vault exists in any subscription.** One must be created: UK South,
+  resource group `Cygenix_UK` beside the Function App, RBAC permission model,
+  soft-delete and purge protection on (a deleted wrapping key is every secret
+  gone). Name it for what it holds, `cygenix-conn-kv`, not for the app.
+- **A key in it**, `conn-kek`, RSA-3072 with wrap/unwrap only, or AES-256 on
+  a Premium (HSM) vault. RSA-3072 on Standard is enough here: the key wraps
+  32-byte data keys, it never encrypts data.
+- **The Function App's identity granted Key Vault Crypto User** on that key.
+  The app has two identities: a system-assigned one (principal
+  `03ccf81d-90f7-4dc9-8bd6-ffe15a4203dc`) and a user-assigned one,
+  `cygenix-db-api-uami`. The code uses `DefaultAzureCredential`
+  (`azure-function/src/index.js`, `sql-entra.js`), which on a host with both
+  resolves the **system-assigned** identity unless `AZURE_CLIENT_ID` names
+  the user-assigned one. Grant the role to whichever one that setting
+  selects — and pick **one identity for both Entra SQL auth and Key Vault**,
+  so the two Entra-auth paths cannot diverge. Absent a reason for the UAMI
+  (it may have been made for SQL; the repository does not say), the
+  system-assigned identity is the recommendation: it lives and dies with the
+  app and cannot be attached to anything else.
+- **`@azure/keyvault-keys`** added to the Function App; `@azure/identity` is
+  already there.
+
+Nothing in the repository imports a Key Vault SDK today, so Phase B is the
+first Key Vault dependency the product takes on.
 
 ## 6. Locked connections
 
@@ -349,7 +370,7 @@ migration to work — which is fortunate, because it never has.
 | Phase | Builds | Depends on | Risk |
 |---|---|---|---|
 | **A. Org register** | `org_connections` container; `connection.create/read/retire`; Connections page lists the org register beside (not instead of) the personal one; dead `funcCode` removed | nothing | Low. Additive. |
-| **B. Secret store** | Key Vault + key + role assignment (Portal); `@azure/keyvault-keys`; `org_secrets`; write-only endpoint; "Password saved · updated … by …" and Replace; Test by `connId` | A; a vault | Medium. First Key Vault dependency; cold-start latency on `unwrapKey` (cache per instance). |
+| **B. Secret store** | **Create** the Key Vault and `conn-kek` (none exists); Crypto User on the identity `DefaultAzureCredential` resolves (system-assigned unless `AZURE_CLIENT_ID` says otherwise); `@azure/keyvault-keys`; `org_secrets`; write-only endpoint; "Password saved · updated … by …" and Replace; Test by `connId` | A | Medium. First Key Vault dependency; a wrong identity choice fails only at runtime, so Phase B starts with a `kv-probe` diagnostic that unwraps a test key and reports which identity answered; cold-start latency on `unwrapKey` (cache per instance). |
 | **C. Grant bridge** | `run-grant` on Netlify; signature verification on Azure; `connection.use` in the matrix; intent/outcome audit | A, B | Medium. New trust boundary; must be tested against forged, expired and replayed grants. |
 | **D. Server-side resolution** | `/api/db` by `{profileId, role}`; Postgres on the Function App; strict Entra auth on that route; `CygenixRun.db()`; the twenty callers migrated one page at a time behind a per-page switch | C | **High.** The most code, the most callers, the 26 s difference in behaviour, and the Function App learning a second dialect. Ship page by page. |
 | **E. Migration and removal** | §10 steps 1–5; `blob-credential` retired; `REQUIRE_TOKEN_AUTH=true`; host keys rotated; `CONN_SECRETS_KEY` deleted | D complete | Medium. Irreversible once local copies are deleted; the cutover date and the "move this password" prompt are what make it safe. |
@@ -386,8 +407,12 @@ is removed until its replacement has carried real traffic.
 
 ## 14. Open questions for the owner
 
-1. Does a Key Vault exist in UK South, and does the Function App have a
-   system-assigned managed identity? (CLAUDE.md open question 2.)
+1. ~~Does a Key Vault exist, and does the Function App have a managed
+   identity?~~ Answered 22 Sep 2026: no vault; both a system-assigned and a
+   user-assigned identity. The remaining question is **what the user-assigned
+   identity `cygenix-db-api-uami` is for, and whether `AZURE_CLIENT_ID` is set
+   to it** on the Function App. That decides which identity gets the Key
+   Vault role in Phase B.
 2. Is Postgres on the Function App acceptable, or must Postgres stay on
    Netlify for some customers? It decides whether Phase D is one path or two.
 3. Should the Approver role be able to *use* a connection to verify a change,
