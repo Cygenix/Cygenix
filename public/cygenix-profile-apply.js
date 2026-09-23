@@ -313,6 +313,9 @@ function select(profileId, opts) {
   var p = profileOf(store, profileId);
   if (!p) return { ok: false, reason: 'No profile ' + profileId + '.' };
   if (p.status !== 'active') return { ok: false, reason: 'Profile ' + p.id + ' is ' + p.status + ' — only an active profile can be selected.' };
+  // Whether this is a real change decides whether the cached schema is
+  // stale. Read before cpSelectProfile overwrites it.
+  var changedProfile = (store.settings && store.settings.activeProfileId) !== p.id;
 
   var b = busy(snapshotBusy());
   if (b.block.length) {
@@ -339,6 +342,7 @@ function select(profileId, opts) {
   }
   P.cpSave(store);
   var written = pl.ok ? apply(pl, { force: true }) : null;
+  if (changedProfile) clearSchemaCache();
   try { root.dispatchEvent(new CustomEvent('cygenix:profiles-changed')); } catch (e) {}
   if (!pl.ok) {
     return { ok: true, selected: true, applied: false, plan: pl,
@@ -360,10 +364,82 @@ function drift(store, savedConns, live) {
     hard: pl.missing.filter(function (m) { return m.hard; }) };
 }
 
+/* Cached schema belongs to the connection it was read from, so a profile
+   switch makes every cygenix_schema_* entry a lie — the Schema Explorer
+   would show the OLD database's tables under the new profile's name, which
+   is worse than showing nothing. Cleared on a real switch only, and only
+   these keys: everything else in storage survives a switch.
+
+   Both stores, because the cache has lived in each at different times. */
+function clearSchemaCache() {
+  var n = 0;
+  [root.localStorage, root.sessionStorage].forEach(function (store) {
+    if (!store) return;
+    var doomed = [];
+    try {
+      for (var i = 0; i < store.length; i++) {
+        var k = store.key(i);
+        if (k && k.indexOf('cygenix_schema') === 0) doomed.push(k);
+      }
+      doomed.forEach(function (k) { try { store.removeItem(k); n++; } catch (e) {} });
+    } catch (e) { /* storage unavailable; nothing cached either */ }
+  });
+  return n;
+}
+
+/* Which profile should be selected when nobody has chosen one?
+
+   This gap was worth closing because of what the product does in that
+   state: cpGuardWrite refuses every write and the status bar reads
+   "NO PROFILE SELECTED" in red. A person who defined one profile, used it,
+   and came back on a new device — where the selection had not yet synced —
+   found the product bricked rather than merely unconfigured.
+
+   The rule is deliberately timid. Only ACTIVE profiles count; retired ones
+   are excluded everywhere and here too. Ties break towards the one most
+   recently updated, which is the closest thing the store has to "last
+   used". And a PRD profile is NEVER auto-selected: selecting one by hand
+   requires its id typed, and a rule that picks it silently on sign-in
+   would walk around that guardrail. If PRD is the only candidate the bar
+   keeps asking, which is the safe answer. */
+function autoSelectCandidate(store) {
+  var list = (store && store.profiles) || [];
+  var best = null;
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i];
+    if (!p || p.status !== 'active') continue;
+    if (String(p.envClass || '').toUpperCase() === 'PRD') continue;
+    if (!best || (p.updatedAt || 0) > (best.updatedAt || 0)) best = p;
+  }
+  return best;
+}
+
+/* Runs before the load check, once, and only when nothing is selected. It
+   writes the selection and nothing else — the apply that follows is
+   checkOnLoad's, through the same path a hand-made selection takes. */
+function autoSelect() {
+  var P = profiles();
+  if (!P) return null;
+  var store = P.cpLoad();
+  var st = store && store.settings;
+  if (!st) return null;
+  if (st.activeProfileId) return null;                 // somebody has chosen
+  if (!store.profiles || !store.profiles.length) return null;  // nothing to choose
+  var p = autoSelectCandidate(store);
+  if (!p) return null;
+  try { P.cpSelectProfile(store, p.id, userName(), Date.now()); }
+  catch (e) { return null; }
+  P.cpEvent(store, { type: 'profile.auto_selected', profileId: p.id, by: userName() }, Date.now());
+  P.cpSave(store);
+  try { root.dispatchEvent(new CustomEvent('cygenix:profiles-changed')); } catch (e) {}
+  return p.id;
+}
+
 /* On page load: once per selection per session, after the cloud load. */
 function checkOnLoad() {
   var P = profiles(), c = conns(), S = ss();
   if (!P || !c || !S) return null;
+  autoSelect();                       // may fill in a selection; re-read below
   var store = P.cpLoad();
   var st = store && store.settings;
   if (!st || !st.activeProfileId) return null;
@@ -507,6 +583,7 @@ return {
   sameFields: sameFields, summary: summary, missingSentence: missingSentence, busy: busy, drift: drift,
   loadSavedConns: loadSavedConns, snapshotBusy: snapshotBusy,
   apply: apply, select: select, checkOnLoad: checkOnLoad, finishOnce: finishOnce,
+  autoSelect: autoSelect, autoSelectCandidate: autoSelectCandidate, clearSchemaCache: clearSchemaCache,
   pendingFinish: pendingFinish, clearFinish: clearFinish, notice: notice,
 };
 });

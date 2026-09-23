@@ -477,8 +477,8 @@ document.addEventListener('DOMContentLoaded', function init(){
   // Source: same shape as target — Azure Function URL takes priority over
   // direct connection string. Without this, source-Azure mode rendered as
   // "not configured" even with a green Connections page.
-  srcConn = c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl+'?code='+encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
-  tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
+  srcConn = c.srcFnUrl ? (c.srcFnKey ? CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
+  tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? CygenixActiveConn.compose(c.tgtFnUrl, c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
 
   const ak = localStorage.getItem('cygenix_api_key')||'';
   if(ak) $('api-key').value = ak;
@@ -662,7 +662,7 @@ async function connectSrc(){
   const c = CygenixConnections.get();
   // Build source connection — Azure Function URL with ?code=KEY, or direct
   // string. Same shape as the init() IIFE above.
-  srcConn = c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl+'?code='+encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
+  srcConn = c.srcFnUrl ? (c.srcFnKey ? CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
   if(!srcConn){ setBanner('src','err','Source: not configured — set in Dashboard → Connections'); return; }
   setBanner('src','connecting','Source: connecting…');
   const connBusy = window.CygenixBusy && CygenixBusy.start('Reading the source schema');
@@ -708,7 +708,7 @@ async function connectSrc(){
 
 async function connectTgt(){
   const c = CygenixConnections.get();
-  tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
+  tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? CygenixActiveConn.compose(c.tgtFnUrl, c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
   if(!tgtConn){ setBanner('tgt','err','Target: not configured — set in Dashboard → Connections'); return; }
   setBanner('tgt','connecting','Target: connecting…');
   const connBusy = window.CygenixBusy && CygenixBusy.start('Reading the target schema');

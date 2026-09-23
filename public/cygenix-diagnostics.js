@@ -496,8 +496,15 @@
   function ambientConns() {
     var c = {};
     try { c = root.CygenixConnections && root.CygenixConnections.get ? (root.CygenixConnections.get() || {}) : {}; } catch (e) { c = {}; }
-    var pick = function (fn, cs) { return (/^https?:\/\//i.test(fn || '') ? fn : '') || cs || fn || ''; };
-    return { src: pick(c.srcFnUrl, c.srcConnString), tgt: pick(c.tgtFnUrl, c.tgtConnString) };
+    // The key was never appended here, so the diagnostics connection test
+    // answered 401 against a keyed Function App even when the product was
+    // working — a test that fails when the thing under test is fine.
+    var pick = function (fn, key, cs) {
+      var A = root.CygenixActiveConn;
+      var composed = (A && A.compose) ? A.compose(fn, key) : '';
+      return composed || cs || '';
+    };
+    return { src: pick(c.srcFnUrl, c.srcFnKey, c.srcConnString), tgt: pick(c.tgtFnUrl, c.tgtFnKey, c.tgtConnString) };
   }
   function resolveProfile(id) {
     var opts = profileOptions();

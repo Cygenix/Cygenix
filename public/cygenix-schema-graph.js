@@ -56,11 +56,11 @@
       const c = window.CygenixConnections.get() || {};
       if (side === 'src') {
         return c.srcFnUrl
-          ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl)
+          ? (c.srcFnKey ? CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey) : c.srcFnUrl)
           : (c.srcConnString || '');
       }
       return c.tgtFnUrl
-        ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
+        ? (c.tgtFnKey ? CygenixActiveConn.compose(c.tgtFnUrl, c.tgtFnKey) : c.tgtFnUrl)
         : (c.tgtConnString || '');
     } catch { return ''; }
   }

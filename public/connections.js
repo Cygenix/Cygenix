@@ -736,6 +736,30 @@ var CygenixConnections = (function () {
   function onChange() { /* no-op */ }
   function pingAll()  { /* no-op */ }
 
+  // ── Composing a Function App URL ────────────────────────────────────────
+  // Never by concatenation. The stored URL frequently already carries an
+  // access parameter — these very getters compose one and callers save the
+  // result back — and appending a second produced two of them. The Function
+  // App reads the last, which is the wrong one, and answers 401.
+  //
+  // This file is required by the Node tests as well as loaded in the
+  // browser, so it uses the shared composer when one is present and falls
+  // back to the same rule here rather than reaching for a global that will
+  // not exist under Node.
+  function composeFnUrl(fnUrl, fnKey) {
+    var shared = (typeof globalThis !== 'undefined') && globalThis.CygenixActiveConn;
+    if (shared && typeof shared.compose === 'function') return shared.compose(fnUrl, fnKey);
+    var u = String(fnUrl == null ? '' : fnUrl).trim();
+    if (!u || !/^https?:\/\//i.test(u)) return '';
+    try {
+      var parsed = new URL(u);
+      if (parsed.searchParams.has('code')) return parsed.toString();
+      var k = String(fnKey == null ? '' : fnKey).trim();
+      if (k) parsed.searchParams.set('code', k);
+      return parsed.toString();
+    } catch (e) { return ''; }
+  }
+
   // ── Public API + back-compat nibs ────────────────────────────────────────
   const api = {
     get, setActive, save, load, clear,
@@ -751,7 +775,7 @@ var CygenixConnections = (function () {
       const c = get();
       if (c.srcFnUrl) {
         return c.srcFnKey
-          ? c.srcFnUrl + (c.srcFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(c.srcFnKey)
+          ? composeFnUrl(c.srcFnUrl, c.srcFnKey)
           : c.srcFnUrl;
       }
       return c.srcConnString || '';
@@ -762,7 +786,7 @@ var CygenixConnections = (function () {
       const c = get();
       if (c.tgtFnUrl) {
         return c.tgtFnKey
-          ? c.tgtFnUrl + (c.tgtFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(c.tgtFnKey)
+          ? composeFnUrl(c.tgtFnUrl, c.tgtFnKey)
           : c.tgtFnUrl;
       }
       return c.tgtConnString || '';

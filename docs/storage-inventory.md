@@ -79,7 +79,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cyg_search_q` | A query typed in the masthead, handed to the Search view once | — | cygenix-sidebar.js, dashboard-app.js |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
 | `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +17 |
-| `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-collation.js, cygenix-cosmos-sync.js +5 |
+| `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-active-conn.js, cygenix-collation.js +6 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
 | `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +34 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |

@@ -842,12 +842,12 @@ function loadSQLFromFile(input) {
 function getConn() {
   const c = CygenixConnections.get();
   const which = document.getElementById('conn-select').value;
-  if (which === 'target') return c.tgtFnUrl ? c.tgtFnUrl+(c.tgtFnKey?'?code='+encodeURIComponent(c.tgtFnKey):'') : c.tgtConnString;
+  if (which === 'target') return c.tgtFnUrl ? CygenixActiveConn.compose(c.tgtFnUrl, c.tgtFnKey) : c.tgtConnString;
   // Source: same shape as target — Azure Function URL takes priority over
   // connection string. Without this branch, picking Source DB while in
   // source-Azure mode silently fell through to an empty string and every
   // query 401'd.
-  if (c.srcFnUrl) return c.srcFnUrl + (c.srcFnKey ? '?code=' + encodeURIComponent(c.srcFnKey) : '');
+  if (c.srcFnUrl) return CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey);
   return c.srcConnString;
 }
 
@@ -1435,11 +1435,11 @@ function getOBSchemas() {
   // string or Azure Function URL). Has to match the conn string assembled
   // inside getConn() so cache hits actually land.
   const srcConnRaw = c.srcFnUrl
-    ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl)
+    ? (c.srcFnKey ? CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey) : c.srcFnUrl)
     : (c.srcConnString || '');
   const srcKey = srcConnRaw.slice(0, 80);
   const tgtConnRaw = c.tgtFnUrl
-    ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
+    ? (c.tgtFnKey ? CygenixActiveConn.compose(c.tgtFnUrl, c.tgtFnKey) : c.tgtFnUrl)
     : (c.tgtConnString || '');
   const tgtKey = tgtConnRaw.slice(0, 80);
   return {
@@ -1825,12 +1825,12 @@ async function fetchBothSchemas() {
 
   // Source: may be direct ADO.NET string or Azure Function URL
   const srcConn = c.srcFnUrl
-    ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl)
+    ? (c.srcFnKey ? CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey) : c.srcFnUrl)
     : (c.srcConnString || '');
 
   // Target: prefer Azure Function URL (with key appended), fall back to direct
   const tgtConn = c.tgtFnUrl
-    ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
+    ? (c.tgtFnKey ? CygenixActiveConn.compose(c.tgtFnUrl, c.tgtFnKey) : c.tgtFnUrl)
     : (c.tgtConnString || '');
 
   console.log('[schema] fetchBothSchemas — src:', srcConn ? (isFn(srcConn)?'fn-url':'direct-cs') : 'EMPTY',
@@ -2329,8 +2329,8 @@ function _resolveDbNameFor(which){
     try {
       const c = CygenixConnections.get();
       const connRaw = which === 'target'
-        ? (c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString || ''))
-        : (c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || ''));
+        ? (c.tgtFnUrl ? (c.tgtFnKey ? CygenixActiveConn.compose(c.tgtFnUrl, c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString || ''))
+        : (c.srcFnUrl ? (c.srcFnKey ? CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || ''));
       const cached = (typeof _schemaCache !== 'undefined') ? _schemaCache[connRaw.slice(0,80)] : null;
       if (cached && cached.database) return cached.database;
       const parsed = _parseDbNameFromConn(connRaw);

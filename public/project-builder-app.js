@@ -250,8 +250,10 @@ function updateAuditSourceWarning(){
 function globalSrcConn(){
   let c = {};
   try { c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get && CygenixConnections.get()) || {}; } catch {}
+  // The source side used to return srcFnUrl bare — no key — so an
+  // azure-mode source answered 401 while the target worked.
   return c.srcConnString
-      || c.srcFnUrl
+      || CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey)
       || sessionStorage.getItem('cygenix_src_conn_string')
       || '';
 }
@@ -260,7 +262,7 @@ function globalTgtConn(){
   try { c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get && CygenixConnections.get()) || {}; } catch {}
   const fnUrl = c.tgtFnUrl || c.fnUrl || sessionStorage.getItem('cygenix_fn_url') || '';
   const fnKey = c.tgtFnKey || c.fnKey || sessionStorage.getItem('cygenix_fn_key') || '';
-  if (fnUrl) return fnUrl + (fnKey ? (fnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(fnKey) : '');
+  if (fnUrl) return CygenixActiveConn.compose(fnUrl, fnKey);
   return c.tgtConnString
       || c.connString
       || sessionStorage.getItem('cygenix_conn_string')

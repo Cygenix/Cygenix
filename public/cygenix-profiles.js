@@ -385,13 +385,35 @@ function cpBindingOf(store, artifactType, artifactId) {
   })[0] || null;
 }
 
+/* Compose a Function App URL without ever appending a second code.
+
+   This file is required by the Node tests as well as loaded in the browser,
+   so it cannot reach for window.CygenixActiveConn unconditionally. It uses
+   the shared composer when there is one and falls back to the same rule
+   here, which is the rule that matters: parse, and set `code` only when the
+   URL does not already carry one. Concatenating produced ?code=A&code=B,
+   the Function App read the last one, and the answer was 401. */
+function cpComposeFnUrl(fnUrl, fnKey) {
+  var shared = (typeof globalThis !== 'undefined') && globalThis.CygenixActiveConn;
+  if (shared && typeof shared.compose === 'function') return shared.compose(fnUrl, fnKey);
+  var u = String(fnUrl == null ? '' : fnUrl).trim();
+  if (!u || !/^https?:\/\//i.test(u)) return '';
+  try {
+    var parsed = new URL(u);
+    if (parsed.searchParams.has('code')) return parsed.toString();
+    var k = String(fnKey == null ? '' : fnKey).trim();
+    if (k) parsed.searchParams.set('code', k);
+    return parsed.toString();
+  } catch (e) { return ''; }
+}
+
 /* the actual connection value a saved entry resolves to (direct string, or
    azure fn URL + code) — mirrors CygenixConnections.srcConn/tgtConn */
 function cpConnValue(entry) {
   if (!entry) return '';
   if (entry.mode === 'azure' && entry.fnUrl) {
     return entry.fnKey
-      ? entry.fnUrl + (entry.fnUrl.indexOf('?') >= 0 ? '&' : '?') + 'code=' + encodeURIComponent(entry.fnKey)
+      ? cpComposeFnUrl(entry.fnUrl, entry.fnKey)
       : entry.fnUrl;
   }
   return entry.connString || '';

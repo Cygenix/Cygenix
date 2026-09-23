@@ -182,7 +182,11 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/connections.js?v=156cd54c07" defer></script>
+<script src="/connections.js?v=9f045abd72" defer></script>
+<!-- One answer to "what am I connected to?": the active profile first, the
+     live pair next, the legacy fields last, and ONE composer for the Function
+     App URL, so its access parameter can never be appended twice (the 401). -->
+<script src="/cygenix-active-conn.js?v=8900581ac6" defer></script>
 <!-- The local half of the saved-connection credential store: the secret for a
      saved connection lives here, never in the synced list. Loaded wherever
      connections.js is, so the profile plan can see a credential this browser
@@ -193,8 +197,8 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
      whatever Connections last held, which after a profile switch is the wrong
      pair or nothing at all. tests/profile-apply.test.js pins that every page
      loading connections.js also loads these. -->
-<script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
-<script src="/cygenix-profile-apply.js?v=2f4374d106" defer></script>
+<script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
+<script src="/cygenix-profile-apply.js?v=2928c2fb5a" defer></script>
 <script src="/nav.js?v=50f8721bfa" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
@@ -844,7 +848,7 @@ function getAzureFnUrl() {
   const code = sessionStorage.getItem('cygenix_fn_key') || '';
   if (!base) return null;
   const url = base.replace(/\/+$/, '');
-  return code ? url + '?code=' + encodeURIComponent(code) : url;
+  return code ? CygenixActiveConn.compose(url, code) : url;
 }
 
 function $(id){ return document.getElementById(id); }
@@ -3108,7 +3112,7 @@ async function doConnectTgt() {
   const tgtFn  = c.tgtFnUrl || '';
   const tgtKey = c.tgtFnKey || '';
   const tgtCs  = c.tgtConnString || '';
-  const tgtConn = tgtFn ? (tgtKey ? tgtFn + '?code=' + encodeURIComponent(tgtKey) : tgtFn) : tgtCs;
+  const tgtConn = tgtFn ? (tgtKey ? CygenixActiveConn.compose(tgtFn, tgtKey) : tgtFn) : tgtCs;
   const btn = document.getElementById('csb-tgt-btn');
   if (!tgtConn) { setBanner('tgt', false, 'Target: not configured — set in Dashboard → Configure'); return; }
   setBanner('tgt', false, 'Target: connecting…');
@@ -3141,7 +3145,7 @@ document.addEventListener('DOMContentLoaded', function forceGlobalConnections() 
   const tgtFn  = c.tgtFnUrl || '';
   const tgtKey = c.tgtFnKey || '';
   const tgtCs  = c.tgtConnString || '';
-  const tgtConn = tgtFn ? (tgtKey ? tgtFn + '?code=' + encodeURIComponent(tgtKey) : tgtFn) : tgtCs;
+  const tgtConn = tgtFn ? (tgtKey ? CygenixActiveConn.compose(tgtFn, tgtKey) : tgtFn) : tgtCs;
 
   // Override any stale project snapshot
   S.srcConnString = srcCs;

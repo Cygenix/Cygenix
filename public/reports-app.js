@@ -5894,7 +5894,7 @@ async function rbInitConnectionBanner(){
     srcConn = cx.srcConnString || '';
     if (!srcConn && cx.srcFnUrl) {
       const sep = cx.srcFnUrl.includes('?') ? '&' : '?';
-      srcConn = cx.srcFnUrl + (cx.srcFnKey ? sep + 'code=' + encodeURIComponent(cx.srcFnKey) : '');
+      srcConn = CygenixActiveConn.compose(cx.srcFnUrl, cx.srcFnKey);
     }
     if (srcConn) {
       const dbName = parseDbName(srcConn);
@@ -5906,7 +5906,7 @@ async function rbInitConnectionBanner(){
     tgtConn = cx.tgtConnString || '';
     if (!tgtConn && cx.tgtFnUrl) {
       const sep = cx.tgtFnUrl.includes('?') ? '&' : '?';
-      tgtConn = cx.tgtFnUrl + (cx.tgtFnKey ? sep + 'code=' + encodeURIComponent(cx.tgtFnKey) : '');
+      tgtConn = CygenixActiveConn.compose(cx.tgtFnUrl, cx.tgtFnKey);
     }
     if (tgtConn) {
       const dbName = parseDbName(tgtConn);

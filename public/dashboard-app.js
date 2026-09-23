@@ -10539,13 +10539,13 @@ async function testProjConn(which) {
       ? (document.getElementById('proj-src-cs')?.value.trim()||'')
       : (document.getElementById('proj-src-fn-url')?.value.trim()||'');
     const key = document.getElementById('proj-src-fn-key')?.value.trim()||'';
-    if (srcMode==='azure'&&key) conn += (conn.includes('?')?'&':'?')+'code='+encodeURIComponent(key);
+    if (srcMode==='azure'&&key) conn = CygenixActiveConn.compose(conn, key);
   } else {
     conn = tgtMode==='direct'
       ? (document.getElementById('proj-tgt-cs')?.value.trim()||'')
       : (document.getElementById('proj-tgt-fn-url')?.value.trim()||'');
     const key = document.getElementById('proj-tgt-fn-key')?.value.trim()||'';
-    if (tgtMode==='azure'&&key) conn += (conn.includes('?')?'&':'?')+'code='+encodeURIComponent(key);
+    if (tgtMode==='azure'&&key) conn = CygenixActiveConn.compose(conn, key);
   }
   if (!conn) { resultEl.textContent='Enter a connection string first.'; resultEl.style.color='var(--red)'; return; }
 
@@ -12190,7 +12190,7 @@ const rstState = { caps: null, family: null, probe: null, header: null, files: n
 function rstTargetConn(){
   const c = (window.CygenixConnections && CygenixConnections.get && CygenixConnections.get()) || {};
   const fn = c.tgtFnUrl || '';
-  if (fn) return c.tgtFnKey ? fn + '?code=' + encodeURIComponent(c.tgtFnKey) : fn;
+  if (fn) return c.tgtFnKey ? CygenixActiveConn.compose(fn, c.tgtFnKey) : fn;
   return c.tgtConnString || '';
 }
 function rstTargetLabel(){
@@ -12928,7 +12928,7 @@ async function blobSourceProxyJson(action, payload){
 
   let resp;
   try {
-    resp = await fetch(BLOB_PROXY_BASE + '/' + action + '?code=' + encodeURIComponent(await blobRelayCode()), {
+    resp = await fetch(CygenixActiveConn.compose(BLOB_PROXY_BASE + '/' + action, await blobRelayCode()), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
       body: JSON.stringify(Object.assign({ sasUrl }, payload || {})),
@@ -15327,7 +15327,7 @@ function impGetConn(which){
                      || ss('cygenix_src_fn_key');
     if (isHttpUrl(srcRawFnUrl)){
       return srcFnKey
-        ? srcRawFnUrl + (srcRawFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(srcFnKey)
+        ? CygenixActiveConn.compose(srcRawFnUrl, srcFnKey)
         : srcRawFnUrl;
     }
     return c.srcConnString
@@ -15343,7 +15343,7 @@ function impGetConn(which){
   const fnKey    = c.tgtFnKey || c.fnKey || ss('cygenix_fn_key') || pcGet('cygenix_fn_key');
   if (isHttpUrl(rawFnUrl)){
     return fnKey
-      ? rawFnUrl + (rawFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(fnKey)
+      ? CygenixActiveConn.compose(rawFnUrl, fnKey)
       : rawFnUrl;
   }
   // Not an HTTP URL — treat anything in fn_url or conn_string as a connection string
@@ -18195,9 +18195,7 @@ async function wiFetchSourceSchema(){
   const conns = wiReadConns();
   let conn = '';
   if (conns.srcFnUrl){
-    conn = conns.srcFnUrl + (conns.srcFnKey
-      ? (conns.srcFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(conns.srcFnKey)
-      : '');
+    conn = CygenixActiveConn.compose(conns.srcFnUrl, conns.srcFnKey);
   } else {
     conn = conns.srcConnString || '';
   }

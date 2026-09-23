@@ -566,7 +566,11 @@ select.inp{cursor:pointer}
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/connections.js?v=156cd54c07" defer></script>
+<script src="/connections.js?v=9f045abd72" defer></script>
+<!-- One answer to "what am I connected to?": the active profile first, the
+     live pair next, the legacy fields last, and ONE composer for the Function
+     App URL, so its access parameter can never be appended twice (the 401). -->
+<script src="/cygenix-active-conn.js?v=8900581ac6" defer></script>
 <!-- The secret half of every saved connection, and of the live pair, with its
      encrypted cloud copy. Loaded wherever connections.js is, so a page opened
      first on a new machine can resolve the live pair's credential. -->
@@ -576,15 +580,15 @@ select.inp{cursor:pointer}
      whatever Connections last held, which after a profile switch is the wrong
      pair or nothing at all. tests/profile-apply.test.js pins that every page
      loading connections.js also loads these. -->
-<script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
-<script src="/cygenix-profile-apply.js?v=2f4374d106" defer></script>
+<script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
+<script src="/cygenix-profile-apply.js?v=2928c2fb5a" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
 <script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
 <script src="/cygenix-api.js?v=f33c20a068" defer></script>
   <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
-<script src="/cygenix-schema-graph.js?v=f0fb879ed7" defer></script>
+<script src="/cygenix-schema-graph.js?v=b504389038" defer></script>
 <script src="/cygenix-subject-harvest.js?v=223a1d8144" defer></script>
 <script src="/cygenix-integrations.js?v=9d508375a5" defer></script>
 <script src="/cygenix-map-context.js?v=f006e965b8" defer></script>
@@ -661,7 +665,11 @@ function saveStore(){
 function connOf(side){
   try {
     const c = window.CygenixConnections ? CygenixConnections.get() || {} : {};
-    return side === 'src' ? (c.srcConnString || '') : (c.tgtConnString || '');
+    // Both sides returned the direct string only, so a profile whose
+    // connection is an Azure Function read as "no connection" here.
+    return side === 'src'
+      ? (c.srcConnString || CygenixActiveConn.compose(c.srcFnUrl, c.srcFnKey) || '')
+      : (c.tgtConnString || CygenixActiveConn.compose(c.tgtFnUrl, c.tgtFnKey) || '');
   } catch { return ''; }
 }
 function dialectOf(side){ return A.asDialectOf(connOf(side)); }

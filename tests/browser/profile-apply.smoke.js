@@ -130,7 +130,17 @@ const CONNS = [
   /* ── 1. Select FIN-DEV-01 ─────────────────────────────────────────────── */
   await openProfiles();
   const before = await live();
-  check('the live settings start empty', !before.srcFnUrl && !before.srcConnString && !before.tgtFnUrl && !before.tgtConnString);
+  // Sep-2026: the live settings no longer START empty. With profiles defined
+  // and none selected, every write in the product was blocked and the status
+  // bar read NO PROFILE SELECTED, so a profile is now auto-selected on load —
+  // the newest non-production one, which here is FIN-DEV-01. The clicks below
+  // still prove the switch; this just records that arriving is no longer a
+  // dead end. FIN-PRD-01 is newer in nothing but would be skipped regardless:
+  // selecting production by hand needs its id typed, and auto-select must not
+  // walk around that.
+  check('arriving with nothing selected auto-selects the newest non-production profile and loads it',
+    (await page.evaluate(() => JSON.parse(localStorage.getItem('cygenix_profiles_v1')).settings.activeProfileId)) === 'FIN-DEV-01'
+    && before.srcFnUrl === 'https://src.azurewebsites.net/api/db', JSON.stringify(before));
   saves.length = 0;
   await page.click('input[name="cp-active"][onchange*="FIN-DEV-01"]');
   await page.waitForTimeout(500);

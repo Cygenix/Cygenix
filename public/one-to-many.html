@@ -142,7 +142,11 @@ select.map-select:focus{border-color:var(--accent)}
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/connections.js?v=156cd54c07" defer></script>
+<script src="/connections.js?v=9f045abd72" defer></script>
+<!-- One answer to "what am I connected to?": the active profile first, the
+     live pair next, the legacy fields last, and ONE composer for the Function
+     App URL, so its access parameter can never be appended twice (the 401). -->
+<script src="/cygenix-active-conn.js?v=8900581ac6" defer></script>
 <!-- The local half of the saved-connection credential store: the secret for a
      saved connection lives here, never in the synced list. Loaded wherever
      connections.js is, so the profile plan can see a credential this browser
@@ -153,8 +157,8 @@ select.map-select:focus{border-color:var(--accent)}
      whatever Connections last held, which after a profile switch is the wrong
      pair or nothing at all. tests/profile-apply.test.js pins that every page
      loading connections.js also loads these. -->
-<script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
-<script src="/cygenix-profile-apply.js?v=2f4374d106" defer></script>
+<script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
+<script src="/cygenix-profile-apply.js?v=2928c2fb5a" defer></script>
 <script src="/nav.js?v=50f8721bfa" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
@@ -495,7 +499,7 @@ async function ensureColumnsForTable(side, table){
   if (side === 'src') conn = _oc.srcConnString || '';
   else {
     conn = _oc.tgtFnUrl || _oc.tgtConnString || '';
-    if (_oc.tgtFnUrl && _oc.tgtFnKey) conn = _oc.tgtFnUrl + '?code=' + encodeURIComponent(_oc.tgtFnKey);
+    if (_oc.tgtFnUrl && _oc.tgtFnKey) conn = CygenixActiveConn.compose(_oc.tgtFnUrl, _oc.tgtFnKey);
   }
   if (!conn) throw new Error(side + ' connection not set');
   try {
@@ -521,7 +525,7 @@ async function ensureColumnsForTable(side, table){
 async function connectTgt(){
   const _oc2=CygenixConnections.get();
   let conn=_oc2.tgtFnUrl||_oc2.tgtConnString||'';
-  if(_oc2.tgtFnUrl&&_oc2.tgtFnKey) conn=_oc2.tgtFnUrl+'?code='+encodeURIComponent(_oc2.tgtFnKey);
+  if(_oc2.tgtFnUrl&&_oc2.tgtFnKey) conn=CygenixActiveConn.compose(_oc2.tgtFnUrl, _oc2.tgtFnKey);
   const st=document.getElementById('tgt-conn-status');
   const btn=document.getElementById('tgt-connect-btn');
   const dot=document.getElementById('banner-tgt-dot');

@@ -141,7 +141,11 @@ body.cyg-collapsed{padding-left:54px}
        which on these pages is every stream lifecycle change. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
-<script src="/connections.js?v=156cd54c07" defer></script>
+<script src="/connections.js?v=9f045abd72" defer></script>
+<!-- One answer to "what am I connected to?": the active profile first, the
+     live pair next, the legacy fields last, and ONE composer for the Function
+     App URL, so its access parameter can never be appended twice (the 401). -->
+<script src="/cygenix-active-conn.js?v=8900581ac6" defer></script>
 <!-- The local half of the saved-connection credential store: the secret for a
      saved connection lives here, never in the synced list. Loaded wherever
      connections.js is, so the profile plan can see a credential this browser
@@ -152,8 +156,8 @@ body.cyg-collapsed{padding-left:54px}
      whatever Connections last held, which after a profile switch is the wrong
      pair or nothing at all. tests/profile-apply.test.js pins that every page
      loading connections.js also loads these. -->
-<script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
-<script src="/cygenix-profile-apply.js?v=2f4374d106" defer></script>
+<script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
+<script src="/cygenix-profile-apply.js?v=2928c2fb5a" defer></script>
 <script src="/cygenix-datastream.js?v=cf1b2702f0"></script>
 <script src="/cygenix-datastream-ui.js?v=a0e01de431"></script>
 <script src="/cygenix-datastream-page.js?v=2c3f580800"></script>
