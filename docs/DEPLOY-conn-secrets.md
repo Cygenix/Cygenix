@@ -1,8 +1,24 @@
-# Deploy note — the encrypted credential store needs a key
+# Deploy note — the encrypted credential store's key
 
-**Status: outstanding until somebody sets `CONN_SECRETS_KEY` on the Function App.**
+**Status: RESOLVED (Sep-2026). `CONN_SECRETS_KEY` is set on the Function App
+and accepted.**
 
-## What is wrong
+Confirmed by probe rather than by looking at the Portal, because the Portal
+shows that a setting exists and not whether the code accepts its value. The
+key check in `conn-secrets.js` runs BEFORE the token check, deliberately, so
+an unauthenticated request distinguishes the two:
+
+```
+GET https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/secrets/list
+
+  {"error":"secrets store not configured","code":"no-secrets-key"}   key missing or malformed
+  {"error":"Authorization Bearer token required"}                    key ACCEPTED — this is what we get
+```
+
+The rest of this note is kept as the record of what was wrong and how to fix
+it again, because the same failure returns the day the key is rotated badly.
+
+## What was wrong
 
 Saved-connection credentials (passwords, connection strings, Function App
 keys) sync to Cosmos encrypted, through `azure-function/src/conn-secrets.js`.
@@ -16,7 +32,8 @@ missing or not a 32-byte base64 value, answers **503**:
 
 That is the 64-byte response the browser sees on `data-proxy?action=secrets-list`.
 
-The key has never been set. So since the feature shipped (commit `613f819`):
+The key was not set from the day the feature shipped (commit `613f819`) until
+Sep-2026. For that whole period:
 
 - every `secrets-list` has answered 503, so no device has ever pulled a credential;
 - every `secrets-put` has answered 503, so **no credential has ever been persisted for any user**;
@@ -26,6 +43,17 @@ The key has never been set. So since the feature shipped (commit `613f819`):
 
 Since Sep-2026 the Connections page and the Profiles page say this in a red box
 instead of a console warning.
+
+## A trap worth knowing about
+
+`Buffer.from(value, 'base64')` does not throw on rubbish — it ignores
+characters it does not recognise. So a value pasted WITH QUOTES, or with the
+trailing `=` dropped, does not fail as "not base64": it decodes to the wrong
+length and fails the 32-byte check instead. The `is not base64` branch in
+`loadKey` is therefore close to unreachable, and "set but silently rejected"
+looks identical to "not set" from the browser. If this ever reads
+`no-secrets-key` again while the Portal shows the setting present, suspect
+the value's shape before suspecting anything else.
 
 ## Fix (Azure Portal, about two minutes)
 
