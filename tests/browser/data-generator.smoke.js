@@ -134,7 +134,7 @@ const COLS={
    localStorage.setItem('cygenix_user',JSON.stringify({email:a.U}));
    localStorage.setItem('cygenix_active_user',a.U);
    localStorage.setItem('cygenix_tier','pro');
-   localStorage.setItem('cygenix_cookie_consent',JSON.stringify({version:'1',essential:true,functional:true,timestamp:new Date().toISOString()}));
+   localStorage.setItem('cygenix_cookie_consent',JSON.stringify({version:'2',essential:true,functional:true,analytics:false,timestamp:new Date().toISOString()}));
    const acct={homeAccountId:'h.t',environment:'cygenix.ciamlogin.com',tenantId:'t',username:a.U,localAccountId:'l',authorityType:'MSSTS',name:'You'};
    localStorage.setItem('acct-cygenix.ciamlogin.com-h.t',JSON.stringify(acct));
    localStorage.setItem('h.t-cygenix.ciamlogin.com-idtoken-f3478996-b2b5-4b21-9a23-a6b97a0e5b13-t-',

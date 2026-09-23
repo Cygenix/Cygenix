@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Public marketing page: anonymous visitor statistics, loaded only after consent.
+     Sets Consent Mode v2 to denied before anything else can run. App pages must
+     never carry this tag - tests/ga4-analytics.test.js fails the build if one does. -->
+<script src="/cygenix-ga4.js?v=c68c5a559a"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -167,11 +171,14 @@ a{color:var(--accent);text-decoration:none}
           <tr><td>cygenix_user</td><td>Essential</td><td>Stores your account details locally</td><td>Session</td></tr>
           <tr><td>cygenix_jobs etc.</td><td>Functional</td><td>Saves your migration work in browser storage</td><td>Persistent</td></tr>
           <tr><td>cygenix_cookie_consent</td><td>Essential</td><td>Records your cookie preferences</td><td>1 year</td></tr>
+          <tr><td>_ga</td><td>Analytics</td><td>Google Analytics — distinguishes one visitor from another. Set only if you accept analytics cookies, and only on our public pages</td><td>2 years</td></tr>
+          <tr><td>_ga_K3NJP5GX2G</td><td>Analytics</td><td>Google Analytics — keeps the current visit together. Same conditions as above</td><td>2 years</td></tr>
           <tr><td>Google Fonts</td><td>Third-party</td><td>Loads platform fonts from Google's CDN</td><td>Session</td></tr>
         </tbody>
       </table>
     </div>
-    <p>We do not use advertising cookies, tracking pixels, or analytics services that identify individual users. You can manage cookie preferences using the cookie settings panel at the bottom of any page.</p>
+    <p><strong>Analytics.</strong> We use Google Analytics to collect anonymous statistics about how our public website is used — how many people visit, which pages they read, and roughly where in the world they are. We use this to decide what to write and what to fix. It runs <em>only</em> with your consent: if you reject analytics cookies, or simply have not answered yet, nothing is loaded from Google and no analytics cookie is set. It runs only on our public pages, never inside the Cygenix migration console, so nothing about your migrations, your data or your connections is ever sent to Google. We do not collect advertising signals and the measurement is not linked to your account. Google acts as our processor for this; the data is held by Google LLC and may be processed outside the UK under the UK International Data Transfer Addendum.</p>
+    <p>We do not use advertising cookies or tracking pixels. You can change or withdraw your choice at any time using the cookie settings panel at the bottom of any page — withdrawing it stops the analytics script loading and deletes the cookies above.</p>
 
     <h2 id="your-rights">7. Your Rights</h2>
     <p>Under UK GDPR, you have the following rights regarding your personal data:</p>
@@ -217,6 +224,6 @@ const observer = new IntersectionObserver(entries => {
 }, { rootMargin: '-20% 0px -75% 0px' });
 document.querySelectorAll('h2[id]').forEach(h => observer.observe(h));
 </script>
-<script src="/cookie-consent.js?v=d15e88322f" defer></script>
+<script src="/cookie-consent.js?v=f55be71b3a" defer></script>
 </body>
 </html>

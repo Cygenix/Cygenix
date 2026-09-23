@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Public marketing page: anonymous visitor statistics, loaded only after consent.
+     Sets Consent Mode v2 to denied before anything else can run. App pages must
+     never carry this tag - tests/ga4-analytics.test.js fails the build if one does. -->
+<script src="/cygenix-ga4.js?v=c68c5a559a"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -579,5 +583,6 @@ const observer = new IntersectionObserver(entries => {
 },{rootMargin:'-20% 0px -70% 0px'});
 sections.forEach(s=>observer.observe(s));
 </script>
+<script src="/cookie-consent.js?v=f55be71b3a" defer></script>
 </body>
 </html>

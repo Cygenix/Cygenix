@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Public marketing page: anonymous visitor statistics, loaded only after consent.
+     Sets Consent Mode v2 to denied before anything else can run. App pages must
+     never carry this tag - tests/ga4-analytics.test.js fails the build if one does. -->
+<script src="/cygenix-ga4.js?v=c68c5a559a"></script>
 <script>
 // Redirect invite/recovery tokens to login.html before anything loads
 (function(){
@@ -1865,7 +1869,7 @@ document.addEventListener('keydown', function(e){
   closeContact(); closeAbout();
 });
 </script>
-<script src="/cookie-consent.js?v=d15e88322f" defer></script>
+<script src="/cookie-consent.js?v=f55be71b3a" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
 <!-- The mesh behind the hero: the engine, then the mount that the pricing
