@@ -329,6 +329,13 @@ body.cyg-collapsed{padding-left:54px}
      encrypted cloud copy. Loaded wherever connections.js is, so a page opened
      first on a new machine can resolve the live pair's credential. -->
 <script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
+<!-- Connection profiles, and the module that copies the selected profile's two
+     connections into the live settings. Without these two the page reads
+     whatever Connections last held, which after a profile switch is the wrong
+     pair or nothing at all. tests/profile-apply.test.js pins that every page
+     loading connections.js also loads these. -->
+<script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
+<script src="/cygenix-profile-apply.js?v=2f4374d106" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>

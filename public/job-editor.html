@@ -94,6 +94,18 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/connections.js?v=156cd54c07" defer></script>
+<!-- The local half of the saved-connection credential store: the secret for a
+     saved connection lives here, never in the synced list. Loaded wherever
+     connections.js is, so the profile plan can see a credential this browser
+     already has instead of warning that it is missing. -->
+<script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
+<!-- Connection profiles, and the module that copies the selected profile's two
+     connections into the live settings. Without these two the page reads
+     whatever Connections last held, which after a profile switch is the wrong
+     pair or nothing at all. tests/profile-apply.test.js pins that every page
+     loading connections.js also loads these. -->
+<script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
+<script src="/cygenix-profile-apply.js?v=2f4374d106" defer></script>
 <script src="/nav.js?v=50f8721bfa" defer></script>
 <link rel="stylesheet" href="/cygenix-mobile.css">
 <link rel="stylesheet" href="/cygenix-icons.css">

@@ -106,6 +106,13 @@ select.ds-input{cursor:pointer}
      store refuses to save a credential when that module is absent, so it is
      loaded here, before it, and not deferred. -->
 <script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6"></script>
+<!-- Connection profiles, and the module that copies the selected profile's two
+     connections into the live settings. Without these two the page reads
+     whatever Connections last held, which after a profile switch is the wrong
+     pair or nothing at all. tests/profile-apply.test.js pins that every page
+     loading connections.js also loads these. -->
+<script src="/cygenix-profiles.js?v=a5c44fb1bf" defer></script>
+<script src="/cygenix-profile-apply.js?v=2f4374d106" defer></script>
 <script src="/cygenix-stream-destinations.js?v=ecc5fb8edf"></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 <script src="/cygenix-datastream.js?v=cf1b2702f0"></script>

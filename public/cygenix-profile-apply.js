@@ -370,8 +370,17 @@ function checkOnLoad() {
   var stamp = st.activeProfileId + '::' + (st.selectedAt || 0);
   try { if (S.getItem(SEEN_KEY) === stamp) return null; S.setItem(SEEN_KEY, stamp); } catch (e) {}
   var d = drift(store, loadSavedConns(), c.get());
-  if (!d.drifted) return d;
-  if (!d.hard.length) {
+  // Not drifted is usually nothing to do — but not when a side of the
+  // selected profile cannot be supplied by this browser. That case used to
+  // return here in silence, because select() had already applied what it
+  // could and the live values therefore MATCHED the plan. The person who
+  // switched saw the sentence on the Profiles page and then walked to the
+  // SQL Editor, where the source was simply empty and nothing said why.
+  // A hard-missing credential is worth saying wherever they land, once per
+  // selection, which is what the stamp above bounds it to.
+  var hard = (d.hard && d.hard.length) ? d.hard : [];
+  if (!d.drifted && !hard.length) return d;
+  if (!hard.length) {
     // force: the once-per-selection stamp above is this path's own guard;
     // the 3-second guard is for a burst of selects, not for a load check
     // that follows a select on the same page.

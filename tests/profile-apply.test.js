@@ -333,8 +333,21 @@ const seedWorld = (st, list, secretsFor) => {
     && /e\.key === 'cygenix_project_connections'\) refillIfShowing/.test(dash)
     && /offsetParent === null\) return;/.test(dash));
 
-  const pages = ['dashboard.html', 'profiles.html', 'data-enrichment.html', 'data-generator.html', 'data-quality.html',
-    'conversion-templates.html'];
+  // THE RULE, derived rather than listed (Sep-2026). This used to be a
+  // hand-kept list of six pages, and the pages left off it were the bug:
+  // the SQL Editor and the Schema Explorer read the LIVE connection but
+  // never loaded the module that puts the selected profile INTO the live
+  // connection, so they saw whatever Connections last held — for a person
+  // who had only ever used profiles, nothing at all. Any page that reads
+  // the live pair needs the profile applied to it, so the set is every
+  // page that loads connections.js, computed here. Add a page that uses
+  // connections and forget the profile modules and this fails by name.
+  const pages = fs.readdirSync(path.join(ROOT, 'public'))
+    .filter((f) => f.endsWith('.html') && /<script src="\/connections\.js/.test(read('public', f)))
+    .sort();
+  check('the rule covers every page that reads the live connection', pages.length >= 29, pages.length + ' pages');
+  check('including the two the bug was reported on',
+    pages.includes('sql-editor.html') && pages.includes('schema_explorer.html'));
   const bad = pages.filter((f) => {
     const s = read('public', f);
     return !/cygenix-profile-apply\.js/.test(s) || s.indexOf('cygenix-profile-apply.js') < s.indexOf('cygenix-profiles.js')
@@ -350,9 +363,11 @@ const seedWorld = (st, list, secretsFor) => {
     return !/cygenix-saved-conn-secrets\.js/.test(s) || s.indexOf('cygenix-saved-conn-secrets.js') > s.indexOf('cygenix-profile-apply.js');
   });
   check('…and each of them loads the local secret store before it, so a stored credential is seen', noSecrets.length === 0, noSecrets.join(', '));
+  // The converse: the module is useless without the live settings it
+  // writes into, so it should not be loaded anywhere connections.js is not.
   const others = fs.readdirSync(path.join(ROOT, 'public')).filter((f) => f.endsWith('.html') && !pages.includes(f)
     && /cygenix-profile-apply\.js/.test(read('public', f)));
-  check('and no page without the engine loads it', others.length === 0, others.join(', '));
+  check('and no page loads it without connections.js, which it writes into', others.length === 0, others.join(', '));
 
   const audit = read('netlify', 'functions', 'lib', 'audit-schema.js');
   check('profile.applied is on the client allowlist', /'profile\.applied':\s*'connections'/.test(audit));
