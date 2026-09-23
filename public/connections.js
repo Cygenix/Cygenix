@@ -398,9 +398,23 @@ var CygenixConnections = (function () {
     } catch { /* fall through */ }
     return PRODUCT_FN_HOST;
   }
-  function sideNeedsProductKey(mine, side, host) {
-    const url = mine && mine[side + 'FnUrl'], key = mine && mine[side + 'FnKey'];
+  // "Is this the product's own Function App, with no key on it?" — the one
+  // question both the real calls and the status probe need to ask. Shaped
+  // by url+key so a caller holding a resolved connection can ask without
+  // having to know the live blob's field names.
+  function needsProductKey(url, key, host) {
     return !!url && !key && hostOf(url) === (host || productHost());
+  }
+  function sideNeedsProductKey(mine, side, host) {
+    return needsProductKey(mine && mine[side + 'FnUrl'], mine && mine[side + 'FnKey'], host);
+  }
+  // The key this browser currently holds for a side, from the live blob that
+  // ensureFnKeys fills. A read, never a fetch.
+  function productKeyFor(side) {
+    try {
+      const c = get();
+      return (c && c[side + 'FnKey']) || '';
+    } catch (e) { return ''; }
   }
   let _fnCredInflight = null;
   let _fnCredLastAt = 0;
@@ -767,7 +781,7 @@ var CygenixConnections = (function () {
     on, off, onChange, pingAll,
     currentUserTag,
     // Sep-2026: the product's own Function App key, fetched rather than typed.
-    ensureFnKeys, fnKeyStatus,
+    ensureFnKeys, fnKeyStatus, needsProductKey, productHost, productKeyFor,
   };
   autoEnsureFnKeys();
   Object.defineProperty(api, 'srcConn', {
@@ -802,4 +816,25 @@ var CygenixConnections = (function () {
 // the global is always reachable.
 if (typeof window !== 'undefined') {
   window.CygenixConnections = CygenixConnections;
+
+  // ── The key step, as a shared API ────────────────────────────────────────
+  // The product's own Function App is reached with a host key that is fetched
+  // rather than typed (see ensureFnKeys above). Anything that builds a request
+  // to that host has to run the same step first, and there must be exactly one
+  // implementation of it: a second copy is a second set of guards to get
+  // wrong, and getting them wrong against a key endpoint means a request
+  // storm.
+  //
+  // So this is a façade, not a reimplementation. ensure() IS ensureFnKeys,
+  // which means callers share its in-flight promise — a page that starts a
+  // real query while the warm-up is still fetching waits for the same fetch
+  // rather than racing it — and its three-second interval, which no caller
+  // can weaken by coming in through here.
+  window.CygenixFnKeys = {
+    ensure: function (opts) { return CygenixConnections.ensureFnKeys(opts); },
+    needsProductKey: function (url, key) { return CygenixConnections.needsProductKey(url, key); },
+    productHost: CygenixConnections.productHost,
+    keyForSide: CygenixConnections.productKeyFor,
+    status: CygenixConnections.fnKeyStatus,
+  };
 }

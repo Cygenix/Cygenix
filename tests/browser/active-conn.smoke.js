@@ -59,6 +59,9 @@ const server = http.createServer((req, res) => {
 
 const U = 'demo@cygenix.onmicrosoft.com';
 const FN_HOST = 'https://fn.azurewebsites.net/api/db';
+const PRODUCT_HOST = 'cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net';
+const PRODUCT_DB = 'https://' + PRODUCT_HOST + '/api/db';
+const HOSTKEY = 'HOSTKEY-FROM-PROXY';
 const GOOD_KEY = 'RIGHTKEY';
 
 // Every request to the "database" is recorded, with its code parameters.

@@ -120,6 +120,8 @@ const CLASSES = {
   'cyg_goto':                          ['C', 'Cross-page navigation intent', ''],
   'cyg_search_q':                      ['C', 'A query typed in the masthead, handed to the Search view once', ''],
   'cygenix_profile_apply_seen':        ['C', 'Profile load-check stamp: which selection was already checked this session (sessionStorage)', ''],
+  'cygenix_conn_test_v1':              ['C', 'Last connection test result per side, keyed by a digest of the connection so a profile switch invalidates it (sessionStorage)', 're-tested on the next warm-up'],
+  'cygenix_conn_warm_v1':              ['C', 'Which profile+connection this session has already warmed, so the Function App is woken once and not once per page (sessionStorage)', 're-warmed next session'],
   'cygenix_profile_finish':            ['C', 'Which saved connection the Connections page should open on to finish a missing credential (sessionStorage; names only)', ''],
   'cygenix_template_last_v1':          ['C', 'Conversion Templates: which template was open last, per project', 'a pointer, not the data'],
   'cygenix_template_draft_v1::*':      ['B', 'Conversion Templates: local mirror of the working draft', 'Cosmos conversion_templates is the truth; the mirror survives a reload before Save'],

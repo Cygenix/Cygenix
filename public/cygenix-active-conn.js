@@ -90,6 +90,23 @@
   function profilesApi() { return root.CygenixProfiles; }
   function connsApi() { return root.CygenixConnections; }
   function secretsApi() { return root.CygenixSavedConnSecrets; }
+  function fnKeysApi() { return root.CygenixFnKeys; }
+
+  // The product's own Function App is reached with a key nobody types: it is
+  // fetched and written into the LIVE pair by ensureFnKeys. A profile-resolved
+  // side reads the SAVED entry, whose fnKey is legitimately empty for that
+  // host, so without this the resolver handed back a keyless URL and the
+  // probe answered 401 while the rest of the product worked. Borrowing the
+  // key here is a read of storage, never a fetch.
+  function borrowProductKey(side, fnUrl, fnKey) {
+    if (fnKey) return fnKey;
+    var K = fnKeysApi();
+    if (!K || typeof K.needsProductKey !== 'function') return fnKey;
+    try {
+      if (!K.needsProductKey(fnUrl, fnKey)) return fnKey;
+      return (typeof K.keyForSide === 'function' && K.keyForSide(side)) || fnKey;
+    } catch (e) { return fnKey; }
+  }
 
   function activeProfile() {
     var P = profilesApi();
@@ -165,6 +182,7 @@
         var rec = savedWithSecret(connId);
         if (rec) {
           var sh = shapeOf(rec.connString, rec.fnUrl, rec.fnKey);
+          sh.fnKey = borrowProductKey(s, sh.fnUrl, sh.fnKey);
           if (usable(sh.connString) || compose(sh.fnUrl, sh.fnKey)) {
             out.mode = sh.mode; out.connString = sh.connString;
             out.fnUrl = sh.fnUrl; out.fnKey = sh.fnKey;
@@ -260,6 +278,25 @@
     } catch (e) { /* the in-memory copy still stands for this page */ }
   }
 
+  // Run the shared key step, but only when this side actually needs it: the
+  // product's own host with nothing on it. Never throws, and resolves to
+  // nothing useful on purpose — the caller re-reads storage afterwards.
+  function maybeEnsureKey(c) {
+    try {
+      var K = fnKeysApi();
+      if (!K || typeof K.ensure !== 'function') return Promise.resolve(null);
+      if (!K.needsProductKey(c.fnUrl, c.fnKey)) return Promise.resolve(null);
+      return K.ensure().catch(function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+  function isProductHost(url) {
+    try {
+      var K = fnKeysApi();
+      if (!K || typeof K.productHost !== 'function') return false;
+      return new URL(String(url || '')).host.toLowerCase() === K.productHost();
+    } catch (e) { return false; }
+  }
+
   function testConnection(side, opts) {
     var s = (side === 'tgt' || side === 'target') ? 'tgt' : 'src';
     var o = opts || {};
@@ -282,19 +319,40 @@
     }
     _testAt[s] = Date.now();                    // stamped BEFORE the request
     _testInflight[s] = (function () {
-      var api = root.CygenixDataApi;
       var done = function (res) { _testLast[s] = res; cachePut(s, ident, res); return res; };
       var p;
       if (c.mode === 'azure') {
-        // The Function App's own db route answers a version probe.
-        p = root.fetch(conn, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'test' }),
-        }).then(function (r) {
-          return r.json().catch(function () { return {}; }).then(function (d) {
-            if (r.ok && d && d.success !== false) return done({ ok: true, state: 'ok', message: d.version || 'Connected', side: s });
-            return done({ ok: false, state: 'failed', message: (d && (d.error || d.message)) || ('HTTP ' + r.status), side: s });
+        // THE KEY STEP, which this probe used to skip.
+        //
+        // The product's own Function App is reached with a key that is
+        // fetched, not typed. connections.js runs that step for every real
+        // call; this probe built its own request and did not, so it went out
+        // bare and Azure answered 401 — a status bar saying the target was
+        // unreachable while every query against it worked.
+        //
+        // ensure() IS ensureFnKeys, so this shares its in-flight promise and
+        // its interval rather than adding a second set of guards. A real call
+        // starting while this is in flight waits for the same fetch.
+        p = maybeEnsureKey(c).then(function () {
+          // Re-resolve: the key, if one arrived, is now in the live pair.
+          var fresh = getActiveConnection(s);
+          var url = fresh.ok ? compose(fresh.fnUrl, fresh.fnKey) : conn;
+          var keyless = isProductHost(fresh.fnUrl || c.fnUrl) && !(fresh.fnKey || c.fnKey);
+          return root.fetch(url || conn, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'test' }),
+          }).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (d) {
+              if (r.ok && d && d.success !== false) return done({ ok: true, state: 'ok', message: d.version || 'Connected', side: s });
+              // A 401 from OUR OWN host, with no key on the request, is not a
+              // credentials problem for a person to solve — it is the key
+              // step not having completed. Say that instead of a bare code.
+              if ((r.status === 401 || r.status === 403) && keyless) {
+                return done({ ok: false, state: 'key-pending', message: 'key not loaded', side: s });
+              }
+              return done({ ok: false, state: 'failed', message: (d && (d.error || d.message)) || ('HTTP ' + r.status), side: s });
+            });
           });
         });
       } else {
@@ -335,51 +393,124 @@
     return _testLast[s];
   }
 
-  // ── Telling the status bar the truth ────────────────────────────────────
-  // The bar used to be built from saved configuration, which says "green"
-  // for a password that was changed last week. It owns a keyed seam for
-  // exactly this — report('key', level, label) — so this reports into it
-  // rather than reaching into its rendering.
+  // ── Warm-up: keyed and awake before anyone asks ─────────────────────────
   //
-  // Once per page load, and no more: the result cache above is keyed by the
-  // connection's identity and lives in sessionStorage, so navigating the
-  // product re-reads an answer rather than re-running the query. The
-  // one-shot flag is set BEFORE the tests start and is never cleared by
-  // their callbacks, which is what stops a slow or failing database turning
-  // the status bar into a request loop.
-  var _verified = false;
-  function verifyForStatus() {
-    if (_verified) return;
-    _verified = true;                      // set BEFORE the work it guards
+  // Two problems this solves, both reported from the live site.
+  //
+  // THE FALSE 401. The bar used to be built from saved configuration, which
+  // says "green" for a password changed last week; it now carries the result
+  // of a real query. But the probe skipped the key step, so against the
+  // product's own Function App it reported 401 while the product worked.
+  // testConnection runs that step now, and this runs it BEFORE the probe so
+  // the first answer is the true one.
+  //
+  // THE TWO ATTEMPTS. The Function App is Flex Consumption: the first request
+  // after an idle period wakes it and is slow, and if that request also
+  // raced the key fetch it failed outright. The three-second guards then held
+  // the retry back, which is what made it feel like "try twice and wait".
+  // Warming once, early, puts the cold start before the person rather than in
+  // front of their first click.
+  //
+  // ONCE PER SESSION, PER PROFILE. The flag is written when the warm-up
+  // STARTS and is never cleared by its own callback — a flag a callback
+  // resets is a flag that lets the work start twice when the callback is
+  // slow, which against a key endpoint is a request storm. Switching profile
+  // changes the flag's value, so the new profile warms once and no more.
+  var WARM_KEY = 'cygenix_conn_warm_v1';
+  var COLD_RETRY_MS = 4000;
+  var _warming = false;
+
+  function warmStamp() {
+    var c = getActiveConnection('tgt');
+    return (c.profileId || 'none') + '::' + (c.connId || 'live');
+  }
+  function warmedAlready(stamp) {
+    try { return root.sessionStorage.getItem(WARM_KEY) === stamp; } catch (e) { return false; }
+  }
+  function markWarming(stamp) {
+    try { root.sessionStorage.setItem(WARM_KEY, stamp); } catch (e) { /* in-memory guard still holds */ }
+  }
+
+  // A cold start looks like a timeout or a dropped connection. A 401, a 403
+  // or a real database error does not, and retrying those would be a loop
+  // against a server that has already given its answer.
+  function looksCold(r) {
+    if (!r || r.ok) return false;
+    if (r.state === 'key-pending') return false;
+    return /Could not reach the server|timeout|timed out|network|Failed to fetch/i.test(r.message || '');
+  }
+
+  function reportSide(side, r) {
     var bar = root.CygenixStatusHairline;
     if (!bar || typeof bar.report !== 'function') return;
-    ['src', 'tgt'].forEach(function (side) {
-      var c = getActiveConnection(side);
-      if (!c.ok && !c.needsSecret) return;  // nothing configured is the bar's own story
-      testConnection(side).then(function (r) {
-        var word = side === 'src' ? 'Source' : 'Target';
-        if (r && r.ok) { bar.report('conn-' + side, null); return; }
-        // The real error text, not a euphemism: "Login failed for user" is
-        // what the person needs to read.
-        bar.report('conn-' + side, 'red', word + ': ' + ((r && r.message) || 'could not connect'));
-      }).catch(function () { /* classified inside testConnection */ });
-    });
+    var word = side === 'src' ? 'Source' : 'Target';
+    if (r && r.ok) { bar.report('conn-' + side, null); return; }
+    if (r && r.state === 'key-pending') {
+      // Not a credentials problem anyone can act on, and not worth a red bar
+      // on a page that is still starting up.
+      bar.report('conn-' + side, 'amber', word + ': key not loaded yet');
+      return;
+    }
+    bar.report('conn-' + side, 'red', word + ': ' + ((r && r.message) || 'could not connect'));
   }
+
+  function warmSide(side) {
+    var c = getActiveConnection(side);
+    if (!c.ok && !c.needsSecret) return Promise.resolve(null);   // nothing configured
+    // The key first, so the probe is never the bare request that answers 401.
+    return maybeEnsureKey(c)
+      .then(function () { return testConnection(side, { force: true }); })
+      .then(function (r) {
+        if (!looksCold(r)) { reportSide(side, r); return r; }
+        // ONE retry, once, for the cold start. Scheduled rather than looped,
+        // and it goes through testConnection's own guards like any other call.
+        return new Promise(function (resolve) {
+          root.setTimeout(function () {
+            testConnection(side, { force: true }).then(function (r2) {
+              reportSide(side, r2); resolve(r2);
+            }, function () { reportSide(side, r); resolve(r); });
+          }, COLD_RETRY_MS);
+        });
+      })
+      .catch(function () { return null; });
+  }
+
+  // Non-blocking by construction: nothing awaits this, and it returns before
+  // the network does.
+  function warmUp(opts) {
+    var o = opts || {};
+    if (_warming) return;
+    var stamp = warmStamp();
+    if (!o.force && warmedAlready(stamp)) return;
+    _warming = true;                       // set BEFORE the work it guards
+    markWarming(stamp);                    // and persisted before it too
+    var both = ['src', 'tgt'].map(warmSide);
+    // The in-memory latch drops only once every side has settled, so a second
+    // trigger during the warm-up joins nothing rather than starting again.
+    Promise.all(both).then(function () { _warming = false; }, function () { _warming = false; });
+  }
+
+  // Kept as the old name for anything that called it.
+  function verifyForStatus() { warmUp(); }
 
   if (root.document && typeof root.addEventListener === 'function') {
     // After the cloud load, so a profile that only just arrived is the one
-    // tested. Falls back to DOMContentLoaded where the sync layer is absent.
-    root.addEventListener('cygenix-sync-loaded', function () { setTimeout(verifyForStatus, 1200); }, { once: true });
+    // warmed. Falls back to DOMContentLoaded where the sync layer is absent.
+    root.addEventListener('cygenix-sync-loaded', function () { root.setTimeout(warmUp, 1200); }, { once: true });
     if (root.document.readyState === 'loading') {
-      root.document.addEventListener('DOMContentLoaded', function () { setTimeout(verifyForStatus, 2500); }, { once: true });
+      root.document.addEventListener('DOMContentLoaded', function () { root.setTimeout(warmUp, 2500); }, { once: true });
     } else {
-      setTimeout(verifyForStatus, 2500);
+      root.setTimeout(warmUp, 2500);
     }
+    // Switching profile changes the stamp, so this warms the NEW profile once
+    // and is a no-op for a re-render. warmUp never dispatches this event, so
+    // it cannot call itself.
+    root.addEventListener('cygenix:profiles-changed', function () { root.setTimeout(warmUp, 400); });
   }
 
   root.CygenixActiveConn = {
     getActiveConnection: getActiveConnection,
-    verifyForStatus: verifyForStatus,
+    verifyForStatus: verifyForStatus, warmUp: warmUp, warmStamp: warmStamp, looksCold: looksCold,
     get: getActiveConnection,
     connUrl: connUrl,
     compose: compose,
@@ -388,8 +519,8 @@
     testConnection: testConnection,
     lastTest: lastTest,
     _reset: function () {
-      _testInflight = {}; _testAt = { src: 0, tgt: 0 }; _testLast = { src: null, tgt: null }; _verified = false;
-      try { root.sessionStorage.removeItem(TEST_CACHE_KEY); } catch (e) {}
+      _testInflight = {}; _testAt = { src: 0, tgt: 0 }; _testLast = { src: null, tgt: null }; _warming = false;
+      try { root.sessionStorage.removeItem(TEST_CACHE_KEY); root.sessionStorage.removeItem(WARM_KEY); } catch (e) {}
     },
   };
 })(typeof window !== 'undefined' ? window : this);
