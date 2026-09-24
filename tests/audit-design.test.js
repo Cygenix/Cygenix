@@ -59,7 +59,7 @@ check('the header is rendered first, then the tabs, then the band — and a read
 // answer "what happened" and the three after it are configuration.
 check('the tabs, in the handoff\'s order with Sign-ins added, drawn as the console strip',
   /\{ key: 'events', label: 'Events' \},\s*\{ key: 'signins', label: 'Sign-ins' \},\s*\{ key: 'settings', label: 'Capture settings' \},\s*\{ key: 'integrity', label: 'Integrity' \},\s*\{ key: 'retention', label: 'Retention' \},/.test(VIEW)
-  && /'\.cyg-a-tab\{[^']*font-family:var\(--font-heading\)[^']*font-size:16px[^']*text-transform:uppercase/.test(CSS)
+  && /'\.cyg-a-tab\{[^']*font-family:var\(--font-heading\)[^']*font-size:16px/.test(CSS)
   && /'\.cyg-a-tab\[aria-selected="true"\]\{color:var\(--color-text\);border-color:var\(--color-accent\)\}'/.test(CSS)
   && /id="cyg-a-panel-retention" role="tabpanel"/.test(VIEW)
   && /function renderRetentionPanel\(\)/.test(VIEW));
@@ -71,8 +71,8 @@ check('the band is the one blueprint frame — 16px 20px, four items with a 28px
   /<div class="cx-blueprint cyg-a-band" id="cyg-a-band">/.test(VIEW)
   && (VIEW.match(/cx-blueprint/g) || []).length === 1
   && /'\.cyg-a-band\{padding:16px 20px;display:flex;align-items:flex-start;gap:28px/.test(CSS));
-check('Chain is stated as a sentence at 22px Condensed uppercase, state-ok when verified, state-fail on a break, neutral when never',
-  /'\.cyg-a-band \.v\{font-family:var\(--font-heading\);font-weight:600;font-size:22px[^']*text-transform:uppercase/.test(CSS)
+check('Chain is stated as a sentence at 22px heading, state-ok when verified, state-fail on a break, neutral when never',
+  /'\.cyg-a-band \.v\{font-family:var\(--font-heading\);font-weight:600;font-size:22px/.test(CSS)
   && /'\.cyg-a-band \.v\.ok\{color:var\(--state-ok\)\}\.cyg-a-band \.v\.fail\{color:var\(--state-fail\)\}/.test(CSS)
   && /'<div class="v ok">Verified to entry ' \+ esc\(Number\(f\.to \|\| 0\)\.toLocaleString\('en-GB'\)\)/.test(VIEW)
   && /'<div class="v fail">Break at entry '/.test(VIEW)
@@ -115,7 +115,7 @@ check('the per-column filters survive, one per column it governs, still sticky, 
 check('category renders as the environment tag; a PROD-scoped event takes the state-fail border and text',
   /function categoryTag\(e\)/.test(VIEW)
   && /var prod = e\.category === 'prod' \|\| String\(e\.environment \|\| ''\)\.toUpperCase\(\) === 'PROD';/.test(VIEW)
-  && /'\.cyg-a-cat\{font-family:var\(--font-heading\);font-weight:600;font-size:12px;letter-spacing:\.1em;text-transform:uppercase;padding:2px 8px[^']*border:1px solid var\(--color-divider\)/.test(CSS)
+  && /'\.cyg-a-cat\{font-family:var\(--font-heading\);font-weight:600;font-size:12px;letter-spacing:0;padding:2px 8px[^']*border:1px solid var\(--color-divider\)/.test(CSS)
   && /'\.cyg-a-cat\.prod\{color:var\(--state-fail\);border-color:var\(--state-fail\)\}'/.test(CSS));
 check('the outcome is a word in the status colour and the avatar blocks are gone — hue is for state',
   /'\.cyg-a-out\{font-size:13px\}\.cyg-a-out\.allowed\{color:var\(--state-ok\)\}\.cyg-a-out\.denied\{color:var\(--state-fail\)\}\.cyg-a-out\.failed\{color:var\(--state-warn\)\}'/.test(CSS)
@@ -153,7 +153,7 @@ check('nothing in the screen\'s stylesheet is below 11px, and body text is 13px 
 check('no border-radius, no rgba(), no hex — every colour is a token and every corner is square',
   !/border-radius/.test(CSS) && !/rgba\(/.test(CSS) && !/#[0-9a-f]{6}/i.test(CSS.replace(/#fff\b/g, '')));
 check('the drawer, the modals and the toast take the tokens too',
-  /'\.cyg-a-dh h2\{[^']*font-family:var\(--font-heading\)[^']*text-transform:uppercase/.test(CSS)
+  /'\.cyg-a-dh h2\{[^']*font-family:var\(--font-heading\)/.test(CSS)
   && /'\.cyg-a-mbox\{background:var\(--color-bg\);border:1px solid var\(--color-divider\)/.test(CSS)
   && /'\.cyg-a-toast\{[^']*background:var\(--color-accent-900\);color:var\(--color-bg\)/.test(CSS));
 

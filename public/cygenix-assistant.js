@@ -608,7 +608,7 @@ function injectStyles() {
     '.cyga-head{display:flex;align-items:center;gap:9px;padding:12px 14px;',
     '  border-bottom:1px solid var(--border);flex:0 0 auto}',
     '.cyga-title{font-size:13.5px;font-weight:600;flex:1;display:flex;align-items:center;gap:8px}',
-    '.cyga-badge{font-size:9.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;',
+    '.cyga-badge{font-size:9.5px;font-weight:600;letter-spacing:.05em;',
     '  padding:2px 6px;border-radius:99px;background:var(--accent);color:#fff}',
     '.cyga-iconbtn{border:1px solid transparent;background:none;cursor:pointer;padding:4px 7px;',
     '  border-radius:7px;font:inherit;font-size:12.5px;color:var(--text2);line-height:1}',

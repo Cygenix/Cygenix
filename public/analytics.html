@@ -43,9 +43,6 @@
 <meta name="twitter:title" content="Cygenix – Analytics">
 <meta name="twitter:description" content="Analytics — telemetry across every job, stream and project: delivery health, validation quality and portfolio progress.">
 <title>Cygenix – Analytics</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════════════════════════════════════
    Analytics — the lens over Connect→Cutover.
@@ -116,7 +113,7 @@ body.cyg-collapsed{padding-left:54px}
 /* ── KPI strip ─────────────────────────────────────────────────────────── */
 .an-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0.5px;background:var(--border);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1rem}
 .an-kpi{background:var(--bg2);padding:0.7rem 0.9rem 0.8rem;min-width:0}
-.an-kpi-label{font-size:9.5px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3)}
+.an-kpi-label{font-size:9.5px;font-weight:600;letter-spacing:0.1em;color:var(--text3)}
 .an-kpi-val{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:22px;font-weight:600;letter-spacing:-0.02em;line-height:1.15;margin-top:3px;color:var(--text)}
 .an-kpi-val em{font-style:normal;font-size:12px;color:var(--text3);font-weight:500;margin-left:2px}
 .an-kpi-sub{font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45}
@@ -140,7 +137,7 @@ body.cyg-collapsed{padding-left:54px}
 /* ── Tables ────────────────────────────────────────────────────────────── */
 .an-tblwrap{overflow-x:auto}
 .an-tbl{width:100%;border-collapse:collapse;font-size:11.5px}
-.an-tbl th{text-align:left;font-size:9.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);font-weight:600;padding:0 0.6rem 0.4rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
+.an-tbl th{text-align:left;font-size:9.5px;letter-spacing:0.08em;color:var(--text3);font-weight:600;padding:0 0.6rem 0.4rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
 .an-tbl td{padding:0.45rem 0.6rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
 .an-tbl tbody tr:last-child td{border-bottom:0}
 .an-tbl tbody tr:hover{background:var(--bg3)}
@@ -183,8 +180,7 @@ body.cyg-collapsed{padding-left:54px}
   border-radius:var(--r);padding:0.6rem 0.7rem;text-decoration:none;color:inherit;display:block;
   transition:border-color 0.12s,background 0.12s}
 .mp-stage:hover{border-color:var(--accent);background:var(--bg2)}
-.mp-stage-key{font-size:9.5px;letter-spacing:0.08em;color:var(--text3);font-family:var(--mono);
-  text-transform:uppercase;margin-bottom:4px}
+.mp-stage-key{font-size:9.5px;letter-spacing:0.08em;color:var(--text3);font-family:var(--mono);margin-bottom:4px}
 .mp-stage-count{font-size:13px;font-weight:600;color:var(--text)}
 .mp-stage-detail{font-size:10.5px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Every state carries a word. Colour is the second signal, never the only
@@ -206,7 +202,7 @@ body.cyg-collapsed{padding-left:54px}
 .mp-arrow-line::after{content:'';position:absolute;right:-1px;top:-3px;border-left:6px solid currentColor;
   border-top:3.5px solid transparent;border-bottom:3.5px solid transparent}
 .mp-arrow.hot{color:var(--amber)}
-.mp-bottleneck{font-size:9.5px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;
+.mp-bottleneck{font-size:9.5px;font-family:var(--mono);letter-spacing:0.06em;
   margin-top:5px;display:inline-block;padding:1px 6px;border-radius:100px}
 .mp-bottleneck.amber{color:var(--amber);background:var(--amber-bg)}
 .mp-bottleneck.red{color:var(--red);background:var(--red-bg)}
@@ -268,7 +264,7 @@ body.cyg-collapsed{padding-left:54px}
 <div id="cyg-sidebar-mount" data-active="analytics"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 
 <div class="page">
 
@@ -360,11 +356,11 @@ body.cyg-collapsed{padding-left:54px}
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('analytics');</script>
 </body>
 </html>

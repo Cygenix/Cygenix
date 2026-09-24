@@ -2558,9 +2558,9 @@ function renderLineageHtml(chain, impact){
       }).join('')
     : '';
 
-  return '<div style="font-size:10px;font-weight:600;letter-spacing:0.06em;color:var(--text3);text-transform:uppercase;margin-bottom:0.5rem">Path back to source</div>'
+  return '<div style="font-size:10px;font-weight:600;letter-spacing:0.06em;color:var(--text3);margin-bottom:0.5rem">Path back to source</div>'
     + chainHtml
-    + '<div style="font-size:10px;font-weight:600;letter-spacing:0.06em;color:var(--text3);text-transform:uppercase;margin:0.9rem 0 0.4rem">Impact of changing this</div>'
+    + '<div style="font-size:10px;font-weight:600;letter-spacing:0.06em;color:var(--text3);margin:0.9rem 0 0.4rem">Impact of changing this</div>'
     + '<div style="font-size:12px;font-weight:600;color:' + (impact.length ? 'var(--amber)' : 'var(--green)') + ';margin-bottom:0.5rem">' + esc(head) + '</div>'
     + impactHtml;
 }
@@ -3981,7 +3981,7 @@ function showOTMJoinColPicker(ti){
   const grouped={};
   joinCols.forEach(c=>{ const g=c.fromJoin||'Joined'; if(!grouped[g]) grouped[g]=[]; grouped[g].push(c); });
   list.innerHTML=Object.entries(grouped).map(([grp,cols])=>
-    `<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:4px 0 2px;font-weight:600">${esc(grp)}</div>`+
+    `<div style="font-size:10px;color:var(--text3);letter-spacing:0.06em;padding:4px 0 2px;font-weight:600">${esc(grp)}</div>`+
     cols.map(c=>`<button onclick="confirmOTMJoinCol(${ti},'${esc(c.name)}','${esc(c.fromJoin||'')}');document.getElementById('join-col-modal').classList.remove('open')"
       class="src-col-pill" style="cursor:pointer;width:100%;justify-content:flex-start">
       ${esc(c.name)}<span class="src-col-type">${esc(c.type||'')}</span></button>`).join('')
@@ -4620,7 +4620,7 @@ function openDriveScriptPicker(files){
     const isJob=/\/Jobs\//.test(f.path);
     const folder=f.path.replace(/\/[^/]*$/,'');
     return '<div class="dsp-row" data-id="'+f.id+'" tabindex="0" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .7rem;border-radius:8px;cursor:pointer">'
-      +'<span style="font-size:9px;font-family:var(--mono);text-transform:uppercase;background:'+(isJob?'rgba(74,91,214,.14)':'var(--bg4)')+';color:'+(isJob?'var(--accent)':'var(--text2)')+';padding:2px 6px;border-radius:4px">'+(isJob?'JOB':'SQL')+'</span>'
+      +'<span style="font-size:9px;font-family:var(--mono);background:'+(isJob?'rgba(74,91,214,.14)':'var(--bg4)')+';color:'+(isJob?'var(--accent)':'var(--text2)')+';padding:2px 6px;border-radius:4px">'+(isJob?'JOB':'SQL')+'</span>'
       +'<span class="dsp-name" style="flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escp(f.name)+'</span>'
       +'<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+escp(folder)+'</span></div>';
   }).join(''):'<div style="padding:1.6rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">No .sql files in the Drive yet.<br>Save one with “Save to Drive”, or save a job.</div>';
@@ -5965,7 +5965,7 @@ function renderJoinBuilder(containerId,allTables,baseTable){
   const joins=window._joinState;
   container.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
-      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Source JOINs <span style="color:var(--teal)">${joins.length?'('+joins.length+')':''}</span></div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.07em">Source JOINs <span style="color:var(--teal)">${joins.length?'('+joins.length+')':''}</span></div>
       <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
     </div>
     ${joins.length===0?`<div style="font-size:11px;color:var(--text3)">No JOINs — using ${baseTable?baseTable.name:''} only</div>`:''}
@@ -6028,7 +6028,7 @@ function showJoinColPicker(){
   const grouped={};
   joinCols.forEach(c=>{ const g=c.fromJoin||'Joined'; if(!grouped[g]) grouped[g]=[]; grouped[g].push(c); });
   list.innerHTML=Object.entries(grouped).map(([grp,cols])=>
-    `<div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin:6px 0 2px;font-weight:600">${esc(grp)}</div>`+
+    `<div style="font-size:10px;color:var(--text3);margin:6px 0 2px;font-weight:600">${esc(grp)}</div>`+
     cols.map(c=>`<button onclick="addJoinColToMapping('${esc(c.name)}','${esc(c.fromJoin||'')}','${esc(c.type||'')}');document.getElementById('join-col-modal').classList.remove('open')"
       class="src-col-pill" style="width:100%;justify-content:flex-start;cursor:pointer">
       ${esc(c.name)}<span class="src-col-type">${esc(c.type||'')}</span></button>`).join('')

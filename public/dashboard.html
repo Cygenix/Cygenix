@@ -54,9 +54,6 @@
 <meta name="twitter:title" content="Cygenix – Migration Dashboard">
 <meta name="twitter:description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
 <title>Cygenix – Migration Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -166,12 +163,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dash-proj-name{font-size:13px;font-weight:600;line-height:1.3;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dash-proj-client{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:1px}
 .dash-proj-grid-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;padding-top:0.55rem;border-top:0.5px solid var(--border)}
-.dash-proj-meta-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-family:var(--mono)}
+.dash-proj-meta-label{font-size:10px;font-weight:500;color:var(--text3);letter-spacing:0.05em;font-family:var(--mono)}
 .dash-proj-meta-val{font-size:11px;color:var(--text);font-family:var(--mono);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dash-proj-active-pill{font-size:9px;padding:1px 7px;border-radius:100px;background:var(--accent);color:#fff;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;flex-shrink:0;align-self:flex-start}
+.dash-proj-active-pill{font-size:9px;padding:1px 7px;border-radius:100px;background:var(--accent);color:#fff;font-family:var(--mono);letter-spacing:0.06em;flex-shrink:0;align-self:flex-start}
 
 /* status badges (shared with projects.html visual language) */
-.dash-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:9px;font-weight:500;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border:0.5px solid;flex-shrink:0;align-self:flex-start}
+.dash-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:9px;font-weight:500;font-family:var(--mono);letter-spacing:0.05em;border:0.5px solid;flex-shrink:0;align-self:flex-start}
 .dash-status-active{background:var(--accent-glow);color:var(--accent);border-color:rgba(74,91,214,0.35)}
 .dash-status-inactive{background:var(--bg4);color:var(--text3);border-color:var(--border2)}
 .dash-status-complete{background:rgba(34,201,122,0.08);color:var(--green);border-color:rgba(34,201,122,0.35)}
@@ -191,7 +188,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .hm-side .hm-block:first-child{margin-top:0}
 .hm-head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-top:26px}
 .hm-plan{display:grid;grid-template-columns:148px minmax(0,1fr) 92px;row-gap:12px;column-gap:16px;align-items:center;padding:18px 20px;border:1px solid var(--color-divider)}
-.hm-plan-l{font-family:var(--font-heading);font-weight:600;font-size:16px;line-height:1.2;text-transform:uppercase;color:var(--color-text)}
+.hm-plan-l{font-family:var(--font-heading);font-weight:600;font-size:16px;line-height:1.2;color:var(--color-text)}
 .hm-plan-l a{color:inherit;text-decoration:none}
 .hm-bar{height:14px;background:var(--color-neutral-300)}
 .hm-bar.done{background:var(--color-accent-700)}
@@ -353,7 +350,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .preview-modal-body::-webkit-scrollbar{width:4px}
 .preview-modal-body::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 .wasis-table{width:100%;border-collapse:collapse;font-size:13px}
-.wasis-table th{background:var(--bg3);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.75rem;text-align:left;border-bottom:0.5px solid var(--border)}
+.wasis-table th{background:var(--bg3);font-size:11px;color:var(--text3);letter-spacing:0.06em;padding:0.5rem 0.75rem;text-align:left;border-bottom:0.5px solid var(--border)}
 .wasis-table td{padding:0.6rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:top}
 .wasis-table tr:last-child td{border-bottom:none}
 .wasis-table tr:hover td{background:rgba(255,255,255,0.02)}
@@ -399,12 +396,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .jb-side .btn-danger{background:transparent;color:var(--state-fail);border:1px solid var(--state-fail)}
 .jb-count{margin-left:auto;font-size:14px;color:var(--color-neutral-700);font-variant-numeric:tabular-nums}
 .jb-selbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--color-accent-100);border:1px solid var(--color-accent-300);padding:10px 14px;margin-bottom:14px}
-.jb-selcount{font-family:var(--font-heading);font-weight:600;font-size:16px;text-transform:uppercase;color:var(--color-accent-900);margin-right:6px;letter-spacing:.02em}
+.jb-selcount{font-family:var(--font-heading);font-weight:600;font-size:16px;color:var(--color-accent-900);margin-right:6px;letter-spacing:.02em}
 .jb-move{display:inline-flex;gap:6px;align-items:center}
 .jb-clear{margin-left:auto;color:var(--color-accent-800);background:none;border:0;font-family:var(--font-body);font-size:14px;cursor:pointer;padding:0 4px;height:auto}
 .jb-clear:hover{text-decoration:underline}
 .jobs-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.4}
-.jobs-table th{font-family:var(--font-body);font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 60%,transparent);padding:7px 10px;text-align:left;border-bottom:1px solid var(--color-divider);white-space:nowrap}
+.jobs-table th{font-family:var(--font-body);font-weight:400;font-size:11px;letter-spacing:0;color:color-mix(in srgb,var(--color-text) 60%,transparent);padding:7px 10px;text-align:left;border-bottom:1px solid var(--color-divider);white-space:nowrap}
 .jobs-table td{padding:8px 10px;border-bottom:1px solid var(--color-divider);vertical-align:middle;white-space:nowrap;color:var(--color-text)}
 .jobs-table tr:last-child td{border-bottom:none}
 .jobs-table tbody tr{cursor:pointer}
@@ -414,7 +411,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .jobs-table td.jb-muted,.jobs-table .jb-muted{color:var(--color-neutral-700)}
 .job-name{font-family:var(--font-heading);font-weight:600;font-size:15px;color:var(--color-text);display:inline-block;max-width:300px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;line-height:1.2}
 .job-meta{font-size:13px;color:var(--color-neutral-700);margin-left:8px}
-.jb-tag{display:inline-block;font-family:var(--font-heading);font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:1px 6px;margin-left:6px;border:1px solid var(--color-divider);color:var(--color-neutral-700);vertical-align:middle;line-height:1.4}
+.jb-tag{display:inline-block;font-family:var(--font-heading);font-weight:600;font-size:11px;letter-spacing:0;padding:1px 6px;margin-left:6px;border:1px solid var(--color-divider);color:var(--color-neutral-700);vertical-align:middle;line-height:1.4}
 .jb-tag-fail{color:var(--state-fail);border-color:var(--state-fail)}
 .jb-st{font-size:13px;white-space:nowrap}
 .jb-st-complete{color:var(--state-ok)}
@@ -433,7 +430,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .jobs-table tr.job-row-drag-over td{border-top:2px solid var(--color-accent);background:var(--color-accent-100)}
 /* the right column */
 .jb-side .cx-kicker{margin-bottom:6px}
-.jb-side-name{font-family:var(--font-heading);font-weight:600;font-size:23px;line-height:1.05;text-transform:uppercase;color:var(--color-text);word-break:break-word}
+.jb-side-name{font-family:var(--font-heading);font-weight:600;font-size:23px;line-height:1.05;color:var(--color-text);word-break:break-word}
 .jb-side-pair{font-size:14px;color:var(--color-neutral-700);margin-top:6px;word-break:break-all}
 .jb-side .cx-attn{margin:18px 0 4px}
 .jb-side .cx-attn p{font-size:14px}
@@ -457,7 +454,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
 /* FORM */
 .form-row{margin-bottom:1rem}
-.form-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;display:block}
+.form-label{font-size:11px;color:var(--text3);letter-spacing:0.07em;margin-bottom:0.4rem;display:block}
 .form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
 .form-input:focus{border-color:var(--accent)}
 
@@ -536,10 +533,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-privacy-security .ps-log-row{display:grid;grid-template-columns:150px 130px 70px 1fr;gap:0.75rem;padding:0.4rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);align-items:baseline;font-family:var(--mono);font-size:11px}
 #view-privacy-security .ps-log-ts{color:var(--text3)}
 #view-privacy-security .ps-log-feat{color:var(--accent)}
-#view-privacy-security .ps-log-mode{color:var(--text2);text-transform:uppercase;font-size:10px}
+#view-privacy-security .ps-log-mode{color:var(--text2);font-size:10px}
 #view-privacy-security .ps-log-details{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #view-privacy-security .ps-log-empty{text-align:center;padding:2rem 1rem;color:var(--text3);font-size:12px}
-#view-privacy-security .ps-log-head{padding:0.5rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg3);display:grid;grid-template-columns:150px 130px 70px 1fr;gap:0.75rem;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3);font-weight:600}
+#view-privacy-security .ps-log-head{padding:0.5rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg3);display:grid;grid-template-columns:150px 130px 70px 1fr;gap:0.75rem;font-size:10px;letter-spacing:0.05em;color:var(--text3);font-weight:600}
 #view-privacy-security .ps-log-table{padding:0 1rem}
 
 #view-privacy-security .ps-transport{background:rgba(23,130,124,0.06);border:0.5px solid rgba(23,130,124,0.25);border-radius:8px;padding:0.75rem 0.9rem;font-size:11.5px;color:var(--text2);line-height:1.6;margin-top:0.5rem}
@@ -570,9 +567,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-integrations .in-card-icon{font-size:22px;line-height:1;flex-shrink:0}
 #view-integrations .in-card-meta{flex:1;min-width:0}
 #view-integrations .in-card-name{font-size:13px;font-weight:600;margin-bottom:2px}
-#view-integrations .in-card-category{font-size:9.5px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em}
+#view-integrations .in-card-category{font-size:9.5px;color:var(--text3);font-family:var(--mono);letter-spacing:0.08em}
 #view-integrations .in-card-desc{font-size:11.5px;color:var(--text2);line-height:1.5;min-height:32px}
-#view-integrations .in-card-badge{position:absolute;top:9px;right:9px;font-size:9px;padding:2px 7px;border-radius:100px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;font-weight:500}
+#view-integrations .in-card-badge{position:absolute;top:9px;right:9px;font-size:9px;padding:2px 7px;border-radius:100px;font-family:var(--mono);letter-spacing:0.06em;font-weight:500}
 #view-integrations .in-card-badge.enabled{background:var(--green-bg);color:var(--green)}
 #view-integrations .in-card-badge.soon{background:var(--bg3);color:var(--text3)}
 
@@ -585,7 +582,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-integrations .in-modal-body{padding:1.1rem 1.2rem}
 #view-integrations .in-modal-foot{padding:0.8rem 1.2rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;justify-content:flex-end;align-items:center}
 #view-integrations .in-form-row{margin-bottom:0.75rem}
-#view-integrations .in-form-row label{display:block;font-size:11px;color:var(--text3);margin-bottom:0.3rem;text-transform:uppercase;letter-spacing:0.05em;font-family:var(--mono)}
+#view-integrations .in-form-row label{display:block;font-size:11px;color:var(--text3);margin-bottom:0.3rem;letter-spacing:0.05em;font-family:var(--mono)}
 #view-integrations .in-form-row input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
 #view-integrations .in-form-row input:focus{border-color:var(--accent)}
 #view-integrations .in-form-note{font-size:11px;color:var(--text3);line-height:1.55;background:var(--bg3);border-radius:6px;padding:0.6rem 0.75rem;margin-top:0.5rem}
@@ -615,7 +612,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
    tokens, so it reads as a warning in whichever theme is active; a button,
    because clicking it is how the string gets re-entered. */
 #view-connections .sconn-chip .sconn-needs-secret{
-  font-family:var(--font-heading);font-weight:600;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  font-family:var(--font-heading);font-weight:600;font-size:10px;letter-spacing:0;
   color:var(--state-warn);background:transparent;border:1px solid var(--state-warn);
   padding:1px 6px;margin-left:6px;cursor:pointer;white-space:nowrap;
 }
@@ -646,7 +643,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .conn-status.ok{ color:var(--state-ok); }
 #view-connections .conn-status.fail{ color:var(--state-fail); }
 #view-connections .conn-seg{ margin-bottom:12px; }
-#view-connections .conn-seg > button{ padding:7px 18px;font-family:var(--font-heading);font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);background:transparent;border:0;cursor:pointer;line-height:1.2; }
+#view-connections .conn-seg > button{ padding:7px 18px;font-family:var(--font-heading);font-weight:600;font-size:15px;letter-spacing:0;color:var(--color-neutral-600);background:transparent;border:0;cursor:pointer;line-height:1.2; }
 #view-connections .conn-seg > button.on{ background:var(--color-accent-900);color:var(--color-bg); }
 #view-connections .conn-locked{
   display:flex;align-items:center;gap:14px;flex-wrap:wrap;
@@ -654,7 +651,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   padding:12px 14px;margin-bottom:12px;
 }
 #view-connections .conn-locked .conn-locked-main{ display:flex;flex-direction:column;gap:2px;min-width:0;flex:1; }
-#view-connections .conn-locked .conn-locked-label{ font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600); }
+#view-connections .conn-locked .conn-locked-label{ font-size:13px;letter-spacing:0;color:var(--color-neutral-600); }
 #view-connections .conn-locked .conn-locked-value{ font-family:var(--font-heading);font-weight:600;font-size:19px;line-height:1.1;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 #view-connections .conn-locked .conn-locked-value.none{ color:var(--color-neutral-600);font-style:italic; }
 #view-connections .conn-locked .conn-locked-nick{ font-size:13px;color:var(--color-neutral-700);border:1px solid var(--color-divider);padding:1px 8px; }
@@ -675,15 +672,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .conn-facts{ font-size:14px;line-height:1.4;color:var(--color-neutral-700);flex:1;min-width:0; }
 #view-connections .conn-foot-acts{ display:flex;gap:8px;margin-left:auto; }
 #view-connections .conn-saved{ margin-top:16px;padding-top:14px;border-top:1px solid var(--color-divider); }
-#view-connections .conn-saved-h{ font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--color-neutral-700);margin-bottom:8px;display:flex;align-items:center;gap:8px; }
+#view-connections .conn-saved-h{ font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:0;color:var(--color-neutral-700);margin-bottom:8px;display:flex;align-items:center;gap:8px; }
 /* The organisation register (Phase A): a table, because a register is read
    across rows — name, side, endpoint, environment, whether a secret exists —
    and chips hide everything but the name. */
 #view-connections .orgconn-grid{ display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 12px;margin-bottom:6px; }
-#view-connections .orgconn-grid label{ display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-700); }
+#view-connections .orgconn-grid label{ display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:0;color:var(--color-neutral-700); }
 #view-connections .orgconn-grid input,#view-connections .orgconn-grid select{ font:inherit;font-size:13px;letter-spacing:0;text-transform:none;color:var(--color-text);background:var(--color-bg);border:1px solid var(--color-divider);padding:6px 8px; }
 #view-connections .orgconn-table{ width:100%;border-collapse:collapse;font-size:13px;line-height:1.4; }
-#view-connections .orgconn-table th{ text-align:left;font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-700);padding:6px 8px;border-bottom:1px solid var(--color-divider);white-space:nowrap; }
+#view-connections .orgconn-table th{ text-align:left;font-weight:400;font-size:11px;letter-spacing:0;color:var(--color-neutral-700);padding:6px 8px;border-bottom:1px solid var(--color-divider);white-space:nowrap; }
 #view-connections .orgconn-table td{ padding:7px 8px;border-bottom:1px solid var(--color-divider);vertical-align:top; }
 #view-connections .orgconn-table td.mono{ font-family:var(--font-mono,monospace);font-size:12px; }
 #view-connections .orgconn-empty{ padding:14px 0;color:var(--color-neutral-700);font-size:13px; }
@@ -697,7 +694,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .cx-tabs{ display:flex;gap:0;border-bottom:1px solid var(--color-divider);flex-wrap:wrap; }
 #view-connections .cx-tab{
   background:transparent;border:none;color:var(--color-neutral-600);
-  font-family:var(--font-heading);font-weight:600;font-size:16px;letter-spacing:.06em;text-transform:uppercase;
+  font-family:var(--font-heading);font-weight:600;font-size:16px;letter-spacing:0;
   padding:8px 14px 9px;cursor:pointer;text-decoration:none;
   border-bottom:2px solid transparent;margin-bottom:-1px;
   transition:color 0.15s,border-color 0.15s;
@@ -721,7 +718,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 }
 #view-connections .imp-schema-table th{
   text-align:left;font-weight:500;color:var(--text3);
-  font-size:10px;text-transform:uppercase;letter-spacing:0.08em;
+  font-size:10px;letter-spacing:0.08em;
   padding:0.5rem 0.75rem;border-bottom:0.5px solid var(--border);
 }
 #view-connections .imp-schema-table td{
@@ -843,7 +840,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 }
 .ring-svg-col{ position:relative;z-index:1; }
 .ring-info-col{ position:relative;z-index:1;min-width:0; }
-.ring-info-head{ font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.25rem; }
+.ring-info-head{ font-size:11px;color:var(--text3);letter-spacing:0.08em;margin-bottom:0.25rem; }
 .ring-info-title{ font-size:1.15rem;font-weight:600;color:var(--text);margin-bottom:0.25rem;letter-spacing:-0.01em; }
 .ring-info-sub{ font-size:12px;color:var(--text3);margin-bottom:1rem; }
 .ring-legend{ display:flex;flex-direction:column;gap:0.55rem; }
@@ -872,7 +869,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
      card — the headline percentage simply wasn't there. */
   fill:var(--text);letter-spacing:-0.02em;
 }
-.ring-centre-lbl{ font-family:var(--mono);font-size:10px;fill:var(--text3);text-transform:uppercase;letter-spacing:0.12em; }
+.ring-centre-lbl{ font-family:var(--mono);font-size:10px;fill:var(--text3);letter-spacing:0.12em; }
 
 @media (max-width: 720px){
   .ring-wrap{ grid-template-columns:1fr;text-align:center; }
@@ -1020,7 +1017,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .ps-active-pill{
   font-size:9.5px;padding:2px 8px;border-radius:999px;
   background:var(--accent-glow);color:var(--accent);
-  font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;
+  font-family:var(--mono);letter-spacing:0.06em;
   border:0.5px solid rgba(74,91,214,0.3);
 }
 .ps-proj-meta{
@@ -1041,8 +1038,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   display:flex;flex-direction:column;gap:0.4rem;
 }
 .ps-dbs-title{
-  font-size:10.5px;color:var(--text3);font-family:var(--mono);
-  text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
+  font-size:10.5px;color:var(--text3);font-family:var(--mono);letter-spacing:0.08em;font-weight:600;
   display:flex;align-items:center;justify-content:space-between;gap:0.45rem;
 }
 .ps-dbs-title svg{width:11px;height:11px;color:var(--text3);}
@@ -1074,7 +1070,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 }
 .ps-db-role{
   display:inline-block;min-width:48px;padding:1px 6px;border-radius:4px;
-  font-size:9.5px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;
+  font-size:9.5px;font-weight:600;letter-spacing:0.06em;
   text-align:center;
 }
 .ps-db-role.src{background:rgba(74,91,214,0.12);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3);}
@@ -1117,8 +1113,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   display:flex;align-items:center;justify-content:space-between;gap:0.5rem;
 }
 .ps-card-title{
-  font-size:10.5px;color:var(--text3);font-family:var(--mono);
-  text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
+  font-size:10.5px;color:var(--text3);font-family:var(--mono);letter-spacing:0.08em;font-weight:600;
 }
 .ps-card-icon{
   width:26px;height:26px;border-radius:7px;
@@ -1155,8 +1150,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .ps-pill{
   display:inline-flex;align-items:center;gap:0.3rem;
   padding:2px 8px;border-radius:999px;
-  font-size:10px;font-family:var(--mono);font-weight:600;
-  text-transform:uppercase;letter-spacing:0.05em;
+  font-size:10px;font-family:var(--mono);font-weight:600;letter-spacing:0.05em;
   border:0.5px solid var(--border2);
 }
 .ps-pill-ok    {background:var(--green-bg);color:var(--green);border-color:rgba(34,201,122,0.3);}
@@ -1194,8 +1188,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 }
 .ps-ai-title{
   display:flex;align-items:center;gap:0.5rem;
-  font-size:11px;color:var(--purple);font-family:var(--mono);
-  text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
+  font-size:11px;color:var(--purple);font-family:var(--mono);letter-spacing:0.08em;font-weight:600;
 }
 .ps-ai-title svg{width:14px;height:14px;}
 .ps-ai-body{
@@ -1231,7 +1224,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-system-parameters .sp-hint code{background:var(--bg4);color:var(--text);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:11px}
 
 #view-system-parameters table.sp-params{width:100%;border-collapse:collapse}
-#view-system-parameters table.sp-params th{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:500;text-align:left;padding:0.6rem 0.8rem;background:var(--bg3);border-bottom:0.5px solid var(--border);user-select:none}
+#view-system-parameters table.sp-params th{font-size:10px;letter-spacing:0.08em;color:var(--text3);font-weight:500;text-align:left;padding:0.6rem 0.8rem;background:var(--bg3);border-bottom:0.5px solid var(--border);user-select:none}
 #view-system-parameters table.sp-params td{padding:0.4rem 0.5rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
 #view-system-parameters table.sp-params tr:last-child td{border-bottom:none}
 
@@ -1310,7 +1303,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 /* ── DataGrid (dark-theme adapted for the dashboard) ───────────────────────── */
 .dg-wrap{position:relative;margin-bottom:0.5rem}
 .dg-toolbar{display:flex;flex-wrap:wrap;gap:0.4rem;align-items:center;margin-bottom:0.6rem;padding:0.5rem 0.65rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);font-size:11px}
-.dg-toolbar-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-right:0.15rem}
+.dg-toolbar-label{font-size:10px;color:var(--text3);letter-spacing:0.06em;margin-right:0.15rem}
 .dg-input{font-family:var(--serif);font-size:11px;padding:3px 7px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);color:var(--text);outline:none;min-width:140px;transition:border-color 0.15s}
 .dg-input:focus{border-color:var(--accent)}
 .dg-select{font-family:var(--serif);font-size:11px;padding:3px 22px 3px 7px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3) url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3e%3cpath d='M1 1l4 4 4-4' stroke='%23555a6a' stroke-width='1.3' fill='none' stroke-linecap='round'/%3e%3c/svg%3e") no-repeat right 7px center;color:var(--text);outline:none;appearance:none;cursor:pointer;transition:border-color 0.15s}
@@ -1326,7 +1319,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dg-spacer{flex:1}
 .dg-meta{font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
 .dg-table{width:100%;border-collapse:collapse;font-size:12px}
-.dg-table th{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.6rem;text-align:left;border-bottom:1px solid var(--border2);background:var(--bg2)}
+.dg-table th{font-size:10px;color:var(--text3);letter-spacing:0.06em;padding:0.5rem 0.6rem;text-align:left;border-bottom:1px solid var(--border2);background:var(--bg2)}
 .dg-table td{padding:0.5rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text);vertical-align:middle}
 .dg-table tr:last-child td{border-bottom:none}
 .dg-table tr:hover td{background:var(--bg3)}
@@ -1346,7 +1339,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dg-badge-blue{background:var(--accent-glow);color:var(--accent)}
 .dg-pivot-panel{display:none;margin-top:0.5rem;padding:0.65rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);grid-template-columns:repeat(3,1fr);gap:0.65rem}
 .dg-pivot-panel.open{display:grid}
-.dg-pivot-slot label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px}
+.dg-pivot-slot label{font-size:9px;color:var(--text3);letter-spacing:0.06em;display:block;margin-bottom:4px}
 .dg-pivot-slot select{width:100%;font-family:var(--serif);font-size:11px;padding:3px 7px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);color:var(--text);outline:none}
 .dg-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;padding:1rem}
 .dg-modal{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);overflow:hidden;font-size:12px}
@@ -1355,7 +1348,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dg-modal-close{background:none;border:none;font-size:1.2rem;color:var(--text3);cursor:pointer;padding:0 4px}
 .dg-modal-close:hover{color:var(--text)}
 .dg-modal-body{padding:0.9rem 1.1rem;display:flex;flex-direction:column;gap:0.65rem}
-.dg-modal-body label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px}
+.dg-modal-body label{font-size:10px;color:var(--text3);letter-spacing:0.06em;display:block;margin-bottom:4px}
 .dg-modal-body .help{font-size:10px;color:var(--text3);line-height:1.5;background:var(--bg3);padding:0.5rem 0.6rem;border-radius:var(--r)}
 .dg-modal-body .help code{font-family:var(--mono);font-size:10px;background:var(--bg4);color:var(--text);padding:1px 4px;border-radius:3px}
 .dg-modal-body .err{font-size:10px;color:var(--red);background:rgba(239,68,68,0.1);padding:0.4rem 0.6rem;border-radius:var(--r);display:none;border:0.5px solid rgba(239,68,68,0.25)}
@@ -1364,7 +1357,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
 /* ── Recon multi-check table (inside each job card) ───────────────────────── */
 .rc-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-top:0.75rem}
-.rc-table th{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.4rem 0.5rem;text-align:left;border-bottom:0.5px solid var(--border2);font-weight:500;background:transparent}
+.rc-table th{font-size:10px;color:var(--text3);letter-spacing:0.06em;padding:0.4rem 0.5rem;text-align:left;border-bottom:0.5px solid var(--border2);font-weight:500;background:transparent}
 .rc-table td{padding:0.35rem 0.35rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
 .rc-table tr:last-child td{border-bottom:none}
 .rc-table select,.rc-table input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.35rem 0.4rem;border-radius:6px;font-size:12px;font-family:var(--serif);outline:none}
@@ -1405,11 +1398,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
      else regardless. -->
 <script src="/cygenix-rbac.js?v=78965846c4" defer></script>
 <script src="/cygenix-org-connections.js?v=c1dd02d6df" defer></script>
-<script src="/cygenix-stream-destinations.js?v=ecc5fb8edf" defer></script>
+<script src="/cygenix-stream-destinations.js?v=e106e8239f" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
 <script src="/cygenix-privacy.js?v=f60f80b472" defer></script>
 <script src="/cygenix-integrations.js?v=9d508375a5" defer></script>
@@ -1464,7 +1457,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-home.js?v=22a62c9cae" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
@@ -1473,7 +1466,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <script src="/cygenix-preflight.js?v=95a838842e" defer></script>
   <script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
   <script src="/cygenix-profile-apply.js?v=2928c2fb5a" defer></script>
-  <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
+  <script src="/cygenix-guardrail.js?v=d5cec80b9b" defer></script>
   <script src="/cygenix-conn-builder.js?v=bcd70367b8" defer></script>
   <!-- The Data Analyser, which lives in the Data import tab of Connections.
        The engine loads before the widget, which requires it; the hand-off
@@ -1481,7 +1474,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        deferred and the widget is mounted lazily on the first visit to the
        tab, so a boot that never opens it pays only the download. -->
   <script src="/cygenix-analyser.js?v=28560aaae1" defer></script>
-  <script src="/cygenix-analyser-widget.js?v=b79dce439d" defer></script>
+  <script src="/cygenix-analyser-widget.js?v=4f8a3df20b" defer></script>
   <script src="/cygenix-analyser-handoff.js?v=0bea095948" defer></script>
   <!-- The audit log. cygenix-audit.js is the recorder and loads BEFORE
        dashboard-app.js, because addAudit() calls it and nine places in that
@@ -1491,18 +1484,18 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        and the alternative is a screen that takes a round trip to appear the
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-  <script src="/audit-app.js?v=228d3222f7" defer></script>
-  <script src="/dashboard-app.js?v=72f9047287" defer></script>
+  <script src="/audit-app.js?v=d7d0f6518f" defer></script>
+  <script src="/dashboard-app.js?v=65b254873c" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
-  <script src="/cygenix-diagnostics.js?v=5b63663c00" defer></script>
+  <script src="/cygenix-diagnostics.js?v=f1207bb527" defer></script>
   <!-- Collation matching. After cygenix-profiles.js (it reads and writes the
        profile store) and after dashboard-app.js (it calls impGetConn,
        impDbCall and sconnGetAll). Deferred scripts run in document order,
        so both are defined by the time this one does anything. -->
   <script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
-  <script src="/cygenix-collation.js?v=1688ff44f7" defer></script>
+  <script src="/cygenix-collation.js?v=ffaa34cfcb" defer></script>
 
 
   <!-- MAIN -->
@@ -2015,7 +2008,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div style="font-size:11px;color:var(--text3);margin-top:8px">Get a key at <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a>. Each Claude call (analysis, schema generation, narrative) draws from your account credit there.</div>
           </div>
           <div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:8px;padding:0.85rem 1rem">
-            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;font-family:var(--mono);margin-bottom:0.5rem">Credit status</div>
+            <div style="font-size:11px;color:var(--text3);letter-spacing:0.07em;font-family:var(--mono);margin-bottom:0.5rem">Credit status</div>
             <div id="settings-credit-status" style="font-size:13px;color:var(--text2);line-height:1.5">
               Live credit balance is shown via the gauge on the New Job page when an API key is set. Anthropic doesn't currently expose an API endpoint for client-side credit polling, so we can't surface the exact balance here without one.
             </div>
@@ -2662,8 +2655,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="conn-grid">
           <!-- Source -->
           <div class="cx-blueprint conn-panel" id="src-conn-panel">
-            <span class="cx-corner tl"></span><span class="cx-corner tr"></span>
-            <span class="cx-corner bl"></span><span class="cx-corner br"></span>
             <div class="conn-panel-head">
               <h2 class="cx-h">Source database</h2>
               <!-- The status pair: an 8px square and a word. Not configured,
@@ -2778,8 +2769,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
           <!-- Target -->
           <div class="cx-blueprint conn-panel" id="tgt-conn-panel">
-            <span class="cx-corner tl"></span><span class="cx-corner tr"></span>
-            <span class="cx-corner bl"></span><span class="cx-corner br"></span>
             <div class="conn-panel-head">
               <h2 class="cx-h">Target database</h2>
               <!-- The status pair: an 8px square and a word. Not configured,
@@ -3260,7 +3249,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <!-- Target identification banner — so users can see exactly which target
              SQL Server the setup SQL will run against before committing. -->
         <div id="ls-target-banner" style="padding:10px 14px;margin-bottom:1rem;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;font-size:12px">
-          <span style="color:var(--text3);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">Target</span>
+          <span style="color:var(--text3);font-family:var(--mono);font-size:10px;letter-spacing:0.08em">Target</span>
           <span id="ls-target-text" style="color:var(--text);font-family:var(--mono);font-size:12px">—</span>
           <span id="ls-target-status" style="margin-left:auto;font-size:11px;color:var(--text3)"></span>
         </div>
@@ -3537,12 +3526,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="display:grid;grid-template-columns:auto 1fr;gap:0.5rem 1rem;align-items:center;margin-bottom:1rem">
             <span style="display:flex;align-items:center;gap:0.5rem">
               <span id="sm-src-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
-              <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Source</span>
+              <span style="font-size:11px;color:var(--text3);letter-spacing:0.06em">Source</span>
             </span>
             <span id="sm-src-msg" style="font-size:12px;color:var(--text2);font-family:var(--mono)">Click Verify to test connection.</span>
             <span style="display:flex;align-items:center;gap:0.5rem">
               <span id="sm-tgt-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
-              <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Target</span>
+              <span style="font-size:11px;color:var(--text3);letter-spacing:0.06em">Target</span>
             </span>
             <span id="sm-tgt-msg" style="font-size:12px;color:var(--text2);font-family:var(--mono)">Click Verify to test connection.</span>
           </div>
@@ -3798,7 +3787,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <!-- LEFT CONTROLS PANEL -->
       <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;position:sticky;top:0">
 
-        <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:1rem">Upload &amp; filter</div>
+        <div style="font-size:11px;font-weight:500;color:var(--text3);letter-spacing:0.08em;margin-bottom:1rem">Upload &amp; filter</div>
 
         <!-- Upload zone -->
         <div class="inv-upload-zone" id="inv-upload-zone"
@@ -3819,7 +3808,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </button>
 
         <!-- Filter by type -->
-        <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.6rem">Filter by type</div>
+        <div style="font-size:10px;font-weight:500;color:var(--text3);letter-spacing:0.08em;margin-bottom:0.6rem">Filter by type</div>
         <div style="display:flex;flex-direction:column;gap:0.3rem;margin-bottom:1.5rem">
           <button class="inv-filter" onclick="invFilter('all')" data-filter="all"
             style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:var(--accent);color:#fff;border:none;font-family:var(--serif)">
@@ -3889,7 +3878,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
           <!-- Project scope — determines which project's AI narrative can use this document as context -->
           <div style="margin-bottom:1.25rem">
-            <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Project scope <span style="color:var(--text3);text-transform:none;letter-spacing:0">(used by report AI narratives)</span></label>
+            <label style="font-size:10px;color:var(--text3);letter-spacing:0.06em;display:block;margin-bottom:4px">Project scope <span style="color:var(--text3);text-transform:none;letter-spacing:0">(used by report AI narratives)</span></label>
             <select id="inv-pending-project" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.5rem;border-radius:6px;font-size:12px">
               <option value="">— Unassigned (not linked to any project) —</option>
             </select>
@@ -4070,17 +4059,17 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
     <div style="display:grid;gap:0.9rem">
       <label style="display:block">
-        <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Schedule name</span>
+        <span style="font-size:11px;color:var(--text3);letter-spacing:0.07em">Schedule name</span>
         <input id="ta-sched-name" class="form-input" style="margin-top:0.35rem" placeholder="e.g. Nightly timekeeper sync" maxlength="80">
       </label>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
         <label style="display:block">
-          <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Job</span>
+          <span style="font-size:11px;color:var(--text3);letter-spacing:0.07em">Job</span>
           <select id="ta-sched-job" class="form-input" style="margin-top:0.35rem" onchange="ta_onJobPicked()"></select>
         </label>
         <label style="display:block">
-          <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Pinned version</span>
+          <span style="font-size:11px;color:var(--text3);letter-spacing:0.07em">Pinned version</span>
           <select id="ta-sched-version" class="form-input" style="margin-top:0.35rem"></select>
         </label>
       </div>
@@ -4440,7 +4429,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div class="modal-title">Move artifact to project</div>
     <div class="modal-sub" id="move-doc-sub">Choose which project folder this document should live in.</div>
     <div style="margin-bottom:1rem">
-      <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px">Target project</label>
+      <label style="font-size:10px;color:var(--text3);letter-spacing:0.06em;display:block;margin-bottom:6px">Target project</label>
       <select id="move-doc-select" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.55rem 0.75rem;border-radius:var(--r);font-size:13px;font-family:var(--serif);outline:none"></select>
     </div>
     <div class="modal-actions">
@@ -4491,7 +4480,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     </div>
     <!-- Steps -->
     <div style="padding:1.5rem">
-      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:1rem">Recommended first steps</div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.07em;margin-bottom:1rem">Recommended first steps</div>
       <div style="display:flex;flex-direction:column;gap:0.6rem">
         <!-- The guided tour is offered HERE rather than as its own first-run
              prompt. This modal already is the first-run experience; a second
@@ -4561,15 +4550,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('dashboard');</script>
 </body>
 </html>
 
 
 
-<script src="/cygenix-project-summary.js?v=b044cb5d87" defer></script>
+<script src="/cygenix-project-summary.js?v=109abb7035" defer></script>

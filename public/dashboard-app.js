@@ -1479,7 +1479,7 @@ function renderActiveProjectSummary(projects, activeId, allJobs, inv){
   const grid = document.getElementById('das-meta-grid');
   if (grid) {
     const cell = (label, val) => `<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:10px;padding:0.55rem 0.75rem">
-      <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-family:var(--mono);margin-bottom:2px">${label}</div>
+      <div style="font-size:9px;color:var(--text3);letter-spacing:0.06em;font-family:var(--mono);margin-bottom:2px">${label}</div>
       <div style="font-size:12px;color:var(--text);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(val || '—')}</div>
     </div>`;
     grid.innerHTML = [
@@ -1530,7 +1530,7 @@ function dashProjCardHtml(p, allJobs, inv, activeId){
       </div>
       ${isActive
         ? '<span class="dash-proj-active-pill">active</span>'
-        : `<span class="dash-status dash-status-${status.value}" title="${status.derived?'Derived from jobs':'Set manually'}">${status.value}</span>`}
+        : `<span class="dash-status dash-status-${status.value}" title="${status.derived?'Derived from jobs':'Set manually'}">${status.value.charAt(0).toUpperCase() + status.value.slice(1)}</span>`}
     </div>
     <div class="dash-proj-grid-meta">
       <div>
@@ -1560,7 +1560,7 @@ function dashProjCardHtml(p, allJobs, inv, activeId){
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding-top:0.55rem;border-top:0.5px solid var(--border)">
       ${isActive
-        ? '<span style="font-size:10px;color:var(--accent);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em">● active</span>'
+        ? '<span style="font-size:10px;color:var(--accent);font-family:var(--mono);letter-spacing:0.06em">● active</span>'
         : `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();setActiveProject('${escapeAttr(p.id)}')">Set as active</button>`}
       <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">Open →</span>
     </div>
@@ -3076,8 +3076,8 @@ function _setupCheckRenderResults(){
         </summary>
         <table style="margin-top:0.4rem;width:100%;border-collapse:collapse">
           <thead><tr>
-            <th style="padding:1px 0.5rem;text-align:left;font-size:10px;color:var(--text3);text-transform:uppercase">Bad value</th>
-            <th style="padding:1px 0.5rem;text-align:right;font-size:10px;color:var(--text3);text-transform:uppercase">Rows</th>
+            <th style="padding:1px 0.5rem;text-align:left;font-size:10px;color:var(--text3);">Bad value</th>
+            <th style="padding:1px 0.5rem;text-align:right;font-size:10px;color:var(--text3);">Rows</th>
           </tr></thead>
           <tbody>${valuesHtml}</tbody>
         </table>
@@ -7500,10 +7500,10 @@ function runGlobalSearch() {
   res.innerHTML =
     '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
     '<thead><tr style="border-bottom:0.5px solid var(--border2);text-align:left">' +
-      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.07em">Type</th>' +
-      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.07em">What</th>' +
-      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.07em">Where matched</th>' +
-      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.07em;width:100px"></th>' +
+      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;letter-spacing:0.07em">Type</th>' +
+      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;letter-spacing:0.07em">What</th>' +
+      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;letter-spacing:0.07em">Where matched</th>' +
+      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;letter-spacing:0.07em;width:100px"></th>' +
     '</tr></thead><tbody>' +
     rows.map(r =>
       '<tr style="border-bottom:0.5px solid var(--border)">' +
@@ -7518,7 +7518,7 @@ function runGlobalSearch() {
         '<td style="padding:0.7rem 0.75rem;vertical-align:top;font-size:11px">' +
           r.matches.map(m =>
             '<div style="margin-bottom:3px">' +
-              '<span style="color:var(--text3);font-family:var(--mono);font-size:10px;text-transform:uppercase;margin-right:6px">' + escapeHtml(m.field) + '</span>' +
+              '<span style="color:var(--text3);font-family:var(--mono);font-size:10px;margin-right:6px">' + escapeHtml(m.field) + '</span>' +
               '<span style="color:var(--text2);font-family:var(--mono)">' + _highlight(String(m.text||''), q) + '</span>' +
             '</div>'
           ).join('') +
@@ -18641,7 +18641,7 @@ function ta_renderUnscheduledPanel() {
     </div>`;
   }).join('');
   return `<div style="margin-bottom:1.25rem">
-    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem">
+    <div style="font-size:11px;color:var(--text3);letter-spacing:0.07em;margin-bottom:0.5rem">
       Tasks awaiting a schedule
       <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400;margin-left:0.4rem">${tasks.length} packaged but not yet scheduled</span>
     </div>
@@ -20159,7 +20159,7 @@ async function ta_openRunDetail(runId, scheduleId) {
       '<tr><td style="padding:0.4rem 0.6rem;color:var(--text3);width:140px">' + escapeHtml(k) + '</td><td style="padding:0.4rem 0.6rem;color:var(--text)">' + escapeHtml(String(v)) + '</td></tr>'
     ).join('') + '</table>';
     if (r.errorMessage) {
-      html += '<div style="margin-top:1rem"><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem">Error</div>'
+      html += '<div style="margin-top:1rem"><div style="font-size:11px;color:var(--text3);letter-spacing:0.07em;margin-bottom:0.4rem">Error</div>'
            + '<div class="code-block" style="color:var(--red);max-height:30vh;white-space:pre-wrap">' + escapeHtml(r.errorMessage) + '</div></div>';
     }
     body.innerHTML = html;

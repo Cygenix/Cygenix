@@ -77,9 +77,9 @@ check('Direct | Azure Function and Paste string | Settings are segmented control
   && (APP.match(/if \(el && el\.classList\) el\.classList\.toggle\('on', !!active\);/g) || []).length === 3
   && !/el\.style\.background = active \? 'var\(--accent-glow\)'/.test(APP)
   && /#view-connections \.conn-seg > button\.on\{ background:var\(--color-accent-900\);color:var\(--color-bg\); \}/.test(DASH));
-check('the masked row: label 13px uppercase, value 19px Condensed, Reveal & edit, and an honest note about where the string lives',
+check('the masked row: label 13px, value 19px heading, Reveal & edit, and an honest note about where the string lives',
   /#view-connections \.conn-locked\{[^}]*background:var\(--color-neutral-100\)/.test(DASH)
-  && /\.conn-locked-label\{ font-size:13px;letter-spacing:\.1em;text-transform:uppercase/.test(DASH)
+  && /\.conn-locked-label\{ font-size:13px/.test(DASH)
   && /\.conn-locked-value\{ font-family:var\(--font-heading\);font-weight:600;font-size:19px/.test(DASH)
   && (CONN.match(/>Reveal &amp; edit<\/button>/g) || []).length === 2
   && /The string is kept on this browser and shown masked here\. Saving a change\s*is written to the audit trail\./.test(CONN)
@@ -236,10 +236,10 @@ check('the filter row: name-or-table, Project, Status, and the count pushed righ
   && /if \(q\) shown = shown\.filter\(j => \[j\.name, j\.sourceTable, j\.source, j\.target\]\.some/.test(APP)
   && /if \(sf\) shown = shown\.filter\(j => jobBucket\(j\) === sf\);/.test(APP)
   && /\$\{denom\} job\$\{denom === 1 \? '' : 's'\}/.test(APP) && /\$\{shown\.length\} in trash/.test(APP));
-check('the selection bar exists only while rows are selected: accent-100, a 1px accent-300 border, N SELECTED at 16px Condensed, Clear pushed right',
+check('the selection bar exists only while rows are selected: accent-100, a 1px accent-300 border, the count at 16px heading, Clear pushed right',
   /<div id="jobs-bulk-actions" class="jb-selbar" style="display:none">/.test(JOBS)
   && /\.jb-selbar\{[^}]*background:var\(--color-accent-100\);border:1px solid var\(--color-accent-300\);padding:10px 14px/.test(DASH)
-  && /\.jb-selcount\{font-family:var\(--font-heading\);font-weight:600;font-size:16px;text-transform:uppercase;color:var\(--color-accent-900\)/.test(DASH)
+  && /\.jb-selcount\{font-family:var\(--font-heading\);font-weight:600;font-size:16px;color:var\(--color-accent-900\)/.test(DASH)
   && /\.jb-clear\{margin-left:auto;color:var\(--color-accent-800\)/.test(DASH)
   && ['Export scripts', 'Export package', 'Setup check', 'Move to project', 'Clear'].every(t => new RegExp('jb-selbar[\\s\\S]*>' + t + '</button>').test(JOBS))
   && /if \(selectedJobIds\.size === 0\)\{\s*bar\.style\.display = 'none';/.test(APP));

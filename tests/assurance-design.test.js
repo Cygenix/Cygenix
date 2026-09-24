@@ -40,13 +40,18 @@ check('the header is kicker QUALITY, title ASSURANCE, and the sentence at 16px /
   /<div class="cx-kicker">Quality<\/div>\s*<h1 class="as-title">Assurance<\/h1>/.test(PAGE)
   && /\.as-sub\{font-size:16px[^}]*max-width:86ch/.test(CSS)
   && !/✓ Assurance/.test(PAGE));
-check('the status band is the one blueprint frame on the screen, with its four corners',
+// v2 (Sep-2026) removed the four registration marks site-wide: beside a
+// text face they read as decoration rather than drafting. The claim that
+// survives — and the one that always mattered — is that this band is the
+// ONE framed panel on the screen. Emphasis now comes from being the only
+// one, and from its position, rather than from crosshairs.
+check('the status band is still the one framed panel on the screen',
   /class="as-status cx-blueprint"/.test(PAGE)
   && (PAGE.match(/cx-blueprint/g) || []).length === 1
-  && ['tl', 'tr', 'bl', 'br'].every(c => PAGE.includes('<span class="cx-corner ' + c + '"></span>')));
-check('the band is 18px 22px, space-between, a 26px Condensed line and a 15px consequence',
+  && !/cx-corner/.test(PAGE));
+check('the band is 18px 22px, space-between, a 26px heading line and a 15px consequence',
   /\.as-status\{[^}]*justify-content:space-between[^}]*padding:18px 22px/.test(CSS)
-  && /\.as-status \.line\{font-family:var\(--font-heading\)[^}]*font-size:26px[^}]*text-transform:uppercase/.test(CSS)
+  && /\.as-status \.line\{font-family:var\(--font-heading\)[^}]*font-size:26px/.test(CSS)
   && /\.as-status \.subnote\{font-size:15px/.test(CSS));
 check('exactly one CTA sits in the band, 40px tall, 22px padding, 16px label',
   (PAGE.match(/id="as-cta"/g) || []).length === 1
@@ -58,10 +63,10 @@ check('the breach state says what is open, what it blocks, and how many to revie
   && /'Review ' \+ n \+ ' breach' \+ \(n === 1 \? '' : 'es'\)/.test(PAGE));
 
 /* ── 2. The ribbon ─────────────────────────────────────────────────────── */
-check('four equal bordered cells, 8px gap, number at 13px, title at 19px Condensed, note at 13px',
+check('four equal bordered cells, 8px gap, number at 13px, title at 19px heading, note at 13px',
   /\.ribbon\{display:grid;grid-template-columns:repeat\(4,1fr\);gap:8px/.test(CSS)
-  && /\.rstep \.idx\{[^}]*font-size:13px[^}]*letter-spacing:\.1em/.test(CSS)
-  && /\.rstep \.t\{[^}]*font-size:19px[^}]*text-transform:uppercase/.test(CSS)
+  && /\.rstep \.idx\{[^}]*font-size:13px/.test(CSS)
+  && /\.rstep \.t\{[^}]*font-size:19px/.test(CSS)
   && /\.rstep \.n\{font-size:13px[^}]*var\(--color-neutral-700\)/.test(CSS));
 check('the current step takes the accent border and accent-100 ground; an unreached title is neutral-600',
   /\.rstep\.now\{border-color:var\(--color-accent\);background:var\(--color-accent-100\)\}/.test(CSS)
@@ -112,8 +117,8 @@ check('money coverage counts money columns in the target and says none when ther
 })();
 
 /* ── 5. Suggested checks ───────────────────────────────────────────────── */
-check('each suggestion row is a category tag, a 17px Condensed title, a 15px explanation, Dismiss / Add rule',
-  /\.bundle b\{[^}]*font-size:17px[^}]*text-transform:uppercase/.test(CSS)
+check('each suggestion row is a category tag, a 17px heading title, a 15px explanation, Dismiss / Add rule',
+  /\.bundle b\{[^}]*font-size:17px/.test(CSS)
   && /\.bundle p\{font-size:15px/.test(CSS)
   && /<div class="bundle"><span class="chip">' \+ esc\(catLabel\(/.test(PAGE)
   && PAGE.includes('>Add rule</button>') && !PAGE.includes('Review &amp; add'));
@@ -144,16 +149,16 @@ check('the split is 300px 1fr inside one border — no panel-body padding around
   /\.split\{display:grid;grid-template-columns:300px minmax\(0,1fr\)/.test(CSS)
   && /\.split > \.bq\{border-right:1px solid var\(--color-divider\)\}/.test(CSS)
   && /<div class="split">\s*<div class="bq" id="as-bq">/.test(PAGE));
-check('a queue entry is severity, timestamp, a 17px Condensed name and a 13px row count',
+check('a queue entry is severity, timestamp, a 17px heading name and a 13px row count',
   /<div class="ts">' \+ \(done \? '<span class="chip ok">Resolved<\/span>' : sevChip\(b\.severity\)\)/.test(PAGE)
-  && /\.bq-item \.t\{[^}]*font-size:17px[^}]*text-transform:uppercase/.test(CSS)
+  && /\.bq-item \.t\{[^}]*font-size:17px/.test(CSS)
   && /\.bq-item \.m\{font-size:13px/.test(CSS));
 check('the selected entry takes accent-100 and a 3px state-fail left rule; resolved ones go neutral-600',
   /\.bq-item\.on\{background:var\(--color-accent-100\);border-left-color:var\(--state-fail\)\}/.test(CSS)
   && /border-left:3px solid transparent/.test(CSS)
   && /\.bq-item\.done \.t,\.bq-item\.done \.m,\.bq-item\.done \.ts\{color:var\(--color-neutral-600\)\}/.test(CSS));
-check('the detail leads with the proves sentence at 23px Condensed and a 15px explanation naming the counts',
-  /\.bd-proves\{[^}]*font-size:23px[^}]*text-transform:uppercase/.test(CSS)
+check('the detail leads with the proves sentence at 23px heading and a 15px explanation naming the counts',
+  /\.bd-proves\{[^}]*font-size:23px/.test(CSS)
   && /\.bd-why\{font-size:15px/.test(CSS)
   && /<div class="bd-proves">' \+ esc\(r\.proves \|\| r\.name\)/.test(PAGE)
   && /fmtInt\(failed\) \+ \(scanned \? ' of ' \+ fmtInt\(scanned\) : ''\)/.test(PAGE));

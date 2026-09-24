@@ -45,10 +45,17 @@ check('the old names are aliases of the new values, not a second palette',
   && /--serif:\s*var\(--font-body\)/.test(css));
 check('border radius is 0 on the components, and the logo keeps its 7px',
   /--r:\s*0;/.test(css) && /\.cx-logo, \.cyg-brand-mark \{ border-radius: 7px; \}/.test(css));
-check('the type scale is Barlow Condensed 600 over Barlow 400',
-  /--font-heading:\s*'Barlow Condensed'/.test(css) && /--font-body:\s*'Barlow'/.test(css)
-  && /\.cx-kicker \{[^}]*font-size: 13px[^}]*letter-spacing: \.18em/.test(css)
-  && /\.cx-title \{[^}]*font-size: 40px[^}]*line-height: \.95/.test(css));
+// v2 (Sep-2026): one face, not two, and it is not condensed. The scale moved
+// with it — see the note at the top of cygenix-console.css and
+// tests/typography.test.js, which owns the detail. What is pinned here is
+// that BOTH tokens resolve to the same family: the distinction the console
+// draws is weight and size, and a second family creeping back into one of
+// these two tokens is how the old drift started.
+check('the type scale is one family at two weights, not two families',
+  /--font-heading:\s*'Noto Sans'/.test(css) && /--font-body:\s*'Noto Sans'/.test(css)
+  && /--font-heading-weight: 600/.test(css)
+  && /\.cx-kicker \{[^}]*font-size: 13px[^}]*letter-spacing: 0/.test(css)
+  && /\.cx-title \{[^}]*font-size: 34px[^}]*line-height: 1\.15/.test(css));
 // The handoff says "no text below 13px anywhere" and, in the same table,
 // gives table headers 11px and tags 12px. The component sizes are the ones
 // the mocks were drawn with, so they win; what is pinned is that nothing
@@ -59,14 +66,22 @@ check('nothing in the shared vocabulary is smaller than 11px, and body text is n
 
 /* ── 2. Self-hosted fonts ───────────────────────────────────────────────── */
 const faces = css.match(/@font-face \{[^}]*\}/g) || [];
-check('five @font-face rules: Barlow 400/500/600, Condensed 400/600',
-  faces.length === 5 && faces.filter(f => /'Barlow Condensed'/.test(f)).length === 2);
+// Six now: Noto Sans 400/500/600/700 and IBM Plex Mono 400/500. The mono
+// face joined the list when the console stopped linking Google Fonts.
+check('six @font-face rules: Noto Sans 400/500/600/700 and the mono at 400/500',
+  faces.length === 6
+  && faces.filter(f => /'Noto Sans'/.test(f)).length === 4
+  && faces.filter(f => /'IBM Plex Mono'/.test(f)).length === 2);
 const fontFiles = faces.map(f => (f.match(/url\('\/fonts\/([^']+)'\)/) || [])[1]).filter(Boolean);
 check('every face points at a woff2 that is actually in public/fonts',
-  fontFiles.length === 5 && fontFiles.every(f => exists('fonts/' + f) && fs.statSync(path.join(PUB, 'fonts', f)).size > 10000),
+  fontFiles.length === 6 && fontFiles.every(f => exists('fonts/' + f) && fs.statSync(path.join(PUB, 'fonts', f)).size > 10000),
   fontFiles.join(', '));
-check('and no console page fetches Barlow from Google Fonts',
-  appPages.every(f => !/fonts\.googleapis\.com[^"']*Barlow/.test(read(f))));
+// Stronger than the old check, which only forbade Barlow: no console page
+// fetches ANY font stylesheet from a third party now that the mono face is
+// self-hosted too. That removed a render-blocking request from 26 pages.
+check('and no console page fetches a font from Google at all',
+  appPages.every(f => !/fonts\.googleapis\.com/.test(read(f))),
+  appPages.filter(f => /fonts\.googleapis\.com/.test(read(f))).join(', '));
 
 /* ── 3. The pages carry no copy of the palette ──────────────────────────── */
 const SHARED = ['--bg', '--bg2', '--text', '--text2', '--accent', '--green', '--amber', '--red', '--serif', '--r'];

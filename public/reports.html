@@ -19,9 +19,6 @@
 <meta name="twitter:title" content="Cygenix – Report Builder">
 <meta name="twitter:description" content="Build paginated tabular and visual reports against migration jobs and saved connections.">
 <title>Cygenix – Report Builder</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/cygenix-console.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -47,7 +44,7 @@ body.cyg-collapsed{padding-left:54px}
 .panel-body{padding:1rem 1.25rem}
 
 /* ── Forms ── */
-.form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
+.form-label{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
 .form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
 .form-input:focus{border-color:var(--accent)}
 
@@ -99,7 +96,7 @@ body.cyg-collapsed{padding-left:54px}
 @media (max-width:900px){.rb-shell{grid-template-columns:1fr}}
 .rb-rail{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:0.75rem;position:sticky;top:1rem;max-height:calc(100vh - 2rem);overflow-y:auto}
 .rb-rail-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;padding:0 0.25rem}
-.rb-rail-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em}
+.rb-rail-title{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.07em}
 .rb-rail-list{display:flex;flex-direction:column;gap:2px}
 .rb-rail-item{display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:0.5rem 0.625rem;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text2);border:0.5px solid transparent;transition:all 0.12s}
 .rb-rail-item:hover{background:var(--bg3);color:var(--text)}
@@ -172,7 +169,7 @@ body.cyg-collapsed{padding-left:54px}
 .ds-section{margin-bottom:1rem;padding-bottom:1rem;border-bottom:0.5px dashed var(--border)}
 .ds-section:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
 .ds-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;cursor:pointer}
-.ds-section-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.07em;display:flex;align-items:center;gap:0.5rem}
+.ds-section-title{font-size:11px;font-weight:600;color:var(--text2);letter-spacing:0.07em;display:flex;align-items:center;gap:0.5rem}
 .ds-section-meta{font-size:10px;color:var(--text3);font-family:var(--mono)}
 .ds-section-body{padding-top:0.25rem}
 .ds-section-body.collapsed{display:none}
@@ -201,8 +198,7 @@ body.cyg-collapsed{padding-left:54px}
 .ds-kind-btn{
   background:transparent;color:var(--text3);
   border:none;border-right:0.5px solid var(--border2);
-  padding:0.28rem 0.55rem;font-size:10.5px;font-family:var(--mono);
-  text-transform:uppercase;letter-spacing:0.05em;
+  padding:0.28rem 0.55rem;font-size:10.5px;font-family:var(--mono);letter-spacing:0.05em;
   cursor:pointer;transition:all 0.12s;
 }
 .ds-kind-btn:last-child{border-right:none}
@@ -255,7 +251,7 @@ body.cyg-collapsed{padding-left:54px}
 .pa-required input{cursor:pointer}
 .pa-body{padding:1rem}
 .pa-row{display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap}
-.pa-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;min-width:90px}
+.pa-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:0.05em;min-width:90px}
 .pa-input{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
 .pa-input:focus{border-color:var(--accent)}
 .pa-options-toggle{display:inline-flex;gap:0;border-radius:6px;overflow:hidden;border:0.5px solid var(--border2)}
@@ -297,13 +293,13 @@ body.cyg-collapsed{padding-left:54px}
 /* Field panel — list of available fields from the bound dataset */
 .la-field-panel{background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.6rem;max-height:480px;overflow-y:auto;position:sticky;top:1rem}
 .la-field-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
-.la-field-panel-title{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em}
+.la-field-panel-title{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.07em}
 .la-field-search{width:100%;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.35rem 0.55rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;margin-bottom:0.5rem}
 .la-field-search:focus{border-color:var(--accent)}
 .la-field{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:5px 8px;border-radius:5px;font-size:11px;color:var(--text2);font-family:var(--mono);cursor:pointer;border:0.5px solid transparent;margin-bottom:2px;transition:all 0.1s}
 .la-field:hover{background:var(--bg);color:var(--text);border-color:var(--border2)}
 .la-field-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
-.la-field-type{font-size:9px;color:var(--text3);flex-shrink:0;text-transform:uppercase;letter-spacing:0.05em}
+.la-field-type{font-size:9px;color:var(--text3);flex-shrink:0;letter-spacing:0.05em}
 .la-field-type.t-number{color:var(--teal)}
 .la-field-type.t-date{color:var(--amber)}
 .la-field-type.t-bool{color:var(--purple)}
@@ -313,7 +309,7 @@ body.cyg-collapsed{padding-left:54px}
 .la-zones{display:flex;flex-direction:column;gap:0.75rem;min-width:0}
 .la-zone{background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.6rem 0.75rem}
 .la-zone-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
-.la-zone-title{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.07em;display:flex;align-items:center;gap:6px}
+.la-zone-title{font-size:10px;font-weight:600;color:var(--text2);letter-spacing:0.07em;display:flex;align-items:center;gap:6px}
 .la-zone-meta{font-size:10px;color:var(--text3);font-family:var(--mono)}
 .la-zone-empty{padding:0.5rem 0.75rem;font-size:11px;color:var(--text3);font-style:italic;border:0.5px dashed var(--border2);border-radius:6px;text-align:center}
 /* Each item in a zone is a chip with controls underneath when expanded */
@@ -333,7 +329,7 @@ body.cyg-collapsed{padding-left:54px}
 .la-chip-body{margin-top:0.5rem;padding-top:0.5rem;border-top:0.5px dashed var(--border)}
 .la-chip-body.collapsed{display:none}
 .la-chip-row{display:grid;grid-template-columns:auto 1fr;gap:0.5rem;align-items:center;margin-bottom:0.35rem}
-.la-chip-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;min-width:80px}
+.la-chip-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:0.05em;min-width:80px}
 .la-chip-input,.la-chip-select{background:var(--bg);border:0.5px solid var(--border2);border-radius:5px;padding:0.3rem 0.5rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;min-width:0}
 .la-chip-input:focus,.la-chip-select:focus{border-color:var(--accent)}
 .la-chip-checkbox{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);cursor:pointer;font-family:var(--serif)}
@@ -352,7 +348,7 @@ body.cyg-collapsed{padding-left:54px}
 
 /* Parameter form */
 .pv-param-form{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem;margin-bottom:1rem}
-.pv-param-form-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.6rem}
+.pv-param-form-title{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.07em;margin-bottom:0.6rem}
 .pv-param-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.6rem 1rem}
 .pv-param-cell{display:flex;flex-direction:column;gap:4px}
 .pv-param-cell label{font-size:11px;color:var(--text2);font-family:var(--serif);display:flex;align-items:center;gap:4px}
@@ -380,7 +376,7 @@ body.cyg-collapsed{padding-left:54px}
 /* Table — matches balancing.html style */
 .pv-table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
 .pv-table th,.pv-table td{padding:6px 10px;border-bottom:0.5px solid var(--border);text-align:left;white-space:nowrap;vertical-align:top}
-.pv-table th{background:var(--bg3);color:var(--text2);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;position:sticky;top:0;z-index:1}
+.pv-table th{background:var(--bg3);color:var(--text2);font-weight:600;font-size:10px;letter-spacing:0.05em;position:sticky;top:0;z-index:1}
 .pv-table td.num{text-align:right;font-variant-numeric:tabular-nums}
 .pv-table td.center{text-align:center}
 .pv-table td.right{text-align:right;font-variant-numeric:tabular-nums}
@@ -417,7 +413,7 @@ body.cyg-collapsed{padding-left:54px}
 @media (max-width:850px){.la-chart-designer{grid-template-columns:1fr}}
 .la-chart-config{background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.75rem}
 .la-chart-row{display:grid;grid-template-columns:auto 1fr;gap:0.5rem;align-items:center;margin-bottom:0.5rem}
-.la-chart-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;min-width:80px}
+.la-chart-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:0.05em;min-width:80px}
 .la-chart-row .la-chip-input,
 .la-chart-row .la-chip-select{flex:1;min-width:0}
 .la-variant-toggle{display:inline-flex;gap:0;border-radius:6px;overflow:hidden;border:0.5px solid var(--border2);width:100%}
@@ -502,13 +498,13 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 
 <!-- Sidebar: data-active matches the new 'report-builder' key in cygenix-sidebar.js -->
 <div id="cyg-sidebar-mount" data-active="report-builder"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 
 <div class="page">
 
@@ -676,15 +672,15 @@ body.cyg-collapsed{padding-left:54px}
 
 </div><!-- /.page -->
 
-<script src="/reports-app.js?v=ba27f159a2" defer></script>
+<script src="/reports-app.js?v=3d32a272f5" defer></script>
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('report-builder');</script>
 </body>
 </html>

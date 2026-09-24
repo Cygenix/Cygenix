@@ -51,9 +51,6 @@
 <meta name="twitter:title" content="Cygenix – Balancing & Metrics">
 <meta name="twitter:description" content="Financial reconciliation and balance metrics for SQL database migrations.">
 <title>Cygenix – Balancing &amp; Metrics</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -78,7 +75,7 @@ body.cyg-collapsed{padding-left:54px}
 .panel-body{padding:1rem 1.25rem}
 
 /* ── Forms ── */
-.form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
+.form-label{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
 .form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
 .form-input:focus{border-color:var(--accent)}
 
@@ -123,7 +120,7 @@ body.cyg-collapsed{padding-left:54px}
 .check-name{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.45rem 0.7rem;font-size:13px;font-weight:500;color:var(--text);outline:none;font-family:var(--serif)}
 .check-name:focus{border-color:var(--accent)}
 .field-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.55rem}
-.field-cell label{display:block;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem;font-weight:600}
+.field-cell label{display:block;font-size:10px;color:var(--text3);letter-spacing:0.05em;margin-bottom:0.2rem;font-weight:600}
 .field-cell input,.field-cell select{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
 .field-cell input:focus,.field-cell select:focus{border-color:var(--accent)}
 /* Subtle chevron hint on picker inputs to communicate they're searchable */
@@ -305,7 +302,7 @@ body.cyg-collapsed{padding-left:54px}
    Used to show the merged TB rows (source/target/variance) inline once
    a report has been run. Excel/CSV exports use the same data array. */
 .tb-preview{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono);margin-top:0.75rem}
-.tb-preview th{text-align:left;padding:6px 8px;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;border-bottom:0.5px solid var(--border);background:var(--bg3);font-weight:600;position:sticky;top:0}
+.tb-preview th{text-align:left;padding:6px 8px;color:var(--text3);font-size:10px;letter-spacing:0.06em;border-bottom:0.5px solid var(--border);background:var(--bg3);font-weight:600;position:sticky;top:0}
 .tb-preview td{padding:5px 8px;border-bottom:0.5px solid var(--border);color:var(--text2)}
 .tb-preview tr:hover td{background:rgba(255,255,255,0.015)}
 .tb-preview td.num{text-align:right;font-variant-numeric:tabular-nums}
@@ -344,14 +341,14 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 
 <!-- Sidebar — `data-active="balancing"` matches the NAV key in
      /cygenix-sidebar.js so this item gets highlighted. -->
 <div id="cyg-sidebar-mount" data-active="balancing"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 
 <div class="page">
 
@@ -1469,11 +1466,11 @@ function tbRenderReportCard(r, idx, run){
   const body = '<div style="margin-bottom:0.75rem">' + periodFields + '</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:0.75rem">'
     +   '<div>'
-    +     '<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem">Source side</div>'
+    +     '<div style="font-size:11px;font-weight:600;color:var(--text2);letter-spacing:0.06em;margin-bottom:0.5rem">Source side</div>'
     +     sourceFields
     +   '</div>'
     +   '<div>'
-    +     '<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem">Target side</div>'
+    +     '<div style="font-size:11px;font-weight:600;color:var(--text2);letter-spacing:0.06em;margin-bottom:0.5rem">Target side</div>'
     +     targetFields
     +   '</div>'
     + '</div>';
@@ -2630,25 +2627,25 @@ function cbRenderFilterSection(r, idx){
   return ''
     + '<div style="display:grid;grid-template-columns:1fr;gap:0.5rem">'
     +   '<div>'
-    +     '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Where (optional)</label>'
+    +     '<label style="font-size:10px;color:var(--text3);letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Where (optional)</label>'
     +     '<textarea style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.7rem;font-family:var(--mono);font-size:11px;color:var(--text);min-height:60px;resize:vertical;outline:none"'
     +       ' placeholder="period_id BETWEEN ' + "'" + '202601' + "'" + ' AND ' + "'" + '202612' + "'" + ' AND amount > 0"'
     +       ' oninput="cbUpdate(' + idx + ',\'where\',this.value)">' + escapeHtml(r.where || '') + '</textarea>'
     +   '</div>'
     +   '<div style="display:grid;grid-template-columns:1fr;gap:0.5rem">'
     +     '<div>'
-    +       '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Order by (optional)</label>'
+    +       '<label style="font-size:10px;color:var(--text3);letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Order by (optional)</label>'
     +       '<input type="text" value="' + escapeHtml(r.orderBy || '') + '" placeholder="period_id ASC, total DESC"'
     +         ' style="width:100%"'
     +         ' oninput="cbUpdate(' + idx + ',\'orderBy\',this.value)">'
     +     '</div>'
     +     '<div style="display:grid;grid-template-columns:1fr 110px;gap:0.5rem;align-items:end">'
     +       '<div>'
-    +         '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Row limit syntax</label>'
+    +         '<label style="font-size:10px;color:var(--text3);letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Row limit syntax</label>'
     +         syntaxSelect
     +       '</div>'
     +       '<div>'
-    +         '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Limit n</label>'
+    +         '<label style="font-size:10px;color:var(--text3);letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Limit n</label>'
     +         '<input type="number" min="1" max="1000000" value="' + escapeHtml(String(r.limit || 1000)) + '"'
     +           (numDisabled ? ' disabled' : '')
     +           ' oninput="cbUpdate(' + idx + ',\'limit\',parseInt(this.value,10) || 1000)">'
@@ -3284,14 +3281,14 @@ function cbAiApplySql(idx, mid){
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <!-- Collation. The rules load first; see the note in object_mapping.html. -->
 <script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
-<script src="/cygenix-collation.js?v=1688ff44f7" defer></script>
+<script src="/cygenix-collation.js?v=ffaa34cfcb" defer></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('balancing');</script>
 </body>
 </html>

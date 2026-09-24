@@ -49,9 +49,6 @@
 <meta name="twitter:title" content="Cygenix – AI Assist">
 <meta name="twitter:description" content="Let Cygenix introspect your databases and propose a complete migration mapping with reasoning for every decision.">
 <title>Cygenix – AI Assist</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
@@ -71,12 +68,12 @@
      loading connections.js also loads these. -->
 <script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
 <script src="/cygenix-profile-apply.js?v=2928c2fb5a" defer></script>
-<script src="/nav.js?v=50f8721bfa" defer></script>
+<script src="/nav.js?v=aae587eea6" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -106,7 +103,7 @@ body.cyg-collapsed .topbar{left:54px}
 
 .topbar-title{font-size:13px;color:var(--accent);font-weight:500;flex-shrink:0;display:flex;align-items:center;gap:0.5rem}
 .topbar-title svg{width:16px;height:16px}
-.topbar-pill{font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--accent-glow);color:var(--accent);border:1px solid var(--border2)}
+.topbar-pill{font-size:10px;font-weight:600;letter-spacing:0.06em;padding:2px 7px;border-radius:999px;background:var(--accent-glow);color:var(--accent);border:1px solid var(--border2)}
 
 .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:background .15s,border-color .15s,transform .05s;line-height:1}
 .btn:hover:not(:disabled){background:var(--bg4);border-color:var(--border2)}
@@ -135,7 +132,7 @@ body.cyg-collapsed .topbar{left:54px}
 
 .field{margin-bottom:1.1rem}
 .field:last-child{margin-bottom:0}
-.field label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em}
+.field label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:0.4rem;letter-spacing:0.05em}
 .field .hint{font-size:11.5px;color:var(--text3);margin-top:0.35rem;line-height:1.5}
 .form-input,.form-textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);padding:9px 12px;font-family:inherit;font-size:13px;transition:border-color .15s,background .15s}
 .form-input:focus,.form-textarea:focus{outline:none;border-color:var(--accent);background:var(--bg4)}
@@ -146,7 +143,7 @@ body.cyg-collapsed .topbar{left:54px}
 @media(max-width:600px){.conn-flow{grid-template-columns:1fr}.conn-arrow{transform:rotate(90deg);margin:0 auto}}
 .conn-card{padding:0.85rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);min-height:64px;display:flex;flex-direction:column;justify-content:center}
 .conn-card-missing{border-style:dashed;border-color:rgba(245,158,11,0.4)}
-.conn-role{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:0.3rem;display:flex;align-items:center;gap:6px}
+.conn-role{font-size:10px;font-weight:600;letter-spacing:0.08em;color:var(--text3);margin-bottom:0.3rem;display:flex;align-items:center;gap:6px}
 .conn-role .conn-dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
 .conn-card-missing .conn-role .conn-dot{background:var(--amber)}
 .conn-label{font-size:13px;color:var(--text);font-weight:500;word-break:break-word;font-family:var(--mono)}
@@ -169,7 +166,7 @@ body.cyg-collapsed .topbar{left:54px}
 @media(max-width:1100px){.setup-grid{grid-template-columns:1fr}}
 
 .panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;display:flex;flex-direction:column}
-.panel-title{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin:0 0 0.85rem}
+.panel-title{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.07em;margin:0 0 0.85rem}
 
 .map-frame{position:relative;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;height:340px}
 .map-frame svg{width:100%;height:100%;display:block}
@@ -196,7 +193,7 @@ body.cyg-collapsed .topbar{left:54px}
 
 .action-card-controls{display:none;margin-top:0.6rem}
 .action-card.active .action-card-controls{display:block}
-.action-card-controls label{display:block;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.3rem}
+.action-card-controls label{display:block;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.07em;margin-bottom:0.3rem}
 .action-card-controls select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-family:inherit;font-size:12.5px}
 .action-card-controls select:focus{outline:none;border-color:var(--accent)}
 
@@ -262,7 +259,7 @@ body.cyg-collapsed .topbar{left:54px}
 .criterion-bool-row strong{color:var(--text)}
 .criteria-empty{padding:1rem;background:var(--bg3);border:1px dashed var(--border);border-radius:var(--r);color:var(--text2);font-size:12px;text-align:center;margin-bottom:0.85rem}
 .tighten-row{margin-top:0.85rem}
-.tighten-label{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem;display:flex;justify-content:space-between;align-items:center}
+.tighten-label{font-size:11px;font-weight:500;color:var(--text2);letter-spacing:0.05em;margin-bottom:0.35rem;display:flex;justify-content:space-between;align-items:center}
 .tighten-label .hint{font-size:10.5px;text-transform:none;letter-spacing:0;color:var(--text3);font-weight:400}
 .tighten-input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:var(--r);font-family:var(--mono);font-size:12px;line-height:1.5;resize:vertical;min-height:54px;box-sizing:border-box}
 .tighten-input:focus{outline:none;border-color:var(--accent)}
@@ -322,12 +319,12 @@ body.cyg-collapsed .topbar{left:54px}
 
 .proposal-summary{padding:1rem 1.1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:1rem;font-size:13px;line-height:1.6;color:var(--text)}
 
-.section-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin:0 0 0.55rem}
+.section-label{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.07em;margin:0 0 0.55rem}
 
 .decisions{margin-bottom:1.1rem}
 .decision{padding:0.7rem 0.85rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:0.45rem;font-size:12.5px}
 .decision-label{display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;font-weight:500;color:var(--text);margin-bottom:0.2rem}
-.decision-confidence{font-size:9.5px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:3px}
+.decision-confidence{font-size:9.5px;font-weight:600;letter-spacing:0.05em;padding:1px 6px;border-radius:3px}
 .decision-confidence.high{background:var(--green-bg);color:var(--green)}
 .decision-confidence.medium{background:var(--amber-bg);color:var(--amber)}
 .decision-confidence.low{background:var(--red-bg);color:var(--red)}
@@ -407,7 +404,7 @@ body.cyg-collapsed .topbar{left:54px}
 <div id="cyg-sidebar-mount" data-active="agentive-migration"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 <script>
 // Sidebar width mirror — same pattern as sql-editor.html
 (function mirrorSidebarWidth(){
@@ -2102,7 +2099,7 @@ body.cyg-collapsed .topbar{left:54px}
         <div class="panel-title">Working scope</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
           <div>
-            <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem">Build from picks</label>
+            <label style="display:block;font-size:11px;color:var(--text3);letter-spacing:0.05em;margin-bottom:0.35rem">Build from picks</label>
             <div style="padding:0.7rem 0.9rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);font-size:12.5px;color:var(--text2);min-height:54px">${summaryText}</div>
             <div style="margin-top:0.6rem;display:flex;gap:0.4rem">
               <input type="text" class="form-input" id="am-scope-name" placeholder="Name this scope (e.g. Master Files)" style="flex:1;font-size:12.5px" value="${state.savedScope ? escapeHtml(state.savedScope.name) : ''}">
@@ -2110,7 +2107,7 @@ body.cyg-collapsed .topbar{left:54px}
             </div>
           </div>
           <div>
-            <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem">Or load an existing scope</label>
+            <label style="display:block;font-size:11px;color:var(--text3);letter-spacing:0.05em;margin-bottom:0.35rem">Or load an existing scope</label>
             <select class="form-input" id="am-load-scope" style="font-size:12.5px">
               <option value="">— Choose a saved scope —</option>
               ${scopeListOptions}
@@ -3079,15 +3076,15 @@ body.cyg-collapsed .topbar{left:54px}
 <!-- Collation. The rules load first; see the note in object_mapping.html.
      Needed here for the run gate in startRun. -->
 <script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
-<script src="/cygenix-collation.js?v=1688ff44f7" defer></script>
+<script src="/cygenix-collation.js?v=ffaa34cfcb" defer></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('agentive-migration');</script>
 </body>
 </html>

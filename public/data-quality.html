@@ -41,9 +41,6 @@
   })();
   </script>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <!--
     Source Data Quality Review.
@@ -183,7 +180,7 @@
     border-radius: var(--r);
     margin-bottom: 1rem;
   }
-  .toolbar label { font-size: 12px; color: var(--text3); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.06em; }
+  .toolbar label { font-size: 12px; color: var(--text3); font-family: var(--mono); letter-spacing: 0.06em; }
 
   /* ── Form controls ───────────────────────────────────────────────────── */
   select, input[type="text"], input:not([type]) {
@@ -388,7 +385,7 @@
     box-shadow: var(--shadow-soft);
   }
   .summary-stat { display: flex; flex-direction: column; gap: 0.2rem; }
-  .summary-stat .stat-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; font-family: var(--mono); }
+  .summary-stat .stat-label { font-size: 10px; color: var(--text3); letter-spacing: 0.07em; font-family: var(--mono); }
   .summary-stat .stat-value { font-size: 1.4rem; font-weight: 600; font-family: var(--serif); color: var(--text); line-height: 1; letter-spacing: -0.01em; }
   .stat-pass { color: var(--green); }
   .stat-warn { color: var(--amber); }
@@ -413,8 +410,7 @@
     padding: 0.4rem 0.55rem; text-align: left;
   }
   .check-result-body th {
-    background: var(--bg3); font-weight: 500;
-    text-transform: uppercase; letter-spacing: 0.05em;
+    background: var(--bg3); font-weight: 500; letter-spacing: 0.05em;
     font-size: 11px; color: var(--text3);
     font-family: var(--mono);
   }
@@ -424,8 +420,7 @@
   .badge {
     display: inline-block; padding: 0.18rem 0.55rem;
     border-radius: 100px;
-    font-size: 10px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.07em;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.07em;
     font-family: var(--mono);
     border: 1px solid transparent;
   }
@@ -476,8 +471,7 @@
   }
   .rel-table th {
     background: var(--bg3);
-    font-size: 11px; font-weight: 500;
-    text-transform: uppercase; letter-spacing: 0.06em;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.06em;
     color: var(--text3);
     font-family: var(--mono);
   }
@@ -495,8 +489,7 @@
   }
   .inline-form .field { display: flex; flex-direction: column; gap: 0.3rem; }
   .inline-form label {
-    font-size: 10px; color: var(--text3);
-    text-transform: uppercase; letter-spacing: 0.06em;
+    font-size: 10px; color: var(--text3); letter-spacing: 0.06em;
     font-family: var(--mono);
   }
   .inline-form input { min-width: 0; }
@@ -554,8 +547,7 @@
     border-bottom: 1px solid var(--border);
   }
   .progress-overall-label {
-    font-family: var(--mono); font-size: 11px; color: var(--text3);
-    text-transform: uppercase; letter-spacing: 0.06em;
+    font-family: var(--mono); font-size: 11px; color: var(--text3); letter-spacing: 0.06em;
   }
   .progress-bar {
     flex: 1; height: 6px;
@@ -583,8 +575,7 @@
   .progress-row .pr-name { color: var(--text); font-weight: 500; }
   .progress-row .pr-detail { font-size: 11px; color: var(--text3); margin-top: 2px; font-family: var(--mono); }
   .progress-row .pr-status {
-    font-family: var(--mono); font-size: 11px;
-    text-transform: uppercase; letter-spacing: 0.05em;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em;
   }
 
   /* Status icons. pending = empty ring, running = spinner, complete = check, errored = !, cancelled = × */
@@ -767,8 +758,7 @@
     padding: 4px 5px;
     margin-bottom: 0.15rem;
     font-family: var(--mono); font-size: 10.5px;
-    color: var(--text3);
-    text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text3); letter-spacing: 0.05em;
     border-bottom: 1px solid var(--border);
     background: var(--bg2);
     border-radius: 4px 4px 0 0;
@@ -829,8 +819,7 @@
     color: var(--accent);
     border: 1px solid rgba(74,91,214,0.35);
     border-radius: 100px;
-    font-size: 9px; font-family: var(--mono);
-    text-transform: uppercase; letter-spacing: 0.05em;
+    font-size: 9px; font-family: var(--mono); letter-spacing: 0.05em;
     font-weight: 600;
   }
   .prep-custom-badge {
@@ -841,8 +830,7 @@
     color: var(--green);
     border: 1px solid rgba(34,201,122,0.35);
     border-radius: 100px;
-    font-size: 9px; font-family: var(--mono);
-    text-transform: uppercase; letter-spacing: 0.05em;
+    font-size: 9px; font-family: var(--mono); letter-spacing: 0.05em;
     font-weight: 600;
   }
 
@@ -875,8 +863,7 @@
     font-size: 1rem; letter-spacing: -0.01em;
   }
   .suggest-meta {
-    font-family: var(--mono); font-size: 11px; color: var(--text3);
-    text-transform: uppercase; letter-spacing: 0.06em;
+    font-family: var(--mono); font-size: 11px; color: var(--text3); letter-spacing: 0.06em;
   }
   .suggest-list {
     display: grid; gap: 0.35rem;
@@ -900,8 +887,7 @@
     padding: 0.5rem 0.7rem;
     border-bottom: 1px solid var(--border);
     color: var(--text2);
-    font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.05em;
+    font-weight: 600; letter-spacing: 0.05em;
     font-size: 10.5px;
     white-space: nowrap;
   }
@@ -947,8 +933,7 @@
     align-self: start;
     display: inline-block; padding: 0.18rem 0.5rem;
     border-radius: 100px;
-    font-family: var(--mono); font-size: 10px;
-    text-transform: uppercase; letter-spacing: 0.07em;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.07em;
     font-weight: 600;
     border: 1px solid transparent;
     white-space: nowrap;
@@ -986,8 +971,7 @@
     margin-bottom: 0.85rem;
   }
   .schema-bar label {
-    font-size: 10px; color: var(--text3);
-    text-transform: uppercase; letter-spacing: 0.06em;
+    font-size: 10px; color: var(--text3); letter-spacing: 0.06em;
     font-family: var(--mono);
   }
   .schema-bar select { min-width: 130px; }
@@ -1299,7 +1283,7 @@
   <!-- Sidebar (auto-mounts on DOMContentLoaded) -->
   <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 
   <!-- Toast -->
   <div id="toast"></div>
@@ -4380,11 +4364,11 @@
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('data-quality');</script>
 </body>
 </html>

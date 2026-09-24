@@ -175,13 +175,13 @@
       '.cyg-a-note-h{font-size:14px;color:var(--color-neutral-700);line-height:1.5}',
       /* the tabs: the console strip */
       '.cyg-a-tabs{display:flex;gap:0;border-bottom:1px solid var(--color-divider);margin-bottom:22px;overflow-x:auto}',
-      '.cyg-a-tab{border:0;background:none;padding:8px 14px 9px;cursor:pointer;color:var(--color-neutral-600);border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--font-heading);font-weight:600;font-size:16px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;line-height:1.2}',
+      '.cyg-a-tab{border:0;background:none;padding:8px 14px 9px;cursor:pointer;color:var(--color-neutral-600);border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--font-heading);font-weight:600;font-size:16px;letter-spacing:0;white-space:nowrap;line-height:1.2}',
       '.cyg-a-tab:hover{color:var(--color-text)}',
       '.cyg-a-tab[aria-selected="true"]{color:var(--color-text);border-color:var(--color-accent)}',
       /* the integrity band */
       '.cyg-a-band{padding:16px 20px;display:flex;align-items:flex-start;gap:28px;flex-wrap:wrap;margin:0 0 22px}',
-      '.cyg-a-band .k{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600)}',
-      '.cyg-a-band .v{font-family:var(--font-heading);font-weight:600;font-size:22px;line-height:1.05;text-transform:uppercase;margin-top:6px;color:var(--color-text);font-variant-numeric:tabular-nums}',
+      '.cyg-a-band .k{font-size:13px;letter-spacing:0;color:var(--color-neutral-600)}',
+      '.cyg-a-band .v{font-family:var(--font-heading);font-weight:600;font-size:22px;line-height:1.05;margin-top:6px;color:var(--color-text);font-variant-numeric:tabular-nums}',
       '.cyg-a-band .v.ok{color:var(--state-ok)}.cyg-a-band .v.fail{color:var(--state-fail)}.cyg-a-band .v.dim{color:var(--color-neutral-600)}',
       '.cyg-a-band .v.plain{text-transform:none;font-family:var(--font-body);font-weight:400;font-size:18px;margin-top:8px}',
       '.cyg-a-band .caveat{margin-left:auto;max-width:42ch;font-size:14px;line-height:1.5;color:var(--color-neutral-700);align-self:flex-end}',
@@ -193,7 +193,7 @@
       '.cyg-a-status .txt{flex:1;min-width:240px}',
       '.cyg-a-status.paused .cyg-a-seg button.on{color:var(--state-warn)}',
       '.cyg-a-status.off .cyg-a-seg button.on{color:var(--state-fail)}',
-      '.cyg-a-pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;line-height:1.4;border:1px solid var(--color-divider);color:var(--color-neutral-700);white-space:nowrap}',
+      '.cyg-a-pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0;padding:2px 8px;line-height:1.4;border:1px solid var(--color-divider);color:var(--color-neutral-700);white-space:nowrap}',
       '.cyg-a-p-green{color:var(--state-ok);border-color:var(--state-ok)}',
       '.cyg-a-p-amber{color:var(--state-warn);border-color:var(--state-warn)}',
       '.cyg-a-p-red{color:var(--state-fail);border-color:var(--state-fail)}',
@@ -206,14 +206,14 @@
       '.cyg-a-always{font-size:13px;color:var(--color-neutral-700);display:flex;gap:8px;align-items:flex-start;max-width:52ch}',
       '.cyg-a-always .ic{flex:none;margin-top:2px}',
       '.cyg-a-seg{display:inline-flex;border:1px solid var(--color-divider)}',
-      '.cyg-a-seg button{border:0;background:transparent;padding:7px 16px;cursor:pointer;font-family:var(--font-heading);font-weight:600;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);display:flex;align-items:center;gap:7px;line-height:1.2}',
+      '.cyg-a-seg button{border:0;background:transparent;padding:7px 16px;cursor:pointer;font-family:var(--font-heading);font-weight:600;font-size:14px;letter-spacing:0;color:var(--color-neutral-600);display:flex;align-items:center;gap:7px;line-height:1.2}',
       '.cyg-a-seg button:hover:not(:disabled){color:var(--color-text)}',
       '.cyg-a-seg button:disabled{opacity:.5;cursor:not-allowed}',
       '.cyg-a-seg button.on{background:var(--color-accent-900);color:var(--color-bg)}',
       /* the four measures */
       '.cyg-a-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--color-divider);border:1px solid var(--color-divider);margin-bottom:22px}',
       '.cyg-a-kpi{padding:14px 18px 16px;background:var(--color-bg)}',
-      '.cyg-a-kpi .l{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600)}',
+      '.cyg-a-kpi .l{font-size:13px;letter-spacing:0;color:var(--color-neutral-600)}',
       '.cyg-a-kpi .v{font-family:var(--font-heading);font-weight:600;font-size:32px;line-height:.95;margin-top:8px;font-variant-numeric:tabular-nums;color:var(--color-text)}',
       '.cyg-a-kpi .d{font-size:13px;color:var(--color-neutral-700);margin-top:6px}',
       /* events: the filter row and the table */
@@ -226,7 +226,7 @@
          the place name, not a second copy of it, so it is small and grey. */
       '.cyg-a-note{font-size:13px;color:var(--color-neutral-700);line-height:1.6;margin:12px 0 0;max-width:70ch}',
       '.cyg-a-note.err{color:var(--state-fail)}',
-      '.cyg-a-cc{margin-left:7px;font-size:11px;letter-spacing:.06em;color:var(--color-neutral-600);' +
+      '.cyg-a-cc{margin-left:7px;font-size:11px;letter-spacing:0;color:var(--color-neutral-600);' +
         'border:1px solid var(--color-divider);padding:1px 5px;vertical-align:1px}',
       '.cyg-a-sp{flex:1}',
       '.cyg-a-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}',
@@ -236,7 +236,7 @@
       '.cyg-a-card{border:1px solid var(--color-divider);background:transparent}',
       '.cyg-a-tw{overflow-x:auto}',
       '.cyg-a-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.4}',
-      '.cyg-a-table th{text-align:left;font-family:var(--font-body);font-weight:400;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 60%,transparent);background:transparent;padding:8px 10px;border-bottom:1px solid var(--color-divider);white-space:nowrap}',
+      '.cyg-a-table th{text-align:left;font-family:var(--font-body);font-weight:400;font-size:11px;letter-spacing:0;color:color-mix(in srgb,var(--color-text) 60%,transparent);background:transparent;padding:8px 10px;border-bottom:1px solid var(--color-divider);white-space:nowrap}',
       '.cyg-a-table th.r,.cyg-a-table td.r{text-align:right}',
       '.cyg-a-table td{padding:8px 10px;border-bottom:1px solid var(--color-divider);vertical-align:top;color:var(--color-text)}',
       /* The filter row. Sticky is deliberate: the whole point of putting a
@@ -259,7 +259,7 @@
       '.cyg-a-when small{display:block;color:var(--color-neutral-600);font-size:13px}',
       '.cyg-a-who{min-width:160px;word-break:break-all}',
       '.cyg-a-who small{display:block;color:var(--color-neutral-600);font-size:13px}',
-      '.cyg-a-cat{font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;line-height:1.4;border:1px solid var(--color-divider);color:var(--color-neutral-700);white-space:nowrap;display:inline-block}',
+      '.cyg-a-cat{font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0;padding:2px 8px;line-height:1.4;border:1px solid var(--color-divider);color:var(--color-neutral-700);white-space:nowrap;display:inline-block}',
       '.cyg-a-cat.prod{color:var(--state-fail);border-color:var(--state-fail)}',
       '.cyg-a-act{font-family:var(--mono);font-size:12px;color:var(--color-text);white-space:nowrap}',
       '.cyg-a-what .s{color:var(--color-neutral-700);font-size:13px;margin-top:2px}',
@@ -281,18 +281,18 @@
       '.cyg-a-drawer.on{transform:none}',
       '@media (prefers-reduced-motion:reduce){.cyg-a-drawer{transition:none}}',
       '.cyg-a-dh{padding:18px 20px;border-bottom:1px solid var(--color-divider);display:flex;gap:12px;align-items:flex-start}',
-      '.cyg-a-dh h2{margin:0;font-size:22px;font-family:var(--font-heading);font-weight:600;text-transform:uppercase;line-height:1.05;word-break:break-all}',
+      '.cyg-a-dh h2{margin:0;font-size:22px;font-family:var(--font-heading);font-weight:600;line-height:1.05;word-break:break-all}',
       '.cyg-a-dh p{margin:6px 0 0;color:var(--color-neutral-700);font-size:14px}',
       '.cyg-a-x{margin-left:auto;border:0;background:none;font-size:20px;cursor:pointer;color:var(--color-neutral-700);line-height:1;padding:0 4px}',
       '.cyg-a-db{padding:16px 20px;overflow:auto;flex:1}',
       '.cyg-a-kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:14px;margin-bottom:18px}',
       '.cyg-a-kv dt{color:var(--color-neutral-700)}.cyg-a-kv dd{margin:0;word-break:break-word}',
-      '.cyg-a-db h4{font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--color-neutral-700);margin:0 0 8px}',
+      '.cyg-a-db h4{font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:0;color:var(--color-neutral-700);margin:0 0 8px}',
       '.cyg-a-diff{border:1px solid var(--color-divider);overflow:hidden;margin-bottom:18px;font-family:var(--mono);font-size:12px}',
       '.cyg-a-diff .row{display:grid;grid-template-columns:130px 1fr 1fr;border-bottom:1px solid var(--color-divider)}',
       '.cyg-a-diff .row:last-child{border:0}',
       '.cyg-a-diff .row>div{padding:7px 10px;word-break:break-word}',
-      '.cyg-a-diff .hd{background:var(--color-neutral-100);font-family:var(--font-body);font-size:11px;color:var(--color-neutral-700);letter-spacing:.08em}',
+      '.cyg-a-diff .hd{background:var(--color-neutral-100);font-family:var(--font-body);font-size:11px;color:var(--color-neutral-700);letter-spacing:0}',
       '.cyg-a-diff .b{color:var(--state-fail)}',
       '.cyg-a-diff .a{color:var(--state-ok)}',
       '.cyg-a-hash{font-family:var(--mono);font-size:12px;background:var(--color-neutral-100);border:1px solid var(--color-divider);padding:10px;color:var(--color-neutral-700);word-break:break-all;line-height:1.7}',
@@ -301,7 +301,7 @@
       '.cyg-a-modal{position:fixed;inset:0;display:none;place-items:center;background:var(--modal-scrim);z-index:1500;padding:16px}',
       '.cyg-a-modal.on{display:grid}',
       '.cyg-a-mbox{background:var(--color-bg);border:1px solid var(--color-divider);width:min(460px,100%);padding:20px;box-shadow:var(--shadow-strong)}',
-      '.cyg-a-mbox h3{margin:0 0 6px;font-family:var(--font-heading);font-weight:600;font-size:22px;text-transform:uppercase;line-height:1.05}',
+      '.cyg-a-mbox h3{margin:0 0 6px;font-family:var(--font-heading);font-weight:600;font-size:22px;line-height:1.05}',
       '.cyg-a-mbox p{color:var(--color-neutral-800);margin:0 0 14px;font-size:14px;line-height:1.5}',
       '.cyg-a-mbox label{display:block;font-size:13px;color:var(--color-neutral-700);margin:10px 0 5px}',
       '.cyg-a-mbox textarea,.cyg-a-mbox select,.cyg-a-mbox input[type=text]{width:100%;border:1px solid var(--color-divider);padding:8px 10px;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:14px}',
@@ -312,7 +312,7 @@
       /* settings, integrity, retention */
       '.cyg-a-grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start}',
       '.cyg-a-pad{padding:18px 20px;margin-bottom:26px}',
-      '.cyg-a-pad h3{margin:0 0 4px;font-family:var(--font-heading);font-weight:600;font-size:17px;text-transform:uppercase;line-height:1.2}',
+      '.cyg-a-pad h3{margin:0 0 4px;font-family:var(--font-heading);font-weight:600;font-size:17px;line-height:1.2}',
       '.cyg-a-pad>p{margin:0 0 14px;color:var(--color-neutral-800);font-size:14px;line-height:1.5}',
       '.cyg-a-cat-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--color-divider)}',
       '.cyg-a-cat-row:first-of-type{border-top:0}',
@@ -321,7 +321,7 @@
       /* A locked category is a fact, not a control: a word and a note, never
          a disabled switch. A disabled switch invites a click that can never
          work. */
-      '.cyg-a-locked{font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-700);border:1px solid var(--color-divider);padding:2px 8px;white-space:nowrap;flex:none}',
+      '.cyg-a-locked{font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0;color:var(--color-neutral-700);border:1px solid var(--color-divider);padding:2px 8px;white-space:nowrap;flex:none}',
       '.cyg-a-tg{position:relative;width:34px;height:18px;flex:none;display:inline-block}',
       '.cyg-a-tg input{position:absolute;opacity:0;width:34px;height:18px;margin:0;cursor:pointer}',
       '.cyg-a-tg span{position:absolute;inset:0;background:var(--color-neutral-200);border:1px solid var(--color-divider);transition:background .15s;pointer-events:none}',
@@ -510,7 +510,7 @@
         'compare that entry against the archive and the retention checkpoint, and record the finding as an incident.</div>'
       : '<div class="caveat">A simultaneous append can race the head. A break is reported, never hidden — state that in any evidence pack.</div>';
     return '<div class="cx-blueprint cyg-a-band" id="cyg-a-band">' +
-      '<span class="cx-corner tl"></span><span class="cx-corner tr"></span><span class="cx-corner bl"></span><span class="cx-corner br"></span>' +
+      '' +
       '<div><div class="k">Chain</div>' + chain + '</div>' +
       '<div><div class="k">Last verified</div><div class="v plain">' + last + '</div></div>' +
       '<div><div class="k">Capture</div><div class="v plain">' + cats + ' categor' + (cats === 1 ? 'y' : 'ies') +

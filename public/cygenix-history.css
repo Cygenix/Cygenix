@@ -98,7 +98,6 @@
   font-size: 9px;
   padding: 1px 5px;
   border-radius: 3px;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .cygenix-history-modal .ch-label.auto       { background: var(--accent-glow, rgba(109,169,255,0.15)); color: var(--accent, #6da9ff); }
@@ -151,8 +150,7 @@
   padding: 8px 14px;
   font-family: var(--mono, monospace);
   font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing:0;
   color: var(--text3, #8a8a8a);
   background: var(--bg3, rgba(255,255,255,0.03));
   border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));

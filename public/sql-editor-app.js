@@ -1123,9 +1123,9 @@ function sqlEdOfferCollationFix() {
       + (res.skipped ? ' ' + res.skipped + ' other finding' + (res.skipped === 1 ? '' : 's')
           + ' cannot be fixed by adding a clause and are left alone.' : '')
       + ' Nothing is written until you choose Apply.</p>'
-      + '<div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600,var(--text3,#777));margin-bottom:4px">Before</div>'
+      + '<div style="font-size:12px;letter-spacing:0;color:var(--color-neutral-600,var(--text3,#777));margin-bottom:4px">Before</div>'
       + '<div style="' + pane + '">' + esc(before) + '</div>'
-      + '<div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600,var(--text3,#777));margin:12px 0 4px">After</div>'
+      + '<div style="font-size:12px;letter-spacing:0;color:var(--color-neutral-600,var(--text3,#777));margin:12px 0 4px">After</div>'
       + '<div style="' + pane + '">' + esc(res.sql) + '</div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
       + '<button type="button" class="btn btn-ghost btn-sm" id="sqled-collation-cancel">Cancel</button>'
@@ -1999,7 +1999,7 @@ function addAIMessage(text, role, parseSQL=false) {
     let html = esc(text).replace(/```sql([\s\S]*?)```/gi, (match, sql) => {
       const sqlId = 'sql_'+Date.now()+'_'+Math.random().toString(36).slice(2,5);
       window['_aiSql_'+sqlId] = sql.trim();
-      return `<pre><span style="color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:0.05em">SQL</span>\n${esc(sql.trim())}<button class="apply-btn" onclick="applySQLFromAI('${sqlId}')">↑ Apply to editor</button></pre>`;
+      return `<pre><span style="color:var(--text3);font-size:9px;letter-spacing:0.05em">SQL</span>\n${esc(sql.trim())}<button class="apply-btn" onclick="applySQLFromAI('${sqlId}')">↑ Apply to editor</button></pre>`;
     });
     // Convert newlines outside code blocks
     html = html.replace(/(?<!<\/pre>)\n/g, '<br>');
@@ -2111,7 +2111,7 @@ function renderLinkedServersMenu(){
   }
 
   menu.innerHTML = `
-    <div style="padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em">
+    <div style="padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;font-weight:500;color:var(--text3);letter-spacing:0.08em">
       Applied linked servers
     </div>
     ${servers.map(s => {
@@ -3050,7 +3050,7 @@ function openDrivePicker(files) {
     const isJob = /\/Jobs\//.test(f.path);
     const folder = f.path.replace(/\/[^/]*$/, '');
     return '<div class="dp-row" data-id="' + f.id + '" tabindex="0" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .7rem;border-radius:8px;cursor:pointer">'
-      + '<span style="font-size:9px;font-family:var(--mono);text-transform:uppercase;background:' + (isJob ? 'rgba(74,91,214,.14)' : 'var(--bg4)') + ';color:' + (isJob ? 'var(--accent)' : 'var(--text2)') + ';padding:2px 6px;border-radius:4px">' + (isJob ? 'JOB' : 'SQL') + '</span>'
+      + '<span style="font-size:9px;font-family:var(--mono);background:' + (isJob ? 'rgba(74,91,214,.14)' : 'var(--bg4)') + ';color:' + (isJob ? 'var(--accent)' : 'var(--text2)') + ';padding:2px 6px;border-radius:4px">' + (isJob ? 'JOB' : 'SQL') + '</span>'
       + '<span class="dp-name" style="flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(f.name) + '</span>'
       + '<span style="font-size:11px;color:var(--text3);white-space:nowrap">' + esc(folder) + '</span></div>';
   }).join('') : '<div style="padding:1.6rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">No .sql files in the Drive yet.<br>Save one with “Save to Drive…”, or use “To Drive” on a job.</div>';

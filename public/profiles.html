@@ -27,9 +27,6 @@
 <meta name="theme-color" content="#FFFFFF">
 <meta name="description" content="Connection profiles: governed source/target pairings every artifact binds to.">
 <title>Cygenix – Connection Profiles</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -55,7 +52,7 @@ body.cyg-collapsed{padding-left:54px}
 .p-right{margin-left:auto;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap}
 .note{padding:0.55rem 0.9rem;font-size:11.5px;color:var(--text2);border-top:0.5px solid var(--border);line-height:1.55}
 table{border-collapse:collapse;width:100%;font-size:12px}
-th{font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);font-weight:500;text-align:left;padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
+th{font-size:10.5px;letter-spacing:0.05em;color:var(--text2);font-weight:500;text-align:left;padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
 td{padding:0.5rem 0.7rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 .tw{overflow-x:auto}
@@ -70,7 +67,7 @@ tr:last-child td{border-bottom:none}
 select.inp{cursor:pointer}
 .inp.mini{width:110px;display:inline-block}
 .fld{margin-bottom:0.6rem}
-.fld label{display:block;font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);margin-bottom:3px;font-weight:500}
+.fld label{display:block;font-size:10.5px;letter-spacing:0.05em;color:var(--text2);margin-bottom:3px;font-weight:500}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0.6rem}
 @media(max-width:900px){.grid3,.grid2{grid-template-columns:1fr}}
@@ -253,13 +250,13 @@ tr.cp-inuse-row td{background:var(--green-bg)}
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
 <script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
 <script src="/cygenix-profile-apply.js?v=2928c2fb5a" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 
 <script>
 'use strict';
@@ -828,11 +825,11 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('profiles');</script>
 </body>
 </html>

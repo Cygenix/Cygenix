@@ -36,9 +36,6 @@
 })();
 </script>
 <title>Cygenix – Data Insights</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -71,7 +68,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 /* FORM */
 .form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.55rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
 .form-input:focus{border-color:var(--accent)}
-.form-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
+.form-label{font-size:11px;font-weight:500;color:var(--text3);letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
 
 /* PANELS */
 .panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem}
@@ -97,7 +94,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 /* INSIGHT SECTIONS */
 .insight-section{margin-bottom:1.25rem}
 .insight-section:last-child{margin-bottom:0}
-.insight-section-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.625rem;display:flex;align-items:center;gap:0.4rem}
+.insight-section-title{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.07em;margin-bottom:0.625rem;display:flex;align-items:center;gap:0.4rem}
 .insight-text{font-size:13px;color:var(--text2);line-height:1.8}
 
 /* TAGS */
@@ -111,7 +108,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 
 /* FIELD TABLE */
 .field-table{width:100%;border-collapse:collapse;font-size:11px}
-.field-table th{text-align:left;padding:0.4rem 0.6rem;font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;background:var(--bg3);border-bottom:0.5px solid var(--border)}
+.field-table th{text-align:left;padding:0.4rem 0.6rem;font-size:9px;font-weight:500;color:var(--text3);letter-spacing:0.07em;background:var(--bg3);border-bottom:0.5px solid var(--border)}
 .field-table td{padding:0.4rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);vertical-align:top;font-family:var(--mono)}
 .field-table tr:last-child td{border-bottom:none}
 .field-table tr:hover td{background:rgba(255,255,255,0.02)}
@@ -234,7 +231,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 .dp-drawer-close:hover{color:var(--text)}
 .dp-section{margin-bottom:1.5rem}
 .dp-section:last-child{margin-bottom:0}
-.dp-section h4{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem}
+.dp-section h4{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.07em;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem}
 .dp-ref-list{display:flex;flex-direction:column;gap:0.35rem}
 .dp-ref{display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.6rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);font-size:11px;font-family:var(--mono);transition:background 0.1s}
 .dp-ref:hover{background:var(--bg4);cursor:pointer}
@@ -252,7 +249,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 .dp-swimlanes-panel{background:linear-gradient(180deg,var(--bg2),var(--bg2)),linear-gradient(135deg,rgba(107,78,142,0.04),rgba(23,130,124,0.04));border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem;position:relative;overflow:hidden}
 .dp-swimlanes-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--teal),var(--purple));opacity:0.5}
 .dp-swim-grid{display:grid;grid-template-columns:140px 1fr 1fr;gap:0.5rem;align-items:start;font-size:11px}
-.dp-swim-header{display:contents;font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);font-family:var(--mono)}
+.dp-swim-header{display:contents;font-size:10px;letter-spacing:0.07em;color:var(--text3);font-family:var(--mono)}
 .dp-swim-header > div{padding:0.4rem 0.6rem;border-bottom:0.5px solid var(--border)}
 .dp-swim-row{display:contents}
 .dp-swim-row > div{padding:0.6rem;border-bottom:0.5px solid var(--border);min-height:42px}
@@ -306,7 +303,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 <div id="cyg-sidebar-mount" data-active="insights"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
@@ -377,17 +374,17 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
   <!-- We just SHOW what's configured and offer a "change" link.                          -->
   <div class="panel" style="display:flex;align-items:center;gap:1rem;padding:0.875rem 1.25rem;flex-wrap:wrap">
     <div style="display:flex;align-items:center;gap:0.4rem;font-size:12px">
-      <span style="color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-size:10px;font-family:var(--mono)">Source</span>
+      <span style="color:var(--text3);letter-spacing:0.06em;font-size:10px;font-family:var(--mono)">Source</span>
       <span id="conn-src-status" style="font-family:var(--mono);color:var(--text3)">…</span>
     </div>
     <div style="width:1px;height:18px;background:var(--border)"></div>
     <div style="display:flex;align-items:center;gap:0.4rem;font-size:12px">
-      <span style="color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-size:10px;font-family:var(--mono)">Target</span>
+      <span style="color:var(--text3);letter-spacing:0.06em;font-size:10px;font-family:var(--mono)">Target</span>
       <span id="conn-tgt-status" style="font-family:var(--mono);color:var(--text3)">…</span>
     </div>
     <div style="width:1px;height:18px;background:var(--border)"></div>
     <div style="display:flex;align-items:center;gap:0.5rem;flex:1;min-width:240px">
-      <span style="color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-size:10px;font-family:var(--mono);flex-shrink:0">API key</span>
+      <span style="color:var(--text3);letter-spacing:0.06em;font-size:10px;font-family:var(--mono);flex-shrink:0">API key</span>
       <div class="api-row" style="flex:1;max-width:340px">
         <input type="password" id="api-key" class="api-input" placeholder="sk-ant-…" oninput="checkReady()" style="font-size:11px;padding:0.3rem 0.6rem">
         <button class="btn btn-ghost btn-sm" onclick="toggleApiKey()" style="flex-shrink:0;font-size:11px"><i class="ic ic-eye"></i> </button>
@@ -1461,7 +1458,7 @@ function renderMigrationMap(map, card){
         <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">${esc(srcSchema?.database||'Source')} → ${esc(tgtSchema?.database||'Target')} · ${(map.tableMappings||[]).length} table mappings</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:1.1rem;font-weight:700;color:${complexCls(map.estimatedComplexity)};font-family:var(--mono);text-transform:uppercase">${map.estimatedComplexity||'—'}</div>
+        <div style="font-size:1.1rem;font-weight:700;color:${complexCls(map.estimatedComplexity)};font-family:var(--mono);">${map.estimatedComplexity||'—'}</div>
         <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">COMPLEXITY</div>
       </div>
     </div>
@@ -1483,7 +1480,7 @@ function renderMigrationMap(map, card){
           <span><i class="ic-dot" style="color:var(--green)"></i> High confidence</span><span><i class="ic-dot" style="color:var(--amber)"></i> Medium</span><span><i class="ic-dot" style="color:var(--amber)"></i> Low</span><span><i class="ic-dot" style="color:var(--red)"></i> No match</span>
         </div>
         <div style="max-height:360px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r)">
-          <div style="display:grid;grid-template-columns:1fr 100px 1fr 1fr;gap:0.5rem;padding:0.35rem 0.5rem;background:var(--bg3);font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;position:sticky;top:0">
+          <div style="display:grid;grid-template-columns:1fr 100px 1fr 1fr;gap:0.5rem;padding:0.35rem 0.5rem;background:var(--bg3);font-size:9px;font-family:var(--mono);color:var(--text3);letter-spacing:0.05em;position:sticky;top:0">
             <div style="text-align:right">Source table</div><div style="text-align:center">Match</div><div>Target table</div><div>Notes</div>
           </div>
           ${mappingsHtml}
@@ -3076,7 +3073,7 @@ function dpRenderResults() {
   tabs.innerHTML = haveBoth
     ? ['source','target'].map(r => {
         const active = r === dpActiveRole;
-        return `<button onclick="dpSwitchRole('${r}')" style="background:${active?'var(--purple-bg)':'var(--bg3)'};color:${active?'var(--purple)':'var(--text2)'};border:0.5px solid ${active?'rgba(107,78,142,0.4)':'var(--border2)'};border-radius:var(--r);padding:0.35rem 0.875rem;font-size:11px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">${r}: ${dpState[r].profile.overview.database}</button>`;
+        return `<button onclick="dpSwitchRole('${r}')" style="background:${active?'var(--purple-bg)':'var(--bg3)'};color:${active?'var(--purple)':'var(--text2)'};border:0.5px solid ${active?'rgba(107,78,142,0.4)':'var(--border2)'};border-radius:var(--r);padding:0.35rem 0.875rem;font-size:11px;cursor:pointer;font-family:var(--mono);letter-spacing:0.05em">${r}: ${dpState[r].profile.overview.database}</button>`;
       }).join('')
     : '';
 
@@ -3084,11 +3081,11 @@ function dpRenderResults() {
   const ov = profile.overview;
   const compColor = { low:'var(--green)', medium:'var(--amber)', high:'var(--red)', very_high:'var(--red)' }[ov.migrationComplexity] || 'var(--text2)';
   document.getElementById('dp-overview').innerHTML =
-    `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem">Schema overview · <span style="color:var(--teal);font-family:var(--mono)">${esc(ov.database)}</span></div>` +
+    `<div style="font-size:11px;color:var(--text3);letter-spacing:0.07em;margin-bottom:0.5rem">Schema overview · <span style="color:var(--teal);font-family:var(--mono)">${esc(ov.database)}</span></div>` +
     `<div style="margin-bottom:0.6rem">${esc(ov.overview)}</div>` +
     (ov.domain ? `<div style="font-size:11px;color:var(--text3);margin-top:0.5rem">Domain: <span style="color:var(--text2)">${esc(ov.domain)}</span></div>` : '') +
     (ov.coreEntities && ov.coreEntities.length ? `<div style="font-size:11px;color:var(--text3);margin-top:0.3rem">Core entities: ${ov.coreEntities.map(e=>`<span style="color:var(--teal);font-family:var(--mono);margin-right:0.5rem">${esc(e)}</span>`).join('')}</div>` : '') +
-    (ov.migrationComplexity ? `<div style="font-size:11px;color:var(--text3);margin-top:0.3rem">Migration complexity: <span style="color:${compColor};font-weight:600;text-transform:uppercase">${esc(ov.migrationComplexity)}</span> — ${esc(ov.complexityRationale||'')}</div>` : '');
+    (ov.migrationComplexity ? `<div style="font-size:11px;color:var(--text3);margin-top:0.3rem">Migration complexity: <span style="color:${compColor};font-weight:600;">${esc(ov.migrationComplexity)}</span> — ${esc(ov.complexityRationale||'')}</div>` : '');
 
   // Tier bar
   const tierBar = document.getElementById('dp-tier-bar');
@@ -3209,14 +3206,14 @@ function dpOpenDrawer(fullName) {
       <h4>↙ Called by · inbound references (${declaredInbound.length + inferredInbound.length})</h4>
       <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Other tables that reference <span style="color:var(--teal);font-family:var(--mono)">${esc(t.fullName)}</span> — what propagates into this table from elsewhere.</div>
       ${refHtml(declaredInbound, 'declared inbound')}
-      ${inferredInbound.length ? `<div style="margin-top:0.5rem;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Inferred (from column-name patterns)</div>${refHtml(inferredInbound, 'inferred inbound')}` : ''}
+      ${inferredInbound.length ? `<div style="margin-top:0.5rem;font-size:10px;color:var(--text3);letter-spacing:0.05em">Inferred (from column-name patterns)</div>${refHtml(inferredInbound, 'inferred inbound')}` : ''}
     </div>
 
     <div class="dp-section">
       <h4>↗ Propagates from · outbound references (${(t.declaredFKs||[]).length + (t.inferredFKs||[]).length})</h4>
       <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Tables that <span style="color:var(--teal);font-family:var(--mono)">${esc(t.fullName)}</span> references — what feeds into it.</div>
       ${refHtml(t.declaredFKs || [], 'declared outbound')}
-      ${(t.inferredFKs||[]).length ? `<div style="margin-top:0.5rem;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Inferred (from column-name patterns)</div>${refHtml(t.inferredFKs, 'inferred outbound')}` : ''}
+      ${(t.inferredFKs||[]).length ? `<div style="margin-top:0.5rem;font-size:10px;color:var(--text3);letter-spacing:0.05em">Inferred (from column-name patterns)</div>${refHtml(t.inferredFKs, 'inferred outbound')}` : ''}
     </div>
 
     <div class="dp-section">
@@ -3535,11 +3532,11 @@ function escapeHtmlAttr(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&'
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('insights');</script>
 </body>
 </html>

@@ -1184,7 +1184,7 @@
     '#cyg-diag .dg-lastrun{font-size:13px;color:var(--color-neutral-600);margin-right:6px;white-space:nowrap}',
     '#cyg-diag .dg-fmt{height:32px;border:1px solid var(--color-neutral-300);background:var(--color-bg);color:var(--color-text);font:inherit;font-size:13px;padding:0 8px;border-radius:0}',
     '#cyg-diag .dg-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;padding:14px 18px;margin-bottom:22px}',
-    '#cyg-diag .dg-bar label{font-family:var(--font-heading);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);margin-right:6px}',
+    '#cyg-diag .dg-bar label{font-family:var(--font-heading);font-size:12px;letter-spacing:0;color:var(--color-neutral-600);margin-right:6px}',
     '#cyg-diag .dg-bar select{height:32px;min-width:220px;border:1px solid var(--color-neutral-300);background:var(--color-bg);color:var(--color-text);font:inherit;font-size:14px;padding:0 8px;border-radius:0}',
     '#cyg-diag .dg-conn{font-size:13px;color:var(--color-text)}',
     '#cyg-diag .dg-conn .mono{font-family:var(--mono);font-size:12px}',
@@ -1208,15 +1208,15 @@
     '#cyg-diag .dg-out{margin-top:6px;font-size:13px;line-height:1.5}',
     '#cyg-diag .dg-out:empty{display:none}',
     '#cyg-diag .dg-part{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}',
-    '#cyg-diag .dg-plabel{font-family:var(--font-heading);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-600);min-width:52px}',
+    '#cyg-diag .dg-plabel{font-family:var(--font-heading);font-size:12px;letter-spacing:0;color:var(--color-neutral-600);min-width:52px}',
     '#cyg-diag .dg-summary{color:var(--color-text)}',
     '#cyg-diag .dg-action{margin-top:2px;color:var(--color-text)}',
     '#cyg-diag .dg-action b{font-weight:600}',
     '#cyg-diag details.dg-details{margin-top:2px}',
-    '#cyg-diag details.dg-details summary{cursor:pointer;color:var(--color-neutral-600);font-size:12px;letter-spacing:.04em;text-transform:uppercase;font-family:var(--font-heading)}',
+    '#cyg-diag details.dg-details summary{cursor:pointer;color:var(--color-neutral-600);font-size:12px;letter-spacing:.04em;font-family:var(--font-heading)}',
     '#cyg-diag details.dg-details pre{margin:4px 0 0;padding:8px 10px;background:var(--color-neutral-100);font-family:var(--mono);font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--color-text)}',
     '#cyg-diag .dg-status{display:flex;justify-content:flex-end;padding-top:1px}',
-    '#cyg-diag .dg-st{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-heading);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);white-space:nowrap}',
+    '#cyg-diag .dg-st{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-heading);font-size:12px;letter-spacing:0;color:var(--color-neutral-600);white-space:nowrap}',
     '#cyg-diag .dg-st::before{content:"";width:8px;height:8px;background:var(--color-neutral-400);flex:none}',
     '#cyg-diag .dg-st-pass{color:var(--state-ok)}#cyg-diag .dg-st-pass::before{background:var(--state-ok)}',
     '#cyg-diag .dg-st-warn{color:var(--state-warn)}#cyg-diag .dg-st-warn::before{background:var(--state-warn)}',
@@ -1252,7 +1252,7 @@
     h += '<button class="cx-btn cx-btn-primary" type="button" id="dg-run">Run selected (0)</button>';
     h += '</div></div>';
 
-    h += '<div class="cx-blueprint dg-bar" id="dg-bar"><span class="cx-corner tl"></span><span class="cx-corner tr"></span><span class="cx-corner bl"></span><span class="cx-corner br"></span>';
+    h += '<div class="cx-blueprint dg-bar" id="dg-bar">';
     h += '<div><label for="dg-profile">Profile</label><select id="dg-profile"></select> <span class="cx-tag" id="dg-env" hidden></span></div>';
     h += '<div class="dg-conn" id="dg-src"></div><div class="dg-conn" id="dg-tgt"></div>';
     h += '<div><label>Run against</label><span class="cx-seg" id="dg-side" role="group" aria-label="Run against">';

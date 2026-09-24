@@ -25,14 +25,14 @@
   .cyg-nav-logo a{font-size:1.05rem;font-weight:700;color:var(--text);text-decoration:none;letter-spacing:-0.02em}
   .cyg-nav-logo a span{color:var(--accent)}
   .cyg-nav-section{margin-bottom:0.25rem}
-  .cyg-nav-label{font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0.75rem 1.25rem 0.25rem;display:block}
+  .cyg-nav-label{font-size:9px;font-weight:600;color:var(--text3);letter-spacing:0.1em;padding:0.75rem 1.25rem 0.25rem;display:block}
   .cyg-nav-item{display:flex;align-items:center;gap:9px;padding:0.42rem 1.25rem;font-size:12.5px;color:var(--text2);cursor:pointer;transition:all 0.12s;border-left:2px solid transparent;text-decoration:none;white-space:nowrap;overflow:hidden}
   .cyg-nav-item:hover{color:var(--text);background:var(--hover-tint)}
   .cyg-nav-item.active{color:var(--accent);background:var(--accent-glow);border-left-color:var(--accent)}
   .cyg-nav-item svg{width:13px;height:13px;opacity:0.65;flex-shrink:0}
   .cyg-nav-item.active svg{opacity:1}
   .cyg-nav-count{margin-left:auto;background:var(--bg3);color:var(--text3);font-size:9px;padding:1px 5px;border-radius:100px;font-family:'IBM Plex Mono',monospace}
-  .cyg-sub-label{font-size:9px;font-weight:600;color:var(--text3);padding:0.5rem 1.25rem 0.2rem 1.1rem;text-transform:uppercase;letter-spacing:0.08em;display:flex;align-items:center;gap:0.35rem;cursor:pointer;user-select:none;transition:color 0.12s}
+  .cyg-sub-label{font-size:9px;font-weight:600;color:var(--text3);padding:0.5rem 1.25rem 0.2rem 1.1rem;letter-spacing:0.08em;display:flex;align-items:center;gap:0.35rem;cursor:pointer;user-select:none;transition:color 0.12s}
   .cyg-sub-label:hover{color:var(--text2)}
   .cyg-sub-label .cyg-chev{font-size:7px;transition:transform 0.2s;margin-left:auto;color:var(--text3)}
   .cyg-sub-label.open .cyg-chev{transform:rotate(90deg)}

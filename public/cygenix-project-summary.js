@@ -732,7 +732,6 @@
         border-radius: 3px;
         font-size: 10px;
         font-weight: 700;
-        text-transform: uppercase;
         letter-spacing: 0.05em;
       }
       .cyg-psd-badge-success { background: rgba(16,185,129,0.15); color: #10b981; }

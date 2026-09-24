@@ -324,7 +324,7 @@ function diagramSvg(model) {
   parts.push('<svg xmlns="http://www.w3.org/2000/svg" version="1.1"'
     + ' viewBox="' + r1(b.x) + ' ' + r1(b.y) + ' ' + r1(b.w) + ' ' + r1(b.h) + '"'
     + ' width="' + r1(b.w) + '" height="' + r1(b.h) + '"'
-    + ' font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif">');
+    + ' font-family="Noto Sans, Segoe UI, Helvetica, Arial, sans-serif">');
   parts.push('<title>' + xml((m.database || 'Schema') + ' — schema diagram') + '</title>');
   parts.push('<desc>' + xml(scopeSentence(m) + '. Generated ' + isoStamp(m.generatedAt)
     + ' by Cygenix Schema Explorer.') + '</desc>');

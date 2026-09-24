@@ -32,16 +32,13 @@
 })();
 </script>
 <title>Cygenix – Data Generator</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-params.js?v=32531717aa" defer></script>
 <!-- The rules about reading a real schema and planning rows for it: the FK
      graph, the insert order, what each column may hold. Pure — no DOM, no
@@ -53,7 +50,7 @@
 :root{
   /* The console palette lives in cygenix-console.css. Only what is this
      page's own is declared here. */
-  --font:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+  --font:'Noto Sans',system-ui,-apple-system,sans-serif;
 }
 html,body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.5;min-height:100vh}
 body{padding-left:216px;transition:padding-left 0.2s ease}
@@ -85,7 +82,7 @@ code,.mono{font-family:var(--mono)}
 
 /* Connection banner */
 .dg-banner{background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem}
-.dg-banner .b-title{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;font-weight:500;margin-bottom:0.25rem}
+.dg-banner .b-title{font-size:11px;color:var(--text2);letter-spacing:0.05em;font-weight:500;margin-bottom:0.25rem}
 .dg-banner .b-value{font-family:var(--mono);font-size:12px;color:var(--text)}
 .dg-banner .b-status{font-size:11px}
 .dg-banner .b-status.ok{color:var(--green)}
@@ -102,7 +99,7 @@ code,.mono{font-family:var(--mono)}
 .dg-table-header{padding:0.75rem 1rem;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none}
 .dg-table-header:hover{background:var(--bg4)}
 .dg-table-name{font-family:var(--mono);font-size:13px;font-weight:500}
-.dg-table-name .fkbadge{background:rgba(74,91,214,0.15);color:#8fa3ff;padding:1px 6px;border-radius:100px;font-size:9px;margin-left:6px;font-family:var(--font);font-weight:500;text-transform:uppercase;letter-spacing:0.05em}
+.dg-table-name .fkbadge{background:rgba(74,91,214,0.15);color:#8fa3ff;padding:1px 6px;border-radius:100px;font-size:9px;margin-left:6px;font-family:var(--font);font-weight:500;letter-spacing:0.05em}
 .dg-table-summary{font-size:11px;color:var(--text2)}
 .dg-table-body{padding:1rem;border-top:0.5px solid var(--border);display:none}
 .dg-table-body.open{display:block}
@@ -111,7 +108,7 @@ code,.mono{font-family:var(--mono)}
 
 /* Column editor */
 .dg-cols{width:100%;font-size:12px;border-collapse:collapse}
-.dg-cols th{text-align:left;color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;font-weight:500;padding:0.4rem 0.5rem;border-bottom:0.5px solid var(--border)}
+.dg-cols th{text-align:left;color:var(--text2);font-size:10px;letter-spacing:0.05em;font-weight:500;padding:0.4rem 0.5rem;border-bottom:0.5px solid var(--border)}
 .dg-cols td{padding:0.3rem 0.5rem;border-bottom:0.5px solid rgba(255,255,255,0.03)}
 .dg-cols input[type=text]{width:100%;padding:0.3rem 0.5rem;font-family:var(--mono);font-size:11px}
 .dg-cols input[type=checkbox]{cursor:pointer}
@@ -125,7 +122,7 @@ code,.mono{font-family:var(--mono)}
 
 /* Row-count row */
 .dg-rowcount{margin-top:0.75rem;padding-top:0.75rem;border-top:0.5px solid var(--border);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
-.dg-rowcount label{font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:0.05em;margin-right:0.5rem}
+.dg-rowcount label{font-size:11px;color:var(--text2);font-weight:500;letter-spacing:0.05em;margin-right:0.5rem}
 .dg-rowcount .preset{font-size:11px;padding:0.3rem 0.7rem;background:var(--bg4);border:0.5px solid var(--border);border-radius:100px;color:var(--text)}
 .dg-rowcount .preset:hover{background:var(--bg3);border-color:var(--accent)}
 .dg-rowcount .preset.active{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -174,7 +171,7 @@ code,.mono{font-family:var(--mono)}
 .dg-pick-opt{display:flex;align-items:flex-start;gap:0.45rem;font-size:11.5px;color:var(--text2);margin:0.6rem 0 0.2rem;cursor:pointer;line-height:1.5}
 .dg-pick-opt input{margin-top:2px;cursor:pointer}
 .dg-pick-list{border:0.5px solid var(--border);border-radius:8px;max-height:46vh;overflow:auto}
-.dg-pick-grp{padding:0.3rem 0.7rem;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text2);background:var(--bg3);border-bottom:0.5px solid var(--border);position:sticky;top:0}
+.dg-pick-grp{padding:0.3rem 0.7rem;font-size:10px;letter-spacing:0.06em;color:var(--text2);background:var(--bg3);border-bottom:0.5px solid var(--border);position:sticky;top:0}
 .dg-pick-row{display:flex;align-items:center;gap:0.55rem;padding:0.35rem 0.7rem;border-bottom:0.5px solid var(--border);cursor:pointer;font-family:var(--mono);font-size:11.5px;color:var(--text)}
 .dg-pick-row:hover{background:var(--bg3)}
 .dg-pick-row .rc{margin-left:auto;font-family:var(--serif);font-size:10.5px;color:var(--text2);white-space:nowrap}
@@ -212,7 +209,7 @@ code,.mono{font-family:var(--mono)}
 <div id="cyg-sidebar-mount" data-active="connections"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 
 <div id="dg-main">
 
@@ -2307,11 +2304,11 @@ document.addEventListener('DOMContentLoaded', function(){
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('data-generator');</script>
 </body>
 </html>

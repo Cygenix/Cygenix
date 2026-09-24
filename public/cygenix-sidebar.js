@@ -426,19 +426,22 @@
         z-index:50;
         background:var(--color-accent-900,#1d2d3d);color:var(--color-bg,#f2f2f3);
         display:flex;align-items:center;gap:18px;padding:0 20px 0 16px;
-        font-family:var(--font-body,'Barlow',system-ui,sans-serif);
+        font-family:var(--font-body,'Noto Sans',system-ui,-apple-system,sans-serif);
         -webkit-font-smoothing:antialiased;
       }
       .cx-mh-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;flex:0 0 auto}
       .cx-logo{width:26px;height:26px;display:block;flex:0 0 auto;border-radius:7px}
-      .cx-wordmark{font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;font-size:21px;
-        letter-spacing:.18em;text-transform:uppercase;color:var(--color-bg,#f2f2f3);line-height:1}
+      /* The wordmark keeps its tracking but not its capitals: the v2 reference
+         sets it as "Cygenix". The logo beside it still keeps its own indigo
+         gradient, which is the part that must not retheme. */
+      .cx-wordmark{font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;font-size:21px;
+        letter-spacing:0;color:var(--color-bg,#f2f2f3);line-height:1}
       .cx-mh-div{width:1px;height:24px;background:rgba(255,255,255,.25);flex:0 0 auto}
       .cx-mh-proj{display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;cursor:pointer;
         font:inherit;padding:6px 8px;min-width:0;text-align:left}
       .cx-mh-proj:hover{background:rgba(255,255,255,.06)}
       .cx-mh-proj-lbl{opacity:.7;font-size:14px;white-space:nowrap}
-      .cx-mh-proj-name{font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;font-size:17px;
+      .cx-mh-proj-name{font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;font-size:17px;
         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
       .cx-mh-proj-chev{opacity:.6;font-size:10px}
       .cx-mh-spacer{flex:1 1 auto;min-width:8px}
@@ -449,12 +452,12 @@
       .cx-mh-search::-webkit-search-cancel-button{-webkit-appearance:none}
       .cx-mh-search:focus{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px;border-color:rgba(255,255,255,.6)}
       .cx-mh-btn{height:32px;padding:0 12px;border:1px solid rgba(255,255,255,.3);background:transparent;
-        color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;
+        color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;
         font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;border-radius:0}
       .cx-mh-btn:hover{background:rgba(255,255,255,.08)}
       .cx-mh-region{font-size:14px;opacity:.8;white-space:nowrap}
       .cx-mh-av{width:30px;height:30px;border:1px solid rgba(255,255,255,.35);background:transparent;
-        color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;
+        color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;
         font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;border-radius:0;flex:0 0 auto}
       .cx-mh-av:hover{background:rgba(255,255,255,.08)}
       .cx-masthead :focus-visible{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px}
@@ -470,7 +473,7 @@
         position:fixed;left:0;bottom:0;
         top:calc(var(--cyg-hairline-h,0px) + ${MASTHEAD_H}px);
         z-index:90;
-        font-family:var(--font-body,'Barlow',system-ui,sans-serif);
+        font-family:var(--font-body,'Noto Sans',system-ui,-apple-system,sans-serif);
         -webkit-font-smoothing:antialiased;
       }
       .cyg-sidebar.collapsed{ width:${WIDTH_CLOSED}px; }
@@ -493,8 +496,8 @@
 
       .cyg-nav-section{margin:0}
       .cyg-nav-label{
-        font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;font-size:13px;line-height:1.2;
-        letter-spacing:.16em;text-transform:uppercase;color:var(--color-neutral-700,#5d5d60);
+        font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;font-size:13px;line-height:1.3;
+        letter-spacing:0;color:var(--color-neutral-700,#5d5d60);
         padding:16px 10px 5px;
       }
       .cyg-nav-item{
@@ -537,14 +540,14 @@
         background:var(--color-bg,#f2f2f3);border:1px solid var(--color-divider,rgba(29,31,32,.16));border-radius:0;
         box-shadow:var(--shadow-strong,0 12px 32px rgba(43,43,45,.22));
         padding:4px 0;display:none;
-        font-family:var(--font-body,'Barlow',system-ui,sans-serif);
+        font-family:var(--font-body,'Noto Sans',system-ui,-apple-system,sans-serif);
       }
       .cyg-user-menu.open{display:block;animation:cygMenuIn .12s ease}
       @keyframes cygMenuIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
       .cyg-user-menu-email{padding:9px 14px 7px;font-size:13px;color:var(--color-neutral-700,#5d5d60);
         white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .cyg-user-menu-label{padding:10px 14px 3px;font-family:var(--font-heading,'Barlow Condensed',sans-serif);
-        font-weight:600;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--color-neutral-700,#5d5d60)}
+      .cyg-user-menu-label{padding:10px 14px 3px;font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);
+        font-weight:600;font-size:13px;line-height:1.3;letter-spacing:0;color:var(--color-neutral-700,#5d5d60)}
       .cyg-user-menu-sep{height:1px;background:var(--color-divider,rgba(29,31,32,.16));margin:4px 0}
       .cyg-user-menu-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
         padding:8px 14px;border:none;background:none;cursor:pointer;font:inherit;font-size:14px;
@@ -571,7 +574,7 @@
       .cyg-prof-id{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
       .cyg-prof-env{
         flex:0 0 auto;padding:1px 6px;border-radius:0;
-        font-family:var(--font-heading,'Barlow Condensed',sans-serif);font-weight:600;font-size:12px;letter-spacing:.1em;
+        font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;font-size:12px;letter-spacing:0;
         border:1px solid var(--color-divider,rgba(29,31,32,.16));color:var(--color-neutral-700,#5d5d60);
       }
       .cyg-prof-chip.lv-green .cyg-prof-dot{background:var(--cyg-status-green,#3f6b52)}

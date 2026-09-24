@@ -51,9 +51,6 @@
 <meta name="twitter:title" content="Cygenix – Schema Explorer">
 <meta name="twitter:description" content="Explore the target schema and see what your saved maps actually cover.">
 <title>Cygenix – Schema Explorer</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -102,7 +99,7 @@ body.cyg-collapsed{padding-left:54px}
    wrapped onto two lines and took the width the header needed. One select
    holds every map, grouped, and leaves the row to the actions. */
 .se-mapsel{display:flex;align-items:center;gap:0.5rem;flex:0 1 auto}
-.se-mapsel-lbl{font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-weight:500}
+.se-mapsel-lbl{font-size:11px;letter-spacing:0.06em;color:var(--text3);font-weight:500}
 .se-select{font-family:var(--serif);font-size:12.5px;font-weight:500;padding:0.42rem 2rem 0.42rem 0.7rem;
   border-radius:8px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;
   min-width:230px;appearance:none;
@@ -148,7 +145,7 @@ body.cyg-collapsed{padding-left:54px}
 .sm-tree-scroll{overflow:auto;flex:1;min-height:0}
 .sm-filter{width:100%;padding:6px 9px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--serif);font-size:12px}
 .sm-filter:focus{outline:none;border-color:var(--accent)}
-.sm-schema{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.9rem 0.25rem}
+.sm-schema{font-size:10px;font-family:var(--mono);color:var(--text3);letter-spacing:0.06em;padding:0.5rem 0.9rem 0.25rem}
 .sm-tnode{display:flex;align-items:center;gap:0.4rem;padding:4px 0.9rem;font-size:12px;cursor:pointer;color:var(--text2)}
 .sm-tnode:hover{background:var(--accent-glow);color:var(--text)}
 .sm-tnode.on{color:var(--accent);font-weight:500}
@@ -268,7 +265,7 @@ body.cyg-collapsed{padding-left:54px}
 .sm-rule-del:hover{color:var(--red)}
 .sm-filters-count{font-size:11px;font-family:var(--mono);color:var(--text3);margin-left:auto}
 .sm-filters-warn{font-size:10.5px;color:var(--amber);padding:0.25rem 0 0;line-height:1.45}
-.sm-section{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:0.6rem 0 0.2rem}
+.sm-section{font-size:10px;font-family:var(--mono);color:var(--text3);letter-spacing:0.06em;margin:0.6rem 0 0.2rem}
 .sm-section:first-child{margin-top:0}
 .btn-badge{display:inline-block;min-width:15px;padding:0 4px;margin-left:4px;border-radius:100px;background:var(--accent);color:#fff;font-size:9px;font-family:var(--mono);line-height:14px;text-align:center}
 
@@ -277,7 +274,7 @@ body.cyg-collapsed{padding-left:54px}
    about which one answers your question. */
 .sm-export-scope{font-size:11px;color:var(--text3);line-height:1.5;padding:0 0 0.5rem;
   border-bottom:0.5px solid var(--border);margin-bottom:0.4rem}
-.sm-export-group{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;
+.sm-export-group{font-size:10px;font-family:var(--mono);color:var(--text3);
   letter-spacing:0.06em;margin:0.7rem 0 0.35rem}
 .sm-export-group:first-of-type{margin-top:0.2rem}
 .sm-export-item{display:block;width:100%;text-align:left;padding:0.5rem 0.6rem;margin-bottom:0.3rem;
@@ -319,7 +316,7 @@ body.cyg-collapsed{padding-left:54px}
 .se-palette-list{max-height:52vh;overflow:auto}
 .se-palette-item{display:flex;align-items:center;gap:0.5rem;padding:7px 1rem;font-size:12px;cursor:pointer;color:var(--text2)}
 .se-palette-item.on{background:var(--accent-glow);color:var(--accent)}
-.se-palette-kind{font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em}
+.se-palette-kind{font-size:9px;font-family:var(--mono);color:var(--text3);letter-spacing:0.05em}
 .se-palette-sub{margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--text3)}
 
 /* ══ VIEW 1.5 — DATA MAP (Data Atlas) ════════════════════════════════ */
@@ -340,7 +337,7 @@ body.cyg-collapsed{padding-left:54px}
 
 .da-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0.6rem;margin-bottom:0.7rem}
 .da-tile{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.85rem;min-width:0}
-.da-tile .k{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);font-weight:600}
+.da-tile .k{font-size:10px;letter-spacing:0;color:var(--text3);font-weight:600}
 .da-tile .v{font-size:21px;font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.05}
 .da-tile .v small{font-size:12px;font-weight:500;color:var(--text2);margin-left:2px}
 .da-tile .n{font-size:11px;color:var(--text2);margin-top:4px;line-height:1.4}
@@ -399,14 +396,14 @@ body.cyg-collapsed{padding-left:54px}
 
 .da-rail{overflow-y:auto;padding:0.75rem;display:flex;flex-direction:column;gap:0.9rem;flex:1;min-height:0}
 .da-rail-panel{display:flex;flex-direction:column;min-height:0}
-.da-sect .st{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);font-weight:600;margin-bottom:7px}
+.da-sect .st{font-size:10px;letter-spacing:0;color:var(--text3);font-weight:600;margin-bottom:7px}
 .da-kv{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:11.5px;border-bottom:1px dashed var(--border)}
 .da-kv:last-child{border-bottom:0}
 .da-kv .k{color:var(--text2)}
 .da-kv .v{font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
 .da-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:20px;border:0.5px solid var(--border2);color:var(--text2)}
 .da-name{font-family:var(--mono);font-size:12.5px;font-weight:600;word-break:break-all;line-height:1.35}
-.da-schema{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text3)}
+.da-schema{font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--text3)}
 .da-bar{height:8px;border-radius:4px;background:var(--bg3);overflow:hidden;display:flex;gap:2px}
 .da-bar i{display:block;height:100%}
 .da-rowlist{display:flex;flex-direction:column;gap:1px}
@@ -420,7 +417,7 @@ body.cyg-collapsed{padding-left:54px}
 .da-tblwrap{flex:1;overflow:auto}
 table.da-dv{width:100%;border-collapse:collapse;font-size:11.5px}
 table.da-dv th{position:sticky;top:0;background:var(--bg3);text-align:left;padding:7px 9px;z-index:2;
-  border-bottom:0.5px solid var(--border2);font-size:10px;letter-spacing:.05em;text-transform:uppercase;
+  border-bottom:0.5px solid var(--border2);font-size:10px;letter-spacing:.05em;
   color:var(--text2);font-weight:600;cursor:pointer;white-space:nowrap}
 table.da-dv th:hover{color:var(--text)}
 table.da-dv td{padding:6px 9px;border-bottom:0.5px solid var(--border);color:var(--text2)}
@@ -432,7 +429,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .cv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.7rem;margin-bottom:1rem}
 .cv-kpi{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.8rem 0.95rem}
 .cv-kpi-num{font-size:22px;font-weight:600;line-height:1.1}
-.cv-kpi-lab{font-size:10.5px;color:var(--text3);margin-top:3px;text-transform:uppercase;letter-spacing:0.05em}
+.cv-kpi-lab{font-size:10.5px;color:var(--text3);margin-top:3px;letter-spacing:0.05em}
 .cv-kpi-note{font-size:10.5px;color:var(--text2);margin-top:5px;line-height:1.45}
 
 .cv-ribbons{position:relative;overflow:auto;padding:0.5rem 0}
@@ -442,11 +439,11 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .cv-node{fill:var(--bg3);stroke:var(--border2);stroke-width:0.5}
 .cv-node-label{font-family:var(--mono);font-size:10px;fill:var(--text2)}
 .cv-node-label.tgt{text-anchor:end}
-.cv-axis{font-family:var(--serif);font-size:10px;fill:var(--text3);letter-spacing:0.06em;text-transform:uppercase}
+.cv-axis{font-family:var(--serif);font-size:10px;fill:var(--text3);letter-spacing:0.06em;}
 
 .cv-waves{display:flex;gap:0.6rem;overflow-x:auto;padding:0.75rem 0.9rem}
 .cv-wave{min-width:170px;background:var(--bg3);border:0.5px solid var(--border);border-radius:8px;padding:0.55rem 0.65rem;flex:none}
-.cv-wave-head{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.35rem}
+.cv-wave-head{font-size:10px;font-family:var(--mono);color:var(--text3);letter-spacing:0.06em;margin-bottom:0.35rem}
 .cv-wave-item{font-size:11px;font-family:var(--mono);color:var(--text2);padding:2px 0;overflow:hidden;text-overflow:ellipsis}
 .cv-wave-item.unmapped{color:var(--text3)}
 
@@ -484,7 +481,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
    disagree about what "Finance & AR" looks like. */
 .am-bar{display:flex;align-items:center;gap:0.75rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.9rem;margin-bottom:0.9rem;flex-wrap:wrap}
 .am-estate{display:flex;align-items:center;gap:0.55rem;min-width:0}
-.am-estate .lbl{font-size:9.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);opacity:0.75}
+.am-estate .lbl{font-size:9.5px;letter-spacing:0.08em;color:var(--text3);opacity:0.75}
 .am-estate .db{font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.3rem 0.5rem;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .am-estate .meta{font-size:10.5px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
 .am-swap{width:26px;height:26px;border-radius:50%;background:var(--bg3);border:0.5px solid var(--border2);display:grid;place-items:center;color:var(--text3);font-size:12px;flex:none}
@@ -494,7 +491,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .am-seg button.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
 .am-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem;margin-bottom:0.9rem}
 .am-kpi{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.8rem 0.9rem}
-.am-kpi .k-lbl{font-size:9.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);opacity:0.8;margin-bottom:0.35rem}
+.am-kpi .k-lbl{font-size:9.5px;letter-spacing:0.08em;color:var(--text3);opacity:0.8;margin-bottom:0.35rem}
 .am-kpi .k-val{font-size:26px;font-weight:600;line-height:1;letter-spacing:-0.02em}
 .am-kpi .k-val small{font-size:12px;font-weight:500;color:var(--text3);margin-left:0.25rem}
 .am-kpi .k-sub{font-size:11px;color:var(--text3);margin-top:0.35rem;line-height:1.45}
@@ -510,7 +507,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .am-grid{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:0.9rem;align-items:start}
 /* Three columns used by header strip, row headers and expanded bodies alike,
    so everything lines up down the page. */
-.am-ledger-head{display:grid;grid-template-columns:1fr 210px 1fr;font-size:9.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);opacity:0.8;padding:0.5rem 0.9rem;border-bottom:0.5px solid var(--border);background:var(--bg3)}
+.am-ledger-head{display:grid;grid-template-columns:1fr 210px 1fr;font-size:9.5px;letter-spacing:0.08em;color:var(--text3);opacity:0.8;padding:0.5rem 0.9rem;border-bottom:0.5px solid var(--border);background:var(--bg3)}
 .am-ledger-head .c{text-align:center}
 .am-ledger-head .r{text-align:right}
 .am-row{border-bottom:0.5px solid var(--border)}
@@ -542,7 +539,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .am-row.open .am-row-body{display:block}
 .am-cols{display:grid;grid-template-columns:1fr 210px 1fr}
 .am-col{background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
-.am-col-head{font-size:9.5px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text3);padding:0.4rem 0.6rem;border-bottom:0.5px solid var(--border);display:flex;gap:0.4rem;align-items:center}
+.am-col-head{font-size:9.5px;letter-spacing:0.07em;color:var(--text3);padding:0.4rem 0.6rem;border-bottom:0.5px solid var(--border);display:flex;gap:0.4rem;align-items:center}
 .am-col-head .r{margin-left:auto;font-family:var(--mono);text-transform:none;letter-spacing:0}
 .am-tbl-row{display:flex;align-items:center;gap:0.5rem;padding:0.34rem 0.6rem;border-bottom:0.5px solid var(--border);font-size:11.5px}
 .am-tbl-row:last-child{border-bottom:none}
@@ -565,13 +562,13 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 .am-pop-wrap{position:relative}
 .am-pop{position:absolute;z-index:40;right:0;top:calc(100% + 4px);background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;box-shadow:0 10px 34px rgba(0,0,0,0.18);padding:0.35rem;min-width:210px;display:none}
 .am-pop.open{display:block}
-.am-pop .pop-lbl{font-size:9.5px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text3);padding:0.3rem 0.45rem 0.35rem}
+.am-pop .pop-lbl{font-size:9.5px;letter-spacing:0.07em;color:var(--text3);padding:0.3rem 0.45rem 0.35rem}
 .am-pop button{display:flex;align-items:center;gap:0.45rem;width:100%;text-align:left;border:none;background:transparent;font-family:var(--serif);font-size:11.5px;padding:0.32rem 0.45rem;border-radius:5px;cursor:pointer;color:var(--text2)}
 .am-pop button:hover{background:var(--bg3)}
 .am-pop .divider{height:0.5px;background:var(--border);margin:0.25rem 0}
 .am-rail-sec{padding:0.8rem 0.9rem;border-bottom:0.5px solid var(--border)}
 .am-rail-sec:last-child{border-bottom:none}
-.am-rail-lbl{font-size:9.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);opacity:0.8;margin-bottom:0.5rem}
+.am-rail-lbl{font-size:9.5px;letter-spacing:0.08em;color:var(--text3);opacity:0.8;margin-bottom:0.5rem}
 .am-stack{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--bg4);margin-bottom:0.5rem}
 .am-stack i{display:block;height:100%}
 .am-legend{display:flex;flex-direction:column;gap:0.25rem}
@@ -588,7 +585,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 /* Migration map — sub-view additions (tokens only, no raw colour) */
 .am-select{font-family:var(--serif);font-size:11px;padding:0.32rem 0.5rem;border-radius:7px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer}
 .am-table{width:100%;border-collapse:collapse;font-size:11.5px}
-.am-table th{font-size:9.5px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text3);text-align:left;padding:0.45rem 0.7rem;border-bottom:0.5px solid var(--border);background:var(--bg3)}
+.am-table th{font-size:9.5px;letter-spacing:0.07em;color:var(--text3);text-align:left;padding:0.45rem 0.7rem;border-bottom:0.5px solid var(--border);background:var(--bg3)}
 .am-table td{padding:0.42rem 0.7rem;border-bottom:0.5px solid var(--border)}
 .am-table tr:last-child td{border-bottom:none}
 .am-table .num,.am-table th.num{text-align:right;font-family:var(--mono);font-size:11px;white-space:nowrap}
@@ -657,11 +654,11 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-api.js?v=f33c20a068" defer></script>
-  <script src="/cygenix-guardrail.js?v=e035c6348b" defer></script>
+  <script src="/cygenix-guardrail.js?v=d5cec80b9b" defer></script>
 <script src="/cygenix-schema-graph.js?v=b504389038" defer></script>
-<script src="/cygenix-schema-export.js?v=f47f585b8f" defer></script>
+<script src="/cygenix-schema-export.js?v=3f0e33b22e" defer></script>
 <script src="/cygenix-subject-map.js?v=dbc44c8eb3" defer></script>
 <script src="/cygenix-subject-harvest.js?v=223a1d8144" defer></script>
 <script src="/cygenix-subject-triage.js?v=da00f1f118" defer></script>
@@ -670,7 +667,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <script src="/cygenix-fullscreen.js?v=402d3dccce" defer></script>
 <!-- Adds its own four map tabs to the tab bar the moment it loads. Deferred, so
      seSwitchTab and smTables are already defined when it wraps them. -->
-<script src="/cygenix-data-maps.js?v=0161ba1b53" defer></script>
+<script src="/cygenix-data-maps.js?v=8005865d4a" defer></script>
 <!-- The Globe registers last, so its tab sits at the end of the row. -->
 <script src="/cygenix-geo-index.js?v=7fe109193e" defer></script>
 <script src="/cygenix-globe.js?v=95b4f5af27" defer></script>
@@ -678,7 +675,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
 <div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 
 <div class="page">
   <div class="se-head">
@@ -3609,11 +3606,11 @@ function daDraw(){
         ctx2.fillStyle = d.c; ctx2.fillRect(fx, fy, fw, d.hdr);
         ctx2.fillStyle = daInk(d.c);
         ctx2.textBaseline = 'middle';
-        ctx2.font = '600 12.5px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif';
+        ctx2.font = '600 12.5px "Noto Sans",system-ui,sans-serif';
         ctx2.fillText(d.label, fx + 9, fy + d.hdr / 2 + 0.5);
         const lw = ctx2.measureText(d.label).width;
         ctx2.globalAlpha = base * 0.8;
-        ctx2.font = '500 11px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif';
+        ctx2.font = '500 11px "Noto Sans",system-ui,sans-serif';
         const meta = daM(d.v) + '  ·  ' + daInt(d.n) + ' table' + (d.n === 1 ? '' : 's');
         if (fw - lw - 24 > ctx2.measureText(meta).width) ctx2.fillText(meta, fx + lw + 18, fy + d.hdr / 2 + 0.5);
         ctx2.restore();
@@ -3645,7 +3642,7 @@ function daDraw(){
       ctx2.fillStyle = daInk(d.c);
       ctx2.save(); daRR(ctx2, x, y, w, h, 4); ctx2.clip();
       ctx2.textBaseline = 'top';
-      ctx2.font = '600 11.5px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif';
+      ctx2.font = '600 11.5px "Noto Sans",system-ui,sans-serif';
       const maxw = w - 14;
       let lines = [d.label];
       if (ctx2.measureText(d.label).width > maxw){
@@ -3674,7 +3671,7 @@ function daDraw(){
       for (let li = 0; li < lines.length; li++) ctx2.fillText(lines[li], x + 7, y + 6 + li * 14);
       if (h > 40 + (lines.length - 1) * 14 && !d.rest){
         ctx2.globalAlpha = base * 0.76;
-        ctx2.font = '500 10.5px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif';
+        ctx2.font = '500 10.5px "Noto Sans",system-ui,sans-serif';
         ctx2.fillText(daM(d.v), x + 7, y + 22 + (lines.length - 1) * 14);
         ctx2.globalAlpha = base;
       }
@@ -5979,11 +5976,11 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>
 CygenixAssistant.registerPage('schema-explorer');
 /* Assistant adapters — schema reads answered by the same graph engine the

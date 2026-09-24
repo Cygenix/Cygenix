@@ -40,9 +40,6 @@
 <meta name="twitter:title" content="Cygenix – Conversion Templates">
 <meta name="twitter:description" content="Conversion Templates: the cut-down copy of the Elite 3E target schema a client builds its staging database to, one module at a time.">
 <title>Cygenix – Conversion Templates</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -72,7 +69,7 @@ body.cyg-collapsed{padding-left:54px}
 .btn-danger{color:var(--red)}
 .form-input{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.38rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none}
 .form-input:focus{border-color:var(--accent)}
-.form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:0.25rem}
+.form-label{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.06em;display:block;margin-bottom:0.25rem}
 .mono{font-family:var(--mono);font-size:11px}
 .muted{color:var(--text3)}
 .chip{display:inline-block;padding:1px 8px;border-radius:9px;font-size:10.5px;font-weight:500;background:var(--bg4);color:var(--text2);white-space:nowrap}
@@ -112,7 +109,7 @@ body.cyg-collapsed{padding-left:54px}
 .ct-mods li .tk{flex:0 0 40px;display:flex;align-items:center;justify-content:center}
 .ct-mods li .tk input{cursor:pointer;margin:0}
 .ct-mods li .tk.none{visibility:hidden}
-.ct-modhead{display:flex;align-items:flex-end;gap:0.5rem;padding:0 0.7rem;font-size:9.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3)}
+.ct-modhead{display:flex;align-items:flex-end;gap:0.5rem;padding:0 0.7rem;font-size:9.5px;letter-spacing:0.06em;color:var(--text3)}
 .ct-modhead .nm{flex:1 1 auto;min-width:0}
 .ct-modhead .n{flex:0 0 40px;text-align:right}
 .ct-modhead .tk{flex:0 0 40px;text-align:center}
@@ -123,10 +120,10 @@ body.cyg-collapsed{padding-left:54px}
    read as broken. So the chip is positive, and it is a word as well as a
    colour — the tick itself is the other, colour-free, indicator. */
 .ct-mods li .chip.inc{background:var(--green-bg);color:var(--green);font-style:normal}
-.ct-mods .ct-sep{padding:0.35rem 0.7rem;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);background:var(--bg3);border-bottom:0.5px solid var(--border)}
+.ct-mods .ct-sep{padding:0.35rem 0.7rem;font-size:10px;letter-spacing:0.06em;color:var(--text3);background:var(--bg3);border-bottom:0.5px solid var(--border)}
 
 table.ct{border-collapse:collapse;width:100%;font-size:12px}
-.ct th{font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);font-weight:500;text-align:left;padding:0.45rem 0.6rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
+.ct th{font-size:10.5px;letter-spacing:0.05em;color:var(--text2);font-weight:500;text-align:left;padding:0.45rem 0.6rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
 .ct td{padding:0.35rem 0.6rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
 .ct tr:last-child td{border-bottom:none}
 .ct td input.form-input{width:100%;padding:0.25rem 0.5rem;font-size:11.5px}
@@ -180,11 +177,11 @@ table.ct{border-collapse:collapse;width:100%;font-size:12px}
 .ct-mods li .chip.oos{background:var(--red-bg);color:var(--red);font-style:normal}
 .ct-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.5rem;margin-bottom:0.7rem}
 .ct-count{border:0.5px solid var(--border);border-radius:8px;padding:0.4rem 0.6rem;background:var(--bg3)}
-.ct-count .k{font-size:9.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3)}
+.ct-count .k{font-size:9.5px;letter-spacing:0.06em;color:var(--text3)}
 .ct-count .v{font-size:17px;font-family:var(--mono);font-weight:500}
 .ct-count.bad .v{color:var(--red)}
 table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
-.ct-prev th{font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--text2);text-align:left;padding:0.35rem 0.5rem;border-bottom:0.5px solid var(--border);position:sticky;top:0;background:var(--bg2)}
+.ct-prev th{font-size:10px;letter-spacing:0.05em;color:var(--text2);text-align:left;padding:0.35rem 0.5rem;border-bottom:0.5px solid var(--border);position:sticky;top:0;background:var(--bg2)}
 .ct-prev td{padding:0.3rem 0.5rem;border-bottom:0.5px solid var(--border);vertical-align:top}
 .ct-prev td.mono{font-family:var(--mono)}
 .ct-prev tr.flagged td:first-child{border-left:3px solid var(--red)}
@@ -440,10 +437,10 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 <script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 <!-- The local secret half of a saved connection. The profile load-check
@@ -1890,14 +1887,14 @@ window.addEventListener('storage', (e) => { if (e && e.key === ES_STORE && CT.tp
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <!-- Collation. The rules load first; see the note in object_mapping.html. -->
 <script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
-<script src="/cygenix-collation.js?v=1688ff44f7" defer></script>
+<script src="/cygenix-collation.js?v=ffaa34cfcb" defer></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('conversion-templates');</script>
 <script src="/cookie-consent.js?v=f55be71b3a" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>

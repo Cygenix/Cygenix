@@ -2731,16 +2731,16 @@
                                             'var(--red)';
     const symbol = r.status === 'created' ? '✓' : r.status === 'skipped' ? '–' : '✕';
     const catBadge =
-      r.category === 'login'          ? '<span style="background:rgba(79,142,255,0.15);color:#6ea4ff;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">login</span>' :
-      r.category === 'operator'       ? '<span style="background:rgba(45,212,191,0.15);color:var(--teal);padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">op</span>' :
-      r.category === 'category'       ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">cat</span>' :
-      r.category === 'job'            ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">job</span>' :
-      r.category === 'ssis-bootstrap' ? '<span style="background:rgba(236,72,153,0.15);color:#ec4899;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">boot</span>' :
-      r.category === 'ssis-folder'    ? '<span style="background:rgba(94,234,212,0.15);color:#5eead4;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">fldr</span>' :
-      r.category === 'ssis-env'       ? '<span style="background:rgba(110,231,183,0.15);color:#6ee7b7;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">env</span>' :
-      r.category === 'ssis-project'   ? '<span style="background:rgba(248,113,113,0.15);color:#f87171;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">proj</span>' :
-      r.category === 'ssis-config'    ? '<span style="background:rgba(196,181,253,0.15);color:#c4b5fd;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">cfg</span>' :
-      r.category === 'linked-server'  ? '<span style="background:rgba(251,146,60,0.15);color:#fb923c;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">link</span>' :
+      r.category === 'login'          ? '<span style="background:rgba(79,142,255,0.15);color:#6ea4ff;padding:1px 6px;border-radius:3px;font-size:10px;">login</span>' :
+      r.category === 'operator'       ? '<span style="background:rgba(45,212,191,0.15);color:var(--teal);padding:1px 6px;border-radius:3px;font-size:10px;">op</span>' :
+      r.category === 'category'       ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;">cat</span>' :
+      r.category === 'job'            ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 6px;border-radius:3px;font-size:10px;">job</span>' :
+      r.category === 'ssis-bootstrap' ? '<span style="background:rgba(236,72,153,0.15);color:#ec4899;padding:1px 6px;border-radius:3px;font-size:10px;">boot</span>' :
+      r.category === 'ssis-folder'    ? '<span style="background:rgba(94,234,212,0.15);color:#5eead4;padding:1px 6px;border-radius:3px;font-size:10px;">fldr</span>' :
+      r.category === 'ssis-env'       ? '<span style="background:rgba(110,231,183,0.15);color:#6ee7b7;padding:1px 6px;border-radius:3px;font-size:10px;">env</span>' :
+      r.category === 'ssis-project'   ? '<span style="background:rgba(248,113,113,0.15);color:#f87171;padding:1px 6px;border-radius:3px;font-size:10px;">proj</span>' :
+      r.category === 'ssis-config'    ? '<span style="background:rgba(196,181,253,0.15);color:#c4b5fd;padding:1px 6px;border-radius:3px;font-size:10px;">cfg</span>' :
+      r.category === 'linked-server'  ? '<span style="background:rgba(251,146,60,0.15);color:#fb923c;padding:1px 6px;border-radius:3px;font-size:10px;">link</span>' :
                                         '';
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:0.75rem;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:12px;font-family:var(--mono)';
@@ -2748,7 +2748,7 @@
       '<span style="color:' + colour + ';width:14px;text-align:center">' + symbol + '</span>' +
       '<span style="width:50px">' + catBadge + '</span>' +
       '<span style="flex:1;color:var(--text)">' + escHtml(r.name) + '</span>' +
-      '<span style="color:' + colour + ';font-size:11px;text-transform:uppercase">' + r.status + '</span>' +
+      '<span style="color:' + colour + ';font-size:11px;">' + r.status + '</span>' +
       '<span style="color:var(--text3);font-size:11px;flex-basis:35%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escHtml(r.message) + '">' + escHtml(r.message) + '</span>';
     container.appendChild(row);
     container.scrollTop = container.scrollHeight;
@@ -2798,7 +2798,7 @@
       const total = (counts.created || 0) + (counts.skipped || 0) + (counts.failed || 0);
       return `
         <tr>
-          <td style="padding:4px 8px;font-family:var(--mono);text-transform:uppercase;font-size:11px;color:var(--text2)">${escHtml(cat)}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text2)">${escHtml(cat)}</td>
           <td style="padding:4px 8px;text-align:right">${total}</td>
           <td style="padding:4px 8px;text-align:right;color:var(--green)">${counts.created || 0}</td>
           <td style="padding:4px 8px;text-align:right;color:var(--amber)">${counts.skipped || 0}</td>
@@ -2808,10 +2808,10 @@
 
     el.innerHTML = `
       <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem">
-        <div><span style="color:var(--text3);font-size:11px;text-transform:uppercase">Total</span><div style="font-size:24px;font-weight:600">${entry.total}</div></div>
-        <div><span style="color:var(--green);font-size:11px;text-transform:uppercase">Created</span><div style="font-size:24px;font-weight:600;color:var(--green)">${entry.created}</div></div>
-        <div><span style="color:var(--amber);font-size:11px;text-transform:uppercase">Skipped</span><div style="font-size:24px;font-weight:600;color:var(--amber)">${entry.skipped}</div></div>
-        <div><span style="color:var(--red);font-size:11px;text-transform:uppercase">Failed</span><div style="font-size:24px;font-weight:600;color:var(--red)">${entry.failed}</div></div>
+        <div><span style="color:var(--text3);font-size:11px;">Total</span><div style="font-size:24px;font-weight:600">${entry.total}</div></div>
+        <div><span style="color:var(--green);font-size:11px;">Created</span><div style="font-size:24px;font-weight:600;color:var(--green)">${entry.created}</div></div>
+        <div><span style="color:var(--amber);font-size:11px;">Skipped</span><div style="font-size:24px;font-weight:600;color:var(--amber)">${entry.skipped}</div></div>
+        <div><span style="color:var(--red);font-size:11px;">Failed</span><div style="font-size:24px;font-weight:600;color:var(--red)">${entry.failed}</div></div>
       </div>
       ${catRows ? `
       <table style="width:100%;max-width:480px;border-collapse:collapse;font-size:12px;margin-bottom:1rem;border:0.5px solid var(--border);border-radius:var(--r)">

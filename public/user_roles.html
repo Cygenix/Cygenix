@@ -20,9 +20,6 @@
 })();
 </script>
 <title>Cygenix – Users &amp; Roles</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/cygenix-auth-token.js?v=8ed8e00fad"></script>
 <script src="/cygenix-rbac.js?v=78965846c4" defer></script>
 <style>
@@ -52,7 +49,7 @@ body.cyg-collapsed{padding-left:54px}
 .btn[disabled]{opacity:0.45;cursor:not-allowed}
 
 table{width:100%;border-collapse:collapse;font-size:12.5px}
-th{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;text-align:left;font-family:var(--mono);padding:6px 10px;border-bottom:0.5px solid var(--border2)}
+th{font-size:10px;font-weight:600;color:var(--text2);letter-spacing:0.06em;text-align:left;font-family:var(--mono);padding:6px 10px;border-bottom:0.5px solid var(--border2)}
 td{padding:8px 10px;border-bottom:0.5px solid var(--border);vertical-align:top}
 tr:last-child td{border-bottom:none}
 .mono{font-family:var(--mono)}
@@ -96,7 +93,7 @@ select:focus,input[type=text]:focus{border-color:var(--accent)}
 <div id="cyg-sidebar-mount" data-active="user-roles"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 
 <div class="page">
   <div class="page-header">
@@ -593,11 +590,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   <!-- The audit recorder. Ask Cygenix can act on this page, and its
        provenance is recorded through this module. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('user-roles');</script>
 </body>
 </html>

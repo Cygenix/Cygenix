@@ -675,7 +675,19 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('no colour is hard-coded outside the palette block',
     (html.slice(html.indexOf('--r:10px')).match(/#[0-9a-fA-F]{6}\b/g) || []).length === 0,
     (html.slice(html.indexOf('--r:10px')).match(/#[0-9a-fA-F]{6}\b/g) || []).join(','));
-  check('the page uses the app font, not system-ui', !/system-ui/.test(html));
+  // This used to read !/system-ui/, because at the time the app stack was
+  // 'IBM Plex Sans','Helvetica Neue',Arial and a bare system-ui meant the
+  // page had simply forgotten to set a font. Since v2 the app stack IS
+  // 'Noto Sans', system-ui, … — system-ui is now the correct fallback, so
+  // the old spelling of this check failed on the right answer. What it was
+  // always trying to say is below: name the app face FIRST, never fall
+  // straight through to whatever the operating system supplies.
+  check('the page uses the app font, not system-ui', (() => {
+    const stacks = html.match(/font(?:-family)?: *['"]?[A-Za-z][^;'"}]*/g) || [];
+    const bare = stacks.filter((v) => /system-ui/.test(v) && !/Noto Sans/.test(v));
+    return bare.length === 0 || bare.join(' | ');
+  })() === true, (html.match(/font(?:-family)?: *['"]?[A-Za-z][^;'"}]*/g) || [])
+    .filter((v) => /system-ui/.test(v) && !/Noto Sans/.test(v)).join(' | '));
 
   // getElementById returns the first match, so a duplicate id hands code the
   // wrong element.

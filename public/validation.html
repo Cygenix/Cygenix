@@ -50,9 +50,6 @@
 <meta name="twitter:title" content="Cygenix – Data Validation">
 <meta name="twitter:description" content="Run validation scripts against any database table.">
 <title>Cygenix – Data Validation</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which is anywhere connections can be saved, edited or deleted. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
@@ -75,7 +72,7 @@
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-nl-recon.js?v=cee1f799aa" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -93,7 +90,7 @@ body.cyg-collapsed .page{max-width:min(1500px,calc(100vw - 54px - 32px))}
 .panel-head{padding:0.75rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;background:var(--bg3)}
 .panel-title{font-size:13px;font-weight:600}
 .panel-body{padding:1rem 1.1rem}
-.form-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.35rem}
+.form-label{font-size:10px;font-weight:500;color:var(--text3);letter-spacing:0.07em;display:block;margin-bottom:0.35rem}
 .form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.45rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
 .form-input:focus{border-color:var(--accent)}
 select.form-input option{background:var(--bg3)}
@@ -118,7 +115,7 @@ select.form-input option{background:var(--bg3)}
 .tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;background:var(--bg4);color:var(--text3);font-family:var(--mono)}
 /* Scripts table */
 .val-table{width:100%;border-collapse:collapse;font-size:12px}
-.val-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;background:var(--bg3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+.val-table th{font-size:10px;font-weight:500;color:var(--text3);letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;background:var(--bg3);border-bottom:0.5px solid var(--border);white-space:nowrap}
 .val-table td{padding:0.5rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
 .val-table tr:last-child td{border-bottom:none}
 .val-table tr:hover td{background:rgba(255,255,255,0.015)}
@@ -155,7 +152,7 @@ select.form-input option{background:var(--bg3)}
 <div id="cyg-sidebar-mount" data-active="validation"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
@@ -1371,11 +1368,11 @@ document.addEventListener('DOMContentLoaded', nlRenderChecks);
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('validation');</script>
 </body>
 </html>

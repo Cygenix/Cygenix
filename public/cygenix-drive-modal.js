@@ -164,7 +164,7 @@
     if (document.getElementById('cygdm-styles')) return;
     const st = document.createElement('style'); st.id = 'cygdm-styles';
     st.textContent = `
-      .cygdm-bg{position:fixed;inset:0;background:var(--modal-scrim,rgba(15,18,26,.5));z-index:4000;display:none;align-items:center;justify-content:center;padding:1.5rem;font-family:var(--sans,'IBM Plex Sans','Helvetica Neue',Arial,sans-serif)}
+      .cygdm-bg{position:fixed;inset:0;background:var(--modal-scrim,rgba(15,18,26,.5));z-index:4000;display:none;align-items:center;justify-content:center;padding:1.5rem;font-family:var(--sans,'Noto Sans',system-ui,-apple-system,sans-serif)}
       .cygdm-bg.open{display:flex}
       .cygdm-modal{background:var(--bg2,#fff);border:1px solid var(--border2,#dfe3ea);border-radius:12px;width:100%;max-width:820px;height:82vh;max-height:82vh;display:flex;flex-direction:column;box-shadow:var(--shadow-strong,0 24px 60px -12px rgba(20,24,40,.4));overflow:hidden}
       /* Maximized — fill the viewport */
@@ -241,7 +241,7 @@
       .cygdm-selcount{font-size:12px;font-weight:600;color:var(--text,#1a1d21);margin-right:auto;padding-left:4px}
       .cygdm-btn.cygdm-danger{color:var(--red,#c0392b)}
       .cygdm-btn.cygdm-danger:hover{border-color:var(--red,#c0392b);background:var(--red-g,rgba(192,57,43,.08))}
-      .cygdm-mp{position:fixed;inset:0;z-index:4200;display:flex;align-items:center;justify-content:center;background:rgba(15,18,26,.45);padding:1.5rem;font-family:var(--sans,'IBM Plex Sans','Helvetica Neue',Arial,sans-serif)}
+      .cygdm-mp{position:fixed;inset:0;z-index:4200;display:flex;align-items:center;justify-content:center;background:rgba(15,18,26,.45);padding:1.5rem;font-family:var(--sans,'Noto Sans',system-ui,-apple-system,sans-serif)}
       .cygdm-mp-card{background:var(--bg2,#fff);border:1px solid var(--border2,#dfe3ea);border-radius:12px;width:100%;max-width:440px;max-height:70vh;display:flex;flex-direction:column;box-shadow:var(--shadow-strong,0 24px 60px -12px rgba(20,24,40,.4));overflow:hidden}
       .cygdm-mp-h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:.8rem 1rem;border-bottom:1px solid var(--border,#eceef2);font-size:14px;font-weight:600;color:var(--text,#1a1d21)}
       .cygdm-mp-h button{background:none;border:none;color:var(--text3,#7a8090);font-size:16px;cursor:pointer;line-height:1}

@@ -77,7 +77,7 @@
 .cygx-kv{display:flex;gap:20px;margin-left:auto;flex-wrap:wrap}
 .cygx-kv div{text-align:right}
 .cygx-kv b{display:block;font:600 17px/1.2 var(--mono)}
-.cygx-kv span{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.cygx-kv span{font-size:11px;color:var(--faint);letter-spacing:0}
 .cygx-why{padding:0 16px 14px;background:var(--panel);color:var(--dim);font-size:12.5px}
 .cygx-why li{margin:2px 0}
 .cygx-why ul{margin:0;padding-left:18px}
@@ -99,8 +99,8 @@
 .cygx-pane{padding:16px;max-height:460px;overflow:auto}
 .cygx-pane[hidden]{display:none}
 .cygx-table{width:100%;border-collapse:collapse;font-size:12.5px}
-.cygx-table th{text-align:left;font:600 11px/1 ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;
-  letter-spacing:.06em;color:var(--faint);padding:0 12px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap;
+.cygx-table th{text-align:left;font:600 11px/1 ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:0;color:var(--faint);padding:0 12px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap;
   position:sticky;top:0;background:var(--bg)}
 .cygx-table td{padding:7px 12px 7px 0;border-bottom:1px solid var(--line-soft);vertical-align:top}
 .cygx-table tbody tr:hover{background:var(--panel)}
@@ -109,10 +109,10 @@
 .cygx-num{font:12px var(--mono);color:var(--dim);text-align:right;white-space:nowrap}
 .cygx-table th.num{text-align:right}
 .cygx-note{color:var(--faint);font:11.5px/1.5 var(--mono);white-space:normal;min-width:200px}
-.cygx-conf-lab{font:11px/1 ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);display:flex;justify-content:space-between;gap:12px}
+.cygx-conf-lab{font:11px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:0;color:var(--faint);display:flex;justify-content:space-between;gap:12px}
 .cygx-conf-lab b{font:600 12px var(--mono);color:var(--text);letter-spacing:0}
 .cygx-samp{color:var(--faint);font:11.5px var(--mono);max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cygx-pk{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ok);border:1px solid currentColor;
+.cygx-pk{font-size:10px;letter-spacing:0;color:var(--ok);border:1px solid currentColor;
   border-radius:3px;padding:1px 5px;margin-left:6px;white-space:nowrap}
 .cygx-miniwarn{color:var(--warn);font-size:11px;display:block;margin-top:3px}
 .cygx-scroll{overflow:auto}
@@ -120,7 +120,7 @@
 .cygx-null{color:var(--faint);font-style:italic}
 
 .cygx-ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
-.cygx-ctl label{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.cygx-ctl label{font-size:11px;color:var(--faint);letter-spacing:0}
 .cygx-sel,.cygx-in{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:13px}
 .cygx-sel:focus,.cygx-in:focus{outline:none;border-color:var(--accent)}
 .cygx-in{font-family:var(--mono);font-size:12.5px;width:150px}

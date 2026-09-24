@@ -42,9 +42,6 @@
 <meta name="twitter:title" content="Cygenix – Project Plan">
 <meta name="twitter:description" content="Project Plan — an Excel-style task planning grid: phases, tasks, resources and week-by-week milestones.">
 <title>Cygenix – Project Plan</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -71,7 +68,7 @@ body.cyg-collapsed{padding-left:54px}
 .btn:disabled{opacity:0.4;cursor:not-allowed}
 .form-input{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.38rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none}
 .form-input:focus{border-color:var(--accent)}
-.form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:0.25rem}
+.form-label{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.06em;display:block;margin-bottom:0.25rem}
 
 /* ── Tool segments ── */
 .pp-seg{display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:2px;gap:2px}
@@ -150,7 +147,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 .pf-row.pf-proj{cursor:pointer}
 .pf-row.pf-proj:hover .pf-left{background:var(--bg3)}
 .pf-hdr{border-bottom:1px solid var(--border2);background:var(--bg3)}
-.pf-hdr .pf-left{background:var(--bg3);align-items:flex-end;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-weight:600}
+.pf-hdr .pf-left{background:var(--bg3);align-items:flex-end;font-size:10px;letter-spacing:0.06em;color:var(--text3);font-weight:600}
 .pf-mo{border-left:1px solid var(--border2);font-size:10.5px;font-weight:600;padding:5px 0 2px 5px;white-space:nowrap;overflow:hidden;color:var(--text2)}
 .pf-mo.q{background:rgba(0,0,0,0.035)}
 .pf-wk{width:var(--pfwk);flex:0 0 var(--pfwk);border-left:0.5px solid var(--border);font-size:9px;text-align:center;color:var(--text3);padding:1px 0 2px;overflow:hidden;font-family:var(--mono)}
@@ -218,12 +215,12 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>
 <script src="/cygenix-profile-merge.js?v=5cc2a71958" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=67b07935b0" defer></script>
-<script src="/cygenix-sync-banner.js?v=791f650cb3" defer></script>
+<script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="project-plan-grid"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=915827f31b" defer></script>
+<script src="/cygenix-sidebar.js?v=fbb1d73e3b" defer></script>
 <script src="/cygenix-project-plan.js?v=e0223dd788" defer></script>
 <!-- The Configurator's engine: the "From Configurator" import computes the
      estimate here rather than duplicating any of its numbers. -->
@@ -966,11 +963,11 @@ document.addEventListener('DOMContentLoaded', ppBoot);
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=9520e8d0b0"></script>
+<script src="/cygenix-assistant.js?v=7f823e8353"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
-<script src="/cygenix-tour.js?v=7810d9c217"></script>
+<script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('project-plan-grid');</script>
 </body>
 </html>

@@ -97,7 +97,7 @@
         'padding:10px 16px',
         'background:#3b1f14', 'color:#ffe9df',
         'border-top:2px solid #d4713f',
-        "font:500 13px/1.45 'IBM Plex Sans','Helvetica Neue',Arial,sans-serif",
+        "font:500 13px/1.45 'Noto Sans',system-ui,-apple-system,sans-serif",
         'box-shadow:0 -2px 12px rgba(0,0,0,0.28)',
       ].join(';'),
     });
@@ -155,7 +155,7 @@
     return [
       'flex:0 0 auto', 'cursor:pointer',
       'padding:7px 13px', 'border-radius:8px',
-      'font:600 12.5px/1 \'IBM Plex Sans\',\'Helvetica Neue\',Arial,sans-serif',
+      'font:600 12.5px/1 \'Noto Sans\',system-ui,sans-serif',
       primary ? 'background:#ffe9df' : 'background:transparent',
       primary ? 'color:#3b1f14' : 'color:#ffe9df',
       primary ? 'border:1px solid #ffe9df' : 'border:1px solid rgba(255,233,223,0.5)',
