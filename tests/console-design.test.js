@@ -122,6 +122,23 @@ check('the hairline paints the same status trio the tokens name',
 check('the rail carries no per-item colour — finding 04 is a data change',
   !/color:\s*'var\(--(teal|green|amber|purple|red|accent|yellow|text2|text3)/.test(rail));
 
+// The masthead search field is the one input on a dark bar, and
+// cygenix-console.css styles `input[type="search"]` for the LIGHT page body.
+// An attribute selector outscores a bare class, so a plain `.cx-mh-search`
+// loses its background to the page palette — which is how the field ended up
+// painting white placeholder text on a near-white box. Whether it is readable
+// is measured for real in tests/browser/masthead-contrast.smoke.js; what is
+// pinned here is the only thing source can pin: that every property is still
+// qualified, so nobody "simplifies" the selector and quietly loses again.
+const mhSearch = rail.split('\n').filter((l) => l.includes('.cx-mh-search') && l.includes('{'));
+check('every masthead search rule is qualified with .cx-masthead, or the page palette wins',
+  mhSearch.length >= 4 && mhSearch.every((l) => l.includes('.cx-masthead .cx-mh-search')),
+  mhSearch.map((l) => l.trim().slice(0, 50)).join(' | '));
+check('the field is filled rather than transparent, so it reads as somewhere to type',
+  /\.cx-masthead \.cx-mh-search\{[^}]*background:rgba\(255,255,255,\.12\)/.test(rail));
+check('and the placeholder pins its own opacity, which Firefox otherwise dims',
+  /\.cx-masthead \.cx-mh-search::placeholder\{[^}]*opacity:1/.test(rail));
+
 /* ── 5. Where the tab strips mount ──────────────────────────────────────── */
 // Every page whose data-active key belongs to a strip must declare a mount,
 // or the strip — and with it the destinations that moved into it — is missing

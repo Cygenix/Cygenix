@@ -445,12 +445,50 @@
         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
       .cx-mh-proj-chev{opacity:.6;font-size:10px}
       .cx-mh-spacer{flex:1 1 auto;min-width:8px}
-      .cx-mh-form{display:flex;margin:0}
-      .cx-mh-search{width:250px;height:32px;border:1px solid rgba(255,255,255,.3);background:transparent;
-        color:var(--color-bg,#f2f2f3);font:inherit;font-size:14px;padding:0 10px;border-radius:0}
-      .cx-mh-search::placeholder{color:rgba(255,255,255,.75)}
-      .cx-mh-search::-webkit-search-cancel-button{-webkit-appearance:none}
-      .cx-mh-search:focus{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px;border-color:rgba(255,255,255,.6)}
+      /* THE SEARCH FIELD IS THE ONE INPUT THAT SITS ON A DARK BAR, and that is
+         why it needs a heavier selector than everything else here.
+
+         cygenix-console.css styles every form control for the light page body:
+           .form-input, input[type="text"], input[type="search"], ... {
+             color: var(--color-text); background: var(--color-bg); }
+         The selector input[type="search"] scores one attribute + one type; a
+         bare .cx-mh-search scores one class, and the attribute selector wins.
+         So the masthead field was silently handed the PAGE's palette — a
+         near-white fill (#f2f2f3) and dark text. The placeholder rule did NOT
+         lose, because .cx-mh-search::placeholder outscores a bare
+         ::placeholder, which is the whole trap in one line.
+         The result was white placeholder text on a white box: measured at
+         1.06:1, which is not low contrast, it is invisible. Nobody caught it
+         for months because the moment you TYPE, the text is dark-on-light and
+         looks perfectly fine — only the hint was lost.
+
+         So every property here is qualified with .cx-masthead, which outscores
+         the console rule on class count and keeps this field out of the light
+         palette for good. Do not "simplify" these back to a single class.
+
+         The field is now a lightened panel inside the navy rather than a
+         transparent outline: filled reads as somewhere you type, where an
+         outline reads as another button next to Files. Placeholder measures
+         8.4:1 and typed text 9.7:1 against the panel — both above WCAG AAA —
+         and the magnifier means the field announces itself even to someone who
+         cannot resolve 15px text at all. */
+      .cx-mh-form{display:flex;margin:0;position:relative;align-items:center}
+      .cx-masthead .cx-mh-ic{position:absolute;left:10px;font-size:15px;color:rgba(255,255,255,.8);
+        pointer-events:none}
+      .cx-masthead .cx-mh-search{width:260px;height:32px;border:1px solid rgba(255,255,255,.35);
+        background:rgba(255,255,255,.12);color:#fff;font:inherit;font-size:15px;
+        padding:0 10px 0 32px;border-radius:0}
+      /* Firefox dims placeholders with its own opacity, which would quietly
+         undo the contrast figure above. Pin it. */
+      .cx-masthead .cx-mh-search::placeholder{color:rgba(255,255,255,.92);opacity:1}
+      .cx-masthead .cx-mh-search::-webkit-search-cancel-button{-webkit-appearance:none}
+      /* No border-color here on purpose: cygenix-console.css sets
+         input:focus { border-color: var(--color-accent) !important }, and
+         !important beats specificity, so anything written here would be dead
+         code that reads as if it worked. The accent border is a perfectly good
+         focus cue on navy; the lift in fill and the outline carry the rest. */
+      .cx-masthead .cx-mh-search:focus{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px;
+        background:rgba(255,255,255,.18)}
       .cx-mh-btn{height:32px;padding:0 12px;border:1px solid rgba(255,255,255,.3);background:transparent;
         color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;
         font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;border-radius:0}
@@ -676,6 +714,7 @@
       </button>
       <span class="cx-mh-spacer"></span>
       <form class="cx-mh-form" id="cx-mh-search-form" role="search">
+        <i class="ic ic-search cx-mh-ic" aria-hidden="true"></i>
         <input class="cx-mh-search" id="cx-mh-search" type="search" placeholder="Search objects, jobs, runs"
                aria-label="Search objects, jobs and runs" autocomplete="off">
       </form>
