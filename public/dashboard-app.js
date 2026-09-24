@@ -9935,12 +9935,20 @@ window.connReveal = connReveal;
 window.connHide   = connHide;
 
 /* The live values can change under this view without anyone touching the
-   form: a profile selected on /profiles in THIS tab (the applied event) or
-   in ANOTHER tab (the storage event on the live-connections key). Either way
-   the fields are refilled from the store, but only while the view is
-   actually showing — refilling a hidden view is work nobody sees, and the
-   next open runs initConnectionsView anyway. Nothing here writes, so nothing
-   here can loop: a refill reads, and reading dispatches no event. */
+   form. Three ways, and the third is the one that was missing:
+
+     · a profile selected on /profiles in THIS tab      (the applied event)
+     · a profile selected in ANOTHER tab                (the storage event)
+     · the Cosmos copy landing after the page opened    (the sync events)
+
+   Either way the fields are refilled from the store, but only while the view
+   is actually showing — refilling a hidden view is work nobody sees, and the
+   next open runs initConnectionsView anyway.
+
+   Nothing reached from here writes: initConnectionsView and everything it
+   calls read the store and paint. That is what makes a sync-driven refill
+   safe to add — a refill that wrote would land in the sync module's
+   write-behind, come back as another sync event, and refill again. */
 (function(){
   function refillIfShowing(){
     try {
@@ -9969,6 +9977,43 @@ window.connHide   = connHide;
   });
   window.addEventListener('storage', function (e) {
     if (e && e.key === 'cygenix_project_connections') refillIfShowing();
+  });
+  /* THE FIRST CLOUD LOAD, which is the one this view used to miss.
+     cygenix-cosmos-sync.js fetches the Cosmos copy on page load and writes it
+     into localStorage through its own setItem wrapper. A same-tab write does
+     NOT fire 'storage' — that event is for OTHER tabs — so the listener above
+     never heard it, and initConnectionsView had already read the store once
+     when the view opened, before the fetch came back. The cards therefore sat
+     on "Not configured" until something else refilled them, which in practice
+     meant a trip to Profiles & integrations and back. The data had been there
+     the whole time; nobody had told the view. */
+  window.addEventListener('cygenix-sync-loaded', refillIfShowing);
+  /* AND THE PATH WHERE THE CLOUD IS VERIFIED EMPTY. A first sign-in, or an
+     account with nothing stored, never reaches applyCloud, so no
+     'cygenix-sync-loaded' is dispatched — the module only moves its health
+     state, which announces 'cygenix-sync-health'. The local copy is the only
+     copy in that case and it is what the view should be showing, so one
+     refill is still owed.
+
+     Health fires on every state change — degraded, recovered, retried — and
+     refilling on each would reset a builder mid-edit. So this watches one
+     transition only: lastLoadAt going from empty to set, which happens once
+     per page. The flag is set and never cleared, because a one-shot that its
+     own callback can re-arm is how a render loop starts. */
+  var sawFirstLoad = false;
+  window.addEventListener('cygenix-sync-health', function (e) {
+    if (sawFirstLoad) return;
+    var at = null;
+    try {
+      // The event carries a copy of the health state, so prefer it: it is
+      // correct even if the module has not finished exporting its API.
+      at = (e && e.detail && e.detail.lastLoadAt)
+        || (window.CygenixSync && window.CygenixSync.getHealth
+            && window.CygenixSync.getHealth().lastLoadAt) || null;
+    } catch (err) { /* no health to read; the next open refills anyway */ }
+    if (!at) return;
+    sawFirstLoad = true;
+    refillIfShowing();
   });
   // The organisation register changed (a list that differed, a create, a
   // retire): redraw that section only. Drawing reads the module's cache and
