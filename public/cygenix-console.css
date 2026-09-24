@@ -90,8 +90,19 @@
 
 /* ── Tokens ────────────────────────────────────────────────────────────── */
 :root {
-  /* Ground and ink */
-  --color-bg:            #f2f2f3;
+  /* Ground and ink.
+     The ground was #f2f2f3, a hair off white, on the reasoning that a panel
+     needs something to sit ON. But this design gave panels no fill of their
+     own (see "Panels are transparent line drawings" below), so the near-grey
+     was doing no work: it was a tint over the whole console that nothing
+     stood out from. WHITE_AND_NAV takes it to pure white, which is the
+     ground the hairlines and the neutral ramp were tuned against in the
+     first place. Everything that needs to read as a surface — an inset SQL
+     block, a masked connection row, a log excerpt — uses neutral-100 and now
+     sits slightly DARKER than the ground rather than slightly lighter, which
+     is the right way round for an inset.
+     Panels, the rail and the right-hand columns take no fill at all. */
+  --color-bg:            #ffffff;
   --color-text:          #1d1f20;
   --color-divider:       color-mix(in srgb, #1d1f20 16%, transparent);
 

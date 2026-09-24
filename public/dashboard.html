@@ -176,14 +176,20 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dash-status-archived{background:var(--bg4);color:var(--text3);border-color:var(--border)}
 
 /* HOME — see #view-dashboard. The right column is a permanent 360px
-   attention column on the neutral-100 ground: it sticks inside the .main
-   scroller so the needs-you queue stays visible at any scroll position. The
-   negative margins let the two panes reach the edges of .main, whose own
-   padding is what every other view uses. */
+   attention column: it sticks inside the .main scroller so the needs-you
+   queue stays visible at any scroll position. The negative margins let the
+   two panes reach the edges of .main, whose own padding is what every other
+   view uses.
+
+   It carries NO fill. It used to sit on neutral-100, which separated it from
+   a near-grey ground by about one percent of luminance — a difference you
+   could measure and not see. On the white ground its own left hairline is
+   what divides it, and that reads at any brightness, on any screen, which a
+   one-percent tint never did. */
 .hm-grid{display:grid;grid-template-columns:minmax(0,1fr) var(--cx-right-col-w,360px);margin:-28px -32px -34px;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px))}
 .hm-grid.hm-empty{grid-template-columns:1fr}
 .hm-main{padding:28px 32px 34px;min-width:0}
-.hm-side{background:var(--color-neutral-100);border-left:1px solid var(--color-divider);padding:28px 24px;position:sticky;top:0;align-self:start;display:flex;flex-direction:column;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));max-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));overflow:auto}
+.hm-side{border-left:1px solid var(--color-divider);padding:28px 24px;position:sticky;top:0;align-self:start;display:flex;flex-direction:column;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));max-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));overflow:auto}
 .hm-block{margin-top:30px}
 .hm-side .hm-block:first-child{margin-top:0}
 .hm-head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-top:26px}
@@ -380,7 +386,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
    in flight. The right column is the same 360px sticky column Home uses. */
 .jb-grid{display:grid;grid-template-columns:minmax(0,1fr) var(--cx-right-col-w,360px);margin:-28px -32px -34px;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px))}
 .jb-main{padding:28px 32px 34px;min-width:0}
-.jb-side{background:var(--color-neutral-100);border-left:1px solid var(--color-divider);padding:28px 24px;position:sticky;top:0;align-self:start;display:flex;flex-direction:column;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));max-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));overflow:auto}
+.jb-side{border-left:1px solid var(--color-divider);padding:28px 24px;position:sticky;top:0;align-self:start;display:flex;flex-direction:column;min-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));max-height:calc(100vh - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));overflow:auto}
 @media(max-width:1200px){.jb-grid{grid-template-columns:1fr}.jb-side{position:static;max-height:none;min-height:0;border-left:0;border-top:1px solid var(--color-divider)}}
 .jb-head{margin-bottom:22px}
 .jb-more-wrap{position:relative;display:inline-block}
@@ -1457,7 +1463,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=4502ac72c1" defer></script>
+<script src="/cygenix-sidebar.js?v=59031b2cdc" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-home.js?v=22a62c9cae" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>

@@ -184,9 +184,18 @@ check('the rail is 216 wide under a 60px masthead',
   && /top:calc\(var\(--cyg-hairline-h,0px\) \+ \$\{MASTHEAD_H\}px\)/.test(src));
 check('the open rail is text; icons are for the collapsed rail only',
   /\.cyg-nav-icon\{[^}]*display:none\}/.test(src) && /\.cyg-sidebar\.collapsed \.cyg-nav-icon\{display:block\}/.test(src));
-check('the active item is an accent-100 ground with a 2px accent bar, in ink — no white-on-dark rail',
-  /\.cyg-nav-item\.active\{[^}]*var\(--color-accent-100/.test(src)
-  && /border-left-color:var\(--color-accent/.test(src) && !/--cyg-ink:#14161f/.test(src));
+// This pin used to read "an accent-100 ground with a 2px accent bar, in ink
+// — no white-on-dark rail". WHITE_AND_NAV reverses it, and deliberately: the
+// old pale wash was legible against a near-grey ground and is a smudge
+// against a white one, so the current page is now the masthead navy. What
+// has NOT changed is that the rail as a whole stays light — one filled item,
+// not a dark column, which is what "no white-on-dark rail" was protecting.
+check('the current page is the masthead navy in white, from the shared token — not a hard-coded hex',
+  /\.cyg-nav-item\.active,[\s\S]{0,400}?background:var\(--color-accent-900/.test(src)
+  && !/\.cyg-nav-item\.active\{[^}]*var\(--color-accent-100/.test(src)
+  && !/--cyg-ink:#14161f/.test(src));
+check('and the rail itself is still a light column — the navy is one item, not the surface',
+  /\.cyg-sidebar\{[\s\S]{0,120}?background:var\(--color-bg/.test(src));
 
 /* ── 9. The tab strip ─────────────────────────────────────────────────────── */
 check('the strip renders into #cyg-subnav-mount and nowhere else',

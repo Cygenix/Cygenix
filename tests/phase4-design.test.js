@@ -258,10 +258,11 @@ check('the status vocabulary is four words in the status colours — Complete ok
   && /\.jb-st-complete\{color:var\(--state-ok\)\}/.test(DASH) && /\.jb-st-ready\{color:var\(--color-accent-800\)\}/.test(DASH)
   && /\.jb-st-failed\{color:var\(--state-fail\)\}/.test(DASH) && /\.jb-st-pending\{color:var\(--color-neutral-600\)\}/.test(DASH)
   && !/badge badge-green"><i class="ic-dot"/.test(APP) && !/SQL Ready/.test(APP));
-check('the right column is the 360px sticky column on neutral-100, rendered from the selected job',
+check('the right column is the 360px sticky column, unfilled, rendered from the selected job',
   /<aside class="jb-side" id="jobs-side" aria-label="Selected job"><\/aside>/.test(JOBS)
   && /\.jb-grid\{display:grid;grid-template-columns:minmax\(0,1fr\) var\(--cx-right-col-w,360px\)/.test(DASH)
-  && /\.jb-side\{background:var\(--color-neutral-100\);border-left:1px solid var\(--color-divider\);padding:28px 24px;position:sticky/.test(DASH)
+  && /\.jb-side\{border-left:1px solid var\(--color-divider\);padding:28px 24px;position:sticky/.test(DASH)
+  && !/\.jb-side\{[^}]*background:/.test(DASH)
   && /function renderJobSide\(shown\)/.test(APP) && /function jobsRowClick\(ev, id\)/.test(APP)
   && /onclick="jobsRowClick\(event,'\$\{j\.id\}'\)"/.test(APP));
 check('a click on the checkbox, a button or the drag handle never changes the selected job',

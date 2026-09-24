@@ -424,7 +424,7 @@
            must stay hoverable; over page content. The rail does not overlap
            it, so their order does not matter. */
         z-index:50;
-        background:var(--color-accent-900,#1d2d3d);color:var(--color-bg,#f2f2f3);
+        background:var(--color-accent-900,#1d2d3d);color:var(--color-bg,#fff);
         display:flex;align-items:center;gap:18px;padding:0 20px 0 16px;
         font-family:var(--font-body,'Noto Sans',system-ui,-apple-system,sans-serif);
         -webkit-font-smoothing:antialiased;
@@ -435,7 +435,7 @@
          sets it as "Cygenix". The logo beside it still keeps its own indigo
          gradient, which is the part that must not retheme. */
       .cx-wordmark{font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;font-size:21px;
-        letter-spacing:0;color:var(--color-bg,#f2f2f3);line-height:1}
+        letter-spacing:0;color:var(--color-bg,#fff);line-height:1}
       .cx-mh-div{width:1px;height:24px;background:rgba(255,255,255,.25);flex:0 0 auto}
       .cx-mh-proj{display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;cursor:pointer;
         font:inherit;padding:6px 8px;min-width:0;text-align:left}
@@ -490,19 +490,19 @@
       .cx-masthead .cx-mh-search:focus{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px;
         background:rgba(255,255,255,.18)}
       .cx-mh-btn{height:32px;padding:0 12px;border:1px solid rgba(255,255,255,.3);background:transparent;
-        color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;
+        color:var(--color-bg,#fff);font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;
         font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;border-radius:0}
       .cx-mh-btn:hover{background:rgba(255,255,255,.08)}
       .cx-mh-region{font-size:14px;opacity:.8;white-space:nowrap}
       .cx-mh-av{width:30px;height:30px;border:1px solid rgba(255,255,255,.35);background:transparent;
-        color:var(--color-bg,#f2f2f3);font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;
+        color:var(--color-bg,#fff);font-family:var(--font-heading,'Noto Sans',system-ui,sans-serif);font-weight:600;
         font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;border-radius:0;flex:0 0 auto}
       .cx-mh-av:hover{background:rgba(255,255,255,.08)}
       .cx-masthead :focus-visible{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px}
 
       /* ── The rail ── */
       .cyg-sidebar{
-        background:var(--color-bg,#f2f2f3);
+        background:var(--color-bg,#fff);
         border-right:1px solid var(--color-divider,rgba(29,31,32,.16));
         padding:8px 0 24px;
         width:${WIDTH_OPEN}px;
@@ -546,8 +546,39 @@
         cursor:pointer;position:relative;user-select:none;white-space:nowrap;
         transition:background .12s,color .12s;
       }
-      .cyg-nav-item:hover{color:var(--color-text,#1d1f20);background:color-mix(in srgb,var(--color-text,#1d1f20) 4%,transparent)}
-      .cyg-nav-item.active{color:var(--color-accent-900,#1d2d3d);background:var(--color-accent-100,#eef6ff);border-left-color:var(--color-accent,#5980a6)}
+      .cyg-nav-item:hover{color:var(--color-text,#1d1f20);background:var(--color-neutral-100,#f5f5f8)}
+      /* THE CURRENT PAGE IS THE MASTHEAD NAVY, and it reads from the same
+         token the masthead does so the two can never drift apart. Do not
+         hard-code #1d2d3d here; a theme that remaps --color-accent-900 (the
+         financial one does, to a warm brown) must move both together or the
+         rail stops looking like part of the same bar.
+
+         It used to be a pale accent-100 wash with a steel bar down the left.
+         On the old near-grey ground that was a visible-enough difference; on
+         pure white a wash that pale is a smudge, and the rail lost its
+         answer to "where am I". A filled block is the one place the console
+         spends a solid colour on navigation rather than on state, and it is
+         spent on exactly one item at a time.
+
+         Both selectors are listed because the rail's pinned-favourites clones
+         mirror .active but must NOT also claim aria-current — two current
+         pages is a worse answer for a screen reader than none. */
+      .cyg-nav-item.active,
+      .cyg-nav-item[aria-current="page"],
+      .cyg-nav-item.active:hover,
+      .cyg-nav-item[aria-current="page"]:hover{
+        color:#fff;background:var(--color-accent-900,#1d2d3d);font-weight:600;
+        border-left-color:var(--color-accent-900,#1d2d3d);
+      }
+      /* The icons inside it are masks painted with currentColor, so they
+         follow the text to white on their own. Stated anyway: an inline SVG
+         added later would not. */
+      .cyg-nav-item.active .ic,
+      .cyg-nav-item.active .cyg-nav-icon,
+      .cyg-nav-item[aria-current="page"] .ic,
+      .cyg-nav-item[aria-current="page"] .cyg-nav-icon{color:#fff;stroke:currentColor}
+      /* Inset by 2px so the ring lands inside the navy rather than on the
+         hairline beside it, where it would be lost. */
       .cyg-nav-item:focus-visible{outline:2px solid var(--color-accent,#5980a6);outline-offset:-2px}
       /* Icons are for the 54px rail only; the open rail is text. */
       .cyg-nav-icon{width:18px;height:18px;flex-shrink:0;color:currentColor;display:none}
@@ -575,7 +606,7 @@
       /* ── Account and project menus: popovers below the masthead ── */
       .cyg-user-menu{
         position:fixed;z-index:1000;min-width:232px;
-        background:var(--color-bg,#f2f2f3);border:1px solid var(--color-divider,rgba(29,31,32,.16));border-radius:0;
+        background:var(--color-bg,#fff);border:1px solid var(--color-divider,rgba(29,31,32,.16));border-radius:0;
         box-shadow:var(--shadow-strong,0 12px 32px rgba(43,43,45,.22));
         padding:4px 0;display:none;
         font-family:var(--font-body,'Noto Sans',system-ui,-apple-system,sans-serif);
@@ -1265,7 +1296,16 @@
     const sidebar = document.querySelector('.cyg-sidebar');
     if (sidebar){
       sidebar.querySelectorAll('.cyg-nav-item[data-key]').forEach(el => {
-        el.classList.toggle('active', el.dataset.key === rail);
+        const on = el.dataset.key === rail;
+        el.classList.toggle('active', on);
+        // The navy fill says "you are here" to anyone who can see it. This
+        // says the same thing to anyone who cannot: a screen reader announces
+        // the current item rather than reading fifteen identical links. Set
+        // on the REAL rail item only — the pinned-favourites clones mirror
+        // .active for the styling and deliberately do not claim this, because
+        // two items both announcing "current page" is worse than none.
+        if (on) el.setAttribute('aria-current', 'page');
+        else el.removeAttribute('aria-current');
       });
     }
     renderSubnav(key);
@@ -1657,6 +1697,11 @@
     var node = src.cloneNode(true);
     node.removeAttribute('data-key');
     node.removeAttribute('id');
+    // cloneNode copies attributes, so a pin taken while its page is open
+    // would carry aria-current="page" too and the rail would announce two
+    // current pages. syncActive mirrors .active for the navy fill; the
+    // attribute stays on the one real item.
+    node.removeAttribute('aria-current');
     node.className = 'cyg-nav-item cyg-fav-item';
     node.setAttribute('data-favkey', key);
     node.setAttribute('tabindex', '0');

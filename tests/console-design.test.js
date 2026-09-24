@@ -192,9 +192,14 @@ check('never "Loading…" — the outstanding cells shimmer',
 check('the schedules module keeps its tested contract and simply tells Home when the list lands',
   /if \(typeof renderHomeNextScheduled === 'function'\) renderHomeNextScheduled\(schedules\);/.test(app)
   && /function renderDashboardSchedules\(schedules\)\{/.test(app));
-check('the right column is a permanent 360px sticky column on neutral-100',
+// WHITE_AND_NAV: the column lost its fill. On the old near-grey ground a
+// neutral-100 panel was about one percent of luminance away from it — a
+// difference you could measure and not see. On white, the left hairline is
+// what divides it, and a hairline reads at any brightness.
+check('the right column is a permanent 360px sticky column with no fill of its own',
   /\.hm-side\{[^}]*position:sticky/.test(dash) && /--cx-right-col-w:\s*360px/.test(css)
-  && /\.hm-side\{[^}]*var\(--color-neutral-100\)/.test(dash));
+  && /\.hm-side\{border-left:1px solid var\(--color-divider\)/.test(dash)
+  && !/\.hm-side\{[^}]*background:/.test(dash));
 check('the empty state is three numbered steps, never "No projects yet"',
   /cx-steps/.test(app) && !/No projects yet/.test(app.slice(app.indexOf('function renderHome('), app.indexOf('function renderHome(') + 9000)));
 
