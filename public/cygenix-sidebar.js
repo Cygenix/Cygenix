@@ -696,7 +696,7 @@
   function ensureA11y(){
     if (window.CygenixA11y || document.getElementById('cygenix-a11y-js')) return;
     const s = document.createElement('script');
-    s.id = 'cygenix-a11y-js'; s.src = '/cygenix-a11y.js';
+    s.id = 'cygenix-a11y-js'; s.src = '/cygenix-a11y.js?v=a64ca52904';
     document.head.appendChild(s);
   }
 
@@ -708,7 +708,7 @@
     let s = document.getElementById('cygenix-drive-modal-js');
     if (!s){
       s = document.createElement('script');
-      s.id = 'cygenix-drive-modal-js'; s.src = '/cygenix-drive-modal.js';
+      s.id = 'cygenix-drive-modal-js'; s.src = '/cygenix-drive-modal.js?v=5e7a748b4a';
       document.head.appendChild(s);
     }
     if (cb) s.addEventListener('load', cb, { once: true });
@@ -1595,10 +1595,10 @@
       try {
         if (window.CygenixDriveSync) return;
         if (typeof window.getCygenixIdToken === 'function') {
-          inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js');
+          inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=e553112889');
         } else {
-          inject('cygenix-auth-token-js', '/cygenix-auth-token.js', function(){
-            inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js');
+          inject('cygenix-auth-token-js', '/cygenix-auth-token.js?v=8ed8e00fad', function(){
+            inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=e553112889');
           });
         }
       } catch (_) {}

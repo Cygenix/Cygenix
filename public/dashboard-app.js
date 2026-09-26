@@ -275,7 +275,7 @@ function ensureServerMigration() {
   if (!s) {
     s = document.createElement('script');
     s.id = 'server-migration-js';
-    s.src = '/server-migration.js';
+    s.src = '/server-migration.js?v=1e4ff50044';
     document.head.appendChild(s);
   }
   s.addEventListener('load', () => { window.ServerMigration && window.ServerMigration.init(); }, { once: true });

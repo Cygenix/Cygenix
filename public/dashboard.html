@@ -14,13 +14,13 @@
        text paints in a fallback face and swaps a moment later. -->
   <link rel="preload" href="/fonts/noto-sans-400-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/noto-sans-600-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/cygenix-console.css">
-<link rel="stylesheet" href="/cygenix-theme.css">
-<link rel="stylesheet" href="/cygenix-icons.css">
-<link rel="stylesheet" href="/cygenix-datastream.css">
+  <link rel="stylesheet" href="/cygenix-console.css?v=4933846bf6">
+<link rel="stylesheet" href="/cygenix-theme.css?v=4e86b26a09">
+<link rel="stylesheet" href="/cygenix-icons.css?v=0ebb2f2b78">
+<link rel="stylesheet" href="/cygenix-datastream.css?v=4c1d02e60d">
 <script src="/cygenix-model.js?v=0c71915777"></script>
-<link rel="stylesheet" href="/cygenix-mobile.css">
-<link rel="stylesheet" href="/cygenix-history.css">
+<link rel="stylesheet" href="/cygenix-mobile.css?v=d176f7c16e">
+<link rel="stylesheet" href="/cygenix-history.css?v=4154a39ada">
 <meta name="theme-color" content="#FFFFFF">
 <!-- Theme pre-paint: read the user's saved theme and apply it to <html> BEFORE
      any content renders, so we don't get a flash of the wrong theme on load.
@@ -1443,7 +1443,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     inject('https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js');
     if (!document.getElementById('server-migration-js') && !window.ServerMigration) {
       var sm = document.createElement('script');
-      sm.id = 'server-migration-js'; sm.src = '/server-migration.js'; sm.async = true;
+      sm.id = 'server-migration-js'; sm.src = '/server-migration.js?v=1e4ff50044'; sm.async = true;
       document.head.appendChild(sm);
     }
   }
@@ -1468,7 +1468,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=59031b2cdc" defer></script>
+<script src="/cygenix-sidebar.js?v=980f724c4a" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-home.js?v=22a62c9cae" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
@@ -1496,7 +1496,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=d7d0f6518f" defer></script>
-  <script src="/dashboard-app.js?v=303c0f1c83" defer></script>
+  <script src="/dashboard-app.js?v=6b4136458c" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
@@ -4561,7 +4561,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=7f823e8353"></script>
+<script src="/cygenix-assistant.js?v=ab7ebac718"></script>
 <script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>

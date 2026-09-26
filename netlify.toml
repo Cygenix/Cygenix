@@ -90,23 +90,26 @@
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
 
 # ── Caching ──────────────────────────────────────────────────────────────────
-# Scripts referenced from HTML carry ?v=<content hash> (scripts/stamp-assets.js),
-# so a changed file always has a changed URL: these numbers only ever apply to a
-# file that has NOT changed, and a new build is fetched the moment the
-# always-revalidated HTML points somewhere new.
+# Every local script and stylesheet URL carries ?v=<content hash>
+# (scripts/stamp-assets.js): <script src>, <link href>, AND the quoted paths
+# that runtime injections use (the sidebar's lazy Drive modal, the a11y
+# helper, server-migration). A changed file therefore always has a changed
+# URL, and the always-revalidated HTML points at it on the next navigation.
 #
-# The window still stays modest because scripts injected at RUNTIME by other
-# scripts (the sidebar's lazy Drive modal) have no tag to stamp and rely on
-# these headers alone. A day of stale-while-revalidate meant a fix in one of
-# those could take a day to arrive; ten minutes bounds it.
+# So these files can be cached for a year and marked immutable: the browser
+# never asks again about a URL it holds. The old value (max-age=300) meant
+# every navigation more than five minutes after the last one revalidated
+# ~50 unchanged files with the server. It was kept short only because the
+# runtime-injected scripts were unstamped; they are stamped now, and
+# tests/asset-stamping.test.js fails the build if any long-lived URL is not.
 [[headers]]
   for = "/*.js"
   [headers.values]
-    Cache-Control = "public, max-age=300, stale-while-revalidate=600"
+    Cache-Control = "public, max-age=31536000, immutable"
 [[headers]]
   for = "/*.css"
   [headers.values]
-    Cache-Control = "public, max-age=300, stale-while-revalidate=600"
+    Cache-Control = "public, max-age=31536000, immutable"
 # The favicon rarely changes and is requested on every page.
 [[headers]]
   for = "/favicon.svg"

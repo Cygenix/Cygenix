@@ -92,9 +92,9 @@ check('no console page declares a shared token in its own :root (' + appPages.le
 check('every console page loads cygenix-console.css, and before cygenix-theme.css where it loads that too',
   appPages.every(f => {
     const s = read(f);
-    const a = s.indexOf('href="/cygenix-console.css"'), b = s.indexOf('href="/cygenix-theme.css"');
+    const a = s.indexOf('href="/cygenix-console.css'), b = s.indexOf('href="/cygenix-theme.css');
     return a !== -1 && (b === -1 || a < b);
-  }), appPages.filter(f => read(f).indexOf('href="/cygenix-console.css"') === -1).join(', '));
+  }), appPages.filter(f => read(f).indexOf('href="/cygenix-console.css') === -1).join(', '));
 check('the Schema Explorer keeps its own data-map ramp — page-specific tokens are left alone',
   /--da-s1/.test(rootBlock(read('schema_explorer.html'))));
 

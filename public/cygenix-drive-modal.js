@@ -153,8 +153,8 @@
     if (_syncReady) return _syncReady;
     _syncReady = (typeof window.getCygenixIdToken === 'function'
         ? Promise.resolve()
-        : loadScriptOnce('cygenix-auth-token-js', '/cygenix-auth-token.js'))
-      .then(() => loadScriptOnce('cygenix-drive-sync-js', '/cygenix-drive-sync.js'))
+        : loadScriptOnce('cygenix-auth-token-js', '/cygenix-auth-token.js?v=8ed8e00fad'))
+      .then(() => loadScriptOnce('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=e553112889'))
       .then(() => !!window.CygenixDriveSync);
     return _syncReady;
   }

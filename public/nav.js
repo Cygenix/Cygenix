@@ -295,7 +295,7 @@
     // Accessibility button in the footer.
     if (!window.CygenixA11y && !document.getElementById('cygenix-a11y-js')) {
       const a = document.createElement('script');
-      a.id = 'cygenix-a11y-js'; a.src = '/cygenix-a11y.js';
+      a.id = 'cygenix-a11y-js'; a.src = '/cygenix-a11y.js?v=a64ca52904';
       document.head.appendChild(a);
     }
 

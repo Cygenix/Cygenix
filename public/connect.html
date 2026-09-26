@@ -6,10 +6,10 @@
 <!-- Site-wide theme overrides (Financial palette + future themes).
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
-<link rel="stylesheet" href="/cygenix-theme.css">
-<link rel="stylesheet" href="/cygenix-icons.css">
+<link rel="stylesheet" href="/cygenix-theme.css?v=4e86b26a09">
+<link rel="stylesheet" href="/cygenix-icons.css?v=0ebb2f2b78">
 <script src="/cygenix-model.js?v=0c71915777"></script>
-<link rel="stylesheet" href="/cygenix-mobile.css">
+<link rel="stylesheet" href="/cygenix-mobile.css?v=d176f7c16e">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
      Reads from cygenix_app_prefs (same key the Settings page writes to). -->
@@ -199,7 +199,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
      loading connections.js also loads these. -->
 <script src="/cygenix-profiles.js?v=dc0206fcd9" defer></script>
 <script src="/cygenix-profile-apply.js?v=2928c2fb5a" defer></script>
-<script src="/nav.js?v=aae587eea6" defer></script>
+<script src="/nav.js?v=fd6e71957e" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 </head>

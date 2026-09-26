@@ -88,8 +88,8 @@ check('and neither page redeclares it at :root',
   tok(rootBlock(index), 'accent') === null && tok(rootBlock(login), 'accent') === null,
   'index=' + tok(rootBlock(index), 'accent') + ' login=' + tok(rootBlock(login), 'accent'));
 check('both pages load that one file',
-  /<link rel="stylesheet" href="\/cygenix-brand\.css">/.test(index)
-  && /<link rel="stylesheet" href="\/cygenix-brand\.css">/.test(login));
+  /<link rel="stylesheet" href="\/cygenix-brand\.css(\?v=[a-f0-9]{10})?">/.test(index)
+  && /<link rel="stylesheet" href="\/cygenix-brand\.css(\?v=[a-f0-9]{10})?">/.test(login));
 // The product mockups on the landing page deliberately carry the console's own
 // palette in a scoped block — that is not drift, it is the mock being the app.
 check('the mockups still map to the console palette',

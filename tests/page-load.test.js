@@ -129,7 +129,7 @@ function scripts(html) {
   check('and only those two — preloading every weight would cost more bandwidth than it saves',
     consolePages.every((f) => (read(f).match(/rel="preload" href="\/fonts\//g) || []).length === 2));
   check('the preloads come before the stylesheet, so they are the first thing after the HTML',
-    consolePages.every((f) => { const s = read(f); return s.indexOf('rel="preload" href="/fonts/') < s.indexOf('href="/cygenix-console.css"'); }));
+    consolePages.every((f) => { const s = read(f); return s.indexOf('rel="preload" href="/fonts/') < s.indexOf('href="/cygenix-console.css'); }));
   check('the files they name exist', ['noto-sans-400-latin.woff2', 'noto-sans-600-latin.woff2']
     .every((f) => fs.existsSync(path.join(PUB, 'fonts', f))));
   check('and carry crossorigin, without which the browser fetches every font twice',

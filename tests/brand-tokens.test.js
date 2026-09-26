@@ -65,7 +65,7 @@ const rootBlock = (src) => {
 PUBLIC_PAGES.forEach((f) => {
   const src = read(f);
   check(f + ' loads the shared tokens',
-    /<link rel="stylesheet" href="\/cygenix-brand\.css">/.test(src));
+    /<link rel="stylesheet" href="\/cygenix-brand\.css(\?v=[a-f0-9]{10})?">/.test(src));
   const root = rootBlock(src);
   const dupes = ['--accent', '--accent2', '--accent-glow', '--sans', '--serif', '--mono', '--r']
     .filter((t) => new RegExp(t + ':').test(root));
