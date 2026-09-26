@@ -19,7 +19,12 @@
 <meta name="twitter:title" content="Cygenix – Report Builder">
 <meta name="twitter:description" content="Build paginated tabular and visual reports against migration jobs and saved connections.">
 <title>Cygenix – Report Builder</title>
-<link rel="stylesheet" href="/cygenix-console.css">
+<!-- The two weights the first paint needs. Without these the browser only
+       discovers the fonts after the stylesheet has arrived and been parsed, so
+       text paints in a fallback face and swaps a moment later. -->
+  <link rel="preload" href="/fonts/noto-sans-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/noto-sans-600-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/cygenix-console.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{

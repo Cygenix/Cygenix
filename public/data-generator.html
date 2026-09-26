@@ -7,7 +7,12 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides — must load BEFORE the theme pre-paint script
      below so its CSS variables are available the moment data-theme is set. -->
-<link rel="stylesheet" href="/cygenix-console.css">
+<!-- The two weights the first paint needs. Without these the browser only
+       discovers the fonts after the stylesheet has arrived and been parsed, so
+       text paints in a fallback face and swaps a moment later. -->
+  <link rel="preload" href="/fonts/noto-sans-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/noto-sans-600-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/cygenix-console.css">
 <link rel="stylesheet" href="/cygenix-theme.css">
 <link rel="stylesheet" href="/cygenix-icons.css">
 <script src="/cygenix-model.js?v=0c71915777"></script>
@@ -32,7 +37,7 @@
 })();
 </script>
 <title>Cygenix – Data Generator</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
 <script src="/cygenix-data-api.js?v=be28b1af7a" defer></script>

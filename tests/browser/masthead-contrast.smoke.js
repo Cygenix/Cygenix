@@ -42,7 +42,7 @@ const path = require('path');
 const { chromium } = require('playwright-core');
 
 const PUB = path.join(__dirname, '..', '..', 'public');
-const PORT = Number(process.env.SMOKE_PORT || 8411);
+const PORT = Number(process.env.SMOKE_PORT || 8429);
 const EXE = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 let pass = 0, fail = 0;

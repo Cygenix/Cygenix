@@ -263,9 +263,13 @@ const P = (st, id) => st.profiles.filter(p => p.id === id)[0];
 
 /* ── 8. Wiring ──────────────────────────────────────────────────────────── */
 
-const PAGE = read('public', 'data_stream.html');
+// Each screen's code is in its own deferred file now; the page holds the
+// markup and the tag. Reading both keeps every pin below meaning what it did.
+const withApp = (page) => read('public', page + '.html')
+  + read('public', page.replace(/_/g, '-') + '-app.js');
+const PAGE = withApp('data_stream');
 const GLUE = read('public', 'cygenix-datastream-page.js');
-const DESIGN = read('public', 'data_stream_designer.html');
+const DESIGN = withApp('data_stream_designer');
 const pages = ['data_stream', 'data_stream_store', 'data_stream_events', 'data_stream_monitor', 'data_stream_designer'];
 
 check('every stream page loads the shared profile helper and the connections module',
@@ -329,7 +333,7 @@ check('the Designer lists tables from the schema cached for the profile\'s side'
   /CygenixSchemaGraph\.cacheKeyFor\(value\)/.test(DESIGN)
   && /cacheKeyFor: \(connValue\) => cacheKey\(connValue\)/.test(read('public', 'cygenix-schema-graph.js')));
 for (const p of ['data_stream_store', 'data_stream_events', 'data_stream_monitor']) {
-  const src = read('public', p + '.html');
+  const src = withApp(p);
   check(p + ' carries the toggle and paints through P.visible',
     /U\.scopeToggle\(P\.scope\(\), P\.activeProfile\(\)\)/.test(src) && /P\.visible(Ids)?\(/.test(src)
     && /function dsScope\(mode\)/.test(src), p);

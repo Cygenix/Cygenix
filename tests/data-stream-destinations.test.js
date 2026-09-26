@@ -346,10 +346,18 @@ const prof = (id) => store().profiles.filter((p) => p.id === id)[0];
   check('both new actions are on the client allowlist under the stream category',
     /'stream\.prod_guard':\s*'stream'/.test(audit) && /'stream\.destination_converted':\s*'stream'/.test(audit));
 
-  const designer = read('public', 'data_stream_designer.html');
-  check('the Designer loads the secrets module before the destination store, neither deferred',
-    (() => { const a = designer.indexOf('/cygenix-saved-conn-secrets.js'), b = designer.indexOf('/cygenix-stream-destinations.js');
-      return a > 0 && b > a && !/cygenix-stream-destinations\.js[^>]*defer/.test(designer); })());
+  // The Designer's own code moved to data-stream-designer-app.js and is
+  // deferred, so the modules it reads are deferred too and order is what
+  // matters now: secrets, then the destination store, then the screen. This
+  // pin used to say "neither deferred" — that was only ever true because an
+  // inline block needed them at parse time, and it cost the page 272KB of
+  // blocking script a tenth of the way in.
+  const designerHtml = read('public', 'data_stream_designer.html');
+  const designer = designerHtml + read('public', 'data-stream-designer-app.js');
+  check('the Designer loads the secrets module, then the destination store, then its own deferred code',
+    (() => { const a = designerHtml.indexOf('/cygenix-saved-conn-secrets.js'), b = designerHtml.indexOf('/cygenix-stream-destinations.js'),
+      c = designerHtml.indexOf('/data-stream-designer-app.js');
+      return a > 0 && b > a && c > b && /data-stream-designer-app\.js[^>]*defer/.test(designerHtml); })());
   check('the Designer picks a destination by name and offers New / Convert',
     /setDestSaved\(/.test(designer) && /dsNewDestination\(\)/.test(designer) && /dsConvertDestination\(\)/.test(designer)
     && /Convert to saved connection/.test(designer));
@@ -360,7 +368,7 @@ const prof = (id) => store().profiles.filter((p) => p.id === id)[0];
   check('no destination endpoint or credential field name is read straight into the Designer\'s markup',
     !/destination\.(url|secret|connString)/.test(designer));
 
-  const list = read('public', 'data_stream.html');
+  const list = read('public', 'data_stream.html') + read('public', 'data-stream-app.js');
   check('the Streams page asks for the id on Start and on Resume and hands it to the engine',
     (list.match(/promptProdConfirm\(/g) || []).length === 2 && (list.match(/opts\.confirmedProfileId = typed/g) || []).length === 2);
   check('a refused start persists (so the refusal audit lands) before it alerts',

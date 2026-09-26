@@ -141,6 +141,20 @@ const CONNS = [
   check('arriving with nothing selected auto-selects the newest non-production profile and loads it',
     (await page.evaluate(() => JSON.parse(localStorage.getItem('cygenix_profiles_v1')).settings.activeProfileId)) === 'FIN-DEV-01'
     && before.srcFnUrl === 'https://src.azurewebsites.net/api/db', JSON.stringify(before));
+  // THE CLICK BELOW MUST BE A REAL SWITCH, and on arrival it is not always
+  // one. Auto-select has already put FIN-DEV-01 in the store; whether the
+  // table shows it CHECKED depends on a re-render the page does when the
+  // secrets module announces 'cygenix:conn-secrets-synced' (profiles.html
+  // listens and calls renderAll). If that lands before this click, the radio
+  // is already checked and a click on a checked radio fires no change event
+  // at all — no handler, no message, no save — which read here as three
+  // failures a few runs in ten, depending on nothing but request timing.
+  // So: let the page settle, then move to the UAT profile through its own
+  // radio, so that clicking FIN-DEV-01 is the switch this section is about.
+  await page.waitForFunction(() => !!document.querySelector('input[name="cp-active"]:checked'), null, { timeout: 3000 }).catch(() => {});
+  await page.click('input[name="cp-active"][onchange*="FIN_3E_UAT"]');
+  await page.waitForFunction(() => /FIN_3E_UAT/.test((document.getElementById('cp-apply-msg') || {}).textContent || ''), null, { timeout: 3000 });
+  for (let i = 0; i < 8; i++) { const n = saves.length; await page.waitForTimeout(4000); if (saves.length === n) break; }
   saves.length = 0;
   await page.click('input[name="cp-active"][onchange*="FIN-DEV-01"]');
   await page.waitForTimeout(500);

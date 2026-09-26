@@ -1,0 +1,422 @@
+/* data-stream-events-app.js — the Change events screen's own code, moved out of the page.
+ *
+ * WHY THIS IS A FILE AND NOT A <script> BLOCK
+ * It used to sit inline at about 28% of the way through data_stream_events.html, right
+ * after the modules it reads from (datastream, datastream-ui, datastream-page). An inline script cannot be
+ * deferred, and it needed those modules at parse time, so THEY could not be
+ * deferred either. The browser therefore stopped parsing the page one tenth
+ * of the way in, fetched and ran 182KB of JavaScript, and only then carried
+ * on to the markup that is the actual screen. On a 5 Mbps line that was the
+ * difference between a page that appears and one that sits blank.
+ *
+ * As an external file it is loaded with `defer`, so it runs in document order
+ * after the modules — which are now deferred too — and after the whole page
+ * has parsed. Nothing about scope changes: this is a classic script, so its
+ * top-level functions are still the globals the page's onclick= handlers
+ * call, exactly as they were inline. It also gets a content stamp from
+ * scripts/stamp-assets.js and a cache entry of its own, which inline code
+ * never had.
+ */
+'use strict';
+const DS = window.CygenixDataStream;
+const U  = window.CygenixDataStreamUI;
+const P  = window.CygenixDataStreamPage;
+
+let f = { stream: '', table: '', ops: [], states: [], key: '', range: 'live' };
+let tailPaused = false;
+let bufferedIds = new Set();     // captured while paused, shown on resume
+let shownIds = [];               // what is currently on screen, newest first
+let openEventId = null;
+let replayStream = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  P.boot();
+  P.wireCopy();
+  const q = P.query();
+  if (q.stream) f.stream = q.stream;
+  if (q.table) f.table = q.table;
+  if (q.state) f.states = [q.state];
+  if (q.op) f.ops = [q.op];
+  if (q.range) f.range = q.range;
+
+  P.onTick(paint);
+  P.start();
+  paint();
+});
+
+function visible(state) {
+  const now = state.clockNow || Date.now();
+  const windowMs = { live: null, '15m': 900000, '1h': 3600000 }[f.range] || null;
+  // Only events from streams in the current profile scope.
+  const inScope = P.visibleIds(state);
+  return (state.events || []).filter(e => {
+    if (!inScope[e.streamId]) return false;
+    if (f.stream && e.streamId !== f.stream) return false;
+    if (f.table && e.table !== f.table) return false;
+    if (f.ops.length && f.ops.indexOf(e.op) === -1) return false;
+    if (f.states.length && f.states.indexOf(e.deliveryState) === -1) return false;
+    if (f.key && String(Object.values(e.key).join(' ')).indexOf(f.key) === -1) return false;
+    if (windowMs && (now - Date.parse(e.ts)) > windowMs) return false;
+    return true;
+  });
+}
+
+function paint(state) {
+  const s = state || P.state;
+  if (!s) return;
+  paintFilters(s);
+  paintDlq(s);
+
+  const rows = visible(s);
+
+  /* Paused means the SCREEN stops, not the world. New records are counted
+     and held; resuming shows them. A tail that kept scrolling under a person
+     reading a row is a tail nobody can read. */
+  if (tailPaused) {
+    rows.forEach(e => { if (shownIds.indexOf(e.id) === -1) bufferedIds.add(e.id); });
+    const n = bufferedIds.size;
+    const btn = document.getElementById('ds-buffered');
+    btn.style.display = n ? 'block' : 'none';
+    btn.textContent = n + ' new event' + (n === 1 ? '' : 's') + ' — click to resume';
+    return;
+  }
+  document.getElementById('ds-buffered').style.display = 'none';
+
+  const fresh = rows.filter(e => shownIds.indexOf(e.id) === -1).map(e => e.id);
+  shownIds = rows.map(e => e.id);
+  document.getElementById('ds-tail-sub').textContent =
+    rows.length + ' record(s) retained' + (f.range === 'live' ? ' · live' : ' · last ' + f.range);
+
+  const tail = document.getElementById('ds-tail');
+  if (!rows.length) {
+    tail.innerHTML = U.emptyState({ icon: 'bolt', title: 'No change records match',
+      body: (s.streams || []).some(x => DS.isLive(x.status))
+        ? 'Streams are running, but nothing here matches those filters yet.'
+        : 'No stream is running, so nothing is being captured. Start one on the Streams screen.',
+      actionHtml: '<a class="btn" href="/data-stream">Go to Streams</a>' });
+    return;
+  }
+
+  tail.innerHTML = '<div class="ds-tablewrap"><table class="ds-table">'
+    + '<thead><tr><th>Time</th><th>Stream</th><th>Table</th><th>Op</th><th>Key</th>'
+    + '<th>Position</th><th>Delivery</th><th class="ds-right">Attempts</th><th class="ds-right">Latency</th></tr></thead>'
+    + '<tbody>' + rows.slice(0, 250).map(e => rowHtml(e, s, fresh.indexOf(e.id) !== -1)).join('')
+    + '</tbody></table></div>';
+  tail.querySelectorAll('tbody tr').forEach(tr => {
+    tr.addEventListener('click', () => dsOpenEvent(tr.getAttribute('data-id')));
+  });
+  if (fresh.length) P.announce(fresh.length + ' new change record(s).');
+}
+
+function rowHtml(e, s, isNew) {
+  const stream = DS.getStream(s, e.streamId) || { name: e.streamId };
+  return '<tr data-id="' + U.esc(e.id) + '"' + (isNew ? ' class="ds-new"' : '') + '>'
+    + '<td><span class="ds-ts" title="' + U.esc(e.ts) + '">' + U.esc(e.ts.slice(11, 23)) + '</span></td>'
+    + '<td><span class="ds-num">' + U.esc(stream.name) + '</span></td>'
+    + '<td><span class="ds-num">' + U.esc(e.table) + '</span></td>'
+    + '<td>' + U.opBadge(e.op) + '</td>'
+    + '<td><span class="ds-num">' + U.esc(keyText(e)) + '</span></td>'
+    + '<td>' + U.monoCopy(e.position, { max: 16 }) + '</td>'
+    + '<td>' + U.deliveryPill(e.deliveryState) + '</td>'
+    + '<td class="ds-right"><span class="ds-num">' + (e.attempts || 1) + '</span></td>'
+    + '<td class="ds-right"><span class="ds-num">' + (e.latencyMs || 0) + 'ms</span></td>'
+    + '</tr>';
+}
+function keyText(e) {
+  return Object.keys(e.key || {}).map(k => k + '=' + e.key[k]).join(', ');
+}
+
+/* ── Filters ────────────────────────────────────────────────────────────── */
+function dsScope(mode) { P.setScope(mode); paint(); P.announce(mode === 'all' ? 'Showing every profile.' : 'Showing this profile only.'); }
+
+function paintFilters(s) {
+  // The stream and table pickers offer what is in scope, not everything.
+  const streams = P.visible(s);
+  const tables = [];
+  streams.forEach(st => (st.objects || []).forEach(o => {
+    if (tables.indexOf(o.table) === -1) tables.push(o.table);
+  }));
+
+  let html = U.scopeToggle(P.scope(), P.activeProfile()) + '<span class="ds-sep"></span>'
+    + '<label class="sr-only" for="ds-f-stream">Stream</label>'
+    + '<select id="ds-f-stream" class="ds-input" onchange="setF(\'stream\', this.value)">'
+    + '<option value="">Every stream</option>'
+    + streams.map(st => '<option value="' + U.esc(st.id) + '"' + (f.stream === st.id ? ' selected' : '') + '>'
+      + U.esc(st.name) + '</option>').join('') + '</select>';
+
+  html += '<label class="sr-only" for="ds-f-table">Table</label>'
+    + '<select id="ds-f-table" class="ds-input" onchange="setF(\'table\', this.value)">'
+    + '<option value="">Every table</option>'
+    + tables.map(t => '<option value="' + U.esc(t) + '"' + (f.table === t ? ' selected' : '') + '>'
+      + U.esc(t) + '</option>').join('') + '</select>';
+
+  html += '<span class="ds-sep"></span>';
+  html += ['I', 'U', 'D', 'DDL'].map(op =>
+    '<button class="ds-chip' + (f.ops.indexOf(op) !== -1 ? ' on' : '') + '" type="button"'
+    + ' onclick="toggleF(\'ops\',\'' + op + '\')" title="' + U.OP_TITLE[op] + '">' + op + '</button>').join('');
+
+  html += '<span class="ds-sep"></span>';
+  html += [['delivered', 'Delivered'], ['retrying', 'Retrying'], ['dead', 'Dead'], ['pending', 'Pending']]
+    .map(([v, label]) => '<button class="ds-chip' + (f.states.indexOf(v) !== -1 ? ' on' : '') + '" type="button"'
+      + ' onclick="toggleF(\'states\',\'' + v + '\')">' + label + '</button>').join('');
+
+  html += '<span class="ds-sep"></span>';
+  html += '<label class="sr-only" for="ds-f-key">Key search</label>'
+    + '<input id="ds-f-key" class="ds-input" type="search" placeholder="Key value…" value="' + U.esc(f.key)
+    + '" oninput="setF(\'key\', this.value)" style="width:130px">';
+  html += ['live', '15m', '1h'].map(r =>
+    '<button class="ds-chip' + (f.range === r ? ' on' : '') + '" type="button"'
+    + ' onclick="setF(\'range\',\'' + r + '\')">' + (r === 'live' ? 'Live' : 'Last ' + r) + '</button>').join('');
+
+  document.getElementById('ds-filters').innerHTML = html;
+
+  // The dead-letter filter turns the bulk requeue on, and only then.
+  const btn = document.getElementById('ds-requeue-btn');
+  const deadOnly = f.states.length === 1 && f.states[0] === 'dead';
+  btn.style.display = deadOnly ? 'inline-flex' : 'none';
+  if (deadOnly) {
+    const n = visible(s).length;
+    btn.textContent = 'Requeue ' + n + ' dead letter' + (n === 1 ? '' : 's');
+    btn.disabled = !n;
+  }
+}
+function setF(key, value) {
+  f[key] = value;
+  shownIds = [];
+  P.setUrl({ stream: f.stream || null, table: f.table || null,
+             state: f.states[0] || null, op: f.ops[0] || null,
+             range: f.range === 'live' ? null : f.range });
+  paint();
+  if (key === 'key') {
+    const el = document.getElementById('ds-f-key');
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }
+}
+function toggleF(key, value) {
+  const i = f[key].indexOf(value);
+  if (i === -1) f[key] = f[key].concat([value]); else f[key] = f[key].filter(x => x !== value);
+  setF(key, f[key]);
+}
+
+/* ── Dead letters ───────────────────────────────────────────────────────── */
+function paintDlq(s) {
+  const el = document.getElementById('ds-dlq-summary');
+  const dead = (s.events || []).filter(e => e.deliveryState === 'dead');
+  const total = (s.streams || []).reduce((a, x) => a + (x.metrics.dlqDepth || 0), 0);
+  if (!dead.length && !total) { el.style.display = 'none'; return; }
+
+  // Group by reason: "23 events · destination rejected …" is actionable in a
+  // way that "23 events failed" is not.
+  const byReason = {};
+  dead.forEach(e => { const r = e.error || 'unknown'; byReason[r] = (byReason[r] || 0) + 1; });
+  el.style.display = 'block';
+  el.innerHTML = '<div class="panel-header"><div class="panel-title">Dead letters</div>'
+    + '<span class="panel-sub">' + total + ' record(s) across every stream</span>'
+    + '<button class="btn" style="margin-left:auto" onclick="showDeadOnly()">Show only dead letters</button></div>'
+    + '<div class="ds-insp-body">'
+    + Object.keys(byReason).map(r => '<div class="ds-note error" style="margin-bottom:0.35rem">'
+      + byReason[r] + ' event' + (byReason[r] === 1 ? '' : 's') + ' · ' + U.esc(r) + '</div>').join('')
+    + '</div>';
+}
+function showDeadOnly() { f.states = ['dead']; setF('states', f.states); }
+
+function dsRequeueSelected() {
+  const s = P.state;
+  const rows = visible(s);
+  if (!rows.length) return;
+  const byStream = {};
+  rows.forEach(e => { byStream[e.streamId] = (byStream[e.streamId] || 0) + 1; });
+  const names = Object.keys(byStream).map(id => (DS.getStream(s, id) || {}).destination)
+    .filter(Boolean).map(d => d.label);
+  if (!confirm(U.confirmText('requeue', { records: rows.length, destination: names.join(', ') || 'their destinations' }))) return;
+  Object.keys(byStream).forEach(id => DS.requeueDlq(s, id, byStream[id]));
+  P.persist();
+  shownIds = [];
+  paint();
+  P.announce(rows.length + ' record(s) requeued.');
+}
+
+/* ── The tail control ───────────────────────────────────────────────────── */
+function dsToggleTail() {
+  tailPaused = !tailPaused;
+  const btn = document.getElementById('ds-tail-btn');
+  btn.innerHTML = tailPaused
+    ? '<i class="ic ic-play"></i> Resume'
+    : '<i class="ic ic-pause"></i> Pause tail';
+  btn.classList.toggle('on', tailPaused);
+  document.getElementById('ds-tail-title').textContent = tailPaused ? 'Live tail — paused' : 'Live tail';
+  if (!tailPaused) dsResumeTail();
+  P.announce(tailPaused ? 'Tail paused. New records are being held.' : 'Tail resumed.');
+}
+function dsResumeTail() {
+  tailPaused = false;
+  bufferedIds = new Set();
+  const btn = document.getElementById('ds-tail-btn');
+  btn.innerHTML = '<i class="ic ic-pause"></i> Pause tail';
+  btn.classList.remove('on');
+  document.getElementById('ds-tail-title').textContent = 'Live tail';
+  paint();
+}
+
+/* ── Event drawer ───────────────────────────────────────────────────────── */
+function dsOpenEvent(id) {
+  const s = P.state;
+  const e = (s.events || []).filter(x => x.id === id)[0];
+  if (!e) return;
+  openEventId = id;
+  const stream = DS.getStream(s, e.streamId) || { name: e.streamId, destination: {} };
+  document.getElementById('ds-drawer-title').textContent = e.table + ' · ' + (U.OP_TITLE[e.op] || e.op);
+  document.getElementById('ds-drawer-sub').textContent = stream.name + ' · ' + e.ts;
+  document.getElementById('ds-drawer-body').innerHTML = drawerBody(e, stream);
+  document.getElementById('ds-drawer-foot').innerHTML =
+      '<button class="btn" onclick="dsRedeliver(\'' + U.escArg(e.id) + '\')"'
+      + (e.deliveryState === 'delivered' ? '' : '') + '><i class="ic ic-sync"></i> Redeliver</button>'
+    + '<button class="btn ds-copy" data-copy="' + U.esc(JSON.stringify(payloadOf(e), null, 2))
+      + '"><i class="ic ic-clipboard"></i> Copy payload</button>';
+  document.getElementById('ds-drawer').classList.add('open');
+}
+function dsCloseDrawer() {
+  document.getElementById('ds-drawer').classList.remove('open');
+  openEventId = null;
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dsCloseDrawer(); });
+
+function payloadOf(e) {
+  return { id: e.id, ts: e.ts, table: e.table, op: e.op, key: e.key,
+           position: e.position, before: e.before, after: e.after,
+           changedColumns: e.changedColumns };
+}
+
+function drawerBody(e, stream) {
+  const cols = Object.keys(Object.assign({}, e.before || {}, e.after || {})).sort();
+  const changed = cols.filter(c => (e.changedColumns || []).indexOf(c) !== -1);
+  const same = cols.filter(c => changed.indexOf(c) === -1);
+  const row = (c) => '<div class="ds-diff-row' + (changed.indexOf(c) !== -1 ? ' changed' : '') + '">'
+    + '<div class="ds-diff-col">' + U.esc(c) + '</div>'
+    + '<div class="ds-diff-col">' + U.esc(fmt(e.before && e.before[c])) + '</div>'
+    + '<div class="ds-diff-col to">' + U.esc(fmt(e.after && e.after[c])) + '</div></div>';
+
+  return '<div class="ds-kv"><b>Delivery</b><span>' + U.deliveryPill(e.deliveryState) + '</span></div>'
+    + '<div class="ds-kv"><b>Attempts</b><span>' + (e.attempts || 1) + '</span></div>'
+    + '<div class="ds-kv"><b>Latency</b><span>' + (e.latencyMs || 0) + 'ms</span></div>'
+    + '<div class="ds-kv"><b>Position</b><span>' + U.monoCopy(e.position, { max: 24 }) + '</span></div>'
+    + (e.error ? '<div class="ds-note error" style="margin:0.5rem 0">' + U.esc(e.error) + '</div>' : '')
+
+    + '<div style="margin:0.9rem 0 0.4rem;font-weight:600">What changed</div>'
+    + '<div class="ds-diff">'
+      + '<div class="ds-diff-row head"><div>Column</div><div>Before</div><div>After</div></div>'
+      + (changed.length ? changed.map(row).join('')
+         : '<div class="ds-diff-row"><div class="ds-dim" style="grid-column:1/-1">'
+           + (e.op === 'I' ? 'Insert — every column is new.'
+              : e.op === 'D' ? 'Delete — the row is gone.' : 'No column changed.') + '</div></div>')
+    + '</div>'
+    + (same.length ? '<details style="margin-top:0.5rem"><summary style="cursor:pointer;font-size:11.5px;color:var(--text3)">'
+        + 'Show ' + same.length + ' unchanged</summary><div class="ds-diff" style="margin-top:0.4rem">'
+        + same.map(row).join('') + '</div></details>' : '')
+
+    + '<div style="margin:0.9rem 0 0.4rem;font-weight:600">Delivery timeline</div>'
+    + '<ul class="ds-timeline">'
+      + '<li><span class="t">' + U.esc(e.ts.slice(11, 23)) + '</span> captured at ' + U.esc(e.position) + '</li>'
+      + '<li><span class="t">+0ms</span> written to the Stream Store</li>'
+      + Array.from({ length: e.attempts || 1 }, (_, i) =>
+          '<li><span class="t">+' + Math.round((e.latencyMs || 0) * ((i + 1) / (e.attempts || 1)))
+          + 'ms</span> attempt ' + (i + 1) + (i + 1 === (e.attempts || 1)
+            ? ' — ' + e.deliveryState : ' — retried') + '</li>').join('')
+    + '</ul>'
+
+    + '<div style="margin:0.9rem 0 0.4rem;font-weight:600">Payload as delivered</div>'
+    + '<div class="ds-pre">' + U.esc(JSON.stringify(payloadOf(e), null, 2)) + '</div>'
+    + '<div class="hint" style="font-size:11px;color:var(--text3);margin-top:0.4rem">Masked columns are masked at '
+      + 'capture, so they are masked here too — this is the record as ' + U.esc(stream.destination.label || 'the destination')
+      + ' receives it.</div>';
+}
+function fmt(v) { return v === null || v === undefined ? '—' : String(v); }
+
+function dsRedeliver(id) {
+  const s = P.state;
+  const e = (s.events || []).filter(x => x.id === id)[0];
+  if (!e) return;
+  const stream = DS.getStream(s, e.streamId) || { destination: {} };
+  if (!confirm(U.confirmText('replay', { records: 1, destination: stream.destination.label || 'the destination' }))) return;
+  DS.redeliverEvent(s, id);
+  P.persist();
+  dsOpenEvent(id);
+  paint();
+  P.announce('Redelivering.');
+}
+
+/* ── Replay ─────────────────────────────────────────────────────────────── */
+function dsOpenReplay() {
+  const s = P.state;
+  replayStream = f.stream || (s.streams[0] || {}).id;
+  if (!replayStream) { alert('There are no streams to replay.'); return; }
+  document.getElementById('ds-replay-body').innerHTML =
+      '<div class="ds-field"><label class="lbl" for="ds-rp-stream">Stream</label>'
+    + '<select id="ds-rp-stream" class="ds-input" onchange="replayStream=this.value;dsReplayPreview()">'
+    + s.streams.map(st => '<option value="' + U.esc(st.id) + '"' + (st.id === replayStream ? ' selected' : '')
+      + '>' + U.esc(st.name) + '</option>').join('') + '</select></div>'
+    + '<label class="ds-radio"><input type="radio" name="ds-rp" value="retention" checked onchange="dsReplayPreview()">'
+      + '<span>From the beginning of retention<span class="b">Everything the Stream Store still holds.</span></span></label>'
+    + '<label class="ds-radio"><input type="radio" name="ds-rp" value="time" onchange="dsReplayPreview()">'
+      + '<span>From a point in time<span class="b">'
+      + '<input class="ds-input" id="ds-rp-time" type="datetime-local" onchange="dsReplayPreview()"></span></span></label>'
+    + '<label class="ds-radio"><input type="radio" name="ds-rp" value="position" onchange="dsReplayPreview()">'
+      + '<span>From an LSN / offset<span class="b">'
+      + '<input class="ds-input" id="ds-rp-pos" type="text" style="font-family:var(--mono);width:100%"'
+      + ' onchange="dsReplayPreview()"></span></span></label>'
+    + '<div class="ds-note warn" id="ds-rp-preview" style="margin-top:0.7rem"></div>';
+  document.getElementById('ds-replay').classList.add('open');
+  dsReplayPreview();
+}
+function dsReplayFrom() {
+  const el = document.querySelector('input[name="ds-rp"]:checked');
+  const kind = el ? el.value : 'retention';
+  if (kind === 'time') {
+    const v = (document.getElementById('ds-rp-time') || {}).value;
+    return { kind: 'time', at: v ? new Date(v).toISOString() : null };
+  }
+  if (kind === 'position') return { kind: 'position', position: (document.getElementById('ds-rp-pos') || {}).value || '' };
+  return { kind: 'retention' };
+}
+function dsReplayPreview() {
+  const s = P.state;
+  const stream = DS.getStream(s, replayStream);
+  if (!stream) return;
+  const n = DS.replayCount(s, replayStream, dsReplayFrom());
+  document.getElementById('ds-rp-preview').textContent =
+    'This will re-deliver about ' + n.toLocaleString() + ' record(s) to ' + stream.destination.label + '.';
+}
+function dsCloseReplay() { document.getElementById('ds-replay').classList.remove('open'); }
+function dsDoReplay() {
+  const s = P.state;
+  const stream = DS.getStream(s, replayStream);
+  const from = dsReplayFrom();
+  const n = DS.replayCount(s, replayStream, from);
+  if (!confirm(U.confirmText('replay', { records: n, destination: stream.destination.label }))) return;
+  DS.replay(s, replayStream, from);
+  P.persist();
+  dsCloseReplay();
+  paint();
+  P.announce('Replaying ' + n.toLocaleString() + ' records.');
+}
+
+/* ── Export ─────────────────────────────────────────────────────────────
+   What is on screen, as CSV. Deliberately the filtered view rather than
+   everything: "export view" is a promise about what you are looking at. */
+function dsExport() {
+  const rows = visible(P.state);
+  if (!rows.length) { alert('Nothing to export in this view.'); return; }
+  const head = ['ts', 'stream', 'table', 'op', 'key', 'position', 'deliveryState', 'attempts', 'latencyMs'];
+  const csv = [head.join(',')].concat(rows.map(e => [
+    e.ts, (DS.getStream(P.state, e.streamId) || {}).name || e.streamId, e.table, e.op,
+    keyText(e), e.position, e.deliveryState, e.attempts || 1, e.latencyMs || 0,
+  ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','))).join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'change-events.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  P.announce('Exported ' + rows.length + ' record(s).');
+}

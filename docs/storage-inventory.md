@@ -68,7 +68,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_pending_sql` | SQL queued for the editor | transient | data-cleansing.html |
 | `cygenix_projects_migrated` | One-time migration marker | idempotent | dashboard-app.js, projects.html |
 | `cygenix_ps_ai_` | Cached AI project-summary text | regenerated | analytics-app.js, dashboard-app.js |
-| `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data_stream_designer.html, data_stream_store.html |
+| `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data-stream-designer-app.js, data-stream-store-app.js |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
 ## C — Preference — per-viewer convenience (30)

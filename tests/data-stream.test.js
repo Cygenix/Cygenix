@@ -31,7 +31,19 @@ const fs = require('fs');
 const path = require('path');
 
 const P = (...p) => path.join(__dirname, '..', ...p);
-const read = (...p) => fs.readFileSync(P(...p), 'utf8');
+const readRaw = (...p) => fs.readFileSync(P(...p), 'utf8');
+// The five stream screens keep their code in deferred files of their own
+// (data_stream.html → data-stream-app.js) since the page-load work of
+// Sep-2026. Every pin in this file that reads a screen wants "the screen",
+// markup and code together, so reading one of those pages returns both.
+const read = (...p) => {
+  const last = String(p[p.length - 1] || '');
+  const m = last.match(/^(data_stream(?:_designer|_events|_monitor|_store)?)\.html$/);
+  if (p[0] === 'public' && m) {
+    return readRaw(...p) + readRaw('public', m[1].replace(/_/g, '-') + '-app.js');
+  }
+  return readRaw(...p);
+};
 
 let pass = 0, fail = 0;
 const check = (label, ok, extra) => {
@@ -624,6 +636,8 @@ check('the engine loads and exports its enums', !!(DS && DS.ENUMS && DS.ENUMS.st
 /* ══ 11. Wiring — nav, pages, assistant ═════════════════════════════════ */
 const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_events.html',
                'data_stream_store.html', 'data_stream_monitor.html'];
+// data_stream_events.html → data-stream-events-app.js: the screen's own code.
+const appFor = (f) => f.replace(/\.html$/, '-app.js').replace(/_/g, '-');
 {
   PAGES.forEach(f => {
     check(f + ' exists', fs.existsSync(P('public', f)));
@@ -747,8 +761,10 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
   const pageJs = read('public', 'cygenix-datastream-page.js');
   check('the tick lives in the shared page module, not in the screens',
     /setInterval\(/.test(pageJs) && /DS\.tick\(state\)/.test(pageJs));
+  // Each screen's code now lives in its own deferred file (page-load work,
+  // Sep-2026); the page carries a tag, not the block.
   PAGES.forEach(f => {
-    const body = (read('public', f).match(/<script>\n'use strict'[\s\S]*/) || [''])[0];
+    const body = read('public', appFor(f));
     check(f + ' does not run a tick of its own',
       !/setInterval\s*\(/.test(body) && !/DS\.tick\(/.test(body));
   });
@@ -760,7 +776,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
 
 {
   // The live tail must be pausable and must buffer while paused.
-  const events = read('public', 'data_stream_events.html');
+  const events = read('public', 'data-stream-events-app.js');
   check('the tail can be paused', /function dsToggleTail/.test(events));
   check('and buffers while paused instead of dropping records',
     /bufferedIds\.add/.test(events) && /new event/.test(events));
@@ -1393,7 +1409,7 @@ const PAGES = ['data_stream.html', 'data_stream_designer.html', 'data_stream_eve
 
 /* ── Wiring ──────────────────────────────────────────────────────────────── */
 {
-  const page = fs.readFileSync(path.join(__dirname, '..', 'public', 'data_stream.html'), 'utf8');
+  const page = read('public', 'data_stream.html');
   const css  = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-datastream.css'), 'utf8');
 
   check('every KPI tile draws its own series',
