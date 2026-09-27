@@ -154,7 +154,7 @@
     _syncReady = (typeof window.getCygenixIdToken === 'function'
         ? Promise.resolve()
         : loadScriptOnce('cygenix-auth-token-js', '/cygenix-auth-token.js?v=8ed8e00fad'))
-      .then(() => loadScriptOnce('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=e553112889'))
+      .then(() => loadScriptOnce('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=5848f4c1be'))
       .then(() => !!window.CygenixDriveSync);
     return _syncReady;
   }
@@ -415,9 +415,16 @@
       lastIndex = index; renderDrive();
     });
 
-    const ic = document.createElement('div'); ic.className = 'cygdm-ic'; ic.textContent = isFolder ? '' : fileIcon(n.name);
+    // The Assistant's reserved folder (cygenix-drive-store.js) is marked in
+    // meta, never by name, and shows as what it is. The user keeps full
+    // control: rename, move or delete it like any folder — delete asks, as
+    // every folder delete does, and the Assistant recreates it on its next
+    // write.
+    const isWorkspace = isFolder && n.meta && n.meta.reserved === 'claude';
+    const ic = document.createElement('div'); ic.className = 'cygdm-ic';
+    if (isWorkspace) ic.innerHTML = '<i class="ic ic-robot" aria-hidden="true"></i>'; else ic.textContent = isFolder ? '' : fileIcon(n.name);
     const nm = document.createElement('div'); nm.className = 'cygdm-nm'; nm.textContent = n.name;
-    const meta = document.createElement('div'); meta.className = 'cygdm-meta'; meta.textContent = isFolder ? 'folder' : fmtSize(n.size);
+    const meta = document.createElement('div'); meta.className = 'cygdm-meta'; meta.textContent = isWorkspace ? 'Assistant workspace' : (isFolder ? 'folder' : fmtSize(n.size));
     const acts = document.createElement('div'); acts.className = 'cygdm-acts';
 
     if (isFolder) {
@@ -809,7 +816,7 @@
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
-  function open() {
+  function openOverlay() {
     build();
     searchQ = ''; clearSelection(); const s = $bg.querySelector('#cygdm-search'); if (s) s.value = '';
     $bg.classList.remove('min'); // always come back into view
@@ -826,5 +833,11 @@
   }
   function close() { if ($bg) { $bg.classList.remove('open', 'min', 'max'); if ($maxBtn) { $maxBtn.textContent = '⤢'; $maxBtn.title = 'Maximize'; } } }
 
+  // open({ folderId }) lands in that folder — the Assistant's Rules chip
+  // uses it to open the workspace. A plain open() is unchanged.
+  function open(opts) {
+    openOverlay();
+    if (opts && opts.folderId) { try { navigate(opts.folderId); } catch (e) { /* the root is fine */ } }
+  }
   window.CygenixDriveModal = { open, close, isOpen: () => !!($bg && $bg.classList.contains('open')) };
 })();

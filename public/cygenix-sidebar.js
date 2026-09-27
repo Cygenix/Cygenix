@@ -708,7 +708,7 @@
     let s = document.getElementById('cygenix-drive-modal-js');
     if (!s){
       s = document.createElement('script');
-      s.id = 'cygenix-drive-modal-js'; s.src = '/cygenix-drive-modal.js?v=5e7a748b4a';
+      s.id = 'cygenix-drive-modal-js'; s.src = '/cygenix-drive-modal.js?v=1758772a9c';
       document.head.appendChild(s);
     }
     if (cb) s.addEventListener('load', cb, { once: true });
@@ -1595,10 +1595,10 @@
       try {
         if (window.CygenixDriveSync) return;
         if (typeof window.getCygenixIdToken === 'function') {
-          inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=e553112889');
+          inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=5848f4c1be');
         } else {
           inject('cygenix-auth-token-js', '/cygenix-auth-token.js?v=8ed8e00fad', function(){
-            inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=e553112889');
+            inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js?v=5848f4c1be');
           });
         }
       } catch (_) {}

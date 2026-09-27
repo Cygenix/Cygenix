@@ -36,6 +36,24 @@
  * Exposes window.CygenixDriveSync = { sync, status, onChange, lastResult }.
  * Emits a 'cygenix:drive-sync' CustomEvent on window whenever state changes,
  * so any Drive UI can re-render itself.
+ *
+ * AN ASSISTANT'S SYNC (Sep-2026)
+ * cygenix-drive-store.js — the Assistant's door to the Drive — writes to
+ * the same IndexedDB and then calls sync({ actor: 'assistant' }). That sync
+ * differs from an ordinary one in two ways, both so the server can apply
+ * its own check (netlify/functions/drive.js refuses an Assistant-marked
+ * write outside the reserved `Claude` folder):
+ *
+ *   · every call carries `x-cygenix-actor: assistant`;
+ *   · only nodes INSIDE the reserved folder are pushed. A sync pushes every
+ *     local change it finds, and the user may have edited something else
+ *     in the meantime; pushing that under the Assistant's header would get
+ *     it refused. Those changes are left for the next ordinary sync, which
+ *     the poll runs within the minute.
+ *
+ * Under that header, folders are pushed before files and a file's content
+ * carries its parentId, because the server checks the parent chain and the
+ * chain has to exist server-side before the content that hangs off it.
  */
 (function () {
   'use strict';
@@ -119,16 +137,18 @@
     return '';
   }
 
-  async function api(action, payload, _retried) {
+  async function api(action, payload, _retried, actor) {
     // Async getter: renews silently when the cached token has expired, which
     // is the normal state after an hour in the same session.
     const token = (typeof window.getCygenixIdTokenAsync === 'function')
       ? await window.getCygenixIdTokenAsync()
       : idToken();
     if (!token) throw new Error('not-signed-in');
+    const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+    if (actor) headers['x-cygenix-actor'] = String(actor);
     const r = await fetch(API, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      headers,
       body: JSON.stringify({ action, ...(payload || {}) }),
       signal: AbortSignal.timeout(60000),
     });
@@ -140,7 +160,7 @@
     if (r.status === 401 && !_retried && typeof window.renewCygenixIdToken === 'function') {
       console.warn('[drive-sync] server rejected the token (' + (data.error || '401') + ') — forcing a refresh and retrying');
       const fresh = await window.renewCygenixIdToken();
-      if (fresh) return api(action, payload, true);
+      if (fresh) return api(action, payload, true, actor);
     }
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     return data;
@@ -177,6 +197,19 @@
     };
     if (n.meta) m.meta = n.meta;
     return m;
+  }
+
+  // Does this node sit under the reserved Assistant folder? Walks parentId
+  // through `nodes` (local or remote, keyed by id), bounded so a cycle in a
+  // damaged manifest cannot spin. Pure, and exposed for the tests.
+  function underReserved(id, nodes) {
+    let cur = nodes[id], hops = 0;
+    while (cur && hops++ < 64) {
+      if (cur.meta && cur.meta.reserved === 'claude') return true;
+      if (!cur.parentId) return false;
+      cur = nodes[cur.parentId];
+    }
+    return false;
   }
 
   // ── The three-way merge decision table ────────────────────────────────────
@@ -250,14 +283,27 @@
       base = {};
     }
 
-    const { toUpload, toDownload, toDeleteLocal, toDeleteRemote } = planSync(local, remoteNodes, base);
+    let { toUpload, toDownload, toDeleteLocal, toDeleteRemote } = planSync(local, remoteNodes, base);
+
+    // An Assistant's sync pushes only what lives in the reserved folder; see
+    // AN ASSISTANT'S SYNC in the header. Uploads are judged by the local
+    // parent chain, remote deletions by the remote manifest's chain (the
+    // node is gone locally, so that is the only chain there is).
+    const actor = opts.actor || null;
+    if (actor === 'assistant') {
+      toUpload = toUpload.filter(n => underReserved(n.id, local));
+      toDeleteRemote = toDeleteRemote.filter(id => underReserved(id, remoteNodes));
+      // Folders first, so a file's parent chain exists server-side before
+      // the file's content arrives and is checked against it.
+      toUpload.sort((a, b) => (a.kind === b.kind ? 0 : (a.kind === 'folder' ? -1 : 1)));
+    }
 
     const skippedLarge = [];
     let uploaded = 0, downloaded = 0;
 
     // 1. Push deletions first so a delete+recreate of the same name can't race.
     if (toDeleteRemote.length) {
-      await api('delete', { ids: toDeleteRemote });
+      await api('delete', { ids: toDeleteRemote }, false, actor);
     }
     for (const id of toDeleteLocal) {
       try { await idbDel(id); } catch {}
@@ -267,6 +313,15 @@
     //    manifest entry with no content behind it would look like a broken
     //    file to every other machine.
     const metaBatch = [];
+    // Under the Assistant's header the folders' metadata goes up on its own
+    // first (they were sorted to the front), so the parent chain exists
+    // before any file content is checked against it.
+    if (actor === 'assistant') {
+      const folders = toUpload.filter(n => n.kind === 'folder').map(metaOf);
+      for (let i = 0; i < folders.length; i += 500) await api('put-meta', { nodes: folders.slice(i, i + 500) }, false, actor);
+      uploaded += folders.length;
+      toUpload = toUpload.filter(n => n.kind !== 'folder');
+    }
     for (const n of toUpload) {
       if (n.kind === 'file') {
         const size = (n.content && n.content.size) || n.size || 0;
@@ -274,7 +329,7 @@
         if (n.content) {
           try {
             const b64 = await blobToB64(n.content);
-            await api('put-content', { id: n.id, contentB64: b64, mime: n.mime || n.content.type || '' });
+            await api('put-content', { id: n.id, contentB64: b64, mime: n.mime || n.content.type || '', parentId: n.parentId || '' }, false, actor);
           } catch (e) {
             if (String(e.message).indexOf('cloud-sync limit') !== -1) { skippedLarge.push(n.name); continue; }
             throw e;
@@ -286,7 +341,7 @@
     }
     // Chunk the manifest write so a very large Drive can't exceed the payload cap.
     for (let i = 0; i < metaBatch.length; i += 500) {
-      await api('put-meta', { nodes: metaBatch.slice(i, i + 500) });
+      await api('put-meta', { nodes: metaBatch.slice(i, i + 500) }, false, actor);
     }
 
     // 3. Pull remote additions/edits into IndexedDB.
@@ -462,5 +517,6 @@
     get lastResult() { return _lastResult; },
     onChange: (fn) => window.addEventListener('cygenix:drive-sync', fn),
     _plan: planSync,   // exposed for tests
+    _underReserved: underReserved,
   };
 })();

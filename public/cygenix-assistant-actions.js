@@ -161,6 +161,169 @@ function findPage(key) {
 }
 
 /* ================================================================ *
+ * The Drive — the Assistant's workspace (Sep-2026)
+ * ================================================================ *
+ * Five actions over public/cygenix-drive-store.js. Reads see the whole
+ * Drive; writes are fenced to Claude/<active project>/ by the store
+ * (judged from the resolved parent chain) and, behind that, by the Drive
+ * function under the x-cygenix-actor header. The store also refuses to
+ * read anything that looks like a credential, and says which file.
+ *
+ * drive_write and drive_delete answer the confirmation question for
+ * themselves: no prompt inside the workspace — that folder is the
+ * Assistant's to keep — and a prompt for anything else, though the fence
+ * refuses anything else before it gets that far. Every call still shows in
+ * the step trail with its full path, and every write or delete is recorded
+ * in the organisation trail with the path and size, never the content.
+ */
+function driveStore() {
+  var S = root.CygenixDriveStore;
+  if (!S) throw new Error('The Drive store (cygenix-drive-store.js) is not loaded on this page, so the Assistant cannot reach the Drive here.');
+  return S;
+}
+function activeProjectName() {
+  var id = activeProject();
+  try {
+    var cur = JSON.parse(localStorage.getItem('cygenix_conv_project') || 'null');
+    if (cur && cur.id === id && cur.name) return cur.name;
+    var list = JSON.parse(localStorage.getItem('cygenix_projects') || '[]') || [];
+    var hit = list.filter(function (p) { return p && p.id === id; })[0];
+    if (hit && hit.name) return hit.name;
+  } catch (e) { /* fall through */ }
+  return id;
+}
+async function workspacePath() {
+  var pid = activeProject();
+  if (!pid) throw new Error('No project is open. Open a project first — the Assistant\'s workspace lives under Claude/<project>/.');
+  var ws = await driveStore().ensureWorkspace(pid, activeProjectName());
+  return ws.path;
+}
+function driveAudit(action, path, size, ok) {
+  try {
+    if (root.CygenixAudit && typeof root.CygenixAudit.recordAssistant === 'function') {
+      root.CygenixAudit.recordAssistant({
+        action: action, category: 'data', outcome: ok ? 'allowed' : 'failed',
+        target: { type: 'drive_file', id: path, label: path },
+        detail: { path: path, size: size || 0 }, projectId: activeProject(),
+      });
+    }
+  } catch (e) { /* auditing must never break a run */ }
+  // rules.md or notes.md changed under the runtime: let it re-read them on
+  // the next turn rather than carry a stale copy.
+  try { if (/\/(rules|notes)\.md$/i.test(path) && typeof A.refreshWorkspace === 'function') A.refreshWorkspace(); } catch (e) { /* optional */ }
+}
+
+A.registerActions([
+  {
+    name: 'drive_list',
+    title: 'List a Drive folder',
+    effect: 'read',
+    icon: '◍',
+    description: 'List one folder of the user\'s Drive: name, kind, size and modified time of each ' +
+      'entry. `path` is `/`-separated from the Drive root (default: the root). `recursive` walks ' +
+      'sub-folders to a depth of 4, capped at 500 entries. Your own workspace is Claude/<project>/.',
+    input_schema: { type: 'object', properties: {
+      path: { type: 'string', description: 'Folder path from the Drive root, e.g. "Claude/Demo/scripts". Empty for the root.' },
+      recursive: { type: 'boolean' } } },
+    summary: function (i) { return i.path || '(root)'; },
+    trailTitle: function (i) { return 'Listed: ' + (i.path || 'Drive root'); },
+    handler: async function (i) {
+      var r = await driveStore().list(i.path || '', { recursive: !!i.recursive });
+      return trim(r, 40000);
+    }
+  },
+  {
+    name: 'drive_search',
+    title: 'Search the Drive',
+    effect: 'read',
+    icon: '◍',
+    description: 'Search file names and the contents of text files (up to 1 MB each) across the ' +
+      'whole Drive. Returns path, line number and the matching line, capped at 50 hits.',
+    input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    summary: function (i) { return i.query; },
+    trailTitle: function (i) { return 'Searched Drive for: ' + i.query; },
+    handler: async function (i) { return trim(await driveStore().search(i.query), 40000); }
+  },
+  {
+    name: 'drive_read',
+    title: 'Read a Drive file',
+    effect: 'read',
+    icon: '◍',
+    description: 'Read a text file from the Drive (.sql .md .txt .csv .json .xml .yml .log), returned ' +
+      'with line numbers and capped at 200,000 characters. Other types return their size only. ' +
+      'Files that look like they hold credentials are refused, and the refusal names the file: ' +
+      'tell the user which file and why, and do not try another way to read it.',
+    input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    summary: function (i) { return i.path; },
+    trailTitle: function (i) { return 'Read: ' + i.path; },
+    handler: async function (i) {
+      var r = await driveStore().readText(i.path);
+      if (!r.readable) return r;
+      var lines = r.text.split('\n').map(function (l, n) { return (n + 1) + ': ' + l; }).join('\n');
+      return { path: r.path, size: r.size, lines: r.lines, truncated: r.truncated, note: r.note, text: lines };
+    }
+  },
+  {
+    name: 'drive_write',
+    title: 'Write a file in your workspace',
+    effect: 'write',
+    icon: '✎',
+    description: 'Create or overwrite a text file inside your own workspace, Claude/<project>/. ' +
+      'Scripts belong in scripts/, results in results/, your notes in notes.md. `mode` is ' +
+      '"create" (fails if the file exists) or "overwrite" (the previous content is kept in ' +
+      '.history/). Anywhere outside your workspace is refused.',
+    input_schema: { type: 'object', properties: {
+      path: { type: 'string', description: 'Full path from the Drive root, inside Claude/<project>/.' },
+      text: { type: 'string' },
+      mode: { type: 'string', enum: ['create', 'overwrite'] } }, required: ['path', 'text'] },
+    /* No approval prompt inside the workspace; anything else asks — and is
+       then refused by the store anyway. Fails closed: an error here asks. */
+    confirms: function (i) {
+      // needsConfirmation is synchronous; the store check is not. Answer from
+      // the path shape alone here, and let the handler's own fence decide.
+      var p = String(i.path || '');
+      return !/^Claude\/[^/]+\/.+/i.test(p) || /(^|\/)\.\.(\/|$)/.test(p) || p.indexOf('\\') !== -1;
+    },
+    confirmTitle: function (i) { return 'Assistant wants to write outside its workspace: "' + i.path + '". Proceed?'; },
+    summary: function (i) { return i.path; },
+    trailTitle: function (i) { return 'Wrote: ' + i.path; },
+    preview: function (i) { return (i.mode === 'overwrite' ? 'Overwrite ' : 'Create ') + i.path + ' (' + String(i.text || '').length + ' characters)'; },
+    handler: async function (i) {
+      await workspacePath();                                   // the folders exist before the write
+      var r;
+      try { r = await driveStore().writeText(i.path, i.text, { mode: i.mode || 'create', projectId: activeProject() }); }
+      catch (e) { driveAudit('assistant.drive.write', i.path, String(i.text || '').length, false); throw e; }
+      driveAudit('assistant.drive.write', r.path, r.size, true);
+      return { ok: true, path: r.path, size: r.size, replaced: r.replaced, synced: r.synced,
+               note: r.replaced ? 'The previous version is in .history/.' : undefined };
+    }
+  },
+  {
+    name: 'drive_delete',
+    title: 'Delete a file in your workspace',
+    effect: 'write',
+    icon: '✎',
+    description: 'Delete a file inside your own workspace. It is moved into .history/ rather than destroyed. Anywhere outside your workspace is refused.',
+    input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    confirms: function (i) {
+      var p = String(i.path || '');
+      return !/^Claude\/[^/]+\/.+/i.test(p) || /(^|\/)\.\.(\/|$)/.test(p) || p.indexOf('\\') !== -1;
+    },
+    confirmTitle: function (i) { return 'Assistant wants to delete outside its workspace: "' + i.path + '". Proceed?'; },
+    summary: function (i) { return i.path; },
+    trailTitle: function (i) { return 'Deleted: ' + i.path; },
+    handler: async function (i) {
+      await workspacePath();
+      var r;
+      try { r = await driveStore().remove(i.path, { projectId: activeProject() }); }
+      catch (e) { driveAudit('assistant.drive.delete', i.path, 0, false); throw e; }
+      driveAudit('assistant.drive.delete', r.path, 0, true);
+      return { ok: true, path: r.path, movedTo: r.movedTo, synced: r.synced };
+    }
+  }
+]);
+
+/* ================================================================ *
  * Core — available on every page
  * ================================================================ */
 

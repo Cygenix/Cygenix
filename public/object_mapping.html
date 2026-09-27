@@ -546,6 +546,11 @@ body.cyg-collapsed{padding-left:54px}
 .rm-card:hover{transform:none;box-shadow:none}
 </style>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
+  <!-- The Assistant's door to the Drive: read the whole Drive, write only in
+       Claude/<project>/. Deferred, so the parser never waits for it; in the
+       head so it fetches early and adds nothing behind the body's tail scripts.
+       The actions reach it lazily, so its order against them does not matter. -->
+  <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
 </head>
 <body>
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
@@ -615,7 +620,7 @@ document.addEventListener('DOMContentLoaded', function(){
 <div id="cyg-sidebar-mount" data-active="object-mapping"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=980f724c4a" defer></script>
+<script src="/cygenix-sidebar.js?v=9be9c4325e" defer></script>
 
 <div class="page">
   <!-- Page header -->
@@ -1235,8 +1240,8 @@ document.addEventListener('DOMContentLoaded', function(){
 <script src="/cygenix-collation.js?v=ffaa34cfcb" defer></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=ab7ebac718"></script>
-<script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
+<script src="/cygenix-assistant.js?v=77f2934851"></script>
+<script src="/cygenix-assistant-actions.js?v=8ff6aaa2b1"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=3aa5b94223"></script>

@@ -198,6 +198,11 @@ code,.mono{font-family:var(--mono)}
 .dg-progress{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin-top:0.5rem}
 .dg-progress-bar{height:100%;background:var(--accent);transition:width 0.15s}
 </style>
+  <!-- The Assistant's door to the Drive: read the whole Drive, write only in
+       Claude/<project>/. Deferred, so the parser never waits for it; in the
+       head so it fetches early and adds nothing behind the body's tail scripts.
+       The actions reach it lazily, so its order against them does not matter. -->
+  <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
 </head>
 <body>
 
@@ -214,7 +219,7 @@ code,.mono{font-family:var(--mono)}
 <div id="cyg-sidebar-mount" data-active="connections"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=980f724c4a" defer></script>
+<script src="/cygenix-sidebar.js?v=9be9c4325e" defer></script>
 
 <div id="dg-main">
 
@@ -2309,8 +2314,8 @@ document.addEventListener('DOMContentLoaded', function(){
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=ab7ebac718"></script>
-<script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
+<script src="/cygenix-assistant.js?v=77f2934851"></script>
+<script src="/cygenix-assistant-actions.js?v=8ff6aaa2b1"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=3aa5b94223"></script>

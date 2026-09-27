@@ -40,7 +40,7 @@ mechanism that stops an unclassified key being added quietly.
 |---|---|---|---|
 | `cygenix_assurance_v1` | The Assurance store: rules, runs, breaches, tags, suggestions | NOT SYNCED — WI-1; Home reads its open breaches for the needs-you queue | dashboard-app.js |
 | `cygenix_backup_history` | Restore-module backup history | NOT SYNCED — WI-1 | dashboard-app.js |
-| `cygenix_conv_project` | The currently-open project blob | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, cygenix-schema-graph.js |
+| `cygenix_conv_project` | The currently-open project blob | synced (SYNC_KEYS) | cygenix-assistant-actions.js, cygenix-assistant.js, cygenix-cosmos-sync.js +1 |
 | `cygenix_datagen_runs` | Which rows each Data Generator run inserted | synced (SYNC_KEYS), union-merged — the only record of what a run put there | data-generator.html |
 | `cygenix_datagen_selection` | Which tables the Data Generator had selected, per profile | synced (SYNC_KEYS) | data-generator.html |
 | `cygenix_effort_estimates_v1` | Saved Configurator estimates | NOT SYNCED — WI-1 | project_plan.html |
@@ -51,7 +51,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js, dashboard-app.js |
 | `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, dashboard-app.js |
 | `cygenix_project_settings` | Per-project settings | synced (SYNC_KEYS) | dashboard-app.js |
-| `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, conversion-templates.html, cygenix-diagnostics.js +7 |
+| `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, conversion-templates.html, cygenix-assistant-actions.js +9 |
 | `cygenix_report` | Generated conversion report | NOT SYNCED — WI-1 | connect.html, dashboard-app.js, project-builder-app.js +2 |
 | `cygenix_report_config` | Report configuration | NOT SYNCED — WI-1 | report.html, report_settings.html |
 | `cygenix_sys_params` | System parameters | synced (SYNC_KEYS) | dashboard-app.js, system-parameters.html |

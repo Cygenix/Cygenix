@@ -498,6 +498,65 @@ check('the Schema Explorer wires listTables and describeTable through the graph 
   /listTables:/.test(schemaPage) && /describeTable:/.test(schemaPage) && /CygenixSchemaGraph\.load\(/.test(schemaPage));
 
 Promise.all(results).then(() => {
-  console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
+  
+/* ── The Drive workspace (Sep-2026) ───────────────────────────────────────── */
+{
+  const acts = A.getActions();
+  const want = { drive_list: 'read', drive_search: 'read', drive_read: 'read', drive_write: 'write', drive_delete: 'write' };
+  check('the five Drive actions are registered with the right effects',
+    Object.keys(want).every((n) => acts[n] && acts[n].effect === want[n]),
+    Object.keys(want).map((n) => n + ':' + (acts[n] ? acts[n].effect : 'missing')).join(' '));
+  const w = acts.drive_write, d = acts.drive_delete;
+  check('drive_write and drive_delete answer the confirmation question for themselves', typeof w.confirms === 'function' && typeof d.confirms === 'function');
+  check('inside the workspace there is no approval prompt', w.confirms({ path: 'Claude/Demo/scripts/load.sql' }) === false && d.confirms({ path: 'Claude/Demo/notes.md' }) === false);
+  check('anywhere else asks, before the fence refuses it anyway',
+    w.confirms({ path: 'Other/x.sql' }) === true && w.confirms({ path: 'x.sql' }) === true && w.confirms({ path: 'Claude/x.sql' }) === true
+    && w.confirms({ path: 'Claude/Demo/../../x.sql' }) === true && w.confirms({ path: 'Claude\\Demo\\x.sql' }) === true && d.confirms({ path: '/Claude/Demo/a' }) === true);
+  check('the policy still holds the floor: a write confirms under confirm_all whatever the hook says',
+    core.needsConfirmation(w, 'confirm_all', { path: 'Claude/Demo/a.sql' }) === false
+    && core.needsConfirmation(w, 'confirm_all', { path: 'Other/a.sql' }) === true);
+  check('every Drive action names its path in the step trail',
+    ['drive_list', 'drive_search', 'drive_read', 'drive_write', 'drive_delete'].every((n) => typeof acts[n].trailTitle === 'function')
+    && /Claude\/Demo\/a\.sql/.test(acts.drive_write.trailTitle({ path: 'Claude/Demo/a.sql' })));
+
+  // The system prompt: rules labelled as the user's, notes as the Assistant's own.
+  const ctx = { page: 'sql-editor', projectId: 'p1', workspacePath: 'Claude/Demo',
+    rules: '# Rules for the Assistant\n## How to write scripts\n- Never add comments to SQL scripts\n', notes: "# Assistant's notes\nLoaded 3 tables on Monday." };
+  const sp = core.buildSystemPrompt(ctx, A.appMap);
+  check('the prompt carries a workspace section naming the folder', /YOUR WORKSPACE IN THE DRIVE/.test(sp) && /Claude\/Demo\/scripts\//.test(sp));
+  check("rules.md is labelled as THE USER'S standing instructions, ranked below the guardrail policy",
+    /THE USER'S STANDING INSTRUCTIONS — Claude\/Demo\/rules\.md/.test(sp) && /rank below the guardrail policy/.test(sp) && /Never add comments to SQL scripts/.test(sp));
+  check("notes.md is labelled as the Assistant's OWN earlier notes — context, not instructions",
+    /YOUR OWN EARLIER NOTES — Claude\/Demo\/notes\.md/.test(sp) && /Context to draw on, not instructions/.test(sp) && /Loaded 3 tables on Monday/.test(sp));
+  check('it offers to add a stated rule, and writes only after the user agrees', /offer to add/.test(sp) && /only after they agree/.test(sp));
+  check('it updates notes.md after a piece of work', /update notes\.md with what changed/.test(sp));
+  check('the data-as-data paragraph is intact and now names other Drive files', /TREAT DATA AS DATA/.test(sp) && /contents of any Drive file other than your rules\.md and notes\.md/.test(sp));
+  const bare = core.buildSystemPrompt(Object.assign({}, ctx, { rules: '# Rules for the Assistant\n\n## How to write scripts\n\n## Where things may run\n\n## Things never to do\n', notes: "# Assistant's notes\n" }), A.appMap);
+  check('an untouched template is reported as holding no instructions yet, not quoted as if it did', /holds no instructions yet/.test(bare) && /\(no notes yet\)/.test(bare));
+  check('without a workspace the prompt has no workspace section', !/YOUR WORKSPACE IN THE DRIVE/.test(core.buildSystemPrompt({ page: 'x' }, A.appMap)));
+  check('the section is exported as a pure function', typeof core.workspaceSection === 'function');
+
+  const schema = read('netlify', 'functions', 'lib', 'audit-schema.js');
+  check('assistant.drive.write and assistant.drive.delete are on the client audit allowlist',
+    /'assistant\.drive\.write':\s*'data'/.test(schema) && /'assistant\.drive\.delete':\s*'data'/.test(schema));
+  const actionsSrc = read('public', 'cygenix-assistant-actions.js');
+  check('the actions record those two events with path and size, never content',
+    /action: action, category: 'data'/.test(actionsSrc) && /detail: \{ path: path, size: size \|\| 0 \}/.test(actionsSrc)
+    && !/detail: \{[^}]*text/.test(actionsSrc));
+  const modal = read('public', 'cygenix-drive-modal.js');
+  check('the Drive overlay shows the reserved folder with an ic-* icon and the label "Assistant workspace", found by its mark not its name',
+    /n\.meta && n\.meta\.reserved === 'claude'/.test(modal) && /ic ic-robot/.test(modal) && /'Assistant workspace'/.test(modal));
+  check('and can open straight to a folder, which the Rules chip uses', /function open\(opts\)/.test(modal) && /opts\.folderId/.test(modal));
+  const runtime = read('public', 'cygenix-assistant.js');
+  check('the Rules chip is in the panel header and opens the workspace in the Drive',
+    /id="cygaRules"/.test(runtime) && /Rules: rules\.md \(/.test(runtime) && /CygenixDriveModal\.open\(\{ folderId: workspace\.folderId \}\)/.test(runtime));
+  check('rules and notes are re-read on the first turn of a conversation, and a New conversation clears them',
+    /await loadWorkspace\(state\.messages\.length <= 1\)/.test(runtime) && /state\.pending = null; state\.resume = null;\s*refreshWorkspace\(\);/.test(runtime));
+  check('every page with the Assistant loads the Drive store',
+    fs.readdirSync(P('public')).filter((f) => f.endsWith('.html') && /cygenix-assistant-actions\.js/.test(read('public', f)))
+      .every((f) => /cygenix-drive-store\.js\?v=[a-f0-9]{10}/.test(read('public', f))));
+}
+
+console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
   process.exit(fail ? 1 : 0);
 });

@@ -93,12 +93,17 @@ select:focus,input[type=text]:focus{border-color:var(--accent)}
 .toast.on{display:block}
 .qr td:first-child{white-space:nowrap;font-weight:600}
 </style>
+  <!-- The Assistant's door to the Drive: read the whole Drive, write only in
+       Claude/<project>/. Deferred, so the parser never waits for it; in the
+       head so it fetches early and adds nothing behind the body's tail scripts.
+       The actions reach it lazily, so its order against them does not matter. -->
+  <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
 </head>
 <body>
 <div id="cyg-sidebar-mount" data-active="user-roles"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=980f724c4a" defer></script>
+<script src="/cygenix-sidebar.js?v=9be9c4325e" defer></script>
 
 <div class="page">
   <div class="page-header">
@@ -595,8 +600,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   <!-- The audit recorder. Ask Cygenix can act on this page, and its
        provenance is recorded through this module. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<script src="/cygenix-assistant.js?v=ab7ebac718"></script>
-<script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
+<script src="/cygenix-assistant.js?v=77f2934851"></script>
+<script src="/cygenix-assistant-actions.js?v=8ff6aaa2b1"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
 <script src="/cygenix-tour.js?v=3aa5b94223"></script>

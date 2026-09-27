@@ -257,6 +257,11 @@ const CLIENT_ACTIONS = {
   // travels in the target. The caller passes the real category — the value
   // here is only the fallback if it does not.
   'assistant.action':     'settings',
+  // The Assistant's own files in the user's Drive (Sep-2026): a write or a
+  // delete inside its reserved workspace. Path and size travel in the
+  // target and detail; content never does.
+  'assistant.drive.write':  'data',
+  'assistant.drive.delete': 'data',
 };
 
 function isClientAction(action) {

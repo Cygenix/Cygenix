@@ -30,6 +30,23 @@
 // own working documents, and "your colleague can now read your files" is not
 // something tenancy implies or anybody asked for. If shared team folders are
 // wanted later they are a feature, not a re-keying.
+//
+// THE ASSISTANT'S WRITES (Sep-2026)
+// The docked Assistant can now write files into the user's Drive — only
+// inside a reserved top-level folder marked meta.reserved === 'claude'
+// (see public/cygenix-drive-store.js). It runs in the browser under the
+// user's own token, so this function cannot tell it from the user. The
+// client therefore marks its own syncs with `x-cygenix-actor: assistant`,
+// and when that header is present on put-meta, put-content or delete, each
+// target's parentId chain is walked through the stored manifest (plus the
+// nodes arriving in the same request) and the write is refused with 403
+// unless the chain reaches the reserved folder.
+//
+// This protects the user from the ASSISTANT'S mistakes — a path guard that
+// slipped, a bug in the store module — not from the user: anyone can leave
+// the header off, and a request without it behaves exactly as it always
+// has. The reserved folder itself may be created by the Assistant (it has
+// to be) but only at the top level, and it may never be deleted by it.
 
 const { getStore } = require('@netlify/blobs');
 const authz = require('./lib/authz');
@@ -113,6 +130,23 @@ async function readManifest(store) {
   return { nodes: {}, updatedAt: null, empty: true };
 }
 
+// Walk parentId from `id` through `nodes`, bounded so a cycle in a damaged
+// manifest cannot spin. `strict` excludes the node itself, for deletes.
+function reachesReserved(id, nodes, strict) {
+  let cur = nodes[id], hops = 0;
+  if (strict) cur = cur && cur.parentId ? nodes[cur.parentId] : null;
+  while (cur && hops++ < 64) {
+    if (cur.meta && cur.meta.reserved === 'claude') return true;
+    if (!cur.parentId) return false;
+    cur = nodes[cur.parentId];
+  }
+  return false;
+}
+function actorHeader(event) {
+  const h = (event && event.headers) || {};
+  return String(h['x-cygenix-actor'] || h['X-Cygenix-Actor'] || '').toLowerCase();
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST')    return fail('Method not allowed', 405);
@@ -144,6 +178,7 @@ exports.handler = async function (event) {
   }
 
   const action = String(body.action || '');
+  const assistant = actorHeader(event) === 'assistant';
 
   try {
     if (action === 'manifest') {
@@ -184,10 +219,24 @@ exports.handler = async function (event) {
       if (incoming.length > 2000) return fail('Too many nodes in one request', 400);
 
       const manifest = await readManifest(store);
+      const clean = incoming.map(sanitizeNode).filter(Boolean);
+      if (assistant) {
+        // Judge against stored ∪ incoming: a new folder's parent may be
+        // arriving in the same batch. The reserved folder itself is allowed
+        // only at the top level, and only one of it.
+        const view = Object.assign({}, manifest.nodes);
+        for (const n of clean) view[n.id] = n;
+        for (const n of clean) {
+          if (n.meta && n.meta.reserved === 'claude') {
+            const others = Object.values(view).filter(x => x.meta && x.meta.reserved === 'claude' && x.id !== n.id);
+            if (n.parentId || others.length) return fail('Assistant may not create a reserved folder there', 403);
+            continue;
+          }
+          if (!reachesReserved(n.id, view, false)) return fail('Assistant may only write inside its reserved folder: ' + n.name, 403);
+        }
+      }
       let count = 0;
-      for (const raw of incoming) {
-        const n = sanitizeNode(raw);
-        if (!n) continue;
+      for (const n of clean) {
         manifest.nodes[n.id] = n;
         count++;
       }
@@ -200,6 +249,16 @@ exports.handler = async function (event) {
     if (action === 'put-content') {
       const id = String(body.id || '');
       if (!id) return fail('id required', 400);
+      if (assistant) {
+        // Content goes up before its metadata (see cygenix-drive-sync.js), so
+        // the node is not in the manifest yet: the client names the parent,
+        // and the parent chain must already be there and reach the folder.
+        const manifest = await readManifest(store);
+        const parentId = String(body.parentId || '');
+        if (!parentId || !manifest.nodes[parentId] || !reachesReserved(parentId, manifest.nodes, false)) {
+          return fail('Assistant may only write inside its reserved folder', 403);
+        }
+      }
       const b64 = String(body.contentB64 || '');
       const buf = Buffer.from(b64, 'base64');
       if (buf.length > MAX_CONTENT_BYTES) {
@@ -231,6 +290,15 @@ exports.handler = async function (event) {
       if (!ids.length) return ok({ ok: true, deleted: 0 });
 
       const manifest = await readManifest(store);
+      if (assistant) {
+        for (const id of ids) {
+          // Strict: the reserved folder itself is never the Assistant's to
+          // delete, and a node the manifest does not know cannot be judged.
+          if (!manifest.nodes[id] || !reachesReserved(id, manifest.nodes, true)) {
+            return fail('Assistant may only delete inside its reserved folder', 403);
+          }
+        }
+      }
       let deleted = 0;
       for (const id of ids) {
         if (manifest.nodes[id]) { delete manifest.nodes[id]; deleted++; }

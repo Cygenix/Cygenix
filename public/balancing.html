@@ -321,6 +321,11 @@ body.cyg-collapsed{padding-left:54px}
 .tb-summary-item.bad strong{color:var(--red)}
 .tb-summary-item.ok strong{color:var(--green)}
 </style>
+  <!-- The Assistant's door to the Drive: read the whole Drive, write only in
+       Claude/<project>/. Deferred, so the parser never waits for it; in the
+       head so it fetches early and adds nothing behind the body's tail scripts.
+       The actions reach it lazily, so its order against them does not matter. -->
+  <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
 </head>
 <body>
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
@@ -353,7 +358,7 @@ body.cyg-collapsed{padding-left:54px}
 <div id="cyg-sidebar-mount" data-active="balancing"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=980f724c4a" defer></script>
+<script src="/cygenix-sidebar.js?v=9be9c4325e" defer></script>
 
 <div class="page">
 
@@ -3286,8 +3291,8 @@ function cbAiApplySql(idx, mid){
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=ab7ebac718"></script>
-<script src="/cygenix-assistant-actions.js?v=bc221fcede"></script>
+<script src="/cygenix-assistant.js?v=77f2934851"></script>
+<script src="/cygenix-assistant-actions.js?v=8ff6aaa2b1"></script>
 <!-- Collation. The rules load first; see the note in object_mapping.html. -->
 <script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
 <script src="/cygenix-collation.js?v=ffaa34cfcb" defer></script>
