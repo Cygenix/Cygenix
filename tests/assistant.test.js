@@ -546,10 +546,15 @@ Promise.all(results).then(() => {
   const modal = read('public', 'cygenix-drive-modal.js');
   check('the Drive overlay shows the reserved folder with an ic-* icon and the label "Assistant workspace", found by its mark not its name',
     /n\.meta && n\.meta\.reserved === 'claude'/.test(modal) && /ic ic-robot/.test(modal) && /'Assistant workspace'/.test(modal));
-  check('and can open straight to a folder, which the Rules chip uses', /function open\(opts\)/.test(modal) && /opts\.folderId/.test(modal));
+  check('and can open straight to a folder, or to a file in its editor, which the Rules chip uses',
+    /function open\(opts\)/.test(modal) && /opts\.folderId/.test(modal) && /opts\.fileId/.test(modal) && /await openEditor\(n\.id\)/.test(modal));
   const runtime = read('public', 'cygenix-assistant.js');
-  check('the Rules chip is in the panel header and opens the workspace in the Drive',
-    /id="cygaRules"/.test(runtime) && /Rules: rules\.md \(/.test(runtime) && /CygenixDriveModal\.open\(\{ folderId: workspace\.folderId \}\)/.test(runtime));
+  check('the Rules chip is in the panel header and opens rules.md itself in the Drive editor (the folder if it cannot be found)',
+    /id="cygaRules"/.test(runtime) && /Rules: rules\.md \(/.test(runtime)
+    && /CygenixDriveModal\.open\(workspace\.rulesId \? \{ fileId: workspace\.rulesId \} : \{ folderId: workspace\.folderId \}\)/.test(runtime));
+  check('a save in the Drive editor reloads rules and notes at once, so the next reply follows them',
+    /function reloadWorkspace\(\) \{ return loadWorkspace\(true\); \}/.test(runtime) && /reloadWorkspace: reloadWorkspace/.test(runtime)
+    && /ed\.inWorkspace && window\.CygenixAssistant && typeof window\.CygenixAssistant\.reloadWorkspace === 'function'/.test(modal));
   check('rules and notes are re-read on the first turn of a conversation, and a New conversation clears them',
     /await loadWorkspace\(state\.messages\.length <= 1\)/.test(runtime) && /state\.pending = null; state\.resume = null;\s*refreshWorkspace\(\);/.test(runtime));
   check('every page with the Assistant loads the Drive store',

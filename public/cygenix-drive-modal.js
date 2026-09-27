@@ -11,7 +11,38 @@
  * the sidebar prefers the native window.openDrive().
  *
  *   window.CygenixDriveModal.open()   // open the overlay
+ *   window.CygenixDriveModal.open({ folderId })   // …in a folder
+ *   window.CygenixDriveModal.open({ fileId })     // …with a text file open to edit
  *   window.CygenixDriveModal.close()
+ *
+ * THE TEXT EDITOR (Sep-2026)
+ * The Drive could store a file and hand it back as a download; it could not
+ * show one. That was fine while the Drive held uploads. It stopped being fine
+ * when the Assistant got a workspace here: its rules.md is a file the user is
+ * MEANT to edit — it is how they tell the Assistant "never put comments in
+ * scripts" — and the only ways to do that were to download it, edit it
+ * elsewhere and upload it again, or to drag it into the SQL editor.
+ *
+ * So a text file (.sql .md .txt .csv .json .xml .yml .yaml .log, up to 1 MB)
+ * now opens in a plain editor inside this overlay when its row is clicked;
+ * anything else downloads as before, and every file keeps its Download
+ * button. Saving writes the node back to IndexedDB in place — same id, same
+ * folder — and asks the sync engine to push it. The engine has its own
+ * in-flight guard and minimum gap; the editor adds one of its own so a
+ * double-click cannot save twice.
+ *
+ * What it defends against:
+ *   · losing work — closing the editor, the overlay, or pressing Esc with
+ *     unsaved changes asks first;
+ *   · overwriting someone else's save — if the file changed after it was
+ *     opened (another tab, another machine through sync, or the Assistant
+ *     writing its notes), Save says so and asks before replacing it;
+ *   · a file deleted while open — Save refuses and keeps the text on screen;
+ *   · sending file contents anywhere — the textarea has spellcheck off,
+ *     because some browsers' enhanced spellcheck posts text to a server, and
+ *     these files can hold connection details.
+ * A save inside the Assistant's workspace tells the Assistant to reload its
+ * rules and notes, so the next reply follows what was just written.
  *
  * Window controls: maximize / restore and minimize (docks to a small bar so
  * the page behind stays usable), plus the usual close.
@@ -117,6 +148,9 @@
   let dragIds = null;         // node ids being dragged (for move-into-folder)
   let lastIndex = -1;         // anchor row index for shift-click range select
   let currentItems = [];      // the rows currently rendered, in display order
+  let $ed, $edText, $edSave;
+  let ed = null;              // the open file: { id, name, mtime, text, path } — null when none
+  let edSaving = false;       // in-flight guard: one save at a time
 
   function toast(msg) { if (!$toast) return; $toast.textContent = msg; $toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $toast.classList.remove('show'), 1800); }
 
@@ -248,6 +282,24 @@
       .cygdm-mp-list{overflow-y:auto;padding:.4rem}
       .cygdm-mp-row{display:flex;align-items:center;gap:.5rem;padding:.5rem .6rem;border-radius:7px;cursor:pointer;font-size:13px;color:var(--text,#1a1d21);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .cygdm-mp-row:hover{background:var(--hover-tint,rgba(0,0,0,.06))}
+      /* The editor replaces the list, the toolbar and the footer while a file
+         is open; the window controls stay, so maximise works for long files. */
+      .cygdm-ed{display:none;flex:1;min-height:0;flex-direction:column}
+      .cygdm-modal.editing .cygdm-ed{display:flex}
+      .cygdm-modal.editing .cygdm-bar,.cygdm-modal.editing .cygdm-mapb,.cygdm-modal.editing .cygdm-body,.cygdm-modal.editing .cygdm-foot{display:none!important}
+      .cygdm-bg.min .cygdm-ed{display:none!important}
+      .cygdm-ed-h{display:flex;align-items:center;gap:.5rem;padding:.55rem .9rem;border-bottom:1px solid var(--border,#eceef2);flex-wrap:wrap}
+      .cygdm-ed-path{font-family:var(--mono,ui-monospace,monospace);font-size:12.5px;color:var(--text,#1a1d21);min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .cygdm-ed-state{font-size:12px;color:var(--text3,#7a8090);white-space:nowrap}
+      .cygdm-ed-state.dirty{color:var(--amber,#9a6b1f);font-weight:600}
+      .cygdm-ed-text{flex:1;min-height:0;resize:none;border:0;margin:0;padding:.8rem 1rem;box-sizing:border-box;width:100%;
+        font-family:var(--mono,ui-monospace,monospace);font-size:13px;line-height:1.55;tab-size:2;
+        color:var(--text,#1a1d21);background:var(--bg,#fff);outline:none}
+      .cygdm-ed-text:focus-visible{box-shadow:inset 0 0 0 2px var(--accent,#4a5bd6)}
+      .cygdm-ed-f{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:6px .9rem;border-top:1px solid var(--border,#eceef2);font-size:12px;color:var(--text3,#7a8090)}
+      .cygdm-btn.cygdm-primary{color:#fff;background:var(--accent,#4a5bd6);border-color:var(--accent,#4a5bd6)}
+      .cygdm-btn.cygdm-primary:hover{color:#fff;filter:brightness(1.08)}
+      .cygdm-btn[disabled]{opacity:.5;cursor:default}
     `;
     document.head.appendChild(st);
   }
@@ -279,6 +331,17 @@
         </div>
         <div class="cygdm-mapb" id="cygdm-map" style="display:none"></div>
         <div class="cygdm-body" id="cygdm-body"></div>
+        <div class="cygdm-ed" id="cygdm-ed" aria-label="Edit file">
+          <div class="cygdm-ed-h">
+            <button class="cygdm-btn" id="cygdm-ed-back" type="button" title="Back to the folder"><i class="ic ic-folder-open"></i> Back</button>
+            <span class="cygdm-ed-path" id="cygdm-ed-path"></span>
+            <span class="cygdm-ed-state" id="cygdm-ed-state" aria-live="polite"></span>
+            <button class="cygdm-btn" id="cygdm-ed-dl" type="button" title="Download this file"><i class="ic ic-download"></i> Download</button>
+            <button class="cygdm-btn cygdm-primary" id="cygdm-ed-save" type="button" disabled title="Save (Ctrl+S)"><i class="ic ic-save"></i> Save</button>
+          </div>
+          <textarea class="cygdm-ed-text" id="cygdm-ed-text" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" aria-label="File contents"></textarea>
+          <div class="cygdm-ed-f"><span id="cygdm-ed-info"></span><span>Ctrl+S saves · Esc goes back</span></div>
+        </div>
         <div class="cygdm-foot">
           <span id="cygdm-footl"></span>
           <span class="cygdm-cloud" id="cygdm-cloud" title="Your Drive is stored with your account, so it's available on any computer you sign in to."></span>
@@ -375,7 +438,24 @@
     $body.addEventListener('dragleave', e => { if (e.target === $body) $body.classList.remove('drag'); });
     $body.addEventListener('drop', async e => { if (dragIds) return; e.preventDefault(); $body.classList.remove('drag'); const f = e.dataTransfer && e.dataTransfer.files; if (f && f.length) await driveUploadFiles(f); });
 
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && $bg.classList.contains('open') && !$bg.classList.contains('min')) close(); });
+    // The editor. Esc inside it goes back to the folder (asking first if there
+    // are unsaved changes) rather than closing the whole Drive.
+    $ed = $bg.querySelector('#cygdm-ed');
+    $edText = $bg.querySelector('#cygdm-ed-text');
+    $edSave = $bg.querySelector('#cygdm-ed-save');
+    $bg.querySelector('#cygdm-ed-back').addEventListener('click', () => { closeEditor(); });
+    $bg.querySelector('#cygdm-ed-dl').addEventListener('click', async () => { if (!ed) return; const n = await dget(ed.id); if (n) downloadFile(n); });
+    $edSave.addEventListener('click', () => { saveEditor(); });
+    $edText.addEventListener('input', paintEditorState);
+    $edText.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveEditor(); }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || !$bg.classList.contains('open') || $bg.classList.contains('min')) return;
+      if (ed) { e.preventDefault(); closeEditor(); return; }
+      close();
+    });
 
     built = true;
   }
@@ -441,7 +521,9 @@
         if (moved || skipped) toast('Moved ' + moved + ' item' + (moved === 1 ? '' : 's') + ' to ' + n.name + (skipped ? (', ' + skipped + ' skipped') : ''));
       });
     } else {
-      row.onclick = e => { if (e.target.closest('.cygdm-acts') || e.target.closest('.cygdm-cb')) return; downloadFile(n); };
+      // A text file opens in the editor; anything else downloads as it always
+      // did. The Download button below is there for both.
+      row.onclick = e => { if (e.target.closest('.cygdm-acts') || e.target.closest('.cygdm-cb')) return; if (isEditable(n)) openEditor(n.id); else downloadFile(n); };
       const dl = document.createElement('button'); dl.title = 'Download'; dl.innerHTML = '<i class="ic ic-download"></i>'; dl.onclick = e => { e.stopPropagation(); downloadFile(n); }; acts.appendChild(dl);
     }
 
@@ -584,6 +666,98 @@
     if ($footL) $footL.textContent = items.length + ' item' + (items.length === 1 ? '' : 's') + (selected.size ? (' · ' + selected.size + ' selected') : '');
     renderSelectAllBtn();
     renderStorage();
+  }
+
+  // ── The text editor ───────────────────────────────────────────────────────
+  const EDIT_EXT = /\.(sql|md|txt|csv|json|xml|ya?ml|log)$/i;
+  const EDIT_MAX = 1048576;   // 1 MB — a textarea past this is slow, and nobody hand-edits it
+  function isEditable(n) { return !!n && n.kind === 'file' && EDIT_EXT.test(n.name || '') && (n.size || 0) <= EDIT_MAX; }
+  function mimeFor(name) {
+    const e = (String(name).split('.').pop() || '').toLowerCase();
+    return ({ md: 'text/markdown', csv: 'text/csv', json: 'application/json', xml: 'application/xml',
+      yml: 'application/yaml', yaml: 'application/yaml', sql: 'application/sql' })[e] || 'text/plain';
+  }
+  async function readNodeText(n) {
+    const c = n && n.content;
+    if (c == null) return '';
+    if (typeof c === 'string') return c;
+    if (typeof c.text === 'function') return c.text();
+    return new Response(c).text();
+  }
+  function editorDirty() { return !!(ed && $edText && $edText.value !== ed.text); }
+  function paintEditorState() {
+    if (!ed || !$bg) return;
+    const dirty = editorDirty();
+    const st = $bg.querySelector('#cygdm-ed-state');
+    st.textContent = edSaving ? 'Saving…' : (dirty ? 'Unsaved changes' : 'Saved');
+    st.classList.toggle('dirty', dirty && !edSaving);
+    $edSave.disabled = !dirty || edSaving;
+    const lines = $edText.value ? $edText.value.split('\n').length : 0;
+    $bg.querySelector('#cygdm-ed-info').textContent = lines + ' line' + (lines === 1 ? '' : 's');
+  }
+  async function openEditor(id) {
+    const n = await dget(id);
+    if (!n) { toast('That file is no longer in the Drive'); return false; }
+    if (!isEditable(n)) { downloadFile(n); return false; }
+    if (ed && ed.id !== id && editorDirty() && !confirm('Discard unsaved changes to “' + ed.name + '”?')) return false;
+    let text = '';
+    try { text = await readNodeText(n); } catch (_) { toast('Could not read that file'); return false; }
+    const chain = await driveFolderPath(n.parentId || '');
+    const path = chain.map(c => c.name).concat(n.name).join(' / ');
+    ed = { id: n.id, name: n.name, mtime: n.mtime || 0, text, path, inWorkspace: chain.some(c => c.meta && c.meta.reserved === 'claude') };
+    $bg.querySelector('#cygdm-ed-path').textContent = path;
+    $bg.querySelector('#cygdm-ed-path').title = path;
+    $edText.value = text;
+    $modal.classList.add('editing');
+    paintEditorState();
+    setTimeout(() => { try { $edText.focus(); $edText.setSelectionRange(0, 0); $edText.scrollTop = 0; } catch (_) {} }, 0);
+    return true;
+  }
+  // Returns false if the person chose to keep editing.
+  function closeEditor(force) {
+    if (!ed) return true;
+    if (!force && editorDirty() && !confirm('Discard unsaved changes to “' + ed.name + '”?')) return false;
+    ed = null;
+    if ($modal) $modal.classList.remove('editing');
+    renderDrive();
+    return true;
+  }
+  async function saveEditor() {
+    if (!ed || edSaving || !editorDirty()) return false;
+    edSaving = true; paintEditorState();
+    try {
+      const n = await dget(ed.id);
+      if (!n) {
+        alert('“' + ed.name + '” was deleted or moved out of the Drive while it was open.\n\nYour text is still in the editor — copy it before going back.');
+        return false;
+      }
+      if ((n.mtime || 0) !== ed.mtime &&
+          !confirm('“' + n.name + '” changed after you opened it — on another tab or machine, or the Assistant saved it.\n\nReplace that version with yours?')) {
+        return false;
+      }
+      const text = $edText.value;
+      n.content = new Blob([text], { type: mimeFor(n.name) });
+      n.size = n.content.size;
+      n.mime = mimeFor(n.name);
+      n.mtime = Date.now();
+      await dput(n);
+      ed.text = text; ed.mtime = n.mtime; ed.name = n.name;
+      toast('Saved ' + n.name);
+      // Push it. The engine de-dupes an in-flight sync and throttles repeats;
+      // a save it throttles goes up on its next poll.
+      if (window.CygenixDriveSync) { try { window.CygenixDriveSync.sync(); } catch (_) {} }
+      // The Assistant reads its rules and notes once per conversation; a
+      // change here should reach the very next reply.
+      if (ed.inWorkspace && window.CygenixAssistant && typeof window.CygenixAssistant.reloadWorkspace === 'function') {
+        try { window.CygenixAssistant.reloadWorkspace(); } catch (_) {}
+      }
+      return true;
+    } catch (e) {
+      alert('Could not save “' + ed.name + '”: ' + (e && e.message ? e.message : e));
+      return false;
+    } finally {
+      edSaving = false; paintEditorState();
+    }
   }
 
   function downloadFile(n) { const a = document.createElement('a'); a.href = URL.createObjectURL(n.content); a.download = n.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
@@ -831,13 +1005,22 @@
       if (ok) window.CygenixDriveSync.sync();
     });
   }
-  function close() { if ($bg) { $bg.classList.remove('open', 'min', 'max'); if ($maxBtn) { $maxBtn.textContent = '⤢'; $maxBtn.title = 'Maximize'; } } }
+  function close() { if (ed && !closeEditor()) return; if ($bg) { $bg.classList.remove('open', 'min', 'max'); if ($maxBtn) { $maxBtn.textContent = '⤢'; $maxBtn.title = 'Maximize'; } } }
 
-  // open({ folderId }) lands in that folder — the Assistant's Rules chip
-  // uses it to open the workspace. A plain open() is unchanged.
-  function open(opts) {
+  // open({ folderId }) lands in that folder; open({ fileId }) lands in the
+  // file's folder with the file open in the editor — the Assistant's Rules
+  // chip uses it for rules.md. A plain open() is unchanged.
+  async function open(opts) {
     openOverlay();
+    if (opts && opts.fileId) {
+      const n = await dget(opts.fileId).catch(() => null);
+      if (n) { try { navigate(n.parentId || ''); } catch (e) {} await openEditor(n.id); return; }
+    }
     if (opts && opts.folderId) { try { navigate(opts.folderId); } catch (e) { /* the root is fine */ } }
   }
-  window.CygenixDriveModal = { open, close, isOpen: () => !!($bg && $bg.classList.contains('open')) };
+  window.CygenixDriveModal = {
+    open, close, isOpen: () => !!($bg && $bg.classList.contains('open')),
+    // For tests and callers that need to know: is a file open, and unsaved?
+    editing: () => (ed ? { id: ed.id, name: ed.name, dirty: editorDirty() } : null),
+  };
 })();

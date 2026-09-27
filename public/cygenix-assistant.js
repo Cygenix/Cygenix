@@ -176,7 +176,7 @@ function collectContext() {
    starts and when the active project changes, and handed to the system
    prompt in labelled sections. Cached per project id; New conversation and
    a write to either file (drive_write calls refreshWorkspace) clear it. */
-var workspace = { projectId: null, path: '', rules: '', notes: '', rulesLines: 0, folderId: null };
+var workspace = { projectId: null, path: '', rules: '', notes: '', rulesLines: 0, folderId: null, rulesId: null };
 
 function projectName() {
   var id = projectId();
@@ -190,22 +190,29 @@ function projectName() {
   return id;
 }
 function refreshWorkspace() { workspace.projectId = null; }
+/* Re-read rules.md and notes.md now, not on the next turn — the Drive's
+   editor calls this after a save in the workspace so the chip's line count
+   and the next reply both reflect what was just written. */
+function reloadWorkspace() { return loadWorkspace(true); }
 async function loadWorkspace(force) {
   var S = root && root.CygenixDriveStore;
   var pid = projectId();
-  if (!S || !pid) { workspace = { projectId: null, path: '', rules: '', notes: '', rulesLines: 0, folderId: null }; return workspace; }
+  if (!S || !pid) { workspace = { projectId: null, path: '', rules: '', notes: '', rulesLines: 0, folderId: null, rulesId: null }; return workspace; }
   if (!force && workspace.projectId === pid) return workspace;
   try {
     var ws = await S.ensureWorkspace(pid, projectName());
     var rules = '', notes = '';
     try { rules = (await S.readText(ws.path + '/rules.md')).text || ''; } catch (e) { rules = ''; }
     try { notes = (await S.readText(ws.path + '/notes.md', { maxChars: 8000 })).text || ''; } catch (e) { notes = ''; }
+    // The chip opens rules.md itself in the Drive's editor, so keep its id.
+    var rulesId = null;
+    try { var rr = await S.resolve(ws.path + '/rules.md'); rulesId = rr && rr.node ? rr.node.id : null; } catch (e) { rulesId = null; }
     workspace = { projectId: pid, path: ws.path, rules: rules, notes: notes,
-                  rulesLines: rules ? rules.split('\n').length : 0, folderId: ws.project.id };
+                  rulesLines: rules ? rules.split('\n').length : 0, folderId: ws.project.id, rulesId: rulesId };
   } catch (e) {
     // A Drive that cannot be reached must not stop a conversation; the
     // prompt simply carries no workspace section this turn.
-    workspace = { projectId: null, path: '', rules: '', notes: '', rulesLines: 0, folderId: null };
+    workspace = { projectId: null, path: '', rules: '', notes: '', rulesLines: 0, folderId: null, rulesId: null };
   }
   if (el && el.rules) renderRulesChip();
   return workspace;
@@ -214,7 +221,7 @@ function renderRulesChip() {
   if (!el || !el.rules) return;
   el.rules.hidden = !workspace.path;
   el.rules.textContent = 'Rules: rules.md (' + workspace.rulesLines + ' line' + (workspace.rulesLines === 1 ? '' : 's') + ')';
-  el.rules.title = workspace.path ? 'Open ' + workspace.path + ' in the Drive' : '';
+  el.rules.title = workspace.path ? 'Open ' + workspace.path + '/rules.md to edit it' : '';
 }
 
 /* ── guardrail policy (per project) ────────────────────────────────────── */
@@ -814,17 +821,18 @@ function buildPanel() {
     stop: document.getElementById('cygaStop'), tourPill: document.getElementById('cygaTourPill'),
     rules: document.getElementById('cygaRules')
   };
-  // The chip opens the workspace folder in the Drive overlay, loading the
-  // overlay first if this page has not yet. The literal is stamped by
-  // scripts/stamp-assets.js like every other runtime injection.
+  // The chip opens rules.md in the Drive overlay's editor (the workspace
+  // folder if the file cannot be found), loading the overlay first if this
+  // page has not yet. The literal is stamped by scripts/stamp-assets.js like
+  // every other runtime injection.
   el.rules.addEventListener('click', function () {
     var go = function () {
-      if (root.CygenixDriveModal) root.CygenixDriveModal.open({ folderId: workspace.folderId });
+      if (root.CygenixDriveModal) root.CygenixDriveModal.open(workspace.rulesId ? { fileId: workspace.rulesId } : { folderId: workspace.folderId });
       else location.href = '/dashboard#drive';
     };
     if (root.CygenixDriveModal) return go();
     var s = document.getElementById('cygenix-drive-modal-js');
-    if (!s) { s = document.createElement('script'); s.id = 'cygenix-drive-modal-js'; s.src = '/cygenix-drive-modal.js?v=1758772a9c'; document.head.appendChild(s); }
+    if (!s) { s = document.createElement('script'); s.id = 'cygenix-drive-modal-js'; s.src = '/cygenix-drive-modal.js?v=ab8c3988e3'; document.head.appendChild(s); }
     s.addEventListener('load', go, { once: true });
   });
   renderRulesChip();
@@ -1686,6 +1694,7 @@ var api = {
   setTourMode: function (on) { tourMode = (on === 'paused') ? 'paused' : !!on; render(); },
   refresh: function () { render(); },
   refreshWorkspace: refreshWorkspace,
+  reloadWorkspace: reloadWorkspace,
   workspace: function () { return workspace; },
   hasKey: function () { return !!apiKey(); },
   suggestions: [],
