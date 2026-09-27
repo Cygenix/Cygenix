@@ -90,8 +90,10 @@ h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:-0.01em}
 nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;
   justify-content:space-between;gap:1rem;padding:0.85rem clamp(1rem,4vw,2.5rem);
   background:transparent;border-bottom:1px solid transparent;transition:background 0.25s,border-color 0.25s}
-nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop-filter:blur(14px);
-  -webkit-backdrop-filter:blur(14px)}
+/* Fully solid, not frosted (Sep-2026): the bar used to be 82% black with a
+   blur, and once it turned solid a faint ghost of whatever was beneath
+   showed through it. The product owner wanted nothing to show through. */
+nav.solid{background:#000;border-bottom-color:var(--border)}
 .nav-logo{display:flex;align-items:center;gap:0.55rem;text-decoration:none;color:var(--text);flex-shrink:0}
 .nav-logo b{font-size:1.05rem;font-weight:600;letter-spacing:-0.02em}
 .nav-beta{font-size:9.5px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;

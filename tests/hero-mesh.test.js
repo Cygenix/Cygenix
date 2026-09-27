@@ -101,7 +101,7 @@ check('with the same two glows and masked grid behind everything',
   && /<div class="brand-glow" aria-hidden="true"><\/div>\s*<div class="brand-grid" aria-hidden="true"><\/div>/.test(pricing));
 check('the same nav: the three-chevron mark, transparent over the hero and solid past it',
   /M9 10\.5 14 16 9 21\.5/.test(pricing) && /nav\{[^}]*background:transparent/.test(pricing)
-  && /nav\.solid\{background:rgba\(0,0,0/.test(pricing) && /nav\.classList\.toggle\('solid'/.test(pricing)
+  && /nav\.solid\{background:#000;/.test(pricing) && /nav\.classList\.toggle\('solid'/.test(pricing)
   && /querySelector\('\.pricing-hero'\)/.test(pricing));
 check('and the same page-wide mesh: fixed, screen-sized, right after the grid, no stage and no mask',
   /<div class="brand-grid" aria-hidden="true"><\/div>\s*(?:<!--[\s\S]*?-->\s*)?<div class="cx-mesh-layer" aria-hidden="true" data-scroll-fade><canvas id="cx-mesh"><\/canvas><\/div>/.test(pricing)

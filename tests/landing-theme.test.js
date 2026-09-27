@@ -174,7 +174,7 @@ check('the atmosphere is inert — it must never eat a click',
 // at every scroll position, and this pins the rule and refuses the old one.
 check('the nav starts transparent and turns solid the moment content would pass under it',
   /nav\{[^}]*background:transparent/.test(index)
-  && /nav\.solid\{background:rgba\(0,0,0/.test(index)
+  && /nav\.solid\{background:#000;/.test(index) && !/backdrop-filter:blur\(14px\)/.test(index)
   && /nav\.classList\.toggle\('solid', window\.pageYOffset > at\)/.test(index)
   && /at = Math\.max\(0, first\.getBoundingClientRect\(\)\.top \+ window\.pageYOffset - nav\.offsetHeight\)/.test(index)
   && /var first = hero\.firstElementChild \|\| hero;/.test(index)
