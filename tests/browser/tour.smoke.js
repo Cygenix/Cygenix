@@ -78,7 +78,8 @@ const server = http.createServer((req, res) => {
 const SEED = () => {
   localStorage.setItem('cygenix_user', JSON.stringify({ email: 'you@example.test', name: 'You' }));
   localStorage.setItem('cygenix_active_user', 'you@example.test');
-  localStorage.setItem('cygenix_cookie_consent', 'all');
+  // cookie-consent.js JSON-parses this; a bare string is "no answer yet" and the banner shows.
+  localStorage.setItem('cygenix_cookie_consent', JSON.stringify({ version: '2', essential: true, functional: true, analytics: false, timestamp: new Date().toISOString() }));
   localStorage.setItem('acct-cygenix.ciamlogin.com-x', JSON.stringify({
     homeAccountId: 'x', environment: 'cygenix.ciamlogin.com', authorityType: 'MSSTS',
     username: 'you@example.test', localAccountId: 'x', tenantId: 'x' }));

@@ -82,7 +82,8 @@ const SEED = (a) => {
   // (test 17 goes through it), and login.html writes exactly this shape.
   localStorage.setItem('cygenix_entra_account', JSON.stringify({ email: a.U, userId: a.U }));
   localStorage.setItem('cygenix_active_user', a.U);
-  localStorage.setItem('cygenix_cookie_consent', 'all');
+  // cookie-consent.js JSON-parses this; a bare string is "no answer yet" and the banner shows.
+  localStorage.setItem('cygenix_cookie_consent', JSON.stringify({ version: '2', essential: true, functional: true, analytics: false, timestamp: new Date().toISOString() }));
   localStorage.setItem('cygenix_onboarded', '1');
   localStorage.setItem('cygenix_tier', 'pro');
   const acct = { homeAccountId: 'h.t', environment: 'cygenix.ciamlogin.com', tenantId: 't', username: a.U, localAccountId: 'l', authorityType: 'MSSTS', name: 'A Tester' };

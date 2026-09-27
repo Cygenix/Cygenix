@@ -152,7 +152,8 @@ async function openConsole(browser, { cloud }) {
     localStorage.setItem('cygenix_user', JSON.stringify({ email: a.USER }));
     localStorage.setItem('cygenix_active_user', a.USER);
     localStorage.setItem('cygenix_tier', 'pro');
-    localStorage.setItem('cygenix_cookie_consent', 'all');
+    // cookie-consent.js JSON-parses this; a bare string is "no answer yet" and the banner shows.
+    localStorage.setItem('cygenix_cookie_consent', JSON.stringify({ version: '2', essential: true, functional: true, analytics: false, timestamp: new Date().toISOString() }));
     localStorage.setItem('acct-cygenix.ciamlogin.com-h.t', JSON.stringify({
       homeAccountId: 'h.t', environment: 'cygenix.ciamlogin.com', tenantId: 't',
       username: a.USER, localAccountId: 'l', authorityType: 'MSSTS' }));

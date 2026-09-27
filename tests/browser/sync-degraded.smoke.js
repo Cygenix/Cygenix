@@ -66,7 +66,8 @@ function seed(arg) {
   localStorage.setItem('cygenix_onboarded', 'true');
   localStorage.setItem('cygenix_user', JSON.stringify({ email: 'smoke@example.com' }));
   localStorage.setItem('cygenix_tier', 'pro');
-  localStorage.setItem('cygenix_cookie_consent', 'all');
+  // cookie-consent.js JSON-parses this; a bare string is "no answer yet" and the banner shows.
+  localStorage.setItem('cygenix_cookie_consent', JSON.stringify({ version: '2', essential: true, functional: true, analytics: false, timestamp: new Date().toISOString() }));
   localStorage.setItem('acct-cygenix.ciamlogin.com-h.t', JSON.stringify(acct));
   // cygenix-auth-token.js finds the bearer token by scanning localStorage for
   // an MSAL IdToken CREDENTIAL record under a key carrying the tenant marker.
