@@ -838,8 +838,19 @@
      cygenix-menu-index.js, in a listbox under the field — because a setting
      is not saved work, and "where is the Claude key" had no answer here at
      all. The last row is always "Search saved work for …", which is exactly
-     what Enter did before, so nobody loses the old behaviour: Enter with no
-     row highlighted still does it.
+     what Enter did before.
+
+     THE FIRST ROW IS HIGHLIGHTED AS SOON AS THE LIST APPEARS, so "type
+     claude, press Enter" opens the Anthropic key — the journey the search
+     exists for. The old Enter is still one key away: ↑ wraps straight to the
+     last row, Esc closes the list and Enter then submits as it always did,
+     and with no match at all the only row IS the saved-work search, so
+     Enter does exactly what it used to.
+
+     A keystroke never acts on a stale list. Enter or an arrow pressed inside
+     the 120ms debounce renders the list for what is in the field first;
+     otherwise typing "theme", Enter, "claude", Enter quickly would open Theme
+     the second time.
 
      If the index did not load, there is simply no dropdown; the field works
      as it always did. The list is appended to <body> with position:fixed so
@@ -870,7 +881,7 @@
 
   function wireSearchMenu(input, toSearchPage){
     const LIST_ID = 'cx-mh-results';
-    let list = null, rows = [], active = -1, timer = 0, open = false;
+    let list = null, rows = [], active = -1, timer = 0, open = false, pending = false;
 
     input.setAttribute('role', 'combobox');
     input.setAttribute('aria-autocomplete', 'list');
@@ -930,12 +941,11 @@
           `<span class="cx-mh-opt-path">${escapeHtml(e.path || '')}</span></span>` +
           `<span class="cx-mh-opt-tag">${e.kind === 'setting' ? 'Setting' : 'Menu'}</span></div>`;
       }).join('');
-      active = -1;
-      input.removeAttribute('aria-activedescendant');
       place();
       list.hidden = false;
       open = true;
       input.setAttribute('aria-expanded', 'true');
+      setActive(0);
     }
 
     function setActive(i){
@@ -953,6 +963,7 @@
 
     function close(){
       clearTimeout(timer);
+      pending = false;
       if (!open) return;
       open = false;
       active = -1;
@@ -975,19 +986,26 @@
 
     input.addEventListener('input', () => {
       clearTimeout(timer);
-      timer = setTimeout(render, SEARCH_DEBOUNCE_MS);
+      pending = true;
+      timer = setTimeout(() => { pending = false; render(); }, SEARCH_DEBOUNCE_MS);
     });
+    // Bring the list up to date with the field before a key acts on it.
+    const settle = () => { if (pending) { clearTimeout(timer); pending = false; render(); } };
     input.addEventListener('focus', () => { if (input.value.trim() && !open) render(); });
     input.addEventListener('blur', close);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        if (!open) { clearTimeout(timer); render(); if (!open) return; }
+        if (pending) { settle(); if (!open) return; e.preventDefault(); return; }
+        if (!open) { render(); if (!open) return; e.preventDefault(); return; }
         e.preventDefault();
         const n = rows.length;
         if (!n) return;
         setActive(e.key === 'ArrowDown' ? (active + 1) % n : (active <= 0 ? n - 1 : active - 1));
       } else if (e.key === 'Enter') {
-        // A highlighted row wins; otherwise the form submits as it always did.
+        // The highlighted row wins — the first, unless the arrows moved it.
+        // With the list closed (Esc, or no index) the form submits as it
+        // always did.
+        settle();
         if (open && active >= 0) { e.preventDefault(); choose(active); }
       } else if (e.key === 'Escape') {
         if (open) { e.preventDefault(); close(); }

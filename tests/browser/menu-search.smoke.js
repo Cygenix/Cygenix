@@ -12,7 +12,9 @@
  * across in sessionStorage. Then that it stops: no view re-rendering after
  * landing, no requests while typing, and nothing thrown.
  *
- * This walks the brief's verification list, 1 to 8.
+ * This walks the brief's verification list, 1 to 8. The first row is
+ * highlighted as soon as the list appears, so step 1 is literally "type
+ * claude, press Enter"; the saved-work search is the last row, one ↑ away.
  *
  * Run it by hand:  node tests/browser/menu-search.smoke.js
  */
@@ -153,9 +155,10 @@ const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x
     });
     check('the dropdown is painted above what it covers', onTop);
 
-    await page.keyboard.press('ArrowDown');
     const ad = await page.evaluate(() => document.getElementById('cx-mh-search').getAttribute('aria-activedescendant'));
-    check('↓ highlights the first row and names it through aria-activedescendant', ad === 'cx-mh-results-0', ad);
+    const firstSel = (await readRows(page))[0].selected;
+    check('THE FIRST ROW IS HIGHLIGHTED THE MOMENT THE LIST APPEARS, and named through aria-activedescendant',
+      ad === 'cx-mh-results-0' && firstSel === 'true', ad + ' / ' + firstSel);
     // Count showView calls from here on: landing must not start a loop.
     await page.evaluate(() => {
       window.__views = 0;
@@ -165,7 +168,7 @@ const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x
     await page.keyboard.press('Enter');
     await page.waitForTimeout(600);
     const l = await landed(page);
-    check('ENTER OPENS GENERAL SETTINGS', l.view === 'view-project-settings', l.view);
+    check('TYPE "claude", PRESS ENTER: GENERAL SETTINGS OPENS — no arrow key needed', l.view === 'view-project-settings', l.view);
     check('…WITH THE KEY FIELD FOCUSED', l.focused === 'settings-api-key', l.focused);
     check('…scrolled into view', l.inView);
     check('…and flashing', l.flashing);
@@ -193,7 +196,6 @@ const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x
     const { page, errors } = await newPage();
     await open(page, '/object-mapping');
     await typeQuery(page, 'claude');
-    await page.keyboard.press('ArrowDown');
     await Promise.all([page.waitForURL(/\/dashboard/, { timeout: 15000 }), page.keyboard.press('Enter')]);
     await page.waitForFunction(() => document.activeElement && document.activeElement.id === 'settings-api-key', null, { timeout: 5000 }).catch(() => {});
     const l = await landed(page);
@@ -220,7 +222,6 @@ const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x
     }
     // A Connections field: the right tab, then the card.
     await typeQuery(page, 'collation');
-    await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
     const c = await page.evaluate(() => {
@@ -262,8 +263,11 @@ const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x
     await page.close();
   }
 
-  /* ── 5. Enter with nothing highlighted, and the Search page ─────────────── */
-  section('5. Enter with nothing highlighted still opens the Search page, now with the new group');
+  /* ── 5. The way back to the Search page, and the page itself ───────────── */
+  // The first row is highlighted automatically, so plain Enter opens it. The
+  // old Enter — search saved work — is the last row: ↑ reaches it in one key
+  // from the first, and Esc-then-Enter submits the form as it always did.
+  section('5. The saved-work search is still one key away, and the Search page shows the new group');
   {
     const { page, errors } = await newPage();
     await page.addInitScript(() => {
@@ -271,6 +275,10 @@ const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x
     });
     await open(page, '/dashboard');
     await typeQuery(page, 'claude');
+    await page.keyboard.press('ArrowUp');
+    const lastSel = await readRows(page);
+    check('↑ from the first row goes straight to "Search saved work for …"',
+      lastSel[lastSel.length - 1].selected === 'true' && /^Search saved work/.test(lastSel[lastSel.length - 1].label));
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
     const s = await page.evaluate(() => ({
@@ -280,7 +288,7 @@ const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x
       text: document.getElementById('search-results').textContent,
       list: (document.getElementById('cx-mh-results') || {}).hidden,
     }));
-    check('THE SEARCH PAGE OPENS, WITH THE QUERY RUN', s.view === 'view-search' && s.q === 'claude', s.view + ' / ' + s.q);
+    check('…and Enter on it opens THE SEARCH PAGE, WITH THE QUERY RUN', s.view === 'view-search' && s.q === 'claude', s.view + ' / ' + s.q);
     check('the dropdown closed on the way', s.list === true);
     check('"Menu & settings" is the first group', s.text.indexOf('Menu & settings') === 0 || s.text.trim().indexOf('Menu & settings') === 0, s.text.slice(0, 80));
     check('…and holds the Anthropic key', /Anthropic API key/.test(s.text));
@@ -318,15 +326,39 @@ const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x
     const { page } = await newPage();
     await open(page, '/dashboard');
     await typeQuery(page, 'theme');
-    await page.keyboard.press('ArrowUp');
     let rows = await readRows(page);
-    check('↑ from nothing highlights the last row', rows[rows.length - 1].selected === 'true');
+    check('the first row starts highlighted', rows[0].selected === 'true');
+    await page.keyboard.press('ArrowDown');
+    rows = await readRows(page);
+    check('↓ moves to the second', rows.length > 2 ? rows[1].selected === 'true' : rows[rows.length - 1].selected === 'true');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    rows = await readRows(page);
+    check('↑ from the first wraps to the last', rows[rows.length - 1].selected === 'true');
     await page.keyboard.press('ArrowDown');
     rows = await readRows(page);
     check('↓ from the last wraps to the first', rows[0].selected === 'true');
     await page.keyboard.press('Escape');
     check('Esc closes it', await page.evaluate(() => document.getElementById('cx-mh-results').hidden));
     check('…and says so', await page.evaluate(() => document.getElementById('cx-mh-search').getAttribute('aria-expanded')) === 'false');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const afterEsc = await page.evaluate(() => ({ view: (document.querySelector('.view.active') || {}).id, q: document.getElementById('search-input').value }));
+    check('Esc then Enter submits as it always did: the Search page, with the query',
+      afterEsc.view === 'view-search' && afterEsc.q === 'theme', JSON.stringify(afterEsc));
+
+    // Typed fast and Enter inside the 120ms debounce: the list on screen
+    // still answers the LAST query. Enter must act on what is in the field.
+    await page.evaluate(() => showView('dashboard'));
+    await typeQuery(page, 'theme');
+    await page.fill('#cx-mh-search', '');
+    await page.type('#cx-mh-search', 'claude', { delay: 0 });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(600);
+    const fast = await landed(page);
+    check('ENTER INSIDE THE DEBOUNCE ACTS ON WHAT WAS TYPED, not on the stale list',
+      fast.view === 'view-project-settings' && fast.focused === 'settings-api-key', JSON.stringify(fast));
+    await page.evaluate(() => showView('dashboard'));
     await typeQuery(page, 'theme');
     await page.mouse.click(700, 500);
     check('a click outside closes it', await page.evaluate(() => document.getElementById('cx-mh-results').hidden));

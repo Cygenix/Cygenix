@@ -327,6 +327,10 @@ function loadSidebar(roles) {
   check('…which reports the highlighted row through aria-activedescendant', /aria-activedescendant/.test(sb));
   check('…debounced at 120ms, at most six rows', /SEARCH_DEBOUNCE_MS = 120/.test(sb) && /SEARCH_MAX = 6/.test(sb));
   check('…whose last row keeps the old behaviour: search saved work', /Search saved work for/.test(sb));
+  check('…whose first row is highlighted as soon as the list renders, so Enter opens it',
+    /input\.setAttribute\('aria-expanded', 'true'\);\s*\n\s*setActive\(0\);/.test(sb));
+  check('…and Enter inside the debounce renders for what was typed before acting',
+    /else if \(e\.key === 'Enter'\) \{[\s\S]{0,300}settle\(\);\s*\n\s*if \(open && active >= 0\)/.test(sb));
   check('…and which is simply absent if the index did not load', /const idx = index\(\);\s*\n\s*if \(!q \|\| !idx/.test(sb));
   check('the list sits above the rail and the hairline', /\.cx-mh-results\{position:fixed;z-index:1000/.test(sb));
   const app = read('dashboard-app.js');
