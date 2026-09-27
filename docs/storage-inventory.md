@@ -71,11 +71,12 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data-stream-designer-app.js, data-stream-store-app.js |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
-## C — Preference — per-viewer convenience (30)
+## C — Preference — per-viewer convenience (31)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
-| `cyg_goto` | Cross-page navigation intent | — | connect.html, cygenix-sidebar.js, dashboard-app.js +2 |
+| `cyg_focus_target` | Selector of a setting chosen in search, focused once on arrival then cleared | — | cygenix-menu-index.js |
+| `cyg_goto` | Cross-page navigation intent | — | connect.html, cygenix-menu-index.js, cygenix-sidebar.js +3 |
 | `cyg_search_q` | A query typed in the masthead, handed to the Search view once | — | cygenix-sidebar.js, dashboard-app.js |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
 | `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +17 |
@@ -108,4 +109,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_64 classified key(s) across `public/`._
+_65 classified key(s) across `public/`._

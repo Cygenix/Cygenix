@@ -119,6 +119,7 @@ const CLASSES = {
   'cygenix_whoami_ok':                 ['C', 'Tier-gate pass cache (sessionStorage)', ''],
   'cyg_goto':                          ['C', 'Cross-page navigation intent', ''],
   'cyg_search_q':                      ['C', 'A query typed in the masthead, handed to the Search view once', ''],
+  'cyg_focus_target':                  ['C', 'Selector of a setting chosen in search, focused once on arrival then cleared', ''],
   'cygenix_profile_apply_seen':        ['C', 'Profile load-check stamp: which selection was already checked this session (sessionStorage)', ''],
   'cygenix_conn_test_v1':              ['C', 'Last connection test result per side, keyed by a digest of the connection so a profile switch invalidates it (sessionStorage)', 're-tested on the next warm-up'],
   'cygenix_conn_warm_v1':              ['C', 'Which profile+connection this session has already warmed, so the Function App is woken once and not once per page (sessionStorage)', 're-warmed next session'],

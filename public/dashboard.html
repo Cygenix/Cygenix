@@ -1473,7 +1473,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-sidebar.js?v=9be9c4325e" defer></script>
+<!-- Menu and settings search, read by the sidebar's masthead field and the
+     Search page. Before the sidebar so it is there when the field is typed in. -->
+<script src="/cygenix-menu-index.js?v=3d85838633" defer></script>
+<script src="/cygenix-sidebar.js?v=767470008a" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-home.js?v=22a62c9cae" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
@@ -1501,7 +1504,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=d7d0f6518f" defer></script>
-  <script src="/dashboard-app.js?v=6b4136458c" defer></script>
+  <script src="/dashboard-app.js?v=af9d1e5754" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
@@ -3997,15 +4000,16 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="panel-header">
         <div>
           <div class="panel-title"><i class="ic ic-search"></i> Search</div>
-          <div class="panel-sub">Find jobs, maps, projects, artifacts and saved reports from one place</div>
+          <div class="panel-sub">Find menu items and settings, and your jobs, maps, projects, artifacts and saved reports, from one place</div>
         </div>
       </div>
 
       <div style="display:flex;gap:0.75rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
-        <input type="text" id="search-input" placeholder="Search your jobs, maps, projects, artifacts and reports…"
+        <input type="text" id="search-input" placeholder="Search settings, menu items, jobs, maps, projects, artifacts and reports…"
           oninput="debouncedGlobalSearch()" style="flex:1;min-width:260px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.7rem 0.9rem;font-size:13px;color:var(--text);outline:none">
         <select id="search-scope" onchange="runGlobalSearch()" style="background:var(--bg2);border:0.5px solid var(--border2);color:var(--text);padding:0.55rem 0.75rem;border-radius:var(--r);font-size:12px">
           <option value="all">All sources</option>
+          <option value="menu">Menu &amp; settings only</option>
           <option value="job">Jobs / Maps only</option>
           <option value="project">Projects only</option>
           <option value="inventory">Artifacts only</option>

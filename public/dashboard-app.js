@@ -310,6 +310,10 @@ function showView(v) {
   if (v === 'task-agent')        ta_init();
   if (v === 'server-migration')  ensureServerMigration();
   if (v === 'diagnostics' && window.CygenixDiagnostics) window.CygenixDiagnostics.init('cyg-diag-mount');
+  // A search result for a single setting leaves its field's selector in
+  // sessionStorage; now that the view is showing, go and land on it. The
+  // index clears the key before it scrolls, so this cannot loop.
+  if (window.CygenixMenuIndex) { try { window.CygenixMenuIndex.consumeFocusTarget(); } catch (e) {} }
 }
 
 function selectTarget(el, name) {
@@ -7255,6 +7259,11 @@ function closeReportSettings() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 let _searchReportCache = null;        // Cached reports list (null = not yet loaded)
+// Said in both places the view is empty. Menu items and settings come first
+// because they are what the masthead dropdown offers too, and a person who
+// arrives here from Enter should not think those were left out.
+const _SEARCH_EMPTY_HTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">' +
+  'Start typing above to search menu items and settings, and your saved work: jobs, projects, artifacts and saved reports.</p></div>';
 let _searchReportLoading = false;     // Prevents concurrent fetches during fast re-open
 
 async function initGlobalSearch() {
@@ -7271,7 +7280,7 @@ async function initGlobalSearch() {
   try { handed = sessionStorage.getItem('cyg_search_q') || ''; sessionStorage.removeItem('cyg_search_q'); } catch {}
   if (input && handed) { input.value = handed; setTimeout(() => { try { runGlobalSearch(); } catch {} }, 0); return; }
   if (input) { setTimeout(() => input.focus(), 50); }
-  if (res) res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, artifacts, and saved reports.</p></div>';
+  if (res) res.innerHTML = _SEARCH_EMPTY_HTML;
   if (sum) sum.textContent = '';
   // Fire-and-forget report prefetch — we don't await so the UI stays responsive.
   // If it fails, search still works for the local sources; we just won't show
@@ -7326,12 +7335,22 @@ function runGlobalSearch() {
   const scopeVal = scope ? scope.value : 'all';
 
   if (!q) {
-    res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, artifacts, and saved reports.</p></div>';
+    res.innerHTML = _SEARCH_EMPTY_HTML;
     if (sum) sum.textContent = '';
     return;
   }
 
   const rows = [];
+
+  // ── Menu & settings ──────────────────────────────────────────────────────
+  // From cygenix-menu-index.js: the rail's destinations (filtered for this
+  // person exactly as the rail is) and individual settings. Local data, no
+  // network. Shown as their own group above saved work, because they are a
+  // different kind of answer — a place to go, not a thing you made.
+  let menuHits = [];
+  if ((scopeVal === 'all' || scopeVal === 'menu') && window.CygenixMenuIndex) {
+    try { menuHits = window.CygenixMenuIndex.search(qRaw, 10) || []; } catch (e) { menuHits = []; }
+  }
 
   // ── Jobs / Maps ──────────────────────────────────────────────────────────
   // Matches name, source/target tables, column names (src + tgt), and the
@@ -7472,13 +7491,19 @@ function runGlobalSearch() {
   if (sum) {
     const bySource = rows.reduce((acc, r) => { acc[r.type] = (acc[r.type]||0) + 1; return acc; }, {});
     const parts = Object.keys(bySource).map(k => bySource[k] + ' ' + k.toLowerCase() + (bySource[k]===1?'':'s'));
-    sum.textContent = rows.length
-      ? rows.length + ' result' + (rows.length===1?'':'s') + (parts.length ? ' · ' + parts.join(', ') : '')
+    if (menuHits.length) parts.unshift(menuHits.length + ' menu item' + (menuHits.length===1?'':'s') + ' or setting' + (menuHits.length===1?'':'s'));
+    const total = rows.length + menuHits.length;
+    sum.textContent = total
+      ? total + ' result' + (total===1?'':'s') + (parts.length ? ' · ' + parts.join(', ') : '')
       + (_searchReportCache === null && (scopeVal==='all'||scopeVal==='report') ? ' · (reports still loading…)' : '')
       : 'No results';
   }
 
-  if (!rows.length) {
+  const menuHtml = _renderMenuSearchGroup(menuHits, q);
+
+  // "Nothing matched" only when EVERY group is empty. A query that finds the
+  // Anthropic key setting and no saved work has matched something.
+  if (!rows.length && !menuHits.length) {
     // Say what IS searched. The old placeholder promised "name, table,
     // column, SQL, filename", which reads as though it searches the connected
     // database — it doesn't. Table and column names are only found where they
@@ -7489,15 +7514,23 @@ function runGlobalSearch() {
       '<h3>No matches</h3>' +
       '<p>Nothing matched "' + escapeHtml(qRaw) + '".</p>' +
       '<p style="color:var(--text3);font-size:12px;margin-top:0.75rem;line-height:1.7">' +
-      'Search looks through your saved work — job and map names, their source/target tables, mapped column names, generated SQL, project names, artifact filenames and saved reports.<br>' +
+      'Search looks through menu items and settings, and through your saved work — job and map names, their source/target tables, mapped column names, generated SQL, project names, artifact filenames and saved reports.<br>' +
       'It does <b>not</b> query the connected databases, so a table that no job or map refers to yet won\'t appear here. ' +
       'To browse live schema, use <b>Object Mapping</b> or the <b>SQL Editor</b>.' +
       '</p></div>';
     return;
   }
 
+  if (!rows.length) {
+    res.innerHTML = menuHtml +
+      '<p style="color:var(--text3);font-size:12px;margin:1rem 0 0">' +
+      (scopeVal === 'menu' ? 'Showing menu items and settings only.' : 'No saved work matched "' + escapeHtml(qRaw) + '".') +
+      '</p>';
+    return;
+  }
+
   // Render results table
-  res.innerHTML =
+  res.innerHTML = menuHtml + (menuHtml ? '<div class="cx-h-sm" style="margin:1.25rem 0 0.5rem">Saved work</div>' : '') +
     '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
     '<thead><tr style="border-bottom:0.5px solid var(--border2);text-align:left">' +
       '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;letter-spacing:0.07em">Type</th>' +
@@ -7533,6 +7566,29 @@ function runGlobalSearch() {
 
 // Helpers used by runGlobalSearch only — underscored to flag their private
 // scope and keep the global namespace tidy.
+
+// The "Menu & settings" group. Each row opens through
+// CygenixMenuIndex.goId, which navigates exactly as the menu would and, for a
+// setting, lands on the field itself. The ids are the index's own
+// ("menu:<nav key>", "set:<id>") and are escaped for the inline handler all
+// the same.
+function _renderMenuSearchGroup(hits, q) {
+  if (!hits || !hits.length) return '';
+  return '<div class="cx-h-sm" style="margin:0 0 0.5rem">Menu &amp; settings</div>' +
+    '<div style="border:0.5px solid var(--border2);border-radius:var(--r)">' +
+    hits.map((h, i) =>
+      '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.75rem' + (i ? ';border-top:0.5px solid var(--border)' : '') + '">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:500;color:var(--text)">' + _highlight(h.label, q) + '</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin-top:2px">' + escapeHtml(h.path || '') + '</div>' +
+        '</div>' +
+        '<span style="font-size:12px;padding:1px 7px;border:0.5px solid var(--border2);color:var(--text2)">' + (h.kind === 'setting' ? 'Setting' : 'Menu') + '</span>' +
+        '<button class="btn btn-sm" style="font-size:12px;padding:0.35rem 0.85rem" onclick="CygenixMenuIndex.goId(\'' + _jsEsc(h.id) + '\')">Open →</button>' +
+      '</div>'
+    ).join('') +
+    '</div>';
+}
+
 function _matchField(v, q) {
   if (v == null) return false;
   return String(v).toLowerCase().indexOf(q) !== -1;

@@ -399,6 +399,50 @@
     return true;
   }
 
+  /* Every destination this person can reach from the rail, its tab strips and
+     the account menu, as plain data — for cygenix-menu-index.js, which makes
+     them searchable. Read here rather than copied there so a new item is
+     searchable the moment it exists.
+
+     Filtered by the SAME isItemVisible the rail uses, so search never offers
+     what the rail would not. A key appears once: the rail's copy wins (it
+     carries the flags — the Audit log's TABS twin has none, and must not
+     smuggle it back in for a person the rail hides it from), and a tab that
+     repeats a rail key under a different label ("Jobs" under "Jobs &
+     packages") adds that label as a keyword instead of a second row. Returns
+     fresh objects every call; nothing here can be used to change the nav. */
+  const ACCOUNT_SETTINGS_KEYS = ['project-settings', 'notifications', 'system-parameters', 'user-roles', 'privacy-security'];
+  function navEntries(){
+    const out = [], seen = {}, blocked = {};
+    const add = (it, section, parentLabel) => {
+      if (blocked[it.key]) return;
+      if (seen[it.key]) {
+        if (it.label !== seen[it.key].label) seen[it.key].keywords.push(it.label);
+        return;
+      }
+      const e = { key: it.key, label: it.label, section: section || '', parentLabel: parentLabel || '', keywords: [] };
+      if (it.view) e.view = it.view;
+      if (it.href) e.href = it.href;
+      if (it.action) e.action = it.action;
+      seen[it.key] = e;
+      out.push(e);
+    };
+    const railOf = {};
+    NAV.forEach(sec => sec.items.forEach(it => {
+      railOf[it.key] = { label: it.label, section: sec.section || 'Home' };
+      if (isItemVisible(it)) add(it, sec.section || 'Home', '');
+      else blocked[it.key] = true;
+    }));
+    Object.keys(TABS).forEach(railKey => {
+      const rail = railOf[railKey] || { label: '', section: '' };
+      TABS[railKey].forEach(t => { if (isItemVisible(t)) add(t, rail.section, rail.label); });
+    });
+    ACCOUNT_NAV.forEach(it => {
+      if (isItemVisible(it)) add(it, ACCOUNT_SETTINGS_KEYS.indexOf(it.key) !== -1 ? 'Settings' : 'Account', '');
+    });
+    return out;
+  }
+
   // ── Style injection (once) ──────────────────────────────────────────────
   function injectStyles(){
     if (document.getElementById('cyg-sidebar-styles')) return;
@@ -499,6 +543,31 @@
         font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;border-radius:0;flex:0 0 auto}
       .cx-mh-av:hover{background:rgba(255,255,255,.08)}
       .cx-masthead :focus-visible{outline:2px solid var(--color-accent,#5980a6);outline-offset:2px}
+
+      /* The search results under the field. The same page-palette tokens as
+         the account and project menus beside it — it drops below the navy
+         bar onto the page, so it reads as the page does, and a theme that
+         remaps the tokens (financial) moves it with them. z 1000 matches
+         those menus: above the rail (90), the status hairline (54/55) and
+         the Assistant panel (290). Text is 14px and 12px, never smaller. */
+      .cx-mh-results{position:fixed;z-index:1000;max-width:calc(100vw - 16px);max-height:min(420px,calc(100vh - 90px));
+        overflow-y:auto;box-sizing:border-box;padding:4px 0;
+        background:var(--color-bg,#fff);color:var(--color-text,#1d1f20);
+        border:1px solid var(--color-divider,rgba(29,31,32,.16));border-radius:0;
+        box-shadow:var(--shadow-strong,0 12px 32px rgba(43,43,45,.22));
+        font-family:var(--font-body,'Noto Sans',system-ui,-apple-system,sans-serif);-webkit-font-smoothing:antialiased}
+      .cx-mh-results[hidden]{display:none}
+      .cx-mh-opt{display:flex;align-items:center;gap:12px;padding:8px 14px;cursor:pointer;font-size:14px;line-height:1.3;
+        border-left:2px solid transparent}
+      .cx-mh-opt[aria-selected="true"]{background:color-mix(in srgb,var(--color-text,#1d1f20) 6%,transparent);
+        border-left-color:var(--color-accent-900,#1d2d3d)}
+      .cx-mh-opt-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+      .cx-mh-opt-lbl{color:var(--color-text,#1d1f20);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .cx-mh-opt-path{font-size:12px;color:var(--color-neutral-700,#5d5d60);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .cx-mh-opt-tag{flex:0 0 auto;font-size:12px;line-height:1.4;padding:1px 7px;
+        border:1px solid var(--color-divider,rgba(29,31,32,.16));color:var(--color-neutral-700,#5d5d60)}
+      .cx-mh-opt-saved{border-top:1px solid var(--color-divider,rgba(29,31,32,.16));margin-top:4px;padding-top:10px}
+      .cx-mh-opt-saved .cx-mh-opt-lbl{color:var(--color-accent-700,#416180);font-weight:600}
 
       /* ── The rail ── */
       .cyg-sidebar{
@@ -746,8 +815,8 @@
       <span class="cx-mh-spacer"></span>
       <form class="cx-mh-form" id="cx-mh-search-form" role="search">
         <i class="ic ic-search cx-mh-ic" aria-hidden="true"></i>
-        <input class="cx-mh-search" id="cx-mh-search" type="search" placeholder="Search objects, jobs, runs"
-               aria-label="Search objects, jobs and runs" autocomplete="off">
+        <input class="cx-mh-search" id="cx-mh-search" type="search" placeholder="Search settings, pages, jobs"
+               aria-label="Search settings, pages and saved work" autocomplete="off">
       </form>
       <a class="cx-mh-btn cyg-drive-btn" id="cyg-drive-btn" href="/dashboard#drive"
          title="Your files — the shared Drive, available on every machine you sign in on">${iconDrive()}Files</a>
@@ -760,22 +829,175 @@
     </header>`;
   }
 
-  /* The masthead search. It is a way INTO the dashboard's Search view rather
-     than a second search: the query is stashed and the view opens with it
-     already run, so the one implementation of "search everything" stays the
-     one implementation. On the dashboard itself the view switches in place. */
+  /* The masthead search. Submitting it is a way INTO the dashboard's Search
+     view rather than a second search: the query is stashed and the view opens
+     with it already run, so the one implementation of "search saved work"
+     stays the one implementation. On the dashboard the view switches in place.
+
+     WHILE TYPING it also offers up to six menu items and settings, from
+     cygenix-menu-index.js, in a listbox under the field — because a setting
+     is not saved work, and "where is the Claude key" had no answer here at
+     all. The last row is always "Search saved work for …", which is exactly
+     what Enter did before, so nobody loses the old behaviour: Enter with no
+     row highlighted still does it.
+
+     If the index did not load, there is simply no dropdown; the field works
+     as it always did. The list is appended to <body> with position:fixed so
+     it can sit above the rail (z 90) and the status hairline (z 54/55) —
+     inside the masthead it would be trapped in the masthead's own stacking
+     context at z 50, under both. */
+  const SEARCH_DEBOUNCE_MS = 120;
+  const SEARCH_MAX = 6;
+
   function wireSearch(root){
     const form = root.querySelector('#cx-mh-search-form');
     const input = root.querySelector('#cx-mh-search');
     if (!form || !input) return;
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
+    const toSearchPage = () => {
       const q = input.value.trim();
       if (!q) return;
       try { sessionStorage.setItem('cyg_search_q', q); } catch {}
       const item = findItem('search');
       if (item) handleClick(item);
+    };
+    const menu = wireSearchMenu(input, toSearchPage);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      menu.close();
+      toSearchPage();
     });
+  }
+
+  function wireSearchMenu(input, toSearchPage){
+    const LIST_ID = 'cx-mh-results';
+    let list = null, rows = [], active = -1, timer = 0, open = false;
+
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-controls', LIST_ID);
+    input.setAttribute('aria-expanded', 'false');
+
+    const index = () => window.CygenixMenuIndex;
+
+    function ensureList(){
+      if (list) return list;
+      list = document.createElement('div');
+      list.id = LIST_ID;
+      list.className = 'cx-mh-results';
+      list.setAttribute('role', 'listbox');
+      list.setAttribute('aria-label', 'Menu items and settings');
+      list.hidden = true;
+      // mousedown, not click, and cancelled: the field keeps focus, so blur
+      // does not close the list out from under the click that follows.
+      list.addEventListener('mousedown', (e) => e.preventDefault());
+      list.addEventListener('click', (e) => {
+        const opt = e.target.closest('[data-i]');
+        if (opt) choose(Number(opt.dataset.i));
+      });
+      list.addEventListener('mousemove', (e) => {
+        const opt = e.target.closest('[data-i]');
+        if (opt && Number(opt.dataset.i) !== active) setActive(Number(opt.dataset.i));
+      });
+      document.body.appendChild(list);
+      return list;
+    }
+
+    function place(){
+      const r = input.getBoundingClientRect();
+      const w = Math.max(r.width, 360);
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+      list.style.left = left + 'px';
+      list.style.top = (r.bottom + 4) + 'px';
+      list.style.width = w + 'px';
+    }
+
+    function render(){
+      const q = input.value.trim();
+      const idx = index();
+      if (!q || !idx || typeof idx.search !== 'function'){ close(); return; }
+      let hits = [];
+      try { hits = idx.search(q, SEARCH_MAX) || []; } catch { hits = []; }
+      rows = hits.map(h => ({ entry: h })).concat([{ saved: true }]);
+      ensureList();
+      list.innerHTML = rows.map((r, i) => {
+        if (r.saved) {
+          return `<div class="cx-mh-opt cx-mh-opt-saved" role="option" id="${LIST_ID}-${i}" data-i="${i}" aria-selected="false">` +
+            `<span class="cx-mh-opt-main"><span class="cx-mh-opt-lbl">Search saved work for “${escapeHtml(q)}” →</span></span></div>`;
+        }
+        const e = r.entry;
+        return `<div class="cx-mh-opt" role="option" id="${LIST_ID}-${i}" data-i="${i}" aria-selected="false">` +
+          `<span class="cx-mh-opt-main"><span class="cx-mh-opt-lbl">${escapeHtml(e.label)}</span>` +
+          `<span class="cx-mh-opt-path">${escapeHtml(e.path || '')}</span></span>` +
+          `<span class="cx-mh-opt-tag">${e.kind === 'setting' ? 'Setting' : 'Menu'}</span></div>`;
+      }).join('');
+      active = -1;
+      input.removeAttribute('aria-activedescendant');
+      place();
+      list.hidden = false;
+      open = true;
+      input.setAttribute('aria-expanded', 'true');
+    }
+
+    function setActive(i){
+      if (!list) return;
+      active = i;
+      list.querySelectorAll('[role="option"]').forEach((el, j) => el.setAttribute('aria-selected', String(j === i)));
+      if (i >= 0) {
+        input.setAttribute('aria-activedescendant', LIST_ID + '-' + i);
+        const el = list.querySelector('#' + LIST_ID + '-' + i);
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+      } else {
+        input.removeAttribute('aria-activedescendant');
+      }
+    }
+
+    function close(){
+      clearTimeout(timer);
+      if (!open) return;
+      open = false;
+      active = -1;
+      if (list) list.hidden = true;
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
+
+    function choose(i){
+      const r = rows[i];
+      close();
+      if (!r) return;
+      if (r.saved) { toSearchPage(); return; }
+      const idx = index();
+      if (!idx) return;
+      input.value = '';
+      input.blur();
+      try { idx.go(r.entry); } catch (e) { console.warn('[cygenix-sidebar] menu search:', e); }
+    }
+
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(render, SEARCH_DEBOUNCE_MS);
+    });
+    input.addEventListener('focus', () => { if (input.value.trim() && !open) render(); });
+    input.addEventListener('blur', close);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!open) { clearTimeout(timer); render(); if (!open) return; }
+        e.preventDefault();
+        const n = rows.length;
+        if (!n) return;
+        setActive(e.key === 'ArrowDown' ? (active + 1) % n : (active <= 0 ? n - 1 : active - 1));
+      } else if (e.key === 'Enter') {
+        // A highlighted row wins; otherwise the form submits as it always did.
+        if (open && active >= 0) { e.preventDefault(); choose(active); }
+      } else if (e.key === 'Escape') {
+        if (open) { e.preventDefault(); close(); }
+      }
+    });
+    document.addEventListener('mousedown', (e) => {
+      if (open && list && !list.contains(e.target) && e.target !== input) close();
+    });
+    window.addEventListener('resize', close);
+    return { close };
   }
 
   // ── Project switcher (nav review) ───────────────────────────────────────
@@ -1479,6 +1701,9 @@
     // Exposed for structural tests (tests/sidebar-nav.test.js): the nav tree
     // and footer as data, so key coverage can be asserted without a DOM.
     __nav: NAV, __accountNav: ACCOUNT_NAV, __findItem: findItem,
+    // For cygenix-menu-index.js: the searchable destinations (already
+    // filtered for this person) and the item a key names.
+    navEntries, findItem,
     __tabs: TABS, __aliases: ALIASES, railKeyFor, tabsFor,
     // Re-render the tab strip for the current key — for a page whose mount
     // point appears after the rail booted.
