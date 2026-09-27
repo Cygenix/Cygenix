@@ -1780,16 +1780,33 @@ footer a:hover{text-decoration:underline}
 <script>
 'use strict';
 
-/* The bar is transparent while the hero is behind it and solid afterwards.
-   The threshold is the hero's own height, so it flips at the boundary rather
-   than at a guessed scroll offset. */
+/* The bar is transparent while nothing is behind it and solid afterwards.
+   See below for where exactly that is. */
 (function(){
   var nav = document.querySelector('nav'), hero = document.querySelector('.hero');
   if (!nav || !hero) return;
-  function sync(){ nav.classList.toggle('solid', window.scrollY > hero.offsetHeight - 80); }
-  sync();
+  /* SOLID THE MOMENT CONTENT WOULD PASS UNDER IT (Sep-2026). The threshold
+     used to be the hero's whole height less 80px — about 600px of scroll.
+     But the hero's first line (the badge) sits only ~80px below the bar, so
+     for the 500px in between the badge, the headline and, on pricing, the
+     billing toggle slid underneath a TRANSPARENT bar and showed through
+     the menu links. Now the threshold is where the hero's first child meets
+     the bar's bottom edge, so the bar is transparent exactly while nothing
+     is behind it. Measured on load and resize, not per scroll event, so a
+     scroll costs one comparison. */
+  var at = 0;
+  function measure(){
+    var first = hero.firstElementChild || hero;
+    at = Math.max(0, first.getBoundingClientRect().top + window.pageYOffset - nav.offsetHeight);
+    sync();
+  }
+  function sync(){ nav.classList.toggle('solid', window.pageYOffset > at); }
+  measure();
   window.addEventListener('scroll', sync, { passive: true });
-  window.addEventListener('resize', sync);
+  window.addEventListener('resize', measure);
+  // Fonts arriving can move the hero's first line by a few pixels.
+  window.addEventListener('load', measure);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure);
 })();
 
 /* Reveal on scroll. Everything is visible without JavaScript and without an

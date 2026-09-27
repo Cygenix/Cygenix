@@ -166,12 +166,19 @@ check('the atmosphere is inert — it must never eat a click',
   /\.brand-glow\{[^}]*pointer-events:none/.test(index)
   && /\.brand-grid\{[^}]*pointer-events:none/.test(index));
 
-// ── 7. The bar belongs to the hero until the hero is gone ───────────────────
-check('the nav starts transparent over the hero and solidifies past it',
+// ── 7. The bar is transparent only while nothing is behind it ──────────────
+// It used to stay transparent until the whole hero had gone (offsetHeight -
+// 80, ~600px), and the badge and headline slid under the menu links for
+// 500px of that. It now turns solid where the hero's first line meets the
+// bar's bottom edge; tests/browser/nav-overlap.smoke.js checks the promise
+// at every scroll position, and this pins the rule and refuses the old one.
+check('the nav starts transparent and turns solid the moment content would pass under it',
   /nav\{[^}]*background:transparent/.test(index)
   && /nav\.solid\{background:rgba\(0,0,0/.test(index)
-  && /nav\.classList\.toggle\('solid'/.test(index)
-  && /hero\.offsetHeight/.test(index));
+  && /nav\.classList\.toggle\('solid', window\.pageYOffset > at\)/.test(index)
+  && /at = Math\.max\(0, first\.getBoundingClientRect\(\)\.top \+ window\.pageYOffset - nav\.offsetHeight\)/.test(index)
+  && /var first = hero\.firstElementChild \|\| hero;/.test(index)
+  && !/hero\.offsetHeight - 80/.test(index) && !/hero\.offsetHeight - 80/.test(pub('pricing.html')));
 
 // ── 8. The product is the only light on the page ────────────────────────────
 // A mockup that tried to be dark would be a drawing of a product that does not
