@@ -30,6 +30,9 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
   if (p === '/') p = '/index.html';
+  // The fixture is served as a page of its own, so the first navigation lands
+  // on a document with NO console scripts in it. See the note above the goto.
+  if (p === '/__fixture') { res.writeHead(200, { 'Content-Type': TYPES['.html'] }); res.end(FIXTURE); return; }
   let f = path.join(PUB, p);
   if (!fs.existsSync(f) && fs.existsSync(f + '.html')) f += '.html';
   if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); res.end('nope'); return; }
@@ -92,15 +95,25 @@ const FIXTURE = `<!doctype html><html><head><title>Fixture screen</title></head>
     localStorage.setItem('cygenix_onboarded', '1');
     localStorage.setItem('cygenix_user', JSON.stringify({ email: 'smoke@example.test', name: 'Smoke' }));
     localStorage.setItem('cygenix_tier', 'pro');
-    localStorage.setItem('cygenix_cookie_consent', 'all');
+    // cookie-consent.js JSON-parses this record; a bare string is "no answer
+    // yet" and the banner shows. Seed the shape it writes itself.
+    localStorage.setItem('cygenix_cookie_consent', JSON.stringify({
+      version: '2', essential: true, functional: true, analytics: false, timestamp: new Date().toISOString(),
+    }));
     localStorage.setItem('acct-cygenix.ciamlogin.com-smoke', JSON.stringify({
       homeAccountId: 'smoke', environment: 'cygenix.ciamlogin.com', authorityType: 'MSSTS',
       username: 'smoke@example.test', localAccountId: 'smoke', tenantId: 'smoke',
     }));
   });
 
-  await page.goto('http://localhost:' + PORT + '/sql-editor', { waitUntil: 'domcontentloaded' });
-  await page.setContent(FIXTURE);
+  // Boot on the fixture itself, not on a console page with the fixture written
+  // over it. Playwright's setContent() rewrites the document but keeps the
+  // window's JavaScript alive, so a console page loaded first goes on running
+  // inside the fixture: its cookie-consent.js woke on a timer a few seconds
+  // later and appended a banner with four buttons between the two snapshots
+  // below (Sep-2026 — the "ids survive a scroll" flake, 1 run in ~40). A
+  // script-free origin has nothing left over to wake up.
+  await page.goto('http://localhost:' + PORT + '/__fixture', { waitUntil: 'load' });
   await page.addScriptTag({ path: PUB + '/cygenix-page-reader.js' });
 
   const snap = await page.evaluate(() => window.CygenixPageReader.readPage());
