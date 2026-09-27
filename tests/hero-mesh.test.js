@@ -52,9 +52,29 @@ MESH_PAGES.forEach((f) => {
 check('and no other page loads either — only pages with a hero',
   fs.readdirSync(P('public')).filter((f) => f.endsWith('.html') && !MESH_PAGES.includes(f))
     .every((f) => !/cygenix-mesh\.js|cygenix-hero-mesh\.js/.test(read('public', f))));
+check('the scroll fade is opt-in by attribute, so the hero-only pricing layer cannot pick it up',
+  /var pageWide = !!\(layer && layer\.hasAttribute\('data-scroll-fade'\)\);/.test(mount)
+  && /if \(!pageWide\) \{\s*window\.cygenixHeroMesh = CygenixMesh\.mount\(el, OPTS\);\s*return;\s*\}/.test(mount)
+  && !/data-scroll-fade/.test(read('public', 'pricing.html')));
+check('the scroll listener is passive and only asks for an animation frame',
+  /addEventListener\('scroll', request, \{ passive: true \}\)/.test(mount)
+  && /function request\(\) \{\s*if \(ticking\) return;\s*ticking = true;\s*window\.requestAnimationFrame\(paint\);/.test(mount));
+check('the fade is a smoothstep from half a screen down to the top of the footer, the glow over the first screen',
+  /function smooth\(p\) \{[^}]*p \* p \* \(3 - 2 \* p\)/.test(mount)
+  && /fadeStart = vh \* 0\.5;/.test(mount) && /document\.querySelector\('footer'\)/.test(mount)
+  && /var glow = GLOW \* \(1 - smooth\(y \/ vh\)\);/.test(mount));
+check('opacity is written to the layer, and at zero the engine is held; above zero it is released',
+  /layer\.style\.opacity = /.test(mount)
+  && /if \(opacity === 0\) \{ if \(!mesh\.isHeld\(\)\) mesh\.hold\(\); \}\s*else if \(mesh\.isHeld\(\)\) mesh\.release\(\);/.test(mount));
+check('the end point is re-measured on resize, on load and when the page changes height',
+  /addEventListener\('resize', remeasure, \{ passive: true \}\)/.test(mount) && /addEventListener\('load', remeasure\)/.test(mount)
+  && /new ResizeObserver\(remeasure\)\.observe\(document\.body\)/.test(mount));
+check('under reduced motion the page-wide mesh is never started, and a scroll cannot wake it',
+  /if \(mq && mq\.matches\) \{\s*\/\/[^\n]*\n[^\n]*\n\s*\} else \{\s*startMesh\(\);/.test(mount)
+  && /if \(mq && mq\.matches\) \{ if \(!mesh\.isHeld\(\)\) mesh\.hold\(\); return; \}/.test(mount));
 check('the mount uses the live-tuned values',
   /density:\s*1\.45/.test(mount) && /speed:\s*1\.0\b/.test(mount) && /reach:\s*200/.test(mount)
-  && /glow:\s*0\.80/.test(mount) && /parallax:\s*0\.55/.test(mount) && /lineAlpha:\s*0\.50/.test(mount) && /nodeAlpha:\s*0\.95/.test(mount));
+  && /var GLOW = 0\.80;/.test(mount) && /glow:\s*GLOW,/.test(mount) && /parallax:\s*0\.55/.test(mount) && /lineAlpha:\s*0\.50/.test(mount) && /nodeAlpha:\s*0\.95/.test(mount));
 // The connectors used to take the engine's default, the brand accent, which
 // is darker than the nodes and read as texture. They now take --accent-ink.
 // All three colours are read from the stylesheet's tokens, with the same
@@ -94,22 +114,27 @@ check('the checkout, region and modal logic is untouched',
   /async function startCheckout\(tier\)/.test(pricing) && /function setupRegionSelector\(\)/.test(pricing)
   && /function openContactModal\(tier\)/.test(pricing) && /const TIER_PRICES = \{/.test(pricing));
 
-// The layout: a full-width stage wrapping the hero, the layer first in it.
-check('the hero is wrapped in a stage whose first child is the mesh layer, then the hero itself',
-  /<div class="hero-stage">\s*<div class="cx-mesh-layer" aria-hidden="true"><canvas id="cx-mesh"><\/canvas><\/div>\s*<section class="hero">/.test(index)
-  && /<\/section>\s*<\/div>\s*\n/.test(index.slice(index.indexOf('<section class="hero">'), index.indexOf('<section class="hero">') + 2000)));
-check('the stage is a positioned, isolated, clipping box that adds no space',
-  /\.hero-stage\{position:relative;z-index:1;isolation:isolate;overflow:hidden\}/.test(index)
-  && !/\.hero-stage\{[^}]*(padding|margin|height|min-height)/.test(index));
-check('the hero keeps its own rule exactly — same padding, same 1000px box',
+// The layout, homepage (Sep-2026): the mesh left .hero-stage and became a
+// fixed, full-screen layer beside the grid, behind every section, faded out
+// on scroll by the mount. The ticker under the hero was removed. Pricing
+// keeps the hero-only stage and is pinned above, unchanged.
+check('the homepage has no hero stage left: the hero is a plain section, not wrapped in anything',
+  !/hero-stage/.test(index.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, ''))
+  && !/<div\b/.test(index.slice(index.indexOf('</nav>'), index.indexOf('<section class="hero">')).replace(/<!--[\s\S]*?-->/g, '')));
+check('the mesh layer sits directly after the grid, opts in to the scroll fade, and is inert to assistive tech',
+  /<div class="brand-grid" aria-hidden="true"><\/div>\s*(?:<!--[\s\S]*?-->\s*)?<div class="cx-mesh-layer" aria-hidden="true" data-scroll-fade><canvas id="cx-mesh"><\/canvas><\/div>/.test(index));
+check('the hero keeps its own rule exactly — same padding, same 1000px box, above the layer',
   /\.hero\{position:relative;z-index:1;text-align:center;padding:9rem clamp\(1rem,5vw,2rem\) 3\.5rem;\s*max-width:1000px;margin:0 auto\}/.test(index));
-check('the copy is above the layer', /\.hero-stage>\.hero\{position:relative;z-index:1\}/.test(index));
-check('the layer is absolute, at z-index 0, inert, and fades out before the next section',
-  /\.cx-mesh-layer\{position:absolute;inset:0;z-index:0;pointer-events:none;/.test(index)
-  && /\.cx-mesh-layer\{[^}]*mask-image:linear-gradient\(to bottom,#000 0%,#000 70%,transparent 100%\)/.test(index)
-  && /\.cx-mesh-layer\{[^}]*-webkit-mask-image:linear-gradient\(to bottom,#000 0%,#000 70%,transparent 100%\)/.test(index));
+check('the layer is fixed and screen-sized, on the large viewport so a phone\'s address bar cannot resize it, at z-index 0 and inert',
+  /\.cx-mesh-layer\{position:fixed;top:0;left:0;right:0;height:100vh;height:100lvh;z-index:0;\s*pointer-events:none\}/.test(index));
+check('the old 70–100% mask is gone — the scroll fade replaces it',
+  !/\.cx-mesh-layer\{[^}]*mask-image/.test(index) && !/#000 70%,transparent 100%/.test(index));
 check('the canvas fills the layer as a block, so the engine reads a real size from its parent',
   /\.cx-mesh-layer canvas\{display:block;width:100%;height:100%\}/.test(index));
+check('under reduced motion the homepage layer is hidden',
+  /@media \(prefers-reduced-motion:reduce\)\{\.cx-mesh-layer\{display:none\}\}/.test(index));
+check('THE TICKER IS GONE: no markup, no rules, no keyframes, no comment left behind',
+  !/ticker/i.test(index) && !/@keyframes tick\b/.test(index) && !/animation:tick\b/.test(index));
 check('the fixed glow and grid underneath are exactly as they were',
   /radial-gradient\(760px 420px at 20% -10%/.test(index) && /background-size:52px 52px/.test(index)
   && /<div class="brand-glow" aria-hidden="true"><\/div>\s*<div class="brand-grid" aria-hidden="true"><\/div>/.test(index));
@@ -145,7 +170,8 @@ check('the field sweeps on its own: a time-driven camera offset, added to the po
   && /renderLayer\(ctx, layers\[2\], px \* cfg\.parallax \* 34, py \* cfg\.parallax \* 26/.test(js)
   && !/pointer\.x \* cfg\.parallax/.test(js));
 check('reduced motion degrades rather than freezes, and does so BEFORE the nodes are built',
-  /function start\(\) \{\s*if \(running \|\| cfg\.paused \|\| !visible\) return;/.test(js)
+  // `held` (hold()/release(), Sep-2026) joined the guard; `reduced` must not.
+  /function start\(\) \{\s*if \(running \|\| cfg\.paused \|\| held \|\| !visible\) return;/.test(js)
   && /if \(reduced\) \{ cfg\.speed \*= 0\.15; cfg\.parallax = 0; \}\s*resize\(\);\s*start\(\);/.test(js)
   && !/if \(reduced\) draw\(1\); else start\(\);/.test(js),
   'velocities are computed from cfg.speed at build time, so the speed must be lowered first');
@@ -243,6 +269,30 @@ function world(opts) {
 
   t.api.update({ preset: 'subtle' });
   check('update() can switch preset', t.api.config.density === 0.55 && t.api.config.lineAlpha === 0.20, JSON.stringify(t.api.config));
+
+  // hold / release / tune (Sep-2026): stop and resume WITHOUT a rebuild,
+  // so the homepage's scroll fade can pause an invisible mesh and bring back
+  // the same field, and dim the bloom without reshuffling it.
+  t.calls.next(2000); t.calls.next(2016);
+  const lastBefore = t.calls.arcs[t.calls.arcs.length - 1];
+  t.api.hold();
+  check('hold() stops the loop', t.api.isHeld() && t.calls.next === null);
+  const heldRaf = t.calls.raf;
+  t.win.document.hidden = false; t.listeners.document.visibilitychange();
+  t.io()([{ isIntersecting: true }]);
+  check('a held mesh stays held through a tab switch and an intersection change', t.calls.raf === heldRaf, heldRaf + ' → ' + t.calls.raf);
+  t.api.release();
+  check('release() starts it again', !t.api.isHeld() && t.calls.raf === heldRaf + 1);
+  const arcsBefore = t.calls.arcs.length;
+  t.calls.next(2032);
+  const firstAfter = t.calls.arcs[arcsBefore];
+  check('and it resumes the SAME field — the first node is a frame\'s drift from where it was, not reshuffled',
+    typeof firstAfter === 'number' && Math.abs(firstAfter - t.calls.arcs[arcsBefore - (t.calls.arcs.length - arcsBefore)]) < 3,
+    'moved ' + (firstAfter - t.calls.arcs[arcsBefore - (t.calls.arcs.length - arcsBefore)]).toFixed(3));
+  const n0 = t.calls.arcs.length;
+  t.api.tune({ glow: 0.2 });
+  t.calls.next(2048);
+  check('tune() changes a draw-time value without a rebuild', t.api.config.glow === 0.2 && t.calls.arcs.length > n0);
 
   t.api.destroy();
   check('destroy() stops the loop and removes every listener and observer',

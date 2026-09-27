@@ -85,110 +85,189 @@ async function open(browser, opts, file) {
   const server = serve();
   const browser = await chromium.launch({ executablePath: EXE, args: ['--no-sandbox'] });
   try {
-    // ── The ordinary visit ─────────────────────────────────────────────
+    // ── The homepage: a page-wide mesh that fades out on scroll ─────────
+    // Sep-2026: the mesh left .hero-stage and became a fixed, full-screen
+    // layer behind every section, faded out by scroll and held (not drawn)
+    // once invisible. The ticker under the hero was removed. These are the
+    // brief's own acceptance checks, in its order.
     {
       const { ctx, page, problems, requests } = await open(browser);
 
-      const tree = await page.evaluate(() => {
-        const stage = document.querySelector('.hero-stage');
-        return stage ? Array.from(stage.children).map((e) => e.tagName + '.' + e.className) : null;
+      // Where it sits: a fixed sibling of the grid, before any content, and
+      // no stage wrapper left behind.
+      const place = await page.evaluate(() => {
+        const layer = document.querySelector('.cx-mesh-layer');
+        const kids = Array.from(document.body.children).map((e) => e.tagName + '.' + (e.className || ''));
+        const l = getComputedStyle(layer), r = layer.getBoundingClientRect();
+        const c = document.getElementById('cx-mesh');
+        return { parent: layer.parentElement.tagName, idxGrid: kids.findIndex((k) => /brand-grid/.test(k)),
+          idxLayer: kids.findIndex((k) => /cx-mesh-layer/.test(k)), idxHero: kids.findIndex((k) => /SECTION\.hero/.test(k)),
+          stage: !!document.querySelector('.hero-stage'), pos: l.position, z: l.zIndex, pe: l.pointerEvents,
+          mask: l.maskImage || l.webkitMaskImage || 'none', w: r.width, h: r.height, iw: innerWidth, ih: innerHeight,
+          cw: c.width, ch: c.height, dpr: Math.min(2, devicePixelRatio || 1), docH: document.documentElement.scrollHeight };
       });
-      check('the stage holds the mesh layer first and the hero after it',
-        !!tree && tree.length === 2 && /DIV\.cx-mesh-layer/.test(tree[0]) && /SECTION\.hero/.test(tree[1]), JSON.stringify(tree));
+      check('the mesh layer is a fixed, full-screen child of <body>, right after the grid and before the hero',
+        place.parent === 'BODY' && place.idxLayer === place.idxGrid + 1 && place.idxLayer < place.idxHero && !place.stage
+        && place.pos === 'fixed' && place.z === '0' && place.pe === 'none', JSON.stringify(place));
+      check('the old 70–100% mask is gone', place.mask === 'none', place.mask);
+      check('the canvas is the size of the SCREEN, never the page',
+        place.w === place.iw && place.h === place.ih && place.cw === Math.round(place.w * place.dpr) && place.ch === Math.round(place.h * place.dpr)
+        && place.docH > place.ih * 5, JSON.stringify(place));
 
-      // 1. No layout shift: the hero and its headline are exactly where and
-      // how big they are with the layer removed from layout.
+      // 1. The ticker is gone, and so is the gap it left.
+      const tick = await page.evaluate(() => {
+        const hero = document.querySelector('.hero').getBoundingClientRect();
+        const next = document.getElementById('platform').getBoundingClientRect();
+        const sheet = Array.from(document.styleSheets).flatMap((s) => { try { return Array.from(s.cssRules); } catch (e) { return []; } });
+        return { el: !!document.querySelector('.ticker-wrap, .ticker, .ticker-item'),
+          rules: sheet.filter((r) => /ticker/.test(r.selectorText || '') || /^tick$/.test(r.name || '')).length,
+          gap: Math.round(next.top - hero.bottom) };
+      });
+      check('1. THE TICKER IS GONE — no element, no rule, no keyframes', !tick.el && tick.rules === 0, JSON.stringify(tick));
+      check('1. …and there is no gap: the next section starts where the hero ends', tick.gap === 0, JSON.stringify(tick));
+
+      // Hero geometry is independent of the layer (it is out of flow now).
       const geom = await page.evaluate(() => {
         const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 10) / 10).join(','); };
         const layer = document.querySelector('.cx-mesh-layer');
-        const shown = { hero: r('.hero'), h1: r('.hero h1'), btn: r('.hero-btns .btn-primary'), stage: r('.hero-stage') };
+        const shown = { hero: r('.hero'), h1: r('.hero h1'), btn: r('.hero-btns .btn-primary') };
         layer.style.display = 'none';
-        const hidden = { hero: r('.hero'), h1: r('.hero h1'), btn: r('.hero-btns .btn-primary'), stage: r('.hero-stage') };
+        const hidden = { hero: r('.hero'), h1: r('.hero h1'), btn: r('.hero-btns .btn-primary') };
         layer.style.display = '';
-        return { shown, hidden };
+        return { shown, hidden, heroW: document.querySelector('.hero').getBoundingClientRect().width };
       });
-      check('the hero, its headline and its button sit exactly where they do without the layer — no layout shift',
-        JSON.stringify(geom.shown) === JSON.stringify(geom.hidden), JSON.stringify(geom));
-      const stageVsHero = await page.evaluate(() => {
-        const s = document.querySelector('.hero-stage').getBoundingClientRect();
-        const h = document.querySelector('.hero').getBoundingClientRect();
-        return { stageH: s.height, heroH: h.height, stageW: s.width, inner: window.innerWidth, heroW: h.width };
-      });
-      check('the stage adds no height of its own and spans the viewport while the hero keeps its 1000px box',
-        Math.abs(stageVsHero.stageH - stageVsHero.heroH) < 0.5 && stageVsHero.stageW === stageVsHero.inner && stageVsHero.heroW === 1000,
-        JSON.stringify(stageVsHero));
+      check('the hero keeps its 1000px box and does not move with the layer shown or hidden',
+        JSON.stringify(geom.shown) === JSON.stringify(geom.hidden) && geom.heroW === 1000, JSON.stringify(geom));
 
-      const cs = await page.evaluate(() => {
-        const l = getComputedStyle(document.querySelector('.cx-mesh-layer'));
-        const c = document.getElementById('cx-mesh');
-        const lr = document.querySelector('.cx-mesh-layer').getBoundingClientRect();
-        const sr = document.querySelector('.hero-stage').getBoundingClientRect();
-        return { pos: l.position, z: l.zIndex, pe: l.pointerEvents, mask: l.maskImage || l.webkitMaskImage,
-          w: c.width, h: c.height, cssW: c.style.width, cssH: c.style.height, dpr: Math.min(2, window.devicePixelRatio || 1),
-          layerW: lr.width, layerH: lr.height, stageW: sr.width, stageH: sr.height,
-          gridOp: getComputedStyle(document.querySelector('.brand-grid')).opacity };
-      });
-      check('the layer is absolute, at z-index 0, inert, and masked toward the section below',
-        cs.pos === 'absolute' && cs.z === '0' && cs.pe === 'none' && /linear-gradient/.test(cs.mask || ''), JSON.stringify(cs));
-      check('the canvas fills the stage at a backing scale of at most 2',
-        cs.layerW === cs.stageW && cs.layerH === cs.stageH && cs.w === Math.round(cs.layerW * cs.dpr) && cs.h === Math.round(cs.layerH * cs.dpr)
-        && cs.cssW === Math.round(cs.layerW) + 'px', JSON.stringify(cs));
-      check('the fixed grid underneath is still there and still visible', cs.gridOp === '0.65', cs.gridOp);
-
-      // The colours resolved from the stylesheet's tokens, not the engine's
-      // darker defaults: connectors are --accent-ink, nodes --accent-ink2.
       const colours = await page.evaluate(() => {
         const c = window.cygenixHeroMesh.config;
         return { node: c.node, line: c.line, glow: c.glowColor, speed: c.speed, lineAlpha: c.lineAlpha };
       });
-      check('the mount resolved the page\'s own tokens for its colours',
-        colours.node === '#a9b6ff' && colours.line === '#8ea0ff' && colours.glow.toLowerCase() === '#4a5bd6', JSON.stringify(colours));
-      check('with the live-tuned speed and line opacity', colours.speed === 1.0 && colours.lineAlpha === 0.5, JSON.stringify(colours));
+      check('the tuning and token colours are unchanged',
+        colours.node === '#a9b6ff' && colours.line === '#8ea0ff' && colours.glow.toLowerCase() === '#4a5bd6'
+        && colours.speed === 1.0 && colours.lineAlpha === 0.5, JSON.stringify(colours));
 
-      // 2. Contrast: the copy's colours are what they were, and the thing at
-      // each of them is the text or the button, never the canvas.
+      // At the top it looks as it did: full strength, full glow, drawing.
+      const top = await page.evaluate(() => ({ op: getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity,
+        glow: window.cygenixHeroMesh.config.glow, raf: window.__raf }));
+      await wait(400);
+      const top2 = await page.evaluate(() => window.__raf);
+      check('at the top of the page: full opacity, full glow, and the loop running',
+        top.op === '1' && top.glow === 0.8 && top2 > top.raf, JSON.stringify(top) + ' → ' + top2);
+
+      // 7. Clicks reach the content, never the canvas.
       const hero = await page.evaluate(() => {
         const at = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return e ? (e.tagName + '.' + e.className) : null; };
-        return {
-          h1: getComputedStyle(document.querySelector('.hero h1 .line1')).color,
-          sub: getComputedStyle(document.querySelector('.hero-sub')).color,
-          btn: getComputedStyle(document.querySelector('.hero-btns .btn-primary')).backgroundColor,
-          underH1: at('.hero h1 .line1'), underSub: at('.hero-sub'), underBtn: at('.hero-btns .btn-primary'), underBtn2: at('.hero-btns .btn-secondary'),
-        };
+        return { h1: getComputedStyle(document.querySelector('.hero h1 .line1')).color,
+          underH1: at('.hero h1 .line1'), underBtn: at('.hero-btns .btn-primary'), underBtn2: at('.hero-btns .btn-secondary') };
       });
-      check('headline and sub-copy colours are unchanged',
-        hero.h1 === 'rgb(242, 244, 248)' && hero.sub === 'rgba(255, 255, 255, 0.62)' && hero.btn === 'rgb(74, 91, 214)', JSON.stringify(hero));
-      check('the mesh never crosses in front of the text or the buttons',
-        /SPAN\.line1/.test(hero.underH1) && /P\.hero-sub/.test(hero.underSub) && /btn-primary/.test(hero.underBtn) && /btn-secondary/.test(hero.underBtn2),
+      check('the headline colour is unchanged and the copy and buttons are in front of the mesh',
+        hero.h1 === 'rgb(242, 244, 248)' && /SPAN\.line1/.test(hero.underH1) && /btn-primary/.test(hero.underBtn) && /btn-secondary/.test(hero.underBtn2),
         JSON.stringify(hero));
-
-      const intercepted = [];
+      const blocked = [];
       for (const sel of ['.hero-btns .btn-primary', '.hero-btns .btn-secondary', '.nav-links a[href="#platform"]', '.nav-cta']) {
-        try { await page.click(sel, { trial: true, timeout: 3000 }); } catch (e) { intercepted.push(sel + ': ' + e.message.split('\n')[0]); }
+        try { await page.click(sel, { trial: true, timeout: 3000 }); } catch (e) { blocked.push(sel); }
       }
-      check('the calls to action and the nav are clickable — the canvas swallows nothing', intercepted.length === 0, intercepted.join(' | '));
+      check('7. the calls to action and the nav are clickable', blocked.length === 0, blocked.join(', '));
 
-      // 4. The loop runs at the top and stops once the hero is out of view.
-      const r0 = await page.evaluate(() => window.__raf);
-      await wait(500);
-      const r1 = await page.evaluate(() => window.__raf);
-      check('the animation loop is running behind the hero', r1 > r0 && r0 > 0, r0 + ' → ' + r1);
-      const ms = await page.evaluate(() => window.__frameMs.slice(-30));
-      const mean = ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : 0;
-      console.log('  info  mean draw time per frame in this headless, software-rendered browser: ' + mean.toFixed(2) + ' ms over ' + ms.length + ' frames');
+      // 2. Visible behind every section while scrolling: at each section's
+      // middle the layer is still showing, and a point in the section's empty
+      // margin is the section, not something opaque over the mesh.
+      const ids = await page.evaluate(() => Array.from(document.querySelectorAll('section.section[id]')).map((s) => s.id));
+      const seen = [];
+      for (const id of ids) {
+        const r = await page.evaluate((i) => {
+          const s = document.getElementById(i), b = s.getBoundingClientRect();
+          window.scrollTo({ top: b.top + scrollY - innerHeight / 2 + Math.min(b.height, innerHeight) / 2, behavior: 'instant' });
+          return i;
+        }, id);
+        await wait(90);
+        const v = await page.evaluate((i) => {
+          const s = document.getElementById(i), b = s.getBoundingClientRect();
+          // Mid-screen, clamped into the section, at its left margin — below
+          // the fixed nav, which turns solid once the page scrolls and is
+          // chrome, not a section.
+          const y = Math.max(b.top + 1, Math.min(b.bottom - 1, innerHeight / 2));
+          const e = document.elementFromPoint(6, y);
+          const op = parseFloat(getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity);
+          return { id: i, op, edge: e ? getComputedStyle(e).backgroundColor : '', at: e ? e.tagName + '.' + e.className : '' };
+        }, r);
+        seen.push(v);
+      }
+      const footerStart = seen.findIndex((v) => v.op === 0);
+      const beforeFooter = seen.slice(0, seen.length - 2);
+      check('2. THE MESH IS SHOWING BEHIND EVERY SECTION BEFORE THE LAST TWO',
+        beforeFooter.every((v) => v.op > 0), JSON.stringify(seen.map((v) => v.id + ':' + v.op.toFixed(2))));
+      check('2. …and no section paints an opaque band over it at its edge',
+        seen.every((v) => /rgba\(0, 0, 0, 0\)|transparent/.test(v.edge)), JSON.stringify(seen.map((v) => v.id + ':' + v.edge + ' ' + v.at)));
+      check('the fade is monotonic — it only ever gets fainter going down',
+        seen.every((v, i) => i === 0 || v.op <= seen[i - 1].op + 1e-6), JSON.stringify(seen.map((v) => v.op.toFixed(3))));
+      check('and the glow fades faster than the dots: gone by the second section',
+        (await page.evaluate(() => window.cygenixHeroMesh.config.glow)) < 0.01);
 
+      // 3. Nothing at the footer, and nothing drawn.
       await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
-      await wait(600);
-      const a = await page.evaluate(() => window.__raf);
+      await wait(300);
+      const bottom = await page.evaluate(() => ({ op: getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity,
+        held: window.cygenixHeroMesh.isHeld(), raf: window.__raf,
+        footerTop: document.querySelector('footer').getBoundingClientRect().top, ih: innerHeight }));
       await wait(500);
-      const b = await page.evaluate(() => window.__raf);
-      check('scrolled past the hero, the loop has stopped — no new frames in 500ms', a === b, a + ' → ' + b);
-      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-      await wait(500);
-      const c = await page.evaluate(() => window.__raf);
-      check('scrolling back to the hero restarts it', c > b, b + ' → ' + c);
+      const bottom2 = await page.evaluate(() => window.__raf);
+      check('3. AT THE FOOTER THE MESH IS FULLY INVISIBLE', bottom.op === '0' && bottom.footerTop < bottom.ih, JSON.stringify(bottom));
+      check('3. …and the engine is held: not a single frame drawn in half a second', bottom.held && bottom2 === bottom.raf,
+        bottom.raf + ' → ' + bottom2);
+      // A tab switch must not wake a held engine.
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await wait(300);
+      check('…and a visibility change does not wake it', (await page.evaluate(() => window.__raf)) === bottom2);
 
-      // 5. Resize 1440 → 375: rebuilt at the new size, no horizontal scrollbar.
+      // It reaches zero exactly as the footer comes into view, not before.
+      const edge = await page.evaluate(() => {
+        const f = document.querySelector('footer');
+        const y = f.getBoundingClientRect().top + scrollY - innerHeight;
+        return y;
+      });
+      // Smoothstep is flat at both ends, which is what makes the fade read as
+      // an ease rather than a ramp — and it means the last few hundred pixels
+      // before the footer are already below 1%, snapped to 0. So the check is
+      // that the mesh is still clearly there a screen and a half out, and gone
+      // at the footer: not that it is exactly zero one pixel early.
+      await page.evaluate((y) => window.scrollTo({ top: y - 1500, behavior: 'instant' }), edge);
+      await wait(150);
+      const justBefore = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity));
+      await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'instant' }), edge);
+      await wait(150);
+      const atFooter = await page.evaluate(() => getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity);
+      check('the fade ends as the top of the footer reaches the bottom of the screen',
+        justBefore > 0.02 && atFooter === '0', justBefore + ' → ' + atFooter);
+
+      // 4. Back up: visible, drawing, full strength at the top again.
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await wait(300);
+      const back = await page.evaluate(() => ({ op: getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity,
+        held: window.cygenixHeroMesh.isHeld(), raf: window.__raf, glow: window.cygenixHeroMesh.config.glow }));
+      await wait(400);
+      const back2 = await page.evaluate(() => window.__raf);
+      check('4. SCROLLING BACK UP BRINGS IT BACK — full opacity, full glow, drawing again',
+        back.op === '1' && !back.held && Math.abs(back.glow - 0.8) < 0.005 && back2 > back.raf, JSON.stringify(back) + ' → ' + back2);
+
+      // The scroll listener is cheap: a burst of scroll events is one frame.
+      const burst = await page.evaluate(async () => {
+        let writes = 0;
+        const layer = document.querySelector('.cx-mesh-layer');
+        const obs = new MutationObserver((m) => { writes += m.length; });
+        obs.observe(layer, { attributes: true, attributeFilter: ['style'] });
+        for (let i = 0; i < 40; i++) { window.scrollTo({ top: 800 + i, behavior: 'instant' }); window.dispatchEvent(new Event('scroll')); }
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        obs.disconnect();
+        return writes;
+      });
+      check('forty scroll events in one burst cost at most a couple of style writes', burst <= 2, burst + ' writes');
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await wait(200);
+
+      // 6. Mobile width: rebuilt at the new size, no horizontal scrollbar,
+      // and the fade still works.
       await page.setViewportSize({ width: 375, height: 667 });
       await wait(400);
       const small = await page.evaluate(() => {
@@ -200,42 +279,92 @@ async function open(browser, opts, file) {
         layer.style.display = 'none';
         const without = document.documentElement.scrollWidth;
         layer.style.display = '';
-        return { w: c.width, cssW: c.style.width, layerW: lr.width, dpr, inner: window.innerWidth, withLayer, without,
-          scrollbarHeight: window.innerHeight - document.documentElement.clientHeight };
+        return { w: c.width, cssW: c.style.width, layerW: lr.width, layerH: lr.height, ih: innerHeight, dpr, withLayer, without };
       });
-      check('at 375px the canvas is rebuilt at the layer\'s new width, not stretched',
-        small.layerW === 375 && small.w === Math.round(375 * small.dpr) && small.cssW === '375px', JSON.stringify(small));
-      check('and it adds no width to the page — no horizontal scrollbar',
-        small.withLayer === small.without && small.scrollbarHeight === 0, JSON.stringify(small));
+      check('6. at 375px the canvas is rebuilt at the new width, not stretched',
+        small.layerW === 375 && small.w === Math.round(375 * small.dpr) && small.cssW === '375px' && small.layerH === small.ih, JSON.stringify(small));
+      // The layer's own question only. After this long desktop session is
+      // shrunk to 375 the document reports 391 — with the layer and without
+      // it alike, so not the layer — and neither a clean phone load, nor a
+      // phone scrolling the whole page, nor main with the same resize shows
+      // it (all measured at 375, Sep-2026). A phone never shrinks from
+      // 1440, so the page's width is asserted in the PHONE block below,
+      // which loads at 375 and reads to the footer as a phone does.
+      check('6. …and the mesh layer adds no width to the page', small.withLayer === small.without, JSON.stringify(small));
+      await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+      await wait(300);
+      check('6. …and the fade still reaches zero at the footer on a phone',
+        (await page.evaluate(() => getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity)) === '0');
+      const tapped = [];
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await wait(200);
+      for (const sel of ['.hero-btns .btn-primary', '.hero-btns .btn-secondary']) {
+        try { await page.click(sel, { trial: true, timeout: 3000 }); } catch (e) { tapped.push(sel); }
+      }
+      check('7. the buttons are still clickable at phone width', tapped.length === 0, tapped.join(', '));
 
-      // 6. Nothing in the console; nothing fetched from anywhere else.
-      check('no console errors or warnings', problems.length === 0, problems.join(' | '));
+      // 5. Nothing in the console; nothing fetched from anywhere else.
+      check('5. NO CONSOLE ERRORS OR WARNINGS', problems.length === 0, problems.join(' | '));
       const external = requests.filter((u) => !/^http:\/\/localhost:8399\//.test(u) && !/fonts\.g(oogleapis|static)\.com/.test(u));
-      check('no new network requests beyond this origin (the aborted font loads excepted)', external.length === 0, external.join(', '));
-      check('the engine is the only script the page added', requests.filter((u) => /cygenix-mesh\.js/.test(u)).length === 1);
+      check('no network requests beyond this origin (the aborted font loads excepted)', external.length === 0, external.join(', '));
       await ctx.close();
     }
 
-    // ── prefers-reduced-motion: degraded, not frozen ───────────────────
-    // The engine as supplied drew one still frame here. That looked broken
-    // on any machine with Reduce Motion on, so it now drifts at 15% speed
-    // with parallax (pointer response and camera sweep) zeroed.
+    // ── A phone, from the start: load at 375, read the whole page ───────
     {
-      const { ctx, page, problems } = await open(browser, { reducedMotion: 'reduce' });
-      await wait(500);
-      const rm = await page.evaluate(() => {
-        const c = document.getElementById('cx-mesh');
-        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-        let lit = 0;
-        for (let i = 3; i < d.length; i += 4 * 97) if (d[i] > 0) lit++;
-        const cfg = window.cygenixHeroMesh.config;
-        return { raf: window.__raf, lit, speed: cfg.speed, parallax: cfg.parallax };
-      });
-      check('with reduced motion the mesh is visible', rm.lit > 0, JSON.stringify(rm));
-      check('and still animating, slowly: the loop runs', rm.raf > 1, rm.raf);
-      check('at 15% of the configured speed with parallax zeroed',
-        Math.abs(rm.speed - 1.0 * 0.15) < 1e-9 && rm.parallax === 0, JSON.stringify(rm));
-      check('no console errors there either', problems.length === 0, problems.join(' | '));
+      const { ctx, page, problems } = await open(browser, { viewport: { width: 375, height: 667 }, hasTouch: true });
+      const H = await page.evaluate(() => document.documentElement.scrollHeight);
+      const ops = [];
+      for (let y = 0; y <= H; y += 600) {
+        // 'instant': the page sets scroll-behavior:smooth, so a bare
+        // scrollTo animates and 40ms later has moved a few pixels.
+        await page.evaluate((v) => window.scrollTo({ top: v, behavior: 'instant' }), y);
+        await wait(40);
+        ops.push(parseFloat(await page.evaluate(() => getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity)));
+      }
+      await wait(300);
+      const phone = await page.evaluate(() => ({ scrollW: document.documentElement.scrollWidth, inner: innerWidth,
+        layerW: document.querySelector('.cx-mesh-layer').getBoundingClientRect().width,
+        op: getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity, held: window.cygenixHeroMesh.isHeld() }));
+      check('6. PHONE: after reading the whole page there is no horizontal scrollbar',
+        phone.scrollW === phone.inner && phone.layerW === phone.inner, JSON.stringify(phone));
+      check('6. PHONE: the mesh starts at full strength, fades steadily, and is gone and held at the footer',
+        ops[0] === 1 && ops.every((v, i) => i === 0 || v <= ops[i - 1] + 1e-6) && phone.op === '0' && phone.held,
+        JSON.stringify(ops.map((v) => v.toFixed(2))));
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await wait(250);
+      const tapped = [];
+      for (const sel of ['.hero-btns .btn-primary', '.hero-btns .btn-secondary']) {
+        try { await page.tap(sel, { trial: true, timeout: 3000 }); } catch (e) { tapped.push(sel); }
+      }
+      check('7. PHONE: the buttons take a tap, back at the top', tapped.length === 0, tapped.join(', '));
+      check('5. PHONE: no console errors', problems.length === 0, problems.join(' | '));
+      await ctx.close();
+    }
+
+    // ── prefers-reduced-motion on the homepage: hidden, nothing drawn ───
+    // The page-wide layer is stricter than the hero-only one: a moving field
+    // behind every paragraph of a 14,700px page is not what someone who
+    // asked for less motion asked for. The grid still gives the page texture.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+      await ctx.addInitScript(countFrames);
+      await ctx.route('**/*', (route) => (/fonts\.g(oogleapis|static)\.com/.test(route.request().url()) ? route.abort() : route.continue()));
+      const page = await ctx.newPage();
+      const problems = [];
+      page.on('pageerror', (e) => problems.push('pageerror: ' + e.message));
+      await page.goto('http://localhost:' + PORT + '/index.html', { waitUntil: 'load' });
+      await wait(700);
+      const rm = await page.evaluate(() => ({ display: getComputedStyle(document.querySelector('.cx-mesh-layer')).display,
+        mounted: !!window.cygenixHeroMesh, raf: window.__raf,
+        grid: getComputedStyle(document.querySelector('.brand-grid')).opacity }));
+      await page.evaluate(() => window.scrollTo({ top: 3000, behavior: 'instant' }));
+      await wait(400);
+      const rm2 = await page.evaluate(() => ({ raf: window.__raf, mounted: !!window.cygenixHeroMesh }));
+      check('reduced motion: the mesh layer is hidden', rm.display === 'none', JSON.stringify(rm));
+      check('reduced motion: the engine is never started, even after a scroll', !rm.mounted && !rm2.mounted, JSON.stringify([rm, rm2]));
+      check('reduced motion: the grid background is still there', rm.grid === '0.65', rm.grid);
+      check('reduced motion: no page errors', problems.length === 0, problems.join(' | '));
       await ctx.close();
     }
 
@@ -289,6 +418,20 @@ async function open(browser, opts, file) {
       check('pricing: no console errors', problems.length === 0, problems.join(' | '));
       const ext = requests.filter((u) => !/^http:\/\/localhost:8399\//.test(u) && !/fonts\.g(oogleapis|static)\.com/.test(u));
       check('pricing: nothing fetched from anywhere else', ext.length === 0, ext.join(', '));
+      await ctx.close();
+    }
+    // ── Pricing under reduced motion: unchanged — degraded, not hidden ──
+    {
+      const { ctx, page, problems } = await open(browser, { reducedMotion: 'reduce' }, 'pricing.html');
+      await wait(500);
+      const rm = await page.evaluate(() => {
+        const cfg = window.cygenixHeroMesh.config;
+        return { raf: window.__raf, speed: cfg.speed, parallax: cfg.parallax,
+          display: getComputedStyle(document.querySelector('.cx-mesh-layer')).display };
+      });
+      check('pricing, reduced motion: still shown and drifting at 15% speed with parallax zeroed, as before',
+        rm.display !== 'none' && rm.raf > 1 && Math.abs(rm.speed - 0.15) < 1e-9 && rm.parallax === 0, JSON.stringify(rm));
+      check('pricing, reduced motion: no console errors', problems.length === 0, problems.join(' | '));
       await ctx.close();
     }
   } finally {

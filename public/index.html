@@ -182,20 +182,30 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
    behind it is the only thing that marks it out. */
 .hero{position:relative;z-index:1;text-align:center;padding:9rem clamp(1rem,5vw,2rem) 3.5rem;
   max-width:1000px;margin:0 auto}
-/* The mesh behind the hero (cygenix-mesh.js). The stage is the full-width
-   box the mesh fills; it adds nothing to the layout — no padding, no margin,
-   no height beyond the hero's own — and clips the canvas so the mesh can
-   never widen the page. isolation:isolate keeps its z-order private: the
-   layer at 0 and the hero at 1 are ordered against each other and nothing
-   else. It sits above the fixed .brand-glow and .brand-grid, which stay
-   underneath as they were. The mask fades the mesh out before the section
-   below, so the field does not end at a hard line. */
-.hero-stage{position:relative;z-index:1;isolation:isolate;overflow:hidden}
-.hero-stage>.hero{position:relative;z-index:1}
-.cx-mesh-layer{position:absolute;inset:0;z-index:0;pointer-events:none;
-  mask-image:linear-gradient(to bottom,#000 0%,#000 70%,transparent 100%);
-  -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 70%,transparent 100%)}
+/* The mesh (cygenix-mesh.js), page-wide since Sep-2026. It used to live in
+   a .hero-stage wrapper, sized to the hero and faded out at 70–100% of it by
+   a mask. It is now a fixed, full-screen layer beside .brand-grid: behind
+   every section, not only the hero, and still the size of the SCREEN rather
+   than the page, because a 14,700px canvas would cost far more to draw than
+   anything it could show. cygenix-hero-mesh.js fades it out as the page
+   scrolls — full strength at the top, nothing by the footer — which is what
+   the old mask did for the hero alone, so the mask is gone.
+
+   Same z-index as the grid and later in the document, so it paints above
+   the grid and below every section (z-index:1). pointer-events:none, so it
+   can never take a click.
+
+   HEIGHT: 100lvh, not inset:0. On a phone the address bar hides and returns
+   as you scroll, which changes the viewport's height. A layer tied to it
+   would resize, the engine would rebuild, and every dot would jump to a new
+   place mid-scroll. The large viewport height does not change when the bar
+   moves. 100vh first is the fallback for browsers without lvh.
+
+   REDUCED MOTION: hidden, not slowed. See cygenix-hero-mesh.js. */
+.cx-mesh-layer{position:fixed;top:0;left:0;right:0;height:100vh;height:100lvh;z-index:0;
+  pointer-events:none}
 .cx-mesh-layer canvas{display:block;width:100%;height:100%}
+@media (prefers-reduced-motion:reduce){.cx-mesh-layer{display:none}}
 .hero-badge{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:500;
   letter-spacing:0.14em;text-transform:uppercase;color:var(--accent-ink);
   border:1px solid rgba(142,160,255,0.28);border-radius:100px;padding:0.35rem 0.9rem;margin-bottom:1.75rem}
@@ -211,17 +221,6 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
 .hero-note a{color:var(--accent-ink);text-decoration:none}
 .hero-note a:hover{text-decoration:underline}
 
-/* ── Ticker ──────────────────────────────────────────────────────────────
-   Sample events from a run. Everything in it is synthetic — the schema names
-   below are the neutral Customer/Orders shape, not anybody's data. */
-.ticker-wrap{position:relative;z-index:1;overflow:hidden;border-top:1px solid var(--border);
-  border-bottom:1px solid var(--border);background:rgba(255,255,255,0.015);padding:0.7rem 0;margin-top:1rem}
-.ticker{display:flex;gap:2.5rem;width:max-content;animation:tick 62s linear infinite}
-.ticker-item{font-family:var(--mono);font-size:11.5px;color:var(--text3);white-space:nowrap;
-  display:flex;align-items:center;gap:0.4rem}
-.ticker-item span{color:var(--text2)}
-@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-.ticker-wrap:hover .ticker{animation-play-state:paused}
 
 /* ── Sections ────────────────────────────────────────────────────────────
    One ground, separated by space and a hairline instead of a change of
@@ -497,6 +496,9 @@ footer a:hover{text-decoration:underline}
 <body>
 <div class="brand-glow" aria-hidden="true"></div>
 <div class="brand-grid" aria-hidden="true"></div>
+<!-- The mesh: fixed, full-screen, behind every section. Faded out on scroll
+     by cygenix-hero-mesh.js; see the .cx-mesh-layer rule for why. -->
+<div class="cx-mesh-layer" aria-hidden="true" data-scroll-fade><canvas id="cx-mesh"></canvas></div>
 
 <nav>
   <a class="nav-logo" href="/" aria-label="Cygenix home — the product is in beta"><span class="mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span><b>Cygenix</b><span class="nav-beta">Beta</span></a>
@@ -517,12 +519,6 @@ footer a:hover{text-decoration:underline}
 </nav>
 
 <!-- ══ HERO ══════════════════════════════════════════════════════════════ -->
-<!-- .hero-stage is a full-width box that adds no height, padding or margin:
-     it exists so the mesh can span the viewport while .hero keeps its 1000px
-     centred box exactly as it was. The mesh layer is the stage's first child
-     and paints under the hero; see cygenix-mesh.js for why. -->
-<div class="hero-stage">
-<div class="cx-mesh-layer" aria-hidden="true"><canvas id="cx-mesh"></canvas></div>
 <section class="hero">
   <div class="hero-badge">SQL Server · Azure SQL · Postgres · Files</div>
   <h1>
@@ -540,35 +536,6 @@ footer a:hover{text-decoration:underline}
   <div class="hero-note">Every capability on this page is checked against the product's own
     <a href="/help#supported">support matrix</a> at build time, so what you read here is what ships.</div>
 </section>
-</div>
-
-<!-- ══ TICKER ════════════════════════════════════════════════════════════
-     Sample events from a run. The schema names are the neutral
-     Customer / Orders shape used throughout this page. -->
-<div class="ticker-wrap" aria-hidden="true">
-  <div class="ticker">
-    <div class="ticker-item"><i class="ic ic-plug"></i> <span>Connected</span> · source · 342 tables, 18 views</div>
-    <div class="ticker-item"><i class="ic ic-wand"></i> <span>AI mapped</span> · 47 columns · 6 flagged for review</div>
-    <div class="ticker-item"><i class="ic ic-flask"></i> <span>Preflight</span> · 3 rejections forecast on dbo.Customer</div>
-    <div class="ticker-item"><i class="ic ic-shield"></i> <span>Guardrail</span> · unbounded DELETE held for approval</div>
-    <div class="ticker-item"><i class="ic ic-key"></i> <span>Server objects</span> · 12 logins, 4 Agent jobs discovered</div>
-    <div class="ticker-item"><i class="ic ic-users"></i> <span>Workspace</span> · engineer invited · role assigned</div>
-    <div class="ticker-item"><i class="ic ic-package"></i> <span>Package</span> · 27 jobs across 4 dependency groups</div>
-    <div class="ticker-item"><i class="ic ic-clock"></i> <span>Task Agent</span> · nightly run scheduled · 22:00</div>
-    <div class="ticker-item"><i class="ic ic-chain"></i> <span>Audit</span> · chain verified · 1,204 entries intact</div>
-    <div class="ticker-item"><i class="ic ic-check-circle"></i> <span>Run complete</span> · 0 errors</div>
-    <div class="ticker-item"><i class="ic ic-plug"></i> <span>Connected</span> · source · 342 tables, 18 views</div>
-    <div class="ticker-item"><i class="ic ic-wand"></i> <span>AI mapped</span> · 47 columns · 6 flagged for review</div>
-    <div class="ticker-item"><i class="ic ic-flask"></i> <span>Preflight</span> · 3 rejections forecast on dbo.Customer</div>
-    <div class="ticker-item"><i class="ic ic-shield"></i> <span>Guardrail</span> · unbounded DELETE held for approval</div>
-    <div class="ticker-item"><i class="ic ic-key"></i> <span>Server objects</span> · 12 logins, 4 Agent jobs discovered</div>
-    <div class="ticker-item"><i class="ic ic-users"></i> <span>Workspace</span> · engineer invited · role assigned</div>
-    <div class="ticker-item"><i class="ic ic-package"></i> <span>Package</span> · 27 jobs across 4 dependency groups</div>
-    <div class="ticker-item"><i class="ic ic-clock"></i> <span>Task Agent</span> · nightly run scheduled · 22:00</div>
-    <div class="ticker-item"><i class="ic ic-chain"></i> <span>Audit</span> · chain verified · 1,204 entries intact</div>
-    <div class="ticker-item"><i class="ic ic-check-circle"></i> <span>Run complete</span> · 0 errors</div>
-  </div>
-</div>
 
 <!-- ══ PLATFORM ══════════════════════════════════════════════════════════ -->
 <section class="section" id="platform">
@@ -1872,10 +1839,11 @@ document.addEventListener('keydown', function(e){
 <script src="/cookie-consent.js?v=f55be71b3a" defer></script>
 <script src="/cygenix-cookie-cleanup.js?v=d312b61359" defer></script>
 <script src="/cygenix-a11y.js?v=a64ca52904" defer></script>
-<!-- The mesh behind the hero: the engine, then the mount that the pricing
-     page shares (one tuning block, not two). Both deferred; the mount waits
-     for DOMContentLoaded and is a no-op wherever #cx-mesh is absent. -->
-<script src="/cygenix-mesh.js?v=014c22dd1f" defer></script>
-<script src="/cygenix-hero-mesh.js?v=63a5abce93" defer></script>
+<!-- The mesh: the engine, then the mount that the pricing page shares (one
+     tuning block, not two). Both deferred; the mount waits for
+     DOMContentLoaded, drives the scroll fade here because the layer carries
+     data-scroll-fade, and is a no-op wherever #cx-mesh is absent. -->
+<script src="/cygenix-mesh.js?v=f982e2bf02" defer></script>
+<script src="/cygenix-hero-mesh.js?v=741f0b860f" defer></script>
 </body>
 </html>

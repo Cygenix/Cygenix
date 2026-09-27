@@ -32,6 +32,11 @@
    It sits ABOVE the page's fixed .brand-glow and .brand-grid, which stay
    underneath as they were: the mesh is additive.
 
+   That describes the pricing page. Since Sep-2026 the HOMEPAGE has no
+   stage: its layer is a fixed, full-screen sibling of .brand-grid behind
+   every section, faded out on scroll — see HOLD, RELEASE AND TUNE below and
+   cygenix-hero-mesh.js.
+
    WHAT IT MUST NEVER DO
    Change the hero's height or spacing, cross in front of the copy, eat a
    click, or keep drawing when nobody can see it. So: the layer is
@@ -81,9 +86,33 @@
    when the nodes are built, so the speed must be lowered first); and the
    wandering paths in build() and step(). Nothing else differs, so a later
    drop-in replacement is a small diff.
+
+   HOLD, RELEASE AND TUNE (Sep-2026)
+   The homepage mesh became a fixed, full-screen layer that fades out as the
+   page scrolls (cygenix-hero-mesh.js drives that). Two things were needed
+   that update() could not do, because update() calls build() and build()
+   scatters every node to a new random position:
+
+     hold()     stop drawing, keep every node exactly where it is. Used when
+                the layer has faded to nothing, so a page nobody can see
+                costs no CPU. A held mesh stays held through a tab switch:
+                start() checks it, so visibilitychange cannot wake it.
+     release()  resume from where it stopped. Scrolling back up shows the
+                same field it left, not a reshuffled one.
+     tune(o)    change a value read at DRAW time — glow, lineAlpha,
+                nodeAlpha, parallax, the colours — without a rebuild. The
+                homepage dims the bloom through it as the first screen
+                scrolls away. It must not be used for density, reach or
+                speed: those are baked into the nodes when they are built,
+                so changing them without a rebuild would do nothing, and
+                that is what update() is for.
+
+   All three are additive. A page that never calls them (pricing) behaves
+   exactly as before.
    ========================================================================== */
 /* Cygenix ambient mesh — animated polygon network background.
-   window.CygenixMesh.mount(canvas, opts) -> { update(opts), destroy() } */
+   window.CygenixMesh.mount(canvas, opts)
+     -> { update(opts), tune(opts), hold(), release(), isHeld(), destroy() } */
 (function () {
   var PRESETS = {
     subtle:    { density: 0.55, speed: 0.45, reach: 140, glow: 0.35, parallax: 0.30, lineAlpha: 0.20, nodeAlpha: 0.60 },
@@ -119,6 +148,11 @@
     var layers = [];
     var pointer = { x: 0, y: 0, tx: 0, ty: 0 };
     var raf = 0, last = 0, running = false, visible = true;
+    // Set by hold(), cleared by release(). Separate from cfg.paused on
+    // purpose: paused is a configuration the page asked for, held is a
+    // moment-to-moment state the scroll fade drives, and each must be able
+    // to keep the loop stopped without the other one restarting it.
+    var held = false;
     // A slow, time-driven camera sweep, added to the pointer offset in draw().
     // Without it the only whole-field motion came from the pointer, so a still
     // mouse saw nothing but the individual nodes drifting.
@@ -300,7 +334,7 @@
     }
 
     function start() {
-      if (running || cfg.paused || !visible) return;
+      if (running || cfg.paused || held || !visible) return;
       running = true; last = performance.now();
       raf = requestAnimationFrame(frame);
     }
@@ -348,6 +382,15 @@
         recolor(); build();
         if (cfg.paused) stop(); else start();
         if (!running) draw(1);
+      },
+      // See HOLD, RELEASE AND TUNE in the header.
+      hold: function () { held = true; stop(); },
+      release: function () { if (!held) return; held = false; start(); },
+      isHeld: function () { return held; },
+      tune: function (next) {
+        Object.assign(cfg, next || {});
+        recolor();
+        if (!running && !held) draw(1);
       },
       config: cfg,
       destroy: function () {
