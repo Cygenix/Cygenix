@@ -131,17 +131,30 @@ nav.solid{background:rgba(0,0,0,0.82);border-bottom-color:var(--border);backdrop
   .region-selector-btn{padding:0.35rem 0.55rem;font-size:11px}
 }
 
-/* ── Hero — the landing page's hero, with the same mesh behind it.
-   .hero-stage is the full-width box the mesh fills; it adds no padding,
-   margin or height of its own, and clips the canvas so the mesh can never
-   widen the page. The layer is the stage's first child and paints under the
-   hero; see cygenix-mesh.js. */
-.hero-stage{position:relative;z-index:1;isolation:isolate;overflow:hidden}
-.hero-stage>.pricing-hero{position:relative;z-index:1}
-.cx-mesh-layer{position:absolute;inset:0;z-index:0;pointer-events:none;
-  mask-image:linear-gradient(to bottom,#000 0%,#000 70%,transparent 100%);
-  -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 70%,transparent 100%)}
+/* ── The mesh — the landing page's, set up the same way (Sep-2026).
+   It used to live in a .hero-stage wrapper, sized to the hero and faded out
+   at 70–100% of it by a mask. It is now a fixed, full-screen layer beside
+   .brand-grid, behind every section, and still the size of the SCREEN rather
+   than the page. cygenix-hero-mesh.js fades it out as the page scrolls —
+   full strength at the top, nothing by the footer — so the mask is gone.
+
+   Same z-index as the grid and later in the document: above the grid, below
+   every section (all z-index:1, the hero included). pointer-events:none.
+
+   HEIGHT: 100lvh, not inset:0, so a phone's address bar hiding and
+   returning cannot resize the layer and re-scatter every dot mid-scroll.
+
+   The page's cards (the tiers, the panels, the comparison table) are solid
+   on purpose and stay so: they carry prices and ticks, and the mesh shows
+   around them rather than behind their text.
+
+   REDUCED MOTION: hidden, not slowed. See cygenix-hero-mesh.js. */
+.cx-mesh-layer{position:fixed;top:0;left:0;right:0;height:100vh;height:100lvh;z-index:0;
+  pointer-events:none}
 .cx-mesh-layer canvas{display:block;width:100%;height:100%}
+@media (prefers-reduced-motion:reduce){.cx-mesh-layer{display:none}}
+
+/* ── Hero */
 .pricing-hero{position:relative;z-index:1;text-align:center;padding:9rem clamp(1rem,5vw,2rem) 3rem;
   max-width:1000px;margin:0 auto}
 .hero-badge{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:500;
@@ -559,6 +572,9 @@ footer a:hover{text-decoration:underline}
 
 <div class="brand-glow" aria-hidden="true"></div>
 <div class="brand-grid" aria-hidden="true"></div>
+<!-- The mesh: fixed, full-screen, behind every section. Faded out on scroll
+     by cygenix-hero-mesh.js; see the .cx-mesh-layer rule for why. -->
+<div class="cx-mesh-layer" aria-hidden="true" data-scroll-fade><canvas id="cx-mesh"></canvas></div>
 
 <nav>
   <a class="nav-logo" href="/" aria-label="Cygenix home — the product is in beta"><span class="mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span><b>Cygenix</b><span class="nav-beta">Beta</span></a>
@@ -585,12 +601,6 @@ footer a:hover{text-decoration:underline}
 </nav>
 
 <!-- ===================== HERO ===================== -->
-<!-- .hero-stage is a full-width box that adds no height, padding or margin:
-     it exists so the mesh can span the viewport while .pricing-hero keeps its
-     1000px centred box. The mesh layer is the stage's first child and paints
-     under the hero; see cygenix-mesh.js. -->
-<div class="hero-stage">
-<div class="cx-mesh-layer" aria-hidden="true"><canvas id="cx-mesh"></canvas></div>
 <section class="pricing-hero">
   <div class="hero-badge">Pricing</div>
   <h1>Predictable subscriptions.<br><span class="grad">No per-row penalty.</span></h1>
@@ -604,7 +614,6 @@ footer a:hover{text-decoration:underline}
   </div>
   <div class="toggle-hint">14-DAY FREE TRIAL ON PRO · ANNUAL SAVES 20% ON PRO AND BUSINESS · CONSULTANT LED IS BILLED HOURLY</div>
 </section>
-</div>
 
 <!-- ===================== PRICING GRID ===================== -->
 <div class="pricing-grid">
@@ -1523,12 +1532,12 @@ document.addEventListener('keydown', e => {
   window.addEventListener('resize', sync);
 })();
 </script>
-<!-- The mesh behind the hero — the landing page's engine and its mount,
-     shared rather than copied. The engine is deferred like every other
-     shared module; the mount waits for DOMContentLoaded and is a no-op
-     wherever #cx-mesh is absent. -->
-<script src="/cygenix-mesh.js?v=f982e2bf02" defer></script>
-<script src="/cygenix-hero-mesh.js?v=741f0b860f" defer></script>
+<!-- The mesh — the landing page's engine and its mount, shared rather than
+     copied. Both deferred; the mount waits for DOMContentLoaded, drives the
+     scroll fade here because the layer carries data-scroll-fade, and is a
+     no-op wherever #cx-mesh is absent. -->
+<script src="/cygenix-mesh.js?v=b6d3e5c83a" defer></script>
+<script src="/cygenix-hero-mesh.js?v=b832a70221" defer></script>
 <script src="/cookie-consent.js?v=f55be71b3a" defer></script>
 </body>
 </html>

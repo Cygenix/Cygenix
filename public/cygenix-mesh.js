@@ -32,10 +32,10 @@
    It sits ABOVE the page's fixed .brand-glow and .brand-grid, which stay
    underneath as they were: the mesh is additive.
 
-   That describes the pricing page. Since Sep-2026 the HOMEPAGE has no
-   stage: its layer is a fixed, full-screen sibling of .brand-grid behind
-   every section, faded out on scroll — see HOLD, RELEASE AND TUNE below and
-   cygenix-hero-mesh.js.
+   That describes the hero-only mount, which no page uses since Sep-2026:
+   the homepage and pricing both have a fixed, full-screen layer beside
+   .brand-grid, behind every section, faded out on scroll — see HOLD,
+   RELEASE AND TUNE below and cygenix-hero-mesh.js.
 
    WHAT IT MUST NEVER DO
    Change the hero's height or spacing, cross in front of the copy, eat a

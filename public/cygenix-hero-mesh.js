@@ -26,14 +26,15 @@
    its palette test does not already sanction.
 
    TWO KINDS OF LAYER (Sep-2026)
-   · Hero-only (pricing): the layer sits inside .hero-stage and is sized to
-     it. Behaviour exactly as it always was.
-   · Page-wide (the homepage): the layer is a fixed, full-screen sibling of
-     .brand-grid, marked data-scroll-fade. It is the size of the SCREEN, not
-     the page — a 14,700px canvas would cost far more to draw than anything
-     it could show — and it fades out as the page scrolls. See SCROLL FADE.
-   The attribute is the switch, so pricing cannot pick up the fade by
-   accident.
+   · Page-wide (the homepage and pricing): the layer is a fixed, full-screen
+     sibling of .brand-grid, marked data-scroll-fade. It is the size of the
+     SCREEN, not the page — a 14,700px canvas would cost far more to draw
+     than anything it could show — and it fades out as the page scrolls.
+     See SCROLL FADE.
+   · Hero-only: a layer inside a hero wrapper, sized to it, no fade. No page
+     uses it any more; it is kept because it is the engine's plain mount and
+     costs four lines. A new page gets it by leaving the attribute off.
+   The attribute is the switch, so no page picks up the fade by accident.
 
    SCROLL FADE
    At the top of the page the mesh is at full strength, as it always was.
@@ -63,7 +64,7 @@
 
    REDUCED MOTION
    On the page-wide layer, someone who has asked their device for less
-   motion gets no mesh at all: index.html hides the layer with a media query
+   motion gets no mesh at all: the page hides the layer with a media query
    and this file does not start the engine, so it costs nothing. The page's
    fixed grid still gives it texture. This is stricter than the hero-only
    layer, which degrades to a slow drift (see REDUCED MOTION in
@@ -71,7 +72,8 @@
    moving field behind every paragraph of a 14,700px page is another.
    cygenix-a11y.js offers text size and contrast and has no motion setting,
    so the device preference is the only signal there is. If it changes while
-   the page is open, this follows it.
+   the page is open, this follows it. (The engine's own slow-drift path,
+   REDUCED MOTION in cygenix-mesh.js, now applies only to a hero-only layer.)
 
    window.cygenixHeroMesh keeps the handle, so the console can tune live:
    cygenixHeroMesh.update({ speed: 0.3, reach: 220 }).

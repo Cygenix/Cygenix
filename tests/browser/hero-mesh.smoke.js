@@ -368,11 +368,14 @@ async function open(browser, opts, file) {
       await ctx.close();
     }
 
-    // ── The pricing page carries the theme and the motion ──────────────
+    // ── Pricing: the same page-wide mesh as the homepage (Sep-2026) ─────
+    // The theme checks are as they were; the mesh checks are the homepage's
+    // checklist, applied here. Pricing's content is mostly solid dark cards
+    // (tiers, panels, a 2,130px comparison table) that stay solid, so the
+    // "behind every section" check samples each section's own margin.
     {
       const { ctx, page, problems, requests } = await open(browser, {}, 'pricing.html');
       const p = await page.evaluate(() => {
-        const stage = document.querySelector('.hero-stage');
         const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 10) / 10).join(','); };
         const layer = document.querySelector('.cx-mesh-layer');
         const shown = { hero: r('.pricing-hero'), h1: r('.pricing-hero h1'), toggle: r('.billing-toggle') };
@@ -380,8 +383,13 @@ async function open(browser, opts, file) {
         const hidden = { hero: r('.pricing-hero'), h1: r('.pricing-hero h1'), toggle: r('.billing-toggle') };
         layer.style.display = '';
         const at = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return e ? (e.tagName + '.' + e.className) : null; };
+        const kids = Array.from(document.body.children).map((e) => e.tagName + '.' + (e.className || ''));
+        const l = getComputedStyle(layer), lr = layer.getBoundingClientRect();
         return {
-          tree: stage ? Array.from(stage.children).map((e) => e.tagName + '.' + e.className) : null,
+          parent: layer.parentElement.tagName, idxGrid: kids.findIndex((k) => /brand-grid/.test(k)),
+          idxLayer: kids.findIndex((k) => /cx-mesh-layer/.test(k)), stage: !!document.querySelector('.hero-stage'),
+          pos: l.position, z: l.zIndex, pe: l.pointerEvents, mask: l.maskImage || l.webkitMaskImage || 'none',
+          lw: lr.width, lh: lr.height, iw: innerWidth, ih: innerHeight, op: l.opacity,
           bg: getComputedStyle(document.body).backgroundColor,
           h1: getComputedStyle(document.querySelector('.pricing-hero h1')).color,
           grid: !!document.querySelector('.brand-grid') && getComputedStyle(document.querySelector('.brand-grid')).opacity,
@@ -393,8 +401,9 @@ async function open(browser, opts, file) {
           raf: window.__raf,
         };
       });
-      check('pricing: the mesh layer sits first in a stage, with the hero after it',
-        !!p.tree && p.tree.length === 2 && /cx-mesh-layer/.test(p.tree[0]) && /SECTION\.pricing-hero/.test(p.tree[1]), JSON.stringify(p.tree));
+      check('pricing: the mesh layer is a fixed, full-screen child of <body> right after the grid, with no stage and no mask',
+        p.parent === 'BODY' && p.idxLayer === p.idxGrid + 1 && !p.stage && p.pos === 'fixed' && p.z === '0' && p.pe === 'none'
+        && p.mask === 'none' && p.lw === p.iw && p.lh === p.ih, JSON.stringify(p));
       check('pricing: black ground, light type, the grid behind, the landing page\'s mark in a transparent nav',
         p.bg === 'rgb(0, 0, 0)' && p.h1 === 'rgb(242, 244, 248)' && p.grid === '0.65' && p.mark && p.navBg === 'rgba(0, 0, 0, 0)', JSON.stringify(p));
       check('pricing: the hero, headline and billing toggle sit exactly where they do without the layer', p.shift);
@@ -405,7 +414,7 @@ async function open(browser, opts, file) {
         p.cfg.speed === 1.0 && p.cfg.reach === 200 && p.cfg.line === '#8ea0ff' && p.cfg.node === '#a9b6ff', JSON.stringify(p.cfg));
       await wait(400);
       const raf2 = await page.evaluate(() => window.__raf);
-      check('pricing: the loop is running', raf2 > p.raf && p.raf > 0, p.raf + ' → ' + raf2);
+      check('pricing: at the top, full opacity and the loop running', p.op === '1' && raf2 > p.raf && p.raf > 0, p.op + ' · ' + p.raf + ' → ' + raf2);
       const clickable = [];
       for (const sel of ['.tier.featured .tier-cta', '#bill-annual', '.nav-cta', '#region-selector-btn']) {
         try { await page.click(sel, { trial: true, timeout: 3000 }); } catch (e) { clickable.push(sel); }
@@ -415,23 +424,102 @@ async function open(browser, opts, file) {
       await wait(300);
       check('pricing: the nav solidifies once the hero has scrolled away',
         (await page.evaluate(() => document.querySelector('nav').classList.contains('solid'))));
+
+      // Behind every section, fading monotonically.
+      const secs = await page.evaluate(() => Array.from(document.querySelectorAll('body > section, body > .pricing-grid')).map((s, i) => { s.dataset.smk = String(i); return i; }));
+      const seen = [];
+      for (const i of secs) {
+        await page.evaluate((n) => { const s = document.querySelector('[data-smk="' + n + '"]'); const b = s.getBoundingClientRect();
+          window.scrollTo({ top: b.top + scrollY - 120, behavior: 'instant' }); }, i);
+        await wait(80);
+        seen.push(await page.evaluate((n) => {
+          const s = document.querySelector('[data-smk="' + n + '"]'), b = s.getBoundingClientRect();
+          const y = Math.max(b.top + 1, Math.min(b.bottom - 1, innerHeight / 2));
+          const e = document.elementFromPoint(4, y);
+          return { cls: s.className, op: parseFloat(getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity),
+            edge: e ? getComputedStyle(e).backgroundColor : '', tag: e ? e.tagName : '' };
+        }, i));
+      }
+      check('pricing: the mesh is showing behind every section before the closing call to action',
+        seen.slice(0, -1).every((v) => v.op > 0), JSON.stringify(seen.map((v) => v.cls + ':' + v.op.toFixed(2))));
+      // The hero and the tier grid are narrower than the screen, so the
+      // margin point lands on <body>. That is the black ground the fixed
+      // layer is drawn ON, not something over it, so it counts as clear.
+      check('pricing: no section paints an opaque band over it at its margin',
+        seen.every((v) => /^(BODY|HTML)$/.test(v.tag) || /rgba\(0, 0, 0, 0\)|transparent/.test(v.edge)),
+        JSON.stringify(seen.map((v) => v.cls + ':' + v.tag + ':' + v.edge)));
+      check('pricing: the fade only ever gets fainter going down',
+        seen.every((v, i) => i === 0 || v.op <= seen[i - 1].op + 1e-6), JSON.stringify(seen.map((v) => v.op.toFixed(3))));
+
+      await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+      await wait(300);
+      const bottom = await page.evaluate(() => ({ op: getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity,
+        held: window.cygenixHeroMesh.isHeld(), raf: window.__raf }));
+      await wait(500);
+      const bottom2 = await page.evaluate(() => window.__raf);
+      check('pricing: at the footer the mesh is invisible and nothing is drawn',
+        bottom.op === '0' && bottom.held && bottom2 === bottom.raf, JSON.stringify(bottom) + ' → ' + bottom2);
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await wait(300);
+      const back = await page.evaluate(() => ({ op: getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity,
+        held: window.cygenixHeroMesh.isHeld(), raf: window.__raf }));
+      await wait(400);
+      check('pricing: scrolling back up brings it back, drawing again',
+        back.op === '1' && !back.held && (await page.evaluate(() => window.__raf)) > back.raf, JSON.stringify(back));
+
       check('pricing: no console errors', problems.length === 0, problems.join(' | '));
       const ext = requests.filter((u) => !/^http:\/\/localhost:8399\//.test(u) && !/fonts\.g(oogleapis|static)\.com/.test(u));
       check('pricing: nothing fetched from anywhere else', ext.length === 0, ext.join(', '));
       await ctx.close();
     }
-    // ── Pricing under reduced motion: unchanged — degraded, not hidden ──
+
+    // ── Pricing on a phone, from the start ──────────────────────────────
     {
-      const { ctx, page, problems } = await open(browser, { reducedMotion: 'reduce' }, 'pricing.html');
-      await wait(500);
-      const rm = await page.evaluate(() => {
-        const cfg = window.cygenixHeroMesh.config;
-        return { raf: window.__raf, speed: cfg.speed, parallax: cfg.parallax,
-          display: getComputedStyle(document.querySelector('.cx-mesh-layer')).display };
-      });
-      check('pricing, reduced motion: still shown and drifting at 15% speed with parallax zeroed, as before',
-        rm.display !== 'none' && rm.raf > 1 && Math.abs(rm.speed - 0.15) < 1e-9 && rm.parallax === 0, JSON.stringify(rm));
-      check('pricing, reduced motion: no console errors', problems.length === 0, problems.join(' | '));
+      const { ctx, page, problems } = await open(browser, { viewport: { width: 375, height: 667 }, hasTouch: true }, 'pricing.html');
+      const H = await page.evaluate(() => document.documentElement.scrollHeight);
+      const ops = [];
+      for (let y = 0; y <= H; y += 600) {
+        await page.evaluate((v) => window.scrollTo({ top: v, behavior: 'instant' }), y);
+        await wait(40);
+        ops.push(parseFloat(await page.evaluate(() => getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity)));
+      }
+      await wait(300);
+      const phone = await page.evaluate(() => ({ scrollW: document.documentElement.scrollWidth, inner: innerWidth,
+        layerW: document.querySelector('.cx-mesh-layer').getBoundingClientRect().width,
+        op: getComputedStyle(document.querySelector('.cx-mesh-layer')).opacity, held: window.cygenixHeroMesh.isHeld() }));
+      check('pricing, phone: after reading the whole page there is no horizontal scrollbar',
+        phone.scrollW === phone.inner && phone.layerW === phone.inner, JSON.stringify(phone));
+      check('pricing, phone: full strength at the top, fading steadily, gone and held at the footer',
+        ops[0] === 1 && ops.every((v, i) => i === 0 || v <= ops[i - 1] + 1e-6) && phone.op === '0' && phone.held,
+        JSON.stringify(ops.map((v) => v.toFixed(2))));
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await wait(250);
+      const tapped = [];
+      for (const sel of ['#bill-annual', '.tier.featured .tier-cta']) {
+        try { await page.tap(sel, { trial: true, timeout: 3000 }); } catch (e) { tapped.push(sel); }
+      }
+      check('pricing, phone: the billing toggle and the featured plan take a tap', tapped.length === 0, tapped.join(', '));
+      check('pricing, phone: no console errors', problems.length === 0, problems.join(' | '));
+      await ctx.close();
+    }
+
+    // ── Pricing under reduced motion: hidden, like the homepage ─────────
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+      await ctx.addInitScript(countFrames);
+      await ctx.route('**/*', (route) => (/fonts\.g(oogleapis|static)\.com/.test(route.request().url()) ? route.abort() : route.continue()));
+      const page = await ctx.newPage();
+      const problems = [];
+      page.on('pageerror', (e) => problems.push('pageerror: ' + e.message));
+      await page.goto('http://localhost:' + PORT + '/pricing.html', { waitUntil: 'load' });
+      await wait(700);
+      await page.evaluate(() => window.scrollTo({ top: 2000, behavior: 'instant' }));
+      await wait(300);
+      const rm = await page.evaluate(() => ({ display: getComputedStyle(document.querySelector('.cx-mesh-layer')).display,
+        mounted: !!window.cygenixHeroMesh, grid: getComputedStyle(document.querySelector('.brand-grid')).opacity }));
+      check('pricing, reduced motion: the mesh is hidden and the engine never started', rm.display === 'none' && !rm.mounted, JSON.stringify(rm));
+      check('pricing, reduced motion: the grid background is still there', rm.grid === '0.65', rm.grid);
+      check('pricing, reduced motion: no page errors', problems.length === 0, problems.join(' | '));
       await ctx.close();
     }
   } finally {

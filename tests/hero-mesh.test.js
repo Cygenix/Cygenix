@@ -52,10 +52,12 @@ MESH_PAGES.forEach((f) => {
 check('and no other page loads either — only pages with a hero',
   fs.readdirSync(P('public')).filter((f) => f.endsWith('.html') && !MESH_PAGES.includes(f))
     .every((f) => !/cygenix-mesh\.js|cygenix-hero-mesh\.js/.test(read('public', f))));
-check('the scroll fade is opt-in by attribute, so the hero-only pricing layer cannot pick it up',
+// Both pages that carry the mesh opted in to the fade (Sep-2026). The
+// hero-only path stays in the mount for a page that leaves the attribute off.
+check('the scroll fade is opt-in by attribute, and both mesh pages opt in',
   /var pageWide = !!\(layer && layer\.hasAttribute\('data-scroll-fade'\)\);/.test(mount)
   && /if \(!pageWide\) \{\s*window\.cygenixHeroMesh = CygenixMesh\.mount\(el, OPTS\);\s*return;\s*\}/.test(mount)
-  && !/data-scroll-fade/.test(read('public', 'pricing.html')));
+  && MESH_PAGES.every((f) => /<div class="cx-mesh-layer" aria-hidden="true" data-scroll-fade><canvas id="cx-mesh"><\/canvas><\/div>/.test(read('public', f))));
 check('the scroll listener is passive and only asks for an animation frame',
   /addEventListener\('scroll', request, \{ passive: true \}\)/.test(mount)
   && /function request\(\) \{\s*if \(ticking\) return;\s*ticking = true;\s*window\.requestAnimationFrame\(paint\);/.test(mount));
@@ -101,11 +103,14 @@ check('the same nav: the three-chevron mark, transparent over the hero and solid
   /M9 10\.5 14 16 9 21\.5/.test(pricing) && /nav\{[^}]*background:transparent/.test(pricing)
   && /nav\.solid\{background:rgba\(0,0,0/.test(pricing) && /nav\.classList\.toggle\('solid'/.test(pricing)
   && /querySelector\('\.pricing-hero'\)/.test(pricing));
-check('and the same mesh behind its hero, in a stage that adds no space',
-  /<div class="hero-stage">\s*<div class="cx-mesh-layer" aria-hidden="true"><canvas id="cx-mesh"><\/canvas><\/div>\s*<section class="pricing-hero">/.test(pricing)
-  && /\.hero-stage\{position:relative;z-index:1;isolation:isolate;overflow:hidden\}/.test(pricing)
-  && /\.hero-stage>\.pricing-hero\{position:relative;z-index:1\}/.test(pricing)
-  && /\.cx-mesh-layer\{position:absolute;inset:0;z-index:0;pointer-events:none;/.test(pricing));
+check('and the same page-wide mesh: fixed, screen-sized, right after the grid, no stage and no mask',
+  /<div class="brand-grid" aria-hidden="true"><\/div>\s*(?:<!--[\s\S]*?-->\s*)?<div class="cx-mesh-layer" aria-hidden="true" data-scroll-fade><canvas id="cx-mesh"><\/canvas><\/div>/.test(pricing)
+  && /\.cx-mesh-layer\{position:fixed;top:0;left:0;right:0;height:100vh;height:100lvh;z-index:0;\s*pointer-events:none\}/.test(pricing)
+  && !/hero-stage/.test(pricing.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, ''))
+  && !/#000 70%,transparent 100%/.test(pricing)
+  && /@media \(prefers-reduced-motion:reduce\)\{\.cx-mesh-layer\{display:none\}\}/.test(pricing));
+check('the pricing hero keeps its own rule, above the layer, in its 1000px box',
+  /\.pricing-hero\{position:relative;z-index:1;text-align:center;padding:9rem clamp\(1rem,5vw,2rem\) 3rem;\s*max-width:1000px;margin:0 auto\}/.test(pricing));
 check('its nav links point at sections the landing page actually has',
   (pricing.match(/href="\/#([a-z-]+)"/g) || []).map((h) => h.slice(8, -1))
     .every((id) => new RegExp('id="' + id + '"').test(index)),
