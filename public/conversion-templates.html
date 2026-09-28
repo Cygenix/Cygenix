@@ -151,6 +151,24 @@ table.ct{border-collapse:collapse;width:100%;font-size:12px}
 /* ── Modal ── */
 .ct-modal{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2000;display:none;align-items:center;justify-content:center;padding:1rem}
 .ct-modal.open{display:flex}
+/* ── Suggest tables ── */
+.ct-link{font-size:11.5px;color:var(--accent);text-decoration:none;white-space:nowrap}
+.ct-link:hover{text-decoration:underline}
+.ct-sg-step{font-size:12.5px;color:var(--text);min-height:1.4em}
+.ct-sg-bar{height:4px;background:var(--bg4);border-radius:2px;margin-top:0.6rem;overflow:hidden}
+.ct-sg-bar span{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.ct-sg-mod{margin-bottom:0.9rem}
+.ct-sg-mh{display:flex;align-items:center;gap:0.6rem;font-weight:600;font-size:12.5px;padding:0.3rem 0;border-bottom:0.5px solid var(--border)}
+.ct-sg-mh .ct-link{font-weight:400}
+.ct-sg-err{font-size:11.5px;color:var(--red);padding:0.3rem 0}
+.ct-sg-none{font-size:11.5px;color:var(--text3);padding:0.3rem 0}
+.ct-sg-row{display:grid;grid-template-columns:22px minmax(140px,1.1fr) 64px 2fr auto;gap:0.5rem;align-items:center;padding:0.28rem 0;border-bottom:0.5px solid var(--border);font-size:12px}
+.ct-sg-row.already{opacity:0.55}
+.ct-sg-row .mono{font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ct-sg-reason{color:var(--text2);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ct-tags{display:flex;gap:0.3rem;margin-top:3px;flex-wrap:wrap}
+.chip.ct-ai{cursor:help}
+.chip.ct-shared{background:var(--amber-bg);color:var(--amber);cursor:help}
 .ct-modal-card{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:min(640px,96vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,0.4)}
 .ct-modal-head{padding:0.85rem 1rem;border-bottom:0.5px solid var(--border);font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:0.5rem}
 .ct-modal-body{padding:0.85rem 1rem;overflow:auto;font-size:12px;line-height:1.6;color:var(--text2)}
@@ -225,6 +243,10 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
       <button class="btn btn-sm" id="ct-stage" onclick="ctOpenStage()" title="Create the staging tables in a database, one at a time — existing tables are skipped and never changed"><i class="ic ic-database"></i> Create staging tables</button>
       <button class="btn btn-sm" id="ct-refresh" onclick="ctRefreshScope(false)" title="Re-read the Configurator estimate and bring the module list into line"><i class="ic ic-sync"></i> Refresh scope</button>
       <button class="btn btn-sm" id="ct-refresh-cols" onclick="ctRefreshColumns()" title="Read each in-scope table's columns from the target database and store them with the template"><i class="ic ic-database"></i> Refresh columns</button>
+      <!-- Suggest tables (AI): proposes target tables for every in-scope
+           module from the live target schema; nothing is added until the
+           preview is reviewed and applied. -->
+      <button class="btn btn-sm" id="ct-suggest-all" onclick="ctSuggest(false)"><i class="ic ic-sparkle"></i> Suggest tables</button>
       <!-- Import / export of the mapping (Sep-2026). Front-end only: the file
            becomes rows in the grid, and Save is still the only thing that
            writes. -->
@@ -305,7 +327,9 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
       <div class="panel-head">
         <div><div class="panel-title" id="ct-tables-title">Target tables</div>
           <div class="panel-sub">Each row is one real target table this module maps to. The staging table is derived from it and can be overridden.</div></div>
-        <span style="margin-left:auto;display:flex;gap:0.4rem">
+        <span style="margin-left:auto;display:flex;gap:0.4rem;align-items:center">
+          <a href="#" id="ct-recalc" class="ct-link" onclick="ctRecalcLoadOrder();return false" title="Renumber load order parents-first from the foreign keys — only rows with no number or one set by Suggest; numbers you typed are kept">Recalculate load order</a>
+          <button class="btn btn-sm" id="ct-suggest-mod" onclick="ctSuggest(true)"><i class="ic ic-sparkle"></i> Suggest</button>
           <button class="btn btn-sm" id="ct-add" onclick="ctOpenPicker()"><i class="ic ic-plus"></i> Add table</button>
         </span>
       </div>
@@ -371,6 +395,35 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
     <div class="ct-modal-head">Templates for this project <span class="muted" id="ct-load-sub" style="font-weight:400;font-size:11.5px"></span></div>
     <div class="ct-modal-body"><ul class="ct-list" id="ct-load-list" style="list-style:none"></ul></div>
     <div class="ct-modal-foot"><button class="btn btn-sm" onclick="ctCloseLoad()">Close</button></div>
+  </div>
+</div>
+
+<!-- Suggest tables: progress. Cancel stops further calls and keeps nothing. -->
+<div class="ct-modal" id="ct-sg-progress" role="dialog" aria-modal="true" aria-label="Suggesting tables">
+  <div class="ct-modal-card" style="width:min(460px,94vw)">
+    <div class="ct-modal-head">Suggesting tables</div>
+    <div class="ct-modal-body">
+      <div id="ct-sg-step" class="ct-sg-step" aria-live="polite">Reading target schema…</div>
+      <div class="ct-sg-bar"><span id="ct-sg-fill"></span></div>
+      <div class="muted" style="font-size:11px;margin-top:0.5rem">Nothing is added until you review the suggestions and choose Apply.</div>
+    </div>
+    <div class="ct-modal-foot"><button class="btn btn-sm" id="ct-sg-cancel" onclick="ctSuggestCancel()">Cancel</button></div>
+  </div>
+</div>
+
+<!-- Suggest tables: review. Grouped by module; High ticked by default. -->
+<div class="ct-modal" id="ct-sg-modal" role="dialog" aria-modal="true" aria-label="Review suggested tables">
+  <div class="ct-modal-card" style="width:min(860px,96vw)">
+    <div class="ct-modal-head">Suggested tables <span class="muted" id="ct-sg-sub" style="font-weight:400;font-size:11.5px"></span>
+      <span style="margin-left:auto;display:flex;gap:0.6rem;font-weight:400;font-size:11.5px">
+        <a href="#" class="ct-link" onclick="ctSuggestTick(null,true);return false">Tick all</a>
+        <a href="#" class="ct-link" onclick="ctSuggestTick(null,false);return false">Untick all</a>
+      </span></div>
+    <div class="ct-modal-body" id="ct-sg-body" style="max-height:62vh;overflow:auto"></div>
+    <div class="ct-modal-foot">
+      <button class="btn btn-sm" onclick="ctSuggestClose()">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="ct-sg-apply" onclick="ctSuggestApply()">Apply selected</button>
+    </div>
   </div>
 </div>
 
@@ -464,7 +517,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- The target's table list, read the way the Schema Explorer reads it:
      one fetch per connection, cached, filtered in memory. -->
 <script src="/cygenix-schema-graph.js?v=b504389038" defer></script>
-<script src="/cygenix-template-model.js?v=1d903bc91b" defer></script>
+<script src="/cygenix-template-model.js?v=830bf506f0" defer></script>
 <!-- Import / export rules (pure; the sheet library itself is fetched only
      when Import or Excel export is first used). -->
 <script src="/cygenix-template-io.js?v=d1247c68f8" defer></script>
@@ -479,6 +532,9 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- The Object Mapping bridge: turning a module's staging→target pairs into
      tagged draft jobs, and taking only those back out again. -->
 <script src="/cygenix-template-mapping.js?v=97560b5f32" defer></script>
+<!-- AI "Suggest tables": orchestration, preview, shared flags and the FK load
+     order. The model calls go through the data proxy's /agent/ routes. -->
+<script src="/cygenix-template-suggest.js?v=cff8dc1d50" defer></script>
 <script>
 'use strict';
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -877,7 +933,18 @@ function ctPatchTable(tableId, field, value){
     if (!t.importFlags.length) delete t.importFlags;
   }
   touchDirty();
-  if (field === 'targetTable' || field === 'loadOrder') render(); else { renderIssues(); renderModules(); }
+  if (field === 'targetTable' || field === 'loadOrder') render();
+  else {
+    renderIssues(); renderModules();
+    // These fields do not redraw the grid (so tabbing on keeps its place),
+    // which left the AI badge on screen after the model had cleared it.
+    // Take it off this row directly once the row is the person's own.
+    if (t && t.source !== 'ai') {
+      const row = document.querySelector('#ct-tables tr[data-id="' + String(tableId).replace(/"/g, '') + '"]');
+      const chip = row && row.querySelector('.ct-ai');
+      if (chip) chip.remove();
+    }
+  }
 }
 function ctRemoveTable(tableId){
   const mod = selectedModule(); if (!mod || isReadOnly()) return;
@@ -895,6 +962,11 @@ function ctMove(tableId, dir){
   if (i < 0 || j < 0 || j >= rows.length) return;
   rows.forEach((t, k) => { t.loadOrder = k + 1; });          // normalise first: duplicates and zeros happen
   const a = rows[i].loadOrder; rows[i].loadOrder = rows[j].loadOrder; rows[j].loadOrder = a;
+  // Moving a row is a person setting the order: every number in this module
+  // is now theirs, and Recalculate will leave it alone. The two rows moved
+  // lose their AI badge, as any other edit would.
+  rows.forEach(t => { t.loadOrderSource = 'user'; });
+  [rows[i], rows[j]].forEach(t => { if (t.source === 'ai') { t.source = 'user'; delete t.aiConfidence; delete t.aiReason; } });
   touchDirty(); render();
 }
 function sortedTables(mod){
@@ -957,6 +1029,156 @@ function ctPickManual(){
   const v = String($('ct-pick-manual').value || '').trim();
   if (!v) return;
   if (ctAddTable(v)) { $('ct-pick-manual').value = ''; $('ct-pick-status').textContent = 'Added "' + v + '" (typed).'; }
+}
+
+/* ── Suggest tables (AI) ────────────────────────────────────────────────────
+   The orchestration, preview model, shared flags and load order live in
+   cygenix-template-suggest.js; this is the page's half: guards, progress,
+   the review, and applying through the model's own add path.
+
+   One run at a time, and never within 3 seconds of the last one started:
+   SG.running is set before anything is awaited and cleared only in the
+   run's own finally, never by a callback it sets off. Cancel aborts the
+   calls in flight, starts no more, and discards whatever came back. */
+const SG = { running: false, lastAt: 0, ctrl: null, preview: null, fks: null };
+function sgBlocker(){
+  if (!CT.tpl) return 'Open or create a template first';
+  if (isReadOnly()) return 'A published version is frozen — start a new draft from it';
+  if (!window.CygenixTemplateSuggest) return 'The suggester did not load — refresh the page';
+  if (!(window.CygenixSchemaGraph && CygenixSchemaGraph.hasConnection && CygenixSchemaGraph.hasConnection('tgt')))
+    return 'No target connection — set one in Connections, or select a profile';
+  if (!(window.CygenixModel && CygenixModel.userKey && CygenixModel.userKey()))
+    return 'Suggest runs on your own Anthropic API key — add it in Settings › General';
+  return '';
+}
+function renderSuggestButtons(){
+  const why = sgBlocker();
+  const mod = selectedModule();
+  const all = $('ct-suggest-all'), one = $('ct-suggest-mod');
+  if (all) {
+    all.disabled = !!why || SG.running || !!CT.inflight;
+    all.title = why || (SG.running ? 'Suggesting — one moment' : 'Suggest target tables for every in-scope module from the target schema. You review them before anything is added.');
+  }
+  if (one) {
+    const perWhy = why || (!mod ? 'Pick a module first' : (mod.inScope === false ? 'This module is no longer in scope' : ''));
+    one.disabled = !!perWhy || SG.running || !!CT.inflight;
+    one.title = perWhy || (SG.running ? 'Suggesting — one moment' : 'Suggest target tables for ' + mod.module + ' from the target schema');
+  }
+}
+function sgProgress(text, done, total){
+  const s = $('ct-sg-step'); if (s) s.textContent = text;
+  const f = $('ct-sg-fill'); if (f) f.style.width = (total ? Math.round(100 * done / total) : 0) + '%';
+}
+async function sgGraph(){
+  if (CT.graph && CT.graph.ok) return CT.graph;
+  const g = await ensureGraph();
+  if (g) return g;
+  // Another read is already in flight (the picker's): wait for it.
+  CT.graph = await CygenixSchemaGraph.load('tgt');
+  return CT.graph;
+}
+async function ctSuggest(one){
+  if (SG.running) return;                                   // one run at a time
+  if (Date.now() - SG.lastAt < 3000) { note('Please wait a moment before suggesting again.', 'warn'); return; }
+  const why = sgBlocker();
+  if (why) { note(why, 'warn'); return; }
+  const mods = one
+    ? [selectedModule()].filter(m => m && m.inScope !== false)
+    : (CT.tpl.modules || []).filter(m => m.inScope !== false);
+  if (!mods.length) { note(one ? 'Pick a module that is in scope first.' : 'No modules are in scope — Refresh scope first.', 'warn'); return; }
+  SG.running = true; SG.lastAt = Date.now(); SG.ctrl = new AbortController();
+  const signal = SG.ctrl.signal;
+  renderSuggestButtons();
+  sgProgress('Reading target schema…', 0, 0);
+  $('ct-sg-progress').classList.add('open');
+  try {
+    const g = await sgGraph();
+    if (signal.aborted) return;
+    if (!g || !g.ok) throw new Error('Target database not available (' + ((g && g.reason) || 'no connection') + ')');
+    const res = await CygenixTemplateSuggest.run({
+      tpl: CT.tpl,
+      modules: mods.map(m => ({ key: m.module, name: m.module, notes: m.notes || '' })),
+      graph: g,
+      columnsOf: (t) => CygenixSchemaGraph.columns('tgt', t.schema || 'dbo', t.name).then(n => (n && n.columns) || []),
+      onProgress: sgProgress,
+      signal,
+    });
+    if (signal.aborted || !res || res.cancelled) { note('Suggest cancelled — nothing was added.'); return; }
+    SG.preview = res.preview; SG.fks = res.fks;
+    $('ct-sg-progress').classList.remove('open');
+    sgRenderPreview();
+    $('ct-sg-modal').classList.add('open');
+    if (res.shortlistErrors) note('Some of the table list could not be shortlisted (' + res.shortlistErrors + ' call' + (res.shortlistErrors === 1 ? '' : 's') + ' failed); the suggestions below come from the rest.', 'warn');
+  } catch (e) {
+    if (!signal.aborted) note('Suggest tables failed: ' + String((e && e.message) || e).slice(0, 240), 'crit');
+  } finally {
+    $('ct-sg-progress').classList.remove('open');
+    SG.running = false; SG.lastAt = Date.now(); SG.ctrl = null;
+    renderSuggestButtons();
+  }
+}
+function ctSuggestCancel(){
+  if (SG.ctrl) SG.ctrl.abort();
+  $('ct-sg-progress').classList.remove('open');
+}
+const SG_CONF = { high: 'ok', medium: 'warn', low: 'info' };
+function sgRenderPreview(){
+  const pv = SG.preview; if (!pv) return;
+  let total = 0, checked = 0;
+  $('ct-sg-body').innerHTML = pv.groups.map((g, gi) => {
+    const fresh = g.rows.filter(r => !r.already);
+    total += fresh.length; checked += fresh.filter(r => r.checked).length;
+    return '<div class="ct-sg-mod"><div class="ct-sg-mh">' + esc(g.module)
+      + '<span class="muted" style="font-weight:400;font-size:11px">' + fresh.length + ' suggested' + (g.rows.length > fresh.length ? ' · ' + (g.rows.length - fresh.length) + ' already added' : '') + '</span>'
+      + (fresh.length ? '<span style="margin-left:auto;display:flex;gap:0.6rem"><a href="#" class="ct-link" onclick="ctSuggestTick(' + gi + ',true);return false">tick all</a>'
+          + '<a href="#" class="ct-link" onclick="ctSuggestTick(' + gi + ',false);return false">untick all</a></span>' : '') + '</div>'
+      + (g.error ? '<div class="ct-sg-err">Could not rank this module: ' + esc(g.error) + '</div>' : '')
+      + (!g.error && !g.rows.length ? '<div class="ct-sg-none">Nothing in the target looked like this module.</div>' : '')
+      + g.rows.map((r, ri) => '<label class="ct-sg-row' + (r.already ? ' already' : '') + '">'
+          + (r.already ? '<span></span>' : '<input type="checkbox"' + (r.checked ? ' checked' : '') + ' onchange="ctSuggestCheck(' + gi + ',' + ri + ',this.checked)">')
+          + '<span class="mono" title="' + esc(r.table) + '">' + esc(r.table) + '</span>'
+          + '<span class="chip ' + SG_CONF[r.confidence] + '">' + esc(r.confidence[0].toUpperCase() + r.confidence.slice(1)) + '</span>'
+          + '<span class="ct-sg-reason" title="' + esc(r.reason) + '">' + (r.already ? 'already added' : esc(r.reason)) + '</span>'
+          + (r.shared.length ? '<span class="chip ct-shared" title="' + esc('Also in: ' + r.shared.join(', ')) + '">Shared</span>' : '<span></span>')
+          + '</label>').join('')
+      + '</div>';
+  }).join('');
+  $('ct-sg-sub').textContent = '— ' + total + ' suggested across ' + pv.groups.length + ' module' + (pv.groups.length === 1 ? '' : 's');
+  const b = $('ct-sg-apply');
+  b.textContent = 'Apply selected (' + checked + ')';
+  b.disabled = !checked;
+}
+function ctSuggestCheck(gi, ri, on){
+  const r = SG.preview && SG.preview.groups[gi] && SG.preview.groups[gi].rows[ri];
+  if (r && !r.already) r.checked = !!on;
+  sgRenderPreview();
+}
+function ctSuggestTick(gi, on){
+  if (!SG.preview) return;
+  SG.preview.groups.forEach((g, i) => { if (gi == null || gi === i) g.rows.forEach(r => { if (!r.already) r.checked = !!on; }); });
+  sgRenderPreview();
+}
+function ctSuggestClose(){ $('ct-sg-modal').classList.remove('open'); SG.preview = null; }
+function ctSuggestApply(){
+  if (!SG.preview || isReadOnly()) return;
+  const pv = SG.preview; SG.preview = null;          // one apply per preview
+  $('ct-sg-modal').classList.remove('open');
+  const r = CygenixTemplateSuggest.apply(CT.tpl, pv, TM, userName(), SG.fks || []);
+  if (!r.added) { note('Nothing was added.'); return; }
+  touchDirty(); render();
+  note('Added ' + r.added + ' table' + (r.added === 1 ? '' : 's') + ' across ' + r.modules + ' module' + (r.modules === 1 ? '' : 's')
+    + '. ' + r.shared + ' shared. Load order set on ' + r.ordered + ' row' + (r.ordered === 1 ? '' : 's') + '.'
+    + (r.cycles ? ' ' + r.cycles + ' table' + (r.cycles === 1 ? ' is' : 's are') + ' in an FK cycle — see their notes.' : '')
+    + ' Not saved yet.', 'ok');
+}
+async function ctRecalcLoadOrder(){
+  if (!CT.tpl || isReadOnly() || !window.CygenixTemplateSuggest) return;
+  if (!confirm('Recalculate the load order from the foreign keys?\n\nRows with no load order, or one set by Suggest tables, are renumbered parents-first (10, 20, 30…). Numbers you typed or set by moving rows are left alone.')) return;
+  const g = await sgGraph();
+  if (!g || !g.ok) { note('Target database not available (' + ((g && g.reason) || 'no connection') + ') — the foreign keys are needed to order the tables.', 'warn'); return; }
+  const r = CygenixTemplateSuggest.applyLoadOrder(CT.tpl, CygenixTemplateSuggest.edgesByName(g), 'recalc');
+  if (r.set) { touchDirty(); render(); }
+  note('Load order set on ' + r.set + ' row' + (r.set === 1 ? '' : 's') + '.' + (r.cycles ? ' ' + r.cycles + ' in an FK cycle — see their notes.' : '') + (r.set ? ' Not saved yet.' : ''), r.set ? 'ok' : '');
 }
 
 /* ── Render ─────────────────────────────────────────────────────────────── */
@@ -1057,18 +1279,28 @@ function renderTables(){
   const ro = isReadOnly() || (mod && mod.inScope === false);
   $('ct-tables-title').textContent = mod ? 'Target tables — ' + mod.module + (mod.inScope === false ? ' (no longer in scope)' : '') : 'Target tables';
   $('ct-add').disabled = !mod || ro;
+  const rl = $('ct-recalc'); if (rl) rl.style.display = (!mod || ro) ? 'none' : '';
+  renderSuggestButtons();
   $('ct-modnotes').value = mod ? (mod.notes || '') : '';
   $('ct-modnotes').disabled = !mod || ro;
   if (!mod) { tb.innerHTML = '<tr><td colspan="6" class="empty">Pick a module on the left.</td></tr>'; return; }
   const rows = sortedTables(mod);
   if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" class="empty">No target tables yet. Click <b>Add table</b> to choose them from the target database.</td></tr>'; return; }
   const IO = window.CygenixTemplateIO;
+  // Shared: live, whoever added the row — any target table that sits in more
+  // than one module says which others, in its tooltip.
+  const SGM = window.CygenixTemplateSuggest ? CygenixTemplateSuggest.membership(CT.tpl) : {};
   tb.innerHTML = rows.map((t, i) => {
     const flags = IO ? IO.flagsOf(t) : [];
     const reason = flags.map(f => f.reason).join(' ');
+    const others = ((SGM[String(t.targetTable).trim().toLowerCase()]) || []).filter(m => m !== mod.module);
+    const tags = (t.source === 'ai'
+        ? '<span class="chip info ct-ai" title="' + esc('Suggested by AI — ' + (t.aiConfidence || '') + ' confidence' + (t.aiReason ? ': ' + t.aiReason : '') + '. Editing the row makes it yours.') + '">AI</span>' : '')
+      + (others.length ? '<span class="chip ct-shared" title="' + esc('Also in: ' + others.join(', ')) + '">Shared</span>' : '');
     return '<tr data-id="' + esc(t.id) + '"' + (flags.length ? ' class="flagged"' : '') + '>'
     + '<td><input class="form-input mono" value="' + esc(t.targetTable) + '"' + (ro ? ' disabled' : '') + ' onchange="ctPatchTable(\'' + escArg(t.id) + '\',\'targetTable\',this.value)">'
-      + (flags.length ? '<div class="flag" title="' + esc(reason) + '"><i class="ic ic-warning"></i> ' + esc(IO.flagText(t)) + '</div>' : '') + '</td>'
+      + (flags.length ? '<div class="flag" title="' + esc(reason) + '"><i class="ic ic-warning"></i> ' + esc(IO.flagText(t)) + '</div>' : '')
+      + (tags ? '<div class="ct-tags">' + tags + '</div>' : '') + '</td>'
     + '<td><input class="form-input mono" value="' + esc(t.stagingTable) + '"' + (ro ? ' disabled' : '') + ' onchange="ctPatchTable(\'' + escArg(t.id) + '\',\'stagingTable\',this.value)" title="Derived as prefix + target name; edit to override"></td>'
     + '<td style="text-align:center"><input type="checkbox"' + (t.required !== false ? ' checked' : '') + (ro ? ' disabled' : '') + ' onchange="ctPatchTable(\'' + escArg(t.id) + '\',\'required\',this.checked)" aria-label="Required"></td>'
     + '<td><input class="form-input ord" type="number" min="1" value="' + esc(t.loadOrder || i + 1) + '"' + (ro ? ' disabled' : '') + ' onchange="ctPatchTable(\'' + escArg(t.id) + '\',\'loadOrder\',this.value)"></td>'
@@ -1105,6 +1337,7 @@ function renderButtons(){
   $('ct-refresh').disabled = ro || !!CT.inflight;
   $('ct-import').disabled = ro || !!CT.inflight || !!CT.importing;
   $('ct-export').disabled = !!CT.inflight;
+  renderSuggestButtons();
   // Reading the target's columns changes the draft, so a published version
   // is read-only here too: its snapshot is the record of what was asked for.
   const rc = $('ct-refresh-cols');

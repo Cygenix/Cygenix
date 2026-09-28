@@ -152,6 +152,17 @@
       columns: Array.isArray(o.columns) ? o.columns : []
     };
   }
+  /* Where a row and its load order came from (optional; a template saved
+     before these existed has none and loads unchanged):
+       source           'ai' — added by Suggest tables, and not edited since
+                        (shows the AI badge); 'user' — anything else
+       aiConfidence     'high' | 'medium' | 'low', with source 'ai'
+       aiReason         the one-line reason, with source 'ai'
+       loadOrderSource  'user' — typed or moved by a person: never overwritten
+                        'ai'   — set from the foreign keys
+                        'auto' — the placeholder tmAddTable assigns (row
+                                 count + 1), which nobody chose
+     A person's edit to the row makes it theirs: see tmUpdateTable. */
 
   function tmNewModule(name) {
     return {
@@ -324,7 +335,7 @@
     if (!t.targetTable) return null;
     var dupe = mod.tables.some(function (x) { return tmSameName(x.targetTable, t.targetTable); });
     if (dupe) return null;
-    if (!t.loadOrder) t.loadOrder = mod.tables.length + 1;
+    if (!t.loadOrder) { t.loadOrder = mod.tables.length + 1; t.loadOrderSource = 'auto'; }
     if (tpl.stagingPrefix) t.stagingTable = tmStagingTableName(t.targetTable, tpl.stagingPrefix);
     mod.tables.push(t);
     tmTouch(tpl, who);
@@ -338,6 +349,12 @@
       if (mod.tables[i].id !== tableId) continue;
       var t = mod.tables[i];
       if (patch && typeof patch === 'object') {
+        // A person editing the row makes it theirs: the AI badge goes, and
+        // a load order they type is never recalculated over. Columns are not
+        // an edit — Refresh columns writes them.
+        var edit = ['targetTable', 'stagingTable', 'required', 'loadOrder', 'notes'].some(function (k) { return k in patch; });
+        if (edit && t.source === 'ai') { t.source = 'user'; delete t.aiConfidence; delete t.aiReason; }
+        if ('loadOrder' in patch) t.loadOrderSource = 'user';
         if ('targetTable' in patch) {
           t.targetTable = tmTrim(patch.targetTable);
           t.stagingTable = tmStagingTableName(t.targetTable, tpl.stagingPrefix);

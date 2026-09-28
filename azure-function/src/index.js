@@ -18,6 +18,9 @@ require('./profile-builder');
 require('./project-memory');
 require('./agent-dependency-planner');
 require('./agent-scope');
+// Conversion Templates: AI table suggestion (shortlist + rank). Side-effect
+// import registers the two routes, as every module above does.
+require('./template-suggest-tables');
 // Encrypted sync for saved-connection credentials — /api/secrets/{action}.
 // Anonymous at the host, strict Entra JWT in code; see the file's header.
 require('./conn-secrets');
