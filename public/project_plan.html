@@ -137,6 +137,53 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 .pp-swatch.sel{border-color:var(--accent)}
 
 .pp-stats{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto}
+.pp-stats .pp-late-txt{color:var(--red);font-weight:600}
+
+/* ── Actuals (plan v2) ──────────────────────────────────────────────────────
+   Minimal clutter is the rule: a 7px dot before each object, no words. The
+   dot is drawn inside a 15px button so it can be hit and focused; the colour
+   IS the status. Tokens, not hex, so a theme that remaps state colours
+   (financial) moves the dots with it. Measured against the task column
+   (tests/browser/plan-actuals.smoke.js): grey 4.3:1, blue 4.1:1, green
+   6.1:1, red 6.6:1 in the console palette; 4.1, 4.0, 4.1 and 5.2 in the
+   financial one — all over the 3:1 a non-text mark needs. */
+.pp-obj{display:flex;align-items:center;gap:3px;color:var(--text3);font-size:10.5px;line-height:1.45}
+.pp-obj-n{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp-dot{width:15px;height:15px;flex:0 0 15px;padding:0;margin:0 0 0 -4px;border:0;background:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;border-radius:50%}
+.pp-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--color-neutral-600,#7a7a7d);box-sizing:border-box}
+.pp-dot.is-active::before{background:var(--color-accent,#5980a6)}
+.pp-dot.is-done::before{background:var(--green)}
+.pp-dot.is-late::before{background:var(--red)}
+/* Done late stays green; a thin red ring carries the flag. */
+.pp-dot.is-donelate::before{box-shadow:0 0 0 1.5px var(--red)}
+.pp-dot:hover{background:var(--bg3)}
+.pp-dot:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+.pp-title-row{display:flex;align-items:center;gap:3px}
+.pp-more{border:0;background:none;padding:0 0 0 14px;color:var(--text3);font-size:10.5px;cursor:pointer;font-family:inherit;text-decoration:underline dotted}
+.pp-more:hover{color:var(--accent)}
+.pp-rollup{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:1px}
+.pp-rollup .pp-late-txt{color:var(--red)}
+.pp-note{font-size:10px;color:var(--text3);font-style:italic;margin-top:2px}
+/* Weeks past the planned end while the task is still open: red hatching,
+   layered over whatever the cell holds (it can carry a milestone's inline
+   background, hence !important on the IMAGE only — the colour stays). */
+.pp td.pp-overdue{background-image:repeating-linear-gradient(45deg,rgba(156,63,56,0.55) 0 2px,transparent 2px 6px) !important}
+/* The status popover. Fixed, outside the grid, so re-rendering the grid on
+   save never destroys it mid-edit. */
+.pp-pop{position:fixed;z-index:95;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);box-shadow:var(--shadow-strong,0 12px 32px rgba(43,43,45,.22));padding:0.6rem 0.7rem;width:236px;font-size:12px}
+.pp-pop[hidden]{display:none}
+.pp-pop-h{font-weight:600;margin-bottom:0.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp-pop-sub{font-size:10.5px;color:var(--text3);margin-bottom:0.45rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp-pop-seg{display:flex;gap:2px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:7px;padding:2px;margin-bottom:0.5rem}
+.pp-pop-seg button{flex:1;border:0;background:transparent;color:var(--text2);font-size:11px;font-family:var(--serif);padding:4px 0;border-radius:5px;cursor:pointer}
+.pp-pop-seg button[aria-pressed="true"]{background:var(--bg2);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08)}
+.pp-pop-dates{display:grid;grid-template-columns:auto 1fr;gap:0.3rem 0.5rem;align-items:center;font-size:11px;color:var(--text3)}
+.pp-pop-dates input{font-size:11px;padding:0.2rem 0.35rem}
+.pp-pop-foot{font-size:10px;color:var(--text3);margin-top:0.45rem}
+.pp-legend{display:none;flex-wrap:wrap;gap:12px;align-items:center;font-size:10px;color:var(--text3);margin-top:0.5rem}
+.pp-legend .k{display:inline-flex;align-items:center;gap:3px}
+.pp-legend .pp-dot{cursor:default;margin:0}
+.pp-legend .box{width:14px;height:10px;border:0.5px solid var(--border2);display:inline-block}
 
 /* ── Portfolio view: every plan on one shared timeline ── */
 :root{--pfwk:15px;--pfleft:330px}
@@ -190,9 +237,12 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
 /* ── Print: the grid IS the report ── */
 @media print{
   body{padding-left:0;background:#fff}
-  #cyg-sidebar-mount,.page-header .pp-actions,.pp-toolbar,.pp-drawer{display:none !important}
+  #cyg-sidebar-mount,.page-header .pp-actions,.pp-toolbar,.pp-drawer,.pp-pop,.pp-more{display:none !important}
   .pp-wrap{max-height:none;overflow:visible}
   .page{padding:0.5rem}
+  /* Dots, darker bars and hatching are colour: print them as colour. */
+  .pp,.pp-legend{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pp-legend:not([hidden]){display:flex}
 }
 </style>
   <!-- The Assistant's door to the Drive: read the whole Drive, write only in
@@ -234,7 +284,7 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
      Search page. Before the sidebar so it is there when the field is typed in. -->
 <script src="/cygenix-menu-index.js?v=3d85838633" defer></script>
 <script src="/cygenix-sidebar.js?v=54d5d4b743" defer></script>
-<script src="/cygenix-project-plan.js?v=e0223dd788" defer></script>
+<script src="/cygenix-project-plan.js?v=174e647756" defer></script>
 <!-- The Configurator's engine: the "From Configurator" import computes the
      estimate here rather than duplicating any of its numbers. -->
 <script src="/cygenix-effort-model.js?v=6b544c7a30" defer></script>
@@ -311,6 +361,18 @@ table.pp{border-collapse:separate;border-spacing:0;font-size:11.5px}
     </div>
     <div class="pp-wrap"><table class="pp" id="pp-grid" aria-label="Project plan grid"></table></div>
   </div>
+  <!-- Printed at the foot of the report once any status is set; hidden on
+       screen, where the dots' tooltips say the same thing. -->
+  <div class="pp-legend" id="pp-legend" hidden>
+    <span class="k"><span class="pp-dot"></span>not started</span>
+    <span class="k"><span class="pp-dot is-active"></span>active</span>
+    <span class="k"><span class="pp-dot is-done"></span>done</span>
+    <span class="k"><span class="pp-dot is-late"></span>late</span>
+    <span class="k"><span class="pp-dot is-done is-donelate"></span>done late</span>
+    <span class="k"><span class="box" id="pp-legend-bar"></span>work done</span>
+    <span class="k"><span class="box" style="background:repeating-linear-gradient(45deg,rgba(156,63,56,0.55) 0 2px,transparent 2px 6px)"></span>overdue</span>
+  </div>
+  <div class="pp-pop" id="pp-pop" role="dialog" aria-label="Object status" hidden></div>
 
   <!-- Task / phase editor drawer -->
   <div class="pp-drawer" id="pp-drawer" onclick="if(event.target===this)ppCloseDrawer()">
@@ -336,7 +398,24 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
   c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
-const PPState = { tool: 'work', painting: false, store: null };
+const PPState = { tool: 'work', painting: false, store: null, expanded: new Set() };
+
+// The v1 → v2 recovery source: every Configurator estimate, normalised the
+// way the import normalised it, and the model's own compute. The engine
+// accepts what this returns only when it agrees with what survived in the
+// plan (see ppAcceptRecovered), so a changed estimate cannot supply the
+// wrong objects.
+function ppRecoverSource(){
+  const PP = window.CygenixProjectPlan, EM = window.CygenixEffortModel;
+  if (!EM) return null;
+  try {
+    const st = JSON.parse(localStorage.getItem('cygenix_effort_estimates_v1') || 'null');
+    if (!st || !st.estimates) return null;
+    const norm = {};
+    for (const [k, e] of Object.entries(st.estimates)) { try { norm[k] = EM.emNormalize(e); } catch (x) {} }
+    return PP.ppRecoverFromEstimates(norm, (e) => EM.emCompute(e));
+  } catch (e) { return null; }
+}
 
 function ppLoadStore(){
   const PP = window.CygenixProjectPlan;
@@ -347,9 +426,21 @@ function ppLoadStore(){
     s = { active: doc.name, plans: {} };
     s.plans[doc.name] = doc;
   }
-  for (const k of Object.keys(s.plans)) s.plans[k] = PP.ppNormalize(s.plans[k]);
+  // Migrate v1 plans once, and write the result straight back so it never
+  // runs again. This store is local to the browser (it is not one of the
+  // keys cygenix-cosmos-sync.js mirrors), so there is no newer cloud copy
+  // for the write to overwrite.
+  let migrated = false, recover;
+  for (const k of Object.keys(s.plans)){
+    if (PP.ppIsLegacy(s.plans[k])){
+      migrated = true;
+      if (recover === undefined) recover = ppRecoverSource();
+      s.plans[k] = PP.ppNormalize(s.plans[k], { recover });
+    } else s.plans[k] = PP.ppNormalize(s.plans[k]);
+  }
   if (!s.plans[s.active]) s.active = Object.keys(s.plans)[0];
   PPState.store = s;
+  if (migrated) ppSave();
   return s;
 }
 function ppSave(){
@@ -487,14 +578,14 @@ function ppAddPhase(){
   // key deliverables and is picked by hand, never handed out automatically.
   const phase = { id: PP.ppId(), name: 'New phase', color: doc.phases.length % PP.PP_AUTO_TINTS };
   doc.phases.push(phase);
-  doc.tasks.push({ id: PP.ppId(), phaseId: phase.id, title: 'New task', resource: '', comment: '' });
+  doc.tasks.push({ id: PP.ppId(), phaseId: phase.id, title: 'New task', resource: '', comment: '', objects: [], detail: '' });
   ppSave(); ppRenderGrid();
   ppEditPhase(phase.id);
 }
 function ppAddTask(phaseId){
   const PP = window.CygenixProjectPlan;
   const doc = ppDoc();
-  const t = { id: PP.ppId(), phaseId, title: 'New task', resource: '', comment: '' };
+  const t = { id: PP.ppId(), phaseId, title: 'New task', resource: '', comment: '', objects: [], detail: '' };
   doc.tasks.push(t);
   ppSave(); ppRenderGrid();
   ppEditTask(t.id);
@@ -519,8 +610,14 @@ function ppEditTask(taskId){
   if (!t) return;
   $('pp-drawer-title').textContent = 'Task';
   $('pp-drawer-body').innerHTML =
-      '<div style="margin-bottom:0.7rem"><span class="form-label">Task — first line is the title, following lines list the detail</span>'
-    + '<textarea id="pp-e-title">' + esc(t.title) + '</textarea></div>'
+      '<div style="margin-bottom:0.7rem"><span class="form-label">Task</span>'
+    + '<input id="pp-e-title" class="form-input" style="width:100%" value="' + esc(t.title) + '"></div>'
+    + '<div style="margin-bottom:0.7rem"><span class="form-label">Objects — one per line; each gets its own status</span>'
+    + '<textarea id="pp-e-objects" style="min-height:120px">' + esc((t.objects || []).join('\n')) + '</textarea>'
+    + (t.objectsIncomplete ? '<div class="pp-note">Objects incomplete — this list was cut short in an older version of the plan. '
+        + 'Add the missing ones here, or re-import from the Configurator.</div>' : '') + '</div>'
+    + '<div style="margin-bottom:0.7rem"><span class="form-label">Notes</span>'
+    + '<textarea id="pp-e-detail" style="min-height:48px">' + esc(t.detail || '') + '</textarea></div>'
     + '<div class="pp-row">'
     + '<div><span class="form-label">Resource</span><input id="pp-e-res" class="form-input" style="width:100%" value="' + esc(t.resource) + '"></div>'
     + '<div><span class="form-label">Comment</span><input id="pp-e-com" class="form-input" style="width:100%" value="' + esc(t.comment) + '"></div>'
@@ -534,17 +631,33 @@ function ppEditTask(taskId){
   $('pp-drawer').classList.add('open');
 }
 function ppSaveTask(taskId){
-  const t = ppDoc().tasks.find(x => x.id === taskId);
+  const PP = window.CygenixProjectPlan;
+  const doc = ppDoc();
+  const t = doc.tasks.find(x => x.id === taskId);
   if (!t) return;
-  t.title = $('pp-e-title').value.slice(0, 600);
+  t.title = ($('pp-e-title').value.split('\n')[0] || '').trim().slice(0, 200) || 'Untitled task';
+  const before = (t.objects || []).join('\n');
+  t.objects = PP.ppCleanObjects($('pp-e-objects').value.split('\n'));
+  t.detail = $('pp-e-detail').value.slice(0, 2000);
   t.resource = $('pp-e-res').value.slice(0, 60);
   t.comment = $('pp-e-com').value.slice(0, 200);
+  // Someone who has edited the list has taken it over: the flag goes.
+  if (t.objects.join('\n') !== before) delete t.objectsIncomplete;
+  // A status belongs to a name. Removing the name (explicitly, here) removes
+  // its status; so does giving a task objects where it had a task-level one.
+  const keys = new Set(PP.ppTaskKeys(t));
+  const bucket = doc.actuals && doc.actuals[t.id];
+  if (bucket){
+    for (const k of Object.keys(bucket)) if (!keys.has(k)) delete bucket[k];
+    if (!Object.keys(bucket).length) delete doc.actuals[t.id];
+  }
   ppSave(); ppCloseDrawer(); ppRenderGrid();
 }
 function ppDeleteTask(taskId){
   const doc = ppDoc();
   if (!window.confirm('Delete this task and its painted weeks?')) return;
   doc.tasks = doc.tasks.filter(x => x.id !== taskId);
+  if (doc.actuals) delete doc.actuals[taskId];
   for (const k of Object.keys(doc.cells)) if (k.startsWith(taskId + '|')) delete doc.cells[k];
   ppSave(); ppCloseDrawer(); ppRenderGrid();
 }
@@ -590,6 +703,7 @@ function ppDeletePhase(phaseId){
   const gone = new Set(doc.tasks.filter(t => t.phaseId === phaseId).map(t => t.id));
   doc.tasks = doc.tasks.filter(t => t.phaseId !== phaseId);
   for (const k of Object.keys(doc.cells)) if (gone.has(k.split('|')[0])) delete doc.cells[k];
+  if (doc.actuals) for (const id of gone) delete doc.actuals[id];
   ppSave(); ppCloseDrawer(); ppRenderGrid();
 }
 
@@ -631,6 +745,40 @@ function ppTodayIso(d){
 function ppNowIndex(startYm, months){
   return window.CygenixProjectPlan.ppNowIndex(startYm, months, ppTodayIso());
 }
+// The same calculation without the window clamp, for lateness: a plan whose
+// last month has passed must still be able to be late.
+function ppNowWeek(doc){
+  return window.CygenixProjectPlan.ppWeekIndex(doc.timeline.start, ppTodayIso());
+}
+// "March W2" for a grid column, including columns past the plan's end.
+function ppColLabel(doc, i){
+  const PP = window.CygenixProjectPlan;
+  if (i == null || i < 0) return '';
+  const ms = PP.ppMonths(doc.timeline.start, Math.min(PP.PP_MAX_MONTHS, Math.floor(i / PP.PP_WEEKS) + 1));
+  const m = ms[Math.floor(i / PP.PP_WEEKS)];
+  return (m ? m.label : 'week ' + (i + 1)) + ' W' + ((i % PP.PP_WEEKS) + 1);
+}
+
+// ── Actuals: one dot ─────────────────────────────────────────────────────
+const PP_STATUS_WORD = { not_started: 'Not started', active: 'Active', done: 'Done' };
+function ppDotHtml(doc, task, key, lateNow){
+  const PP = window.CygenixProjectPlan;
+  const obj = key === PP.PP_TASK_KEY ? '' : key;
+  const st = PP.ppObjectState(doc, task, obj, lateNow);
+  const cls = st.lateKind === 'done_late' ? 'is-done is-donelate'
+    : st.late ? 'is-late' : 'is-' + (st.status === 'not_started' ? 'none' : st.status);
+  const rec = st.record || {};
+  const tip = [(obj || task.title) + ' — ' + PP_STATUS_WORD[st.status] + (st.late ? ' (' + PP.PP_LATE_LABEL[st.lateKind] + ')' : '')];
+  if (rec.startedAt) tip.push('Started ' + rec.startedAt);
+  if (rec.doneAt) tip.push('Done ' + rec.doneAt);
+  tip.push(st.first == null ? 'No planned weeks' : 'Planned ' + ppColLabel(doc, st.first)
+    + (st.last !== st.first ? ' – ' + ppColLabel(doc, st.last) : ''));
+  if (st.record) tip.push('Source: ' + (rec.source || 'manual'));
+  tip.push('Click to change');
+  return '<button type="button" class="pp-dot ' + cls + '" data-task="' + esc(task.id) + '" data-key="' + esc(key) + '"'
+    + ' title="' + esc(tip.join('\n')) + '" aria-label="' + esc((obj || task.title) + ': ' + PP_STATUS_WORD[st.status]
+    + (st.late ? ', ' + PP.PP_LATE_LABEL[st.lateKind] : '') + '. Change status') + '"></button>';
+}
 
 // ── Rendering ─────────────────────────────────────────────────────────────
 let ppScrolledToNow = false;
@@ -643,6 +791,11 @@ function ppRenderGrid(){
   $('pp-months').value = doc.timeline.months;
   const nowIdx = ppNowIndex(doc.timeline.start, months.length);
   const nowMonth = nowIdx == null ? -1 : Math.floor(nowIdx / PP.PP_WEEKS);
+  // Actuals. No red anywhere until the first status is set in this plan:
+  // a plan nobody records against is not late, it is untracked.
+  const tracking = PP.ppTracking(doc);
+  const nowWeek = ppNowWeek(doc);
+  const lateNow = tracking ? nowWeek : null;
 
   let h = '<thead><tr>'
     + '<th class="pp-left pp-c-phase" rowspan="2"></th>'
@@ -669,7 +822,15 @@ function ppRenderGrid(){
   for (const r of rows){
     num++;
     const pal = PP.PP_PALETTE[r.phase.color] || PP.PP_PALETTE[0];
-    const lines = String(r.task.title).split('\n');
+    const objs = r.task.objects || [];
+    const sum = PP.ppTaskSummary(doc, r.task, lateNow);
+    const span = tracking ? PP.ppTaskActualSpan(doc, r.task, nowWeek) : null;
+    const planned = PP.ppTaskWeeks(doc, r.task.id);
+    const lastPlanned = planned.length ? planned[planned.length - 1] : null;
+    const overdueTo = (tracking && !sum.complete && lastPlanned != null && lateNow != null) ? lateNow : null;
+    // "+N more" is display only — the stored list is always whole.
+    const open = PPState.expanded.has(r.task.id);
+    const shown = open ? objs : objs.slice(0, PP_OBJ_SHOWN);
     h += '<tr>';
     if (r.first){
       h += '<td class="pp-left pp-c-phase pp-phase-cell" rowspan="' + r.span + '" style="background:'
@@ -678,9 +839,20 @@ function ppRenderGrid(){
         + esc(r.phase.name) + '</span></td>';
     }
     h += '<td class="pp-left pp-c-num">' + num + '</td>'
-      + '<td class="pp-left pp-c-task"><div class="pp-task-title" onclick="ppEditTask(\'' + esc(r.task.id) + '\')">'
-      + esc(lines[0] || '(untitled)') + '</div>'
-      + (lines.length > 1 ? '<div class="pp-task-lines">' + esc(lines.slice(1).join('\n')) + '</div>' : '')
+      + '<td class="pp-left pp-c-task"><div class="pp-title-row">'
+      + (objs.length ? '' : ppDotHtml(doc, r.task, PP.PP_TASK_KEY, lateNow))
+      + '<div class="pp-task-title" onclick="ppEditTask(\'' + esc(r.task.id) + '\')">'
+      + esc(r.task.title || '(untitled)') + '</div></div>'
+      + (sum.any ? '<div class="pp-rollup">' + sum.done + '/' + sum.total + ' done'
+          + (sum.late ? ' · <span class="pp-late-txt">' + sum.late + ' late</span>' : '')
+          + (sum.doneLate ? ' · ' + sum.doneLate + ' done late' : '') + '</div>' : '')
+      + (r.task.detail ? '<div class="pp-task-lines">' + esc(r.task.detail) + '</div>' : '')
+      + shown.map(o => '<div class="pp-obj">' + ppDotHtml(doc, r.task, o, lateNow)
+          + '<span class="pp-obj-n">' + esc(o) + '</span></div>').join('')
+      + (objs.length > PP_OBJ_SHOWN ? '<button type="button" class="pp-more" data-more="' + esc(r.task.id) + '">'
+          + (open ? 'show fewer' : '+' + (objs.length - PP_OBJ_SHOWN) + ' more') + '</button>' : '')
+      + (r.task.objectsIncomplete ? '<div class="pp-note" title="An older version of the plan kept only the first twelve objects. '
+          + 'Add the rest in the task editor, or re-import from the Configurator.">objects incomplete — re-import from Configurator</div>' : '')
       + (r.span && r.task === doc.tasks.filter(t => t.phaseId === r.phase.id).slice(-1)[0]
           ? '<button class="btn btn-sm" style="margin-top:3px;font-size:9.5px;padding:0 6px" onclick="ppAddTask(\''
             + esc(r.phase.id) + '\')">+ task</button>' : '')
@@ -692,20 +864,26 @@ function ppRenderGrid(){
     for (let mi = 0; mi < months.length; mi++){
       const m = months[mi];
       for (let w = 1; w <= PP.PP_WEEKS; w++){
-        const isNow = mi * PP.PP_WEEKS + (w - 1) === nowIdx;
+        const col = mi * PP.PP_WEEKS + (w - 1);
+        const isNow = col === nowIdx;
         const key = PP.ppCellKey(r.task.id, m.ym, w);
         const c = doc.cells[key];
         let style = '', inner = '';
-        if (c && c.t === 'work') style = 'background:' + pal.bg;
+        // Planned tint as before; a stronger shade of the same tint where the
+        // work has actually happened.
+        const didWork = span && col >= span.from && col <= span.to;
+        if (c && c.t === 'work') style = 'background:' + (didWork ? PP.ppShade(pal.bg, pal.fg) : pal.bg);
+        const overdue = overdueTo != null && col > lastPlanned && col <= overdueTo;
         if (c && c.t === 'mile'){
           style = 'background:' + PP.PP_MILESTONE.bg;
           inner = '<span class="pp-mile" style="color:' + PP.PP_MILESTONE.fg + '">' + esc(c.label) + '</span>';
         }
-        h += '<td class="pp-cell' + (w === 1 ? ' pp-w1' : '') + (isNow ? ' pp-now' : '') + '" style="' + style + '"'
+        h += '<td class="pp-cell' + (w === 1 ? ' pp-w1' : '') + (isNow ? ' pp-now' : '') + (overdue ? ' pp-overdue' : '') + '" style="' + style + '"'
           + ' onmousedown="ppCellDown(event,\'' + esc(key) + '\')"'
           + ' onmouseover="ppCellOver(event,\'' + esc(key) + '\')"'
           + ' title="' + esc(m.label) + ' · week ' + w + (isNow ? ' · this week' : '')
-          + (c && c.t === 'mile' ? ' · ' + c.label : '') + '">'
+          + (c && c.t === 'mile' ? ' · ' + c.label : '') + (didWork && c && c.t === 'work' ? ' · work done' : '')
+          + (overdue ? ' · past the planned end, not done' : '') + '">'
           + inner + '</td>';
       }
     }
@@ -721,6 +899,18 @@ function ppRenderGrid(){
       ? '<span class="pp-nowchip off" title="Today falls outside this plan\'s window">today is outside this plan</span>'
       : '<span class="pp-nowchip">now: ' + esc(months[nowMonth].label) + ' week '
         + ((nowIdx % PP.PP_WEEKS) + 1) + '</span>');
+  if (tracking){
+    const ps = PP.ppPlanSummary(doc, lateNow);
+    $('pp-stats').innerHTML += ' · ' + ps.pct + '% done · '
+      + (ps.late ? '<span class="pp-late-txt">' + ps.late + ' late</span>' : '0 late');
+  }
+  const leg = $('pp-legend');
+  if (leg){
+    leg.hidden = !tracking;
+    const bar = $('pp-legend-bar');
+    if (bar) bar.style.background = PP.ppShade(PP.PP_PALETTE[0].bg, PP.PP_PALETTE[0].fg);
+  }
+  ppPopRender();
 
   /* bring this week into view once, so a long plan does not open parked in
      January — but never again, or every paint would yank the grid back */
@@ -734,12 +924,111 @@ function ppRenderGrid(){
   }
 }
 function ppRenderAll(){ ppFillPlanSelect(); ppRenderGrid(); }
+const PP_OBJ_SHOWN = 12;
+
+// ── Actuals: the status popover ───────────────────────────────────────────
+// Opened from a dot; changes save at once through ppSave, the same path every
+// other edit takes. It lives outside the grid, so the re-render that follows
+// a save cannot destroy it, and ppPopRender() only READS the plan — nothing
+// it draws writes back, so a save can never set off another save.
+const PPPop = { taskId: null, key: null };
+function ppPopOpen(taskId, key, anchor){
+  PPPop.taskId = taskId; PPPop.key = key;
+  const pop = $('pp-pop');
+  pop.hidden = false;
+  ppPopRender();
+  // Beside the dot, never below it: below, it covered the next objects'
+  // dots, and marking a run of them meant closing it between every one.
+  const r = anchor.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  const right = r.right + 10;
+  pop.style.left = (right + w + 8 <= window.innerWidth ? right : Math.max(8, r.left - w - 10)) + 'px';
+  pop.style.top = Math.max(8, Math.min(r.top - 12, window.innerHeight - h - 8)) + 'px';
+  const on = pop.querySelector('[aria-pressed="true"]');
+  if (on) on.focus();
+}
+function ppPopClose(){
+  PPPop.taskId = null; PPPop.key = null;
+  const pop = $('pp-pop'); if (pop) pop.hidden = true;
+}
+function ppPopRender(){
+  const pop = $('pp-pop');
+  if (!pop || pop.hidden || !PPPop.taskId) return;
+  const PP = window.CygenixProjectPlan;
+  const doc = ppDoc();
+  const task = doc.tasks.find(t => t.id === PPPop.taskId);
+  if (!task){ ppPopClose(); return; }
+  const obj = PPPop.key === PP.PP_TASK_KEY ? '' : PPPop.key;
+  const st = PP.ppObjectState(doc, task, obj, PP.ppTracking(doc) ? ppNowWeek(doc) : null);
+  const rec = st.record || {};
+  pop.innerHTML = '<div class="pp-pop-h">' + esc(obj || task.title) + '</div>'
+    + '<div class="pp-pop-sub">' + esc(obj ? task.title : 'Whole task')
+    + (st.late ? ' · ' + esc(PP.PP_LATE_LABEL[st.lateKind]) : '') + '</div>'
+    + '<div class="pp-pop-seg" role="group" aria-label="Status">'
+    + PP.PP_STATUSES.map(s => '<button type="button" data-status="' + s + '" aria-pressed="' + (st.status === s) + '">'
+        + PP_STATUS_WORD[s] + '</button>').join('') + '</div>'
+    + '<div class="pp-pop-dates">'
+    + '<label for="pp-pop-start">Started</label><input id="pp-pop-start" type="date" class="form-input" value="' + esc(rec.startedAt || '') + '"' + (st.record ? '' : ' disabled') + '>'
+    + '<label for="pp-pop-done">Done</label><input id="pp-pop-done" type="date" class="form-input" value="' + esc(rec.doneAt || '') + '"' + (st.status === 'done' ? '' : ' disabled') + '>'
+    + '</div>'
+    + '<div class="pp-pop-foot">Planned ' + (st.first == null ? '— no weeks painted' : esc(ppColLabel(doc, st.first))
+        + (st.last !== st.first ? ' – ' + esc(ppColLabel(doc, st.last)) : ''))
+    + (st.record ? ' · ' + esc(rec.source || 'manual') : '') + '</div>';
+}
+function ppPopSetStatus(status){
+  const PP = window.CygenixProjectPlan;
+  if (!PPPop.taskId) return;
+  PP.ppSetStatus(ppDoc(), PPPop.taskId, PPPop.key, status, ppTodayIso());
+  ppSave(); ppRenderGrid();          // ppRenderGrid redraws the popover too
+}
+function ppPopSetDate(field, value){
+  const PP = window.CygenixProjectPlan;
+  if (!PPPop.taskId) return;
+  const d = {}; d[field] = value;
+  PP.ppSetDates(ppDoc(), PPPop.taskId, PPPop.key, d);
+  ppSave(); ppRenderGrid();
+}
+function ppWireActuals(){
+  // Delegated, once: the grid is rebuilt on every change, its listeners are not.
+  $('pp-grid').addEventListener('click', (e) => {
+    const dot = e.target.closest('.pp-dot');
+    if (dot){
+      e.stopPropagation();
+      if (PPPop.taskId === dot.dataset.task && PPPop.key === dot.dataset.key && !$('pp-pop').hidden) { ppPopClose(); return; }
+      ppPopOpen(dot.dataset.task, dot.dataset.key, dot);
+      return;
+    }
+    const more = e.target.closest('.pp-more');
+    if (more){
+      const id = more.dataset.more;
+      PPState.expanded.has(id) ? PPState.expanded.delete(id) : PPState.expanded.add(id);
+      ppRenderGrid();
+    }
+  });
+  const pop = $('pp-pop');
+  pop.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-status]');
+    if (b) ppPopSetStatus(b.dataset.status);
+  });
+  pop.addEventListener('change', (e) => {
+    if (e.target.id === 'pp-pop-start') ppPopSetDate('startedAt', e.target.value);
+    if (e.target.id === 'pp-pop-done') ppPopSetDate('doneAt', e.target.value);
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (pop.hidden) return;
+    if (pop.contains(e.target) || e.target.closest('.pp-dot')) return;
+    ppPopClose();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !pop.hidden){ e.preventDefault(); ppPopClose(); }
+  });
+}
 
 // ── Export ────────────────────────────────────────────────────────────────
 function ppExportCsv(){
   const PP = window.CygenixProjectPlan;
   const doc = ppDoc();
-  const blob = new Blob([PP.ppCsv(doc)], { type: 'text/csv' });
+  const blob = new Blob([PP.ppCsv(doc, { todayIso: ppTodayIso() })], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = 'cygenix-project-plan.csv';
@@ -749,7 +1038,7 @@ function ppExportCsv(){
 
 function ppExportExcel(){
   const PP = window.CygenixProjectPlan;
-  const blob = new Blob([PP.ppExcelHtml(ppDoc())], { type: 'application/vnd.ms-excel' });
+  const blob = new Blob([PP.ppExcelHtml(ppDoc(), { todayIso: ppTodayIso() })], { type: 'application/vnd.ms-excel' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = 'cygenix-project-plan.xls';
@@ -768,7 +1057,7 @@ const PF_DOT = ['#9E2A1B', '#2F5D8A', '#3F7D4E', '#6B4E8E', '#B26A00', '#0F6E6C'
 
 function pfOpen(){
   const PP = window.CygenixProjectPlan;
-  PF.model = PP.ppPortfolio(PPState.store.plans);
+  PF.model = PP.ppPortfolio(PPState.store.plans, { todayIso: ppTodayIso() });
   if (!PF.model){ window.alert('No plans with tasks yet — build one first.'); return; }
   PF.open = true;
   $('pp-single-panel').style.display = 'none';
@@ -882,7 +1171,11 @@ function pfProjectRow(p){
     + '<div class="pf-col"><div class="pf-name">' + esc(p.name) + '</div>'
     + '<div class="pf-meta">' + esc(p.client || '—')
     + (next ? ' · next: ' + esc(next.label) : '') + '</div></div>'
-    + '<div class="pf-stat">' + (p.fp ? '<b>' + p.fp.toFixed(0) + ' FP</b>' : '<b>—</b>') + p.weeks + ' wks</div>'
+    + '<div class="pf-stat">' + (p.fp ? '<b>' + p.fp.toFixed(0) + ' FP</b>' : '<b>—</b>') + p.weeks + ' wks'
+    // % done and late, once the plan is being tracked at all.
+    + (p.actuals && p.actuals.tracking ? '<br>' + p.actuals.pct + '% done · '
+        + (p.actuals.late ? '<span style="color:var(--red)">' + p.actuals.late + ' late</span>' : '0 late') : '')
+    + '</div>'
     + '</div>' + pfTrack(paint, p.milestones) + '</div>';
 }
 
@@ -968,6 +1261,7 @@ function pfRender(){
 function ppBoot(){
   if (!window.CygenixProjectPlan){ setTimeout(ppBoot, 40); return; }
   ppLoadStore();
+  ppWireActuals();
   ppRenderAll();
 }
 document.addEventListener('DOMContentLoaded', ppBoot);

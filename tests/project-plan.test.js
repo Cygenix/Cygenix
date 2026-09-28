@@ -154,9 +154,12 @@ const check = (name, ok, detail) => {
   check('the employee becomes every task\'s resource and the FP rides in the comment',
     plan.tasks.every(t => t.resource === 'Curtis')
     && plan.tasks[0].comment === '13.5 FP' && plan.tasks[2].comment === '26.5 FP');
-  check('ticked modules become the task\'s detail lines',
-    plan.tasks[0].title.includes(': AP') && plan.tasks[0].title.includes(': Chart of Accounts (GL)')
-    && !plan.tasks[1].title.includes(': AP'));
+  // v2: the modules are DATA on the task, in full — no longer baked into the
+  // title, where v1 kept twelve and wrote "+N more" for the rest.
+  check('ticked modules become the task\'s objects, as data, and the title is the name alone',
+    plan.tasks[0].objects.join(';') === 'Addresses;AP;AP Master;AR;Card Summary;Chart of Accounts (GL)'
+    && plan.tasks[0].title === 'Initial analysis, business review, documentation'
+    && plan.tasks[1].objects.join(';') === 'Addresses' && plan.v === 2);
   check('the timeline starts on the estimate\'s start month',
     plan.timeline.start === '2026-08');
 
@@ -201,9 +204,9 @@ const check = (name, ok, detail) => {
     check('phases keep their tint and stand rotated; milestones stay green with their names',
       /mso-rotate:90/.test(xls) && xls.includes(PP.PP_PALETTE[0].bg)
       && xls.includes(PP.PP_MILESTONE.bg) && /Est\. delivery/.test(xls) && /Due date/.test(xls));
-    check('work bars land as filled cells and multiline tasks keep their lines',
+    check('work bars land as filled cells and each task lists its objects',
       (xls.match(new RegExp('background:' + PP.PP_PALETTE[2].bg, 'g')) || []).length >= 8
-      && /: AP<br>/.test(xls));
+      && /<br>AP<br>/.test(xls));
     check('user text is escaped in the workbook',
       PP.ppExcelHtml(Object.assign(PP.ppNewDoc(), { client: '<img src=x>' }))
         .includes('&lt;img src=x&gt;'));
@@ -286,7 +289,8 @@ const check = (name, ok, detail) => {
     /id="pp-tool-work"/.test(html) && /id="pp-tool-mile"/.test(html)
     && /id="pp-tool-erase"/.test(html) && /id="pp-mile-label"/.test(html));
   check('user text is escaped everywhere it renders',
-    /esc\(lines\[0\]/.test(html) && /esc\(c\.label\)/.test(html) && /esc\(r\.phase\.name\)/.test(html));
+    /esc\(r\.task\.title \|\| '\(untitled\)'\)/.test(html) && /esc\(o\) \+ '<\/span><\/div>'/.test(html)
+    && /esc\(c\.label\)/.test(html) && /esc\(r\.phase\.name\)/.test(html));
   check('drag extends and never toggles — sweeping back cannot erase the bar',
     /Drag never toggles: it extends/.test(html));
   check('printing hides the chrome and prints the grid as the report',
@@ -330,7 +334,7 @@ const check = (name, ok, detail) => {
   check('the Portfolio button opens the multi-project view in place',
     /id="pf-open-btn"/.test(html) && /▤ Portfolio/.test(html)
     && /id="pf-view"/.test(html) && /Back to plan/.test(html)
-    && /ppPortfolio\(PPState\.store\.plans\)/.test(html));
+    && /ppPortfolio\(PPState\.store\.plans, \{ todayIso: ppTodayIso\(\) \}\)/.test(html));
   check('portfolio modes, zoom, client filter and expand/collapse are wired',
     /pfSetMode\('resource'\)/.test(html) && /pfSetZoom\('wk'\)/.test(html)
     && /id="pf-client"/.test(html) && /pfExpandAll/.test(html));
@@ -339,6 +343,25 @@ const check = (name, ok, detail) => {
     && /booked on ' \+ a\.length \+ ' projects this week/.test(html));
   check('the today line and milestone flags ride on every track',
     /pf-today/.test(html) && /pf-flag/.test(html) && /pfTodayWeek/.test(html));
+
+  // ── Actuals on the page ──
+  check('v1 plans migrate on load with the Configurator as the recovery source, and are saved once',
+    /function ppRecoverSource/.test(html) && /PP\.ppIsLegacy\(s\.plans\[k\]\)/.test(html)
+    && /PP\.ppNormalize\(s\.plans\[k\], \{ recover \}\)/.test(html) && /if \(migrated\) ppSave\(\);/.test(html));
+  check('lateness uses the page\'s own "now", unclamped — ppWeekIndex, not a second calculation',
+    /function ppNowWeek\(doc\)\{\s*return window\.CygenixProjectPlan\.ppWeekIndex\(doc\.timeline\.start, ppTodayIso\(\)\);/.test(html));
+  check('no red until the first status is set in the plan', /const lateNow = tracking \? nowWeek : null;/.test(html));
+  check('"+N more" is display only: the stored list is shown in full on request',
+    /const shown = open \? objs : objs\.slice\(0, PP_OBJ_SHOWN\)/.test(html) && /data-more=/.test(html));
+  check('the popover only READS the plan when it draws — a save cannot set off another save',
+    /function ppPopRender\(\)\{[\s\S]{0,2400}?\n\}/.test(html)
+    && !/ppSave\(/.test((/function ppPopRender\(\)\{([\s\S]*?)\n\}/.exec(html) || [])[1] || 'ppSave('));
+  check('the popover closes on Esc and on a click outside it',
+    /e\.key === 'Escape' && !pop\.hidden/.test(html) && /pop\.contains\(e\.target\)/.test(html));
+  check('print keeps the dots, the darker bars and the hatching, with a legend at the foot',
+    /print-color-adjust:exact/.test(html) && /id="pp-legend"/.test(html) && /\.pp-legend:not\(\[hidden\]\)\{display:flex\}/.test(html));
+  check('exports carry today so the late column can be worked out',
+    /PP\.ppCsv\(doc, \{ todayIso: ppTodayIso\(\) \}\)/.test(html) && /PP\.ppExcelHtml\(ppDoc\(\), \{ todayIso: ppTodayIso\(\) \}\)/.test(html));
 
   const sidebar = fs.readFileSync(path.join(__dirname, '..', 'public', 'cygenix-sidebar.js'), 'utf8');
   // The Configurator and the Project plan used to sit in a Project expander
@@ -358,6 +381,155 @@ const check = (name, ok, detail) => {
   check('and neither module is listed under Reports any more',
     !/reports-group[\s\S]{0,900}key:'project-plan-grid'/.test(sidebar)
     && !/reports-group[\s\S]{0,900}key:'effort-estimator'/.test(sidebar));
+}
+
+// ── Actuals v2: migration ───────────────────────────────────────────────────
+// Found in live data: the objects under each task were text in the title, and
+// the import kept twelve and wrote "+N more" — eleven of "Initial analysis"'s
+// objects existed nowhere. Migration splits v1 once, recovers the lost names
+// from the Configurator when it can prove they are the right ones, and flags
+// the task when it cannot.
+{
+  const EM = require('../public/cygenix-effort-model.js');
+  const mods = Array.from({ length: 23 }, (_, i) => 'Mod ' + String(i + 1).padStart(2, '0'));
+  const est = EM.emNewDoc('New estimate');
+  for (const m of mods) est.ticks['analysis|' + m] = 1;
+  const r = EM.emCompute(est);
+  const ucName = r.perUseCase.find(u => u.id === 'analysis').name;
+  // Exactly what v1 stored.
+  const v1 = { v: 1, name: 'Plan — New estimate', timeline: { start: '2026-01', months: 6 },
+    phases: [{ id: 'p1', name: ucName, color: 0 }, { id: 'p2', name: 'Manual', color: 1 }],
+    tasks: [
+      { id: 't1', phaseId: 'p1', title: [ucName].concat(mods.slice(0, 12).map(m => ': ' + m), [': +11 more']).join('\n'), resource: 'Curtis', comment: '13 FP' },
+      { id: 't2', phaseId: 'p2', title: 'Workshop\nBring the org chart\n: Contracts', resource: '', comment: '' },
+      { id: 't3', phaseId: 'p2', title: 'Kick-off', resource: '', comment: '' },
+    ],
+    cells: { 't1|2026-01|1': { t: 'work' } } };
+
+  check('a v1 plan is recognised as needing migration, a v2 one is not',
+    PP.ppIsLegacy(v1) && !PP.ppIsLegacy(PP.ppNewDoc()));
+  const split = PP.ppSplitTitle(v1.tasks[0].title);
+  check('the split: first line is the title, ": " lines objects, "+N more" the count lost',
+    split.title === ucName && split.objects.length === 12 && split.more === 11);
+
+  const recover = PP.ppRecoverFromEstimates({ 'New estimate': est }, (e) => EM.emCompute(EM.emNormalize(e)));
+  const m1 = PP.ppNormalize(JSON.parse(JSON.stringify(v1)), { recover });
+  check('THE ELEVEN LOST OBJECTS ARE RECOVERED FROM THE CONFIGURATOR',
+    m1.tasks[0].objects.length === 23 && m1.tasks[0].objects.join() === mods.join() && !m1.tasks[0].objectsIncomplete,
+    m1.tasks[0].objects.length);
+  check('…and the title is the name alone', m1.tasks[0].title === ucName);
+  check('a line that is not ": X" is kept as detail, not lost and not an object',
+    m1.tasks[1].title === 'Workshop' && m1.tasks[1].detail === 'Bring the org chart' && m1.tasks[1].objects.join() === 'Contracts');
+  check('a task with no objects has none', m1.tasks[2].objects.length === 0);
+  check('the migrated plan is v2 with an empty actuals map', m1.v === 2 && JSON.stringify(m1.actuals) === '{}');
+  check('MIGRATION RUNS ONCE: normalising the result again changes nothing',
+    JSON.stringify(PP.ppNormalize(JSON.parse(JSON.stringify(m1)), { recover })) === JSON.stringify(m1));
+
+  const noRecover = PP.ppNormalize(JSON.parse(JSON.stringify(v1)));
+  check('with no Configurator to recover from, the 12 names are kept and the task is FLAGGED',
+    noRecover.tasks[0].objects.length === 12 && noRecover.tasks[0].objectsIncomplete === true);
+  const edited = EM.emNewDoc('New estimate');
+  for (const m of mods.slice(0, 20)) edited.ticks['analysis|' + m] = 1;
+  const wrong = PP.ppNormalize(JSON.parse(JSON.stringify(v1)),
+    { recover: PP.ppRecoverFromEstimates({ x: edited }, (e) => EM.emCompute(EM.emNormalize(e))) });
+  check('an estimate edited since the import does NOT supply objects — the count must match exactly',
+    wrong.tasks[0].objects.length === 12 && wrong.tasks[0].objectsIncomplete === true);
+  check('recovery refuses a list whose first names differ',
+    !PP.ppAcceptRecovered(['A', 'B'], 1, ['A', 'X', 'C']) && PP.ppAcceptRecovered(['A', 'B'], 1, ['A', 'B', 'C']));
+  const cut = PP.ppNormalize({ v: 1, tasks: [{ id: 'c', title: 'T\n' + ': x'.repeat(200) }] });
+  check('a v1 title cut at the old 600-character cap is flagged too', cut.tasks[0].objectsIncomplete === true);
+  check('a flag survives later loads', PP.ppNormalize(noRecover).tasks[0].objectsIncomplete === true);
+  const dup = PP.ppNormalize({ v: 2, tasks: [{ id: 'd', title: 'T', objects: ['AP', 'AP', ' ', '_task', 'AR'] }] });
+  check('objects are cleaned: no blanks, no duplicates, never the reserved "_task"', dup.tasks[0].objects.join() === 'AP,AR');
+}
+
+// ── Actuals v2: status and lateness ─────────────────────────────────────────
+{
+  const doc = PP.ppNormalize({ v: 2, name: 'L', timeline: { start: '2026-01', months: 6 },
+    phases: [{ id: 'p', name: 'Analysis', color: 0 }],
+    tasks: [{ id: 't', phaseId: 'p', title: 'Analysis', objects: ['AP', 'AR', 'GL'] },
+            { id: 'u', phaseId: 'p', title: 'Unplanned', objects: ['X'] },
+            { id: 'n', phaseId: 'p', title: 'No objects', objects: [] }],
+    // planned: Feb W1–W4 → columns 4..7
+    cells: { 't|2026-02|1': { t: 'work' }, 't|2026-02|2': { t: 'work' }, 't|2026-02|3': { t: 'work' }, 't|2026-02|4': { t: 'work' },
+             'n|2026-01|1': { t: 'work' } } });
+  const T = doc.tasks[0];
+  check('planned weeks are the task\'s work cells as columns', PP.ppTaskWeeks(doc, 't').join() === '4,5,6,7');
+  check('the week index is ppNowIndex without its window clamp',
+    PP.ppWeekIndex('2026-01', '2026-02-10') === 5 && PP.ppWeekIndex('2026-01', '2027-01-01') === 48
+    && PP.ppNowIndex('2026-01', 6, '2027-01-01') === null && PP.ppWeekIndex('2026-01', '2025-12-31') < 0);
+
+  check('before the first planned week, not started is simply not started',
+    PP.ppObjectState(doc, T, 'AP', 3).late === false && PP.ppObjectState(doc, T, 'AP', 3).status === 'not_started');
+  check('in the first planned week it is not yet late', PP.ppObjectState(doc, T, 'AP', 4).late === false);
+  const ls = PP.ppObjectState(doc, T, 'AP', 5);
+  check('LATE START: not started, first planned week behind us', ls.late && ls.lateKind === 'late_start');
+  const lt = PP.ppObjectState(doc, T, 'AP', 8);
+  check('LATE: not done, last planned week behind us', lt.late && lt.lateKind === 'late');
+  check('a plan whose window has ended can still be late', PP.ppObjectState(doc, T, 'AP', 60).lateKind === 'late');
+  check('a task with no planned weeks gets no late logic', PP.ppObjectState(doc, doc.tasks[1], 'X', 60).late === false);
+
+  PP.ppSetStatus(doc, 't', 'AP', 'active', '2026-02-02');
+  check('Active stamps the start date, and says manual',
+    doc.actuals.t.AP.status === 'active' && doc.actuals.t.AP.startedAt === '2026-02-02' && doc.actuals.t.AP.doneAt === '' && doc.actuals.t.AP.source === 'manual');
+  check('an active object past its planned end is late', PP.ppObjectState(doc, T, 'AP', 8).lateKind === 'late');
+  check('an active object is never a late START', PP.ppObjectState(doc, T, 'AP', 5).late === false);
+  PP.ppSetStatus(doc, 't', 'AP', 'done', '2026-02-20');
+  check('Done stamps the finish and keeps the start',
+    doc.actuals.t.AP.doneAt === '2026-02-20' && doc.actuals.t.AP.startedAt === '2026-02-02');
+  check('done on time is not late', PP.ppObjectState(doc, T, 'AP', 20).late === false);
+  PP.ppSetStatus(doc, 't', 'AR', 'done', '2026-03-10');
+  const dl = PP.ppObjectState(doc, T, 'AR', 20);
+  check('DONE LATE: done after the last planned week — green, with the flag', dl.status === 'done' && dl.late && dl.lateKind === 'done_late');
+  check('Done with no start stamps both', doc.actuals.t.AR.startedAt === '2026-03-10');
+  PP.ppSetDates(doc, 't', 'AR', { doneAt: '2026-02-25' });
+  check('editing the done date back inside the plan clears done-late', PP.ppObjectState(doc, T, 'AR', 20).late === false);
+  check('…and pulls the stamped start back with it: work cannot start after it finished',
+    doc.actuals.t.AR.startedAt === '2026-02-25');
+  PP.ppSetDates(doc, 't', 'AR', { doneAt: 'garbage' });
+  check('a malformed date is ignored, not stored', doc.actuals.t.AR.doneAt === '2026-02-25');
+  PP.ppSetStatus(doc, 't', 'AR', 'active', '2026-03-01');
+  check('moving Done back to Active clears the finish and keeps the start', doc.actuals.t.AR.doneAt === '' && doc.actuals.t.AR.startedAt === '2026-02-25');
+  PP.ppSetStatus(doc, 't', 'AR', 'not_started', '2026-03-01');
+  check('Not started removes the record', !('AR' in doc.actuals.t));
+  PP.ppSetStatus(doc, 'n', '', 'done', '2026-01-05');
+  check('a task with no objects keeps its status under "_task"', doc.actuals.n._task.status === 'done');
+
+  const ts = PP.ppTaskSummary(doc, T, 8);
+  check('the task roll-up: 1/3 done, 2 late', ts.total === 3 && ts.done === 1 && ts.late === 2 && ts.any && !ts.complete);
+  const ps = PP.ppPlanSummary(doc, 8);
+  check('the plan summary: done %, late count, tracking on',
+    ps.tracking && ps.total === 5 && ps.done === 2 && ps.pct === 40 && ps.late === 2, JSON.stringify(ps));
+  check('tracking is off until the first status is set', !PP.ppTracking(PP.ppNewDoc()));
+
+  const span = PP.ppTaskActualSpan(doc, T, 9);
+  check('the actual span runs from the first start to now while the task is open', span.from === 4 && span.to === 9, JSON.stringify(span));
+  check('a task with nothing started has no actual span', PP.ppTaskActualSpan(doc, doc.tasks[1], 9) === null);
+
+  const re = PP.ppNormalize(JSON.parse(JSON.stringify(doc)));
+  check('actuals survive normalisation — including the timeline re-crop', JSON.stringify(re.actuals) === JSON.stringify(doc.actuals));
+  const junk = PP.ppNormalize({ v: 2, tasks: [{ id: 'a', title: 'A' }],
+    actuals: { a: { X: { status: 'weird' }, Y: { status: 'done', doneAt: 'no', startedAt: '2026-01-01', source: 'hack' } }, gone: { Z: { status: 'done' } } } });
+  check('normalise drops bad statuses, bad dates, unknown sources and deleted tasks',
+    JSON.stringify(junk.actuals) === JSON.stringify({ a: { Y: { status: 'done', startedAt: '2026-01-01', doneAt: '', source: 'manual' } } }));
+  check('the stronger shade keeps the hue: it moves the tint toward its own ink',
+    PP.ppShade('#F8E0C8', '#7A4A12', 0.3) !== '#F8E0C8' && /^#[0-9a-f]{6}$/.test(PP.ppShade('#F8E0C8', '#7A4A12')));
+
+  // Exports
+  const csv = PP.ppCsv(doc, { todayIso: '2026-03-02' }).trim().split('\n');
+  check('CSV: the original columns come first, unchanged, then object/status/started/done/late',
+    csv[0].startsWith('phase,task,resource,comment,January W1') && csv[0].endsWith(',object,status,started,done,late'));
+  const apRow = csv.find(l => /,AP,done,2026-02-02,2026-02-20,$/.test(l));
+  check('CSV: ONE ROW PER OBJECT, with its status and dates', !!apRow && csv.filter(l => /^Analysis,Analysis,/.test(l)).length === 3, csv.slice(1, 4).join(' | '));
+  check('CSV: a late object says so', csv.some(l => /,AR,not started,,,late$/.test(l)));
+  check('CSV: a task with no objects is one row, keyed by nothing', csv.some(l => /^Analysis,No objects,.*,,done,2026-01-05,2026-01-05,$/.test(l)));
+  const xls = PP.ppExcelHtml(doc, { todayIso: '2026-03-02' });
+  check('Excel: the grid keeps its rows and gains an actuals table, one row per object',
+    />Object<\/td>/.test(xls) && />Late<\/td>/.test(xls) && (xls.match(/>GL<\/td>/g) || []).length === 1);
+  check('Excel: an old plan with no actuals exports exactly as before — no actuals table',
+    !/>Object<\/td>/.test(PP.ppExcelHtml(PP.ppNewDoc(), { todayIso: '2026-03-02' })));
+  const pf = PP.ppPortfolio({ a: doc }, { todayIso: '2026-03-02' });
+  check('Portfolio: each plan carries % done and late', pf.projects[0].actuals.pct === 40 && pf.projects[0].actuals.late === 2 && pf.projects[0].actuals.tracking);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
