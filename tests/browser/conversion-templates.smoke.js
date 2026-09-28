@@ -639,11 +639,10 @@ const U = 'you@example.test';
     return o ? o.textContent : '';
   });
   await lm.close();
-  // The +1 is the deleted map: Load map's own dropdown counts every stored
-  // job in a project, deleted or not, while its list hides deleted ones.
-  // That is Object Mapping's count, not this send's, and is left as it is.
-  check('Load map lists them under the current project: "★ Acme conversion — current (' + (modPairs.length + 1) + ')"',
-    lmOpt === '★ Acme conversion — current (' + (modPairs.length + 1) + ')', lmOpt);
+  // The deleted map is still stored with this project's id; the badge must
+  // count only what the list will show, so it is not in the number.
+  check('Load map lists them under the current project, counting only live maps: "★ Acme conversion — current (' + modPairs.length + ')"',
+    lmOpt === '★ Acme conversion — current (' + modPairs.length + ')', lmOpt);
   // Put the store back the way the next sections expect it.
   await page.evaluate(() => localStorage.setItem('cygenix_jobs', '[]'));
 

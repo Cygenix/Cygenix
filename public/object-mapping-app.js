@@ -5313,8 +5313,11 @@ function populateLoadMapProjectFilter(){
     if (b.id===activeProject) return 1;
     return (a.name||'').localeCompare(b.name||'');
   });
-  // Count jobs per project for badges
-  const jobs = _getAllSavedJobs();
+  // Count jobs per project for badges. Deleted jobs are left out: the list
+  // below never shows them (see renderLoadMapList), and a badge that counted
+  // them promised maps the list would not produce — "current (5)" over four
+  // rows after a map was deleted and re-sent from a Conversion Template.
+  const jobs = _getAllSavedJobs().filter(j => j && !j._deleted);
   const countFor = (pid) => jobs.filter(j => (j.projectId||'')===pid).length;
   const noProjectCount = jobs.filter(j => !j.projectId).length;
 
