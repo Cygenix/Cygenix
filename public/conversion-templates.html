@@ -531,7 +531,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <script src="/cygenix-template-staging.js?v=1b07fb7b6f" defer></script>
 <!-- The Object Mapping bridge: turning a module's staging→target pairs into
      tagged draft jobs, and taking only those back out again. -->
-<script src="/cygenix-template-mapping.js?v=97560b5f32" defer></script>
+<script src="/cygenix-template-mapping.js?v=06c6e42487" defer></script>
 <!-- AI "Suggest tables": orchestration, preview, shared flags and the FK load
      order. The model calls go through the data proxy's /agent/ routes. -->
 <script src="/cygenix-template-suggest.js?v=cff8dc1d50" defer></script>
@@ -1695,6 +1695,12 @@ function writeJobs(jobs){
    stored on the template, so the job's source table and the table that
    actually gets created are the same string. */
 function stagingSchema(){ return String((CT.tpl && CT.tpl.stagingSchema) || 'dbo').trim() || 'dbo'; }
+/* The project a sent job is filed under, read the way Object Mapping reads
+   it: the active project id, or '' when none is active. Not projectId()
+   above — that one falls back to 'default' for the template store's keys,
+   and a job stamped 'default' sits under a project Load map has never heard
+   of, and is never matched as a duplicate of a map made there. */
+function mapProjectId(){ try { return (localStorage.getItem('cygenix_active_project_id') || '').trim(); } catch (e) { return ''; } }
 /* The target's schema for a given table, from the schema already in memory.
    Never fetches: if the graph has not been loaded, dbo is the assumption the
    rest of this page makes and the operator can correct the job in Object
@@ -1738,7 +1744,7 @@ async function ctToggleMap(moduleName, on){
     const jobs = readJobs();
     if (on) {
       const res = MAP.applySend(CT.tpl, moduleName, jobs, {
-        projectId: projectId(), by: userName(),
+        projectId: mapProjectId(), by: userName(),
         stagingSchema: stagingSchema(), targetSchemaOf: targetSchemaOf,
       });
       if (!res.ok) {

@@ -152,23 +152,57 @@ function buildJob(tpl, pair, opts) {
   };
 }
 
+/* A soft-deleted job is still in cygenix_jobs, flagged `_deleted`, and every
+   list in Object Mapping hides it. It is not a mapping anybody can see. */
+function isLive(job) { return !!job && !job._deleted; }
+
+/* Does this job belong to the project a send is for? Object Mapping files a
+   map under the active project id, or under '' when none is active, and its
+   Load map groups on exactly that — so "same project" here is the same
+   comparison, blank matching only blank. */
+function inProject(job, projectId) { return trim(job && job.projectId) === trim(projectId); }
+
 /* ── Plan a send ──────────────────────────────────────────────────────────
    Pure. Says what WOULD happen, including the refusal, so the page can show
-   it before anything is written. */
+   it before anything is written.
+
+   WHICH JOBS COUNT AS "ALREADY MAPPED"
+   Only live jobs in the project the send is for. It used to be every job in
+   the store, and that went wrong twice over. A pair mapped in another
+   project — or in no project, from before projects existed — was reported
+   as a duplicate, so the current project never got its own map and Load
+   map's "current project" group stayed empty. And a map somebody had
+   deleted still blocked the pair, so deleting a map and ticking the module
+   again could never bring it back. The duplicates list keeps its shape
+   (jobId, jobName, byHand), so the page still explains every skip — now
+   only the ones that are really in the way.
+
+   WHAT COUNTS AGAINST THE CAP
+   Live jobs in every project: the cap guards the whole store, not one
+   project's share of it, but a deleted map is not work anybody can lose.
+   One catch. Deleted maps still take up room in the stored list, and every
+   writer of cygenix_jobs keeps only its first hundred entries — newest
+   first, so the oldest fall off the end. Counting live jobs alone would let
+   a send push the list past a hundred and cut live maps off that end, which
+   is exactly what the refusal exists to prevent. So the plan also looks at
+   what that cut would take, and refuses if any of it is a live map.
+   Deleted maps at the end simply fall off, as they always have. */
 function planSend(tpl, moduleName, jobs, opts) {
   var o = opts || {};
   var cap = o.cap || JOB_CAP;
   var list = jobs || [];
+  var live = list.filter(isLive);
   var pairs = modulePairs(tpl, moduleName, o);
   var have = {};
-  list.forEach(function (j) { have[jobPairKey(j)] = j; });
+  live.forEach(function (j) { if (inProject(j, o.projectId)) have[jobPairKey(j)] = j; });
 
   var create = [], duplicates = [];
   pairs.forEach(function (p) {
     var existing = have[pairKey(p.source, p.target)];
     if (existing) {
-      // Already mapped — by hand or by an earlier send. Either way the pair
-      // is covered and a second job for it would just be noise.
+      // Already mapped in this project — by hand or by an earlier send.
+      // Either way the pair is covered and a second job for it would just
+      // be noise.
       duplicates.push({ pair: p, jobId: existing.id, jobName: str(existing.name),
         byHand: !isFromTemplate(existing, null, null) });
       return;
@@ -176,18 +210,27 @@ function planSend(tpl, moduleName, jobs, opts) {
     create.push(p);
   });
 
-  var would = list.length + create.length;
+  var would = live.length + create.length;
   var overBy = would - cap;
+  // What the store's own trim to `cap` entries would cut off the end once
+  // the new jobs go on the front, and how much of that is live work.
+  var keep = Math.max(0, cap - create.length);
+  var pushedOut = create.length && list.length > keep ? list.slice(keep).filter(isLive).length : 0;
   return {
     module: trim(moduleName),
     pairs: pairs,
     create: create,
     duplicates: duplicates,
-    total: list.length,
+    total: live.length,
+    deleted: list.length - live.length,
     cap: cap,
     would: would,
     overCap: overBy > 0,
     overBy: overBy > 0 ? overBy : 0,
+    // Under the cap on live jobs, but deleted maps fill enough of the
+    // stored list that the trim would still take live ones.
+    pushesOutLive: overBy <= 0 && pushedOut > 0,
+    pushedOut: overBy <= 0 ? pushedOut : 0,
   };
 }
 
@@ -205,10 +248,18 @@ function applySend(tpl, moduleName, jobs, opts) {
         + 'Nothing was sent. Delete jobs you have finished with in Object Mapping, then tick this again.',
     };
   }
+  if (plan.pushesOutLive) {
+    return {
+      ok: false, plan: plan,
+      reason: 'Object Mapping holds ' + plan.total + ' saved jobs, and ' + plan.deleted + ' deleted ones still take up room in its '
+        + plan.cap + '-entry store. Sending the ' + plan.create.length + ' jobs "' + plan.module + '" needs would push '
+        + plan.pushedOut + ' of the oldest saved jobs out. Nothing was sent. Delete jobs you have finished with in Object Mapping, then tick this again.',
+    };
+  }
   if (!plan.create.length) {
     return { ok: true, added: 0, jobs: (jobs || []).slice(), plan: plan,
       reason: plan.duplicates.length
-        ? 'Every table in "' + plan.module + '" is already mapped in Object Mapping — nothing to add.'
+        ? 'Every table in "' + plan.module + '" is already mapped in this project in Object Mapping — nothing to add.'
         : 'Module "' + plan.module + '" has no tables to send.' };
   }
   var next = (jobs || []).slice();
@@ -264,6 +315,8 @@ function countSentForModule(tpl, moduleName, jobs) {
 
 return {
   JOB_CAP: JOB_CAP,
+  isLive: isLive,
+  inProject: inProject,
   qualify: qualify,
   isFromTemplate: isFromTemplate,
   templateJobs: templateJobs,

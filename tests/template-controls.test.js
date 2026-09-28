@@ -488,7 +488,7 @@ check('every job carries the template id and the module, so its origin is not a 
 check('an existing pair is not sent twice, whoever made it',
   (() => {
     const t = tpl();
-    const byHand = { id: 'j1', name: 'mine', sourceTable: 'DBO.stg_vchr', targetTable: 'dbo.VCHR', columnMapping: [{ a: 1 }] };
+    const byHand = { id: 'j1', name: 'mine', projectId: 'p1', sourceTable: 'DBO.stg_vchr', targetTable: 'dbo.VCHR', columnMapping: [{ a: 1 }] };
     const r = MAP.applySend(t, 'AP', [byHand], SEND);
     return r.ok && r.added === 1 && r.plan.duplicates.length === 1 && r.plan.duplicates[0].byHand === true;
   })());
@@ -563,6 +563,98 @@ check('the count beside the heading is read from the jobs, not from the ticks',
     TM.tmSetModuleMapped(t, 'Matters', true, 'me');      // ticked but never sent
     return MAP.countSent(t, jobs) === 2 && MAP.countSentForModule(t, 'AP', jobs) === 2
       && MAP.countSentForModule(t, 'Matters', jobs) === 0;
+  })());
+
+/* Which jobs count as "already mapped": live ones in the project the send
+   is for. Before this, an unassigned or other-project map of the same pair,
+   or a deleted one, swallowed the send and the project never got its own. */
+const pairJob = (id, src, tgt, extra) => Object.assign({ id: id, name: id, sourceTable: src, targetTable: tgt }, extra || {});
+
+check('UNASSIGNED MAPS OF THE SAME PAIRS DO NOT BLOCK THE SEND — the project gets its own, filed under it',
+  (() => {
+    const t = tpl();
+    const loose = [pairJob('u1', 'dbo.STG_Vchr', 'dbo.Vchr'), pairJob('u2', 'dbo.STG_VchrDetail', 'dbo.VchrDetail', { projectId: '' })];
+    const r = MAP.applySend(t, 'AP', loose, SEND);
+    return r.ok && r.added === 2 && r.plan.duplicates.length === 0
+      && r.created.every(j => j.projectId === 'p1')
+      && r.jobs.some(j => j.id === 'u1') && r.jobs.some(j => j.id === 'u2');
+  })());
+
+check('a map of the same pair in ANOTHER project does not block it either',
+  (() => {
+    const r = MAP.applySend(tpl(), 'AP', [pairJob('o1', 'dbo.STG_Vchr', 'dbo.Vchr', { projectId: 'p2' })], SEND);
+    return r.ok && r.added === 2 && r.plan.duplicates.length === 0;
+  })());
+
+check('delete one sent map, send again: ONLY that one is re-created, the other is reported',
+  (() => {
+    const t = tpl();
+    let jobs = MAP.applySend(t, 'AP', [], SEND).jobs;
+    const gone = jobs.find(j => /STG_Vchr$/.test(j.sourceTable));
+    gone._deleted = true; gone._deletedAt = '2026-09-28T00:00:00Z';
+    const r = MAP.applySend(t, 'AP', jobs, SEND);
+    return r.ok && r.added === 1 && r.created[0].sourceTable === 'dbo.STG_Vchr'
+      && r.plan.duplicates.length === 1 && /STG_VchrDetail/.test(r.plan.duplicates[0].pair.source)
+      && r.plan.duplicates[0].byHand === false && typeof r.plan.duplicates[0].jobId === 'string'
+      && r.jobs.some(j => j.id === gone.id && j._deleted === true);   // the deleted one is still stored
+  })());
+
+check('…and a third send with nothing deleted adds nothing and reports every pair',
+  (() => {
+    const t = tpl();
+    let jobs = MAP.applySend(t, 'AP', [], SEND).jobs;
+    jobs[0]._deleted = true;
+    jobs = MAP.applySend(t, 'AP', jobs, SEND).jobs;
+    const r = MAP.applySend(t, 'AP', jobs, SEND);
+    return r.ok && r.added === 0 && r.plan.duplicates.length === 2 && r.jobs.length === jobs.length
+      && /already mapped in this project/.test(r.reason);
+  })());
+
+check('with no active project, only maps with no project count as duplicates',
+  (() => {
+    const none = Object.assign({}, SEND, { projectId: '' });
+    const r = MAP.applySend(tpl(), 'AP', [pairJob('a', 'dbo.STG_Vchr', 'dbo.Vchr'), pairJob('b', 'dbo.STG_VchrDetail', 'dbo.VchrDetail', { projectId: 'p1' })], none);
+    return r.ok && r.added === 1 && r.plan.duplicates.length === 1 && r.plan.duplicates[0].jobId === 'a'
+      && r.created[0].projectId === '';
+  })());
+
+check('DELETED MAPS DO NOT COUNT AGAINST THE CAP; every project\'s live ones do',
+  (() => {
+    const list = [];
+    for (let i = 0; i < 90; i++) list.push(pairJob('l' + i, 's' + i, 't' + i, { projectId: i % 2 ? 'p1' : 'p2' }));
+    for (let i = 0; i < 10; i++) list.push(pairJob('d' + i, 'x' + i, 'y' + i, { projectId: 'p1', _deleted: true }));
+    const r = MAP.applySend(tpl(), 'AP', list, SEND);        // 90 live + 2 = 92; 10 deleted at the old end fall off
+    const p = r.plan;
+    return r.ok && r.added === 2 && p.total === 90 && p.deleted === 10 && !p.overCap && !p.pushesOutLive
+      && r.jobs.slice(0, MAP.JOB_CAP).filter(MAP.isLive).length === 92;
+  })());
+
+check('…and live maps from every project still do: 99 live across two projects + 2 is refused',
+  (() => {
+    const list = [];
+    for (let i = 0; i < 99; i++) list.push(pairJob('l' + i, 's' + i, 't' + i, { projectId: i % 2 ? 'p1' : 'p2' }));
+    list.push(pairJob('d', 'x', 'y', { _deleted: true }));
+    const r = MAP.applySend(tpl(), 'AP', list, SEND);
+    return r.ok === false && r.plan.total === 99 && /holds 99 of its 100 saved jobs/.test(r.reason)
+      && /would push 1 of the oldest out/.test(r.reason);
+  })());
+
+check('BUT A SEND THAT WOULD STILL TRIM LIVE MAPS OFF THE STORE IS REFUSED — deleted maps take room until they fall off',
+  (() => {
+    const list = [];
+    for (let i = 0; i < 10; i++) list.push(pairJob('d' + i, 'x' + i, 'y' + i, { _deleted: true }));   // newest
+    for (let i = 0; i < 90; i++) list.push(pairJob('l' + i, 's' + i, 't' + i, { projectId: 'p2' })); // oldest at the end
+    const r = MAP.applySend(tpl(), 'AP', list, SEND);        // 92 live is under the cap, but 102 stored loses l88, l89
+    return r.ok === false && r.plan.pushesOutLive && r.plan.pushedOut === 2
+      && /10 deleted ones still take up room/.test(r.reason) && /push 2 of the oldest saved jobs out/.test(r.reason)
+      && /Nothing was sent/.test(r.reason);
+  })());
+
+check('the page files a sent job under the same project id Object Mapping uses — blank, not "default", with none active',
+  (() => {
+    const pg = read('public', 'conversion-templates.html');
+    return /function mapProjectId\(\)\{[^}]*cygenix_active_project_id'\) \|\| ''\)\.trim\(\)/.test(pg)
+      && /MAP\.applySend\([^)]*\{\s*projectId: mapProjectId\(\)/.test(pg);
   })());
 
 check('a bare table name is qualified with its schema, an already-qualified one is left alone',

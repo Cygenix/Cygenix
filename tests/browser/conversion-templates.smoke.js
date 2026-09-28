@@ -596,6 +596,57 @@ const U = 'you@example.test';
   check('THE mapping built by hand is untouched, column mapping and all',
     !!back.hand && back.hand.columnMapping.length === 1 && back.hand.status === 'ready');
 
+  /* ── 10b. Only this project's live maps are "already mapped" ────────────
+     Unassigned maps of the very same pairs used to swallow the send, so the
+     project never got its own and Load map's current-project group stayed
+     empty; a deleted map blocked its pair for good. */
+  const modPairs = await page.evaluate((mod) => CygenixTemplateMapping.modulePairs(CT.tpl, mod,
+    { stagingSchema: stagingSchema(), targetSchemaOf: targetSchemaOf }).map((p) => [p.source, p.target]), exModule);
+  await page.evaluate((pairs) => localStorage.setItem('cygenix_jobs', JSON.stringify(pairs.map((p, i) => ({
+    id: 'loose' + i, name: 'unassigned ' + i, jobType: 'simple-map', sourceTable: p[0], targetTable: p[1], columnMapping: [], status: 'draft' })))), modPairs);
+  const sendMod = (mod) => page.evaluate(async (m) => {
+    await ctToggleMap(m, true);
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    return { jobs: jobs, note: document.getElementById('ct-note').textContent };
+  }, mod);
+  const s1 = await sendMod(exModule);
+  const ours1 = s1.jobs.filter((j) => j.fromTemplate && !j._deleted);
+  check('WITH UNASSIGNED MAPS OF THE SAME PAIRS PRESENT, the module is still sent — one map per table, filed under the active project',
+    modPairs.length > 1 && ours1.length === modPairs.length && ours1.every((j) => j.projectId === 'p1')
+      && s1.jobs.filter((j) => /^loose/.test(j.id)).length === modPairs.length, JSON.stringify({ pairs: modPairs.length, ours: ours1.length, note: s1.note }));
+  await page.evaluate((id) => {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const j = jobs.find((x) => x.id === id); j._deleted = true; j._deletedAt = new Date().toISOString();
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+  }, ours1[0].id);
+  const s2 = await sendMod(exModule);
+  const ours2 = s2.jobs.filter((j) => j.fromTemplate && !j._deleted);
+  check('delete one of them and send again: ONLY that one is re-created',
+    ours2.length === modPairs.length && s2.jobs.length === s1.jobs.length + 1
+      && ours2.filter((j) => ours1.every((o) => o.id !== j.id)).length === 1
+      && s2.jobs.some((j) => j.id === ours1[0].id && j._deleted), JSON.stringify({ before: s1.jobs.length, after: s2.jobs.length }));
+  const s3 = await sendMod(exModule);
+  check('a third send with nothing deleted creates nothing and says every table is already mapped here',
+    s3.jobs.length === s2.jobs.length && /already mapped in this project/.test(s3.note), s3.note);
+  const lm = await ctx.newPage();
+  await lm.goto('http://localhost:' + PORT + '/object-mapping', { waitUntil: 'domcontentloaded' });
+  await lm.waitForFunction(() => typeof populateLoadMapProjectFilter === 'function', null, { timeout: 20000 });
+  const lmOpt = await lm.evaluate(() => {
+    let sel = document.getElementById('load-map-project-filter');
+    if (!sel) { sel = document.createElement('select'); sel.id = 'load-map-project-filter'; document.body.appendChild(sel); }
+    populateLoadMapProjectFilter();
+    const o = Array.from(sel.options).find((x) => /— current/.test(x.textContent));
+    return o ? o.textContent : '';
+  });
+  await lm.close();
+  // The +1 is the deleted map: Load map's own dropdown counts every stored
+  // job in a project, deleted or not, while its list hides deleted ones.
+  // That is Object Mapping's count, not this send's, and is left as it is.
+  check('Load map lists them under the current project: "★ Acme conversion — current (' + (modPairs.length + 1) + ')"',
+    lmOpt === '★ Acme conversion — current (' + (modPairs.length + 1) + ')', lmOpt);
+  // Put the store back the way the next sections expect it.
+  await page.evaluate(() => localStorage.setItem('cygenix_jobs', '[]'));
+
   /* ── 11. Create staging tables ─────────────────────────────────────────── */
   execSql.length = 0;
   await page.click('#ct-stage');
