@@ -278,6 +278,19 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 @media (prefers-reduced-motion: reduce) {
   #create-task-btn.needs-regen { animation: none; box-shadow: 0 0 0 3px rgba(245,158,11,0.20); }
 }
+
+/* ── No active project ──
+   The chooser replaces the project while none is active; every control that
+   saves, runs or deletes is hidden with it (and refuses in code as well). */
+.pb-choose{max-width:620px;margin:2rem auto;padding:1.25rem 1.4rem;border:0.5px solid var(--border2);border-radius:var(--r-lg,10px);background:var(--bg2)}
+.pb-choose[hidden]{display:none}
+.pb-choose-h{font-size:15px;font-weight:600;margin-bottom:0.35rem;color:var(--text)}
+.pb-choose-p{font-size:12.5px;color:var(--text2);line-height:1.55;margin:0 0 0.9rem}
+.pb-choose-list{display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.9rem}
+.pb-choose-f{display:flex;align-items:center;gap:0.75rem;font-size:12px}
+.pb-choose-a{color:var(--accent)}
+body.pb-no-active .main-body > :not(#pb-choose){display:none !important}
+body.pb-no-active .pb-needs-active{display:none !important}
 </style>
   <!-- The audit recorder. Loaded wherever a recordable action can happen,
        which is anywhere connections can be saved, edited or deleted. -->
@@ -302,7 +315,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <!-- Menu and settings search, read by the sidebar's masthead field and the
      Search page. Before the sidebar so it is there when the field is typed in. -->
 <script src="/cygenix-menu-index.js?v=3d85838633" defer></script>
-<script src="/cygenix-sidebar.js?v=54d5d4b743" defer></script>
+<script src="/cygenix-sidebar.js?v=cf7503ba14" defer></script>
 
 <div class="topbar">
   <a href="/dashboard" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Packages</span></a>
@@ -352,10 +365,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <!-- populated by refreshProjectSelector() -->
         </select>
         <button class="btn btn-ghost btn-sm" onclick="newProjectPrompt()" title="Create a new project">+ New</button>
-        <button class="btn btn-ghost btn-sm" onclick="renameProjectPrompt()" title="Rename this project"><i class="ic ic-edit"></i> Rename</button>
-        <button class="btn btn-ghost btn-sm" onclick="deleteProjectPrompt()" title="Delete this project" style="color:var(--red)"><i class="ic ic-trash"></i> </button>
+        <button class="btn btn-ghost btn-sm pb-needs-active" onclick="renameProjectPrompt()" title="Rename this project"><i class="ic ic-edit"></i> Rename</button>
+        <button class="btn btn-ghost btn-sm pb-needs-active" onclick="deleteProjectPrompt()" title="Delete this project" style="color:var(--red)"><i class="ic ic-trash"></i> </button>
       </div>
-      <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
+      <div class="pb-needs-active" style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <!-- Packages: named arrangements of the jobs below. Save keeps the
              CURRENT arrangement on the project; Load swaps in a saved one. -->
@@ -434,6 +447,9 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
     </div>
 
     <div class="main-body">
+      <!-- Shown instead of a project when projects exist but none is active
+           (renderActiveGate in project-builder-app.js). Never picks one. -->
+      <div id="pb-choose" class="pb-choose" role="region" aria-label="Choose the active project" hidden></div>
 
       <!-- Preflight report — filled by renderPreflightReport(). Hidden until
            a preflight has run; persists per project so the last forecast is
@@ -680,7 +696,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <!-- Collation. The rules load first; see the note in object_mapping.html. -->
 <script src="/cygenix-collation-rules.js?v=81efc48692" defer></script>
 <script src="/cygenix-collation.js?v=ffaa34cfcb" defer></script>
-<script src="/project-builder-app.js?v=101df91e83" defer></script>
+<script src="/project-builder-app.js?v=fdc30ffe24" defer></script>
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-model.js?v=0c71915777"></script>

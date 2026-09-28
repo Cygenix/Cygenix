@@ -18,7 +18,10 @@
  *   3. with A active, creating B leaves A active;
  *   4. a brand-new account still gets "Create a project" → /projects?new=1;
  *   5. deactivating the active project by a manual status → "Choose…";
- *   6. the footer count matches, and nothing throws on either page.
+ *   6. the footer count matches, and nothing throws on either page;
+ *   7. Project Builder follows the same rule: with none active it shows a
+ *      chooser, not the first project; Save never picks one; deleting the
+ *      active project clears the id rather than promoting another.
  *
  * Run it by hand:  node tests/browser/active-project.smoke.js
  */
@@ -209,6 +212,93 @@ const B = { id: 'proj_b', name: 'Bravo migration', created: '2026-09-02T00:00:00
     const s3 = h.steps[2] || {};
     check('HOME SAYS "Choose your active project", NOT "Create project"', s3.title === 'Choose your active project' && s3.href === '/projects', s3.title);
     check('the footer still counts 2 projects', /^2 projects/.test(h.foot.trim()), h.foot);
+    check('nothing threw', errors.length === 0, errors.slice(0, 3).join(' | '));
+    await ctx.close();
+  }
+
+  /* ── 7. Project Builder follows the same rule ────────────────────────── */
+  // It used to show projects[0] silently when none was active, make it active
+  // on Save, and promote projects[0] when the active project was deleted.
+  async function builder(page) {
+    await page.goto(BASE + '/project-builder', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof window.handleProjectSwitch === 'function' && document.getElementById('proj-selector').options.length > 0, null, { timeout: 15000 });
+    await page.waitForTimeout(300);
+    return page.evaluate(() => {
+      const sel = document.getElementById('proj-selector');
+      const gate = document.getElementById('pb-choose');
+      const vis = (el) => !!el && getComputedStyle(el).display !== 'none' && el.offsetParent !== null;
+      return {
+        gate: vis(gate), gateText: gate ? gate.textContent : '',
+        picks: gate ? [...gate.querySelectorAll('[data-pick]')].map((b) => b.textContent) : [],
+        selValue: sel.value, selText: sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '',
+        runVisible: vis(document.getElementById('run-btn')),
+        stepsVisible: vis(document.getElementById('steps-list')),
+        jobsEmpty: (document.querySelector('.job-item-empty') || {}).textContent || '',
+        active: localStorage.getItem('cygenix_active_project_id'),
+        count: JSON.parse(localStorage.getItem('cygenix_projects') || '[]').length,
+      };
+    });
+  }
+  section('7. Project Builder shows the active project, or asks — never picks');
+  {
+    const { ctx, page, errors } = await scenario({ projects: [A, B], active: null });
+    // One job belonging to no project: the blank placeholder's '' id would
+    // have matched it as "this project".
+    await page.addInitScript(() => { if (!localStorage.getItem('cygenix_jobs'))
+      localStorage.setItem('cygenix_jobs', JSON.stringify([{ id: 'j1', name: 'Loose job', jobType: 'sql', sql: 'select 1' }])); });
+    let b = await builder(page);
+    check('WITH NONE ACTIVE IT SHOWS THE CHOOSER, NOT THE FIRST PROJECT', b.gate && /No project is active/.test(b.gateText) && /You have 2 projects/.test(b.gateText), b.gateText.slice(0, 80));
+    check('…listing both projects', b.picks.join('|') === 'Alpha migration|Bravo migration', b.picks.join('|'));
+    check('the selector says "choose", not a project name', b.selValue === '' && /Choose the active project/.test(b.selText), b.selText);
+    const mast = await page.evaluate(() => (document.getElementById('cyg-proj-name') || {}).textContent || '');
+    check('THE MASTHEAD SAYS "No project selected" — it no longer names the first project', mast === 'No project selected', mast);
+    check('run and the package editor are hidden', !b.runVisible && !b.stepsVisible);
+    check('the jobs list does not pretend unassigned jobs are "this project"', /Choose the active project to see its jobs/.test(b.jobsEmpty), b.jobsEmpty);
+    await page.evaluate(() => saveProject());
+    b = await builder(page);
+    check('SAVE DOES NOT PICK A PROJECT, and saves no blank one', b.active === null && b.count === 2, b.active + ' / ' + b.count);
+
+    await page.click('#pb-choose [data-pick="' + B.id + '"]');
+    await page.waitForTimeout(200);
+    const chosen = await page.evaluate(() => ({ active: localStorage.getItem('cygenix_active_project_id'),
+      sel: document.getElementById('proj-selector').value, gate: !document.getElementById('pb-choose').hidden,
+      placeholder: [...document.getElementById('proj-selector').options].some((o) => o.value === '') }));
+    check('CHOOSING ONE MAKES IT ACTIVE and shows it', chosen.active === B.id && chosen.sel === B.id && !chosen.gate && !chosen.placeholder, JSON.stringify(chosen));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(600);
+    check('…and after a reload the masthead names it', await page.evaluate(() => document.getElementById('cyg-proj-name').textContent) === B.name);
+    const h = await home(page);
+    check('…and Home agrees', !h.empty && h.title === B.name, h.title);
+
+    await page.goto(BASE + '/project-builder', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof window.deleteProjectPrompt === 'function');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => deleteProjectPrompt());
+    await page.waitForTimeout(200);
+    b = await builder(page);
+    check('DELETING THE ACTIVE PROJECT CLEARS THE ACTIVE ID — it does not promote another', b.active === null && b.count === 1 && b.gate && b.picks.join() === 'Alpha migration', JSON.stringify({ a: b.active, c: b.count, p: b.picks }));
+    const h2 = await home(page);
+    check('…and Home asks to choose', (h2.steps[2] || {}).title === 'Choose your active project', (h2.steps[2] || {}).title);
+    check('nothing threw', errors.length === 0, errors.slice(0, 3).join(' | '));
+    await ctx.close();
+  }
+  {
+    const { ctx, page, errors } = await scenario({ projects: [A, B], active: B.id });
+    const b = await builder(page);
+    check('with an active project it opens on THAT project, not the first', !b.gate && b.selValue === B.id && b.runVisible, JSON.stringify({ sel: b.selValue, gate: b.gate }));
+    check('nothing threw', errors.length === 0, errors.slice(0, 3).join(' | '));
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await scenario({ projects: [A, B], active: 'proj_deleted' });
+    const b = await builder(page);
+    check('an active id pointing at a deleted project shows the chooser', b.gate && b.active === 'proj_deleted');
+    await ctx.close();
+  }
+  {
+    const { ctx, page, errors } = await scenario({ projects: [], active: null });
+    const b = await builder(page);
+    check('a brand-new account still gets "My first project", created and active', !b.gate && b.count === 1 && b.selText === 'My first project' && !!b.active, JSON.stringify(b));
     check('nothing threw', errors.length === 0, errors.slice(0, 3).join(' | '));
     await ctx.close();
   }

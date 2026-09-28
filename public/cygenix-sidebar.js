@@ -1023,11 +1023,17 @@
   // cygenix_projects / cygenix_active_project_id keys the dashboard and
   // projects.html use. Selecting a project sets the active id and reloads so
   // every page picks up the new context; "All projects…" goes to the manager.
+  // The ACTIVE project's name, or '' — never the first project in the list.
+  // It used to fall back to projects[0], so with no project active the
+  // masthead on every page named one ("Project: Alpha migration") while Home
+  // said none was active and asked the person to choose. '' renders as "No
+  // project selected", which is the truth, and the switcher beside it is how
+  // they choose.
   function activeProjectName(){
     try {
       const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
       const id = localStorage.getItem('cygenix_active_project_id') || '';
-      const p = projects.find(x => x && x.id === id) || projects[0];
+      const p = Array.isArray(projects) ? projects.find(x => x && x.id === id) : null;
       return p && p.name ? p.name : '';
     } catch { return ''; }
   }

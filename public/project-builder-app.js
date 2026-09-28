@@ -120,6 +120,51 @@ let jobScope = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(
 
 function newProjectId(){ return 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
 
+// ── No active project (Sep-2026) ─────────────────────────────────────────────
+// The active project is cygenix_active_project_id and nothing else — the same
+// rule Home and the Projects page follow. This page used to break it three
+// ways when no project was active (the person deactivated theirs, or the id
+// pointed at a project since deleted):
+//   · on load it silently SHOWED projects[0], so Home said "choose your
+//     active project" while this page looked as if one was chosen;
+//   · Save then wrote projects[0]'s id as active — an auto-pick nobody asked
+//     for, made by a button labelled Save;
+//   · deleting the active project activated projects[0] in its place, where
+//     the Projects page clears the active id and lets the person choose.
+// Now, with projects and none active, the builder shows a chooser instead of
+// a project, and nothing that saves, runs or deletes can act until one is
+// chosen. `project` holds a blank placeholder that is never persisted, so the
+// render code — which assumes a project object — keeps working unchanged.
+// A brand-new account with no projects still gets "My first project",
+// created and activated, exactly as the Projects page activates a first one.
+let noActive = false;
+const blankProject = () => ({ id: '', name: '', createdAt: '', srcConn: '', tgtConn: '', groups: [] });
+function requireActive(){
+  if (!noActive) return false;
+  showToast('Choose the active project first');
+  return true;
+}
+function renderActiveGate(){
+  document.body.classList.toggle('pb-no-active', noActive);
+  const g = document.getElementById('pb-choose');
+  if (!g) return;
+  g.hidden = !noActive;
+  if (!noActive) { g.innerHTML = ''; return; }
+  const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const sorted = [...projects].sort((a, b) => (a.name||'').localeCompare(b.name||''));
+  g.innerHTML = '<div class="pb-choose-h">No project is active</div>'
+    + '<p class="pb-choose-p">You have ' + projects.length + ' project' + (projects.length === 1 ? '' : 's')
+    + ', but none is active. Packages, runs, Home and readiness all follow the active project — choose one to continue.</p>'
+    + '<div class="pb-choose-list">' + sorted.map(p =>
+        '<button type="button" class="btn btn-ghost btn-sm" data-pick="' + esc(p.id) + '">' + esc(p.name || '(unnamed project)') + '</button>'
+      ).join('') + '</div>'
+    + '<div class="pb-choose-f"><button type="button" class="btn btn-ghost btn-sm" data-pick-new="1">+ New project</button>'
+    + ' <a href="/projects" class="pb-choose-a">Manage projects</a></div>';
+  g.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => handleProjectSwitch(b.dataset.pick)));
+  const nb = g.querySelector('[data-pick-new]');
+  if (nb) nb.addEventListener('click', () => newProjectPrompt());
+}
+
 function loadProjectsList(){
   try {
     const raw = localStorage.getItem(PROJECTS_KEY);
@@ -499,8 +544,9 @@ function refreshProjectSelector(){
   }
   // Sort alphabetically so analysts who prefix-name (ACME-..., BeanCo-...) see natural grouping
   const sorted = [...projects].sort((a, b) => (a.name||'').localeCompare(b.name||''));
-  sel.innerHTML = sorted.map(p =>
-    `<option value="${p.id}"${p.id===project.id?' selected':''}>${(p.name || '(unnamed project)').replace(/</g,'&lt;')}</option>`
+  sel.innerHTML = (noActive ? '<option value="" selected disabled>— Choose the active project —</option>' : '')
+    + sorted.map(p =>
+    `<option value="${p.id}"${!noActive && p.id===project.id?' selected':''}>${(p.name || '(unnamed project)').replace(/</g,'&lt;')}</option>`
   ).join('');
 }
 
@@ -508,12 +554,12 @@ function refreshProjectSelector(){
   projects = loadProjectsList();
   migrateLegacyProject();
 
-  // Pick the active project
+  // The active project, and only the active project. With projects and none
+  // active, show the chooser rather than picking one (see renderActiveGate).
   let activeId = localStorage.getItem(ACTIVE_ID_KEY);
   let active = projects.find(p => p.id === activeId);
-  if (!active && projects.length) active = projects[0];
 
-  if (!active){
+  if (!active && !projects.length){
     // No projects yet — create a blank default
     active = {
       id: newProjectId(),
@@ -527,9 +573,11 @@ function refreshProjectSelector(){
     localStorage.setItem(ACTIVE_ID_KEY, active.id);
   }
 
-  project = active;
+  noActive = !active;
+  project = active || blankProject();
   refreshProjectSelector();
   hydrateProjectIntoUI();
+  renderActiveGate();
 })();
 
 // Re-sync connection display when the user returns to this page (from dashboard,
@@ -648,6 +696,8 @@ function refreshTaskStaleness() {
 }
 
 function saveProject() {
+  // Never persist the placeholder, and never make a project active by saving.
+  if (requireActive()) return;
   // Connection fields are no longer persisted per-project — they always reflect
   // the Dashboard > Connections global. We only save project metadata + steps.
   const idx = projects.findIndex(p => p.id === project.id);
@@ -714,10 +764,14 @@ function handleProjectSwitch(newId){
   if (!next) return;
   project = next;
   localStorage.setItem(ACTIVE_ID_KEY, project.id);
+  const wasNone = noActive;
+  noActive = false;
   isDirty = false;
   document.getElementById('dirty-badge').style.display = 'none';
+  if (wasNone) refreshProjectSelector();     // drop the "choose" placeholder option
   hydrateProjectIntoUI();
-  showToast('Switched to ' + (project.name || 'project'));
+  renderActiveGate();
+  showToast((wasNone ? 'Active project: ' : 'Switched to ') + (project.name || 'project'));
 }
 
 function newProjectPrompt(){
@@ -734,14 +788,17 @@ function newProjectPrompt(){
   persistProjectsList();
   project = p;
   localStorage.setItem(ACTIVE_ID_KEY, project.id);
+  noActive = false;
   isDirty = false;
   document.getElementById('dirty-badge').style.display = 'none';
   refreshProjectSelector();
   hydrateProjectIntoUI();
+  renderActiveGate();
   showToast('Created "' + name + '"');
 }
 
 function renameProjectPrompt(){
+  if (requireActive()) return;
   const next = (prompt('Rename project:', project.name || '') || '').trim();
   if (!next || next === project.name) return;
   project.name = next;
@@ -753,6 +810,7 @@ function renameProjectPrompt(){
 }
 
 function deleteProjectPrompt(){
+  if (requireActive()) return;
   if (projects.length <= 1){
     alert('Cannot delete the last project. Rename it instead, or create a new one first.');
     return;
@@ -766,13 +824,16 @@ function deleteProjectPrompt(){
   // Its saved batches go with it — they are arrangements OF this project's
   // jobs, and leaving them behind would accumulate silently forever.
   try { if (window.CygenixBatches) CygenixBatches.deleteProjectBatches(removedId); } catch (e) {}
-  // Switch to the first remaining project
-  project = projects[0];
-  localStorage.setItem(ACTIVE_ID_KEY, project.id);
+  // The deleted project was the active one. Clear the id and let the person
+  // choose, as the Projects page does — never promote projects[0] in its place.
+  try { localStorage.removeItem(ACTIVE_ID_KEY); } catch (e) {}
+  noActive = true;
+  project = blankProject();
   isDirty = false;
   document.getElementById('dirty-badge').style.display = 'none';
   refreshProjectSelector();
   hydrateProjectIntoUI();
+  renderActiveGate();
   // Recorded against the project that is gone, not the one switched to.
   if (window.CygenixAudit) {
     window.CygenixAudit.record({
@@ -884,7 +945,9 @@ function renderJobs() {
   // Scope filter (project-aware)
   let scoped = enriched;
   if (jobScope === 'project'){
-    scoped = enriched.filter(({j}) => (j.projectId || '') === (project?.id || ''));
+    // With no active project there is no "this project": show nothing rather
+    // than the unassigned jobs, which the blank placeholder's '' id would match.
+    scoped = noActive ? [] : enriched.filter(({j}) => (j.projectId || '') === (project?.id || ''));
   } else if (jobScope === 'unassigned'){
     scoped = enriched.filter(({j}) => !j.projectId);
   }
@@ -922,7 +985,7 @@ function renderJobs() {
 
   if (!filtered.length) {
     const reason = q ? 'No matches for "' + esc(q) + '"'
-                   : jobScope === 'project' ? 'No jobs in this project yet'
+                   : jobScope === 'project' ? (noActive ? 'Choose the active project to see its jobs' : 'No jobs in this project yet')
                    : jobScope === 'unassigned' ? 'No unassigned jobs'
                    : 'No jobs';
     list.innerHTML = '<div class="job-item-empty">' + reason + '</div>';
@@ -963,6 +1026,7 @@ function renderJobs() {
 }
 
 function addJobAsStep(jobIndex) {
+  if (requireActive()) return;
   let jobs = [];
   try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
   const job = jobs[jobIndex];
@@ -1498,6 +1562,7 @@ function syncSelectionUI(){
 
 // ── Group operations ──────────────────────────────────────────────────────────
 function addGroup(){
+  if (requireActive()) return;
   const g = newGroup('New group','sequential');
   project.groups.push(g);
   project._lastGroupIdx = project.groups.length - 1;
@@ -3303,6 +3368,7 @@ function showToast(msg){
 }
 
 async function runSingleStep(gi, si) {
+  if (requireActive()) return;
   const group = project.groups[gi];
   const step = group ? group.steps[si] : null;
   if (!step) return;
@@ -3395,7 +3461,7 @@ async function runSingleStep(gi, si) {
 // dbCall the runner uses, and nothing else.
 
 async function runPreflight() {
-  if (isRunning) return;
+  if (isRunning || requireActive()) return;
   if (typeof CygenixPreflight === 'undefined') { alert('Preflight module not loaded — refresh the page.'); return; }
   saveProject();
   const flat = getAllStepsFlat().filter(x => isStepEnabled(x.step));
@@ -3514,7 +3580,7 @@ function restorePreflightReport() {
 }
 
 async function runProject() {
-  if (isRunning) return;
+  if (isRunning || requireActive()) return;
   saveProject();
   ensureAtLeastOneGroup();
   const flat = getAllStepsFlat();
@@ -5970,6 +6036,7 @@ function buildCompositeChildSteps(){
 }
 
 function openCreateTaskModal(){
+  if (requireActive()) return;
   ensureAtLeastOneGroup();
   const flat = getAllStepsFlat();
   if (!flat.length) { alert('Add at least one job first.'); return; }
@@ -6127,6 +6194,7 @@ function batchMessage(tone, text) {
 }
 
 function openBatchPicker() {
+  if (requireActive()) return;
   const m = document.getElementById('batch-modal');
   if (!m) return;
   batchMessage(null);
@@ -6191,6 +6259,7 @@ function escB(s) {
 }
 
 function openSaveBatchPrompt() {
+  if (requireActive()) return;
   const B = batchApi();
   if (!B) { showToast('The batches module did not load — refresh the page.'); return; }
   if (!B.countSteps(project.groups)) {
