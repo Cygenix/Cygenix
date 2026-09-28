@@ -57,6 +57,50 @@ console.log('— no project —');
   check('the footer still counts what exists', /0 projects · 2 connections/.test(m3.footer.line), m3.footer.line);
 }
 
+/* ── Projects exist, none is active ─────────────────────────────────────────
+   The bug: a user with projects and no active one (deactivated by a manual
+   status, or the active id pointed at a deleted project) saw "Start a
+   migration … Create project" over a footer counting their projects, and was
+   sent to make a duplicate. Home must ask them to CHOOSE — and must never
+   choose for them. */
+console.log('— projects, none active —');
+{
+  const two = H.homeModel({ now: NOW, project: null, projects: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], jobs: [], connections: { source: true, target: true }, region: 'UK South' });
+  check('it is still the empty state — Home does not pick a project itself', two.empty === true && !two.plan);
+  check('STEP 3 ASKS TO CHOOSE, NOT TO CREATE', two.steps[2].title === 'Choose your active project' && two.steps[2].cta === 'Choose project', two.steps[2].title);
+  check('…and goes to the project list, not the new-project form', two.steps[2].href === '/projects');
+  check('…saying how many projects there are', /You have 2 projects, but none is active\./.test(two.steps[2].text), two.steps[2].text);
+  check('the heading no longer says "Start a migration"', two.title === 'Pick up where you left off' && /None of your projects is active/.test(two.sentence), two.title);
+  check('the footer count matches', /^2 projects/.test(two.footer.line), two.footer.line);
+  const one = H.homeModel({ now: NOW, project: null, projects: [{ id: 'a' }], jobs: [], connections: {} });
+  check('one project is "1 project", singular', /You have 1 project, but/.test(one.steps[2].text), one.steps[2].text);
+  check('choosing is live even with no connections saved — a dimmed step is a dead link',
+    one.steps[2].live === true && one.steps[0].live === true && one.steps[1].live === false);
+  const zero = H.homeModel({ now: NOW, project: null, projects: [], jobs: [], connections: {} });
+  check('a brand-new account is unchanged: "Create a project" → /projects?new=1, waiting for both connections',
+    zero.title === 'Start a migration' && zero.steps[2].title === 'Create a project' && zero.steps[2].cta === 'Create project'
+    && zero.steps[2].href === '/projects?new=1' && zero.steps[2].live === false);
+  const junk = H.homeModel({ now: NOW, project: null, projects: 'not a list', jobs: [], connections: {} });
+  check('projects that are not a list count as none', junk.steps[2].title === 'Create a project');
+}
+
+/* ── Creating a project when none is active activates it ───────────────── */
+console.log('— projects.html saveProject —');
+{
+  const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'projects.html'), 'utf8');
+  const save = html.slice(html.indexOf('function saveProject(){'), html.indexOf('function mirrorActiveProjectToLegacy('));
+  const created = save.slice(save.indexOf('} else {'), save.indexOf('saveProjects();', save.indexOf('} else {')));
+  check('the "first-ever project" test is gone', !/_projects\.length === 1/.test(save));
+  check('A NEW PROJECT IS ACTIVATED WHEN NO EXISTING PROJECT IS ACTIVE',
+    /const activeExists\s*=\s*!!currentActive && _projects\.some\(x => x\.id === currentActive\);/.test(created)
+    && /if \(!activeExists\) setActive\(savedId, true\);/.test(created), created.slice(-400));
+  check('…through setActive, so the session copy and the legacy mirror are refreshed too',
+    /function setActive\(id, silent\)[\s\S]{0,1400}sessionStorage\.setItem\('cygenix_active_project'[\s\S]{0,300}mirrorActiveProjectToLegacy\(p\)/.test(html));
+  const edit = save.slice(save.indexOf('if (_editingId) {'), save.indexOf('} else {'));
+  check('the edit branch still clears the active id on a manual non-active status',
+    /savedId === currentActiveId && safeStatus && safeStatus !== 'active'/.test(edit) && /localStorage\.removeItem\(ACTIVE_PROJ_KEY\)/.test(edit));
+}
+
 /* ── The header ──────────────────────────────────────────────────────────── */
 console.log('\n— the header —');
 {

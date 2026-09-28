@@ -16,7 +16,8 @@
    stores and returns exactly what the screen shows, in reading order: the
    project header, the plan, three measures, the recent runs, the needs-you
    queue, the run in flight, the next scheduled runs and the footer facts —
-   or the three-step empty state when there is no project. No DOM, no
+   or the three-step empty state when there is no active project (whose
+   last step creates one, or asks for one to be chosen when some exist). No DOM, no
    storage, no fetch, no clock it is not handed. The renderer in
    dashboard-app.js consumes this and knows nothing about jobs.
 
@@ -386,13 +387,29 @@ function nextScheduled(schedules, now, limit) {
 function emptySteps(input) {
   var c = input.connections || {};
   var src = !!c.source, tgt = !!c.target;
+  // Step 3 depends on whether projects exist. With none, it creates one. With
+  // some but none active, "Create project" was the wrong instruction — it sent
+  // people to make a duplicate of work they already had — so it asks them to
+  // choose. Choosing is theirs: Home never picks an active project itself.
+  //
+  // And it is live whatever the connections say. Creating a project waits
+  // for both databases because a project scopes work against them; choosing
+  // one that already exists does not, and a dimmed step renders as a
+  // disabled link, which would leave someone with projects and no saved
+  // connection nothing to click.
+  var n = Array.isArray(input.projects) ? input.projects.length : 0;
+  var step3 = n > 0
+    ? { n: 3, title: 'Choose your active project',
+        text: 'You have ' + n + ' ' + plural(n, 'project') + ', but none is active. Home, jobs and readiness follow the active project — pick one to continue.',
+        cta: 'Choose project', href: '/projects', live: true, done: false }
+    : { n: 3, title: 'Create a project', text: 'A project scopes the jobs, the plan and the evidence. Readiness is scored from the moment it exists.',
+        cta: 'Create project', href: '/projects?new=1', live: src && tgt, done: false };
   return [
     { n: 1, title: 'Connect a source', text: 'Point Cygenix at the database you are moving from. Read-only until you say otherwise.',
       cta: src ? 'Source connected' : 'Connect source', href: '/dashboard#goto=connections', live: true, done: src },
     { n: 2, title: 'Connect a target', text: 'Add the database you are moving to. Every page — mapping, jobs, assurance — inherits both.',
       cta: tgt ? 'Target connected' : 'Connect target', href: '/dashboard#goto=connections', live: src, done: tgt },
-    { n: 3, title: 'Create a project', text: 'A project scopes the jobs, the plan and the evidence. Readiness is scored from the moment it exists.',
-      cta: 'Create project', href: '/projects?new=1', live: src && tgt, done: false },
+    step3,
   ];
 }
 
@@ -411,10 +428,16 @@ function homeModel(input) {
   var projects = Array.isArray(input.projects) ? input.projects : [];
 
   if (!project) {
+    // "Start a migration" is right for a new account and wrong for someone
+    // whose projects exist but none is active; the heading says which.
+    var has = projects.length > 0;
     return {
       empty: true, steps: emptySteps(input),
-      title: 'Start a migration', kicker: 'Cygenix' + (input.region ? ' · ' + input.region : ''),
-      sentence: 'Connect a source and a target, then create a project. Home fills in from there.',
+      title: has ? 'Pick up where you left off' : 'Start a migration',
+      kicker: 'Cygenix' + (input.region ? ' · ' + input.region : ''),
+      sentence: has
+        ? 'None of your projects is active. Choose one and Home fills in from there.'
+        : 'Connect a source and a target, then create a project. Home fills in from there.',
       footer: footer(input, projects),
     };
   }

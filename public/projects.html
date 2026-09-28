@@ -782,15 +782,25 @@ function saveProject(){
       created:  now,
       modified: now,
     });
-    // First-ever project? Make it active. Otherwise leave the active project
-    // unchanged so we don't surprise the user mid-task.
-    if (_projects.length === 1) {
-      localStorage.setItem(ACTIVE_PROJ_KEY, savedId);
-      // Persist 'active' on the record to match the active-id source of
-      // truth — see comment in setActive().
-      const i = _projects.findIndex(x => x.id === savedId);
-      if (i >= 0) _projects[i] = { ..._projects[i], status: 'active', statusManual: true };
-    }
+    // Activate the new project when NOTHING is active — not only when it is
+    // the first project ever. The old test fired only when the list held
+    // exactly one project, and it left a gap that looked like a broken Home: someone with older
+    // projects and no active one (they deactivated it by setting a manual
+    // status, or the id points at a project since deleted) created a new
+    // project, it was saved and never activated, and Home went on saying
+    // "Start a migration … Create project" above a footer that counted two
+    // projects.
+    //
+    // An active project that EXISTS is never replaced: creating a second
+    // project mid-task must not move everything the person is looking at.
+    //
+    // Through setActive(), not a copy of it: setActive also refreshes the
+    // session copy of the active project and the legacy settings mirror
+    // that report headers read, and the old inline body did neither — two
+    // ways of activating a project had already drifted apart once.
+    const currentActive = localStorage.getItem(ACTIVE_PROJ_KEY) || '';
+    const activeExists  = !!currentActive && _projects.some(x => x.id === currentActive);
+    if (!activeExists) setActive(savedId, true);
   }
   saveProjects();
 
