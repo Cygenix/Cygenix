@@ -63,7 +63,7 @@ const U = 'you@example.test';
   const token = 'x.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, preferred_username: U })).toString('base64url') + '.y';
 
   // The stubbed world: a roles record the page asks for, and a fake Azure.
-  const world = { me: { oid: 'x', email: U, roles: ['ML'], claudeCode: { enabled: false, roles: ['OW', 'PA'], allowed: false, canChangeData: false, canConfigure: false } },
+  const world = { outputs: [], me: { oid: 'x', email: U, roles: ['ML'], claudeCode: { enabled: false, roles: ['OW', 'PA'], allowed: false, canChangeData: false, canConfigure: false } },
     calls: [], sessions: {}, nextEvents: [], failEvents: false, failStop: false };
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', async (route) => {
@@ -93,6 +93,10 @@ const U = 'you@example.test';
       if (action === 'mode') { world.sessions[body.sessionId].session.dataChangesAllowed = body.dataChangesAllowed; return json(route, { ok: true, dataChangesAllowed: body.dataChangesAllowed }); }
       if (action === 'stop') { if (world.failStop) return json(route, { error: 'boom' }, 500); world.sessions[body.sessionId].session.status = 'stopped'; return json(route, { ok: true, status: 'stopped' }); }
       if (action === 'sessions') return json(route, { sessions: Object.values(world.sessions).map((x) => x.session).reverse() });
+      if (action === 'upload') { const s = world.sessions[body.sessionId]; const up = { fileId: 'file_u' + (s.session.uploads || []).length, name: body.name, path: '/workspace/uploads/' + body.name, size: Buffer.from(body.contentBase64, 'base64').length, at: new Date().toISOString() };
+        s.session.uploads = (s.session.uploads || []).concat([up]); return json(route, { upload: up }); }
+      if (action === 'outputs') { const s = world.sessions[new URL('http://x' + p).searchParams.get('sessionId')]; return json(route, { outputs: world.outputs, uploads: (s && s.session.uploads) || [] }); }
+      if (action === 'download') return json(route, { name: 'counts.csv', size: 24, contentBase64: Buffer.from('table,rows\nCustomer,1200\n').toString('base64') });
       if (action === 'session') { const s = world.sessions[new URL('http://x' + p).searchParams.get('id')]; return s ? json(route, { session: s.session, events: s.events }) : json(route, { error: 'No such session.' }, 404); }
       return json(route, { error: 'unexpected ' + action }, 500);
     }
@@ -130,7 +134,7 @@ const U = 'you@example.test';
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   const open = async () => {
-    await page.goto('http://localhost:' + PORT + '/claude-code', { waitUntil: 'domcontentloaded' });
+    await page.goto('http://localhost:' + PORT + '/dev-console', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.CygenixCcConsole && typeof csNew === 'function' && !!document.getElementById('cs-status'), null, { timeout: 20000 });
     await page.waitForTimeout(500);
   };
@@ -211,6 +215,22 @@ const U = 'you@example.test';
   await page.waitForTimeout(7000);
   check('POLLING STOPS WHEN THE SESSION IS IDLE — no further /events calls', calls('events').length === pollsAtIdle && pollsAtIdle > pollsMid, calls('events').length + ' vs ' + pollsAtIdle);
 
+  /* Phase 2: attach a file, and get one back. */
+  await page.setInputFiles('#cs-file', { name: 'orders.csv', mimeType: 'text/csv', buffer: Buffer.from('id,name\n1,Ann\n') });
+  await page.waitForFunction(() => /Attached orders\.csv/.test(document.getElementById('cs-chat').textContent), null, { timeout: 8000 });
+  const up = calls('upload')[0];
+  check('ATTACHING A FILE sends its name and content, and the chat shows where it landed',
+    !!up && up.body.name === 'orders.csv' && Buffer.from(up.body.contentBase64, 'base64').toString() === 'id,name\n1,Ann\n'
+    && /\/workspace\/uploads\/orders\.csv/.test(await text('cs-chat')), JSON.stringify(up && up.body).slice(0, 200));
+  check('the Files panel opens and lists it', !(await page.evaluate(() => document.getElementById('cs-files').hidden)) && /orders\.csv/.test(await text('cs-uploads')));
+  world.outputs = [{ id: 'file_o1', name: 'counts.csv', size: 24, at: new Date().toISOString() }];
+  await page.waitForTimeout(3100);
+  await page.click('#cs-files .ct-link');
+  await page.waitForFunction(() => /counts\.csv/.test(document.getElementById('cs-outputs').textContent), null, { timeout: 8000 });
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 8000 }), page.click('#cs-outputs button')]);
+  check('A FILE CLAUDE WROTE downloads with its name', dl.suggestedFilename() === 'counts.csv' && calls('download').length === 1 && /fileId=file_o1/.test(calls('download')[0].path));
+  await page.waitForTimeout(3100);
+
   /* 6. The toggle, on a DEV profile. */
   await page.click('#cs-toggle');
   check('the toggle asks first, naming the profile and the connection; no production name needed on DEV',
@@ -286,7 +306,7 @@ const U = 'you@example.test';
   await ctx.addInitScript(() => { try { const s = JSON.parse(localStorage.getItem('cygenix_profiles_v1')); s.profiles[0].envClass = 'PRD'; localStorage.setItem('cygenix_profiles_v1', JSON.stringify(s)); } catch (e) {} });
   const page2 = await ctx.newPage();
   page2.on('pageerror', (e) => errors.push(e.message));
-  await page2.goto('http://localhost:' + PORT + '/claude-code', { waitUntil: 'domcontentloaded' });
+  await page2.goto('http://localhost:' + PORT + '/dev-console', { waitUntil: 'domcontentloaded' });
   await page2.waitForFunction(() => typeof csToggle === 'function' && !document.getElementById('cc-console').hidden, null, { timeout: 20000 });
   await page2.waitForTimeout(400);
   await page2.click('#cs-toggle');

@@ -1482,8 +1482,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
 <!-- Menu and settings search, read by the sidebar's masthead field and the
      Search page. Before the sidebar so it is there when the field is typed in. -->
-<script src="/cygenix-menu-index.js?v=d3750bbd06" defer></script>
-<script src="/cygenix-sidebar.js?v=4c9e04fdfe" defer></script>
+<script src="/cygenix-menu-index.js?v=44d29c015d" defer></script>
+<script src="/cygenix-sidebar.js?v=ce307ce49a" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-home.js?v=60f393deb7" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
@@ -1511,7 +1511,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=d7d0f6518f" defer></script>
-  <script src="/dashboard-app.js?v=2e3e60d435" defer></script>
+  <script src="/dashboard-app.js?v=717055a35d" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
@@ -2362,15 +2362,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
            console makes. Saved through rbac-admin; audited from/to. -->
       <div class="ps-panel" id="ps-cc-panel">
         <div class="ps-panel-head">
-          <div class="ps-panel-title">Claude Code console</div>
+          <div class="ps-panel-title">Dev Console</div>
           <span class="ps-mode-indicator">Organisation: <span id="ps-cc-state">—</span></span>
         </div>
         <div class="ps-panel-body">
           <div class="ps-toggle-row">
             <div class="ps-toggle-switch" id="ps-cc-enabled" onclick="ccGovToggle()" role="switch" aria-checked="false" aria-labelledby="ps-cc-label"></div>
             <div>
-              <div class="ps-toggle-label" id="ps-cc-label">Claude Code console</div>
-              <div class="ps-help">Lets people chat with Claude, which writes and runs code — Python, Node, shell, SQL — in an
+              <div class="ps-toggle-label" id="ps-cc-label">Dev Console</div>
+              <div class="ps-help">The Dev Console lets people chat with Claude, which writes and runs code — Python, Node, shell, SQL — in an
                 isolated workspace hosted by Anthropic that connects directly to the database on their active profile.
                 Off for the whole organisation until switched on here.</div>
             </div>
@@ -4613,8 +4613,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=f17fbead2e"></script>
-<script src="/cygenix-assistant-actions.js?v=4d7f25a77a"></script>
+<script src="/cygenix-assistant.js?v=112db55504"></script>
+<script src="/cygenix-assistant-actions.js?v=3bd2678be0"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=580c85794f"></script>
 <script src="/cygenix-tour.js?v=3aa5b94223"></script>

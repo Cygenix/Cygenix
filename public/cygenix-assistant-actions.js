@@ -128,7 +128,7 @@ var PAGES = [
   { key: 'conversion-templates', label: 'Conversion Templates', href: '/conversion-templates' },
   { key: 'object-mapping',     label: 'Object Mapping',     href: '/object-mapping' },
   { key: 'schema-explorer',    label: 'Schema Explorer',    href: '/schema-explorer' },
-  { key: 'claude-code',        label: 'Claude Code',        href: '/claude-code' },
+  { key: 'claude-code',        label: 'Dev Console',        href: '/dev-console' },
   { key: 'sql-editor',         label: 'SQL Editor',         href: '/sql-editor' },
   { key: 'agentive-migration', label: 'AI Assist',          href: '/agentive-migration' },
   { key: 'jobs',               label: 'All Jobs',           view: 'jobs' },

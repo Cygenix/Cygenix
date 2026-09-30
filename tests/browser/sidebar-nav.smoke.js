@@ -328,7 +328,7 @@ const server = http.createServer((req, res) => {
   await open('/dashboard');
   check('…and appears, under Develop, once it is on for this person',
     await page.evaluate(() => { const el = document.querySelector('.cyg-nav-item[data-key="claude-code"]');
-      return !!el && el.closest('.cyg-nav-section').dataset.group === 'develop' && /Claude Code/.test(el.textContent); }));
+      return !!el && el.closest('.cyg-nav-section').dataset.group === 'develop' && /Dev Console/.test(el.textContent); }));
 
   /* ── The status hairline ────────────────────────────────────────────────
    *

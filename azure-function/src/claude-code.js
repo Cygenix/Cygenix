@@ -17,6 +17,9 @@
      POST agent/claude-code/stop      interrupt it and close it
      GET  agent/claude-code/sessions  the caller's past sessions
      GET  agent/claude-code/session   one past session, for read-only replay
+     POST agent/claude-code/upload    attach a file to the workspace (phase 2)
+     GET  agent/claude-code/outputs   the files Claude wrote, and the uploads
+     GET  agent/claude-code/download  one of those files, base64
 
    WHOSE ACCOUNT, WHOSE MONEY
    Everything runs on the CALLER'S Anthropic API key, read from the
@@ -99,7 +102,7 @@ const MODEL = () => process.env.CLAUDE_CODE_MODEL || 'claude-opus-5-5';
 // Bump when the agent's configuration below changes; the next call finds
 // the account's agent carrying an older spec and updates it in place.
 const AGENT_SPEC = '2';
-const AGENT_NAME = 'Cygenix Claude Code';
+const AGENT_NAME = 'Cygenix Dev Console';
 const GATE_TTL_MS = 30 * 1000;
 const RESOLVE_TTL_MS = 10 * 60 * 1000;
 const LIST_CAP = 200;               // never walk more than this many agents/environments
@@ -115,6 +118,19 @@ const MASK = '••••••';
 const CONN_ID_RE = /^sconn_[A-Za-z0-9_]{1,80}$/;
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{6,128}$/;
 const TEXT_MAX = 20000;
+// Phase 2 (Oct-2026): files in and out. A file the person attaches is
+// uploaded through the Files API and mounted read-only under
+// /workspace/uploads; a file Claude writes to /mnt/session/outputs is what
+// the API scopes to the session and hands back. Both travel as base64 in
+// JSON because the browser's only road to this app forwards a text body:
+// 4 MB in is 5.4 MB of JSON, under Netlify's 6 MB.
+const UPLOAD_DIR = '/workspace/uploads/';
+const UPLOAD_MAX = 4 * 1024 * 1024;
+const DOWNLOAD_MAX = 8 * 1024 * 1024;
+const UPLOAD_TTL_S = 7 * 24 * 60 * 60;
+const UPLOADS_PER_SESSION = 50;
+const OUTPUTS_CAP = 100;
+const FILE_ID_RE = /^[A-Za-z0-9_-]{6,128}$/;
 
 // The spend cap, in US cents as the API wants it: an integer string, > 0.
 function budget() {
@@ -395,7 +411,7 @@ function parseConn(connString) {
 function shq(v) { return "'" + String(v == null ? '' : v).replace(/'/g, "'\\''") + "'"; }
 function credFile(p, connString) {
   return [
-    '# Cygenix Claude Code — this session\'s database connection. Read-only.',
+    '# Cygenix Dev Console — this session\'s database connection. Read-only.',
     'CYG_DB_TYPE=' + shq(p.kind),
     'CYG_DB_HOST=' + shq(p.host),
     'CYG_DB_PORT=' + shq(p.port),
@@ -496,6 +512,7 @@ function publicSession(doc) {
     dbHost: doc.dbHost || '', dbName: doc.dbName || '', createdAt: doc.createdAt, endedAt: doc.endedAt || null,
     costCents: doc.costCents == null ? null : doc.costCents, eventCount: doc.eventCount || 0,
     stopReason: doc.stopReason || null,
+    uploads: (doc.uploads || []).map(u => ({ fileId: u.fileId, name: u.name, path: u.path, size: u.size, at: u.at })),
   };
 }
 async function appendEvents(container, doc, events) {
@@ -542,6 +559,11 @@ async function deleteFile(client, fileId) {
   if (!fileId) return;
   try { await client.beta.files.delete(fileId); } catch (e) { /* it expires on its own */ }
 }
+// The person's uploads go with the session; what Claude wrote (the outputs)
+// stays, because that is the work product and the replay offers it.
+async function deleteUploads(client, doc) {
+  for (const u of (doc.uploads || [])) { await deleteFile(client, u.fileId); u.fileId = null; }
+}
 
 // ── session ──────────────────────────────────────────────────────────────
 function str(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 200); }
@@ -560,7 +582,7 @@ async function sessionStart(who, apiKey, body, ctx) {
     return bad(409, 'The credential for "' + names.connectionName + '" has not been saved to the cloud from this browser. Open Connections, check it is there, and let it sync — then try again.');
   }
   if (!secret.bundle.connString) {
-    return bad(409, 'Claude Code needs a direct database connection. "' + names.connectionName + '" is a '
+    return bad(409, 'The Dev Console needs a direct database connection. "' + names.connectionName + '" is a '
       + (secret.bundle.fnKey ? 'Function App connection' : 'stream destination') + ', which the workspace cannot use.');
   }
   const p = parseConn(secret.bundle.connString);
@@ -584,7 +606,7 @@ async function sessionStart(who, apiKey, body, ctx) {
       agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
                system: systemPrompt({ dbType: p.kind, mode: 'readonly' }) },
       environment_id: environmentId,
-      title: 'Cygenix Claude Code — ' + names.connectionName,
+      title: 'Cygenix Dev Console — ' + names.connectionName,
       metadata: { cygenix: 'console', cyg_oid: who.oid },
       budget: budget(),
       resources: [{ type: 'file', file_id: file.id, mount_path: CRED_PATH }],
@@ -686,6 +708,7 @@ async function sessionEvents(who, apiKey, sessionId) {
     doc.endedAt = doc.endedAt || new Date(deps.now()).toISOString();
     await deleteFile(client, doc.fileId);
     doc.fileId = null;
+    await deleteUploads(client, doc);
   } else {
     doc.status = status;
   }
@@ -732,11 +755,107 @@ async function sessionStop(who, apiKey, body) {
   try { await client.beta.sessions.archive(doc.id); } catch (e) { /* already archived or gone */ }
   await deleteFile(client, doc.fileId);
   doc.fileId = null;
+  await deleteUploads(client, doc);
   doc.status = 'stopped';
   doc.endedAt = new Date(deps.now()).toISOString();
   doc.updatedAt = doc.endedAt;
   await container.items.upsert(doc);
   return ok({ ok: true, status: 'stopped' });
+}
+
+// ── upload ───────────────────────────────────────────────────────────────
+// A file name is the only thing the person controls here: it becomes a
+// mount path inside the workspace, so it is reduced to a safe basename.
+function safeName(raw) {
+  let n = String(raw == null ? '' : raw).split(/[\\/]/).pop().trim().replace(/[^A-Za-z0-9._ -]+/g, '_').replace(/^\.+/, '').slice(0, 100);
+  return n || 'file';
+}
+function uniquePath(doc, name) {
+  const taken = new Set((doc.uploads || []).map(u => u.path));
+  let candidate = UPLOAD_DIR + name;
+  for (let i = 2; taken.has(candidate) && i < 1000; i++) {
+    const dot = name.lastIndexOf('.');
+    candidate = UPLOAD_DIR + (dot > 0 ? name.slice(0, dot) + '-' + i + name.slice(dot) : name + '-' + i);
+  }
+  return candidate;
+}
+function decodeBase64(s) {
+  const t = String(s || '').replace(/^data:[^,]*,/, '').replace(/\s+/g, '');
+  if (!t || !/^[A-Za-z0-9+/]+=*$/.test(t)) return null;
+  return Buffer.from(t, 'base64');
+}
+async function sessionUpload(who, apiKey, body) {
+  const container = await deps.container();
+  const s = await loadSession(container, who, body.sessionId);
+  if (s.error) return s.error;
+  const doc = s.doc;
+  if (doc.status === 'stopped' || doc.status === 'error') return bad(409, 'This session has ended. Start a new one to attach files.');
+  if ((doc.uploads || []).length >= UPLOADS_PER_SESSION) return bad(409, 'This session already has ' + UPLOADS_PER_SESSION + ' files attached.');
+  const name = safeName(body.name);
+  const buf = decodeBase64(body.contentBase64);
+  if (!buf || !buf.length) return bad(400, 'The file is empty or not readable.');
+  if (buf.length > UPLOAD_MAX) return bad(413, 'Files up to 4 MB can be attached; "' + name + '" is ' + (buf.length / 1048576).toFixed(1) + ' MB.');
+  const g = await gate(who, 'use');
+  if (!g.ok) return g.response;
+  const client = deps.makeClient(apiKey);
+  const file = await client.beta.files.upload({ file: await deps.toFile(buf, name), expires_in_seconds: UPLOAD_TTL_S });
+  const mountPath = uniquePath(doc, name);
+  try {
+    await client.beta.sessions.resources.add(doc.id, { type: 'file', file_id: file.id, mount_path: mountPath });
+  } catch (e) {
+    await deleteFile(client, file.id);
+    throw e;
+  }
+  // Tell Claude where it is, without starting a turn: a system message
+  // waits for the next one. If the API declines it, the page shows the
+  // path and the person can say so themselves.
+  try {
+    await client.beta.sessions.events.send(doc.id, { events: [{ type: 'system.message',
+      content: [{ type: 'text', text: 'The user attached a file: ' + name + ' (' + buf.length + ' bytes), mounted read-only at ' + mountPath + '.' }] }] });
+  } catch (e) { /* the path is shown to the person */ }
+  const rec = { fileId: file.id, name, path: mountPath, size: buf.length, at: new Date(deps.now()).toISOString() };
+  doc.uploads = (doc.uploads || []).concat([rec]);
+  doc.updatedAt = rec.at;
+  await container.items.upsert(doc);
+  return ok({ upload: rec });
+}
+
+// ── outputs, download ────────────────────────────────────────────────────
+async function listOutputs(client, sessionId) {
+  const out = [];
+  for await (const f of client.beta.files.list({ scope_id: sessionId, betas: ['managed-agents-2026-04-01'] })) {
+    out.push({ id: f.id, name: f.filename, size: f.size_bytes, at: f.created_at });
+    if (out.length >= OUTPUTS_CAP) break;
+  }
+  return out;
+}
+async function sessionOutputs(who, apiKey, sessionId) {
+  const container = await deps.container();
+  const s = await loadSession(container, who, sessionId);
+  if (s.error) return s.error;
+  const g = await gate(who, 'use');
+  if (!g.ok) return g.response;
+  const client = deps.makeClient(apiKey);
+  return ok({ outputs: await listOutputs(client, s.doc.id), uploads: publicSession(s.doc).uploads });
+}
+async function sessionDownload(who, apiKey, sessionId, fileId) {
+  if (!FILE_ID_RE.test(String(fileId || ''))) return bad(400, 'fileId is missing or malformed.');
+  const container = await deps.container();
+  const s = await loadSession(container, who, sessionId);
+  if (s.error) return s.error;
+  const g = await gate(who, 'use');
+  if (!g.ok) return g.response;
+  const client = deps.makeClient(apiKey);
+  // Only a file that belongs to THIS session — one Claude wrote for it, or
+  // one the person attached to it — ever comes back through here.
+  const outputs = await listOutputs(client, s.doc.id);
+  const own = outputs.find(f => f.id === fileId) || (s.doc.uploads || []).filter(u => u.fileId === fileId).map(u => ({ id: u.fileId, name: u.name, size: u.size }))[0];
+  if (!own) return bad(404, 'No such file in this session.');
+  if (own.size != null && own.size > DOWNLOAD_MAX) return bad(413, '"' + own.name + '" is ' + (own.size / 1048576).toFixed(1) + ' MB; files up to 8 MB can be downloaded here.');
+  const res = await client.beta.files.download(fileId);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > DOWNLOAD_MAX) return bad(413, '"' + own.name + '" is too large to download here (over 8 MB).');
+  return ok({ name: own.name, size: buf.length, contentBase64: buf.toString('base64') });
 }
 
 // ── sessions, session ────────────────────────────────────────────────────
@@ -935,6 +1054,9 @@ const ACTIONS = {
   mode:     { POST: (who, key, req, body) => sessionMode(who, key, body) },
   stop:     { POST: (who, key, req, body) => sessionStop(who, key, body) },
   sessions: { GET: (who) => sessionList(who) },
+  upload:   { POST: (who, key, req, body) => sessionUpload(who, key, body) },
+  outputs:  { GET: (who, key, req) => sessionOutputs(who, key, req.query.get('sessionId')) },
+  download: { GET: (who, key, req) => sessionDownload(who, key, req.query.get('sessionId'), req.query.get('fileId')) },
 };
 
 async function handler(req, ctx) {
@@ -943,7 +1065,7 @@ async function handler(req, ctx) {
   const started = deps.now();
   try {
     const spec = ACTIONS[action];
-    if (!spec) return bad(404, 'Unknown Claude Code action: ' + action);
+    if (!spec) return bad(404, 'Unknown Dev Console action: ' + action);
     const fn = spec[req.method];
     if (!fn) return bad(405, action + ' is ' + Object.keys(spec).join(' or '));
     const who = await identify(req);
@@ -977,6 +1099,7 @@ module.exports = {
   environmentName, environmentConfig, parseConn, credFile, systemPrompt, MODE_TEXT, makeRedactor,
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
+  sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
   validateProbe, probeScript, probeInstruction, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PROBE_SYSTEM, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,

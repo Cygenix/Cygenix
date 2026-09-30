@@ -68,7 +68,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_pending_sql` | SQL queued for the editor | transient | data-cleansing.html |
 | `cygenix_projects_migrated` | One-time migration marker | idempotent | dashboard-app.js, projects.html |
 | `cygenix_ps_ai_` | Cached AI project-summary text | regenerated | analytics-app.js, dashboard-app.js |
-| `cygenix_rbac_me` | sessionStorage: the caller's roles and Claude Code entitlement from rbac-admin?what=me, cached five minutes | cleared after a Governance save so the sidebar re-asks | dashboard-app.js |
+| `cygenix_rbac_me` | sessionStorage: the caller's roles and Dev Console entitlement from rbac-admin?what=me, cached five minutes | cleared after a Governance save so the sidebar re-asks | dashboard-app.js |
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data-stream-designer-app.js, data-stream-store-app.js |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 

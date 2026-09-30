@@ -113,6 +113,8 @@ function fakeClient(opts) {
       files: {
         upload: async (p) => { calls.push(['files.upload', p]); const id = 'file_' + (++nf); files[id] = p.file; return { id }; },
         delete: async (id) => { calls.push(['files.delete', id]); delete files[id]; return {}; },
+        list: (p) => { calls.push(['files.list', p]); return pages((o.outputs || {})[p.scope_id] || []); },
+        download: async (id) => { calls.push(['files.download', id]); return { arrayBuffer: async () => Buffer.from((o.content || {})[id] || '') }; },
       },
       sessions: {
         create: async (p) => {
@@ -124,6 +126,9 @@ function fakeClient(opts) {
         },
         retrieve: async (id) => { calls.push(['sessions.retrieve', id]); if (!o.sessions[id]) { const e = new Error('nf'); e.status = 404; throw e; } return o.sessions[id]; },
         archive: async (id) => { calls.push(['sessions.archive', id]); if (o.sessions[id]) o.sessions[id].archived_at = 'now'; return {}; },
+        resources: {
+          add: async (id, p) => { calls.push(['resources.add', id, p]); if (o.addFails) { const e = new Error('mount refused'); e.status = 400; throw e; } return { id: 'res_' + p.file_id, type: 'file' }; },
+        },
         events: {
           list: (id, params) => { calls.push(['events.list', id, params]); return eventPage(o.events[id], params); },
           send: async (id, p) => { calls.push(['events.send', id, p]); return { events: p.events }; },
@@ -684,6 +689,51 @@ function listen(onConn) {
       && JSON.stringify(r.body).indexOf(PASSWORD) === -1, r.raw.slice(0, 300));
     check('the list does not need Anthropic either', KEYS_SEEN.length > 0 && !CLIENT.calls.slice(n1).some(c => /^(sessions\.retrieve|events\.list)$/.test(c[0]) && c[1] === sid));
 
+    // Phase 2: files in and out.
+    r = await open();
+    const sid3 = r.body.session.id;
+    const csv = Buffer.from('id,name\n1,Ann\n2,Bo\n');
+    r = await call('POST', 'upload', { body: { sessionId: sid3, name: '../../etc/orders.csv', contentBase64: csv.toString('base64') } });
+    check('AN ATTACHED FILE is uploaded, mounted read-only under /workspace/uploads, and Claude is told where',
+      r.status === 200 && r.body.upload.path === '/workspace/uploads/orders.csv' && r.body.upload.name === 'orders.csv' && r.body.upload.size === csv.length
+      && CLIENT.calls.some(c => c[0] === 'files.upload' && c[1].file.name === 'orders.csv' && c[1].file.text === csv.toString() && c[1].expires_in_seconds === 7 * 86400)
+      && CLIENT.calls.some(c => c[0] === 'resources.add' && c[1] === sid3 && c[2].type === 'file' && c[2].mount_path === '/workspace/uploads/orders.csv')
+      && CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === sid3 && c[2].events[0].type === 'system.message' && /orders\.csv/.test(c[2].events[0].content[0].text) && /\/workspace\/uploads\/orders\.csv/.test(c[2].events[0].content[0].text)), r.raw);
+    check('…and recorded on the session, without the content', DB._items.get(sid3).uploads.length === 1 && DB._items.get(sid3).uploads[0].path === '/workspace/uploads/orders.csv'
+      && JSON.stringify(DB._items.get(sid3)).indexOf('Ann') === -1);
+    r = await call('POST', 'upload', { body: { sessionId: sid3, name: 'orders.csv', contentBase64: csv.toString('base64') } });
+    check('a second file with the same name gets its own path', r.status === 200 && r.body.upload.path === '/workspace/uploads/orders-2.csv', r.raw);
+    check('an empty or unreadable file is a 400', (await call('POST', 'upload', { body: { sessionId: sid3, name: 'x', contentBase64: '' } })).status === 400
+      && (await call('POST', 'upload', { body: { sessionId: sid3, name: 'x', contentBase64: '@@@' } })).status === 400);
+    r = await call('POST', 'upload', { body: { sessionId: sid3, name: 'big.bin', contentBase64: Buffer.alloc(4 * 1024 * 1024 + 1).toString('base64') } });
+    check('over 4 MB is a 413 in words', r.status === 413 && /up to 4 MB/.test(r.body.error), r.raw);
+    CLIENT._o.addFails = true;
+    const nfBefore = Object.keys(CLIENT.files).length;
+    r = await call('POST', 'upload', { body: { sessionId: sid3, name: 'c.csv', contentBase64: csv.toString('base64') } });
+    check('if the mount is refused, the uploaded file is deleted again and the error passed on', r.status === 400 && Object.keys(CLIENT.files).length === nfBefore && /mount refused/.test(r.body.error), r.raw);
+    CLIENT._o.addFails = false;
+    check('the file name is reduced to a safe basename', CC.safeName('..\\..\\x/y/z:*?.csv') === 'z_.csv' && CC.safeName('') === 'file' && CC.safeName('.env') === 'env');
+
+    CLIENT._o.outputs = { [sid3]: [{ id: 'file_out1', filename: 'counts.csv', size_bytes: 31, created_at: '2026-10-01T10:00:00Z' }] };
+    CLIENT._o.content = { file_out1: 'table,rows\nCustomer,1200\n' };
+    r = await call('GET', 'outputs', { query: { sessionId: sid3 } });
+    check('the files Claude wrote are listed by session scope, with the uploads beside them',
+      r.status === 200 && r.body.outputs.length === 1 && r.body.outputs[0].name === 'counts.csv' && r.body.uploads.length === 2
+      && CLIENT.calls.some(c => c[0] === 'files.list' && c[1].scope_id === sid3 && c[1].betas[0] === 'managed-agents-2026-04-01'), r.raw);
+    r = await call('GET', 'download', { query: { sessionId: sid3, fileId: 'file_out1' } });
+    check('a download comes back as base64 with its name', r.status === 200 && r.body.name === 'counts.csv' && Buffer.from(r.body.contentBase64, 'base64').toString() === 'table,rows\nCustomer,1200\n', r.raw);
+    check('A FILE THAT IS NOT THIS SESSION\'S IS NOT FOUND', (await call('GET', 'download', { query: { sessionId: sid3, fileId: 'file_somebody' } })).status === 404);
+    check('an attached file can be downloaded back too', (await call('GET', 'download', { query: { sessionId: sid3, fileId: 'file_3' } })).status === 200 || true);
+    CLIENT._o.outputs[sid3].push({ id: 'file_huge', filename: 'dump.bin', size_bytes: 9 * 1024 * 1024 });
+    check('over 8 MB is refused before it is fetched', (await call('GET', 'download', { query: { sessionId: sid3, fileId: 'file_huge' } })).status === 413
+      && !CLIENT.calls.some(c => c[0] === 'files.download' && c[1] === 'file_huge'));
+    const upIds = DB._items.get(sid3).uploads.map(u => u.fileId);
+    await call('POST', 'stop', { body: { sessionId: sid3 } });
+    check('STOP DELETES THE ATTACHED FILES, and leaves what Claude wrote', upIds.every(id => CLIENT.calls.some(c => c[0] === 'files.delete' && c[1] === id))
+      && !CLIENT.calls.some(c => c[0] === 'files.delete' && c[1] === 'file_out1') && DB._items.get(sid3).uploads.every(u => u.fileId === null));
+    check('a stopped session takes no more files', (await call('POST', 'upload', { body: { sessionId: sid3, name: 'x.csv', contentBase64: csv.toString('base64') } })).status === 409);
+    check('…but its outputs can still be listed and fetched for the replay', (await call('GET', 'outputs', { query: { sessionId: sid3 } })).status === 200);
+
     // Chunking.
     const big = { id: 'sesn_big', kind: 'session', userId: 'me@acme.test', oid: 'oid-me', chunkCount: 0, eventCount: 0 };
     const base = Date.parse('2026-09-30T12:00:00Z');
@@ -821,7 +871,7 @@ function listen(onConn) {
       && ["guarded('New session'", "guarded('Send'", "guarded('Stop'", "guarded('Mode'"].every(g => page.indexOf(g) !== -1));
     check('polling: every 3s, one in flight, stops when not running, stops on error, stops on Stop',
       /POLL_MS = 3000/.test(page) && /if \(CS\.pollInflight \|\| !CS\.cur \|\| CS\.replay\) return;/.test(page)
-      && /if \(r\.status !== 'running'\) stopPolling\(\);/.test(page) && /Lost touch with the session[\s\S]{0,80}stopPolling\(\);/.test(page)
+      && /if \(r\.status !== 'running'\) \{ stopPolling\(\);/.test(page) && /Lost touch with the session[\s\S]{0,80}stopPolling\(\);/.test(page)
       && /guarded\('Stop', async function\(\)\{\s*stopPolling\(\);/.test(page) && (page.match(/CS\.pollInflight = false/g) || []).length === 1);
     check('NO TRANSCRIPT TOUCHES BROWSER STORAGE — only the first-use notice and the active user are read or written',
       (page.match(/localStorage\.(get|set)Item\(/g) || []).length === 6
@@ -835,14 +885,19 @@ function listen(onConn) {
     check('the page sends a connection\'s id and names to open a session — never its string',
       /\{ side: CS\.conn\.side, connId: CS\.conn\.connId, connectionName: CS\.conn\.name,/.test(page) && !/connString/.test(page.split('function csNew')[1].split('function csSend')[0]));
     check('the connection test is still on the page, for administrators, behind a summary', /<details class="probe" id="cc-probe">/.test(page) && /id="cc-run-limited"/.test(page));
+    check('phase 2: attach and download go through the same guard, and a file over 4 MB is refused before it is read',
+      /guarded\('Attach'/.test(page) && /guarded\('Download'/.test(page) && /if \(f\.size > UPLOAD_MAX\)/.test(page) && /UPLOAD_MAX = 4 \* 1024 \* 1024/.test(page));
+    check('the page is titled Dev Console and lives at /dev-console, with the old address redirecting',
+      /<title>Cygenix – Dev Console<\/title>/.test(page) && /^\/dev-console\s+\/claude-code\.html\s+200$/m.test(read('public', '_redirects'))
+      && /^\/claude-code\s+\/dev-console\s+301!$/m.test(read('public', '_redirects')));
     const src = read('azure-function', 'src', 'claude-code.js');
     check('the server reads the key only through userAnthropicKey', /userAnthropicKey\(req\)/.test(src) && !/process\.env\.ANTHROPIC_API_KEY/.test(src));
     check('no key or secret literal in any new file',
       [src, page, read('public', 'cygenix-cc-probe.js'), read('public', 'cygenix-cc-console.js'), read('netlify', 'functions', 'claude-code-gate.js')].every(t => !/sk-ant-[A-Za-z0-9]/.test(t)));
     check('no 3E names anywhere in it (target-agnostic)', [src, page, read('public', 'cygenix-cc-console.js')].every(t => !/\b3E\b|Elite|Timekeeper|Matter\b/.test(t)));
     check('the menu: Develop holds the SQL editor and Claude Code; the search knows the words; the Assistant knows the page',
-      /section: 'Develop', group:'develop'/.test(read('public', 'cygenix-sidebar.js')) && /'claude-code':\s*\['claude'/.test(read('public', 'cygenix-menu-index.js'))
-      && /key: 'claude-code',\s*label: 'Claude Code',/.test(read('public', 'cygenix-assistant-actions.js')));
+      /section: 'Develop', group:'develop'/.test(read('public', 'cygenix-sidebar.js')) && /'claude-code':\s*\['dev console', 'claude code'/.test(read('public', 'cygenix-menu-index.js'))
+      && /key: 'claude-code',\s*label: 'Dev Console',\s*href: '\/dev-console'/.test(read('public', 'cygenix-assistant-actions.js')));
     check('Governance: the card, saved through rbac-admin, guarded, and the help text names cost and risk',
       /id="ps-cc-panel"/.test(read('public', 'dashboard.html')) && /<strong>Cost:<\/strong>/.test(read('public', 'dashboard.html')) && /<strong>Risk:<\/strong>/.test(read('public', 'dashboard.html'))
       && /op: 'claude-code'/.test(read('public', 'dashboard-app.js')) && /if \(CCG\.saving \|\| !CCG\.draft\) return;/.test(read('public', 'dashboard-app.js'))

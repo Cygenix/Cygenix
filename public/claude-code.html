@@ -37,7 +37,7 @@
 </script>
 <meta name="theme-color" content="#FFFFFF">
 <meta name="description" content="Chat with Claude, which writes and runs code against your database in an isolated Anthropic workspace.">
-<title>Cygenix – Claude Code</title>
+<title>Cygenix – Dev Console</title>
 <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
 <script src="/cygenix-rbac.js?v=78965846c4" defer></script>
 <!-- Connections are read so a session can be opened on the active profile's
@@ -124,6 +124,13 @@ table.res{border-collapse:collapse;font-size:0.78rem;margin:0.4rem 0.75rem 0.6re
 table.res th,table.res td{border:0.5px solid var(--border);padding:0.2rem 0.5rem;text-align:left;white-space:nowrap}
 table.res th{background:var(--bg3);position:sticky;top:0}
 .empty{color:var(--text3);font-size:0.84rem;padding:1rem 0.2rem}
+.files{border:0.5px solid var(--border);border-radius:var(--r,6px);background:var(--bg2);padding:0.6rem 0.8rem;margin-bottom:0.8rem}
+.files-head{font-size:0.76rem;font-weight:600;color:var(--text2);margin:0.3rem 0 0.2rem;display:flex;gap:0.6rem;align-items:center}
+.files-head a{font-weight:400;color:var(--accent);text-decoration:none;font-size:0.74rem}
+.file{display:flex;align-items:center;gap:0.6rem;font-size:0.82rem;padding:0.25rem 0;border-bottom:0.5px solid var(--border)}
+.file:last-child{border-bottom:0}
+.file .n{font-family:var(--mono);font-size:0.78rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .sz{color:var(--text2);font-size:0.74rem;white-space:nowrap}
 /* Sessions drawer and the two modals */
 .drawer{position:fixed;top:calc(52px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;bottom:0;width:360px;max-width:92vw;background:var(--bg2);border-left:0.5px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,0.08);transform:translateX(100%);transition:transform 0.18s;z-index:30;display:flex;flex-direction:column}
 .drawer.open{transform:none}
@@ -167,11 +174,11 @@ table.facts td:first-child{color:var(--text2);width:210px}
 <div id="cyg-sidebar-mount" data-active="claude-code"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-menu-index.js?v=d3750bbd06" defer></script>
-<script src="/cygenix-sidebar.js?v=4c9e04fdfe" defer></script>
+<script src="/cygenix-menu-index.js?v=44d29c015d" defer></script>
+<script src="/cygenix-sidebar.js?v=ce307ce49a" defer></script>
 
 <div class="topbar">
-  <h1><i class="ic ic-robot"></i> Claude Code</h1>
+  <h1><i class="ic ic-robot"></i> Dev Console</h1>
   <select id="cs-conn" aria-label="Connection" onchange="csPickConn()"></select>
   <span class="sw" id="cs-toggle" role="switch" aria-checked="false" tabindex="0" onclick="csToggle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();csToggle()}"
         title="When off, Claude is instructed not to change data. For guaranteed protection, use a read-only database login.">
@@ -188,7 +195,7 @@ table.facts td:first-child{color:var(--text2);width:210px}
 <main class="main">
   <section class="gate" id="cc-gate" hidden>
     <div class="card">
-      <h2 id="cc-gate-title">Claude Code</h2>
+      <h2 id="cc-gate-title">Dev Console</h2>
       <p class="muted" id="cc-gate-text"></p>
       <div id="cc-key-note" class="note warn" hidden>No Anthropic API key is saved in this browser. Add it in
         <a href="/dashboard#project-settings">Settings → General</a>, then come back. Nothing is sent until you do.</div>
@@ -205,13 +212,25 @@ table.facts td:first-child{color:var(--text2);width:210px}
         <div class="col-head"><i class="ic ic-chat"></i> Chat</div>
         <div class="col-body" id="cs-chat"><div class="empty">Start a session, then ask Claude for what you need — for example, "List the tables and row counts using Python".</div></div>
         <div class="composer">
+          <input type="file" id="cs-file" hidden onchange="csAttach(this)">
+          <button class="btn" id="cs-attach" onclick="document.getElementById('cs-file').click()" disabled
+                  title="Attach a file of up to 4 MB. It is mounted read-only in the workspace under /workspace/uploads and Claude is told where."><i class="ic ic-upload"></i></button>
           <textarea id="cs-input" rows="2" placeholder="Ask Claude… (Ctrl+Enter to send)" disabled onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();csSend()}"></textarea>
           <button class="btn primary" id="cs-send" onclick="csSend()" disabled>Send</button>
         </div>
       </div>
       <div class="col">
-        <div class="col-head"><i class="ic ic-tools"></i> Output <span class="tag" id="cs-out-count"></span></div>
+        <div class="col-head"><i class="ic ic-tools"></i> Output <span class="tag" id="cs-out-count"></span>
+          <span class="spacer"></span>
+          <button class="btn" id="cs-files-btn" onclick="csFilesToggle()"><i class="ic ic-folder"></i> Files <span class="tag" id="cs-files-count"></span></button>
+        </div>
         <div class="col-body">
+          <div id="cs-files" class="files" hidden>
+            <div class="files-head">Attached to the workspace</div>
+            <div id="cs-uploads"><div class="empty">Nothing attached. Use the paper-clip button by the message box.</div></div>
+            <div class="files-head">Written by Claude <a href="#" class="ct-link" onclick="event.preventDefault(); loadOutputs(true)">Refresh</a></div>
+            <div id="cs-outputs"><div class="empty">Files Claude saves under /mnt/session/outputs appear here when a turn finishes.</div></div>
+          </div>
           <div id="cs-firewall" class="note warn" hidden>Your database may only accept known IP addresses — the Anthropic workspace may need allowing.</div>
           <div id="cs-budget" class="note crit" hidden>This session reached its spend cap and has paused. Start a new session to carry on.</div>
           <div id="cs-note" class="note" hidden></div>
@@ -311,7 +330,9 @@ table.facts td:first-child{color:var(--text2);width:210px}
 var PROXY = '/.netlify/functions/data-proxy';
 var POLL_MS = 3000, MIN_GAP_MS = 3000;
 var CS = { me: null, conns: [], conn: null, cur: null, events: [], seen: {}, wantChanges: false,
-           polling: null, pollInflight: false, busy: {}, last: {}, replay: null, sessions: [], user: '' };
+           polling: null, pollInflight: false, busy: {}, last: {}, replay: null, sessions: [], user: '',
+           outputs: [], outputsFor: '', outputsLoading: false, filesOpen: false };
+var UPLOAD_MAX = 4 * 1024 * 1024;
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
@@ -351,7 +372,7 @@ async function init(){
   var gate = $('cc-gate'), con = $('cc-console');
   if (!allowed) {
     gate.hidden = false; con.hidden = true;
-    $('cc-gate-title').textContent = 'Claude Code';
+    $('cc-gate-title').textContent = 'Dev Console';
     $('cc-gate-text').textContent = !CS.me
       ? 'Could not read your roles. Sign in again and reopen this page.'
       : 'Not enabled for your role — ask an Owner to enable it in Governance.';
@@ -363,7 +384,7 @@ async function init(){
   }
   if (!hasKey()) {
     gate.hidden = false; con.hidden = true;
-    $('cc-gate-text').textContent = 'Claude Code runs on your own Anthropic API key.';
+    $('cc-gate-text').textContent = 'The Dev Console runs on your own Anthropic API key.';
     $('cc-key-note').hidden = false;
     renderTop(); pbRenderButtons();
     return;
@@ -424,7 +445,7 @@ function csNew(){
       var r = await call('POST', '/agent/claude-code/session', { side: CS.conn.side, connId: CS.conn.connId, connectionName: CS.conn.name,
         profileId: CS.conn.profileId, profileName: CS.conn.profileName, envClass: CS.conn.envClass });
       stopPolling();
-      CS.replay = null; CS.cur = r.session; CS.events = []; CS.seen = {};
+      CS.replay = null; CS.cur = r.session; CS.events = []; CS.seen = {}; CS.outputs = []; CS.outputsFor = r.session.id;
       CS.cur.connectionName = CS.conn.name; CS.cur.profileName = CS.conn.profileName; CS.cur.envClass = CS.conn.envClass;
       note('cs-note', '');
       $('cs-firewall').hidden = true; $('cs-budget').hidden = true;
@@ -491,8 +512,9 @@ async function poll(){
     var r = await call('GET', '/agent/claude-code/events?sessionId=' + encodeURIComponent(cur.id) + '&after=' + encodeURIComponent(lastEventId()));
     if (CS.cur !== cur) return;
     mergeEvents(r.events || []);
+    var wasRunning = cur.status === 'running';
     cur.status = r.status; cur.costCents = r.costCents; cur.dataChangesAllowed = !!r.dataChangesAllowed;
-    if (r.status !== 'running') stopPolling();
+    if (r.status !== 'running') { stopPolling(); if (wasRunning) loadOutputs(false); }
   } catch (e) {
     // A readable error, once, and no more polling: a retry storm helps nobody.
     note('cs-note', 'Lost touch with the session: ' + e.message, 'crit');
@@ -562,6 +584,84 @@ function applyMode(on){
   });
 }
 
+/* ── Files: attach to the workspace, fetch what Claude wrote ─────────── */
+function csFilesToggle(){ CS.filesOpen = !CS.filesOpen; render(); if (CS.filesOpen) loadOutputs(false); }
+function sessionForFiles(){ return CS.replay ? CS.replay.session : CS.cur; }
+function csAttach(input){
+  var f = input.files && input.files[0];
+  input.value = '';
+  if (!f || !CS.cur || CS.replay) return;
+  if (f.size > UPLOAD_MAX) { note('cs-note', 'Files up to 4 MB can be attached; "' + f.name + '" is ' + (f.size / 1048576).toFixed(1) + ' MB.', 'warn'); return; }
+  guarded('Attach', function(){
+    return new Promise(function(resolve){
+      var rd = new FileReader();
+      rd.onerror = function(){ note('cs-note', 'Could not read "' + f.name + '".', 'crit'); resolve(); };
+      rd.onload = async function(){
+        try {
+          note('cs-note', 'Attaching "' + f.name + '"…', 'info');
+          var b64 = String(rd.result || '').replace(/^data:[^,]*,/, '');
+          var r = await call('POST', '/agent/claude-code/upload', { sessionId: CS.cur.id, name: f.name, contentBase64: b64 });
+          CS.cur.uploads = (CS.cur.uploads || []).concat([r.upload]);
+          CS.events.push({ id: 'local-file-' + Date.now(), type: 'system.message', local: true,
+            content: [{ type: 'text', text: 'Attached ' + r.upload.name + ' — in the workspace at ' + r.upload.path + '. Mention it in your next message.' }] });
+          note('cs-note', '');
+          CS.filesOpen = true;
+        } catch (e) {
+          note('cs-note', 'Could not attach the file: ' + e.message, 'crit');
+        }
+        resolve();
+      };
+      rd.readAsDataURL(f);
+    });
+  });
+}
+async function loadOutputs(force){
+  var s = sessionForFiles();
+  if (!s || CS.outputsLoading) return;
+  if (!force && CS.outputsFor === s.id && CS.outputs.length) return;
+  CS.outputsLoading = true;
+  try {
+    var r = await call('GET', '/agent/claude-code/outputs?sessionId=' + encodeURIComponent(s.id));
+    CS.outputs = r.outputs || []; CS.outputsFor = s.id;
+    if (r.uploads && !CS.replay && CS.cur && CS.cur.id === s.id) CS.cur.uploads = r.uploads;
+  } catch (e) {
+    note('cs-note', 'Could not list the workspace files: ' + e.message, 'warn');
+  } finally { CS.outputsLoading = false; render(); }
+}
+function csDownload(fileId, name){
+  var s = sessionForFiles();
+  if (!s) return;
+  guarded('Download', async function(){
+    try {
+      var r = await call('GET', '/agent/claude-code/download?sessionId=' + encodeURIComponent(s.id) + '&fileId=' + encodeURIComponent(fileId));
+      var bin = atob(r.contentBase64 || ''), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([bytes]));
+      var a = document.createElement('a'); a.href = url; a.download = r.name || name || 'file'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+    } catch (e) {
+      note('cs-note', 'Could not download: ' + e.message, 'crit');
+    }
+  });
+}
+function sizeText(n){ n = Number(n) || 0; return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB'; }
+function renderFiles(){
+  var s = sessionForFiles();
+  var ups = (s && s.uploads) || [];
+  var outs = CS.outputsFor === (s && s.id) ? CS.outputs : [];
+  $('cs-files').hidden = !CS.filesOpen;
+  $('cs-files-count').textContent = (ups.length + outs.length) ? String(ups.length + outs.length) : '';
+  $('cs-files-btn').disabled = !s;
+  $('cs-uploads').innerHTML = ups.length ? ups.map(function(u){
+    return '<div class="file"><span class="n" title="' + esc(u.path) + '">' + esc(u.name) + '</span><span class="sz">' + esc(sizeText(u.size)) + '</span>'
+      + '<span class="sz">' + esc(u.path) + '</span></div>'; }).join('')
+    : '<div class="empty">Nothing attached. Use the paper-clip button by the message box.</div>';
+  $('cs-outputs').innerHTML = outs.length ? outs.map(function(o){
+    return '<div class="file"><span class="n">' + esc(o.name) + '</span><span class="sz">' + esc(sizeText(o.size)) + '</span>'
+      + '<button class="btn" onclick="csDownload(\'' + esc(o.id) + '\',\'' + esc(o.name) + '\')"' + (CS.busy['Download'] ? ' disabled' : '') + '><i class="ic ic-download"></i> Download</button></div>'; }).join('')
+    : '<div class="empty">' + (CS.outputsLoading ? 'Looking…' : 'Files Claude saves under /mnt/session/outputs appear here when a turn finishes.') + '</div>';
+}
+
 /* ── Past sessions ───────────────────────────────────────────────────── */
 async function loadSessions(){
   try { CS.sessions = (await call('GET', '/agent/claude-code/sessions')).sessions || []; } catch (e) { CS.sessions = []; }
@@ -573,7 +673,9 @@ async function csOpenSession(id){
   try {
     var r = await call('GET', '/agent/claude-code/session?id=' + encodeURIComponent(id));
     CS.replay = { session: r.session, events: r.events || [] };
+    CS.outputs = []; CS.outputsFor = '';
     csDrawer(false);
+    if (CS.filesOpen) loadOutputs(true);
     $('cs-replay-text').textContent = 'Replaying "' + (r.session.title || r.session.id) + '" — read-only.';
     render();
   } catch (e) { note('cs-note', 'Could not load that session: ' + e.message, 'crit'); }
@@ -591,6 +693,7 @@ function renderTop(){
   $('cs-new').disabled = !allowed || !!CS.busy['New session'] || !!CS.replay;
   $('cs-stop').disabled = !live || !!CS.busy['Stop'];
   $('cs-send').disabled = !live || !!CS.busy['Send'];
+  $('cs-attach').disabled = !live || !!CS.busy['Attach'];
   $('cs-input').disabled = !live;
   $('cs-conn').disabled = !allowed || !!CS.busy['New session'];
   var on = CS.replay ? !!CS.replay.session.dataChangesAllowed : (CS.cur ? !!CS.cur.dataChangesAllowed : CS.wantChanges);
@@ -630,6 +733,7 @@ function render(){
   }
   $('cs-firewall').hidden = !view.flags.connectionFailure;
   $('cs-budget').hidden = !view.flags.budgetReached;
+  renderFiles();
   renderDrawer();
 }
 function tableHtml(t){
@@ -752,8 +856,8 @@ document.addEventListener('DOMContentLoaded', function(){
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=f17fbead2e"></script>
-<script src="/cygenix-assistant-actions.js?v=4d7f25a77a"></script>
+<script src="/cygenix-assistant.js?v=112db55504"></script>
+<script src="/cygenix-assistant-actions.js?v=3bd2678be0"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
 <script src="/cygenix-tour-steps.js?v=580c85794f"></script>
 <script src="/cygenix-tour.js?v=3aa5b94223"></script>

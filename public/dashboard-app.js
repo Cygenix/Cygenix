@@ -16746,7 +16746,7 @@ function initPrivacySecurityView(){
   ccGovLoad();
 }
 
-/* ── Claude Code console: the organisation switch and its allow-list ──────
+/* ── Dev Console (Claude Code): the organisation switch and its allow-list ──────
    Read from rbac-admin?what=me (the same record the sidebar reads) and
    written back with op:'claude-code'. Only an Owner or Platform Administrator
    can save; everyone else sees the state read-only. One save at a time,
@@ -16818,7 +16818,7 @@ async function ccGovSave(){
     try { sessionStorage.removeItem('cygenix_rbac_me'); } catch (e) {}
     const on = data.claudeCode && data.claudeCode.enabled;
     note.textContent = 'Saved. The console is ' + (on ? 'ON for ' + (data.claudeCode.roles.length ? data.claudeCode.roles.map(x => CC_ROLE_NAMES[x] || x).join(', ') : 'nobody') : 'OFF') + '. Recorded in the audit log.';
-    psToast(on ? 'Claude Code console switched on' : 'Claude Code console switched off');
+    psToast(on ? 'Dev Console switched on' : 'Dev Console switched off');
   } catch (e) {
     note.textContent = 'Could not save: ' + e.message;
   } finally {

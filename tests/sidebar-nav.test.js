@@ -77,10 +77,10 @@ check('the rail is seven groups — Plan, Connect, Model, Develop, Run, Quality,
   'got: ' + sections.join(' → '));
 check('and it is sixteen destinations, not thirty',
   railKeys.length === 16, railKeys.length + ': ' + railKeys.join(','));
-check('Develop holds the SQL editor — moved, same key, same address — and Claude Code',
+check('Develop holds the SQL editor — moved, same key, same address — and the Dev Console',
   (() => { const d = NAV.find(s => s.section === 'Develop'); const sq = d && d.items[0]; const cc = d && d.items[1];
     return d && d.items.length === 2 && sq.key === 'sql-editor' && sq.href === '/sql-editor' && sq.label === 'SQL editor'
-      && cc.key === 'claude-code' && cc.href === '/claude-code' && cc.label === 'Claude Code'
+      && cc.key === 'claude-code' && cc.href === '/dev-console' && cc.label === 'Dev Console'
       && !NAV.find(s => s.section === 'Model').items.some(i => i.key === 'sql-editor'); })());
 check('Claude Code is hidden unless the organisation switch and the caller\'s role say otherwise (requiresClaudeCode)',
   (SB.__findItem('claude-code') || {}).requiresClaudeCode === true);

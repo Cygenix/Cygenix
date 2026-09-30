@@ -104,9 +104,9 @@ exports.handler = async function (event) {
     const decision = rbac.can(actor, spec.action, { mutating: spec.mutating });
     if (!decision.allow) {
       return refuse(decision.reason, body.act === 'probe'
-        ? 'Only an Organisation Owner or Platform Administrator can run the Claude Code connection test.'
+        ? 'Only an Organisation Owner or Platform Administrator can run the Dev Console connection test.'
         : body.act === 'changes'
-          ? 'Your role cannot allow Claude Code to change data.'
+          ? 'Your role cannot allow the Dev Console to change data.'
           : 'Not enabled for your role — ask an Owner to enable it in Governance.',
         decision.severity);
     }
@@ -115,7 +115,7 @@ exports.handler = async function (event) {
       const policy = tenancy.normaliseClaudeCode(tenant.claudeCode);
       if (!policy.enabled) {
         return refuse('console switched off',
-          'The Claude Code console is switched off for this organisation — ask an Owner to enable it in Governance.');
+          'The Dev Console is switched off for this organisation — ask an Owner to enable it in Governance.');
       }
       if (!actor.roles.some(r => policy.roles.indexOf(r) !== -1)) {
         return refuse('role not on the allow-list',

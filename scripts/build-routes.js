@@ -81,6 +81,8 @@ const ADDRESS = {
   'report_settings.html':       '/report-settings',
   'schema_explorer.html':       '/schema-explorer',
   'user_roles.html':            '/user-roles',
+  // Renamed in Sep-2026: the Claude Code console became the Dev Console.
+  'claude-code.html':           '/dev-console',
 };
 
 // The address a page answers at, and the one its file name would have given

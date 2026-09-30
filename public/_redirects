@@ -28,7 +28,7 @@
 /analytics.html           /analytics              301!
 /assurance.html           /assurance              301!
 /balancing.html           /balancing              301!
-/claude-code.html         /claude-code            301!
+/claude-code.html         /dev-console            301!
 /connect.html             /connect                301!
 /conversion-templates.html /conversion-templates   301!
 /coworker.html            /coworker               301!
@@ -74,6 +74,7 @@
 # Pages whose address is not their file name send the file-name form
 # here too, so an address a page used to answer at still works.
 /agentive_migration       /agentive-migration     301!
+/claude-code              /dev-console            301!
 /data_stream              /data-stream            301!
 /data_stream_designer     /data-stream-designer   301!
 /data_stream_events       /data-stream-events     301!
@@ -93,7 +94,7 @@
 /analytics                /analytics.html         200
 /assurance                /assurance.html         200
 /balancing                /balancing.html         200
-/claude-code              /claude-code.html       200
+/dev-console              /claude-code.html       200
 /connect                  /connect.html           200
 /conversion-templates     /conversion-templates.html 200
 /coworker                 /coworker.html          200

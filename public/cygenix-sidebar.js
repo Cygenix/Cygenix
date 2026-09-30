@@ -106,14 +106,14 @@
     ]},
     // DEVELOP (Sep-2026): where a person writes and runs things against
     // what Model describes. The SQL editor moved here from Model — same
-    // key, same address, nothing else about it changed. Claude Code is the
-    // console where Claude writes and runs code in an Anthropic workspace
+    // key, same address, nothing else about it changed. The Dev Console
+    // (key claude-code, its name until Oct-2026) is where Claude writes and runs code in an Anthropic workspace
     // connected to one of the person's databases; it is hidden until the
     // organisation switches it on in Governance AND the person's role is on
     // the allow-list, both read from the same roles record as the Audit log.
     { section: 'Develop', group:'develop', items: [
       { key:'sql-editor',  label:'SQL editor',  href:'/sql-editor',  icon: iconCode() },
-      { key:'claude-code', label:'Claude Code', href:'/claude-code', icon: iconTerminal(), requiresClaudeCode:true },
+      { key:'claude-code', label:'Dev Console', href:'/dev-console', icon: iconTerminal(), requiresClaudeCode:true },
     ]},
     { section: 'Run', group:'run', items: [
       { key:'jobs',        label:'Jobs & packages', view:'jobs',        icon: iconPlay() },

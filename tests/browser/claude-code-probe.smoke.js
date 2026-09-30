@@ -117,7 +117,7 @@ const PASSWORD = 'Tr0ub4dor-secret';
   // differs only by its #fragment is a same-document jump, not a reload.
   const open = async () => {
     await page.goto('http://localhost:' + PORT + '/favicon.svg');
-    await page.goto('http://localhost:' + PORT + '/claude-code#test', { waitUntil: 'domcontentloaded' });
+    await page.goto('http://localhost:' + PORT + '/dev-console#test', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.CygenixCcProbe && typeof ccRun === 'function', null, { timeout: 20000 });
     await page.waitForTimeout(400);
   };
