@@ -939,11 +939,14 @@ function probeScript(p) {
   ].join('\n');
 }
 
-const PROBE_SYSTEM = 'You run one automated network test for Cygenix and report its output. '
+const PROBE_SYSTEM = 'You are running a connectivity check for Cygenix, a database migration console, on behalf of the '
+  + 'signed-in administrator. The server named in the script is their own database server, the one Cygenix is configured '
+  + 'to migrate to or from; the check tells them whether their firewall lets this workspace in, and from which address. '
   + 'Run exactly what you are given, change nothing, install nothing, run nothing else.';
 
 function probeInstruction(p) {
-  return 'Save the Python script below, exactly as it is, to /tmp/cygprobe.py (the write tool, or a bash heredoc), '
+  return 'This is a connectivity check against my own database server, so I can allow this workspace through its firewall. '
+    + 'Save the Python script below, exactly as it is, to /tmp/cygprobe.py (the write tool, or a bash heredoc), '
     + 'then run `python3 /tmp/cygprobe.py` with the bash tool. Do not change the script and do not run anything else. '
     + 'Reply with the full output of the script, which includes a line beginning CYGPROBE_RESULT. If the script '
     + 'fails, reply with the error it printed.\n\n```python\n' + probeScript(p) + '\n```';
@@ -977,14 +980,25 @@ function parseProbeEvents(events) {
   // credential is involved in a test, so nothing here needs blanking.
   const clip = (t) => String(t || '').replace(/\s+$/, '').slice(-1200);
   const transcript = [];
+  // Every event type, in order, so an unexpected shape is visible too.
+  const eventTypes = events.map(ev => ev.type + (ev.stop_reason && ev.stop_reason.type ? ':' + ev.stop_reason.type : '')
+    + (ev.is_error ? ':error' : '') + (ev.error && ev.error.type ? ':' + ev.error.type : ''));
   events.forEach(ev => {
-    if (ev.type === 'agent.message') transcript.push({ kind: 'message', text: clip(textsOf(ev).join('\n')) });
-    else if (ev.type === 'agent.tool_use') {
+    if (ev.type === 'agent.message') {
+      const blocks = Array.isArray(ev.content) ? ev.content : [];
+      // A reply Anthropic's safety system withheld arrives as a redacted
+      // block and nothing else. Say so, rather than showing a blank.
+      if (blocks.length && blocks.every(b => b && b.type === 'redacted')) {
+        transcript.push({ kind: 'refused', text: 'Claude\'s reply was withheld by Anthropic\'s safety system — the request was declined.' });
+      } else transcript.push({ kind: 'message', text: clip(textsOf(ev).join('\n')) });
+    } else if (ev.type === 'span.model_request_end' && ev.is_error) {
+      transcript.push({ kind: 'error', text: 'A model request failed.' });
+    } else if (ev.type === 'agent.tool_use') {
       const input = ev.input || {};
       transcript.push({ kind: 'tool', text: clip(ev.name === 'bash' ? input.command : (ev.name || 'tool') + ' ' + JSON.stringify(input)) });
     } else if (ev.type === 'agent.tool_result') transcript.push({ kind: ev.is_error ? 'error' : 'output', text: clip(textsOf(ev).join('\n')) });
   });
-  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12) };
+  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12), eventTypes };
 }
 
 function verdict(r) {
@@ -1045,6 +1059,7 @@ async function probeResult(who, apiKey, sessionId) {
     result: parsed.result, verdict: verdict(parsed.result), errors: parsed.errors,
     stopReason: parsed.stopReason,
     transcript: finished && !parsed.result ? parsed.transcript : [],
+    eventTypes: finished && !parsed.result ? parsed.eventTypes : [],
     costCents: cost && cost.amount != null ? Number(cost.amount) : null,
   });
 }

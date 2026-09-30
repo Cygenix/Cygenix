@@ -524,6 +524,13 @@ function listen(onConn) {
     check('WHEN NO RESULT LINE COMES BACK, what the workspace ran, got and said is kept so a person can act on it',
       noLine.result === null && noLine.transcript.length === 3 && noLine.transcript[0].kind === 'tool' && /cygprobe/.test(noLine.transcript[0].text)
       && noLine.transcript[1].kind === 'error' && /Traceback/.test(noLine.transcript[1].text) && noLine.transcript[2].kind === 'message');
+    const withheld = CC.parseProbeEvents([
+      { type: 'span.model_request_start' }, { type: 'agent.message', content: [{ type: 'redacted' }] },
+      { type: 'span.model_request_end', is_error: false }, { type: 'session.status_idle', stop_reason: { type: 'end_turn' } }]);
+    check('A REPLY WITHHELD BY THE SAFETY SYSTEM IS NAMED AS SUCH, and every event type is listed',
+      withheld.transcript.length === 1 && withheld.transcript[0].kind === 'refused' && /withheld/.test(withheld.transcript[0].text)
+      && withheld.eventTypes.join() === 'span.model_request_start,agent.message,span.model_request_end,session.status_idle:end_turn', JSON.stringify(withheld));
+    check('the test is framed as a firewall check of the person\'s own configured server', /their own database server/.test(CC.PROBE_SYSTEM) && /my own database server/.test(CC.probeInstruction({ host: 'h', port: 1, kind: 'other' })));
     CLIENT._o.sessions.sesn_noline = { id: 'sesn_noline', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
     CLIENT._o.events.sesn_noline = [{ id: 'q1', type: 'agent.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'I could not run it.' }] },
       { id: 'q2', type: 'session.status_idle', processed_at: '2026-10-01T00:00:01Z', stop_reason: { type: 'end_turn' } }];

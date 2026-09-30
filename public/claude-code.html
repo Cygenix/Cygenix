@@ -812,7 +812,7 @@ async function pbPoll(run){
   p.inflight = true;
   try {
     var r = await call('GET', '/agent/claude-code/probe?sessionId=' + encodeURIComponent(run.id));
-    run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents; run.transcript = r.transcript || [];
+    run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents; run.transcript = r.transcript || []; run.eventTypes = r.eventTypes || [];
     if (r.done) { run.status = 'done'; pbStop(run); }
   } catch (e) {
     run.status = 'error'; run.error = e.message; pbStop(run);
@@ -844,9 +844,13 @@ function pbRenderRuns(){
       html += '<div class="note warn">The workspace finished without reporting a result. This is not the allow-list: the test did not get as far as trying the connection. What it said and did is below.</div>';
       if ((run.transcript || []).length) {
         html += '<details class="block" open><summary>What the workspace said</summary>' + run.transcript.map(function(t){
-          var label = t.kind === 'tool' ? 'Ran' : t.kind === 'output' ? 'Output' : t.kind === 'error' ? 'Failed' : 'Claude';
+          var label = t.kind === 'tool' ? 'Ran' : t.kind === 'output' ? 'Output' : t.kind === 'error' ? 'Failed' : t.kind === 'refused' ? 'Declined' : 'Claude';
           return '<div class="res-label">' + esc(label) + '</div><pre>' + esc(t.text || '(nothing)') + '</pre>'; }).join('') + '</details>';
+      } else {
+        html += '<div class="note crit">The workspace sent back no reply, no command and no output at all.'
+          + ((run.eventTypes || []).length ? '' : ' If the Azure deploy of the latest change had not finished when this ran, run the test again in a few minutes.') + '</div>';
       }
+      if ((run.eventTypes || []).length) html += '<p class="muted mono" style="margin-top:0.4rem">Session events: ' + esc(run.eventTypes.join(' › ')) + '</p>';
     }
     return html + '</div>';
   }).join('');
