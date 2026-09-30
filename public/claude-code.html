@@ -96,10 +96,17 @@ body.cyg-collapsed .topbar{left:54px}
 .note.crit{background:var(--red-bg);color:var(--red)}
 .note.ok{background:var(--green-bg);color:var(--green)}
 .note.info{background:var(--accent-glow);color:var(--accent)}
-/* The two columns: chat 40%, output 60%, each scrolling on its own. */
-.cols{display:grid;grid-template-columns:2fr 3fr;height:calc(100vh - 52px - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));min-height:420px}
-.col{display:flex;flex-direction:column;min-width:0;border-right:0.5px solid var(--border)}
+/* The two columns, with a draggable divider between them. The chat width
+   is a CSS variable the divider drags and the tab remembers; the output
+   pane takes the rest. Each pane scrolls on its own and the pair fills the
+   window height so the page itself never scrolls. */
+.cols{display:grid;grid-template-columns:var(--cs-chat,40%) 6px minmax(0,1fr);height:calc(100vh - 52px - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));min-height:420px}
+.col{display:flex;flex-direction:column;min-width:0;border-right:0.5px solid var(--border);overflow:hidden}
 .col:last-child{border-right:0}
+.divider{cursor:col-resize;background:var(--border);position:relative}
+.divider:hover,.divider.dragging{background:var(--accent)}
+.divider::after{content:"";position:absolute;inset:0 -4px}
+body.cs-resizing{cursor:col-resize;user-select:none}
 .col-head{padding:0.55rem 1rem;font-size:0.78rem;font-weight:600;color:var(--text2);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.5rem}
 .col-body{flex:1;overflow:auto;padding:0.9rem 1rem}
 .msg{max-width:92%;margin-bottom:0.7rem;padding:0.55rem 0.75rem;border-radius:var(--r-lg,10px);font-size:0.86rem;line-height:1.5;white-space:pre-wrap;word-break:break-word}
@@ -108,7 +115,7 @@ body.cyg-collapsed .topbar{left:54px}
 .msg.notice{margin:0.5rem auto;max-width:100%;text-align:center;font-size:0.76rem;color:var(--text2);background:transparent;padding:0.2rem}
 .msg.working{color:var(--text2);font-style:italic;background:transparent}
 .composer{border-top:0.5px solid var(--border);padding:0.7rem 1rem;display:flex;gap:0.5rem;align-items:flex-end}
-.composer textarea{flex:1;font:inherit;font-size:0.86rem;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--r,6px);padding:0.5rem 0.6rem;resize:vertical;min-height:58px;max-height:200px}
+.composer textarea{flex:1;font:inherit;font-size:0.86rem;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--r,6px);padding:0.5rem 0.6rem;resize:none;min-height:40px;max-height:200px;overflow-y:auto}
 .composer textarea:disabled{opacity:0.6}
 .block{border:0.5px solid var(--border);border-radius:var(--r,6px);margin-bottom:0.6rem;background:var(--bg2);overflow:hidden}
 .block summary{list-style:none;cursor:pointer;padding:0.45rem 0.7rem;font-size:0.8rem;font-weight:600;display:flex;align-items:center;gap:0.5rem}
@@ -166,7 +173,20 @@ table.facts{border-collapse:collapse;margin-top:0.5rem;font-size:0.84rem;width:1
 table.facts td{padding:0.3rem 0.5rem 0.3rem 0;vertical-align:top;border-bottom:0.5px solid var(--border)}
 table.facts td:first-child{color:var(--text2);width:210px}
 .mono{font-family:var(--mono);font-size:0.82rem}
-@media (max-width:900px){.cols{grid-template-columns:1fr;height:auto}.col{border-right:0;border-bottom:0.5px solid var(--border)}.col-body{max-height:50vh}.topbar{left:0;height:auto;flex-wrap:wrap;padding:0.4rem 0.75rem}.main{padding-top:calc(110px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px))}.form{grid-template-columns:1fr 1fr}}
+/* Full screen: hide the shared chrome (rail, masthead, status hairline,
+   subnav) and let the console fill the whole window. The console's own
+   toolbar stays — it holds the Exit full screen button. */
+body.cs-full{padding-left:0 !important}
+body.cs-full .cyg-sidebar,body.cs-full .cx-masthead,body.cs-full #cyg-envbar,body.cs-full .cx-subnav,body.cs-full .cyg-mobile-menu-btn{display:none !important}
+body.cs-full .topbar{left:0;top:0}
+body.cs-full .main{padding-top:52px}
+body.cs-full .cols{height:calc(100vh - 52px)}
+body.cs-full .drawer{top:52px}
+/* The Ask Cygenix launcher sits bottom-right, over the Output pane; shrink
+   it here so it does not cover the pane's corner. */
+.cyga-launch{transform:scale(0.8) !important;transform-origin:bottom right !important;opacity:0.72}
+.cyga-launch:hover{opacity:1}
+@media (max-width:900px){.cols{grid-template-columns:1fr;height:auto}.divider{display:none}.col{border-right:0;border-bottom:0.5px solid var(--border)}.col-body{max-height:50vh}.topbar{left:0;height:auto;flex-wrap:wrap;padding:0.4rem 0.75rem}.main{padding-top:calc(110px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px))}.form{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -175,7 +195,7 @@ table.facts td:first-child{color:var(--text2);width:210px}
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
 <script src="/cygenix-menu-index.js?v=44d29c015d" defer></script>
-<script src="/cygenix-sidebar.js?v=ce307ce49a" defer></script>
+<script src="/cygenix-sidebar.js?v=6662cdc388" defer></script>
 
 <div class="topbar">
   <h1><i class="ic ic-robot"></i> Dev Console</h1>
@@ -190,6 +210,7 @@ table.facts td:first-child{color:var(--text2);width:210px}
   <button class="btn primary" id="cs-new" onclick="csNew()"><i class="ic ic-plus"></i> New session</button>
   <button class="btn danger" id="cs-stop" onclick="csStop()" disabled><i class="ic ic-stop"></i> Stop</button>
   <button class="btn" id="cs-sessions-btn" onclick="csDrawer(true)"><i class="ic ic-clock"></i> Sessions</button>
+  <button class="btn" id="cs-full" onclick="csFull()" title="Fill the window, hiding the sidebar and header (Esc to exit)"><i class="ic ic-fullscreen"></i> <span id="cs-full-label">Full screen</span></button>
 </div>
 
 <main class="main">
@@ -215,10 +236,12 @@ table.facts td:first-child{color:var(--text2);width:210px}
           <input type="file" id="cs-file" hidden onchange="csAttach(this)">
           <button class="btn" id="cs-attach" onclick="document.getElementById('cs-file').click()" disabled
                   title="Attach a file of up to 4 MB. It is mounted read-only in the workspace under /workspace/uploads and Claude is told where."><i class="ic ic-upload"></i></button>
-          <textarea id="cs-input" rows="2" placeholder="Ask Claude… (Ctrl+Enter to send)" disabled onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();csSend()}"></textarea>
+          <textarea id="cs-input" rows="1" placeholder="Ask Claude…  (Enter to send, Shift+Enter for a new line)" disabled
+                    oninput="autoGrow(this)" onkeydown="csInputKey(event)"></textarea>
           <button class="btn primary" id="cs-send" onclick="csSend()" disabled>Send</button>
         </div>
       </div>
+      <div class="divider" id="cs-divider" role="separator" aria-orientation="vertical" title="Drag to resize" onmousedown="csDragStart(event)" ondblclick="csDragReset()"></div>
       <div class="col">
         <div class="col-head"><i class="ic ic-tools"></i> Output <span class="tag" id="cs-out-count"></span>
           <span class="spacer"></span>
@@ -439,22 +462,21 @@ function csPickConn(){
 /* ── Sessions ────────────────────────────────────────────────────────── */
 function csNew(){
   if (!CS.conn) { note('cs-note', 'Choose a connection with a saved credential first.', 'warn'); return; }
+  // A session in flight would be abandoned by clearing: confirm first. The
+  // old session keeps running in your Anthropic account and stays in the
+  // Sessions list; only the screen is cleared.
+  if (CS.cur && CS.cur.status === 'running' && !CS.replay) {
+    if (!window.confirm('This session is still working. Start a new one and clear the screen? The current session keeps running and stays in Sessions.')) return;
+  }
   guarded('New session', async function(){
+    clearScreen();
     note('cs-note', 'Opening a workspace… this usually takes 10 to 30 seconds.', 'info');
     try {
       var r = await call('POST', '/agent/claude-code/session', { side: CS.conn.side, connId: CS.conn.connId, connectionName: CS.conn.name,
         profileId: CS.conn.profileId, profileName: CS.conn.profileName, envClass: CS.conn.envClass });
-      stopPolling();
-      CS.replay = null; CS.cur = r.session; CS.events = []; CS.seen = {}; CS.outputs = []; CS.outputsFor = r.session.id;
+      CS.cur = r.session; CS.outputsFor = r.session.id;
       CS.cur.connectionName = CS.conn.name; CS.cur.profileName = CS.conn.profileName; CS.cur.envClass = CS.conn.envClass;
       note('cs-note', '');
-      $('cs-firewall').hidden = true; $('cs-budget').hidden = true;
-      if (CS.wantChanges) {
-        // The toggle was on before the session existed: apply it now, with
-        // the same confirmation a live toggle gets.
-        CS.wantChanges = false; render();
-        csToggle();
-      }
       loadSessions();
     } catch (e) {
       note('cs-note', 'Could not open a session: ' + e.message, 'crit');
@@ -467,7 +489,7 @@ function csSend(){
   guarded('Send', async function(){
     try {
       var r = await call('POST', '/agent/claude-code/message', { sessionId: CS.cur.id, text: text });
-      $('cs-input').value = '';
+      $('cs-input').value = ''; autoGrow($('cs-input'));
       CS.cur.status = 'running';
       if (r.title && !CS.cur.title) CS.cur.title = r.title;
       // Shown at once; the server's echo of it is deduplicated by id later.
@@ -691,7 +713,8 @@ function renderTop(){
   var live = !!CS.cur && !CS.replay && CS.cur.status !== 'stopped' && CS.cur.status !== 'error';
   var allowed = !!(CS.me && CS.me.claudeCode && CS.me.claudeCode.allowed) && hasKey();
   $('cs-new').disabled = !allowed || !!CS.busy['New session'] || !!CS.replay;
-  $('cs-stop').disabled = !live || !!CS.busy['Stop'];
+  // Stop only does something while the session is actually working.
+  $('cs-stop').disabled = !(live && CS.cur && CS.cur.status === 'running') || !!CS.busy['Stop'];
   $('cs-send').disabled = !live || !!CS.busy['Send'];
   $('cs-attach').disabled = !live || !!CS.busy['Attach'];
   $('cs-input').disabled = !live;
@@ -867,17 +890,82 @@ function pbRenderRuns(){
       if ((run.eventTypes || []).length) html += '<p class="muted mono" style="margin-top:0.4rem">Session events: ' + esc(run.eventTypes.join(' › ')) + '</p>';
     }
     if (run.status === 'done' && run.raw) {
-      html += '<details class="block"><summary>Raw events</summary><div class="res-label">Last model request, as Anthropic sent it</div><pre>'
-        + esc(JSON.stringify(run.raw.modelRequestEnd, null, 2)) + '</pre><div class="res-label">Session usage</div><pre>'
-        + esc(JSON.stringify(run.raw.usage, null, 2)) + '</pre></details>';
+      html += '<details class="block"><summary>Raw events <span class="tag">Show details</span></summary>'
+        + '<details class="block"><summary>Last model request, as Anthropic sent it</summary><pre>' + esc(JSON.stringify(run.raw.modelRequestEnd, null, 2)) + '</pre></details>'
+        + '<details class="block"><summary>Session usage</summary><pre>' + esc(JSON.stringify(run.raw.usage, null, 2)) + '</pre></details>'
+        + '</details>';
     }
     return html + '</div>';
   }).join('');
 }
 
+/* ── Full screen, layout, input ──────────────────────────────────────────
+   Full screen and the chat/output split are remembered for THIS TAB only
+   (sessionStorage), so a refresh keeps them but a new tab starts plain. */
+var FULL_KEY = 'cygenix_cc_full', SPLIT_KEY = 'cygenix_cc_split';
+function ssGet(k){ try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+function ssSet(k, v){ try { sessionStorage.setItem(k, v); } catch (e) {} }
+function applyFull(on){
+  document.body.classList.toggle('cs-full', !!on);
+  var lbl = $('cs-full-label'); if (lbl) lbl.textContent = on ? 'Exit full screen' : 'Full screen';
+}
+function csFull(){
+  var on = !document.body.classList.contains('cs-full');
+  applyFull(on); ssSet(FULL_KEY, on ? '1' : '0');
+}
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && document.body.classList.contains('cs-full')) { applyFull(false); ssSet(FULL_KEY, '0'); }
+});
+
+function autoGrow(el){ if (!el) return; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
+function csInputKey(e){ if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); csSend(); } }
+
+/* The draggable divider writes the chat column width to a CSS variable and
+   remembers it for the tab. Double-click restores the 40% default. */
+function applySplit(px){
+  var cols = document.querySelector('.cols'); if (!cols) return;
+  if (px == null || px === '') { cols.style.removeProperty('--cs-chat'); return; }
+  var w = cols.clientWidth || window.innerWidth;
+  var v = Math.max(260, Math.min(w - 320, Number(px)));
+  cols.style.setProperty('--cs-chat', v + 'px');
+}
+function csDragStart(e){
+  e.preventDefault();
+  var cols = document.querySelector('.cols'); if (!cols) return;
+  var div = $('cs-divider'); div.classList.add('dragging'); document.body.classList.add('cs-resizing');
+  var left = cols.getBoundingClientRect().left;
+  function move(ev){ applySplit((ev.clientX || 0) - left); }
+  function up(ev){
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    div.classList.remove('dragging'); document.body.classList.remove('cs-resizing');
+    var cur = getComputedStyle(cols).getPropertyValue('--cs-chat').trim();
+    if (cur) ssSet(SPLIT_KEY, parseInt(cur, 10));
+  }
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+}
+function csDragReset(){ applySplit(null); try { sessionStorage.removeItem(SPLIT_KEY); } catch (e) {} }
+
+/* Clear the whole screen to a blank state, keeping only the chosen
+   connection. Used by New session. */
+function clearScreen(){
+  stopPolling();
+  CS.replay = null; CS.cur = null; CS.events = []; CS.seen = {}; CS.outputs = []; CS.outputsFor = '';
+  CS.filesOpen = false; CS.wantChanges = false;
+  var i = $('cs-input'); if (i) { i.value = ''; autoGrow(i); }
+  Object.keys(CC.polling).forEach(function(id){ var p = CC.polling[id]; if (p) clearInterval(p.timer); });
+  CC.polling = {}; CC.runs = []; pbRenderRuns();
+  note('cs-note', ''); note('cc-note', '');
+  $('cs-firewall').hidden = true; $('cs-budget').hidden = true;
+  $('cs-replay-bar').hidden = true;
+  render();
+}
+
 document.addEventListener('DOMContentLoaded', function(){
   pbRenderButtons();
   try { if (window.CygenixActiveConn) { $('cc-conn').value = 'tgt'; ccFillFrom('tgt'); } } catch (e) {}
+  if (ssGet(FULL_KEY) === '1') applyFull(true);
+  var sp = ssGet(SPLIT_KEY); if (sp) applySplit(sp);
+  autoGrow($('cs-input'));
   init();
 });
 </script>

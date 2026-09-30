@@ -98,6 +98,8 @@ const CLASSES = {
   'cygenix_sidebar_closed_groups':     ['C', 'Collapsed nav groups', ''],
   'cygenix_rbac_me':                   ['B', 'sessionStorage: the caller\'s roles and Dev Console entitlement from rbac-admin?what=me, cached five minutes', 'cleared after a Governance save so the sidebar re-asks'],
   'cygenix_cc_notice':                 ['C', 'Dev Console: the first-use notice, dismissed per user', 'transcripts are NOT here — they come from Cosmos on every load'],
+  'cygenix_cc_full':                   ['C', 'sessionStorage: Dev Console full-screen on/off, remembered for the tab', 'per-tab UI only; no transcript'],
+  'cygenix_cc_split':                  ['C', 'sessionStorage: Dev Console chat/output split width in px, remembered for the tab', 'per-tab UI only; no transcript'],
   'cygenix_jobs_panel_collapsed':      ['C', 'Jobs panel collapsed', ''],
   'cygenix_sql_panel_collapsed':       ['C', 'SQL panel collapsed', ''],
   'cygenix_job_sort':                  ['C', 'Job list sort order', ''],

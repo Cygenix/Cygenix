@@ -633,7 +633,7 @@
       }
       .cyg-sidebar-toggle:hover{color:var(--color-text,#1d1f20);background:color-mix(in srgb,var(--color-text,#1d1f20) 4%,transparent)}
 
-      .cyg-sidebar-scroll{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:0 0 12px;
+      .cyg-sidebar-scroll{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:0 0 28px;
         scrollbar-width:thin;scrollbar-color:var(--color-neutral-300,#d4d4d7) transparent}
       .cyg-sidebar-scroll::-webkit-scrollbar{width:6px}
       .cyg-sidebar-scroll::-webkit-scrollbar-thumb{background:var(--color-neutral-300,#d4d4d7)}

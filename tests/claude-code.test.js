@@ -457,28 +457,26 @@ function listen(onConn) {
     const s = (CLIENT.calls.find(c => c[0] === 'sessions.create') || [])[1] || {};
     check('THE SESSION CARRIES THE SPEND CAP: 600 cents USD (about £5)',
       s.budget && s.budget.type === 'limit' && s.budget.max_list_cost.amount === '600' && s.budget.max_list_cost.currency === 'USD', JSON.stringify(s.budget));
-    check('it is stamped with the caller, so nobody else can read it', s.metadata.cyg_oid === 'oid-me' && s.metadata.cygenix === 'probe');
-    check('IT CARRIES A NEUTRAL SYSTEM PROMPT: medium effort, no migration/database/firewall framing at all — only "run what you are given and paste it"',
-      s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'medium' && s.agent.system === CC.probeSystem()
-      && /run exactly what you are given|Run exactly what you are given/i.test(s.agent.system)
-      && !/migration|database|firewall|connection string|Cygenix, a/i.test(s.agent.system) && s.agent.system.indexOf(CC.CRED_PATH) === -1, s.agent.system);
-    check('the console prompt itself is unchanged for a real session', /connection details are in the read-only file/.test(CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly' }))
-      && /Never print the password/.test(CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly' })));
+    check('it is stamped with the caller and flagged as a test, so nobody else can read it', s.metadata.cyg_oid === 'oid-me' && s.metadata.cyg_probe === '1');
+    check('IT OPENS THE VERY SESSION A CONSOLE OPEN DOES: the console system prompt, the console title, cygenix:console metadata',
+      s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'medium'
+      && s.agent.system === CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly' })
+      && /Cygenix Dev Console/.test(s.title) && s.metadata.cygenix === 'console', s.title + ' / ' + s.metadata.cygenix);
     const sent = CLIENT.calls.filter(c => c[0] === 'events.send' && c[1] === s_id(r));
     check('NO INITIAL EVENTS: the session is created idle and then sent ONE ordinary user message with ONE non-empty text block',
       !s.initial_events && sent.length === 1 && sent[0][2].events.length === 1 && sent[0][2].events[0].type === 'user.message'
       && sent[0][2].events[0].content.length === 1 && sent[0][2].events[0].content[0].type === 'text' && sent[0][2].events[0].content[0].text.trim().length > 0, JSON.stringify(sent));
     const pf = CLIENT.calls.find(c => c[0] === 'files.upload')[1];
     const pf_id = () => (s.resources[0] || {}).file_id;
-    check('THE TARGET TRAVELS AS A MOUNTED FILE, THE WAY THE CONSOLE HOLDS ITS DETAILS: the file names the host and port, mounted read-only',
-      pf.file.name === 'probe.env' && /CYG_PROBE_HOST='db\.acme\.io'/.test(pf.file.text) && /CYG_PROBE_PORT='1433'/.test(pf.file.text) && /CYG_PROBE_KIND='sqlserver'/.test(pf.file.text)
-      && s.resources.length === 1 && s.resources[0].type === 'file' && s.resources[0].mount_path === CC.PROBE_PATH && /^file_/.test(pf_id()), JSON.stringify(s.resources));
+    check('THE TARGET AND A MADE-UP LOGIN TRAVEL AS A db.env AT THE CONSOLE\'S OWN PATH — the same file a console session mounts',
+      pf.file.name === 'db.env' && /CYG_DB_HOST='db\.acme\.io'/.test(pf.file.text) && /CYG_DB_PORT='1433'/.test(pf.file.text) && /CYG_DB_TYPE='sqlserver'/.test(pf.file.text)
+      && /CYG_DB_USER='cygenix_probe'/.test(pf.file.text) && s.resources.length === 1 && s.resources[0].mount_path === CC.CRED_PATH && /^file_/.test(pf_id()), JSON.stringify(s.resources));
     const ask = sent[0][2].events[0].content[0].text;
     check('THE FIRST RUNG IS A HELLO LINE: one bash command, no script, no server named — does this session answer at all?',
       /```bash\npython3 -c "print\('CYGPROBE_HELLO', 2 \+ 2\)"\n```/.test(ask) && ask.indexOf('acme') === -1 && ask.indexOf('import') === -1, ask);
     check('the start reports the session as running, with the three rungs by name',
       r.body.status === 'running' && r.body.steps.join() === 'Workspace answers,Connection to the server,Database reply');
-    check('THE TARGET IS NOT ON THE ANTHROPIC METADATA AT ALL: only who may read it', !s.metadata.cyg_host && !s.metadata.cyg_port && !s.metadata.cyg_kind && s.metadata.cyg_oid === 'oid-me', JSON.stringify(s.metadata));
+    check('THE TARGET IS NOT ON THE ANTHROPIC METADATA AT ALL: only who may read it and that it is a test', !s.metadata.cyg_host && !s.metadata.cyg_port && !s.metadata.cyg_kind && s.metadata.cyg_oid === 'oid-me' && s.metadata.cyg_probe === '1', JSON.stringify(s.metadata));
     check('the target is kept in our own store (Cosmos), keyed by the session, with the file id for cleanup', (() => {
       const d = DB._items.get(s_id(r)); return d && d.kind === 'probe' && d.host === 'db.acme.io' && d.port === 1433 && d.dbKind === 'sqlserver' && d.oid === 'oid-me' && d.fileId === pf_id();
     })());
@@ -486,8 +484,8 @@ function listen(onConn) {
     const connectAsk = CC.probeMessage('connect', 'sqlserver');
     const loginAsk = CC.probeMessage('login', 'sqlserver');
     check('NO RUNG MESSAGE NAMES THE SERVER: the connect script reads the mounted file, no address in it, no login, no driver',
-      /```python\n[\s\S]*CYGPROBE_RESULT[\s\S]*```/.test(connectAsk) && /CYG_PROBE_HOST/.test(connectAsk) && connectAsk.indexOf('acme') === -1 && connectAsk.indexOf('1433') === -1
-      && !/pymssql|cygenix_probe|pip install/.test(connectAsk) && /paste its output verbatim/.test(connectAsk), connectAsk.slice(0, 300));
+      /```python\n[\s\S]*CYGPROBE_RESULT[\s\S]*```/.test(connectAsk) && /CYG_DB_HOST/.test(connectAsk) && connectAsk.indexOf('acme') === -1 && connectAsk.indexOf('1433') === -1
+      && !/pymssql|pip install/.test(connectAsk) && /paste its output verbatim/.test(connectAsk), connectAsk.slice(0, 300));
     check('rung three is the driver login under the made-up account reading the same file, with the install hint, naming no address',
       /pymssql\.connect\(server=H/.test(loginAsk) && /cygenix_probe/.test(loginAsk) && /pip install pymssql/.test(loginAsk) && /login failed/.test(loginAsk)
       && loginAsk.indexOf('acme') === -1 && /pip install "psycopg\[binary\]"/.test(CC.probeMessage('login', 'postgres')));
@@ -513,7 +511,7 @@ function listen(onConn) {
     r = await call('GET', 'probe', { query: { sessionId: sid } });
     check('THE HELLO ANSWERED: rung two (the connect script) is sent as a fresh user message and the poll goes on',
       r.body.done === false && r.body.step === 2 && r.body.steps[0].status === 'passed' && r.body.steps[1].status === 'running'
-      && sends().length === 2 && /CYG_PROBE_HOST/.test(sends()[1]) && sends()[1].indexOf('acme') === -1 && !/pymssql/.test(sends()[1]), r.raw);
+      && sends().length === 2 && /CYG_DB_HOST/.test(sends()[1]) && sends()[1].indexOf('acme') === -1 && !/pymssql/.test(sends()[1]), r.raw);
     // The same poll again, before the platform has recorded that message: nothing is sent twice.
     r = await call('GET', 'probe', { query: { sessionId: sid } });
     check('…and a poll that lands before the message is recorded sends nothing more, and still reports the rung as running',
@@ -537,7 +535,7 @@ function listen(onConn) {
     // The ladder falls off at rung three: the connect result stands, the login is marked not run.
     const dbProbe = (id, host, port, dbKind) => DB.items.upsert({ id, kind: 'probe', userId: who.email, oid: 'oid-me', host, port, dbKind, network: 'limited', fileId: 'file_' + id, createdAt: '2026-01-01T00:00:00Z' });
     await dbProbe('sesn_rung3', 'db.acme.io', 1433, 'sqlserver');
-    CLIENT._o.sessions.sesn_rung3 = { id: 'sesn_rung3', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
+    CLIENT._o.sessions.sesn_rung3 = { id: 'sesn_rung3', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
     CLIENT._o.events.sesn_rung3 = [
       { type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, ...ran('CYGPROBE_HELLO 4\n'), idle(),
       { type: 'user.message', content: [{ type: 'text', text: 'connect' }] }, ...ran(connectLine + '\n'), idle(),
@@ -550,7 +548,7 @@ function listen(onConn) {
       && /did not run: Claude returned an empty turn/.test(r.body.verdict.text) && r.body.eventTypes.length > 0, r.raw);
     // ...and at rung one: nothing to show but the rung.
     await dbProbe('sesn_rung1', 'db.acme.io', 1433, 'other');
-    CLIENT._o.sessions.sesn_rung1 = { id: 'sesn_rung1', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
+    CLIENT._o.sessions.sesn_rung1 = { id: 'sesn_rung1', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
     CLIENT._o.events.sesn_rung1 = [{ type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, { type: 'span.model_request_end', is_error: false, model_usage: { output_tokens: 0 } }, idle()];
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_rung1' } });
     check('an empty turn at rung one ends it there: no result, two rungs listed for an Other server, nothing further sent',
@@ -558,13 +556,13 @@ function listen(onConn) {
       && r.body.steps[1].status === 'pending' && !CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === 'sesn_rung1'), r.raw);
     // A hello that ran something else, not the line asked for, is a failed rung, not an empty one.
     await dbProbe('sesn_odd', 'h.io', 1, 'other');
-    CLIENT._o.sessions.sesn_odd = { id: 'sesn_odd', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
+    CLIENT._o.sessions.sesn_odd = { id: 'sesn_odd', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
     CLIENT._o.events.sesn_odd = [{ type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, { type: 'agent.message', content: [{ type: 'text', text: 'I would rather not.' }] }, idle()];
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_odd' } });
     check('a rung answered in words but not with its line is "failed", with the words shown', r.body.done === true && r.body.emptyTurn === false
       && r.body.failedStep.status === 'failed' && r.body.transcript.length === 1 && /rather not/.test(r.body.transcript[0].text), r.raw);
     await DB.items.upsert({ id: 'sesn_other', kind: 'probe', userId: who.email, oid: 'somebody-else', host: 'x', port: 1, dbKind: 'other', createdAt: '2026-01-01T00:00:00Z' });
-    CLIENT._o.sessions.sesn_other = { id: 'sesn_other', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'somebody-else' } };
+    CLIENT._o.sessions.sesn_other = { id: 'sesn_other', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'somebody-else', cyg_probe: '1' } };
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_other' } });
     check('SOMEBODY ELSE\'S TEST IS NOT FOUND (checked in our own store, before Anthropic)', r.status === 404, r.raw);
     check('an unknown session is a 404', (await call('GET', 'probe', { query: { sessionId: 'sesn_gone00' } })).status === 404);
@@ -602,12 +600,12 @@ function listen(onConn) {
       CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'error: timed out' }).ok === false);
     check('verdict: with no driver, an open connection is reported as such', CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).ok === true
       && /driver was not available/.test(CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).text));
-    check('the script reads the target from the mounted file and is a driver login under a made-up account — no raw protocol bytes, no address in it',
-      /pymssql\.connect\(server=H/.test(CC.probeScript()) && /psycopg\.connect\(host=H/.test(CC.probeScript()) && /CYG_PROBE_HOST/.test(CC.probeScript())
-      && !/fromhex/.test(CC.probeScript()) && /cygenix_probe/.test(CC.probeScript()) && CC.probeScript().indexOf('acme') === -1);
+    check('the script reads the target and login from the mounted db.env and is a driver login — no raw protocol bytes, no address in it',
+      /pymssql\.connect\(server=H/.test(CC.probeScript()) && /psycopg\.connect\(host=H/.test(CC.probeScript()) && /CYG_DB_HOST/.test(CC.probeScript()) && /CYG_DB_USER/.test(CC.probeScript())
+      && !/fromhex/.test(CC.probeScript()) && CC.probeScript().indexOf('acme') === -1);
     // An empty turn — zero output tokens, nothing said or run — is the end, named as such. No retry.
     await dbProbe('sesn_empty', 'db.acme.io', 1433, 'sqlserver');
-    CLIENT._o.sessions.sesn_empty = { id: 'sesn_empty', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
+    CLIENT._o.sessions.sesn_empty = { id: 'sesn_empty', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
     CLIENT._o.events.sesn_empty = [{ id: 'm1', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'run' }] },
       { id: 'm2', type: 'span.model_request_end', processed_at: '2026-10-01T00:00:01Z', is_error: false, model_usage: { input_tokens: 4000, output_tokens: 0 } },
       { id: 'm3', type: 'session.status_idle', processed_at: '2026-10-01T00:00:02Z', stop_reason: { type: 'end_turn' } }];
@@ -620,7 +618,7 @@ function listen(onConn) {
       && CC.parseProbeEvents([{ type: 'span.model_request_end', model_usage: { output_tokens: 0 }, is_error: true }]).emptyTurn === false);
     check('an idle session that has not been sent its message yet is not finished', (await (async () => {
       await dbProbe('sesn_fresh', 'db.acme.io', 1433, 'sqlserver');
-      CLIENT._o.sessions.sesn_fresh = { id: 'sesn_fresh', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
+      CLIENT._o.sessions.sesn_fresh = { id: 'sesn_fresh', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
       CLIENT._o.events.sesn_fresh = [];
       return (await call('GET', 'probe', { query: { sessionId: 'sesn_fresh' } })).body.done;
     })()) === false);
@@ -651,9 +649,9 @@ function listen(onConn) {
       && withheld.eventTypes.join() === 'span.model_request_start,agent.message,span.model_request_end,session.status_idle:end_turn', JSON.stringify(withheld));
     check('the connect rung says what the script is for; the connect-only script has no login block at all',
       /the server named in it/.test(CC.probeMessage('connect', 'other'))
-      && !/handshake|connect\(/.test(CC.probeScript({ login: false })));
+      && !/handshake|pymssql\.connect|psycopg\.connect/.test(CC.probeScript({ login: false })));
     await dbProbe('sesn_noline', 'db.acme.io', 1433, 'sqlserver');
-    CLIENT._o.sessions.sesn_noline = { id: 'sesn_noline', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
+    CLIENT._o.sessions.sesn_noline = { id: 'sesn_noline', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
     CLIENT._o.events.sesn_noline = [{ id: 'q0', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'hello' }] },
       { id: 'q1', type: 'agent.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'I could not run it.' }] },
       { id: 'q2', type: 'session.status_idle', processed_at: '2026-10-01T00:00:01Z', stop_reason: { type: 'end_turn' } }];
@@ -902,7 +900,7 @@ function listen(onConn) {
     const os = require('os');
     const cfgPath = path.join(os.tmpdir(), 'cygprobe-' + process.pid + '.env');
     env.CYG_PROBE_ENV = cfgPath;
-    const script = (p) => { fs.writeFileSync(cfgPath, CC.probeFile(p)); return CC.probeScript().replace('https://' + CC.IP_ECHO_HOST, 'https://127.0.0.1:9'); };
+    const script = (p) => { fs.writeFileSync(cfgPath, CC.credFile({ kind: p.kind, host: p.host, port: p.port, database: '', user: 'cygenix_probe', password: 'cygenix-probe' }, '')); return CC.probeScript().replace('https://' + CC.IP_ECHO_HOST, 'https://127.0.0.1:9'); };
 
     // The drivers are not installed here, so the script's "no-driver" path
     // is what runs; the connect, DNS, timing and address-echo parts are real.
@@ -1018,10 +1016,13 @@ function listen(onConn) {
       /POLL_MS = 3000/.test(page) && /if \(CS\.pollInflight \|\| !CS\.cur \|\| CS\.replay\) return;/.test(page)
       && /if \(r\.status !== 'running'\) \{ stopPolling\(\);/.test(page) && /Lost touch with the session[\s\S]{0,80}stopPolling\(\);/.test(page)
       && /guarded\('Stop', async function\(\)\{\s*stopPolling\(\);/.test(page) && (page.match(/CS\.pollInflight = false/g) || []).length === 1);
-    check('NO TRANSCRIPT TOUCHES BROWSER STORAGE — only the first-use notice and the active user are read or written',
-      (page.match(/localStorage\.(get|set)Item\(/g) || []).length === 6
-      && (page.match(/localStorage\.(get|set)Item\((CygenixCcConsole\.NOTICE_KEY|'cygenix_app_prefs'|'cygenix_active_user')/g) || []).length === 6
-      && !/sessionStorage\.setItem/.test(page));
+    check('NO TRANSCRIPT TOUCHES BROWSER STORAGE — localStorage only the notice, theme and active user; sessionStorage only the per-tab full-screen and split',
+      (page.match(/localStorage\.(get|set)Item\(/g) || []).length
+        === (page.match(/localStorage\.(get|set)Item\((CygenixCcConsole\.NOTICE_KEY|'cygenix_app_prefs'|'cygenix_active_user')/g) || []).length
+      && /FULL_KEY = 'cygenix_cc_full', SPLIT_KEY = 'cygenix_cc_split'/.test(page)
+      && (page.match(/ss(Get|Set)\(/g) || []).length === (page.match(/ss(Get|Set)\((FULL_KEY|SPLIT_KEY|k[,)])/g) || []).length
+      && (page.match(/sessionStorage\.(get|set|remove)Item\(/g) || []).length === (page.match(/sessionStorage\.(get|set|remove)Item\((k|v|FULL_KEY|SPLIT_KEY)/g) || []).length
+      && !/(local|session)Storage\.setItem\([^)]*(transcript|events|cc_events|cc_session)/i.test(page));
     check('the brief\'s notice, the not-enabled sentence, the toggle note and the firewall help are there, word for word',
       /Runs on your own Anthropic API key and is billed to your Anthropic account\. Code runs in an isolated Anthropic workspace\. You are responsible for changes it makes\./.test(page)
       && /Not enabled for your role — ask an Owner to enable it in Governance\./.test(page)

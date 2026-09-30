@@ -183,7 +183,7 @@ const U = 'you@example.test';
     sb.connId === 'c_tgt' && sb.connectionName === 'Target DEV' && sb.profileName === 'Demo' && sb.side === 'tgt'
     && !JSON.stringify(world.calls).includes('Tr0ub4dor') && !JSON.stringify(world.calls).includes('acme.database'), JSON.stringify(sb));
   check('the caller\'s key and token ride in the headers', /sk-ant-smoke-key/.test(calls('session')[0].headers['x-anthropic-key']) && /^Bearer /.test(calls('session')[0].headers.authorization));
-  check('Idle: Send is on, Stop is on', (await text('cs-status')) === 'Idle' && (await page.evaluate(() => !document.getElementById('cs-send').disabled && !document.getElementById('cs-stop').disabled)));
+  check('Idle: Send is on, Stop is OFF (nothing to stop)', (await text('cs-status')) === 'Idle' && (await page.evaluate(() => !document.getElementById('cs-send').disabled && document.getElementById('cs-stop').disabled)));
 
   /* A message, then the events. */
   world.nextEvents = [
@@ -318,6 +318,27 @@ const U = 'you@example.test';
   await page2.fill('#cs-confirm-input', 'Demo');
   check('the right name turns it on', !(await page2.evaluate(() => document.getElementById('cs-confirm-ok').disabled)));
   await page2.close();
+
+  /* Full screen and the draggable split, on the first page. */
+  await page.evaluate(() => csFull());
+  check('FULL SCREEN hides the chrome and relabels the button, remembered for the tab',
+    await page.evaluate(() => document.body.classList.contains('cs-full') && document.getElementById('cs-full-label').textContent === 'Exit full screen'
+      && sessionStorage.getItem('cygenix_cc_full') === '1'));
+  await page.keyboard.press('Escape');
+  check('Esc exits full screen', await page.evaluate(() => !document.body.classList.contains('cs-full') && document.getElementById('cs-full-label').textContent === 'Full screen'));
+  await page.evaluate(() => applySplit(520));
+  check('the divider sets the chat column width and it can be reset',
+    await page.evaluate(() => {
+      const cols = document.querySelector('.cols');
+      const set = getComputedStyle(cols).getPropertyValue('--cs-chat').trim();
+      csDragReset();
+      const cleared = cols.style.getPropertyValue('--cs-chat');
+      return /px/.test(set) && !cleared;
+    }));
+  check('Enter sends and Shift+Enter does not', await page.evaluate(() => {
+    return typeof csInputKey === 'function'
+      && (function(){ let sent = false; const orig = window.csSend; window.csSend = function(){ sent = true; }; csInputKey({ key: 'Enter', shiftKey: false, preventDefault(){} }); const a = sent; sent = false; csInputKey({ key: 'Enter', shiftKey: true, preventDefault(){} }); const b = sent; window.csSend = orig; return a && !b; })();
+  }));
 
   check('nothing threw', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();

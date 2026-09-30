@@ -926,7 +926,7 @@ function probeScript(opts) {
   const login = !(opts && opts.login === false);
   return [
     'import socket, json, time, urllib.request, os',
-    'CFG = os.environ.get("CYG_PROBE_ENV", ' + JSON.stringify(PROBE_PATH) + ')',
+    'CFG = os.environ.get("CYG_PROBE_ENV", ' + JSON.stringify(CRED_PATH) + ')',
     'cfg = {}',
     'for line in open(CFG):',
     '    line = line.strip()',
@@ -937,12 +937,12 @@ function probeScript(opts) {
     "    if len(v) >= 2 and v[0] == chr(39) and v[-1] == chr(39):",
     '        v = v[1:-1]',
     '    cfg[k.strip()] = v',
-    'H = cfg.get("CYG_PROBE_HOST", "")',
-    'P = int(cfg.get("CYG_PROBE_PORT", "0") or 0)',
-    'KIND = cfg.get("CYG_PROBE_KIND", "other")',
+    'H = cfg.get("CYG_DB_HOST", "")',
+    'P = int(cfg.get("CYG_DB_PORT", "0") or 0)',
+    'KIND = cfg.get("CYG_DB_TYPE", "other")',
   ].concat(login ? [
-    '# A made-up account: the server refusing it is the reply being checked for.',
-    'U = "cygenix_probe"; PW = "cygenix-probe"',
+    '# A made-up account, from the mounted file: the server refusing it is the reply being checked for.',
+    'U = cfg.get("CYG_DB_USER", "cygenix_probe"); PW = cfg.get("CYG_DB_PASSWORD", "cygenix-probe")',
   ] : []).concat([
     'r = {"host": H, "port": P, "kind": KIND}',
     'try:',
@@ -1000,44 +1000,23 @@ function probeScript(opts) {
 // answer; the first empty turn ends the climb and is named with its rung.
 // A connect result that arrives before the login rung fails is still a
 // result: the firewall question is answered by rung two.
-// v7. The console works; the test does not; the difference the console
-// never has is the target ADDRESS on the request — in a script, in the
-// message, or (since v6) in the session metadata. The console keeps its
-// connection details in a mounted file the model reads at run time, so the
-// address is in no prompt a classifier scans. The test now does the same:
-// the host and port travel in a mounted file, the scripts read it, and the
-// address is stored in Cosmos (our own store) — never in the Anthropic
-// request. No message names the server; no metadata carries it.
-const PROBE_PATH = '/workspace/.cygenix/probe.env';
-const PROBE_TTL_S = 60 * 60;
-function probeFile(p) {
-  return [
-    '# Cygenix connection test — the server to check. Read-only.',
-    'CYG_PROBE_HOST=' + shq(p.host),
-    'CYG_PROBE_PORT=' + shq(String(p.port)),
-    'CYG_PROBE_KIND=' + shq(p.kind),
-    '',
-  ].join('\n');
-}
+// v8. Removing the target from the request did not help either: a bare
+// "print 2 + 2" first rung still came back empty, while the SAME message
+// in an ordinary console session returns "4" on the same key and agent.
+// So the fault is not the target at all — it is something in how the test
+// set its session up differently from the console. The fix is to stop
+// being different: the test now opens the very session a console open
+// does. The target and a made-up login travel in a db.env mounted at the
+// console's own path; the system prompt, title and metadata are the
+// console's. Only the first message differs — it is our check, not a
+// person's question. The target is also kept in Cosmos so the later rungs
+// can be built.
 const PROBE_STEPS = [
   { name: 'hello', label: 'Workspace answers' },
   { name: 'connect', label: 'Connection to the server' },
   { name: 'login', label: 'Database reply' },
 ];
 function probeSteps(kind) { return kind === 'other' ? PROBE_STEPS.slice(0, 2) : PROBE_STEPS; }
-// v6. The console's own system prompt (data migration, database hosts, a
-// firewall to cross) was the last thing the test carried that a plain
-// "run this and show me the output" session does not. Even the hello rung,
-// which names nothing, came back with zero output tokens. So the test now
-// carries a neutral prompt with none of that framing: it only needs the
-// model to run what it is given and paste the result.
-function probeSystem() {
-  return [
-    'You are a coding assistant working in a sandbox for the signed-in user.',
-    'The user will give you small commands or scripts to run with the bash tool. Run exactly what you are given, '
-      + 'paste the output verbatim, and add nothing else. Do not run anything you were not asked to run.',
-  ].join('\n\n');
-}
 function probeMessage(step, kind) {
   const driver = kind === 'sqlserver' ? 'pymssql' : kind === 'postgres' ? '"psycopg[binary]"' : '';
   if (step === 'hello') {
@@ -1169,36 +1148,34 @@ async function probeStart(who, apiKey, body) {
   const client = deps.makeClient(apiKey);
   const tag = keyTag(apiKey);
   const agentId = await ensureAgent(client, tag);
-  // The console's environment shape exactly — the host, the registries,
-  // the address echo — with only the networking setting under test.
   const environmentId = await ensureEnvironment(client, tag, p.network, [p.host].concat(PACKAGE_HOSTS, [IP_ECHO_HOST]));
-  // The target travels as a mounted file the scripts read — the way the
-  // console mounts its connection details — never in the request itself.
-  const file = await client.beta.files.upload({ file: await deps.toFile(Buffer.from(probeFile(p), 'utf8'), 'probe.env'), expires_in_seconds: PROBE_TTL_S });
+  // A console session, to the letter. The target and a made-up login are a
+  // db.env at the console's own path; the prompt, title and metadata are a
+  // console session's. This is the one shape we have seen produce output.
+  const conn = { kind: p.kind, host: p.host, port: p.port, database: '', user: 'cygenix_probe', password: 'cygenix-probe' };
+  const file = await client.beta.files.upload({
+    file: await deps.toFile(Buffer.from(credFile(conn, ''), 'utf8'), 'db.env'), expires_in_seconds: CRED_TTL_S,
+  });
   let session;
   try {
     session = await client.beta.sessions.create({
-      agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' }, system: probeSystem() },
+      agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
+               system: systemPrompt({ dbType: p.kind, mode: 'readonly' }) },
       environment_id: environmentId,
-      title: 'Cygenix connection test',
-      // No target on the metadata: only who may read it back. The address
-      // lives in Cosmos (below) and in the mounted file, nowhere Anthropic
-      // is asked to scan.
-      metadata: { cygenix: 'probe', cyg_oid: who.oid },
+      title: 'Cygenix Dev Console — connection test',
+      metadata: { cygenix: 'console', cyg_oid: who.oid, cyg_probe: '1' },
       budget: budget(),
-      resources: [{ type: 'file', file_id: file.id, mount_path: PROBE_PATH }],
+      resources: [{ type: 'file', file_id: file.id, mount_path: CRED_PATH }],
     });
   } catch (e) {
     await deleteFile(client, file.id);
     throw e;
   }
-  // The target, kept in our own store so the later rungs can be built.
   const now = new Date(deps.now()).toISOString();
   try {
     await container.items.upsert({ id: session.id, kind: 'probe', userId: who.email, oid: who.oid,
       host: p.host, port: p.port, dbKind: p.kind, network: p.network, fileId: file.id, createdAt: now });
   } catch (e) { /* the test can still run; the later rungs just cannot rebuild */ }
-  // Then the first rung, the way the console sends its first message.
   await client.beta.sessions.events.send(session.id, { events: [{ type: 'user.message', content: [{ type: 'text', text: probeMessage('hello', p.kind) }] }] });
   return ok({ sessionId: session.id, status: 'running', network: p.network, host: p.host, port: p.port, steps: probeSteps(p.kind).map(st => st.label) });
 }
@@ -1216,7 +1193,7 @@ async function probeResult(who, apiKey, sessionId) {
   let session;
   try { session = await client.beta.sessions.retrieve(sessionId); }
   catch (e) { if (e && e.status === 404) return bad(404, 'No such test session.'); throw e; }
-  if (!session.metadata || session.metadata.cyg_oid !== who.oid || session.metadata.cygenix !== 'probe') {
+  if (!session.metadata || session.metadata.cyg_oid !== who.oid || session.metadata.cyg_probe !== '1') {
     return bad(404, 'No such test session.');
   }
   const events = [];
@@ -1352,7 +1329,7 @@ module.exports = {
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
-  validateProbe, probeScript, probeFile, probeInstruction, probeMessage, probeSteps, probeSystem, probeTurns, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic, PROBE_PATH,
+  validateProbe, probeScript, probeInstruction, probeMessage, probeSteps, probeTurns, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
 };
