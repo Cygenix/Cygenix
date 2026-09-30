@@ -813,6 +813,7 @@ async function pbPoll(run){
   try {
     var r = await call('GET', '/agent/claude-code/probe?sessionId=' + encodeURIComponent(run.id));
     run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents; run.transcript = r.transcript || []; run.eventTypes = r.eventTypes || [];
+    run.retrying = !!r.retrying;
     if (r.done) { run.status = 'done'; pbStop(run); }
   } catch (e) {
     run.status = 'error'; run.error = e.message; pbStop(run);
@@ -825,7 +826,7 @@ function pbRenderRuns(){
   $('cc-results').hidden = !CC.runs.length;
   $('cc-runs').innerHTML = CC.runs.map(function(run){
     var label = run.network === 'open' ? 'Open networking' : 'Cygenix allow-list';
-    var pill = run.status === 'running' ? '<span class="pill busy">Working</span>'
+    var pill = run.status === 'running' ? '<span class="pill busy">' + (run.retrying ? 'Asking again' : 'Working') + '</span>'
       : run.status === 'error' ? '<span class="pill bad">Error</span>'
       : run.status === 'timeout' ? '<span class="pill bad">No answer</span>'
       : run.verdict && run.verdict.ok ? '<span class="pill ok">Reached</span>'

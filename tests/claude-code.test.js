@@ -446,11 +446,15 @@ function listen(onConn) {
       && tools.configs.some(c => c.name === 'web_fetch' && c.enabled === false));
     check('and carries metadata to find it by next time', created[1].metadata.cygenix === 'claude-code' && created[1].metadata.spec === CC.AGENT_SPEC);
     const env = (CLIENT.calls.find(c => c[0] === 'environments.create') || [])[1] || {};
-    check('the environment is LIMITED to the host and the address echo, nothing else',
+    check('the test environment is LIMITED to the host and the address echo, with the registries open for its two drivers',
       env.config.type === 'cloud' && env.config.networking.type === 'limited'
       && env.config.networking.allowed_hosts.join() === 'db.acme.io,api.ipify.org'
-      && env.config.networking.allow_package_managers === false && env.config.networking.allow_mcp_servers === false, JSON.stringify(env));
-    check('its name carries a hash, not the database host', /^cygenix-cc-limited-[0-9a-f]{16}$/.test(env.name) && !/acme/.test(env.name));
+      && env.config.networking.allow_package_managers === true && env.config.networking.allow_mcp_servers === false
+      && env.config.packages.pip.join() === 'pymssql,psycopg[binary]', JSON.stringify(env));
+    check('its name carries a variant and a hash, not the database host', /^cygenix-cc-limited-probe2-[0-9a-f]{16}$/.test(env.name) && !/acme/.test(env.name));
+    check('a console session\'s environment is NOT that one: no packages, registries closed, plain name',
+      CC.environmentName('limited', ['h.io']) === 'cygenix-cc-limited-' + CC.environmentName('limited', ['h.io']).slice(-16)
+      && CC.environmentConfig('limited', ['h.io']).networking.allow_package_managers === false && !CC.environmentConfig('limited', ['h.io']).packages);
     const s = (CLIENT.calls.find(c => c[0] === 'sessions.create') || [])[1] || {};
     check('THE SESSION CARRIES THE SPEND CAP: 600 cents USD (about £5)',
       s.budget && s.budget.type === 'limit' && s.budget.max_list_cost.amount === '600' && s.budget.max_list_cost.currency === 'USD', JSON.stringify(s.budget));
@@ -511,8 +515,25 @@ function listen(onConn) {
     check('anything else is a 500 carrying the message AND the stack (house rule)', r.status === 500 && r.body.error === 'boom here' && /claude-code/.test(r.body.stack));
 
     check('verdict: DNS failure', /could not resolve/.test(CC.verdict({ host: 'h', dns_error: 'x' }).text));
-    check('verdict: a connection nobody answered on is NOT a pass',
-      CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-reply' }).ok === false);
+    check('verdict: a connection nobody answered a login on is NOT a pass',
+      CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'error: timed out' }).ok === false);
+    check('verdict: with no driver, an open connection is reported as such', CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).ok === true
+      && /driver was not available/.test(CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).text));
+    check('the script is a driver login under a made-up account — no raw protocol bytes',
+      /pymssql\.connect\(server=H/.test(CC.probeScript({ host: 'h', port: 1, kind: 'sqlserver' })) && /psycopg\.connect\(host=H/.test(CC.probeScript({ host: 'h', port: 1, kind: 'postgres' }))
+      && !/fromhex/.test(CC.probeScript({ host: 'h', port: 1, kind: 'sqlserver' })) && /cygenix_probe/.test(CC.probeScript({ host: 'h', port: 1, kind: 'sqlserver' })));
+    // An empty turn gets one plain second ask; a second empty turn is the end.
+    CLIENT._o.sessions.sesn_empty = { id: 'sesn_empty', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
+    CLIENT._o.events.sesn_empty = [{ id: 'm1', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'run' }] },
+      { id: 'm2', type: 'span.model_request_end', processed_at: '2026-10-01T00:00:01Z', is_error: false },
+      { id: 'm3', type: 'session.status_idle', processed_at: '2026-10-01T00:00:02Z', stop_reason: { type: 'end_turn' } }];
+    r = await call('GET', 'probe', { query: { sessionId: 'sesn_empty' } });
+    check('AN EMPTY TURN IS ASKED AGAIN, ONCE, in plain words', r.body.done === false && r.body.retrying === true
+      && CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === 'sesn_empty' && /came back empty/.test(c[2].events[0].content[0].text)), r.raw);
+    CLIENT._o.events.sesn_empty.push({ id: 'm4', type: 'user.message', processed_at: '2026-10-01T00:00:03Z', content: [{ type: 'text', text: 'again' }] },
+      { id: 'm5', type: 'session.status_idle', processed_at: '2026-10-01T00:00:04Z', stop_reason: { type: 'end_turn' } });
+    r = await call('GET', 'probe', { query: { sessionId: 'sesn_empty' } });
+    check('…and a second empty turn ends it, with the event list', r.body.done === true && r.body.retrying === false && r.body.eventTypes.length === 5);
     check('verdict: the database answered', CC.verdict({ host: 'h', port: 1, kind: 'postgres', tcp: 'open', handshake: 'postgres-replied' }).ok === true);
     check('session errors are collected', CC.parseProbeEvents([{ type: 'session.error', error: { type: 'billing_error', message: 'credit balance too low' } }]).errors[0] === 'credit balance too low');
     const noLine = CC.parseProbeEvents([
@@ -778,26 +799,20 @@ function listen(onConn) {
     ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'].forEach(k => delete env[k]);
     const script = (p) => CC.probeScript(p).replace('https://' + CC.IP_ECHO_HOST, 'https://127.0.0.1:9');
 
-    const mssql = await listen((sock) => sock.once('data', (d) => {
-      sock.end(d[0] === 0x12 ? Buffer.from([0x04, 0x01, 0x00, 0x08, 0x00, 0x00, 0x01, 0x00]) : Buffer.alloc(0));
-    }));
+    // The drivers are not installed here, so the script's "no-driver" path
+    // is what runs; the connect, DNS, timing and address-echo parts are real.
+    const mssql = await listen((sock) => { sock.end(); });
     let r = await runPython(script({ host: '127.0.0.1', port: mssql.address().port, kind: 'sqlserver' }), env);
-    check('SQL Server: a server that answers PRELOGIN is reported as answering',
-      r.result && r.result.tcp === 'open' && r.result.handshake === 'sqlserver-replied', r.stderr || r.stdout);
+    check('SQL Server: the connection opens, and without a driver the script says so rather than guessing',
+      r.result && r.result.tcp === 'open' && r.result.handshake === 'no-driver' && CC.verdict(r.result).ok === true, r.stderr || r.stdout);
     check('the address-echo failure is reported, not fatal', r.result && !!r.result.egress_ip_error && !r.result.egress_ip);
     mssql.close();
 
-    const pg = await listen((sock) => sock.once('data', (d) => sock.end(d.length === 8 && d.readUInt32BE(4) === 80877103 ? 'N' : '?')));
+    const pg = await listen((sock) => { sock.end(); });
     r = await runPython(script({ host: '127.0.0.1', port: pg.address().port, kind: 'postgres' }), env);
-    check('PostgreSQL: a server that answers SSLRequest is reported as answering',
-      r.result && r.result.handshake === 'postgres-replied', r.stderr || r.stdout);
+    check('PostgreSQL: the same', r.result && r.result.tcp === 'open' && r.result.handshake === 'no-driver', r.stderr || r.stdout);
     pg.close();
-
-    const mute = await listen((sock) => sock.end());
-    r = await runPython(script({ host: '127.0.0.1', port: mute.address().port, kind: 'sqlserver' }), env);
-    check('A PORT THAT ACCEPTS AND SAYS NOTHING IS NOT MISTAKEN FOR A DATABASE',
-      r.result && r.result.tcp === 'open' && r.result.handshake === 'no-reply' && CC.verdict(r.result).ok === false, JSON.stringify(r.result));
-    mute.close();
+    check('the script runs clean under python3 — no syntax error in the driver branches', !/Traceback|SyntaxError/.test(r.stderr || ''), r.stderr);
 
     const closed = await listen(() => {}); const port = closed.address().port; closed.close();
     await new Promise(res => setTimeout(res, 50));
