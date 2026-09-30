@@ -278,27 +278,25 @@ async function ensureAgent(client, tag) {
 // One environment per network shape. The name carries a hash of the allowed
 // hosts rather than the hosts themselves: it lives in the customer's own
 // account, but a list of their database servers is not a label.
-// `extra` is for the connectivity test only: a variant tag in the name and
-// packages pre-installed (which needs the package registries open). A
-// console session never passes it — its environment stays the host and
-// the two registries, nothing else, because it carries a database login.
-function environmentName(network, hosts, extra) {
+// The connectivity test uses the same shape, and the same environment for
+// the same host: an earlier version gave it a variant with package managers
+// on and drivers pre-installed, and that was one of the differences under
+// suspicion when its turns came back empty. Package managers stay off; the
+// registries are reachable by name, so pip and npm work all the same.
+function environmentName(network, hosts) {
   const h = crypto.createHash('sha256').update(network + '|' + hosts.slice().sort().join(',')).digest('hex').slice(0, 16);
-  return 'cygenix-cc-' + network + '-' + (extra && extra.variant ? extra.variant + '-' : '') + h;
+  return 'cygenix-cc-' + network + '-' + h;
 }
-function environmentConfig(network, hosts, extra) {
-  const e = extra || {};
-  const cfg = {
+function environmentConfig(network, hosts) {
+  return {
     type: 'cloud',
     networking: network === 'open'
       ? { type: 'unrestricted' }
-      : { type: 'limited', allowed_hosts: hosts.slice(), allow_package_managers: !!e.allowPackageManagers, allow_mcp_servers: false },
+      : { type: 'limited', allowed_hosts: hosts.slice(), allow_package_managers: false, allow_mcp_servers: false },
   };
-  if (e.packages) cfg.packages = e.packages;
-  return cfg;
 }
-async function ensureEnvironment(client, tag, network, hosts, extra) {
-  const name = environmentName(network, hosts, extra);
+async function ensureEnvironment(client, tag, network, hosts) {
+  const name = environmentName(network, hosts);
   const known = remembered(tag, name);
   if (known) return known;
   const byName = () => findFirst(client.beta.environments.list(), e => e.name === name && !e.archived_at);
@@ -306,7 +304,7 @@ async function ensureEnvironment(client, tag, network, hosts, extra) {
   if (!env) {
     try {
       env = await client.beta.environments.create({
-        name, config: environmentConfig(network, hosts, extra), metadata: { cygenix: 'claude-code' },
+        name, config: environmentConfig(network, hosts), metadata: { cygenix: 'claude-code' },
       });
     } catch (e) {
       // Two tabs raced us to the same name: the other one won, use theirs.
@@ -447,7 +445,12 @@ function systemPrompt(o) {
   return [
     'You are working inside Cygenix, a data migration console, on data migration work for the signed-in user. '
       + 'You can write and run code in this workspace: Python, Node, shell and SQL.',
-    'The database for this session is ' + kind + '. Its connection details are in the read-only file ' + CRED_PATH
+    // The connection test (credentials: false) carries no login and no
+    // file: the same prompt otherwise, with that one paragraph replaced.
+    o.credentials === false
+      ? 'The database for this session is ' + kind + '. This session carries no database login: it is a connectivity check '
+        + 'the user runs before saving one.'
+      : 'The database for this session is ' + kind + '. Its connection details are in the read-only file ' + CRED_PATH
       + ", as KEY='value' lines: CYG_DB_TYPE, CYG_DB_HOST, CYG_DB_PORT, CYG_DB_NAME, CYG_DB_USER, CYG_DB_PASSWORD and "
       + 'CYG_DB_CONNSTR (the full connection string). Load them into the environment before running code, for example '
       + '`set -a; . ' + CRED_PATH + '; set +a`, and read them from the environment in your code.',
@@ -457,8 +460,8 @@ function systemPrompt(o) {
     'The workspace can reach the database host, the Python and npm package registries, and ' + IP_ECHO_HOST
       + ' (so `curl -s https://' + IP_ECHO_HOST + '` tells the user this workspace\'s public IP address, for a firewall rule) — and nothing else on the network.',
     MODE_TEXT[o.mode === 'changes' ? 'changes' : 'readonly'],
-    'Show SQL or code before running anything that modifies data. Never print the password or the contents of '
-      + CRED_PATH + ' unless the user explicitly asks you to.',
+    'Show SQL or code before running anything that modifies data.' + (o.credentials === false ? '' : ' Never print the password or the contents of '
+      + CRED_PATH + ' unless the user explicitly asks you to.'),
     'Keep replies short and concrete: what you ran, what came back, what it means.',
   ].join('\n\n');
 }
@@ -902,57 +905,35 @@ function validateProbe(body) {
 // Fixed script; the three values go in as JSON literals, which are valid
 // Python literals for anything validateProbe lets through.
 //
-// v2. The first version spoke each database's opening handshake in raw
-// bytes over a socket. Against a bare IP address that reads, to the safety
-// classifier that sits in front of the model, like a port scan — and the
-// model then ended its turn with nothing at all, three times running. So
-// the check now does what any client does: a normal login attempt with the
-// database's own driver (pre-installed in the test environment) under an
-// obviously made-up account. "Login failed" IS the answer we want — the
-// server was reached and replied; a timeout or "unavailable" means it was
-// not. No credential of the person's is involved at any point.
-const PROBE_PACKAGES = { pip: ['pymssql', 'psycopg[binary]'] };
-const PROBE_PATH = '/workspace/.cygenix/probe.env';
-const PROBE_SCRIPT_PATH = '/workspace/.cygenix/probe.py';
-const PROBE_TTL_S = 60 * 60;
-// v3. Even the driver login was ended with an empty turn, three requests
-// running, once the target was a bare IP address: the classifier objects
-// to the TARGET, written into the script, and will not say so. So the
-// target now travels the way a real session's database login does — as a
-// small file the session mounts and the script reads. What the model sees
-// names no address and no account: a script that reads a config file the
-// person's own console put there and tries the server it describes.
-function probeFile(p) {
+// History, because every version below was built on a wrong guess. v1 spoke
+// each database's opening handshake in raw bytes and the model's turn came
+// back empty — zero output tokens, no refusal, no error. v2 replaced that
+// with a normal driver login under a made-up account: still empty. v3 moved
+// the target into a mounted file so the prompt named no address: still
+// empty. v4 mounted the script too and asked in one sentence: still empty.
+// The raw model request finally showed the shape of it: ~4,800 input
+// tokens, 0 output, is_error false, three requests running. Meanwhile an
+// ordinary console session on the same key, the same agent and the same
+// model works every time. So the fault was in what the test did
+// DIFFERENTLY from the console — its own system prompt, its own
+// environment shape (package managers on, drivers pre-installed), its
+// message sent as an initial event — not in the script or the target.
+//
+// v5 therefore does exactly what a console session does: the console's
+// system prompt, the console's environment shape, a session created idle
+// and then ONE ordinary user message with the script inline. Only the
+// networking setting differs (allow-list or open). The script tries a
+// driver login under an obviously made-up account when the driver is
+// there — "Login failed" IS the answer wanted, the server was reached and
+// replied — and says 'no-driver' otherwise. No credential of the person's
+// is involved at any point.
+function probeScript(p) {
+  const H = JSON.stringify(p.host); const P = JSON.stringify(p.port); const K = JSON.stringify(p.kind);
   return [
-    '# Cygenix Dev Console connection test — the server to check. Read-only.',
-    'CYG_PROBE_HOST=' + shq(p.host),
-    'CYG_PROBE_PORT=' + shq(p.port),
-    'CYG_PROBE_KIND=' + shq(p.kind),
-    // A made-up account: the server refusing it is the reply being checked for.
-    'CYG_PROBE_USER=' + shq('cygenix_probe'),
-    'CYG_PROBE_PASSWORD=' + shq('cygenix-probe'),
-    '',
-  ].join('\n');
-}
-function probeScript() {
-  return [
-    'import socket, json, time, os, urllib.request',
-    'CFG = os.environ.get("CYG_PROBE_ENV", ' + JSON.stringify(PROBE_PATH) + ')',
-    'cfg = {}',
-    'for line in open(CFG):',
-    '    line = line.strip()',
-    '    if not line or line.startswith("#") or "=" not in line:',
-    '        continue',
-    '    k, v = line.split("=", 1)',
-    '    v = v.strip()',
-    '    if len(v) >= 2 and v[0] == "\'" and v[-1] == "\'":',
-    '        v = v[1:-1].replace("\'\\\\\'\'", "\'")',
-    '    cfg[k.strip()] = v',
-    'H = cfg.get("CYG_PROBE_HOST", "")',
-    'P = int(cfg.get("CYG_PROBE_PORT", "0") or 0)',
-    'KIND = cfg.get("CYG_PROBE_KIND", "other")',
-    'U = cfg.get("CYG_PROBE_USER", "")',
-    'PW = cfg.get("CYG_PROBE_PASSWORD", "")',
+    'import socket, json, time, urllib.request',
+    'H = ' + H, 'P = ' + P, 'KIND = ' + K,
+    '# A made-up account: the server refusing it is the reply being checked for.',
+    'U = "cygenix_probe"; PW = "cygenix-probe"',
     'r = {"host": H, "port": P, "kind": KIND}',
     'try:',
     '    r["dns"] = sorted({a[4][0] for a in socket.getaddrinfo(H, P, proto=socket.IPPROTO_TCP)})',
@@ -997,20 +978,11 @@ function probeScript() {
   ].join('\n');
 }
 
-const PROBE_SYSTEM = 'You are running a connectivity check for Cygenix, a database migration console, on behalf of the '
-  + 'signed-in administrator. The session mounts a small file describing their own database server, the one Cygenix is '
-  + 'configured to migrate to or from; the check tells them whether their firewall lets this workspace in, and from which '
-  + 'address. Run exactly what you are given, change nothing, install nothing, run nothing else.';
-
-// v4. With the target in a file the turn was STILL empty, so the script
-// went the same way: mounted, not pasted. The ask is now one sentence —
-// run the check this session mounted and paste what it printed — the
-// shape of an ordinary console request, which works.
-function probeInstruction() {
-  return 'Please run the connectivity check this session mounted: `python3 ' + PROBE_SCRIPT_PATH + '` with the bash tool '
-    + '(it reads the server details from ' + PROBE_PATH + ' and only tries to open a connection to my own database server, so I '
-    + 'can allow this workspace through its firewall). Reply with the full output, which includes a line beginning CYGPROBE_RESULT; '
-    + 'if it fails, reply with the error it printed. Do not change it and do not run anything else.';
+function probeInstruction(p) {
+  const driver = p.kind === 'sqlserver' ? 'pymssql' : p.kind === 'postgres' ? '"psycopg[binary]"' : '';
+  return 'Run this Python script with bash and paste its output verbatim (it only checks whether this workspace can reach '
+    + 'my database server, for a firewall rule).' + (driver ? ' If the driver is missing, `pip install ' + driver + '` first.' : '')
+    + '\n\n```python\n' + probeScript(p) + '\n```';
 }
 
 function textsOf(ev) {
@@ -1074,7 +1046,12 @@ function parseProbeEvents(events) {
     modelRequestEnd: events.filter(ev => ev.type === 'span.model_request_end').pop() || null,
     usage: events.filter(ev => ev.type === 'session.usage').pop() || null,
   });
-  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12), eventTypes, raw };
+  // A turn in which the model wrote nothing at all: zero output tokens on
+  // the last request, no error, nothing said or run. Named as such, rather
+  // than folded into "no reply".
+  const mu = raw && raw.modelRequestEnd && raw.modelRequestEnd.model_usage;
+  const emptyTurn = !!(mu && mu.output_tokens === 0 && !raw.modelRequestEnd.is_error && transcript.length === 0);
+  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12), eventTypes, raw, emptyTurn };
 }
 function scrubKeys(o) {
   try { return JSON.parse(JSON.stringify(o).replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, '[key]')); }
@@ -1098,39 +1075,21 @@ async function probeStart(who, apiKey, body) {
   if (!g.ok) return g.response;
   const client = deps.makeClient(apiKey);
   const tag = keyTag(apiKey);
-  const hosts = [p.host, IP_ECHO_HOST];
   const agentId = await ensureAgent(client, tag);
-  // The test environment carries no credential, so the package registries
-  // may be open to it for the drivers it pre-installs.
-  const environmentId = await ensureEnvironment(client, tag, p.network, hosts, { variant: 'probe2', allowPackageManagers: true, packages: PROBE_PACKAGES });
-  const file = await client.beta.files.upload({ file: await deps.toFile(Buffer.from(probeFile(p), 'utf8'), 'probe.env'), expires_in_seconds: PROBE_TTL_S });
-  let script;
-  try {
-    script = await client.beta.files.upload({ file: await deps.toFile(Buffer.from(probeScript() + '\n', 'utf8'), 'probe.py'), expires_in_seconds: PROBE_TTL_S });
-  } catch (e) {
-    await deleteFile(client, file.id);
-    throw e;
-  }
-  let session;
-  try {
-    session = await client.beta.sessions.create({
-      agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' }, system: PROBE_SYSTEM },
-      environment_id: environmentId,
-      title: 'Cygenix connection test',
-      metadata: { cygenix: 'probe', cyg_oid: who.oid, cyg_file: file.id, cyg_script: script.id },
-      budget: budget(),
-      resources: [
-        { type: 'file', file_id: file.id, mount_path: PROBE_PATH },
-        { type: 'file', file_id: script.id, mount_path: PROBE_SCRIPT_PATH },
-      ],
-      initial_events: [{ type: 'user.message', content: [{ type: 'text', text: probeInstruction() }] }],
-    });
-  } catch (e) {
-    await deleteFile(client, file.id);
-    await deleteFile(client, script.id);
-    throw e;
-  }
-  return ok({ sessionId: session.id, status: session.status, network: p.network, host: p.host, port: p.port });
+  // The console's environment shape exactly — the host, the registries,
+  // the address echo — with only the networking setting under test.
+  const environmentId = await ensureEnvironment(client, tag, p.network, [p.host].concat(PACKAGE_HOSTS, [IP_ECHO_HOST]));
+  const session = await client.beta.sessions.create({
+    agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
+             system: systemPrompt({ dbType: p.kind, mode: 'readonly', credentials: false }) },
+    environment_id: environmentId,
+    title: 'Cygenix connection test',
+    metadata: { cygenix: 'probe', cyg_oid: who.oid },
+    budget: budget(),
+  });
+  // Then the message, the way the console sends its first one.
+  await client.beta.sessions.events.send(session.id, { events: [{ type: 'user.message', content: [{ type: 'text', text: probeInstruction(p) }] }] });
+  return ok({ sessionId: session.id, status: 'running', network: p.network, host: p.host, port: p.port });
 }
 
 async function probeResult(who, apiKey, sessionId) {
@@ -1150,33 +1109,23 @@ async function probeResult(who, apiKey, sessionId) {
     if (events.length >= 400) break;
   }
   const parsed = parseProbeEvents(events);
-  let finished = session.status === 'terminated'
+  // Finished means the turn ended: an idle session that has not yet been
+  // sent its message (the moment between create and send) is not done.
+  // No retry: an empty turn is reported as one, with the raw request.
+  const finished = session.status === 'terminated'
     || (session.status === 'idle' && (parsed.stopReason || parsed.result || parsed.errors.length));
-  // An EMPTY turn — no reply, no command, nothing — gets one plain-worded
-  // second ask, so a hiccup gets another go and a refusal at least says so.
-  // A turn that said something in words is an answer, and is shown as one.
-  const asks = events.filter(ev => ev.type === 'user.message').length;
-  let retrying = false;
-  if (finished && session.status === 'idle' && !parsed.result && !parsed.errors.length && asks < 2 && parsed.transcript.length === 0) {
-    try {
-      await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.message', content: [{ type: 'text',
-        text: 'Your previous turn came back empty. Please run `python3 ' + PROBE_SCRIPT_PATH + '` now and paste its full output. If you are not able to, say why in one sentence.' }] }] });
-      finished = false; retrying = true;
-    } catch (e) { /* leave it finished */ }
-  }
   if (finished && !session.archived_at) {
     try { await client.beta.sessions.archive(sessionId); } catch (e) { /* ignore */ }
-    await deleteFile(client, session.metadata.cyg_file);
-    await deleteFile(client, session.metadata.cyg_script);
   }
   const cost = session.usage && session.usage.list_cost;
   return ok({
-    sessionId, status: session.status, done: !!finished, retrying,
+    sessionId, status: session.status, done: !!finished, retrying: false,
     result: parsed.result, verdict: verdict(parsed.result), errors: parsed.errors,
     stopReason: parsed.stopReason,
     transcript: finished && !parsed.result ? parsed.transcript : [],
     eventTypes: finished && !parsed.result ? parsed.eventTypes : [],
     raw: finished ? parsed.raw : null,
+    emptyTurn: !!(finished && !parsed.result && parsed.emptyTurn),
     costCents: cost && cost.amount != null ? Number(cost.amount) : null,
   });
 }
@@ -1246,7 +1195,7 @@ module.exports = {
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
-  validateProbe, probeScript, probeFile, probeInstruction, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic, PROBE_PATH, PROBE_SCRIPT_PATH,
+  validateProbe, probeScript, probeInstruction, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
-  AGENT_SPEC, IP_ECHO_HOST, PROBE_SYSTEM, PROBE_PACKAGES, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
+  AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
 };

@@ -58,7 +58,7 @@ const PASSWORD = 'Tr0ub4dor-secret';
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const token = 'x.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, preferred_username: U })).toString('base64url') + '.y';
 
-  const seen = { starts: [], reads: 0, bodies: [], failReads: false, doneAfter: 2 };
+  const seen = { starts: [], reads: 0, bodies: [], failReads: false, doneAfter: 2, emptyTurn: false };
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', async (route) => {
     const u = route.request().url();
@@ -74,6 +74,9 @@ const PASSWORD = 'Tr0ub4dor-secret';
       seen.reads++;
       if (seen.failReads) return json(route, { error: 'Anthropic is rate-limiting this account. Wait a minute and try again.' }, 429);
       const done = seen.reads >= seen.doneAfter;
+      if (done && seen.emptyTurn) return json(route, { done: true, status: 'idle', costCents: 7, result: null, verdict: null, errors: [], transcript: [], emptyTurn: true, stopReason: 'end_turn',
+        eventTypes: ['user.message', 'span.model_request_end:out=0', 'session.status_idle:end_turn'],
+        raw: { modelRequestEnd: { type: 'span.model_request_end', is_error: false, model_usage: { cache_creation_input_tokens: 4833, input_tokens: 4, output_tokens: 0 } }, usage: { type: 'session.usage', usage: { output_tokens: 0 } } } });
       return json(route, done ? {
         done: true, status: 'idle', costCents: 4,
         result: { host: 'acme.database.windows.net', port: 1433, kind: 'sqlserver', dns: ['10.1.2.3'], tcp: 'open', tcp_ms: 38, handshake: 'no-reply', egress_ip: '203.0.113.9' },
@@ -164,6 +167,18 @@ const PASSWORD = 'Tr0ub4dor-secret';
   await page.waitForTimeout(7000);
   check('a failing read shows its error once and stops — no retry storm', seen.reads === r0, seen.reads - r0);
   check('the open-networking test was asked for as such', seen.starts[1] && seen.starts[1].network === 'open');
+
+  // An empty turn is named as one, with the numbers from the raw request.
+  seen.failReads = false; seen.emptyTurn = true; seen.reads = 0;
+  await page.waitForTimeout(3100);
+  await page.evaluate(() => ccRun('limited'));
+  await page.waitForFunction(() => /No result/.test(document.getElementById('cc-runs').textContent), null, { timeout: 15000 });
+  const empty = await page.evaluate(() => document.getElementById('cc-runs').textContent);
+  check('AN EMPTY TURN SAYS SO, WITH THE STOP REASON AND THE TOKEN COUNTS — not "no reply"',
+    /Claude's turn ended with nothing written: 0 output tokens, stop reason end_turn, no error reported by Anthropic/.test(empty) && /4837 input tokens/.test(empty)
+    && !/sent back no reply/.test(empty), empty.slice(0, 400));
+  check('and the raw events are there to open', /Raw events/.test(empty) && /cache_creation_input_tokens/.test(empty)
+    && await page.evaluate(() => !document.querySelector('#cc-runs details:not([open]) summary') === false));
 
   // The console has one palette plus named themes (cygenix-theme.css); a
   // saved 'dark' is migrated to light by every page's pre-paint script. What
