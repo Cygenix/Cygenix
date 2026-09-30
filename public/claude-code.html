@@ -244,9 +244,9 @@ table.facts td:first-child{color:var(--text2);width:210px}
     <summary>Connection test — can Anthropic's workspace reach a database? (Owner or Platform Administrator)</summary>
     <section class="card" style="margin-top:0.75rem">
       <p class="muted">Checks that the workspace can open a connection to a database server and that the server answers, and
-        reports the IP address the workspace connects from. It sends only the server name, port and database type; no user name,
-        password or data leaves this page, and nothing is run against the database. Runs on your own Anthropic API key, costs a
-        few cents, and is capped at US$6.00 (about £5).</p>
+        reports the IP address the workspace connects from. It sends only the server name, port and database type, placed in a
+        small file the workspace reads; no user name, password or data leaves this page, and nothing is run against the database.
+        Runs on your own Anthropic API key, costs a few cents, and is capped at US$6.00 (about £5).</p>
       <div class="form">
         <label class="wide">Fill from a connection
           <select id="cc-conn" onchange="ccFillFrom(this.value)">

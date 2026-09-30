@@ -461,6 +461,12 @@ function listen(onConn) {
     check('it is stamped with the caller, so nobody else can read it', s.metadata.cyg_oid === 'oid-me' && s.metadata.cygenix === 'probe');
     check('it overrides the agent for this one run: medium effort, the probe prompt',
       s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'medium' && s.agent.system === CC.PROBE_SYSTEM);
+    const pf = CLIENT.calls.find(c => c[0] === 'files.upload')[1];
+    const ask = s.initial_events[0].content[0].text;
+    check('THE TARGET TRAVELS AS A MOUNTED FILE, NOT IN THE PROMPT: the file names the host, the instruction and the script do not',
+      pf.file.name === 'probe.env' && /CYG_PROBE_HOST='db\.acme\.io'/.test(pf.file.text) && /CYG_PROBE_PORT='1433'/.test(pf.file.text) && /CYG_PROBE_USER='cygenix_probe'/.test(pf.file.text)
+      && s.resources[0].type === 'file' && s.resources[0].mount_path === CC.PROBE_PATH && s.resources[0].file_id === s.metadata.cyg_file && /^file_\d+$/.test(s.metadata.cyg_file)
+      && /CYGPROBE_RESULT/.test(ask) && ask.indexOf('acme') === -1 && ask.indexOf('cygenix_probe') === -1 && ask.indexOf('1433') === -1, ask.slice(0, 200));
     check('THE KEY APPEARS NOWHERE IN WHAT WAS SENT TO ANTHROPIC OR THE GATE',
       !JSON.stringify(CLIENT.calls).includes(KEY) && !JSON.stringify(FETCHED).includes(KEY));
     check('the log line carries action, method, status and time — no host, no key',
@@ -480,7 +486,8 @@ function listen(onConn) {
     check('the result is read back from the script\'s own output', r.status === 200 && r.body.done === true
       && r.body.result.handshake === 'sqlserver-replied' && r.body.result.egress_ip === '203.0.113.9', r.raw);
     check('with a plain-language verdict and the cost', r.body.verdict.ok === true && /answered/.test(r.body.verdict.text) && r.body.costCents === 3);
-    check('a finished test session is archived (routine cleanup)', CLIENT.calls.some(c => c[0] === 'sessions.archive' && c[1] === sid));
+    check('a finished test session is archived (routine cleanup) and its file deleted', CLIENT.calls.some(c => c[0] === 'sessions.archive' && c[1] === sid)
+      && CLIENT.calls.some(c => c[0] === 'files.delete' && c[1] === s.metadata.cyg_file));
     CLIENT._o.sessions.sesn_other = { id: 'sesn_other', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'somebody-else' } };
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_other' } });
     check('SOMEBODY ELSE\'S TEST IN A SHARED ANTHROPIC ACCOUNT IS NOT FOUND', r.status === 404, r.raw);
@@ -496,8 +503,8 @@ function listen(onConn) {
       CLIENT.calls.find(c => c[0] === 'environments.create')[1].config.networking.type === 'unrestricted');
     const n0 = CLIENT.calls.length;
     await CC.probeStart(who, KEY, { host: 'db.acme.io', port: 1433, kind: 'sqlserver', network: 'open' });
-    check('a repeat inside ten minutes asks Anthropic for nothing but the session',
-      CLIENT.calls.slice(n0).map(c => c[0]).join() === 'sessions.create', CLIENT.calls.slice(n0).map(c => c[0]).join());
+    check('a repeat inside ten minutes asks Anthropic for nothing but the file and the session',
+      CLIENT.calls.slice(n0).map(c => c[0]).join() === 'files.upload,sessions.create', CLIENT.calls.slice(n0).map(c => c[0]).join());
     CC._reset();
     CLIENT = fakeClient({ agents: [{ id: 'agent_cur', metadata: { cygenix: 'claude-code', spec: CC.AGENT_SPEC } }], envCreate409: true });
     await CC.probeStart(who, KEY, { host: 'db2.acme.io', port: 5432, kind: 'postgres', network: 'limited' });
@@ -519,9 +526,9 @@ function listen(onConn) {
       CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'error: timed out' }).ok === false);
     check('verdict: with no driver, an open connection is reported as such', CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).ok === true
       && /driver was not available/.test(CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).text));
-    check('the script is a driver login under a made-up account — no raw protocol bytes',
-      /pymssql\.connect\(server=H/.test(CC.probeScript({ host: 'h', port: 1, kind: 'sqlserver' })) && /psycopg\.connect\(host=H/.test(CC.probeScript({ host: 'h', port: 1, kind: 'postgres' }))
-      && !/fromhex/.test(CC.probeScript({ host: 'h', port: 1, kind: 'sqlserver' })) && /cygenix_probe/.test(CC.probeScript({ host: 'h', port: 1, kind: 'sqlserver' })));
+    check('the script is a driver login read from the mounted file — no raw protocol bytes, no address, no account in it',
+      /pymssql\.connect\(server=H/.test(CC.probeScript()) && /psycopg\.connect\(host=H/.test(CC.probeScript())
+      && !/fromhex|cygenix_probe|cygenix-probe/.test(CC.probeScript()) && /CYG_PROBE_HOST/.test(CC.probeScript()));
     // An empty turn gets one plain second ask; a second empty turn is the end.
     CLIENT._o.sessions.sesn_empty = { id: 'sesn_empty', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
     CLIENT._o.events.sesn_empty = [{ id: 'm1', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'run' }] },
@@ -590,9 +597,9 @@ function listen(onConn) {
     check('the gate recorded the start, naming profile, connection and host',
       gb.act === 'use' && gb.record === 'session.start' && gb.detail.profile === 'Demo' && gb.detail.connection === 'Target DEV' && gb.detail.host === 'acme.database.windows.net', JSON.stringify(gb));
     const env = CLIENT.calls.find(c => c[0] === 'environments.create')[1];
-    check('THE WORKSPACE MAY REACH THE DATABASE HOST AND THE TWO PACKAGE REGISTRIES, NOTHING ELSE',
+    check('THE WORKSPACE MAY REACH THE DATABASE HOST, THE TWO PACKAGE REGISTRIES AND THE ADDRESS ECHO, NOTHING ELSE',
       env.config.networking.type === 'limited'
-      && env.config.networking.allowed_hosts.join() === 'acme.database.windows.net,pypi.org,files.pythonhosted.org,registry.npmjs.org'
+      && env.config.networking.allowed_hosts.join() === 'acme.database.windows.net,pypi.org,files.pythonhosted.org,registry.npmjs.org,api.ipify.org'
       && env.config.networking.allow_package_managers === false, JSON.stringify(env.config));
     const up = CLIENT.calls.find(c => c[0] === 'files.upload')[1];
     check('the credential file is uploaded with the connection\'s parts, shell-sourceable, expiring in a day',
@@ -797,7 +804,9 @@ function listen(onConn) {
   {
     const env = Object.assign({}, process.env);
     ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'].forEach(k => delete env[k]);
-    const script = (p) => CC.probeScript(p).replace('https://' + CC.IP_ECHO_HOST, 'https://127.0.0.1:9');
+    const cfgPath = path.join(require('os').tmpdir(), 'cygprobe-' + process.pid + '.env');
+    env.CYG_PROBE_ENV = cfgPath;
+    const script = (p) => { fs.writeFileSync(cfgPath, CC.probeFile(p)); return CC.probeScript().replace('https://' + CC.IP_ECHO_HOST, 'https://127.0.0.1:9'); };
 
     // The drivers are not installed here, so the script's "no-driver" path
     // is what runs; the connect, DNS, timing and address-echo parts are real.
@@ -818,6 +827,8 @@ function listen(onConn) {
     await new Promise(res => setTimeout(res, 50));
     r = await runPython(script({ host: '127.0.0.1', port, kind: 'postgres' }), env);
     check('a closed port is a failed connection, with the error', r.result && r.result.tcp === 'failed' && /Refused|refused/.test(r.result.tcp_error), JSON.stringify(r.result));
+    check('the script read the host, port and kind out of the mounted file', r.result && r.result.host === '127.0.0.1' && r.result.port === port && r.result.kind === 'postgres', JSON.stringify(r.result));
+    try { fs.unlinkSync(cfgPath); } catch (e) { /* */ }
   }
 
   /* ── 7. The parsers ─────────────────────────────────────────────────── */

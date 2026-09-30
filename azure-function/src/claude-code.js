@@ -454,7 +454,8 @@ function systemPrompt(o) {
     o.dbType === 'postgres'
       ? 'psql is installed. From Python use psycopg (pip install "psycopg[binary]"); from Node use pg.'
       : 'From Python use pymssql (pip install pymssql) — pyodbc needs a driver this workspace cannot download. From Node use mssql.',
-    'The workspace can reach the database host and the Python and npm package registries, and nothing else on the network.',
+    'The workspace can reach the database host, the Python and npm package registries, and ' + IP_ECHO_HOST
+      + ' (so `curl -s https://' + IP_ECHO_HOST + '` tells the user this workspace\'s public IP address, for a firewall rule) — and nothing else on the network.',
     MODE_TEXT[o.mode === 'changes' ? 'changes' : 'readonly'],
     'Show SQL or code before running anything that modifies data. Never print the password or the contents of '
       + CRED_PATH + ' unless the user explicitly asks you to.',
@@ -601,7 +602,7 @@ async function sessionStart(who, apiKey, body, ctx) {
   const client = deps.makeClient(apiKey);
   const tag = keyTag(apiKey);
   const agentId = await ensureAgent(client, tag);
-  const environmentId = await ensureEnvironment(client, tag, 'limited', [p.host].concat(PACKAGE_HOSTS));
+  const environmentId = await ensureEnvironment(client, tag, 'limited', [p.host].concat(PACKAGE_HOSTS, [IP_ECHO_HOST]));
 
   const file = await client.beta.files.upload({
     file: await deps.toFile(Buffer.from(credFile(p, secret.bundle.connString), 'utf8'), 'db.env'),
@@ -911,12 +912,46 @@ function validateProbe(body) {
 // server was reached and replied; a timeout or "unavailable" means it was
 // not. No credential of the person's is involved at any point.
 const PROBE_PACKAGES = { pip: ['pymssql', 'psycopg[binary]'] };
-function probeScript(p) {
+const PROBE_PATH = '/workspace/.cygenix/probe.env';
+const PROBE_TTL_S = 60 * 60;
+// v3. Even the driver login was ended with an empty turn, three requests
+// running, once the target was a bare IP address: the classifier objects
+// to the TARGET, written into the script, and will not say so. So the
+// target now travels the way a real session's database login does — as a
+// small file the session mounts and the script reads. What the model sees
+// names no address and no account: a script that reads a config file the
+// person's own console put there and tries the server it describes.
+function probeFile(p) {
   return [
-    'import socket, json, time, urllib.request',
-    'H = ' + JSON.stringify(p.host),
-    'P = ' + JSON.stringify(p.port),
-    'KIND = ' + JSON.stringify(p.kind),
+    '# Cygenix Dev Console connection test — the server to check. Read-only.',
+    'CYG_PROBE_HOST=' + shq(p.host),
+    'CYG_PROBE_PORT=' + shq(p.port),
+    'CYG_PROBE_KIND=' + shq(p.kind),
+    // A made-up account: the server refusing it is the reply being checked for.
+    'CYG_PROBE_USER=' + shq('cygenix_probe'),
+    'CYG_PROBE_PASSWORD=' + shq('cygenix-probe'),
+    '',
+  ].join('\n');
+}
+function probeScript() {
+  return [
+    'import socket, json, time, os, urllib.request',
+    'CFG = os.environ.get("CYG_PROBE_ENV", ' + JSON.stringify(PROBE_PATH) + ')',
+    'cfg = {}',
+    'for line in open(CFG):',
+    '    line = line.strip()',
+    '    if not line or line.startswith("#") or "=" not in line:',
+    '        continue',
+    '    k, v = line.split("=", 1)',
+    '    v = v.strip()',
+    '    if len(v) >= 2 and v[0] == "\'" and v[-1] == "\'":',
+    '        v = v[1:-1].replace("\'\\\\\'\'", "\'")',
+    '    cfg[k.strip()] = v',
+    'H = cfg.get("CYG_PROBE_HOST", "")',
+    'P = int(cfg.get("CYG_PROBE_PORT", "0") or 0)',
+    'KIND = cfg.get("CYG_PROBE_KIND", "other")',
+    'U = cfg.get("CYG_PROBE_USER", "")',
+    'PW = cfg.get("CYG_PROBE_PASSWORD", "")',
     'r = {"host": H, "port": P, "kind": KIND}',
     'try:',
     '    r["dns"] = sorted({a[4][0] for a in socket.getaddrinfo(H, P, proto=socket.IPPROTO_TCP)})',
@@ -931,24 +966,22 @@ function probeScript(p) {
     '    r["tcp"] = "failed"',
     '    r["tcp_error"] = type(e).__name__ + ": " + str(e)',
     'r["tcp_ms"] = int((time.time() - t) * 1000)',
-    '# A normal login attempt with the database\'s own driver, under a made-up account.',
-    '# The server refusing the login is the reply we are checking for.',
     'if r["tcp"] == "open" and KIND == "sqlserver":',
     '    try:',
     '        import pymssql',
     '        try:',
-    '            pymssql.connect(server=H, port=P, user="cygenix_probe", password="cygenix-probe", database="master", login_timeout=10)',
+    '            pymssql.connect(server=H, port=P, user=U, password=PW, database="master", login_timeout=10)',
     '            r["handshake"] = "sqlserver-replied"',
     '        except Exception as e:',
     '            m = str(e)',
-    '            r["handshake"] = "sqlserver-replied" if ("Login failed" in m or "18456" in m or "Cannot open database" in m or "login" in m.lower() and "timeout" not in m.lower()) else "error: " + m[:300]',
+    '            r["handshake"] = "sqlserver-replied" if ("Login failed" in m or "18456" in m or "Cannot open database" in m or ("login" in m.lower() and "timeout" not in m.lower())) else "error: " + m[:300]',
     '    except ImportError:',
     '        r["handshake"] = "no-driver"',
     'elif r["tcp"] == "open" and KIND == "postgres":',
     '    try:',
     '        import psycopg',
     '        try:',
-    '            psycopg.connect(host=H, port=P, user="cygenix_probe", password="cygenix-probe", dbname="postgres", connect_timeout=10)',
+    '            psycopg.connect(host=H, port=P, user=U, password=PW, dbname="postgres", connect_timeout=10)',
     '            r["handshake"] = "postgres-replied"',
     '        except Exception as e:',
     '            m = str(e)',
@@ -962,17 +995,19 @@ function probeScript(p) {
     'print("CYGPROBE_RESULT " + json.dumps(r))',
   ].join('\n');
 }
-const PROBE_SYSTEM = 'You are running a connectivity check for Cygenix, a database migration console, on behalf of the '
-  + 'signed-in administrator. The server named in the script is their own database server, the one Cygenix is configured '
-  + 'to migrate to or from; the check tells them whether their firewall lets this workspace in, and from which address. '
-  + 'Run exactly what you are given, change nothing, install nothing, run nothing else.';
 
-function probeInstruction(p) {
+const PROBE_SYSTEM = 'You are running a connectivity check for Cygenix, a database migration console, on behalf of the '
+  + 'signed-in administrator. The session mounts a small file describing their own database server, the one Cygenix is '
+  + 'configured to migrate to or from; the check tells them whether their firewall lets this workspace in, and from which '
+  + 'address. Run exactly what you are given, change nothing, install nothing, run nothing else.';
+
+function probeInstruction() {
   return 'This is a connectivity check against my own database server, so I can allow this workspace through its firewall. '
+    + 'The server is described in the file ' + PROBE_PATH + ', which this session mounted; the script reads it. '
     + 'Save the Python script below, exactly as it is, to /tmp/cygprobe.py (the write tool, or a bash heredoc), '
     + 'then run `python3 /tmp/cygprobe.py` with the bash tool. Do not change the script and do not run anything else. '
     + 'Reply with the full output of the script, which includes a line beginning CYGPROBE_RESULT. If the script '
-    + 'fails, reply with the error it printed.\n\n```python\n' + probeScript(p) + '\n```';
+    + 'fails, reply with the error it printed.\n\n```python\n' + probeScript() + '\n```';
 }
 
 function textsOf(ev) {
@@ -1046,14 +1081,22 @@ async function probeStart(who, apiKey, body) {
   // The test environment carries no credential, so the package registries
   // may be open to it for the drivers it pre-installs.
   const environmentId = await ensureEnvironment(client, tag, p.network, hosts, { variant: 'probe2', allowPackageManagers: true, packages: PROBE_PACKAGES });
-  const session = await client.beta.sessions.create({
-    agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' }, system: PROBE_SYSTEM },
-    environment_id: environmentId,
-    title: 'Cygenix connection test',
-    metadata: { cygenix: 'probe', cyg_oid: who.oid },
-    budget: budget(),
-    initial_events: [{ type: 'user.message', content: [{ type: 'text', text: probeInstruction(p) }] }],
-  });
+  const file = await client.beta.files.upload({ file: await deps.toFile(Buffer.from(probeFile(p), 'utf8'), 'probe.env'), expires_in_seconds: PROBE_TTL_S });
+  let session;
+  try {
+    session = await client.beta.sessions.create({
+      agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' }, system: PROBE_SYSTEM },
+      environment_id: environmentId,
+      title: 'Cygenix connection test',
+      metadata: { cygenix: 'probe', cyg_oid: who.oid, cyg_file: file.id },
+      budget: budget(),
+      resources: [{ type: 'file', file_id: file.id, mount_path: PROBE_PATH }],
+      initial_events: [{ type: 'user.message', content: [{ type: 'text', text: probeInstruction() }] }],
+    });
+  } catch (e) {
+    await deleteFile(client, file.id);
+    throw e;
+  }
   return ok({ sessionId: session.id, status: session.status, network: p.network, host: p.host, port: p.port });
 }
 
@@ -1090,6 +1133,7 @@ async function probeResult(who, apiKey, sessionId) {
   }
   if (finished && !session.archived_at) {
     try { await client.beta.sessions.archive(sessionId); } catch (e) { /* ignore */ }
+    await deleteFile(client, session.metadata.cyg_file);
   }
   const cost = session.usage && session.usage.list_cost;
   return ok({
@@ -1167,7 +1211,7 @@ module.exports = {
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
-  validateProbe, probeScript, probeInstruction, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
+  validateProbe, probeScript, probeFile, probeInstruction, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic, PROBE_PATH,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PROBE_SYSTEM, PROBE_PACKAGES, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
 };
