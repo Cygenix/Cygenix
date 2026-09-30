@@ -812,7 +812,7 @@ async function pbPoll(run){
   p.inflight = true;
   try {
     var r = await call('GET', '/agent/claude-code/probe?sessionId=' + encodeURIComponent(run.id));
-    run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents;
+    run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents; run.transcript = r.transcript || [];
     if (r.done) { run.status = 'done'; pbStop(run); }
   } catch (e) {
     run.status = 'error'; run.error = e.message; pbStop(run);
@@ -829,6 +829,7 @@ function pbRenderRuns(){
       : run.status === 'error' ? '<span class="pill bad">Error</span>'
       : run.status === 'timeout' ? '<span class="pill bad">No answer</span>'
       : run.verdict && run.verdict.ok ? '<span class="pill ok">Reached</span>'
+      : !run.result ? '<span class="pill bad">No result</span>'
       : '<span class="pill bad">Not reached</span>';
     var html = '<div class="run"><div class="run-head">' + pill + ' ' + esc(label) + ' — <span class="mono">' + esc(run.host) + ':' + esc(run.port) + '</span></div>';
     if (run.verdict) html += '<p class="muted" style="margin-top:0.4rem">' + esc(run.verdict.text) + '</p>';
@@ -839,7 +840,14 @@ function pbRenderRuns(){
     (run.errors || []).forEach(function(er){ html += '<div class="note crit">' + esc(er) + '</div>'; });
     if (run.status === 'error') html += '<div class="note crit">' + esc(run.error) + '</div>';
     if (run.status === 'timeout') html += '<div class="note crit">The test did not report back within 3 minutes. It may still be running in your Anthropic account, where its spend cap applies.</div>';
-    if (run.status === 'done' && !run.result && !(run.errors || []).length) html += '<div class="note warn">The workspace finished without reporting a result.</div>';
+    if (run.status === 'done' && !run.result && !(run.errors || []).length) {
+      html += '<div class="note warn">The workspace finished without reporting a result. This is not the allow-list: the test did not get as far as trying the connection. What it said and did is below.</div>';
+      if ((run.transcript || []).length) {
+        html += '<details class="block" open><summary>What the workspace said</summary>' + run.transcript.map(function(t){
+          var label = t.kind === 'tool' ? 'Ran' : t.kind === 'output' ? 'Output' : t.kind === 'error' ? 'Failed' : 'Claude';
+          return '<div class="res-label">' + esc(label) + '</div><pre>' + esc(t.text || '(nothing)') + '</pre>'; }).join('') + '</details>';
+      }
+    }
     return html + '</div>';
   }).join('');
 }

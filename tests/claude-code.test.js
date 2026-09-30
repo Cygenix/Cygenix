@@ -455,8 +455,8 @@ function listen(onConn) {
     check('THE SESSION CARRIES THE SPEND CAP: 600 cents USD (about £5)',
       s.budget && s.budget.type === 'limit' && s.budget.max_list_cost.amount === '600' && s.budget.max_list_cost.currency === 'USD', JSON.stringify(s.budget));
     check('it is stamped with the caller, so nobody else can read it', s.metadata.cyg_oid === 'oid-me' && s.metadata.cygenix === 'probe');
-    check('it overrides the agent for this one run: low effort, the probe prompt',
-      s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'low' && s.agent.system === CC.PROBE_SYSTEM);
+    check('it overrides the agent for this one run: medium effort, the probe prompt',
+      s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'medium' && s.agent.system === CC.PROBE_SYSTEM);
     check('THE KEY APPEARS NOWHERE IN WHAT WAS SENT TO ANTHROPIC OR THE GATE',
       !JSON.stringify(CLIENT.calls).includes(KEY) && !JSON.stringify(FETCHED).includes(KEY));
     check('the log line carries action, method, status and time — no host, no key',
@@ -515,6 +515,22 @@ function listen(onConn) {
       CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-reply' }).ok === false);
     check('verdict: the database answered', CC.verdict({ host: 'h', port: 1, kind: 'postgres', tcp: 'open', handshake: 'postgres-replied' }).ok === true);
     check('session errors are collected', CC.parseProbeEvents([{ type: 'session.error', error: { type: 'billing_error', message: 'credit balance too low' } }]).errors[0] === 'credit balance too low');
+    const noLine = CC.parseProbeEvents([
+      { type: 'agent.tool_use', name: 'bash', input: { command: 'python3 /tmp/cygprobe.py' } },
+      { type: 'agent.tool_result', is_error: true, content: [{ type: 'text', text: 'Traceback (most recent call last):\n  File "/tmp/cygprobe.py", line 3\nSyntaxError: x' }] },
+      { type: 'agent.message', content: [{ type: 'text', text: 'The script failed to run.' }] },
+      { type: 'session.status_idle', stop_reason: { type: 'end_turn' } },
+    ]);
+    check('WHEN NO RESULT LINE COMES BACK, what the workspace ran, got and said is kept so a person can act on it',
+      noLine.result === null && noLine.transcript.length === 3 && noLine.transcript[0].kind === 'tool' && /cygprobe/.test(noLine.transcript[0].text)
+      && noLine.transcript[1].kind === 'error' && /Traceback/.test(noLine.transcript[1].text) && noLine.transcript[2].kind === 'message');
+    CLIENT._o.sessions.sesn_noline = { id: 'sesn_noline', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
+    CLIENT._o.events.sesn_noline = [{ id: 'q1', type: 'agent.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'I could not run it.' }] },
+      { id: 'q2', type: 'session.status_idle', processed_at: '2026-10-01T00:00:01Z', stop_reason: { type: 'end_turn' } }];
+    r = await call('GET', 'probe', { query: { sessionId: 'sesn_noline' } });
+    check('…and the route returns that transcript only in the no-result case', r.body.done === true && r.body.result === null && r.body.transcript.length === 1 && /could not run/.test(r.body.transcript[0].text));
+    check('the test runs at medium effort with an instruction that asks for the full output or the error',
+      /effort: 'medium' \}, system: PROBE_SYSTEM/.test(read('azure-function', 'src', 'claude-code.js')) && /If the script fails, reply with the error/.test(CC.probeInstruction({ host: 'h', port: 1, kind: 'other' })));
   }
 
   /* ── 5. The console ─────────────────────────────────────────────────── */

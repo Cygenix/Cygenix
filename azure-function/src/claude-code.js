@@ -943,9 +943,10 @@ const PROBE_SYSTEM = 'You run one automated network test for Cygenix and report 
   + 'Run exactly what you are given, change nothing, install nothing, run nothing else.';
 
 function probeInstruction(p) {
-  return 'Use the bash tool to write the Python script below to /tmp/cygprobe.py and run it with python3. '
-    + 'Do not change it and do not run anything else. When it finishes, reply with only the line of '
-    + 'its output that begins with CYGPROBE_RESULT.\n\n```python\n' + probeScript(p) + '\n```';
+  return 'Save the Python script below, exactly as it is, to /tmp/cygprobe.py (the write tool, or a bash heredoc), '
+    + 'then run `python3 /tmp/cygprobe.py` with the bash tool. Do not change the script and do not run anything else. '
+    + 'Reply with the full output of the script, which includes a line beginning CYGPROBE_RESULT. If the script '
+    + 'fails, reply with the error it printed.\n\n```python\n' + probeScript(p) + '\n```';
 }
 
 function textsOf(ev) {
@@ -971,7 +972,19 @@ function parseProbeEvents(events) {
     errors.push(String(er.message || er.type || 'session error'));
   });
   const idle = events.filter(ev => ev.type === 'session.status_idle').pop();
-  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null };
+  // What the workspace said and did, for the case where no result line came
+  // back: without it a person sees "no result" and nothing to act on. No
+  // credential is involved in a test, so nothing here needs blanking.
+  const clip = (t) => String(t || '').replace(/\s+$/, '').slice(-1200);
+  const transcript = [];
+  events.forEach(ev => {
+    if (ev.type === 'agent.message') transcript.push({ kind: 'message', text: clip(textsOf(ev).join('\n')) });
+    else if (ev.type === 'agent.tool_use') {
+      const input = ev.input || {};
+      transcript.push({ kind: 'tool', text: clip(ev.name === 'bash' ? input.command : (ev.name || 'tool') + ' ' + JSON.stringify(input)) });
+    } else if (ev.type === 'agent.tool_result') transcript.push({ kind: ev.is_error ? 'error' : 'output', text: clip(textsOf(ev).join('\n')) });
+  });
+  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12) };
 }
 
 function verdict(r) {
@@ -994,7 +1007,7 @@ async function probeStart(who, apiKey, body) {
   const agentId = await ensureAgent(client, tag);
   const environmentId = await ensureEnvironment(client, tag, p.network, hosts);
   const session = await client.beta.sessions.create({
-    agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'low' }, system: PROBE_SYSTEM },
+    agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' }, system: PROBE_SYSTEM },
     environment_id: environmentId,
     title: 'Cygenix connection test',
     metadata: { cygenix: 'probe', cyg_oid: who.oid },
@@ -1031,6 +1044,7 @@ async function probeResult(who, apiKey, sessionId) {
     sessionId, status: session.status, done: !!finished,
     result: parsed.result, verdict: verdict(parsed.result), errors: parsed.errors,
     stopReason: parsed.stopReason,
+    transcript: finished && !parsed.result ? parsed.transcript : [],
     costCents: cost && cost.amount != null ? Number(cost.amount) : null,
   });
 }
