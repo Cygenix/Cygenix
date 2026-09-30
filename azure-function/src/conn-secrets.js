@@ -226,6 +226,34 @@ async function identify(req) {
   return { ok: true, oid, email };
 }
 
+// ─── One secret, for the server's own use ────────────────────────────────────
+// Sep-2026, for the Claude Code console: the Function App itself needs the
+// credential behind ONE connection, to hand into an Anthropic workspace on
+// the owner's behalf. Until now nothing on the server unsealed a secret for
+// any purpose but returning it to the browser that owns it. This does not
+// widen that: the caller passes the oid from a token IT verified, the AAD
+// binds the record to that oid, and the bundle is returned to the caller in
+// memory and nowhere else. It never reaches a log or a response body.
+//
+//   { ok: true,  bundle }                       the credential
+//   { ok: false, why, code: 'no-secrets-key' }  the store is not configured
+//   { ok: false, why, code: 'not-found' }       nothing saved for this
+//                                               connection, on the cloud side
+//   { ok: false, why, code: 'undecryptable' }   saved under another key
+async function readSecret(oid, connId) {
+  if (!oid || !validateConnId(connId)) return { ok: false, why: 'bad connection id', code: 'not-found' };
+  const k = loadKey(deps.env());
+  if (!k.ok) return { ok: false, why: k.why, code: 'no-secrets-key' };
+  const container = await deps.container();
+  let doc = null;
+  try { doc = (await container.item(oid + ':' + connId, oid).read()).resource || null; }
+  catch (e) { if (!e || e.code !== 404) throw e; }
+  if (!doc) return { ok: false, why: 'no secret is saved on the cloud side for this connection', code: 'not-found' };
+  const bundle = decryptBundle(k.key, oid, connId, doc);
+  if (!bundle) return { ok: false, why: 'the saved secret cannot be opened with the current key', code: 'undecryptable' };
+  return { ok: true, bundle };
+}
+
 // ─── The handler ─────────────────────────────────────────────────────────────
 async function handler(req, ctx) {
   if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
@@ -353,7 +381,7 @@ app.http('conn-secrets', {
 
 // For the tests: the pure pieces, the handler, and the seams.
 module.exports = {
-  handler,
+  handler, readSecret,
   loadKey, encryptBundle, decryptBundle, validateBundle, validateConnId, validateUpdatedAt,
   rateLimited, resetRateLimit,
   CONN_ID_RE, SECRET_FIELDS, MAX_FIELD_LEN, WRITES_PER_MIN, CONTAINER,

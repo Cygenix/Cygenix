@@ -531,6 +531,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-privacy-security .ps-toggle-switch.on{background:var(--accent);border-color:var(--accent)}
 #view-privacy-security .ps-toggle-switch.on::after{left:22px;background:#fff}
 #view-privacy-security .ps-toggle-label{font-size:13px;font-weight:500;margin-bottom:0.2rem}
+#view-privacy-security .ps-help{font-size:12px;color:var(--text2);line-height:1.5}
+#view-privacy-security .ps-cc-roles{display:flex;flex-wrap:wrap;gap:0.4rem 1rem;padding:0.5rem 0 0.2rem 0}
+#view-privacy-security .ps-cc-roles label{display:inline-flex;align-items:center;gap:0.4rem;font-size:13px;cursor:pointer}
+#view-privacy-security .ps-cc-roles input{accent-color:var(--accent)}
+#view-privacy-security .ps-cc-roles label.off{opacity:0.55;cursor:default}
+#view-privacy-security .ps-cc-actions{display:flex;align-items:center;gap:0.75rem;margin-top:0.75rem}
+#view-privacy-security .ps-cc-actions .btn:disabled{opacity:0.5;cursor:not-allowed}
 #view-privacy-security .ps-toggle-desc{font-size:11.5px;color:var(--text3);line-height:1.5}
 
 #view-privacy-security .ps-excl-input-row{display:flex;gap:0.5rem;margin-bottom:0.5rem}
@@ -1475,8 +1482,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
 <!-- Menu and settings search, read by the sidebar's masthead field and the
      Search page. Before the sidebar so it is there when the field is typed in. -->
-<script src="/cygenix-menu-index.js?v=3d85838633" defer></script>
-<script src="/cygenix-sidebar.js?v=cf7503ba14" defer></script>
+<script src="/cygenix-menu-index.js?v=d3750bbd06" defer></script>
+<script src="/cygenix-sidebar.js?v=4c9e04fdfe" defer></script>
   <script src="/cygenix-restore.js?v=9aad9f10f9" defer></script>
   <script src="/cygenix-home.js?v=60f393deb7" defer></script>
   <script src="/cygenix-pipeline.js?v=00a20951e7" defer></script>
@@ -1504,7 +1511,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        first time somebody goes looking for evidence. -->
   <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
   <script src="/audit-app.js?v=d7d0f6518f" defer></script>
-  <script src="/dashboard-app.js?v=af9d1e5754" defer></script>
+  <script src="/dashboard-app.js?v=2e3e60d435" defer></script>
   <!-- The Diagnostics tab. Loads AFTER dashboard-app.js because it calls
        that file's sconnGetAll(), gfetch() and ta_sched(); deferred scripts
        run in document order, so the globals exist by the time it runs. -->
@@ -2346,6 +2353,42 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <button class="btn btn-sm btn-primary" onclick="psAddPattern()">+ Add pattern</button>
           </div>
           <div class="ps-excl-list" id="ps-exclusion-list"></div>
+        </div>
+      </div>
+
+      <!-- Claude Code console (Sep-2026). Unlike the panels above, this is
+           an ORGANISATION setting kept on the server beside the tenant
+           guardrails, because the server enforces it on every call the
+           console makes. Saved through rbac-admin; audited from/to. -->
+      <div class="ps-panel" id="ps-cc-panel">
+        <div class="ps-panel-head">
+          <div class="ps-panel-title">Claude Code console</div>
+          <span class="ps-mode-indicator">Organisation: <span id="ps-cc-state">—</span></span>
+        </div>
+        <div class="ps-panel-body">
+          <div class="ps-toggle-row">
+            <div class="ps-toggle-switch" id="ps-cc-enabled" onclick="ccGovToggle()" role="switch" aria-checked="false" aria-labelledby="ps-cc-label"></div>
+            <div>
+              <div class="ps-toggle-label" id="ps-cc-label">Claude Code console</div>
+              <div class="ps-help">Lets people chat with Claude, which writes and runs code — Python, Node, shell, SQL — in an
+                isolated workspace hosted by Anthropic that connects directly to the database on their active profile.
+                Off for the whole organisation until switched on here.</div>
+            </div>
+          </div>
+          <div id="ps-cc-roles" class="ps-cc-roles" aria-label="Roles allowed to use the console"></div>
+          <div class="ps-help" style="margin-top:0.6rem">
+            <strong>Cost:</strong> every session runs on the person's own Anthropic API key and is billed to their Anthropic
+            account — model use plus workspace time — with a cap of about £5 (US$6) per session.
+            <strong>Risk:</strong> the workspace receives the database login for the selected connection, so Claude's code can
+            do whatever that login can. Sessions start read-only; a person must switch on "Allow changes to data" for a session,
+            which is recorded in the audit log, and a production profile requires its name typed to confirm. For guaranteed
+            protection use a read-only database login. Sessions are stored by Anthropic (US or global processing) and are not
+            covered by UK-only data residency.
+          </div>
+          <div class="ps-cc-actions">
+            <button class="btn btn-sm" id="ps-cc-save" onclick="ccGovSave()">Save</button>
+            <span class="ps-help" id="ps-cc-note"></span>
+          </div>
         </div>
       </div>
 
@@ -4570,10 +4613,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=f8c6826a23"></script>
-<script src="/cygenix-assistant-actions.js?v=46ca9246a9"></script>
+<script src="/cygenix-assistant.js?v=f17fbead2e"></script>
+<script src="/cygenix-assistant-actions.js?v=4d7f25a77a"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
-<script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
+<script src="/cygenix-tour-steps.js?v=580c85794f"></script>
 <script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('dashboard');</script>
 </body>

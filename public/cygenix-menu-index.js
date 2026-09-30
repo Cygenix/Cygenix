@@ -178,6 +178,8 @@
     'audit':             ['audit', 'trail', 'log', 'history', 'who did what'],
     'task-agent':        ['schedule', 'cron', 'task agent', 'chain'],
     'object-mapping':    ['mapping', 'map columns', 'ai mapping'],
+    'sql-editor':        ['sql', 'query', 'develop'],
+    'claude-code':       ['claude', 'code', 'python', 'agent', 'script', 'workspace', 'develop', 'console'],
   };
 
   /* ── Ranking ───────────────────────────────────────────────────────────────

@@ -26,6 +26,7 @@
 // POST { op:'revoke-invite', inviteId }                    (user.manage)
 // POST { op:'remove-member', oid }                         (user.manage)
 // POST { op:'guardrails', mode, twoPersonRule, environments } (tenant.guardrails)
+// POST { op:'claude-code', enabled, roles }                 (claudecode.configure)
 // POST { op:'approve', approvalId }                        (run.approve)
 // POST { op:'withdraw-approval', approvalId }              (requester or approver)
 //
@@ -78,6 +79,12 @@ exports.handler = async function (event) {
       const what = q.what || 'me';
 
       if (what === 'me') {
+        // The Claude Code console: the organisation's switch and allow-list,
+        // and what they mean for THIS caller, so the sidebar and the page can
+        // hide or show without a second round trip. A courtesy: the server
+        // asks the gate again on every call the console makes.
+        const cc = tenancy.normaliseClaudeCode(tenant.claudeCode);
+        const onList = actor.roles.some(r => cc.roles.indexOf(r) !== -1);
         return ok({
           oid: actor.oid, email: actor.email, name: actor.name,
           isActive: actor.isActive, roles: actor.roles,
@@ -85,6 +92,12 @@ exports.handler = async function (event) {
           collapsed: rbac.collapsedSegregation(actor.roles),
           bootstrapped: actor.bootstrapped || false,
           roleRef: rbac.ROLES,   // the Appendix 16 quick reference — not sensitive
+          claudeCode: {
+            enabled: cc.enabled, roles: cc.roles, roleOptions: tenancy.CLAUDE_CODE_ROLES,
+            allowed: cc.enabled && onList && rbac.can(actor, 'claudecode.use', {}).allow,
+            canChangeData: cc.enabled && onList && rbac.can(actor, 'claudecode.use', { mutating: true }).allow,
+            canConfigure: rbac.can(actor, 'claudecode.configure', { mutating: true }).allow,
+          },
         });
       }
 
@@ -362,6 +375,30 @@ exports.handler = async function (event) {
                       resourceType: 'tenant', resourceId: tenant.id,
                       detail: { from: before, to: r.guardrails } });
         return ok({ done: true, guardrails: r.guardrails });
+      }
+
+      if (op === 'claude-code') {
+        const d = rbac.can(actor, 'claudecode.configure', { mutating: true });
+        if (!d.allow) return denied('claudecode.configure', d, { enabled: body.enabled });
+        if (body.enabled !== undefined && typeof body.enabled !== 'boolean') return fail('enabled must be true or false', 400);
+        if (body.roles !== undefined && !Array.isArray(body.roles)) return fail('roles must be a list of role codes', 400);
+        const unknown = (body.roles || []).filter(r => tenancy.CLAUDE_CODE_ROLES.indexOf(r) === -1);
+        if (unknown.length) return fail('roles must be among ' + tenancy.CLAUDE_CODE_ROLES.join('|') + ' (got ' + unknown.join(',') + ')', 400);
+        const before = tenancy.normaliseClaudeCode(tenant.claudeCode);
+        const r = await tenancy.setClaudeCode(store, {
+          tenantId: tenant.id,
+          policy: {
+            enabled: body.enabled === undefined ? before.enabled : body.enabled,
+            roles: body.roles === undefined ? before.roles : body.roles,
+          },
+        });
+        if (!r.ok) return fail(r.reason, 400);
+        // Switching an agent with a database login on for an organisation is
+        // a high-severity change; so is widening who may use it.
+        await audit({ action: 'claudecode.configure', outcome: 'allowed', severity: 'high',
+                      resourceType: 'tenant', resourceId: tenant.id,
+                      detail: { from: before, to: r.claudeCode } });
+        return ok({ done: true, claudeCode: r.claudeCode });
       }
 
       if (op === 'approve') {

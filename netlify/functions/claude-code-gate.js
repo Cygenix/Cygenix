@@ -28,14 +28,17 @@
 //                  on the organisation's allow-list
 //   act 'changes'  the same, for a session allowed to change data — a
 //                  mutating act, which the Auditor's R grant refuses
+//   record         optional: the name of the event this call IS, to be
+//                  written to the trail on a yes — 'probe', 'session.start',
+//                  'session.stop' (with act 'use') or 'session.changes-on'
+//                  (with act 'changes'). Filed as claudecode.<name>.
 //
 // 200 { allowed: true, roles, tenantId }        — go ahead
 // 403 { error, reason }                         — no, with a sentence a user
 //                                                 can act on
 // Every refusal is audited (authz does it for the matrix; this file does it
-// for the organisation policy). An allowed 'use' is NOT audited — it is
-// asked every half-minute of every session, and the events worth keeping
-// (start, data changes on, stop) are recorded by name by the caller's act.
+// for the organisation policy). A plain allowed 'use' is NOT audited — it is
+// asked every half-minute of every session — only the named events are.
 
 'use strict';
 
@@ -47,10 +50,13 @@ const HEADERS = { 'Content-Type': 'application/json' };
 const reply = (statusCode, data) => ({ statusCode, headers: HEADERS, body: JSON.stringify(data) });
 
 const ACTS = {
-  probe:   { action: 'claudecode.configure', mutating: true,  policy: false },
-  use:     { action: 'claudecode.use',       mutating: false, policy: true },
-  changes: { action: 'claudecode.use',       mutating: true,  policy: true },
+  probe:   { action: 'claudecode.configure', mutating: true,  policy: false, records: ['probe'] },
+  use:     { action: 'claudecode.use',       mutating: false, policy: true,  records: ['session.start', 'session.stop'] },
+  changes: { action: 'claudecode.use',       mutating: true,  policy: true,  records: ['session.changes-on'] },
 };
+// Handing a database login to an agent is worth a notice; telling the agent
+// it may change the data is worth more than one.
+const RECORD_SEVERITY = { 'session.changes-on': 'high' };
 
 // Only these keys of a caller's detail reach the audit trail, and only as
 // short strings — the gate is asked by a server, but it is still input.
@@ -81,6 +87,10 @@ exports.handler = async function (event) {
 
   const spec = ACTS[body.act];
   if (!spec) return reply(400, { error: 'act must be one of ' + Object.keys(ACTS).join('|') });
+  const record = body.record ? String(body.record) : '';
+  if (record && spec.records.indexOf(record) === -1) {
+    return reply(400, { error: 'record must be one of ' + spec.records.join('|') + ' for act ' + body.act });
+  }
   const detail = cleanDetail(body.detail);
 
   const refuse = async (reason, message, severity) => {
@@ -113,11 +123,13 @@ exports.handler = async function (event) {
       }
     }
 
-    // Recorded when the test STARTS (the caller says so with record:true),
-    // not each time the page asks for its result.
-    if (body.act === 'probe' && body.record === true) {
-      await audit({ action: 'claudecode.probe', outcome: 'allowed', severity: 'notice',
-                    resourceType: 'tenant', resourceId: tenant.id, detail });
+    // Recorded when the caller names the event this call is — a test or a
+    // session starting, data changes being allowed, a session stopping —
+    // and not on the routine permission checks in between.
+    if (record) {
+      await audit({ action: 'claudecode.' + record, outcome: 'allowed', severity: RECORD_SEVERITY[record] || 'notice',
+                    resourceType: record === 'probe' ? 'tenant' : 'claudecode_session',
+                    resourceId: record === 'probe' ? tenant.id : (detail.sessionId || tenant.id), detail });
     }
     return reply(200, { allowed: true, roles: actor.roles, tenantId: tenant.id });
   } catch (e) {

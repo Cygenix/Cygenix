@@ -64,17 +64,26 @@ const missing = LEGACY_KEYS.filter(k => !SB.__findItem(k));
 check('every pre-redesign key still resolves (' + LEGACY_KEYS.length + ')', missing.length === 0,
   'missing: ' + missing.join(', '));
 
-/* ── 2. Six groups, in the order the work happens ────────────────────────── */
+/* ── 2. Seven groups, in the order the work happens ──────────────────────── */
 // Plan comes first: the Configurator decides what is in scope and sizes it,
 // and the Project plan is built from that. The handoff filed both as tabs
-// under Reports, and nobody found them there.
+// under Reports, and nobody found them there. Develop (Sep-2026) sits after
+// Model: the SQL editor and the Claude Code console are where a person
+// writes and runs things against what the model describes.
 const sections = NAV.map(s => s.section).filter(Boolean);
-check('the rail is six groups — Plan, Connect, Model, Run, Quality, Govern — after Home',
-  JSON.stringify(sections) === JSON.stringify(['Plan','Connect','Model','Run','Quality','Govern'])
+check('the rail is seven groups — Plan, Connect, Model, Develop, Run, Quality, Govern — after Home',
+  JSON.stringify(sections) === JSON.stringify(['Plan','Connect','Model','Develop','Run','Quality','Govern'])
   && NAV[0].section === null && NAV[0].items.length === 1 && NAV[0].items[0].key === 'dashboard',
   'got: ' + sections.join(' → '));
-check('and it is fifteen destinations, not thirty',
-  railKeys.length === 15, railKeys.length + ': ' + railKeys.join(','));
+check('and it is sixteen destinations, not thirty',
+  railKeys.length === 16, railKeys.length + ': ' + railKeys.join(','));
+check('Develop holds the SQL editor — moved, same key, same address — and Claude Code',
+  (() => { const d = NAV.find(s => s.section === 'Develop'); const sq = d && d.items[0]; const cc = d && d.items[1];
+    return d && d.items.length === 2 && sq.key === 'sql-editor' && sq.href === '/sql-editor' && sq.label === 'SQL editor'
+      && cc.key === 'claude-code' && cc.href === '/claude-code' && cc.label === 'Claude Code'
+      && !NAV.find(s => s.section === 'Model').items.some(i => i.key === 'sql-editor'); })());
+check('Claude Code is hidden unless the organisation switch and the caller\'s role say otherwise (requiresClaudeCode)',
+  (SB.__findItem('claude-code') || {}).requiresClaudeCode === true);
 check('the Configurator and the Project plan are the Plan group, directly below Home',
   NAV[1].section === 'Plan' && NAV[1].items.map(i => i.key).join(',') === 'effort-estimator,project-plan-grid'
   && NAV[1].items[0].label === 'Configurator' && NAV[1].items[0].href === '/configurator'

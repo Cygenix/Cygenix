@@ -58,7 +58,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_validation_sources` | Validation sources | synced (SYNC_KEYS) | assurance.html |
 | `cygenix_wasis_rules` | Was/Is substitution rules | synced (SYNC_KEYS) | project-builder-app.js |
 
-## B — Cache — derived, safe to lose (8)
+## B — Cache — derived, safe to lose (9)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
@@ -68,6 +68,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_pending_sql` | SQL queued for the editor | transient | data-cleansing.html |
 | `cygenix_projects_migrated` | One-time migration marker | idempotent | dashboard-app.js, projects.html |
 | `cygenix_ps_ai_` | Cached AI project-summary text | regenerated | analytics-app.js, dashboard-app.js |
+| `cygenix_rbac_me` | sessionStorage: the caller's roles and Claude Code entitlement from rbac-admin?what=me, cached five minutes | cleared after a Governance save so the sidebar re-asks | dashboard-app.js |
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data-stream-designer-app.js, data-stream-store-app.js |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
@@ -80,7 +81,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cyg_search_q` | A query typed in the masthead, handed to the Search view once | — | cygenix-sidebar.js, dashboard-app.js |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
 | `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +17 |
-| `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-active-conn.js, cygenix-collation.js +6 |
+| `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, claude-code.html, cygenix-active-conn.js +7 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
 | `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +35 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
@@ -109,4 +110,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_65 classified key(s) across `public/`._
+_66 classified key(s) across `public/`._

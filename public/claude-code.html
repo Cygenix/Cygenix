@@ -36,13 +36,14 @@
 })();
 </script>
 <meta name="theme-color" content="#FFFFFF">
-<meta name="description" content="Check that Anthropic's Claude Code workspace can reach your database.">
-<title>Cygenix – Claude Code connection test</title>
+<meta name="description" content="Chat with Claude, which writes and runs code against your database in an isolated Anthropic workspace.">
+<title>Cygenix – Claude Code</title>
 <script src="/cygenix-audit.js?v=a02ee52051" defer></script>
-<!-- Connections are read so the test can be pointed at the active profile's
-     databases. Only the host, port and type are taken from them; see
-     cygenix-cc-probe.js. The same load order every connection page uses
-     (tests/profile-apply.test.js, tests/profile-sync.test.js). -->
+<script src="/cygenix-rbac.js?v=78965846c4" defer></script>
+<!-- Connections are read so a session can be opened on the active profile's
+     databases. Only the connection's ID and name leave the page — the server
+     unseals the credential itself. The same load order every connection page
+     uses (tests/profile-apply.test.js, tests/profile-sync.test.js). -->
 <script src="/connections.js?v=3e4823fa6a" defer></script>
 <script src="/cygenix-active-conn.js?v=2db3d77de1" defer></script>
 <script src="/cygenix-saved-conn-secrets.js?v=5d5b969ce6" defer></script>
@@ -55,6 +56,7 @@
 <script src="/cygenix-drive.js?v=43733ac277" defer></script>
 <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
 <script src="/cygenix-cc-probe.js?v=bc18a9e22a" defer></script>
+<script src="/cygenix-cc-console.js?v=3e088d59a5" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -63,10 +65,29 @@
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:216px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
-.topbar{position:fixed;top:calc(var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;left:216px;height:52px;display:flex;align-items:center;gap:0.75rem;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg);z-index:20}
+.topbar{position:fixed;top:calc(var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;left:216px;height:52px;display:flex;align-items:center;gap:0.6rem;padding:0 1rem;border-bottom:0.5px solid var(--border);background:var(--bg);z-index:20}
 body.cyg-collapsed .topbar{left:54px}
-.topbar h1{font-size:1rem;font-weight:600;display:flex;align-items:center;gap:0.5rem}
-.main{padding:calc(52px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px) + 1.25rem) 1.5rem 3rem;max-width:980px}
+.topbar h1{font-size:0.95rem;font-weight:600;display:flex;align-items:center;gap:0.45rem;white-space:nowrap}
+.topbar select{font:inherit;font-size:0.82rem;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--r,6px);padding:0.32rem 0.45rem;max-width:260px}
+.spacer{flex:1}
+.btn{font:inherit;font-size:0.82rem;padding:0.38rem 0.75rem;border-radius:var(--r,6px);border:0.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:0.35rem;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--red);border-color:var(--red)}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+.pill{font-size:0.72rem;font-weight:600;padding:0.15rem 0.55rem;border-radius:999px;background:var(--bg3);color:var(--text2);white-space:nowrap}
+.pill.running{background:var(--accent-glow);color:var(--accent)}
+.pill.idle{background:var(--green-bg);color:var(--green)}
+.pill.stopped{background:var(--bg3);color:var(--text2)}
+.pill.error{background:var(--red-bg);color:var(--red)}
+.sw{display:inline-flex;align-items:center;gap:0.45rem;font-size:0.8rem;white-space:nowrap;cursor:pointer;user-select:none}
+.sw .knob{width:36px;height:20px;border-radius:10px;background:var(--bg4);border:0.5px solid var(--border2);position:relative;transition:all 0.15s;flex:none}
+.sw .knob::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--text3);transition:all 0.15s}
+.sw.on .knob{background:var(--red);border-color:var(--red)}
+.sw.on .knob::after{left:18px;background:#fff}
+.sw.disabled{opacity:0.5;cursor:not-allowed}
+.cost{font-size:0.75rem;color:var(--text2);white-space:nowrap}
+.main{padding-top:calc(52px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px))}
+.gate{margin:1.25rem 1.5rem;max-width:760px}
 .card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg,10px);padding:1.1rem 1.25rem;margin-bottom:1rem}
 .card h2{font-size:0.95rem;font-weight:600;margin-bottom:0.5rem}
 .muted{color:var(--text2);font-size:0.85rem;line-height:1.55}
@@ -74,17 +95,63 @@ body.cyg-collapsed .topbar{left:54px}
 .note.warn{background:var(--amber-bg);color:var(--amber)}
 .note.crit{background:var(--red-bg);color:var(--red)}
 .note.ok{background:var(--green-bg);color:var(--green)}
+.note.info{background:var(--accent-glow);color:var(--accent)}
+/* The two columns: chat 40%, output 60%, each scrolling on its own. */
+.cols{display:grid;grid-template-columns:2fr 3fr;height:calc(100vh - 52px - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));min-height:420px}
+.col{display:flex;flex-direction:column;min-width:0;border-right:0.5px solid var(--border)}
+.col:last-child{border-right:0}
+.col-head{padding:0.55rem 1rem;font-size:0.78rem;font-weight:600;color:var(--text2);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.5rem}
+.col-body{flex:1;overflow:auto;padding:0.9rem 1rem}
+.msg{max-width:92%;margin-bottom:0.7rem;padding:0.55rem 0.75rem;border-radius:var(--r-lg,10px);font-size:0.86rem;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.msg.user{margin-left:auto;background:var(--accent-glow);color:var(--text)}
+.msg.assistant{background:var(--bg2);border:0.5px solid var(--border)}
+.msg.notice{margin:0.5rem auto;max-width:100%;text-align:center;font-size:0.76rem;color:var(--text2);background:transparent;padding:0.2rem}
+.msg.working{color:var(--text2);font-style:italic;background:transparent}
+.composer{border-top:0.5px solid var(--border);padding:0.7rem 1rem;display:flex;gap:0.5rem;align-items:flex-end}
+.composer textarea{flex:1;font:inherit;font-size:0.86rem;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--r,6px);padding:0.5rem 0.6rem;resize:vertical;min-height:58px;max-height:200px}
+.composer textarea:disabled{opacity:0.6}
+.block{border:0.5px solid var(--border);border-radius:var(--r,6px);margin-bottom:0.6rem;background:var(--bg2);overflow:hidden}
+.block summary{list-style:none;cursor:pointer;padding:0.45rem 0.7rem;font-size:0.8rem;font-weight:600;display:flex;align-items:center;gap:0.5rem}
+.block summary::-webkit-details-marker{display:none}
+.block summary::before{content:"▸";color:var(--text3);font-size:0.7rem;width:0.8em}
+.block[open] summary::before{content:"▾"}
+.block.error summary{color:var(--red)}
+.block.notice summary{color:var(--amber)}
+.block .tag{font-size:0.68rem;font-weight:600;padding:0.05rem 0.4rem;border-radius:999px;background:var(--bg3);color:var(--text2)}
+.block pre{font-family:var(--mono);font-size:0.78rem;line-height:1.45;padding:0.55rem 0.75rem;border-top:0.5px solid var(--border);white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;background:var(--bg)}
+.block .res-label{font-size:0.7rem;color:var(--text2);padding:0.35rem 0.75rem 0;border-top:0.5px solid var(--border)}
+table.res{border-collapse:collapse;font-size:0.78rem;margin:0.4rem 0.75rem 0.6rem;font-family:var(--mono);max-width:calc(100% - 1.5rem);display:block;overflow:auto;max-height:360px}
+table.res th,table.res td{border:0.5px solid var(--border);padding:0.2rem 0.5rem;text-align:left;white-space:nowrap}
+table.res th{background:var(--bg3);position:sticky;top:0}
+.empty{color:var(--text3);font-size:0.84rem;padding:1rem 0.2rem}
+/* Sessions drawer and the two modals */
+.drawer{position:fixed;top:calc(52px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;bottom:0;width:360px;max-width:92vw;background:var(--bg2);border-left:0.5px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,0.08);transform:translateX(100%);transition:transform 0.18s;z-index:30;display:flex;flex-direction:column}
+.drawer.open{transform:none}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:0.7rem 1rem;border-bottom:0.5px solid var(--border);font-weight:600;font-size:0.9rem}
+.drawer-list{flex:1;overflow:auto;padding:0.5rem}
+.sess{display:block;width:100%;text-align:left;font:inherit;background:transparent;border:0.5px solid transparent;border-radius:var(--r,6px);padding:0.5rem 0.6rem;cursor:pointer;color:var(--text)}
+.sess:hover{background:var(--bg3)}
+.sess.cur{border-color:var(--accent)}
+.sess .t{font-size:0.84rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess .s{font-size:0.74rem;color:var(--text2);display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.15rem}
+.replay-bar{display:flex;align-items:center;gap:0.6rem;padding:0.45rem 1rem;background:var(--amber-bg);color:var(--amber);font-size:0.8rem}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.35);display:none;align-items:center;justify-content:center;z-index:40;padding:1rem}
+.modal.open{display:flex}
+.modal-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg,10px);max-width:520px;width:100%;padding:1.1rem 1.25rem}
+.modal-card h3{font-size:1rem;font-weight:600;margin-bottom:0.5rem}
+.modal-card input{font:inherit;font-size:0.9rem;width:100%;margin-top:0.6rem;padding:0.45rem 0.55rem;border:0.5px solid var(--border2);border-radius:var(--r,6px);background:var(--bg);color:var(--text)}
+.modal-foot{display:flex;justify-content:flex-end;gap:0.6rem;margin-top:1rem}
+/* The connection test, kept for administrators: an Owner or Platform
+   Administrator opens it from the "Not enabled" screen or with #test. */
+details.probe{margin:1.25rem 1.5rem;max-width:980px}
+details.probe>summary{cursor:pointer;font-size:0.9rem;font-weight:600;padding:0.5rem 0}
 .form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0.75rem;margin-top:0.75rem}
 .form label{display:flex;flex-direction:column;gap:0.3rem;font-size:0.78rem;color:var(--text2)}
 .form .wide{grid-column:span 2}
 .form input,.form select{font:inherit;font-size:0.88rem;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--r,6px);padding:0.45rem 0.55rem}
 .actions{display:flex;flex-wrap:wrap;gap:0.6rem;margin-top:1rem}
-.btn{font:inherit;font-size:0.85rem;padding:0.5rem 0.9rem;border-radius:var(--r,6px);border:0.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:0.4rem}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn:disabled{opacity:0.5;cursor:not-allowed}
 .run{border-top:0.5px solid var(--border);padding-top:0.8rem;margin-top:0.8rem}
 .run-head{display:flex;align-items:center;gap:0.6rem;font-size:0.88rem;font-weight:600}
-.pill{font-size:0.72rem;font-weight:600;padding:0.12rem 0.5rem;border-radius:999px;background:var(--bg3);color:var(--text2)}
 .pill.ok{background:var(--green-bg);color:var(--green)}
 .pill.bad{background:var(--red-bg);color:var(--red)}
 .pill.busy{background:var(--accent-glow);color:var(--accent)}
@@ -92,7 +159,7 @@ table.facts{border-collapse:collapse;margin-top:0.5rem;font-size:0.84rem;width:1
 table.facts td{padding:0.3rem 0.5rem 0.3rem 0;vertical-align:top;border-bottom:0.5px solid var(--border)}
 table.facts td:first-child{color:var(--text2);width:210px}
 .mono{font-family:var(--mono);font-size:0.82rem}
-@media (max-width:760px){.form{grid-template-columns:1fr 1fr}.topbar{left:0}.main{padding-left:1rem;padding-right:1rem}}
+@media (max-width:900px){.cols{grid-template-columns:1fr;height:auto}.col{border-right:0;border-bottom:0.5px solid var(--border)}.col-body{max-height:50vh}.topbar{left:0;height:auto;flex-wrap:wrap;padding:0.4rem 0.75rem}.main{padding-top:calc(110px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px))}.form{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -100,98 +167,158 @@ table.facts td:first-child{color:var(--text2);width:210px}
 <div id="cyg-sidebar-mount" data-active="claude-code"></div>
 <script src="/cygenix-capabilities.js?v=0526488864" defer></script>
 <script src="/cygenix-status-hairline.js?v=619bb8ede1" defer></script>
-<script src="/cygenix-menu-index.js?v=3d85838633" defer></script>
-<script src="/cygenix-sidebar.js?v=cf7503ba14" defer></script>
+<script src="/cygenix-menu-index.js?v=d3750bbd06" defer></script>
+<script src="/cygenix-sidebar.js?v=4c9e04fdfe" defer></script>
 
-<div class="topbar"><h1><i class="ic ic-plug"></i> Claude Code — connection test</h1></div>
+<div class="topbar">
+  <h1><i class="ic ic-robot"></i> Claude Code</h1>
+  <select id="cs-conn" aria-label="Connection" onchange="csPickConn()"></select>
+  <span class="sw" id="cs-toggle" role="switch" aria-checked="false" tabindex="0" onclick="csToggle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();csToggle()}"
+        title="When off, Claude is instructed not to change data. For guaranteed protection, use a read-only database login.">
+    <span class="knob"></span><span>Allow changes to data this session</span>
+  </span>
+  <span class="spacer"></span>
+  <span class="cost" id="cs-cost"></span>
+  <span class="pill" id="cs-status">No session</span>
+  <button class="btn primary" id="cs-new" onclick="csNew()"><i class="ic ic-plus"></i> New session</button>
+  <button class="btn danger" id="cs-stop" onclick="csStop()" disabled><i class="ic ic-stop"></i> Stop</button>
+  <button class="btn" id="cs-sessions-btn" onclick="csDrawer(true)"><i class="ic ic-clock"></i> Sessions</button>
+</div>
 
 <main class="main">
-  <section class="card">
-    <h2>Can Anthropic's workspace reach your database?</h2>
-    <p class="muted">The Claude Code console runs code in an isolated workspace hosted by Anthropic, which connects to your
-      database directly. Before the console is switched on, this test checks that the workspace can open a connection
-      to your database server and that the server answers, and reports the IP address the workspace connects from.</p>
-    <p class="muted" style="margin-top:0.5rem">It sends only the server name, port and database type. No user name, password
-      or data leaves this page, and nothing is run against the database. It runs on your own Anthropic API key, costs a
-      few cents, and is capped at US$6.00 (about £5). Only an Organisation Owner or Platform Administrator can run it.</p>
-    <div id="cc-key-note" class="note warn" hidden>No Anthropic API key is saved in this browser. Add it in
-      <a href="/dashboard#project-settings">Settings → General</a>, then come back.</div>
+  <section class="gate" id="cc-gate" hidden>
+    <div class="card">
+      <h2 id="cc-gate-title">Claude Code</h2>
+      <p class="muted" id="cc-gate-text"></p>
+      <div id="cc-key-note" class="note warn" hidden>No Anthropic API key is saved in this browser. Add it in
+        <a href="/dashboard#project-settings">Settings → General</a>, then come back. Nothing is sent until you do.</div>
+    </div>
   </section>
 
-  <section class="card">
-    <h2>Server to test</h2>
-    <div class="form">
-      <label class="wide">Fill from a connection
-        <select id="cc-conn" onchange="ccFillFrom(this.value)">
-          <option value="">Choose…</option>
-          <option value="tgt">Active profile — target</option>
-          <option value="src">Active profile — source</option>
-        </select>
-      </label>
-      <label>Database type
-        <select id="cc-kind">
-          <option value="sqlserver">SQL Server / Azure SQL</option>
-          <option value="postgres">PostgreSQL</option>
-          <option value="other">Other (connection only)</option>
-        </select>
-      </label>
-      <span></span>
-      <label class="wide">Server name
-        <input id="cc-host" type="text" autocomplete="off" spellcheck="false" placeholder="myserver.database.windows.net">
-      </label>
-      <label>Port
-        <input id="cc-port" type="number" min="1" max="65535" value="1433">
-      </label>
+  <section id="cc-console" hidden>
+    <div id="cs-replay-bar" class="replay-bar" hidden>
+      <i class="ic ic-eye"></i> <span id="cs-replay-text">Replaying a past session, read-only.</span>
+      <button class="btn" onclick="csReplayBack()">Back to the current session</button>
     </div>
-    <div id="cc-fill-note" class="note warn" hidden></div>
-    <div class="actions">
-      <button class="btn primary" id="cc-run-limited" onclick="ccRun('limited')"><i class="ic ic-shield"></i> Test with the Cygenix allow-list</button>
-      <button class="btn" id="cc-run-open" onclick="ccRun('open')"><i class="ic ic-plug"></i> Test with open networking</button>
+    <div class="cols">
+      <div class="col">
+        <div class="col-head"><i class="ic ic-chat"></i> Chat</div>
+        <div class="col-body" id="cs-chat"><div class="empty">Start a session, then ask Claude for what you need — for example, "List the tables and row counts using Python".</div></div>
+        <div class="composer">
+          <textarea id="cs-input" rows="2" placeholder="Ask Claude… (Ctrl+Enter to send)" disabled onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();csSend()}"></textarea>
+          <button class="btn primary" id="cs-send" onclick="csSend()" disabled>Send</button>
+        </div>
+      </div>
+      <div class="col">
+        <div class="col-head"><i class="ic ic-tools"></i> Output <span class="tag" id="cs-out-count"></span></div>
+        <div class="col-body">
+          <div id="cs-firewall" class="note warn" hidden>Your database may only accept known IP addresses — the Anthropic workspace may need allowing.</div>
+          <div id="cs-budget" class="note crit" hidden>This session reached its spend cap and has paused. Start a new session to carry on.</div>
+          <div id="cs-note" class="note" hidden></div>
+          <div id="cs-output"><div class="empty">Code Claude writes, commands it runs and what comes back appear here.</div></div>
+        </div>
+      </div>
     </div>
-    <p class="muted" style="margin-top:0.6rem">The allow-list test is the one that matters: it is how the console will run,
-      reaching only your server. The open-networking test tells you, when the first one fails, whether the
-      allow-list is the cause or the network itself.</p>
-    <div id="cc-note" class="note" hidden></div>
   </section>
 
-  <section class="card" id="cc-results" hidden>
-    <h2>Results</h2>
-    <div id="cc-runs"></div>
-  </section>
+  <details class="probe" id="cc-probe">
+    <summary>Connection test — can Anthropic's workspace reach a database? (Owner or Platform Administrator)</summary>
+    <section class="card" style="margin-top:0.75rem">
+      <p class="muted">Checks that the workspace can open a connection to a database server and that the server answers, and
+        reports the IP address the workspace connects from. It sends only the server name, port and database type; no user name,
+        password or data leaves this page, and nothing is run against the database. Runs on your own Anthropic API key, costs a
+        few cents, and is capped at US$6.00 (about £5).</p>
+      <div class="form">
+        <label class="wide">Fill from a connection
+          <select id="cc-conn" onchange="ccFillFrom(this.value)">
+            <option value="">Choose…</option>
+            <option value="tgt">Active profile — target</option>
+            <option value="src">Active profile — source</option>
+          </select>
+        </label>
+        <label>Database type
+          <select id="cc-kind">
+            <option value="sqlserver">SQL Server / Azure SQL</option>
+            <option value="postgres">PostgreSQL</option>
+            <option value="other">Other (connection only)</option>
+          </select>
+        </label>
+        <span></span>
+        <label class="wide">Server name
+          <input id="cc-host" type="text" autocomplete="off" spellcheck="false" placeholder="myserver.database.windows.net">
+        </label>
+        <label>Port
+          <input id="cc-port" type="number" min="1" max="65535" value="1433">
+        </label>
+      </div>
+      <div id="cc-fill-note" class="note warn" hidden></div>
+      <div class="actions">
+        <button class="btn primary" id="cc-run-limited" onclick="ccRun('limited')"><i class="ic ic-shield"></i> Test with the Cygenix allow-list</button>
+        <button class="btn" id="cc-run-open" onclick="ccRun('open')"><i class="ic ic-plug"></i> Test with open networking</button>
+      </div>
+      <div id="cc-note" class="note" hidden></div>
+    </section>
+    <section class="card" id="cc-results" hidden>
+      <h2>Results</h2>
+      <div id="cc-runs"></div>
+    </section>
+  </details>
 </main>
 
+<!-- Past sessions -->
+<aside class="drawer" id="cs-drawer" aria-label="Past sessions">
+  <div class="drawer-head"><span>Sessions</span><button class="btn" onclick="csDrawer(false)">Close</button></div>
+  <div class="drawer-list" id="cs-drawer-list"><div class="empty">No sessions yet.</div></div>
+</aside>
+
+<!-- First-use notice -->
+<div class="modal" id="cs-notice" role="dialog" aria-modal="true" aria-labelledby="cs-notice-title">
+  <div class="modal-card">
+    <h3 id="cs-notice-title">Before you start</h3>
+    <p class="muted">Runs on your own Anthropic API key and is billed to your Anthropic account. Code runs in an isolated Anthropic workspace. You are responsible for changes it makes.</p>
+    <p class="muted" style="margin-top:0.5rem">The workspace receives the database login for the connection you choose, so Claude's code can do
+      whatever that login can. Sessions start read-only. Transcripts are kept by Cygenix with passwords blanked, and by Anthropic.</p>
+    <div class="modal-foot"><button class="btn primary" id="cs-notice-ok" onclick="csNoticeOk()">I understand</button></div>
+  </div>
+</div>
+
+<!-- The data-change confirmation -->
+<div class="modal" id="cs-confirm" role="dialog" aria-modal="true" aria-labelledby="cs-confirm-title">
+  <div class="modal-card">
+    <h3 id="cs-confirm-title">Allow changes to data this session?</h3>
+    <p class="muted" id="cs-confirm-text"></p>
+    <p class="muted" id="cs-confirm-prod" hidden style="margin-top:0.5rem;color:var(--red)">This is a <strong>production</strong> profile. Type its name to confirm.</p>
+    <input id="cs-confirm-input" type="text" autocomplete="off" hidden oninput="csConfirmRender()">
+    <div class="modal-foot">
+      <button class="btn" onclick="csConfirmClose(false)">Cancel</button>
+      <button class="btn danger" id="cs-confirm-ok" onclick="csConfirmClose(true)">Allow changes</button>
+    </div>
+  </div>
+</div>
+
 <script>
-/* The page's half of the connection test. Rules it keeps:
-   - one test at a time, and none within 3 seconds of the last start;
-   - results are polled every 3 seconds, one request in flight at a time,
-     and polling stops when the test is done, fails, or passes 3 minutes;
-   - the in-flight flag is reset only by the code that set it (its finally),
-     never by a callback it triggered, so a render can never restart a loop. */
-var CC = { starting: false, lastStart: 0, runs: [], polling: {} };
+/* ── The console ──────────────────────────────────────────────────────────
+   Rules it keeps, all of them about the network:
+   - every button that posts to Azure has an in-flight guard and a 3-second
+     minimum interval (New session, Send, Stop, the toggle);
+   - results are polled every 3 seconds while a session is working, one
+     request in flight at a time, and polling stops the moment the session
+     is idle, stopped or in error — or the Stop button is pressed;
+   - a one-shot flag is reset only in the finally of the code that set it,
+     never by a render or a callback it caused;
+   - nothing about a transcript is kept in this browser: it comes from
+     Cosmos on every load, redacted by the server. */
 var PROXY = '/.netlify/functions/data-proxy';
-var POLL_MS = 3000, GIVE_UP_MS = 3 * 60 * 1000;
+var POLL_MS = 3000, MIN_GAP_MS = 3000;
+var CS = { me: null, conns: [], conn: null, cur: null, events: [], seen: {}, wantChanges: false,
+           polling: null, pollInflight: false, busy: {}, last: {}, replay: null, sessions: [], user: '' };
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 function hasKey(){ return !!(window.CygenixModel && CygenixModel.userKey && CygenixModel.userKey()); }
 function note(id, text, tone){ var el = $(id); if (!el) return; el.hidden = !text; el.className = 'note ' + (tone || ''); el.textContent = text || ''; }
-
-function renderButtons(){
-  var block = CC.starting || !hasKey();
-  $('cc-run-limited').disabled = block;
-  $('cc-run-open').disabled = block;
-  $('cc-key-note').hidden = hasKey();
-}
-
-function ccFillFrom(side){
-  note('cc-fill-note', '');
-  if (!side) return;
-  var c = window.CygenixActiveConn && CygenixActiveConn.getActiveConnection ? CygenixActiveConn.getActiveConnection(side) : null;
-  if (!c || !c.ok) { note('cc-fill-note', (c && c.why) || 'No ' + (side === 'tgt' ? 'target' : 'source') + ' connection is set on the active profile.', 'warn'); return; }
-  var e = CygenixCcProbe.endpointOf(c.connString, c.mode);
-  if (!e.ok) { note('cc-fill-note', e.why, 'warn'); return; }
-  $('cc-host').value = e.host; $('cc-port').value = e.port; $('cc-kind').value = e.kind;
-  if (e.note) note('cc-fill-note', e.note, 'warn');
+function currentUser(){
+  try { return (CS.me && CS.me.email) || localStorage.getItem('cygenix_active_user') || ''; } catch (e) { return ''; }
 }
 
 async function call(method, path, body){
@@ -205,58 +332,392 @@ async function call(method, path, body){
   if (!res.ok) { var err = new Error(data.error || ('The server answered ' + res.status)); err.status = res.status; throw err; }
   return data;
 }
+/* One at a time per action, three seconds apart. The flag is cleared in
+   this function's own finally and nowhere else. */
+async function guarded(name, fn){
+  if (CS.busy[name]) return null;
+  var wait = (CS.last[name] || 0) + MIN_GAP_MS - Date.now();
+  if (wait > 0) { note('cs-note', 'One moment — ' + name + ' was used a few seconds ago.', 'warn'); return null; }
+  CS.busy[name] = true; CS.last[name] = Date.now(); render();
+  try { return await fn(); }
+  finally { CS.busy[name] = false; render(); }
+}
 
+/* ── Who may, and what to connect to ─────────────────────────────────── */
+async function init(){
+  try { CS.me = window.CygenixRBAC ? await CygenixRBAC.me() : null; } catch (e) { CS.me = null; }
+  var cc = (CS.me && CS.me.claudeCode) || null;
+  var allowed = !!(cc && cc.allowed);
+  var gate = $('cc-gate'), con = $('cc-console');
+  if (!allowed) {
+    gate.hidden = false; con.hidden = true;
+    $('cc-gate-title').textContent = 'Claude Code';
+    $('cc-gate-text').textContent = !CS.me
+      ? 'Could not read your roles. Sign in again and reopen this page.'
+      : 'Not enabled for your role — ask an Owner to enable it in Governance.';
+    // An administrator here for the connection test still needs a key.
+    $('cc-key-note').hidden = hasKey();
+    if (cc && cc.canConfigure) $('cc-probe').open = true;
+    renderTop(); pbRenderButtons();
+    return;
+  }
+  if (!hasKey()) {
+    gate.hidden = false; con.hidden = true;
+    $('cc-gate-text').textContent = 'Claude Code runs on your own Anthropic API key.';
+    $('cc-key-note').hidden = false;
+    renderTop(); pbRenderButtons();
+    return;
+  }
+  gate.hidden = true; con.hidden = false;
+  loadConns();
+  if (location.hash === '#test') $('cc-probe').open = true;
+  try {
+    if (!CygenixCcConsole.noticeDismissed(localStorage.getItem(CygenixCcConsole.NOTICE_KEY), currentUser())) $('cs-notice').classList.add('open');
+  } catch (e) {}
+  render(); pbRenderButtons();
+  loadSessions();
+}
+function csNoticeOk(){
+  try { localStorage.setItem(CygenixCcConsole.NOTICE_KEY, CygenixCcConsole.noticeDismiss(localStorage.getItem(CygenixCcConsole.NOTICE_KEY), currentUser())); } catch (e) {}
+  $('cs-notice').classList.remove('open');
+}
+
+function profileOf(id){
+  try { var st = CygenixProfiles.cpLoad(); return (st.profiles || []).filter(function(p){ return p && p.id === id; })[0] || null; } catch (e) { return null; }
+}
+function connName(connId){
+  try { var e = window.CygenixConnections && CygenixConnections.savedGetById ? CygenixConnections.savedGetById(connId) : null; return (e && e.name) || ''; } catch (e) { return ''; }
+}
+function loadConns(){
+  CS.conns = [];
+  ['tgt', 'src'].forEach(function(side){
+    var c = null;
+    try { c = window.CygenixActiveConn ? CygenixActiveConn.getActiveConnection(side) : null; } catch (e) { c = null; }
+    var label = side === 'tgt' ? 'Target' : 'Source';
+    if (!c || (!c.ok && !c.needsSecret)) { CS.conns.push({ side: side, ok: false, label: label + ' — none', why: (c && c.why) || 'Nothing is configured for this side.' }); return; }
+    var connId = c.connId || ('sconn_live_' + side);
+    var name = connName(connId) || (c.connName || '') || (c.source === 'profile' ? connId : 'Live ' + label.toLowerCase() + ' connection');
+    var p = c.profileId ? profileOf(c.profileId) : null;
+    if (c.mode === 'azure') { CS.conns.push({ side: side, ok: false, label: label + ' — ' + name, why: 'This connection goes through a Cygenix Function App; Claude Code needs a direct database connection.' }); return; }
+    CS.conns.push({ side: side, ok: true, connId: connId, name: name, label: label + ' — ' + name,
+      profileId: c.profileId || '', profileName: p ? p.name : '', envClass: p ? p.envClass : '' });
+  });
+  var sel = $('cs-conn');
+  sel.innerHTML = CS.conns.map(function(c, i){ return '<option value="' + i + '"' + (c.ok ? '' : ' disabled') + '>' + esc(c.label) + '</option>'; }).join('');
+  var first = CS.conns.findIndex(function(c){ return c.ok; });
+  sel.value = String(first === -1 ? 0 : first);
+  csPickConn();
+}
+function csPickConn(){
+  var c = CS.conns[Number($('cs-conn').value)] || null;
+  CS.conn = c && c.ok ? c : null;
+  if (c && !c.ok) note('cs-note', c.why, 'warn'); else note('cs-note', '');
+  render();
+}
+
+/* ── Sessions ────────────────────────────────────────────────────────── */
+function csNew(){
+  if (!CS.conn) { note('cs-note', 'Choose a connection with a saved credential first.', 'warn'); return; }
+  guarded('New session', async function(){
+    note('cs-note', 'Opening a workspace… this usually takes 10 to 30 seconds.', 'info');
+    try {
+      var r = await call('POST', '/agent/claude-code/session', { side: CS.conn.side, connId: CS.conn.connId, connectionName: CS.conn.name,
+        profileId: CS.conn.profileId, profileName: CS.conn.profileName, envClass: CS.conn.envClass });
+      stopPolling();
+      CS.replay = null; CS.cur = r.session; CS.events = []; CS.seen = {};
+      CS.cur.connectionName = CS.conn.name; CS.cur.profileName = CS.conn.profileName; CS.cur.envClass = CS.conn.envClass;
+      note('cs-note', '');
+      $('cs-firewall').hidden = true; $('cs-budget').hidden = true;
+      if (CS.wantChanges) {
+        // The toggle was on before the session existed: apply it now, with
+        // the same confirmation a live toggle gets.
+        CS.wantChanges = false; render();
+        csToggle();
+      }
+      loadSessions();
+    } catch (e) {
+      note('cs-note', 'Could not open a session: ' + e.message, 'crit');
+    }
+  });
+}
+function csSend(){
+  var text = $('cs-input').value.trim();
+  if (!CS.cur || CS.replay || !text) return;
+  guarded('Send', async function(){
+    try {
+      var r = await call('POST', '/agent/claude-code/message', { sessionId: CS.cur.id, text: text });
+      $('cs-input').value = '';
+      CS.cur.status = 'running';
+      if (r.title && !CS.cur.title) CS.cur.title = r.title;
+      // Shown at once; the server's echo of it is deduplicated by id later.
+      CS.events.push({ id: 'local-' + Date.now(), type: 'user.message', content: [{ type: 'text', text: text }], local: true });
+      note('cs-note', '');
+      startPolling();
+    } catch (e) {
+      note('cs-note', 'Could not send: ' + e.message, 'crit');
+    }
+  });
+}
+function csStop(){
+  if (!CS.cur || CS.replay) return;
+  guarded('Stop', async function(){
+    stopPolling();
+    try {
+      var r = await call('POST', '/agent/claude-code/stop', { sessionId: CS.cur.id });
+      CS.cur.status = r.status || 'stopped';
+      note('cs-note', 'Session stopped. Start a new one to carry on.', 'info');
+      loadSessions();
+    } catch (e) {
+      note('cs-note', 'Could not stop: ' + e.message, 'crit');
+    }
+  });
+}
+
+/* ── Polling ─────────────────────────────────────────────────────────── */
+function startPolling(){
+  if (CS.polling) return;
+  CS.polling = setInterval(poll, POLL_MS);
+  poll();
+}
+function stopPolling(){
+  if (CS.polling) { clearInterval(CS.polling); CS.polling = null; }
+  render();
+}
+async function poll(){
+  if (CS.pollInflight || !CS.cur || CS.replay) return;
+  CS.pollInflight = true;
+  var cur = CS.cur;
+  try {
+    var r = await call('GET', '/agent/claude-code/events?sessionId=' + encodeURIComponent(cur.id) + '&after=' + encodeURIComponent(lastEventId()));
+    if (CS.cur !== cur) return;
+    mergeEvents(r.events || []);
+    cur.status = r.status; cur.costCents = r.costCents; cur.dataChangesAllowed = !!r.dataChangesAllowed;
+    if (r.status !== 'running') stopPolling();
+  } catch (e) {
+    // A readable error, once, and no more polling: a retry storm helps nobody.
+    note('cs-note', 'Lost touch with the session: ' + e.message, 'crit');
+    stopPolling();
+  } finally {
+    CS.pollInflight = false;
+    render();
+  }
+}
+function lastEventId(){
+  for (var i = CS.events.length - 1; i >= 0; i--) if (!CS.events[i].local) return CS.events[i].id || '';
+  return '';
+}
+function mergeEvents(list){
+  list.forEach(function(ev){
+    if (!ev || !ev.id || CS.seen[ev.id]) return;
+    CS.seen[ev.id] = true;
+    // The server's copy of a message this page showed straight away.
+    if (ev.type === 'user.message') {
+      var i = CS.events.findIndex(function(x){ return x.local && x.type === 'user.message' && CygenixCcConsole.textOf(x) === CygenixCcConsole.textOf(ev); });
+      if (i !== -1) { CS.events[i] = ev; return; }
+    }
+    CS.events.push(ev);
+  });
+}
+
+/* ── The toggle ──────────────────────────────────────────────────────── */
+var CONFIRM = null;
+function csToggle(){
+  if (CS.replay || CS.busy['Mode']) return;
+  var on = CS.cur ? !CS.cur.dataChangesAllowed : !CS.wantChanges;
+  var cc = CS.me && CS.me.claudeCode;
+  if (on && cc && cc.canChangeData === false) { note('cs-note', 'Your role cannot allow Claude Code to change data.', 'warn'); return; }
+  if (!on) { applyMode(false); return; }
+  var conn = CS.cur ? { name: CS.cur.connectionName } : CS.conn;
+  var prof = CS.cur ? { name: CS.cur.profileName, envClass: CS.cur.envClass } : (CS.conn ? { name: CS.conn.profileName, envClass: CS.conn.envClass } : null);
+  CONFIRM = CygenixCcConsole.confirmSpec(prof, conn);
+  $('cs-confirm-text').textContent = CONFIRM.text;
+  $('cs-confirm-prod').hidden = !CONFIRM.prod;
+  var inp = $('cs-confirm-input'); inp.hidden = !CONFIRM.prod; inp.value = ''; inp.placeholder = CONFIRM.prod ? CONFIRM.typeToConfirm : '';
+  csConfirmRender();
+  $('cs-confirm').classList.add('open');
+  if (CONFIRM.prod) setTimeout(function(){ inp.focus(); }, 30);
+}
+function csConfirmRender(){
+  if (!CONFIRM) return;
+  $('cs-confirm-ok').disabled = !CygenixCcConsole.confirmAccepts(CONFIRM, $('cs-confirm-input').value);
+}
+function csConfirmClose(yes){
+  $('cs-confirm').classList.remove('open');
+  if (!yes || !CONFIRM || !CygenixCcConsole.confirmAccepts(CONFIRM, $('cs-confirm-input').value)) { CONFIRM = null; return; }
+  CONFIRM = null;
+  applyMode(true);
+}
+function applyMode(on){
+  if (!CS.cur) { CS.wantChanges = on; render(); return; }
+  guarded('Mode', async function(){
+    try {
+      await call('POST', '/agent/claude-code/mode', { sessionId: CS.cur.id, dataChangesAllowed: on });
+      CS.cur.dataChangesAllowed = on;
+      CS.events.push({ id: 'local-mode-' + Date.now(), type: 'system.message', local: true,
+        content: [{ type: 'text', text: on ? 'DATA-CHANGE MODE: CHANGES ALLOWED.' : 'DATA-CHANGE MODE: READ-ONLY.' }] });
+      note('cs-note', '');
+    } catch (e) {
+      note('cs-note', 'Could not change the mode: ' + e.message, 'crit');
+    }
+  });
+}
+
+/* ── Past sessions ───────────────────────────────────────────────────── */
+async function loadSessions(){
+  try { CS.sessions = (await call('GET', '/agent/claude-code/sessions')).sessions || []; } catch (e) { CS.sessions = []; }
+  renderDrawer();
+}
+function csDrawer(open){ $('cs-drawer').classList.toggle('open', !!open); if (open) loadSessions(); }
+async function csOpenSession(id){
+  if (CS.cur && CS.cur.id === id && !CS.replay) { csDrawer(false); return; }
+  try {
+    var r = await call('GET', '/agent/claude-code/session?id=' + encodeURIComponent(id));
+    CS.replay = { session: r.session, events: r.events || [] };
+    csDrawer(false);
+    $('cs-replay-text').textContent = 'Replaying "' + (r.session.title || r.session.id) + '" — read-only.';
+    render();
+  } catch (e) { note('cs-note', 'Could not load that session: ' + e.message, 'crit'); }
+}
+function csReplayBack(){ CS.replay = null; render(); }
+
+/* ── Rendering ───────────────────────────────────────────────────────── */
+function renderTop(){
+  var s = CS.replay ? CS.replay.session : CS.cur;
+  var status = s ? s.status : 'none';
+  var pill = $('cs-status'); pill.textContent = CygenixCcConsole.statusWord(status); pill.className = 'pill ' + (s ? status : '');
+  $('cs-cost').textContent = s && s.costCents != null ? 'US$' + (Number(s.costCents) / 100).toFixed(2) : '';
+  var live = !!CS.cur && !CS.replay && CS.cur.status !== 'stopped' && CS.cur.status !== 'error';
+  var allowed = !!(CS.me && CS.me.claudeCode && CS.me.claudeCode.allowed) && hasKey();
+  $('cs-new').disabled = !allowed || !!CS.busy['New session'] || !!CS.replay;
+  $('cs-stop').disabled = !live || !!CS.busy['Stop'];
+  $('cs-send').disabled = !live || !!CS.busy['Send'];
+  $('cs-input').disabled = !live;
+  $('cs-conn').disabled = !allowed || !!CS.busy['New session'];
+  var on = CS.replay ? !!CS.replay.session.dataChangesAllowed : (CS.cur ? !!CS.cur.dataChangesAllowed : CS.wantChanges);
+  var tg = $('cs-toggle'); tg.classList.toggle('on', on); tg.setAttribute('aria-checked', on ? 'true' : 'false');
+  tg.classList.toggle('disabled', !allowed || !!CS.replay || (!!CS.cur && !live) || !!CS.busy['Mode']);
+}
+function render(){
+  renderTop();
+  var events = CS.replay ? CS.replay.events : CS.events;
+  var s = CS.replay ? CS.replay.session : CS.cur;
+  $('cs-replay-bar').hidden = !CS.replay;
+  var view = CygenixCcConsole.blocksFrom(events);
+  var chat = $('cs-chat');
+  if (!view.chat.length) chat.innerHTML = '<div class="empty">' + (s ? 'Ask Claude for what you need — for example, "List the tables and row counts using Python".' : 'Start a session, then ask Claude for what you need.') + '</div>';
+  else {
+    chat.innerHTML = view.chat.map(function(m){ return '<div class="msg ' + m.role + '">' + esc(m.text) + '</div>'; }).join('')
+      + (s && s.status === 'running' && !CS.replay ? '<div class="msg working">Working…</div>' : '');
+    chat.scrollTop = chat.scrollHeight;
+  }
+  var out = $('cs-output');
+  $('cs-out-count').textContent = view.output.length ? String(view.output.length) : '';
+  if (!view.output.length) out.innerHTML = '<div class="empty">Code Claude writes, commands it runs and what comes back appear here.</div>';
+  else {
+    var n = view.output.length;
+    out.innerHTML = view.output.map(function(b, i){
+      var open = i >= n - 2 || b.kind === 'error' || b.kind === 'notice';
+      var h = '<details class="block ' + esc(b.kind) + '"' + (open ? ' open' : '') + '><summary>' + esc(b.title) + '</summary>';
+      if (b.body) h += '<pre>' + esc(b.body) + '</pre>';
+      if (b.result) {
+        h += '<div class="res-label">' + (b.result.kind === 'error' ? 'Failed' : 'Output') + '</div>';
+        if (b.result.table) h += tableHtml(b.result.table);
+        else h += '<pre>' + esc(b.result.body || '(no output)') + '</pre>';
+      }
+      return h + '</details>';
+    }).join('');
+    out.scrollTop = out.scrollHeight;
+  }
+  $('cs-firewall').hidden = !view.flags.connectionFailure;
+  $('cs-budget').hidden = !view.flags.budgetReached;
+  renderDrawer();
+}
+function tableHtml(t){
+  var h = '<table class="res"><thead><tr>' + t.columns.map(function(c){ return '<th>' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+  h += t.rows.map(function(r){ return '<tr>' + r.map(function(v){ return '<td>' + esc(v) + '</td>'; }).join('') + '</tr>'; }).join('');
+  h += '</tbody></table>';
+  if (t.truncated) h += '<div class="res-label">Showing ' + t.rows.length + ' of ' + t.truncated + ' rows.</div>';
+  return h;
+}
+function renderDrawer(){
+  var list = $('cs-drawer-list');
+  if (!CS.sessions.length) { list.innerHTML = '<div class="empty">No sessions yet.</div>'; return; }
+  list.innerHTML = CS.sessions.map(function(s){
+    var cur = (CS.replay ? CS.replay.session.id : (CS.cur && CS.cur.id)) === s.id;
+    var when = s.createdAt ? new Date(s.createdAt).toLocaleString() : '';
+    return '<button class="sess' + (cur ? ' cur' : '') + '" onclick="csOpenSession(\'' + esc(s.id) + '\')">'
+      + '<div class="t">' + esc(s.title || '(no message yet)') + '</div>'
+      + '<div class="s"><span>' + esc(when) + '</span><span>' + esc(s.connectionName || '') + '</span><span class="pill ' + esc(s.status) + '">' + esc(CygenixCcConsole.statusWord(s.status)) + '</span>'
+      + (s.dataChangesAllowed ? '<span class="pill error">changes allowed</span>' : '') + '</div></button>';
+  }).join('');
+}
+
+/* ── The connection test (unchanged from step 1) ─────────────────────── */
+var CC = { starting: false, lastStart: 0, runs: [], polling: {} };
+var GIVE_UP_MS = 3 * 60 * 1000;
+function pbRenderButtons(){
+  var block = CC.starting || !hasKey();
+  $('cc-run-limited').disabled = block;
+  $('cc-run-open').disabled = block;
+}
+function ccFillFrom(side){
+  note('cc-fill-note', '');
+  if (!side) return;
+  var c = window.CygenixActiveConn && CygenixActiveConn.getActiveConnection ? CygenixActiveConn.getActiveConnection(side) : null;
+  if (!c || !c.ok) { note('cc-fill-note', (c && c.why) || 'No ' + (side === 'tgt' ? 'target' : 'source') + ' connection is set on the active profile.', 'warn'); return; }
+  var e = CygenixCcProbe.endpointOf(c.connString, c.mode);
+  if (!e.ok) { note('cc-fill-note', e.why, 'warn'); return; }
+  $('cc-host').value = e.host; $('cc-port').value = e.port; $('cc-kind').value = e.kind;
+  if (e.note) note('cc-fill-note', e.note, 'warn');
+}
 async function ccRun(network){
   if (CC.starting) return;
-  if (!hasKey()) { renderButtons(); return; }
+  if (!hasKey()) { pbRenderButtons(); note('cc-note', 'No Anthropic API key is saved in this browser. Add it in Settings → General.', 'warn'); return; }
   var wait = CC.lastStart + 3000 - Date.now();
   if (wait > 0) { note('cc-note', 'One moment — a test was started ' + Math.ceil((3000 - wait) / 1000) + 's ago.', 'warn'); return; }
   var host = $('cc-host').value.trim(), port = Number($('cc-port').value), kind = $('cc-kind').value;
   var problem = CygenixCcProbe.validate(host, port);
   if (problem) { note('cc-note', problem, 'warn'); return; }
-  CC.starting = true; CC.lastStart = Date.now(); renderButtons();
+  CC.starting = true; CC.lastStart = Date.now(); pbRenderButtons();
   note('cc-note', 'Starting a test workspace… this usually takes 20 to 60 seconds.', '');
   try {
     var r = await call('POST', '/agent/claude-code/probe', { host: host, port: port, kind: kind, network: network });
     var run = { id: r.sessionId, network: network, host: r.host, port: r.port, status: 'running', startedAt: Date.now() };
     CC.runs.unshift(run);
     note('cc-note', '');
-    renderRuns();
-    schedulePoll(run);
+    pbRenderRuns();
+    pbSchedule(run);
   } catch (e) {
     note('cc-note', 'The test could not start: ' + e.message, 'crit');
   } finally {
-    CC.starting = false; renderButtons();
+    CC.starting = false; pbRenderButtons();
   }
 }
-
-function schedulePoll(run){
+function pbSchedule(run){
   if (CC.polling[run.id]) return;
-  CC.polling[run.id] = { inflight: false, timer: setInterval(function(){ poll(run); }, POLL_MS) };
+  CC.polling[run.id] = { inflight: false, timer: setInterval(function(){ pbPoll(run); }, POLL_MS) };
 }
-function stopPoll(run){
+function pbStop(run){
   var p = CC.polling[run.id];
   if (p) { clearInterval(p.timer); delete CC.polling[run.id]; }
 }
-async function poll(run){
+async function pbPoll(run){
   var p = CC.polling[run.id];
   if (!p || p.inflight) return;
-  if (Date.now() - run.startedAt > GIVE_UP_MS) { run.status = 'timeout'; stopPoll(run); renderRuns(); return; }
+  if (Date.now() - run.startedAt > GIVE_UP_MS) { run.status = 'timeout'; pbStop(run); pbRenderRuns(); return; }
   p.inflight = true;
   try {
     var r = await call('GET', '/agent/claude-code/probe?sessionId=' + encodeURIComponent(run.id));
     run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents;
-    if (r.done) { run.status = 'done'; stopPoll(run); }
+    if (r.done) { run.status = 'done'; pbStop(run); }
   } catch (e) {
-    // One failed read ends the polling: a readable error, never a retry storm.
-    run.status = 'error'; run.error = e.message; stopPoll(run);
+    run.status = 'error'; run.error = e.message; pbStop(run);
   } finally {
     p.inflight = false;
-    renderRuns();
+    pbRenderRuns();
   }
 }
-
-function renderRuns(){
+function pbRenderRuns(){
   $('cc-results').hidden = !CC.runs.length;
   $('cc-runs').innerHTML = CC.runs.map(function(run){
     var label = run.network === 'open' ? 'Open networking' : 'Cygenix allow-list';
@@ -280,9 +741,9 @@ function renderRuns(){
 }
 
 document.addEventListener('DOMContentLoaded', function(){
-  renderButtons();
-  // Pre-fill from the target, the side a migration writes to — best effort.
+  pbRenderButtons();
   try { if (window.CygenixActiveConn) { $('cc-conn').value = 'tgt'; ccFillFrom('tgt'); } } catch (e) {}
+  init();
 });
 </script>
 
@@ -291,10 +752,10 @@ document.addEventListener('DOMContentLoaded', function(){
 <script src="/cygenix-busy.js?v=5b8f3d8384"></script>
 <!-- Assistant — docked side panel, present on every app screen -->
 <script src="/cygenix-page-reader.js?v=42e45abb62"></script>
-<script src="/cygenix-assistant.js?v=f8c6826a23"></script>
-<script src="/cygenix-assistant-actions.js?v=46ca9246a9"></script>
+<script src="/cygenix-assistant.js?v=f17fbead2e"></script>
+<script src="/cygenix-assistant-actions.js?v=4d7f25a77a"></script>
 <script src="/cygenix-tour-state.js?v=9e44c36131"></script>
-<script src="/cygenix-tour-steps.js?v=e74ac47365"></script>
+<script src="/cygenix-tour-steps.js?v=580c85794f"></script>
 <script src="/cygenix-tour.js?v=3aa5b94223"></script>
 <script>CygenixAssistant.registerPage('claude-code');</script>
 </body>

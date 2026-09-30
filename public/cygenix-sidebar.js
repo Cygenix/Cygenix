@@ -103,7 +103,17 @@
     { section: 'Model', group:'model', items: [
       { key:'schema-explorer', label:'Schema explorer', href:'/schema-explorer', icon: iconGraph() },
       { key:'object-mapping',  label:'Object mapping',  href:'/object-mapping',  icon: iconArrows() },
-      { key:'sql-editor',      label:'SQL editor',      href:'/sql-editor',      icon: iconCode() },
+    ]},
+    // DEVELOP (Sep-2026): where a person writes and runs things against
+    // what Model describes. The SQL editor moved here from Model — same
+    // key, same address, nothing else about it changed. Claude Code is the
+    // console where Claude writes and runs code in an Anthropic workspace
+    // connected to one of the person's databases; it is hidden until the
+    // organisation switches it on in Governance AND the person's role is on
+    // the allow-list, both read from the same roles record as the Audit log.
+    { section: 'Develop', group:'develop', items: [
+      { key:'sql-editor',  label:'SQL editor',  href:'/sql-editor',  icon: iconCode() },
+      { key:'claude-code', label:'Claude Code', href:'/claude-code', icon: iconTerminal(), requiresClaudeCode:true },
     ]},
     { section: 'Run', group:'run', items: [
       { key:'jobs',        label:'Jobs & packages', view:'jobs',        icon: iconPlay() },
@@ -255,6 +265,10 @@
   // iconArrows (the mapping arrows it sits beside) so the two children of the
   // Object Mapping group are told apart at a glance.
   function iconGraph(){        return svg('<circle cx="3.5" cy="4" r="1.8" stroke="currentColor" stroke-width="1.2"/><circle cx="12.5" cy="4" r="1.8" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="12" r="1.8" stroke="currentColor" stroke-width="1.2"/><path d="M4.8 5.4 6.9 10.4M11.2 5.4 9.1 10.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
+  // A terminal prompt: the Claude Code console runs code, and the chevron
+  // and cursor say so without borrowing iconCode's window from the SQL
+  // editor beside it.
+  function iconTerminal(){     return svg('<rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4.5 6.5l2 1.5-2 1.5M8.5 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconCode(){         return svg('<rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M6 7l-2 1 2 1M10 7l2 1-2 1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconHand(){         return svg('<path d="M7.5 8h1.5a1.3 1.3 0 0 0 0-2.6H7c-.4 0-.75.13-.93.4L2 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 12l1-.9c.2-.27.55-.4.93-.4h2.65c.73 0 1.4-.27 1.86-.8L14 6.95a1.3 1.3 0 0 0-1.8-1.9l-2.75 2.55" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 8.5l4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconClean(){        return svg('<path d="M4 2v4M4 10v4M2 6h4M2 12h4M10 3l3 3-6 6-3-3z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
@@ -354,6 +368,27 @@
     } catch { return null; }
   }
 
+  // The Claude Code console, from the same record. Two switches, both on
+  // the server: the organisation's (Governance) and the role allow-list. The
+  // server computes the answer (`claudeCode.allowed` on ?what=me) because
+  // the rule is its to keep; this only reads it. Same default as the Audit
+  // log — hidden until known — and the same fetch fills both.
+  function resolveClaudeCodeVisibility(){
+    const rec = meFromCache();
+    if (rec) return !!(rec.claudeCode && rec.claudeCode.allowed === true);
+    if (!_auditFetching) { _auditFetching = true; fetchAuditVisibility(); }
+    return false;
+  }
+  function meFromCache(){
+    try {
+      const raw = sessionStorage.getItem(RBAC_CACHE_KEY);
+      if (!raw) return null;
+      const rec = JSON.parse(raw);
+      if (!rec || Date.now() - rec.at > RBAC_CACHE_MS) return null;
+      return rec.me || null;
+    } catch { return null; }
+  }
+
   function resolveAuditVisibility(){
     if (_auditVisible !== null) return _auditVisible;
     const cached = rolesFromCache();
@@ -381,11 +416,12 @@
         if (!me) return;
         try { sessionStorage.setItem(RBAC_CACHE_KEY, JSON.stringify({ at: Date.now(), me })); } catch {}
         const next = Array.isArray(me.roles) && me.roles.some(r => AUDIT_ROLES.indexOf(r) !== -1);
-        if (next === _auditVisible) return;
+        const ccNext = !!(me.claudeCode && me.claudeCode.allowed === true);
+        if (next === _auditVisible && !ccNext) return;
         _auditVisible = next;
         // Only rebuild when the answer actually changes the rail, which for
         // the overwhelming majority of loads it does not.
-        if (next && window.CygenixSidebar && window.CygenixSidebar.refresh) {
+        if ((next || ccNext) && window.CygenixSidebar && window.CygenixSidebar.refresh) {
           window.CygenixSidebar.refresh();
         }
       })
@@ -396,6 +432,7 @@
   function isItemVisible(item){
     if (item.requiresAiEnabled && !isAiEnabled()) return false;
     if (item.requiresAuditRead && !resolveAuditVisibility()) return false;
+    if (item.requiresClaudeCode && !resolveClaudeCodeVisibility()) return false;
     return true;
   }
 

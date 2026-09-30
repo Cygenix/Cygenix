@@ -110,7 +110,7 @@ return [
         + "<b>Conversion templates</b> decide which tables exist to be mapped; <b>AI assist</b> drafts "
         + "for you to review before anything runs." },
 
-  { id: 'sql', section: 'Model', title: 'SQL editor', page: 'sql-editor', target: '[data-key="sql-editor"]',
+  { id: 'sql', section: 'Develop', title: 'SQL editor', page: 'sql-editor', target: '[data-key="sql-editor"]',
     body: "Write and run queries against any connection you have registered — handy for checking data "
         + "before a load and proving it after one." },
 

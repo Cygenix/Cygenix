@@ -96,6 +96,8 @@ const CLASSES = {
   'cygenix_profiles_show_retired':     ['C', 'Profiles page: whether retired profiles are shown in the table', 'read and written in try/catch; the page renders without it'],
   'cygenix_signin_audited':            ['C', 'sessionStorage: the sign-in already recorded in the audit log, as its result id and token issued-at', 'a one-shot guard, never cleared by the request it guards; session-scoped so a new sign-in records again'],
   'cygenix_sidebar_closed_groups':     ['C', 'Collapsed nav groups', ''],
+  'cygenix_rbac_me':                   ['B', 'sessionStorage: the caller\'s roles and Claude Code entitlement from rbac-admin?what=me, cached five minutes', 'cleared after a Governance save so the sidebar re-asks'],
+  'cygenix_cc_notice':                 ['C', 'Claude Code console: the first-use notice, dismissed per user', 'transcripts are NOT here — they come from Cosmos on every load'],
   'cygenix_jobs_panel_collapsed':      ['C', 'Jobs panel collapsed', ''],
   'cygenix_sql_panel_collapsed':       ['C', 'SQL panel collapsed', ''],
   'cygenix_job_sort':                  ['C', 'Job list sort order', ''],

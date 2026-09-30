@@ -109,11 +109,13 @@ const server = http.createServer((req, res) => {
   console.log('Dashboard sidebar — the nav actually changes the view\n');
 
   await open('/dashboard');
-  check('the dashboard is served at the extensionless address and the six-group rail renders',
+  // Fifteen visible: Claude Code is the sixteenth rail item and stays hidden
+  // until the seeded roles record says the organisation has switched it on.
+  check('the dashboard is served at the extensionless address and the seven-group rail renders',
     (await page.evaluate(() => document.querySelectorAll('.cyg-nav-item[data-key]').length)) === 15
     && (await page.evaluate(() => Array.from(document.querySelectorAll('.cyg-nav-label')).map(l => l.textContent.trim())
           .filter(l => l !== 'Pinned').join(',')))
-       === 'Plan,Connect,Model,Run,Quality,Govern');
+       === 'Plan,Connect,Model,Develop,Run,Quality,Govern');
   check('the masthead is on the page: logo, project, search, region, avatar',
     await page.evaluate(() => !!document.querySelector('#cx-masthead .cx-logo') && !!document.getElementById('cyg-proj-btn')
       && !!document.getElementById('cx-mh-search') && !!document.getElementById('cx-mh-region') && !!document.getElementById('cyg-user-chip')));
@@ -315,6 +317,18 @@ const server = http.createServer((req, res) => {
   await open('/dashboard');
   check('an Auditor does — reading this screen is the whole role',
     await page.evaluate(() => !!document.querySelector('.cyg-nav-item[data-key="audit"]')));
+
+  /* ── Claude Code's gate ─────────────────────────────────────────────────── */
+  // Off for everyone until Governance switches it on and the person's role
+  // is on the list; the same roles record carries the answer.
+  check('Claude Code is not on the rail while the organisation has it off',
+    !(await page.evaluate(() => !!document.querySelector('.cyg-nav-item[data-key="claude-code"]'))));
+  await page.evaluate(() => sessionStorage.setItem('cygenix_rbac_me', JSON.stringify({
+    at: Date.now(), me: { oid: 'x', email: 'you@example.test', roles: ['EN'], claudeCode: { enabled: true, roles: ['OW', 'PA', 'EN'], allowed: true } } })));
+  await open('/dashboard');
+  check('…and appears, under Develop, once it is on for this person',
+    await page.evaluate(() => { const el = document.querySelector('.cyg-nav-item[data-key="claude-code"]');
+      return !!el && el.closest('.cyg-nav-section').dataset.group === 'develop' && /Claude Code/.test(el.textContent); }));
 
   /* ── The status hairline ────────────────────────────────────────────────
    *

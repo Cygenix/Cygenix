@@ -113,8 +113,11 @@ const PASSWORD = 'Tr0ub4dor-secret';
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // Leave the page before opening it again: a goto to an address that
+  // differs only by its #fragment is a same-document jump, not a reload.
   const open = async () => {
-    await page.goto('http://localhost:' + PORT + '/claude-code', { waitUntil: 'domcontentloaded' });
+    await page.goto('http://localhost:' + PORT + '/favicon.svg');
+    await page.goto('http://localhost:' + PORT + '/claude-code#test', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.CygenixCcProbe && typeof ccRun === 'function', null, { timeout: 20000 });
     await page.waitForTimeout(400);
   };
@@ -128,7 +131,9 @@ const PASSWORD = 'Tr0ub4dor-secret';
   await page.waitForTimeout(300);
   check('…and clicking anyway calls nothing', seen.starts.length === 0);
 
-  await page.evaluate(() => { localStorage.setItem('cygenix_api_key', 'sk-ant-smoke-key'); });
+  // The key is seeded before the page loads, as it is for a real user who
+  // saved it in Settings.
+  await ctx.addInitScript(() => { try { localStorage.setItem('cygenix_api_key', 'sk-ant-smoke-key'); } catch (e) {} });
   await open();
   st = await page.evaluate(() => ({ host: document.getElementById('cc-host').value, port: document.getElementById('cc-port').value,
     kind: document.getElementById('cc-kind').value, off: document.getElementById('cc-run-limited').disabled }));

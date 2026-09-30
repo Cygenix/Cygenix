@@ -16743,6 +16743,88 @@ function initPrivacySecurityView(){
   psRenderRedact();
   psRenderExclusions();
   psRenderLog();
+  ccGovLoad();
+}
+
+/* ── Claude Code console: the organisation switch and its allow-list ──────
+   Read from rbac-admin?what=me (the same record the sidebar reads) and
+   written back with op:'claude-code'. Only an Owner or Platform Administrator
+   can save; everyone else sees the state read-only. One save at a time,
+   three seconds apart, and the in-flight flag is reset only in its own
+   finally — never by a render it caused. */
+const CCG = { me: null, draft: null, saving: false, lastSave: 0, loading: false };
+const CC_ROLE_NAMES = { OW: 'Organisation Owner', PA: 'Platform Administrator', ML: 'Migration Lead', EN: 'Migration Engineer', AU: 'Auditor (read-only sessions)' };
+async function ccGovLoad(){
+  if (CCG.loading || !document.getElementById('ps-cc-panel')) return;
+  CCG.loading = true;
+  try {
+    const me = window.CygenixRBAC ? await CygenixRBAC.me(true) : null;
+    CCG.me = me;
+    const cc = (me && me.claudeCode) || null;
+    CCG.draft = cc ? { enabled: !!cc.enabled, roles: (cc.roles || []).slice() } : null;
+  } catch (e) { CCG.me = null; CCG.draft = null; }
+  finally { CCG.loading = false; ccGovRender(); }
+}
+function ccGovRender(){
+  const panel = document.getElementById('ps-cc-panel'); if (!panel) return;
+  const cc = CCG.me && CCG.me.claudeCode;
+  const can = !!(cc && cc.canConfigure);
+  const d = CCG.draft;
+  const sw = document.getElementById('ps-cc-enabled');
+  sw.classList.toggle('on', !!(d && d.enabled));
+  sw.setAttribute('aria-checked', d && d.enabled ? 'true' : 'false');
+  sw.style.cursor = can ? 'pointer' : 'default';
+  document.getElementById('ps-cc-state').textContent = !cc ? 'unknown' : (cc.enabled ? 'ON' : 'OFF');
+  const opts = (cc && cc.roleOptions) || ['OW', 'PA', 'ML', 'EN', 'AU'];
+  document.getElementById('ps-cc-roles').innerHTML = opts.map(r =>
+    '<label class="' + (can ? '' : 'off') + '"><input type="checkbox" value="' + psEsc(r) + '"'
+    + (d && d.roles.indexOf(r) !== -1 ? ' checked' : '') + (can ? '' : ' disabled') + ' onchange="ccGovRole(this)"> '
+    + psEsc(CC_ROLE_NAMES[r] || r) + '</label>').join('');
+  document.getElementById('ps-cc-save').disabled = !can || CCG.saving || !d;
+  const note = document.getElementById('ps-cc-note');
+  if (!cc) note.textContent = 'Could not read the organisation setting. Sign in again and reopen Governance.';
+  else if (!can) note.textContent = 'Only an Organisation Owner or Platform Administrator can change this.';
+  else if (!CCG.saving) note.textContent = note.textContent && /Saved|Could not/.test(note.textContent) ? note.textContent : '';
+}
+function ccGovToggle(){
+  const cc = CCG.me && CCG.me.claudeCode;
+  if (!cc || !cc.canConfigure || !CCG.draft) return;
+  CCG.draft.enabled = !CCG.draft.enabled;
+  document.getElementById('ps-cc-note').textContent = '';
+  ccGovRender();
+}
+function ccGovRole(input){
+  if (!CCG.draft) return;
+  const r = input.value;
+  const i = CCG.draft.roles.indexOf(r);
+  if (input.checked && i === -1) CCG.draft.roles.push(r);
+  if (!input.checked && i !== -1) CCG.draft.roles.splice(i, 1);
+  document.getElementById('ps-cc-note').textContent = '';
+}
+async function ccGovSave(){
+  if (CCG.saving || !CCG.draft) return;
+  const wait = CCG.lastSave + 3000 - Date.now();
+  if (wait > 0) { document.getElementById('ps-cc-note').textContent = 'One moment — saved a few seconds ago.'; return; }
+  CCG.saving = true; CCG.lastSave = Date.now(); ccGovRender();
+  const note = document.getElementById('ps-cc-note');
+  note.textContent = 'Saving…';
+  try {
+    const tok = typeof getCygenixIdToken === 'function' ? getCygenixIdToken() : '';
+    const r = await fetch('/.netlify/functions/rbac-admin', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+      body: JSON.stringify({ op: 'claude-code', enabled: CCG.draft.enabled, roles: CCG.draft.roles }) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('The server answered ' + r.status));
+    try { sessionStorage.removeItem('cygenix_rbac_me'); } catch (e) {}
+    const on = data.claudeCode && data.claudeCode.enabled;
+    note.textContent = 'Saved. The console is ' + (on ? 'ON for ' + (data.claudeCode.roles.length ? data.claudeCode.roles.map(x => CC_ROLE_NAMES[x] || x).join(', ') : 'nobody') : 'OFF') + '. Recorded in the audit log.';
+    psToast(on ? 'Claude Code console switched on' : 'Claude Code console switched off');
+  } catch (e) {
+    note.textContent = 'Could not save: ' + e.message;
+  } finally {
+    CCG.saving = false;
+    await ccGovLoad();
+  }
 }
 
 function psEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
