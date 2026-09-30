@@ -927,13 +927,16 @@ function validateProbe(body) {
 // there — "Login failed" IS the answer wanted, the server was reached and
 // replied — and says 'no-driver' otherwise. No credential of the person's
 // is involved at any point.
-function probeScript(p) {
+function probeScript(p, opts) {
+  const login = !(opts && opts.login === false);
   const H = JSON.stringify(p.host); const P = JSON.stringify(p.port); const K = JSON.stringify(p.kind);
   return [
     'import socket, json, time, urllib.request',
     'H = ' + H, 'P = ' + P, 'KIND = ' + K,
+  ].concat(login ? [
     '# A made-up account: the server refusing it is the reply being checked for.',
     'U = "cygenix_probe"; PW = "cygenix-probe"',
+  ] : []).concat([
     'r = {"host": H, "port": P, "kind": KIND}',
     'try:',
     '    r["dns"] = sorted({a[4][0] for a in socket.getaddrinfo(H, P, proto=socket.IPPROTO_TCP)})',
@@ -948,6 +951,7 @@ function probeScript(p) {
     '    r["tcp"] = "failed"',
     '    r["tcp_error"] = type(e).__name__ + ": " + str(e)',
     'r["tcp_ms"] = int((time.time() - t) * 1000)',
+  ]).concat(login ? [
     'if r["tcp"] == "open" and KIND == "sqlserver":',
     '    try:',
     '        import pymssql',
@@ -970,39 +974,86 @@ function probeScript(p) {
     '            r["handshake"] = "postgres-replied" if ("authentication failed" in m or "does not exist" in m or "pg_hba.conf" in m or "no encryption" in m or "SSL" in m) else "error: " + m[:300]',
     '    except ImportError:',
     '        r["handshake"] = "no-driver"',
+  ] : []).concat([
     'try:',
     '    r["egress_ip"] = urllib.request.urlopen("https://' + IP_ECHO_HOST + '", timeout=10).read().decode().strip()',
     'except Exception as e:',
     '    r["egress_ip_error"] = type(e).__name__ + ": " + str(e)',
     'print("CYGPROBE_RESULT " + json.dumps(r))',
-  ].join('\n');
+  ]).join('\n');
 }
 
-function probeInstruction(p) {
+// v6. The console-shaped session (v5) came back empty too: 5,843 input
+// tokens, 0 output. The test is now indistinguishable from a console
+// message except for what the message SAYS, so one click climbs a ladder
+// and reports the rung it fell off: a hello line first (does this
+// session answer at all?), then a connect-only script (DNS, TCP, egress
+// address), then the driver login. Each rung is a fresh user message in
+// the same session, sent only after the previous turn ended with its
+// answer; the first empty turn ends the climb and is named with its rung.
+// A connect result that arrives before the login rung fails is still a
+// result: the firewall question is answered by rung two.
+const PROBE_STEPS = [
+  { name: 'hello', label: 'Workspace answers' },
+  { name: 'connect', label: 'Connection to the server' },
+  { name: 'login', label: 'Database reply' },
+];
+function probeSteps(kind) { return kind === 'other' ? PROBE_STEPS.slice(0, 2) : PROBE_STEPS; }
+function probeMessage(step, p) {
   const driver = p.kind === 'sqlserver' ? 'pymssql' : p.kind === 'postgres' ? '"psycopg[binary]"' : '';
-  return 'Run this Python script with bash and paste its output verbatim (it only checks whether this workspace can reach '
-    + 'my database server, for a firewall rule).' + (driver ? ' If the driver is missing, `pip install ' + driver + '` first.' : '')
-    + '\n\n```python\n' + probeScript(p) + '\n```';
+  if (step === 'hello') {
+    return 'Run this with bash and paste the output verbatim:\n\n```bash\npython3 -c "print(\'CYGPROBE_HELLO\', 2 + 2)"\n```';
+  }
+  if (step === 'connect') {
+    return 'Now run this Python script with bash and paste its output verbatim (it only checks whether this workspace can reach '
+      + 'my database server, for a firewall rule).\n\n```python\n' + probeScript(p, { login: false }) + '\n```';
+  }
+  return 'Last one: the same check with a login attempt under a made-up account, to confirm the database itself replies '
+    + '(a "login failed" is the expected answer).' + (driver ? ' If the driver is missing, `pip install ' + driver + '` first.' : '')
+    + '\n\n```python\n' + probeScript(p, { login: true }) + '\n```';
 }
+// Kept for the tests and the page copy: the message that starts a test.
+function probeInstruction(p) { return probeMessage('hello', p); }
 
 function textsOf(ev) {
   return (Array.isArray(ev && ev.content) ? ev.content : [])
     .filter(b => b && b.type === 'text' && typeof b.text === 'string').map(b => b.text);
 }
-function parseProbeEvents(events) {
-  let result = null;
-  const errors = [];
-  const pick = (types) => {
-    for (const ev of events) {
+const AGENT_TYPES = ['agent.message', 'agent.tool_use', 'agent.tool_result', 'agent.thinking'];
+function pickResult(evs) {
+  for (const types of [['agent.tool_result'], ['agent.message']]) {
+    for (const ev of evs) {
       if (types.indexOf(ev.type) === -1) continue;
       for (const t of textsOf(ev)) {
         const m = /CYGPROBE_RESULT (\{.*\})/.exec(t);
         if (m) { try { return JSON.parse(m[1]); } catch (e) { /* keep looking */ } }
       }
     }
-    return null;
-  };
-  result = pick(['agent.tool_result']) || pick(['agent.message']);
+  }
+  return null;
+}
+// One entry per user message: what was asked and what came back, so the
+// route can climb the ladder and the page can name the rung.
+function probeTurns(events) {
+  const turns = [];
+  let cur = null;
+  events.forEach(ev => {
+    if (ev.type === 'user.message') { cur = { ask: textsOf(ev).join('\n'), events: [] }; turns.push(cur); }
+    else if (cur) cur.events.push(ev);
+  });
+  return turns.map(t => {
+    const said = t.events.some(ev => AGENT_TYPES.indexOf(ev.type) !== -1);
+    const ended = t.events.some(ev => ev.type === 'session.status_idle');
+    const texts = [].concat(...t.events.filter(ev => ev.type === 'agent.tool_result' || ev.type === 'agent.message').map(textsOf));
+    return { ask: t.ask, ended, said, empty: ended && !said, hello: texts.some(x => /CYGPROBE_HELLO 4\b/.test(x)), result: pickResult(t.events) };
+  });
+}
+function parseProbeEvents(events) {
+  const errors = [];
+  const turns = probeTurns(events);
+  // The connect rung's result, with the login rung's laid over it.
+  const results = turns.map(t => t.result).filter(Boolean);
+  const result = results.length ? Object.assign({}, ...results) : null;
   events.filter(ev => ev.type === 'session.error').forEach(ev => {
     const er = ev.error || {};
     errors.push(String(er.message || er.type || 'session error'));
@@ -1050,8 +1101,9 @@ function parseProbeEvents(events) {
   // the last request, no error, nothing said or run. Named as such, rather
   // than folded into "no reply".
   const mu = raw && raw.modelRequestEnd && raw.modelRequestEnd.model_usage;
-  const emptyTurn = !!(mu && mu.output_tokens === 0 && !raw.modelRequestEnd.is_error && transcript.length === 0);
-  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12), eventTypes, raw, emptyTurn };
+  const last = turns[turns.length - 1];
+  const emptyTurn = !!(last && last.empty && !(raw && raw.modelRequestEnd && raw.modelRequestEnd.is_error) && (!mu || mu.output_tokens === 0));
+  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12), eventTypes, raw, emptyTurn, turns };
 }
 function scrubKeys(o) {
   try { return JSON.parse(JSON.stringify(o).replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, '[key]')); }
@@ -1065,6 +1117,7 @@ function verdict(r) {
   if (r.kind === 'other') return { ok: true, text: 'A connection to ' + r.host + ':' + r.port + ' opened.' };
   if (/-replied$/.test(r.handshake || '')) return { ok: true, text: 'The database at ' + r.host + ':' + r.port + ' answered.' };
   if (r.handshake === 'no-driver') return { ok: true, text: 'A connection to ' + r.host + ':' + r.port + ' opened; the database driver was not available in the workspace to confirm a reply.' };
+  if (r.login_skipped) return { ok: true, text: 'A connection to ' + r.host + ':' + r.port + ' opened. The database-reply check did not run: ' + r.login_skipped + '.' };
   return { ok: false, text: 'A connection opened, but the database did not answer a login attempt on it (' + (r.handshake || 'no reply') + ') — something between the workspace and ' + r.host + ' may be accepting the connection without passing it on.' };
 }
 
@@ -1084,12 +1137,14 @@ async function probeStart(who, apiKey, body) {
              system: systemPrompt({ dbType: p.kind, mode: 'readonly', credentials: false }) },
     environment_id: environmentId,
     title: 'Cygenix connection test',
-    metadata: { cygenix: 'probe', cyg_oid: who.oid },
+    // The target rides on the session (in the customer's own account) so
+    // the later rungs can be built from it without the page resending it.
+    metadata: { cygenix: 'probe', cyg_oid: who.oid, cyg_host: p.host, cyg_port: String(p.port), cyg_kind: p.kind },
     budget: budget(),
   });
-  // Then the message, the way the console sends its first one.
-  await client.beta.sessions.events.send(session.id, { events: [{ type: 'user.message', content: [{ type: 'text', text: probeInstruction(p) }] }] });
-  return ok({ sessionId: session.id, status: 'running', network: p.network, host: p.host, port: p.port });
+  // Then the first rung, the way the console sends its first message.
+  await client.beta.sessions.events.send(session.id, { events: [{ type: 'user.message', content: [{ type: 'text', text: probeMessage('hello', p) }] }] });
+  return ok({ sessionId: session.id, status: 'running', network: p.network, host: p.host, port: p.port, steps: probeSteps(p.kind).map(st => st.label) });
 }
 
 async function probeResult(who, apiKey, sessionId) {
@@ -1109,23 +1164,64 @@ async function probeResult(who, apiKey, sessionId) {
     if (events.length >= 400) break;
   }
   const parsed = parseProbeEvents(events);
-  // Finished means the turn ended: an idle session that has not yet been
-  // sent its message (the moment between create and send) is not done.
-  // No retry: an empty turn is reported as one, with the raw request.
-  const finished = session.status === 'terminated'
-    || (session.status === 'idle' && (parsed.stopReason || parsed.result || parsed.errors.length));
+  const md = session.metadata;
+  const p = { host: md.cyg_host || '', port: Number(md.cyg_port) || 0, kind: md.cyg_kind || 'other' };
+  const steps = probeSteps(p.kind);
+  // Where the climb stands: one turn per rung, in order. The rung under way
+  // is the last turn; a rung passed when its turn ended with its answer.
+  const turns = parsed.turns;
+  const last = turns[turns.length - 1];
+  const passed = (st, t) => !!(t && t.ended && (st.name === 'hello' ? t.hello : t.result));
+  const status = steps.map((st, i) => {
+    const t = turns[i];
+    if (!t) return 'pending';
+    if (!t.ended) return 'running';
+    if (passed(st, t)) return 'passed';
+    return t.empty ? 'empty' : 'failed';
+  });
+  // Finished means the turn under way ended: an idle session whose message
+  // has not been recorded yet (the moment between create and send) is not
+  // done. No retry of a rung: an empty turn ends the climb, named as such.
+  let finished = session.status === 'terminated' || parsed.errors.length > 0;
+  let next = null;
+  if (!finished && session.status === 'idle' && last && last.ended) {
+    const i = turns.length - 1;
+    if (i >= steps.length - 1 || status[i] !== 'passed') finished = true;
+    else next = steps[i + 1];
+  }
+  // A poll can land after a rung was sent and before the platform lists
+  // its message; without a memo it would be sent twice. The memo is per
+  // instance, which is where such back-to-back polls come from.
+  let stepNo = turns.length;
+  if (next && remembered(sessionId, 'rung:' + next.name)) { next = null; status[turns.length] = 'running'; stepNo = turns.length + 1; }
+  if (next) {
+    remember(sessionId, 'rung:' + next.name, '1');
+    await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.message', content: [{ type: 'text', text: probeMessage(next.name, p) }] }] });
+    status[turns.length] = 'running';
+    stepNo = turns.length + 1;
+  }
+  // A connect result with the login rung not run is still a result.
+  const result = parsed.result;
+  if (finished && result && result.tcp === 'open' && p.kind !== 'other' && !result.handshake) {
+    const li = steps.findIndex(st => st.name === 'login');
+    result.login_skipped = status[li] === 'empty' ? 'Claude returned an empty turn for it' : status[li] === 'pending' ? 'it was not reached' : 'it did not report';
+  }
   if (finished && !session.archived_at) {
     try { await client.beta.sessions.archive(sessionId); } catch (e) { /* ignore */ }
   }
   const cost = session.usage && session.usage.list_cost;
+  const failedAt = finished ? status.findIndex(x => x === 'empty' || x === 'failed') : -1;
   return ok({
     sessionId, status: session.status, done: !!finished, retrying: false,
-    result: parsed.result, verdict: verdict(parsed.result), errors: parsed.errors,
+    steps: steps.map((st, i) => ({ name: st.name, label: st.label, status: status[i] })),
+    step: stepNo,
+    failedStep: failedAt === -1 ? null : { index: failedAt + 1, name: steps[failedAt].name, label: steps[failedAt].label, status: status[failedAt] },
+    result, verdict: verdict(result), errors: parsed.errors,
     stopReason: parsed.stopReason,
-    transcript: finished && !parsed.result ? parsed.transcript : [],
-    eventTypes: finished && !parsed.result ? parsed.eventTypes : [],
+    transcript: finished && failedAt !== -1 ? parsed.transcript : [],
+    eventTypes: finished && failedAt !== -1 ? parsed.eventTypes : [],
     raw: finished ? parsed.raw : null,
-    emptyTurn: !!(finished && !parsed.result && parsed.emptyTurn),
+    emptyTurn: !!(finished && failedAt !== -1 && status[failedAt] === 'empty' && parsed.emptyTurn),
     costCents: cost && cost.amount != null ? Number(cost.amount) : null,
   });
 }
@@ -1195,7 +1291,7 @@ module.exports = {
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
-  validateProbe, probeScript, probeInstruction, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
+  validateProbe, probeScript, probeInstruction, probeMessage, probeSteps, probeTurns, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
 };

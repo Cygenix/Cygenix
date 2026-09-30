@@ -74,14 +74,16 @@ const PASSWORD = 'Tr0ub4dor-secret';
       seen.reads++;
       if (seen.failReads) return json(route, { error: 'Anthropic is rate-limiting this account. Wait a minute and try again.' }, 429);
       const done = seen.reads >= seen.doneAfter;
+      const steps = (a, b, c) => [{ name: 'hello', label: 'Workspace answers', status: a }, { name: 'connect', label: 'Connection to the server', status: b }, { name: 'login', label: 'Database reply', status: c }];
       if (done && seen.emptyTurn) return json(route, { done: true, status: 'idle', costCents: 7, result: null, verdict: null, errors: [], transcript: [], emptyTurn: true, stopReason: 'end_turn',
+        steps: steps('passed', 'empty', 'pending'), step: 2, failedStep: { index: 2, name: 'connect', label: 'Connection to the server', status: 'empty' },
         eventTypes: ['user.message', 'span.model_request_end:out=0', 'session.status_idle:end_turn'],
         raw: { modelRequestEnd: { type: 'span.model_request_end', is_error: false, model_usage: { cache_creation_input_tokens: 4833, input_tokens: 4, output_tokens: 0 } }, usage: { type: 'session.usage', usage: { output_tokens: 0 } } } });
       return json(route, done ? {
-        done: true, status: 'idle', costCents: 4,
+        done: true, status: 'idle', costCents: 4, steps: steps('passed', 'passed', 'passed'), step: 3, failedStep: null,
         result: { host: 'acme.database.windows.net', port: 1433, kind: 'sqlserver', dns: ['10.1.2.3'], tcp: 'open', tcp_ms: 38, handshake: 'no-reply', egress_ip: '203.0.113.9' },
         verdict: { ok: false, text: 'A connection opened, but no database answered on it (no-reply).' }, errors: [],
-      } : { done: false, status: 'running', result: null, verdict: null, errors: [] });
+      } : { done: false, status: 'running', result: null, verdict: null, errors: [], steps: steps('passed', 'running', 'pending'), step: 2, failedStep: null });
     }
     if (/action=whoami/.test(u)) return json(route, { tier: 'pro', tier_status: 'active', role: 'user' });
     if (/data-proxy|netlify\/functions|\/api\//.test(u)) return json(route, {});
@@ -156,6 +158,7 @@ const PASSWORD = 'Tr0ub4dor-secret';
   check('the result shows the verdict, the facts and the workspace IP', /no database answered/.test(out) && /203\.0\.113\.9/.test(out) && /10\.1\.2\.3/.test(out), out.slice(0, 300));
   check('a failure shows the firewall sentence with the address', /Your database may only accept known IP addresses — the Anthropic workspace may need allowing\. This test arrived from 203\.0\.113\.9/.test(out));
   check('and the cost', /US\$0\.04/.test(out));
+  check('the three rungs are listed with their outcome', /1 Workspace answers: passed · 2 Connection to the server: passed · 3 Database reply: passed/.test(out), out.slice(0, 400));
   await page.waitForTimeout(7000);
   check('POLLING STOPS WHEN THE TEST IS DONE — no further result calls', seen.reads === readsAtDone, seen.reads + ' vs ' + readsAtDone);
 
@@ -174,9 +177,10 @@ const PASSWORD = 'Tr0ub4dor-secret';
   await page.evaluate(() => ccRun('limited'));
   await page.waitForFunction(() => /No result/.test(document.getElementById('cc-runs').textContent), null, { timeout: 15000 });
   const empty = await page.evaluate(() => document.getElementById('cc-runs').textContent);
-  check('AN EMPTY TURN SAYS SO, WITH THE STOP REASON AND THE TOKEN COUNTS — not "no reply"',
-    /Claude's turn ended with nothing written: 0 output tokens, stop reason end_turn, no error reported by Anthropic/.test(empty) && /4837 input tokens/.test(empty)
-    && !/sent back no reply/.test(empty), empty.slice(0, 400));
+  check('AN EMPTY TURN SAYS SO, NAMING THE RUNG, WITH THE STOP REASON AND THE TOKEN COUNTS — not "no reply"',
+    /Claude's turn ended with nothing written at step 2 \(Connection to the server\): 0 output tokens, stop reason end_turn, no error reported by Anthropic/.test(empty) && /4837 input tokens/.test(empty)
+    && /stopped at step 2 \(Connection to the server\) without reporting a result/.test(empty) && /2 Connection to the server: empty turn · 3 Database reply: not reached/.test(empty)
+    && !/sent back no reply/.test(empty), empty.slice(0, 600));
   check('and the raw events are there to open', /Raw events/.test(empty) && /cache_creation_input_tokens/.test(empty)
     && await page.evaluate(() => !document.querySelector('#cc-runs details:not([open]) summary') === false));
 

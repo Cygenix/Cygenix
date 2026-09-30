@@ -471,30 +471,88 @@ function listen(onConn) {
       && sent.length === 1 && sent[0][2].events.length === 1 && sent[0][2].events[0].type === 'user.message'
       && sent[0][2].events[0].content.length === 1 && sent[0][2].events[0].content[0].type === 'text' && sent[0][2].events[0].content[0].text.trim().length > 0, JSON.stringify(sent));
     const ask = sent[0][2].events[0].content[0].text;
-    check('the message is the script inline, in a fenced block, with the values in it and a one-line ask to run it and paste the output',
-      /```python\n[\s\S]*CYGPROBE_RESULT[\s\S]*```/.test(ask) && /H = "db\.acme\.io"/.test(ask) && /P = 1433/.test(ask) && /KIND = "sqlserver"/.test(ask)
-      && /paste its output verbatim/.test(ask) && /pip install pymssql/.test(ask), ask.slice(0, 300));
-    check('the start reports the session as running', r.body.status === 'running');
+    check('THE FIRST RUNG IS A HELLO LINE: one bash command, no script, no server named — does this session answer at all?',
+      /```bash\npython3 -c "print\('CYGPROBE_HELLO', 2 \+ 2\)"\n```/.test(ask) && ask.indexOf('acme') === -1 && ask.indexOf('import') === -1, ask);
+    check('the start reports the session as running, with the three rungs by name',
+      r.body.status === 'running' && r.body.steps.join() === 'Workspace answers,Connection to the server,Database reply');
+    check('the target rides on the session metadata for the later rungs', s.metadata.cyg_host === 'db.acme.io' && s.metadata.cyg_port === '1433' && s.metadata.cyg_kind === 'sqlserver');
+    check('an "Other" server has two rungs — there is no driver to log in with', CC.probeSteps('other').length === 2 && CC.probeSteps('postgres').length === 3);
+    const connectAsk = CC.probeMessage('connect', { host: 'db.acme.io', port: 1433, kind: 'sqlserver' });
+    const loginAsk = CC.probeMessage('login', { host: 'db.acme.io', port: 1433, kind: 'sqlserver' });
+    check('rung two is the connect-only script inline: the values in it, no login, no driver',
+      /```python\n[\s\S]*CYGPROBE_RESULT[\s\S]*```/.test(connectAsk) && /H = "db\.acme\.io"/.test(connectAsk) && /P = 1433/.test(connectAsk) && /KIND = "sqlserver"/.test(connectAsk)
+      && !/pymssql|cygenix_probe|pip install/.test(connectAsk) && /paste its output verbatim/.test(connectAsk), connectAsk.slice(0, 300));
+    check('rung three is the driver login under the made-up account, with the install hint',
+      /pymssql\.connect\(server=H/.test(loginAsk) && /cygenix_probe/.test(loginAsk) && /pip install pymssql/.test(loginAsk) && /login failed/.test(loginAsk)
+      && /pip install "psycopg\[binary\]"/.test(CC.probeMessage('login', { host: 'h', port: 1, kind: 'postgres' })));
     check('THE KEY APPEARS NOWHERE IN WHAT WAS SENT TO ANTHROPIC OR THE GATE',
       !JSON.stringify(CLIENT.calls).includes(KEY) && !JSON.stringify(FETCHED).includes(KEY));
     check('the log line carries action, method, status and time — no host, no key',
       /probe POST status=200 ms=\d+/.test(logs[logs.length - 1]) && logs.every(l => !/acme|sk-ant/.test(l)), logs[logs.length - 1]);
 
     const sid = r.body.sessionId;
-    const line = 'CYGPROBE_RESULT {"host":"db.acme.io","port":1433,"kind":"sqlserver","dns":["10.0.0.4"],"tcp":"open","handshake":"sqlserver-replied","tcp_ms":41,"egress_ip":"203.0.113.9"}';
-    CLIENT._o.sessions[sid].status = 'idle';
-    CLIENT._o.sessions[sid].usage = { list_cost: { amount: '3', currency: 'USD' } };
-    CLIENT._o.events[sid] = [
-      { type: 'user.message', content: [{ type: 'text', text: 'run it' }] },
-      { type: 'agent.tool_use', name: 'bash' },
-      { type: 'agent.tool_result', content: [{ type: 'text', text: 'x\n' + line + '\n' }] },
-      { type: 'session.status_idle', stop_reason: { type: 'end_turn' } },
-    ];
+    const idle = () => ({ type: 'session.status_idle', stop_reason: { type: 'end_turn' } });
+    const ran = (out) => [{ type: 'agent.tool_use', name: 'bash' }, { type: 'agent.tool_result', content: [{ type: 'text', text: out }] }];
+    const connectLine = 'CYGPROBE_RESULT {"host":"db.acme.io","port":1433,"kind":"sqlserver","dns":["10.0.0.4"],"tcp":"open","tcp_ms":41,"egress_ip":"203.0.113.9"}';
+    const loginLine = 'CYGPROBE_RESULT {"host":"db.acme.io","port":1433,"kind":"sqlserver","dns":["10.0.0.4"],"tcp":"open","handshake":"sqlserver-replied","tcp_ms":39,"egress_ip":"203.0.113.9"}';
+    const sends = () => CLIENT.calls.filter(c => c[0] === 'events.send' && c[1] === sid).map(c => c[2].events[0].content[0].text);
+    // Rung one: the session is still running — nothing to do yet.
+    CLIENT._o.sessions[sid].status = 'running';
+    CLIENT._o.events[sid] = [{ type: 'user.message', content: [{ type: 'text', text: 'hello' }] }];
     r = await call('GET', 'probe', { query: { sessionId: sid } });
-    check('the result is read back from the script\'s own output', r.status === 200 && r.body.done === true
-      && r.body.result.handshake === 'sqlserver-replied' && r.body.result.egress_ip === '203.0.113.9', r.raw);
-    check('with a plain-language verdict and the cost', r.body.verdict.ok === true && /answered/.test(r.body.verdict.text) && r.body.costCents === 3);
+    check('while a rung runs the poll reports the step and sends nothing', r.body.done === false && r.body.step === 1 && r.body.steps[0].status === 'running' && sends().length === 1, r.raw);
+    // Rung one answered: rung two is sent, in the same session.
+    CLIENT._o.sessions[sid].status = 'idle';
+    CLIENT._o.events[sid].push(...ran('CYGPROBE_HELLO 4\n'), idle());
+    r = await call('GET', 'probe', { query: { sessionId: sid } });
+    check('THE HELLO ANSWERED: rung two (the connect script) is sent as a fresh user message and the poll goes on',
+      r.body.done === false && r.body.step === 2 && r.body.steps[0].status === 'passed' && r.body.steps[1].status === 'running'
+      && sends().length === 2 && /H = "db\.acme\.io"/.test(sends()[1]) && !/pymssql/.test(sends()[1]), r.raw);
+    // The same poll again, before the platform has recorded that message: nothing is sent twice.
+    r = await call('GET', 'probe', { query: { sessionId: sid } });
+    check('…and a poll that lands before the message is recorded sends nothing more, and still reports the rung as running',
+      sends().length === 2 && r.body.done === false && r.body.step === 2 && r.body.steps[1].status === 'running', sends().length + ' ' + r.raw);
+    // Rung two answered: rung three sent.
+    CLIENT._o.events[sid].push({ type: 'user.message', content: [{ type: 'text', text: sends()[1] }] }, ...ran('x\n' + connectLine + '\n'), idle());
+    r = await call('GET', 'probe', { query: { sessionId: sid } });
+    check('THE CONNECT SCRIPT ANSWERED: its result is already in hand and rung three (the login) is sent',
+      r.body.done === false && r.body.step === 3 && r.body.result && r.body.result.tcp === 'open' && r.body.result.egress_ip === '203.0.113.9'
+      && sends().length === 3 && /cygenix_probe/.test(sends()[2]), r.raw);
+    // Rung three answered: done, the login result laid over the connect one.
+    CLIENT._o.events[sid].push({ type: 'user.message', content: [{ type: 'text', text: sends()[2] }] }, ...ran('x\n' + loginLine + '\n'), idle());
+    CLIENT._o.sessions[sid].usage = { list_cost: { amount: '9', currency: 'USD' } };
+    r = await call('GET', 'probe', { query: { sessionId: sid } });
+    check('ALL THREE RUNGS PASSED: the result is read back from the scripts\' own output', r.status === 200 && r.body.done === true
+      && r.body.result.handshake === 'sqlserver-replied' && r.body.result.egress_ip === '203.0.113.9' && r.body.steps.every(st => st.status === 'passed') && r.body.failedStep === null, r.raw);
+    check('with a plain-language verdict and the cost', r.body.verdict.ok === true && /answered/.test(r.body.verdict.text) && r.body.costCents === 9);
     check('a finished test session is archived (routine cleanup)', CLIENT.calls.some(c => c[0] === 'sessions.archive' && c[1] === sid));
+    check('and nothing more is sent to a finished session', sends().length === 3);
+
+    // The ladder falls off at rung three: the connect result stands, the login is marked not run.
+    CLIENT._o.sessions.sesn_rung3 = { id: 'sesn_rung3', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me', cyg_host: 'db.acme.io', cyg_port: '1433', cyg_kind: 'sqlserver' }, usage: {} };
+    CLIENT._o.events.sesn_rung3 = [
+      { type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, ...ran('CYGPROBE_HELLO 4\n'), idle(),
+      { type: 'user.message', content: [{ type: 'text', text: 'connect' }] }, ...ran(connectLine + '\n'), idle(),
+      { type: 'user.message', content: [{ type: 'text', text: 'login' }] }, { type: 'span.model_request_end', is_error: false, model_usage: { input_tokens: 5000, output_tokens: 0 } }, idle(),
+    ];
+    r = await call('GET', 'probe', { query: { sessionId: 'sesn_rung3' } });
+    check('AN EMPTY TURN AT RUNG THREE: the test is done, the connection result stands, the verdict says the login check did not run',
+      r.body.done === true && r.body.emptyTurn === true && r.body.failedStep && r.body.failedStep.index === 3 && r.body.failedStep.status === 'empty'
+      && r.body.steps.map(st => st.status).join() === 'passed,passed,empty' && r.body.result.tcp === 'open' && r.body.verdict.ok === true
+      && /did not run: Claude returned an empty turn/.test(r.body.verdict.text) && r.body.eventTypes.length > 0, r.raw);
+    // ...and at rung one: nothing to show but the rung.
+    CLIENT._o.sessions.sesn_rung1 = { id: 'sesn_rung1', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me', cyg_host: 'db.acme.io', cyg_port: '1433', cyg_kind: 'other' }, usage: {} };
+    CLIENT._o.events.sesn_rung1 = [{ type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, { type: 'span.model_request_end', is_error: false, model_usage: { output_tokens: 0 } }, idle()];
+    r = await call('GET', 'probe', { query: { sessionId: 'sesn_rung1' } });
+    check('an empty turn at rung one ends it there: no result, two rungs listed for an Other server, nothing further sent',
+      r.body.done === true && r.body.emptyTurn === true && r.body.result === null && r.body.failedStep.index === 1 && r.body.steps.length === 2
+      && r.body.steps[1].status === 'pending' && !CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === 'sesn_rung1'), r.raw);
+    // A hello that ran something else, not the line asked for, is a failed rung, not an empty one.
+    CLIENT._o.sessions.sesn_odd = { id: 'sesn_odd', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me', cyg_host: 'h.io', cyg_port: '1', cyg_kind: 'other' }, usage: {} };
+    CLIENT._o.events.sesn_odd = [{ type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, { type: 'agent.message', content: [{ type: 'text', text: 'I would rather not.' }] }, idle()];
+    r = await call('GET', 'probe', { query: { sessionId: 'sesn_odd' } });
+    check('a rung answered in words but not with its line is "failed", with the words shown', r.body.done === true && r.body.emptyTurn === false
+      && r.body.failedStep.status === 'failed' && r.body.transcript.length === 1 && /rather not/.test(r.body.transcript[0].text), r.raw);
     CLIENT._o.sessions.sesn_other = { id: 'sesn_other', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'somebody-else' } };
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_other' } });
     check('SOMEBODY ELSE\'S TEST IN A SHARED ANTHROPIC ACCOUNT IS NOT FOUND', r.status === 404, r.raw);
@@ -578,11 +636,12 @@ function listen(onConn) {
     check('A REPLY WITHHELD BY THE SAFETY SYSTEM IS NAMED AS SUCH, and every event type is listed',
       withheld.transcript.length === 1 && withheld.transcript[0].kind === 'refused' && /withheld/.test(withheld.transcript[0].text)
       && withheld.eventTypes.join() === 'span.model_request_start,agent.message,span.model_request_end,session.status_idle:end_turn', JSON.stringify(withheld));
-    check('the ask says what the script is for, and asks for the driver only where there is one',
-      /my database server/.test(CC.probeInstruction({ host: 'h', port: 1, kind: 'other' })) && !/pip install/.test(CC.probeInstruction({ host: 'h', port: 1, kind: 'other' }))
-      && /pip install "psycopg\[binary\]"/.test(CC.probeInstruction({ host: 'h', port: 1, kind: 'postgres' })));
-    CLIENT._o.sessions.sesn_noline = { id: 'sesn_noline', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
-    CLIENT._o.events.sesn_noline = [{ id: 'q1', type: 'agent.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'I could not run it.' }] },
+    check('the connect rung says what the script is for; the connect-only script has no login block at all',
+      /my database server/.test(CC.probeMessage('connect', { host: 'h', port: 1, kind: 'other' }))
+      && !/handshake|connect\(/.test(CC.probeScript({ host: 'h', port: 1, kind: 'sqlserver' }, { login: false })));
+    CLIENT._o.sessions.sesn_noline = { id: 'sesn_noline', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me', cyg_kind: 'sqlserver' }, usage: {} };
+    CLIENT._o.events.sesn_noline = [{ id: 'q0', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'hello' }] },
+      { id: 'q1', type: 'agent.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'I could not run it.' }] },
       { id: 'q2', type: 'session.status_idle', processed_at: '2026-10-01T00:00:01Z', stop_reason: { type: 'end_turn' } }];
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_noline' } });
     check('…and the route returns that transcript only in the no-result case', r.body.done === true && r.body.result === null && r.body.transcript.length === 1 && /could not run/.test(r.body.transcript[0].text));

@@ -758,7 +758,7 @@ function renderDrawer(){
 
 /* ── The connection test (unchanged from step 1) ─────────────────────── */
 var CC = { starting: false, lastStart: 0, runs: [], polling: {} };
-var GIVE_UP_MS = 3 * 60 * 1000;
+var GIVE_UP_MS = 5 * 60 * 1000;
 function pbRenderButtons(){
   var block = CC.starting || !hasKey();
   $('cc-run-limited').disabled = block;
@@ -815,6 +815,7 @@ async function pbPoll(run){
     run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents; run.transcript = r.transcript || []; run.eventTypes = r.eventTypes || [];
     run.raw = r.raw || null;
     run.retrying = !!r.retrying; run.emptyTurn = !!r.emptyTurn; run.stopReason = r.stopReason || null;
+    run.steps = r.steps || []; run.step = r.step || 0; run.failedStep = r.failedStep || null;
     if (r.done) { run.status = 'done'; pbStop(run); }
   } catch (e) {
     run.status = 'error'; run.error = e.message; pbStop(run);
@@ -827,7 +828,7 @@ function pbRenderRuns(){
   $('cc-results').hidden = !CC.runs.length;
   $('cc-runs').innerHTML = CC.runs.map(function(run){
     var label = run.network === 'open' ? 'Open networking' : 'Cygenix allow-list';
-    var pill = run.status === 'running' ? '<span class="pill busy">' + (run.retrying ? 'Asking again' : 'Working') + '</span>'
+    var pill = run.status === 'running' ? '<span class="pill busy">' + (run.step ? 'Step ' + run.step + ' of ' + run.steps.length : 'Working') + '</span>'
       : run.status === 'error' ? '<span class="pill bad">Error</span>'
       : run.status === 'timeout' ? '<span class="pill bad">No answer</span>'
       : run.verdict && run.verdict.ok ? '<span class="pill ok">Reached</span>'
@@ -835,6 +836,10 @@ function pbRenderRuns(){
       : '<span class="pill bad">Not reached</span>';
     var html = '<div class="run"><div class="run-head">' + pill + ' ' + esc(label) + ' — <span class="mono">' + esc(run.host) + ':' + esc(run.port) + '</span></div>';
     if (run.verdict) html += '<p class="muted" style="margin-top:0.4rem">' + esc(run.verdict.text) + '</p>';
+    if ((run.steps || []).length) {
+      var words = { pending: 'not reached', running: 'running', passed: 'passed', empty: 'empty turn', failed: 'no answer' };
+      html += '<p class="muted mono" style="margin-top:0.4rem">' + run.steps.map(function(st, i){ return (i + 1) + ' ' + esc(st.label) + ': ' + esc(words[st.status] || st.status); }).join(' · ') + '</p>';
+    }
     var rows = CygenixCcProbe.rows(run.result);
     if (rows.length) html += '<table class="facts">' + rows.map(function(r){ return '<tr><td>' + esc(r[0]) + '</td><td class="mono">' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>';
     if (run.cost != null) html += '<p class="muted" style="margin-top:0.4rem">Cost of this test: ' + esc(CygenixCcProbe.costText(run.cost)) + '</p>';
@@ -842,20 +847,21 @@ function pbRenderRuns(){
     (run.errors || []).forEach(function(er){ html += '<div class="note crit">' + esc(er) + '</div>'; });
     if (run.status === 'error') html += '<div class="note crit">' + esc(run.error) + '</div>';
     if (run.status === 'timeout') html += '<div class="note crit">The test did not report back within 3 minutes. It may still be running in your Anthropic account, where its spend cap applies.</div>';
-    if (run.status === 'done' && !run.result && !(run.errors || []).length) {
-      html += '<div class="note warn">The workspace finished without reporting a result. This is not the allow-list: the test did not get as far as trying the connection. What it said and did is below.</div>';
+    if (run.status === 'done' && run.failedStep && !(run.errors || []).length) {
+      var at = ' at step ' + run.failedStep.index + ' (' + esc(run.failedStep.label) + ')';
+      if (!run.result) html += '<div class="note warn">The workspace stopped' + at + ' without reporting a result. This is not the allow-list: the test did not get as far as trying the connection.</div>';
       if ((run.transcript || []).length) {
         html += '<details class="block" open><summary>What the workspace said</summary>' + run.transcript.map(function(t){
           var label = t.kind === 'tool' ? 'Ran' : t.kind === 'output' ? 'Output' : t.kind === 'error' ? 'Failed' : t.kind === 'refused' ? 'Declined' : 'Claude';
           return '<div class="res-label">' + esc(label) + '</div><pre>' + esc(t.text || '(nothing)') + '</pre>'; }).join('') + '</details>';
       } else if (run.emptyTurn) {
         var mu = run.raw && run.raw.modelRequestEnd && run.raw.modelRequestEnd.model_usage || {};
-        html += '<div class="note crit">Claude\'s turn ended with nothing written: ' + esc(String(mu.output_tokens != null ? mu.output_tokens : 0)) + ' output tokens, stop reason '
+        html += '<div class="note crit">Claude\'s turn ended with nothing written' + at + ': ' + esc(String(mu.output_tokens != null ? mu.output_tokens : 0)) + ' output tokens, stop reason '
           + esc(run.stopReason || 'none') + ', no error reported by Anthropic. This is not a refusal in words and not a script failure: the model was sent the request'
           + (mu.input_tokens != null || mu.cache_creation_input_tokens != null ? ' (' + esc(String((mu.input_tokens || 0) + (mu.cache_creation_input_tokens || 0) + (mu.cache_read_input_tokens || 0))) + ' input tokens)' : '')
           + ' and returned an empty turn. The raw events are below.</div>';
       } else {
-        html += '<div class="note crit">The workspace sent back no reply, no command and no output at all.'
+        html += '<div class="note crit">The workspace sent back no reply, no command and no output' + at + '.'
           + ((run.eventTypes || []).length ? '' : ' If the Azure deploy of the latest change had not finished when this ran, run the test again in a few minutes.') + '</div>';
       }
       if ((run.eventTypes || []).length) html += '<p class="muted mono" style="margin-top:0.4rem">Session events: ' + esc(run.eventTypes.join(' › ')) + '</p>';
