@@ -445,12 +445,7 @@ function systemPrompt(o) {
   return [
     'You are working inside Cygenix, a data migration console, on data migration work for the signed-in user. '
       + 'You can write and run code in this workspace: Python, Node, shell and SQL.',
-    // The connection test (credentials: false) carries no login and no
-    // file: the same prompt otherwise, with that one paragraph replaced.
-    o.credentials === false
-      ? 'The database for this session is ' + kind + '. This session carries no database login: it is a connectivity check '
-        + 'the user runs before saving one.'
-      : 'The database for this session is ' + kind + '. Its connection details are in the read-only file ' + CRED_PATH
+    'The database for this session is ' + kind + '. Its connection details are in the read-only file ' + CRED_PATH
       + ", as KEY='value' lines: CYG_DB_TYPE, CYG_DB_HOST, CYG_DB_PORT, CYG_DB_NAME, CYG_DB_USER, CYG_DB_PASSWORD and "
       + 'CYG_DB_CONNSTR (the full connection string). Load them into the environment before running code, for example '
       + '`set -a; . ' + CRED_PATH + '; set +a`, and read them from the environment in your code.',
@@ -460,8 +455,8 @@ function systemPrompt(o) {
     'The workspace can reach the database host, the Python and npm package registries, and ' + IP_ECHO_HOST
       + ' (so `curl -s https://' + IP_ECHO_HOST + '` tells the user this workspace\'s public IP address, for a firewall rule) — and nothing else on the network.',
     MODE_TEXT[o.mode === 'changes' ? 'changes' : 'readonly'],
-    'Show SQL or code before running anything that modifies data.' + (o.credentials === false ? '' : ' Never print the password or the contents of '
-      + CRED_PATH + ' unless the user explicitly asks you to.'),
+    'Show SQL or code before running anything that modifies data. Never print the password or the contents of '
+      + CRED_PATH + ' unless the user explicitly asks you to.',
     'Keep replies short and concrete: what you ran, what came back, what it means.',
   ].join('\n\n');
 }
@@ -999,6 +994,19 @@ const PROBE_STEPS = [
   { name: 'login', label: 'Database reply' },
 ];
 function probeSteps(kind) { return kind === 'other' ? PROBE_STEPS.slice(0, 2) : PROBE_STEPS; }
+// v6. The console's own system prompt (data migration, database hosts, a
+// firewall to cross) was the last thing the test carried that a plain
+// "run this and show me the output" session does not. Even the hello rung,
+// which names nothing, came back with zero output tokens. So the test now
+// carries a neutral prompt with none of that framing: it only needs the
+// model to run what it is given and paste the result.
+function probeSystem() {
+  return [
+    'You are a coding assistant working in a sandbox for the signed-in user.',
+    'The user will give you small commands or scripts to run with the bash tool. Run exactly what you are given, '
+      + 'paste the output verbatim, and add nothing else. Do not run anything you were not asked to run.',
+  ].join('\n\n');
+}
 function probeMessage(step, p) {
   const driver = p.kind === 'sqlserver' ? 'pymssql' : p.kind === 'postgres' ? '"psycopg[binary]"' : '';
   if (step === 'hello') {
@@ -1133,8 +1141,7 @@ async function probeStart(who, apiKey, body) {
   // the address echo — with only the networking setting under test.
   const environmentId = await ensureEnvironment(client, tag, p.network, [p.host].concat(PACKAGE_HOSTS, [IP_ECHO_HOST]));
   const session = await client.beta.sessions.create({
-    agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
-             system: systemPrompt({ dbType: p.kind, mode: 'readonly', credentials: false }) },
+    agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' }, system: probeSystem() },
     environment_id: environmentId,
     title: 'Cygenix connection test',
     // The target rides on the session (in the customer's own account) so
@@ -1291,7 +1298,7 @@ module.exports = {
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
-  validateProbe, probeScript, probeInstruction, probeMessage, probeSteps, probeTurns, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
+  validateProbe, probeScript, probeInstruction, probeMessage, probeSteps, probeSystem, probeTurns, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
 };

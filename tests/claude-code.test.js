@@ -458,11 +458,10 @@ function listen(onConn) {
     check('THE SESSION CARRIES THE SPEND CAP: 600 cents USD (about £5)',
       s.budget && s.budget.type === 'limit' && s.budget.max_list_cost.amount === '600' && s.budget.max_list_cost.currency === 'USD', JSON.stringify(s.budget));
     check('it is stamped with the caller, so nobody else can read it', s.metadata.cyg_oid === 'oid-me' && s.metadata.cygenix === 'probe');
-    check('IT OVERRIDES THE AGENT THE WAY A CONSOLE SESSION DOES: medium effort, the console system prompt without the credential paragraph',
-      s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'medium'
-      && s.agent.system === CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly', credentials: false })
-      && /working inside Cygenix/.test(s.agent.system) && /carries no database login/.test(s.agent.system)
-      && s.agent.system.indexOf(CC.CRED_PATH) === -1 && !/Run exactly/.test(s.agent.system), s.agent.system);
+    check('IT CARRIES A NEUTRAL SYSTEM PROMPT: medium effort, no migration/database/firewall framing at all — only "run what you are given and paste it"',
+      s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'medium' && s.agent.system === CC.probeSystem()
+      && /run exactly what you are given|Run exactly what you are given/i.test(s.agent.system)
+      && !/migration|database|firewall|connection string|Cygenix, a/i.test(s.agent.system) && s.agent.system.indexOf(CC.CRED_PATH) === -1, s.agent.system);
     check('the console prompt itself is unchanged for a real session', /connection details are in the read-only file/.test(CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly' }))
       && /Never print the password/.test(CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly' })));
     const sent = CLIENT.calls.filter(c => c[0] === 'events.send' && c[1] === s_id(r));
