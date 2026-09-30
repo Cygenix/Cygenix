@@ -1067,7 +1067,18 @@ function parseProbeEvents(events) {
       transcript.push({ kind: 'tool', text: clip(ev.name === 'bash' ? input.command : (ev.name || 'tool') + ' ' + JSON.stringify(input)) });
     } else if (ev.type === 'agent.tool_result') transcript.push({ kind: ev.is_error ? 'error' : 'output', text: clip(textsOf(ev).join('\n')) });
   });
-  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12), eventTypes };
+  // The last model request and the usage line, exactly as Anthropic sent
+  // them: our summary has been wrong about what an empty turn holds, so
+  // the page shows the real thing. Scrubbed of anything key-shaped.
+  const raw = scrubKeys({
+    modelRequestEnd: events.filter(ev => ev.type === 'span.model_request_end').pop() || null,
+    usage: events.filter(ev => ev.type === 'session.usage').pop() || null,
+  });
+  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12), eventTypes, raw };
+}
+function scrubKeys(o) {
+  try { return JSON.parse(JSON.stringify(o).replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, '[key]')); }
+  catch (e) { return null; }
 }
 
 function verdict(r) {
@@ -1165,6 +1176,7 @@ async function probeResult(who, apiKey, sessionId) {
     stopReason: parsed.stopReason,
     transcript: finished && !parsed.result ? parsed.transcript : [],
     eventTypes: finished && !parsed.result ? parsed.eventTypes : [],
+    raw: finished ? parsed.raw : null,
     costCents: cost && cost.amount != null ? Number(cost.amount) : null,
   });
 }

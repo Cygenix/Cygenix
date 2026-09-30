@@ -547,6 +547,10 @@ function listen(onConn) {
     check('…and a second empty turn ends it, with the event list', r.body.done === true && r.body.retrying === false && r.body.eventTypes.length === 5);
     check('each model request in that list carries its output-token count, so nothing-written and reply-lost can be told apart',
       r.body.eventTypes[1] === 'span.model_request_end:out=0', r.body.eventTypes.join());
+    check('the raw last model request and usage line come back whole, for the page to show',
+      r.body.raw && r.body.raw.modelRequestEnd && r.body.raw.modelRequestEnd.id === 'm2' && r.body.raw.modelRequestEnd.model_usage.input_tokens === 4000
+      && r.body.raw.usage === null, JSON.stringify(r.body.raw));
+    check('with anything key-shaped scrubbed out of it', JSON.stringify(CC.parseProbeEvents([{ type: 'session.usage', note: 'x sk-ant-api03-abcdefghijk y' }]).raw).indexOf('sk-ant') === -1);
     check('so does the usage line (either field shape)', CC.parseProbeEvents([{ type: 'session.usage', output_tokens: 12 }]).eventTypes[0] === 'session.usage:out=12'
       && CC.parseProbeEvents([{ type: 'span.model_request_end', usage: { output_tokens: 3 } }]).eventTypes[0] === 'span.model_request_end:out=3');
     check('verdict: the database answered', CC.verdict({ host: 'h', port: 1, kind: 'postgres', tcp: 'open', handshake: 'postgres-replied' }).ok === true);

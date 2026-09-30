@@ -813,6 +813,7 @@ async function pbPoll(run){
   try {
     var r = await call('GET', '/agent/claude-code/probe?sessionId=' + encodeURIComponent(run.id));
     run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents; run.transcript = r.transcript || []; run.eventTypes = r.eventTypes || [];
+    run.raw = r.raw || null;
     run.retrying = !!r.retrying;
     if (r.done) { run.status = 'done'; pbStop(run); }
   } catch (e) {
@@ -852,6 +853,11 @@ function pbRenderRuns(){
           + ((run.eventTypes || []).length ? '' : ' If the Azure deploy of the latest change had not finished when this ran, run the test again in a few minutes.') + '</div>';
       }
       if ((run.eventTypes || []).length) html += '<p class="muted mono" style="margin-top:0.4rem">Session events: ' + esc(run.eventTypes.join(' › ')) + '</p>';
+    }
+    if (run.status === 'done' && run.raw) {
+      html += '<details class="block"><summary>Raw events</summary><div class="res-label">Last model request, as Anthropic sent it</div><pre>'
+        + esc(JSON.stringify(run.raw.modelRequestEnd, null, 2)) + '</pre><div class="res-label">Session usage</div><pre>'
+        + esc(JSON.stringify(run.raw.usage, null, 2)) + '</pre></details>';
     }
     return html + '</div>';
   }).join('');
