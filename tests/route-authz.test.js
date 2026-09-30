@@ -144,6 +144,9 @@ const CALL = {
   // A CREATE, deliberately: the organisation register's write is PA-only,
   // and a roleless caller must not reach even the read.
   'org-connections': { httpMethod: 'POST', body: JSON.stringify({ op: 'create', connection: { name: 'x', side: 'src', kind: 'sqlserver', envClass: 'DEV', server: 'h', database: 'd' } }) },
+  // The connectivity test, deliberately: it is the one act that needs an
+  // administrator rather than the organisation's allow-list.
+  'claude-code-gate': { httpMethod: 'POST', body: JSON.stringify({ act: 'probe', detail: { host: 'db.example.test', port: 1433 } }) },
 };
 
 async function invoke(name, event) {
@@ -220,6 +223,7 @@ const is2xx = (r) => r && typeof r.statusCode === 'number' && r.statusCode >= 20
     'rbac-admin': { OW: 'allow', PA: 'allow', EN: 'deny', MB: 'deny' },  // admin.read
     'db-connect': { ML: 'allow', EN: 'deny', PA: 'deny', MB: 'deny' },   // sql.write on PROD
     'org-connections': { PA: 'allow', OW: 'deny', ML: 'deny', EN: 'deny', MB: 'deny' },  // connection.create
+    'claude-code-gate': { OW: 'allow', PA: 'allow', ML: 'deny', EN: 'deny', AU: 'deny', MB: 'deny' },  // claudecode.configure
   };
   const refused = (r) => r && (r.statusCode === 401 || r.statusCode === 403);
 

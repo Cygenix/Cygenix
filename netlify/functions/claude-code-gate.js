@@ -1,0 +1,129 @@
+// netlify/functions/claude-code-gate.js
+//
+// The yes/no the Azure Function App asks before it touches the Anthropic
+// Managed Agents API on somebody's behalf.
+//
+// WHY THIS LIVES HERE AND NOT IN AZURE
+// Roles live in Netlify Blobs (cygenix-org: rbac/users, rbac/assignments)
+// and the organisation's Claude Code policy lives beside the guardrails on
+// the tenant record. The Function App can read neither. Two ways round that
+// were on the table:
+//
+//   1. Check in data-proxy and let Azure trust the result. Rejected: the two
+//      Function App host keys were once published in the client and their
+//      rotation is still an open item, so anybody holding one could call the
+//      Azure route directly and a proxy-only check would never run.
+//   2. Azure asks THIS function, forwarding the caller's own Entra token.
+//      Chosen. The token is the credential, not a shared secret, so a host
+//      key alone gets an Azure caller nothing: it still needs a token that
+//      verifies, for a user whose roles and organisation say yes.
+//
+// Azure caches a yes for 30 seconds per user, so a console polling every
+// three seconds costs one gate call in ten, not one in one.
+//
+// POST { act, record?, detail? }
+//   act 'probe'    workspace connectivity test — claudecode.configure (OW, PA)
+//   act 'use'      open or drive a read-only session — claudecode.use, AND
+//                  the organisation switch is on, AND the actor holds a role
+//                  on the organisation's allow-list
+//   act 'changes'  the same, for a session allowed to change data — a
+//                  mutating act, which the Auditor's R grant refuses
+//
+// 200 { allowed: true, roles, tenantId }        — go ahead
+// 403 { error, reason }                         — no, with a sentence a user
+//                                                 can act on
+// Every refusal is audited (authz does it for the matrix; this file does it
+// for the organisation policy). An allowed 'use' is NOT audited — it is
+// asked every half-minute of every session, and the events worth keeping
+// (start, data changes on, stop) are recorded by name by the caller's act.
+
+'use strict';
+
+const authz = require('./lib/authz');
+const rbac = require('./lib/rbac');
+const tenancy = require('./lib/tenancy');
+
+const HEADERS = { 'Content-Type': 'application/json' };
+const reply = (statusCode, data) => ({ statusCode, headers: HEADERS, body: JSON.stringify(data) });
+
+const ACTS = {
+  probe:   { action: 'claudecode.configure', mutating: true,  policy: false },
+  use:     { action: 'claudecode.use',       mutating: false, policy: true },
+  changes: { action: 'claudecode.use',       mutating: true,  policy: true },
+};
+
+// Only these keys of a caller's detail reach the audit trail, and only as
+// short strings — the gate is asked by a server, but it is still input.
+const DETAIL_KEYS = ['host', 'port', 'network', 'sessionId', 'profile', 'connection'];
+function cleanDetail(d) {
+  const out = {};
+  if (!d || typeof d !== 'object') return out;
+  DETAIL_KEYS.forEach(k => {
+    if (d[k] !== undefined && d[k] !== null) out[k] = String(d[k]).slice(0, 200);
+  });
+  return out;
+}
+
+exports.handler = async function (event) {
+  if (event.httpMethod !== 'POST') return reply(405, { error: 'POST only' });
+
+  let ctx;
+  try {
+    ctx = await authz.authorize(event, { route: 'claude-code-gate', action: null });
+  } catch (e) {
+    return authz.errorResponse(e, HEADERS);
+  }
+  const { actor, tenant, audit } = ctx;
+
+  let body;
+  try { body = JSON.parse(event.body || '{}'); }
+  catch (e) { return reply(400, { error: 'Body is not JSON' }); }
+
+  const spec = ACTS[body.act];
+  if (!spec) return reply(400, { error: 'act must be one of ' + Object.keys(ACTS).join('|') });
+  const detail = cleanDetail(body.detail);
+
+  const refuse = async (reason, message, severity) => {
+    await audit({ action: spec.action, outcome: 'denied', severity: severity || 'notice',
+                  resourceType: 'tenant', resourceId: tenant.id,
+                  detail: Object.assign({ act: body.act, reason }, detail) });
+    return reply(403, { error: message, reason });
+  };
+
+  try {
+    const decision = rbac.can(actor, spec.action, { mutating: spec.mutating });
+    if (!decision.allow) {
+      return refuse(decision.reason, body.act === 'probe'
+        ? 'Only an Organisation Owner or Platform Administrator can run the Claude Code connection test.'
+        : body.act === 'changes'
+          ? 'Your role cannot allow Claude Code to change data.'
+          : 'Not enabled for your role — ask an Owner to enable it in Governance.',
+        decision.severity);
+    }
+
+    if (spec.policy) {
+      const policy = tenancy.normaliseClaudeCode(tenant.claudeCode);
+      if (!policy.enabled) {
+        return refuse('console switched off',
+          'The Claude Code console is switched off for this organisation — ask an Owner to enable it in Governance.');
+      }
+      if (!actor.roles.some(r => policy.roles.indexOf(r) !== -1)) {
+        return refuse('role not on the allow-list',
+          'Not enabled for your role — ask an Owner to enable it in Governance.');
+      }
+    }
+
+    // Recorded when the test STARTS (the caller says so with record:true),
+    // not each time the page asks for its result.
+    if (body.act === 'probe' && body.record === true) {
+      await audit({ action: 'claudecode.probe', outcome: 'allowed', severity: 'notice',
+                    resourceType: 'tenant', resourceId: tenant.id, detail });
+    }
+    return reply(200, { allowed: true, roles: actor.roles, tenantId: tenant.id });
+  } catch (e) {
+    return reply(500, { error: e.message, stack: e.stack });
+  }
+};
+
+// For tests.
+exports._internals = { ACTS, cleanDetail };

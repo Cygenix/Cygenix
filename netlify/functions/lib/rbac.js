@@ -161,6 +161,21 @@ const MATRIX = {
   // reads it because a control they cannot see is a control they cannot
   // report on.
   'tenant.guardrails':     { OW: 'F', PA: 'F', AU: 'R' },
+  // The Claude Code console (Sep 2026). Two rows, because switching the
+  // console on for an organisation and using it are different acts.
+  //
+  // configure — the org switch and its role allow-list in Governance, and
+  // the workspace connectivity test an administrator runs before switching
+  // it on. Control plane, so the two roles that answer for the tenant.
+  //
+  // use — the CEILING of who could ever be allowed in. The organisation's
+  // own allow-list (tenancy.normaliseClaudeCode) narrows it, and the gate
+  // checks both. A session with "Allow changes to data" on is a mutating
+  // act; one without is not. The Auditor holds R, which admits read-only
+  // sessions and refuses the data-change toggle — the same independence
+  // rule (A-22) that keeps an Auditor out of every other mutating grant.
+  'claudecode.configure':  { OW: 'F', PA: 'F', AU: 'R' },
+  'claudecode.use':        { OW: 'F', PA: 'F', ML: 'F', EN: 'F', AU: 'R' },
 };
 
 const GRANT_RANK = { F: 4, A: 3, L: 2, R: 1 };

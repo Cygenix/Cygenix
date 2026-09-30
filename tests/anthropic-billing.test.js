@@ -134,6 +134,9 @@ const SERVER = [
   ['azure-function/src/profile-builder.js', 'profile-build'],
   ['azure-function/src/agent.js', 'agent/migrate'],
   ['azure-function/src/agent-suggest-criteria.js', 'agent/suggest-criteria'],
+  // Managed Agents: the agent, environment and session are created in the
+  // caller's own Anthropic account, on their key, per request.
+  ['azure-function/src/claude-code.js', 'agent/claude-code/probe'],
 ];
 for (const [f, what] of SERVER) {
   const src = read(...f.split('/'));

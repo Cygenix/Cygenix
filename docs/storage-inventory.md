@@ -82,7 +82,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +17 |
 | `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, cygenix-active-conn.js, cygenix-collation.js +6 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
-| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +34 |
+| `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +35 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |

@@ -135,6 +135,12 @@ const CATEGORY_BY_PREFIX = {
   'settings':   'settings',
   'notify':     'settings',
   'governance': 'settings',
+  // Claude Code runs arbitrary code in an Anthropic workspace holding a
+  // database login. Starting one, letting it change data and stopping it
+  // are filed with security, which cannot be switched off, rather than with
+  // data, which can: an organisation that quietens its data category has
+  // not thereby agreed to stop recording who handed a database to an agent.
+  'claudecode': 'security',
 };
 
 function categoryFor(action, environment) {
