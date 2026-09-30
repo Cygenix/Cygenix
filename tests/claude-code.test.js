@@ -461,12 +461,16 @@ function listen(onConn) {
     check('it is stamped with the caller, so nobody else can read it', s.metadata.cyg_oid === 'oid-me' && s.metadata.cygenix === 'probe');
     check('it overrides the agent for this one run: medium effort, the probe prompt',
       s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'medium' && s.agent.system === CC.PROBE_SYSTEM);
-    const pf = CLIENT.calls.find(c => c[0] === 'files.upload')[1];
+    const ups = CLIENT.calls.filter(c => c[0] === 'files.upload').map(c => c[1]);
+    const pf = ups[0]; const ps = ups[1];
     const ask = s.initial_events[0].content[0].text;
-    check('THE TARGET TRAVELS AS A MOUNTED FILE, NOT IN THE PROMPT: the file names the host, the instruction and the script do not',
+    check('THE TARGET AND THE SCRIPT TRAVEL AS MOUNTED FILES, NOT IN THE PROMPT: the env file names the host, the script file is the script, the ask is one sentence naming neither',
       pf.file.name === 'probe.env' && /CYG_PROBE_HOST='db\.acme\.io'/.test(pf.file.text) && /CYG_PROBE_PORT='1433'/.test(pf.file.text) && /CYG_PROBE_USER='cygenix_probe'/.test(pf.file.text)
-      && s.resources[0].type === 'file' && s.resources[0].mount_path === CC.PROBE_PATH && s.resources[0].file_id === s.metadata.cyg_file && /^file_\d+$/.test(s.metadata.cyg_file)
-      && /CYGPROBE_RESULT/.test(ask) && ask.indexOf('acme') === -1 && ask.indexOf('cygenix_probe') === -1 && ask.indexOf('1433') === -1, ask.slice(0, 200));
+      && ps.file.name === 'probe.py' && /CYGPROBE_RESULT/.test(ps.file.text) && ps.expires_in_seconds === 3600
+      && s.resources.length === 2 && s.resources[0].mount_path === CC.PROBE_PATH && s.resources[0].file_id === s.metadata.cyg_file
+      && s.resources[1].mount_path === CC.PROBE_SCRIPT_PATH && s.resources[1].file_id === s.metadata.cyg_script && /^file_\d+$/.test(s.metadata.cyg_file)
+      && /CYGPROBE_RESULT/.test(ask) && ask.indexOf(CC.PROBE_SCRIPT_PATH) !== -1 && ask.length < 700
+      && ask.indexOf('acme') === -1 && ask.indexOf('cygenix_probe') === -1 && ask.indexOf('1433') === -1 && ask.indexOf('import') === -1, ask.slice(0, 200));
     check('THE KEY APPEARS NOWHERE IN WHAT WAS SENT TO ANTHROPIC OR THE GATE',
       !JSON.stringify(CLIENT.calls).includes(KEY) && !JSON.stringify(FETCHED).includes(KEY));
     check('the log line carries action, method, status and time — no host, no key',
@@ -486,8 +490,8 @@ function listen(onConn) {
     check('the result is read back from the script\'s own output', r.status === 200 && r.body.done === true
       && r.body.result.handshake === 'sqlserver-replied' && r.body.result.egress_ip === '203.0.113.9', r.raw);
     check('with a plain-language verdict and the cost', r.body.verdict.ok === true && /answered/.test(r.body.verdict.text) && r.body.costCents === 3);
-    check('a finished test session is archived (routine cleanup) and its file deleted', CLIENT.calls.some(c => c[0] === 'sessions.archive' && c[1] === sid)
-      && CLIENT.calls.some(c => c[0] === 'files.delete' && c[1] === s.metadata.cyg_file));
+    check('a finished test session is archived (routine cleanup) and both its files deleted', CLIENT.calls.some(c => c[0] === 'sessions.archive' && c[1] === sid)
+      && CLIENT.calls.some(c => c[0] === 'files.delete' && c[1] === s.metadata.cyg_file) && CLIENT.calls.some(c => c[0] === 'files.delete' && c[1] === s.metadata.cyg_script));
     CLIENT._o.sessions.sesn_other = { id: 'sesn_other', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'somebody-else' } };
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_other' } });
     check('SOMEBODY ELSE\'S TEST IN A SHARED ANTHROPIC ACCOUNT IS NOT FOUND', r.status === 404, r.raw);
@@ -503,8 +507,8 @@ function listen(onConn) {
       CLIENT.calls.find(c => c[0] === 'environments.create')[1].config.networking.type === 'unrestricted');
     const n0 = CLIENT.calls.length;
     await CC.probeStart(who, KEY, { host: 'db.acme.io', port: 1433, kind: 'sqlserver', network: 'open' });
-    check('a repeat inside ten minutes asks Anthropic for nothing but the file and the session',
-      CLIENT.calls.slice(n0).map(c => c[0]).join() === 'files.upload,sessions.create', CLIENT.calls.slice(n0).map(c => c[0]).join());
+    check('a repeat inside ten minutes asks Anthropic for nothing but the two files and the session',
+      CLIENT.calls.slice(n0).map(c => c[0]).join() === 'files.upload,files.upload,sessions.create', CLIENT.calls.slice(n0).map(c => c[0]).join());
     CC._reset();
     CLIENT = fakeClient({ agents: [{ id: 'agent_cur', metadata: { cygenix: 'claude-code', spec: CC.AGENT_SPEC } }], envCreate409: true });
     await CC.probeStart(who, KEY, { host: 'db2.acme.io', port: 5432, kind: 'postgres', network: 'limited' });
@@ -532,7 +536,7 @@ function listen(onConn) {
     // An empty turn gets one plain second ask; a second empty turn is the end.
     CLIENT._o.sessions.sesn_empty = { id: 'sesn_empty', status: 'idle', metadata: { cygenix: 'probe', cyg_oid: 'oid-me' }, usage: {} };
     CLIENT._o.events.sesn_empty = [{ id: 'm1', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'run' }] },
-      { id: 'm2', type: 'span.model_request_end', processed_at: '2026-10-01T00:00:01Z', is_error: false },
+      { id: 'm2', type: 'span.model_request_end', processed_at: '2026-10-01T00:00:01Z', is_error: false, model_usage: { input_tokens: 4000, output_tokens: 0 } },
       { id: 'm3', type: 'session.status_idle', processed_at: '2026-10-01T00:00:02Z', stop_reason: { type: 'end_turn' } }];
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_empty' } });
     check('AN EMPTY TURN IS ASKED AGAIN, ONCE, in plain words', r.body.done === false && r.body.retrying === true
@@ -541,6 +545,10 @@ function listen(onConn) {
       { id: 'm5', type: 'session.status_idle', processed_at: '2026-10-01T00:00:04Z', stop_reason: { type: 'end_turn' } });
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_empty' } });
     check('…and a second empty turn ends it, with the event list', r.body.done === true && r.body.retrying === false && r.body.eventTypes.length === 5);
+    check('each model request in that list carries its output-token count, so nothing-written and reply-lost can be told apart',
+      r.body.eventTypes[1] === 'span.model_request_end:out=0', r.body.eventTypes.join());
+    check('so does the usage line (either field shape)', CC.parseProbeEvents([{ type: 'session.usage', output_tokens: 12 }]).eventTypes[0] === 'session.usage:out=12'
+      && CC.parseProbeEvents([{ type: 'span.model_request_end', usage: { output_tokens: 3 } }]).eventTypes[0] === 'span.model_request_end:out=3');
     check('verdict: the database answered', CC.verdict({ host: 'h', port: 1, kind: 'postgres', tcp: 'open', handshake: 'postgres-replied' }).ok === true);
     check('session errors are collected', CC.parseProbeEvents([{ type: 'session.error', error: { type: 'billing_error', message: 'credit balance too low' } }]).errors[0] === 'credit balance too low');
     const noLine = CC.parseProbeEvents([
@@ -565,7 +573,7 @@ function listen(onConn) {
     r = await call('GET', 'probe', { query: { sessionId: 'sesn_noline' } });
     check('…and the route returns that transcript only in the no-result case', r.body.done === true && r.body.result === null && r.body.transcript.length === 1 && /could not run/.test(r.body.transcript[0].text));
     check('the test runs at medium effort with an instruction that asks for the full output or the error',
-      /effort: 'medium' \}, system: PROBE_SYSTEM/.test(read('azure-function', 'src', 'claude-code.js')) && /If the script fails, reply with the error/.test(CC.probeInstruction({ host: 'h', port: 1, kind: 'other' })));
+      /effort: 'medium' \}, system: PROBE_SYSTEM/.test(read('azure-function', 'src', 'claude-code.js')) && /if it fails, reply with the error it printed/.test(CC.probeInstruction()));
   }
 
   /* ── 5. The console ─────────────────────────────────────────────────── */

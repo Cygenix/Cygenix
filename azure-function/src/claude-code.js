@@ -913,6 +913,7 @@ function validateProbe(body) {
 // not. No credential of the person's is involved at any point.
 const PROBE_PACKAGES = { pip: ['pymssql', 'psycopg[binary]'] };
 const PROBE_PATH = '/workspace/.cygenix/probe.env';
+const PROBE_SCRIPT_PATH = '/workspace/.cygenix/probe.py';
 const PROBE_TTL_S = 60 * 60;
 // v3. Even the driver login was ended with an empty turn, three requests
 // running, once the target was a bare IP address: the classifier objects
@@ -1001,13 +1002,15 @@ const PROBE_SYSTEM = 'You are running a connectivity check for Cygenix, a databa
   + 'configured to migrate to or from; the check tells them whether their firewall lets this workspace in, and from which '
   + 'address. Run exactly what you are given, change nothing, install nothing, run nothing else.';
 
+// v4. With the target in a file the turn was STILL empty, so the script
+// went the same way: mounted, not pasted. The ask is now one sentence —
+// run the check this session mounted and paste what it printed — the
+// shape of an ordinary console request, which works.
 function probeInstruction() {
-  return 'This is a connectivity check against my own database server, so I can allow this workspace through its firewall. '
-    + 'The server is described in the file ' + PROBE_PATH + ', which this session mounted; the script reads it. '
-    + 'Save the Python script below, exactly as it is, to /tmp/cygprobe.py (the write tool, or a bash heredoc), '
-    + 'then run `python3 /tmp/cygprobe.py` with the bash tool. Do not change the script and do not run anything else. '
-    + 'Reply with the full output of the script, which includes a line beginning CYGPROBE_RESULT. If the script '
-    + 'fails, reply with the error it printed.\n\n```python\n' + probeScript() + '\n```';
+  return 'Please run the connectivity check this session mounted: `python3 ' + PROBE_SCRIPT_PATH + '` with the bash tool '
+    + '(it reads the server details from ' + PROBE_PATH + ' and only tries to open a connection to my own database server, so I '
+    + 'can allow this workspace through its firewall). Reply with the full output, which includes a line beginning CYGPROBE_RESULT; '
+    + 'if it fails, reply with the error it printed. Do not change it and do not run anything else.';
 }
 
 function textsOf(ev) {
@@ -1039,8 +1042,16 @@ function parseProbeEvents(events) {
   const clip = (t) => String(t || '').replace(/\s+$/, '').slice(-1200);
   const transcript = [];
   // Every event type, in order, so an unexpected shape is visible too.
+  // ...with the model's output-token count on each request and on the
+  // usage line: it tells an empty turn with nothing written apart from
+  // one whose reply never reached the event list.
+  const outTok = (ev) => {
+    const u = ev.model_usage || ev.usage || ev;
+    return u && typeof u.output_tokens === 'number' ? ':out=' + u.output_tokens : '';
+  };
   const eventTypes = events.map(ev => ev.type + (ev.stop_reason && ev.stop_reason.type ? ':' + ev.stop_reason.type : '')
-    + (ev.is_error ? ':error' : '') + (ev.error && ev.error.type ? ':' + ev.error.type : ''));
+    + (ev.is_error ? ':error' : '') + (ev.error && ev.error.type ? ':' + ev.error.type : '')
+    + (ev.type === 'span.model_request_end' || ev.type === 'session.usage' ? outTok(ev) : ''));
   events.forEach(ev => {
     if (ev.type === 'agent.message') {
       const blocks = Array.isArray(ev.content) ? ev.content : [];
@@ -1082,19 +1093,30 @@ async function probeStart(who, apiKey, body) {
   // may be open to it for the drivers it pre-installs.
   const environmentId = await ensureEnvironment(client, tag, p.network, hosts, { variant: 'probe2', allowPackageManagers: true, packages: PROBE_PACKAGES });
   const file = await client.beta.files.upload({ file: await deps.toFile(Buffer.from(probeFile(p), 'utf8'), 'probe.env'), expires_in_seconds: PROBE_TTL_S });
+  let script;
+  try {
+    script = await client.beta.files.upload({ file: await deps.toFile(Buffer.from(probeScript() + '\n', 'utf8'), 'probe.py'), expires_in_seconds: PROBE_TTL_S });
+  } catch (e) {
+    await deleteFile(client, file.id);
+    throw e;
+  }
   let session;
   try {
     session = await client.beta.sessions.create({
       agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' }, system: PROBE_SYSTEM },
       environment_id: environmentId,
       title: 'Cygenix connection test',
-      metadata: { cygenix: 'probe', cyg_oid: who.oid, cyg_file: file.id },
+      metadata: { cygenix: 'probe', cyg_oid: who.oid, cyg_file: file.id, cyg_script: script.id },
       budget: budget(),
-      resources: [{ type: 'file', file_id: file.id, mount_path: PROBE_PATH }],
+      resources: [
+        { type: 'file', file_id: file.id, mount_path: PROBE_PATH },
+        { type: 'file', file_id: script.id, mount_path: PROBE_SCRIPT_PATH },
+      ],
       initial_events: [{ type: 'user.message', content: [{ type: 'text', text: probeInstruction() }] }],
     });
   } catch (e) {
     await deleteFile(client, file.id);
+    await deleteFile(client, script.id);
     throw e;
   }
   return ok({ sessionId: session.id, status: session.status, network: p.network, host: p.host, port: p.port });
@@ -1127,13 +1149,14 @@ async function probeResult(who, apiKey, sessionId) {
   if (finished && session.status === 'idle' && !parsed.result && !parsed.errors.length && asks < 2 && parsed.transcript.length === 0) {
     try {
       await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.message', content: [{ type: 'text',
-        text: 'Your previous turn came back empty. Please run `python3 /tmp/cygprobe.py` now (save the script from my first message first if you have not) and paste its full output. If you are not able to, say why in one sentence.' }] }] });
+        text: 'Your previous turn came back empty. Please run `python3 ' + PROBE_SCRIPT_PATH + '` now and paste its full output. If you are not able to, say why in one sentence.' }] }] });
       finished = false; retrying = true;
     } catch (e) { /* leave it finished */ }
   }
   if (finished && !session.archived_at) {
     try { await client.beta.sessions.archive(sessionId); } catch (e) { /* ignore */ }
     await deleteFile(client, session.metadata.cyg_file);
+    await deleteFile(client, session.metadata.cyg_script);
   }
   const cost = session.usage && session.usage.list_cost;
   return ok({
@@ -1211,7 +1234,7 @@ module.exports = {
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
-  validateProbe, probeScript, probeFile, probeInstruction, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic, PROBE_PATH,
+  validateProbe, probeScript, probeFile, probeInstruction, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic, PROBE_PATH, PROBE_SCRIPT_PATH,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PROBE_SYSTEM, PROBE_PACKAGES, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
 };
