@@ -483,12 +483,15 @@ function listen(onConn) {
     check('an "Other" server has two rungs — there is no driver to log in with', CC.probeSteps('other').length === 2 && CC.probeSteps('postgres').length === 3);
     const connectAsk = CC.probeMessage('connect', 'sqlserver');
     const loginAsk = CC.probeMessage('login', 'sqlserver');
-    check('NO RUNG MESSAGE NAMES THE SERVER: the connect script reads the mounted file, no address in it, no login, no driver',
-      /```python\n[\s\S]*CYGPROBE_RESULT[\s\S]*```/.test(connectAsk) && /CYG_DB_HOST/.test(connectAsk) && connectAsk.indexOf('acme') === -1 && connectAsk.indexOf('1433') === -1
-      && !/pymssql|pip install/.test(connectAsk) && /paste its output verbatim/.test(connectAsk), connectAsk.slice(0, 300));
-    check('rung three is the driver login under the made-up account reading the same file, with the install hint, naming no address',
-      /pymssql\.connect\(server=H/.test(loginAsk) && /cygenix_probe/.test(loginAsk) && /pip install pymssql/.test(loginAsk) && /login failed/.test(loginAsk)
-      && loginAsk.indexOf('acme') === -1 && /pip install "psycopg\[binary\]"/.test(CC.probeMessage('login', 'postgres')));
+    check('STEP 2 ASKS IN PLAIN WORDS — no script handed over — for a TCP check and the public IP, naming the mounted file but not the server, ending in one result line',
+      !/```/.test(connectAsk) && /Can you check whether this workspace can reach my database server/.test(connectAsk)
+      && connectAsk.indexOf(CC.CRED_FILE) !== -1 && /CYG_DB_HOST and CYG_DB_PORT/.test(connectAsk) && /do not log in/.test(connectAsk)
+      && /CYGPROBE_RESULT/.test(connectAsk) && /tcp \("open" or "failed"\)/.test(connectAsk) && /egress_ip/.test(connectAsk)
+      && connectAsk.indexOf('acme') === -1 && connectAsk.indexOf('1433') === -1 && !/pymssql|import socket/.test(connectAsk), connectAsk);
+    check('step 3 asks in plain words for one login with the made-up account, says a "login failed" is the expected answer, and names the right driver',
+      !/```/.test(loginAsk) && /pymssql/.test(loginAsk) && /CYG_DB_USER and CYG_DB_PASSWORD/.test(loginAsk) && /login failed/.test(loginAsk)
+      && /try once only/.test(loginAsk) && /sqlserver-replied/.test(loginAsk) && loginAsk.indexOf('acme') === -1
+      && /psycopg\[binary\]/.test(CC.probeMessage('login', 'postgres')) && /postgres-replied/.test(CC.probeMessage('login', 'postgres')));
     check('THE KEY APPEARS NOWHERE IN WHAT WAS SENT TO ANTHROPIC OR THE GATE',
       !JSON.stringify(CLIENT.calls).includes(KEY) && !JSON.stringify(FETCHED).includes(KEY));
     check('the log line carries action, method, status and time — no host, no key',
@@ -521,7 +524,7 @@ function listen(onConn) {
     r = await call('GET', 'probe', { query: { sessionId: sid } });
     check('THE CONNECT SCRIPT ANSWERED: its result is already in hand and rung three (the login) is sent',
       r.body.done === false && r.body.step === 3 && r.body.result && r.body.result.tcp === 'open' && r.body.result.egress_ip === '203.0.113.9'
-      && sends().length === 3 && /cygenix_probe/.test(sends()[2]), r.raw);
+      && sends().length === 3 && /CYG_DB_USER and CYG_DB_PASSWORD/.test(sends()[2]), r.raw);
     // Rung three answered: done, the login result laid over the connect one.
     CLIENT._o.events[sid].push({ type: 'user.message', content: [{ type: 'text', text: sends()[2] }] }, ...ran('x\n' + loginLine + '\n'), idle());
     CLIENT._o.sessions[sid].usage = { list_cost: { amount: '9', currency: 'USD' } };
@@ -600,9 +603,7 @@ function listen(onConn) {
       CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'error: timed out' }).ok === false);
     check('verdict: with no driver, an open connection is reported as such', CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).ok === true
       && /driver was not available/.test(CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).text));
-    check('the script reads the target and login from the mounted db.env and is a driver login — no raw protocol bytes, no address in it',
-      /pymssql\.connect\(server=H/.test(CC.probeScript()) && /psycopg\.connect\(host=H/.test(CC.probeScript()) && /CYG_DB_HOST/.test(CC.probeScript()) && /CYG_DB_USER/.test(CC.probeScript())
-      && !/fromhex/.test(CC.probeScript()) && CC.probeScript().indexOf('acme') === -1);
+    check('no pre-written probe script is left to hand over', typeof CC.probeScript === 'undefined');
     // An empty turn — zero output tokens, nothing said or run — is the end, named as such. No retry.
     await dbProbe('sesn_empty', 'db.acme.io', 1433, 'sqlserver');
     CLIENT._o.sessions.sesn_empty = { id: 'sesn_empty', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
@@ -647,9 +648,7 @@ function listen(onConn) {
     check('A REPLY WITHHELD BY THE SAFETY SYSTEM IS NAMED AS SUCH, and every event type is listed',
       withheld.transcript.length === 1 && withheld.transcript[0].kind === 'refused' && /withheld/.test(withheld.transcript[0].text)
       && withheld.eventTypes.join() === 'span.model_request_start,agent.message,span.model_request_end,session.status_idle:end_turn', JSON.stringify(withheld));
-    check('the connect rung says what the script is for; the connect-only script has no login block at all',
-      /the server named in it/.test(CC.probeMessage('connect', 'other'))
-      && !/handshake|pymssql\.connect|psycopg\.connect/.test(CC.probeScript({ login: false })));
+    check('the connect step carries the database type it was given', /kind \("other"\)/.test(CC.probeMessage('connect', 'other')));
     await dbProbe('sesn_noline', 'db.acme.io', 1433, 'sqlserver');
     CLIENT._o.sessions.sesn_noline = { id: 'sesn_noline', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
     CLIENT._o.events.sesn_noline = [{ id: 'q0', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'hello' }] },
@@ -838,15 +837,16 @@ function listen(onConn) {
     const sid3 = r.body.session.id;
     const csv = Buffer.from('id,name\n1,Ann\n2,Bo\n');
     r = await call('POST', 'upload', { body: { sessionId: sid3, name: '../../etc/orders.csv', contentBase64: csv.toString('base64') } });
-    check('AN ATTACHED FILE is uploaded, mounted read-only under /workspace/uploads, and Claude is told where',
-      r.status === 200 && r.body.upload.path === '/workspace/uploads/orders.csv' && r.body.upload.name === 'orders.csv' && r.body.upload.size === csv.length
+    check('AN ATTACHED FILE is uploaded, mounted read-only under /workspace/uploads, and Claude is told where it REALLY appears',
+      r.status === 200 && r.body.upload.path === '/mnt/session/uploads/workspace/uploads/orders.csv' && r.body.upload.mountPath === '/workspace/uploads/orders.csv'
+      && r.body.upload.name === 'orders.csv' && r.body.upload.size === csv.length
       && CLIENT.calls.some(c => c[0] === 'files.upload' && c[1].file.name === 'orders.csv' && c[1].file.text === csv.toString() && c[1].expires_in_seconds === 7 * 86400)
       && CLIENT.calls.some(c => c[0] === 'resources.add' && c[1] === sid3 && c[2].type === 'file' && c[2].mount_path === '/workspace/uploads/orders.csv')
-      && CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === sid3 && c[2].events[0].type === 'system.message' && /orders\.csv/.test(c[2].events[0].content[0].text) && /\/workspace\/uploads\/orders\.csv/.test(c[2].events[0].content[0].text)), r.raw);
-    check('…and recorded on the session, without the content', DB._items.get(sid3).uploads.length === 1 && DB._items.get(sid3).uploads[0].path === '/workspace/uploads/orders.csv'
+      && CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === sid3 && c[2].events[0].type === 'system.message' && /orders\.csv/.test(c[2].events[0].content[0].text) && /\/mnt\/session\/uploads\/workspace\/uploads\/orders\.csv/.test(c[2].events[0].content[0].text)), r.raw);
+    check('…and recorded on the session, without the content', DB._items.get(sid3).uploads.length === 1 && DB._items.get(sid3).uploads[0].path === '/mnt/session/uploads/workspace/uploads/orders.csv'
       && JSON.stringify(DB._items.get(sid3)).indexOf('Ann') === -1);
     r = await call('POST', 'upload', { body: { sessionId: sid3, name: 'orders.csv', contentBase64: csv.toString('base64') } });
-    check('a second file with the same name gets its own path', r.status === 200 && r.body.upload.path === '/workspace/uploads/orders-2.csv', r.raw);
+    check('a second file with the same name gets its own path', r.status === 200 && r.body.upload.mountPath === '/workspace/uploads/orders-2.csv' && r.body.upload.path === '/mnt/session/uploads/workspace/uploads/orders-2.csv', r.raw);
     check('an empty or unreadable file is a 400', (await call('POST', 'upload', { body: { sessionId: sid3, name: 'x', contentBase64: '' } })).status === 400
       && (await call('POST', 'upload', { body: { sessionId: sid3, name: 'x', contentBase64: '@@@' } })).status === 400);
     r = await call('POST', 'upload', { body: { sessionId: sid3, name: 'big.bin', contentBase64: Buffer.alloc(4 * 1024 * 1024 + 1).toString('base64') } });
@@ -892,37 +892,32 @@ function listen(onConn) {
       && DB._items.get('sesn_big').eventCount === 450, total + ' / ' + DB._items.get('sesn_big').chunkCount);
   }
 
-  /* ── 6. The probe, for real ─────────────────────────────────────────── */
-  section('6. The Python probe, against local fake servers');
+  /* ── 6. Reading Claude's result line ──────────────────────────────── */
+  section('6. Reading the CYGPROBE_RESULT line, wherever Claude put it');
   {
-    const env = Object.assign({}, process.env);
-    ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'].forEach(k => delete env[k]);
-    const os = require('os');
-    const cfgPath = path.join(os.tmpdir(), 'cygprobe-' + process.pid + '.env');
-    env.CYG_PROBE_ENV = cfgPath;
-    const script = (p) => { fs.writeFileSync(cfgPath, CC.credFile({ kind: p.kind, host: p.host, port: p.port, database: '', user: 'cygenix_probe', password: 'cygenix-probe' }, '')); return CC.probeScript().replace('https://' + CC.IP_ECHO_HOST, 'https://127.0.0.1:9'); };
+    const R = CC.resultFrom;
+    check('on one line after a space', R('done\nCYGPROBE_RESULT {"tcp":"open","egress_ip":"1.2.3.4"}').tcp === 'open');
+    check('after a colon, inside a code block', R('Result:\n```\nCYGPROBE_RESULT: {"tcp":"failed","tcp_error":"timed out"}\n```').tcp_error === 'timed out');
+    check('spread over several lines', R('CYGPROBE_RESULT {\n  "host": "h",\n  "port": 14330,\n  "tcp": "open"\n}').port === 14330);
+    check('braces inside a string do not end it early', R('CYGPROBE_RESULT {"tcp":"failed","tcp_error":"bad {thing} here"}').tcp_error === 'bad {thing} here');
+    check('the LAST marker wins when Claude repeats the format first', R('I will print CYGPROBE_RESULT {"tcp":"x"} at the end.\nCYGPROBE_RESULT {"tcp":"open"}').tcp === 'open');
+    check('no marker, no JSON or broken JSON is null, not a crash', R('nothing here') === null && R('CYGPROBE_RESULT and then nothing') === null && R('CYGPROBE_RESULT {"tcp": open}') === null);
+    const parsed = CC.parseProbeEvents([
+      { type: 'user.message', content: [{ type: 'text', text: 'check' }] },
+      { type: 'agent.tool_use', name: 'bash', input: { command: 'python3 x.py' } },
+      { type: 'agent.tool_result', content: [{ type: 'text', text: 'connected' }] },
+      { type: 'agent.message', content: [{ type: 'text', text: 'It connected.\n\nCYGPROBE_RESULT {"host":"h","port":14330,"kind":"other","tcp":"open","egress_ip":"34.1.2.3"}' }] },
+      { type: 'session.status_idle', stop_reason: { type: 'end_turn' } }]);
+    check('a result in Claude\'s closing message is picked up from the event list', parsed.result && parsed.result.tcp === 'open' && parsed.result.egress_ip === '34.1.2.3', JSON.stringify(parsed.result));
+  }
 
-    // The drivers are not installed here, so the script's "no-driver" path
-    // is what runs; the connect, DNS, timing and address-echo parts are real.
-    const mssql = await listen((sock) => { sock.end(); });
-    let r = await runPython(script({ host: '127.0.0.1', port: mssql.address().port, kind: 'sqlserver' }), env);
-    check('SQL Server: the connection opens, and without a driver the script says so rather than guessing',
-      r.result && r.result.tcp === 'open' && r.result.handshake === 'no-driver' && CC.verdict(r.result).ok === true, r.stderr || r.stdout);
-    check('the address-echo failure is reported, not fatal', r.result && !!r.result.egress_ip_error && !r.result.egress_ip);
-    mssql.close();
-
-    const pg = await listen((sock) => { sock.end(); });
-    r = await runPython(script({ host: '127.0.0.1', port: pg.address().port, kind: 'postgres' }), env);
-    check('PostgreSQL: the same', r.result && r.result.tcp === 'open' && r.result.handshake === 'no-driver', r.stderr || r.stdout);
-    pg.close();
-    check('the script runs clean under python3 — no syntax error in the driver branches', !/Traceback|SyntaxError/.test(r.stderr || ''), r.stderr);
-
-    const closed = await listen(() => {}); const port = closed.address().port; closed.close();
-    await new Promise(res => setTimeout(res, 50));
-    r = await runPython(script({ host: '127.0.0.1', port, kind: 'postgres' }), env);
-    check('a closed port is a failed connection, with the error', r.result && r.result.tcp === 'failed' && /Refused|refused/.test(r.result.tcp_error), JSON.stringify(r.result));
-    check('the script read the host, port and kind out of the mounted file', r.result && r.result.host === '127.0.0.1' && r.result.port === port && r.result.kind === 'postgres', JSON.stringify(r.result));
-    try { fs.unlinkSync(cfgPath); } catch (e) { /* */ }
+  /* ── 6b. Where the mounted files really are ─────────────────────────── */
+  section('6b. Mounted files: the real location is what the model is told');
+  {
+    check('the connection file is at /mnt/session/uploads + the mount path', CC.CRED_FILE === '/mnt/session/uploads/workspace/.cygenix/db.env');
+    const sp = CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly' });
+    check('the console prompt names that location, sources it from there, and says how to find it if it moved',
+      sp.indexOf('read-only file ' + CC.CRED_FILE) !== -1 && sp.indexOf('. ' + CC.CRED_FILE + '; set +a') !== -1 && /find \/ -name db\.env/.test(sp), sp);
   }
 
   /* ── 7. The parsers ─────────────────────────────────────────────────── */

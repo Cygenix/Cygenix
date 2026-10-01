@@ -238,7 +238,7 @@ body.cs-full .drawer{top:52px}
         <div class="composer">
           <input type="file" id="cs-file" hidden onchange="csAttach(this)">
           <button class="btn" id="cs-attach" onclick="document.getElementById('cs-file').click()" disabled
-                  title="Attach a file of up to 4 MB. It is mounted read-only in the workspace under /workspace/uploads and Claude is told where."><i class="ic ic-upload"></i></button>
+                  title="Attach a file of up to 4 MB. It is mounted read-only in the workspace (under /mnt/session/uploads) and Claude is told where."><i class="ic ic-upload"></i></button>
           <textarea id="cs-input" rows="1" placeholder="Ask Claude…  (Enter to send, Shift+Enter for a new line)" disabled
                     oninput="autoGrow(this)" onkeydown="csInputKey(event)"></textarea>
           <button class="btn primary" id="cs-send" onclick="csSend()" disabled>Send</button>

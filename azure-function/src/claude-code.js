@@ -109,6 +109,14 @@ const LIST_CAP = 200;               // never walk more than this many agents/env
 const IP_ECHO_HOST = 'api.ipify.org';
 const PACKAGE_HOSTS = ['pypi.org', 'files.pythonhosted.org', 'registry.npmjs.org'];
 const CRED_PATH = '/workspace/.cygenix/db.env';
+// Where a file mounted at mount_path actually appears in the sandbox. The
+// documentation does not say; every session so far has found a file
+// mounted at /workspace/x under /mnt/session/uploads/workspace/x, and
+// reported the path we gave it as wrong. So the model is told the real
+// location — and, should that ever move, to search for the file by name.
+const MOUNT_ROOT = '/mnt/session/uploads';
+const mountedAt = (p) => MOUNT_ROOT + p;
+const CRED_FILE = mountedAt(CRED_PATH);
 const CRED_TTL_S = 24 * 60 * 60;    // the file expires by itself if a stop never comes
 const CONTAINER = 'claude_code_sessions';
 const EVENT_CHUNK = 200;
@@ -445,10 +453,11 @@ function systemPrompt(o) {
   return [
     'You are working inside Cygenix, a data migration console, on data migration work for the signed-in user. '
       + 'You can write and run code in this workspace: Python, Node, shell and SQL.',
-    'The database for this session is ' + kind + '. Its connection details are in the read-only file ' + CRED_PATH
+    'The database for this session is ' + kind + '. Its connection details are in the read-only file ' + CRED_FILE
+      + ' (if it is not there, find it with `find / -name db.env -path "*cygenix*" 2>/dev/null`)'
       + ", as KEY='value' lines: CYG_DB_TYPE, CYG_DB_HOST, CYG_DB_PORT, CYG_DB_NAME, CYG_DB_USER, CYG_DB_PASSWORD and "
       + 'CYG_DB_CONNSTR (the full connection string). Load them into the environment before running code, for example '
-      + '`set -a; . ' + CRED_PATH + '; set +a`, and read them from the environment in your code.',
+      + '`set -a; . ' + CRED_FILE + '; set +a`, and read them from the environment in your code.',
     o.dbType === 'postgres'
       ? 'psql is installed. From Python use psycopg (pip install "psycopg[binary]"); from Node use pg.'
       : 'From Python use pymssql (pip install pymssql) — pyodbc needs a driver this workspace cannot download. From Node use mssql.',
@@ -456,7 +465,7 @@ function systemPrompt(o) {
       + ' (so `curl -s https://' + IP_ECHO_HOST + '` tells the user this workspace\'s public IP address, for a firewall rule) — and nothing else on the network.',
     MODE_TEXT[o.mode === 'changes' ? 'changes' : 'readonly'],
     'Show SQL or code before running anything that modifies data. Never print the password or the contents of '
-      + CRED_PATH + ' unless the user explicitly asks you to.',
+      + CRED_FILE + ' unless the user explicitly asks you to.',
     'Keep replies short and concrete: what you ran, what came back, what it means.',
   ].join('\n\n');
 }
@@ -777,7 +786,9 @@ function safeName(raw) {
   return n || 'file';
 }
 function uniquePath(doc, name) {
-  const taken = new Set((doc.uploads || []).map(u => u.path));
+  // Compare mount paths: u.path is now where the file really appears
+  // (under MOUNT_ROOT); older records have only path, which was the mount path.
+  const taken = new Set((doc.uploads || []).map(u => u.mountPath || u.path));
   let candidate = UPLOAD_DIR + name;
   for (let i = 2; taken.has(candidate) && i < 1000; i++) {
     const dot = name.lastIndexOf('.');
@@ -817,9 +828,9 @@ async function sessionUpload(who, apiKey, body) {
   // path and the person can say so themselves.
   try {
     await client.beta.sessions.events.send(doc.id, { events: [{ type: 'system.message',
-      content: [{ type: 'text', text: 'The user attached a file: ' + name + ' (' + buf.length + ' bytes), mounted read-only at ' + mountPath + '.' }] }] });
+      content: [{ type: 'text', text: 'The user attached a file: ' + name + ' (' + buf.length + ' bytes), mounted read-only at ' + mountedAt(mountPath) + '.' }] }] });
   } catch (e) { /* the path is shown to the person */ }
-  const rec = { fileId: file.id, name, path: mountPath, size: buf.length, at: new Date(deps.now()).toISOString() };
+  const rec = { fileId: file.id, name, path: mountedAt(mountPath), mountPath, size: buf.length, at: new Date(deps.now()).toISOString() };
   doc.uploads = (doc.uploads || []).concat([rec]);
   doc.updatedAt = rec.at;
   await container.items.upsert(doc);
@@ -897,99 +908,6 @@ function validateProbe(body) {
   return { ok: true, host, port, kind, network };
 }
 
-// Fixed script; the three values go in as JSON literals, which are valid
-// Python literals for anything validateProbe lets through.
-//
-// History, because every version below was built on a wrong guess. v1 spoke
-// each database's opening handshake in raw bytes and the model's turn came
-// back empty — zero output tokens, no refusal, no error. v2 replaced that
-// with a normal driver login under a made-up account: still empty. v3 moved
-// the target into a mounted file so the prompt named no address: still
-// empty. v4 mounted the script too and asked in one sentence: still empty.
-// The raw model request finally showed the shape of it: ~4,800 input
-// tokens, 0 output, is_error false, three requests running. Meanwhile an
-// ordinary console session on the same key, the same agent and the same
-// model works every time. So the fault was in what the test did
-// DIFFERENTLY from the console — its own system prompt, its own
-// environment shape (package managers on, drivers pre-installed), its
-// message sent as an initial event — not in the script or the target.
-//
-// v5 therefore does exactly what a console session does: the console's
-// system prompt, the console's environment shape, a session created idle
-// and then ONE ordinary user message with the script inline. Only the
-// networking setting differs (allow-list or open). The script tries a
-// driver login under an obviously made-up account when the driver is
-// there — "Login failed" IS the answer wanted, the server was reached and
-// replied — and says 'no-driver' otherwise. No credential of the person's
-// is involved at any point.
-function probeScript(opts) {
-  const login = !(opts && opts.login === false);
-  return [
-    'import socket, json, time, urllib.request, os',
-    'CFG = os.environ.get("CYG_PROBE_ENV", ' + JSON.stringify(CRED_PATH) + ')',
-    'cfg = {}',
-    'for line in open(CFG):',
-    '    line = line.strip()',
-    '    if not line or line.startswith("#") or "=" not in line:',
-    '        continue',
-    '    k, v = line.split("=", 1)',
-    '    v = v.strip()',
-    "    if len(v) >= 2 and v[0] == chr(39) and v[-1] == chr(39):",
-    '        v = v[1:-1]',
-    '    cfg[k.strip()] = v',
-    'H = cfg.get("CYG_DB_HOST", "")',
-    'P = int(cfg.get("CYG_DB_PORT", "0") or 0)',
-    'KIND = cfg.get("CYG_DB_TYPE", "other")',
-  ].concat(login ? [
-    '# A made-up account, from the mounted file: the server refusing it is the reply being checked for.',
-    'U = cfg.get("CYG_DB_USER", "cygenix_probe"); PW = cfg.get("CYG_DB_PASSWORD", "cygenix-probe")',
-  ] : []).concat([
-    'r = {"host": H, "port": P, "kind": KIND}',
-    'try:',
-    '    r["dns"] = sorted({a[4][0] for a in socket.getaddrinfo(H, P, proto=socket.IPPROTO_TCP)})',
-    'except Exception as e:',
-    '    r["dns_error"] = type(e).__name__ + ": " + str(e)',
-    't = time.time()',
-    'try:',
-    '    s = socket.create_connection((H, P), timeout=10)',
-    '    r["tcp"] = "open"',
-    '    s.close()',
-    'except Exception as e:',
-    '    r["tcp"] = "failed"',
-    '    r["tcp_error"] = type(e).__name__ + ": " + str(e)',
-    'r["tcp_ms"] = int((time.time() - t) * 1000)',
-  ]).concat(login ? [
-    'if r["tcp"] == "open" and KIND == "sqlserver":',
-    '    try:',
-    '        import pymssql',
-    '        try:',
-    '            pymssql.connect(server=H, port=P, user=U, password=PW, database="master", login_timeout=10)',
-    '            r["handshake"] = "sqlserver-replied"',
-    '        except Exception as e:',
-    '            m = str(e)',
-    '            r["handshake"] = "sqlserver-replied" if ("Login failed" in m or "18456" in m or "Cannot open database" in m or ("login" in m.lower() and "timeout" not in m.lower())) else "error: " + m[:300]',
-    '    except ImportError:',
-    '        r["handshake"] = "no-driver"',
-    'elif r["tcp"] == "open" and KIND == "postgres":',
-    '    try:',
-    '        import psycopg',
-    '        try:',
-    '            psycopg.connect(host=H, port=P, user=U, password=PW, dbname="postgres", connect_timeout=10)',
-    '            r["handshake"] = "postgres-replied"',
-    '        except Exception as e:',
-    '            m = str(e)',
-    '            r["handshake"] = "postgres-replied" if ("authentication failed" in m or "does not exist" in m or "pg_hba.conf" in m or "no encryption" in m or "SSL" in m) else "error: " + m[:300]',
-    '    except ImportError:',
-    '        r["handshake"] = "no-driver"',
-  ] : []).concat([
-    'try:',
-    '    r["egress_ip"] = urllib.request.urlopen("https://' + IP_ECHO_HOST + '", timeout=10).read().decode().strip()',
-    'except Exception as e:',
-    '    r["egress_ip_error"] = type(e).__name__ + ": " + str(e)',
-    'print("CYGPROBE_RESULT " + json.dumps(r))',
-  ]).join('\n');
-}
-
 // v6. The console-shaped session (v5) came back empty too: 5,843 input
 // tokens, 0 output. The test is now indistinguishable from a console
 // message except for what the message SAYS, so one click climbs a ladder
@@ -1017,18 +935,29 @@ const PROBE_STEPS = [
   { name: 'login', label: 'Database reply' },
 ];
 function probeSteps(kind) { return kind === 'other' ? PROBE_STEPS.slice(0, 2) : PROBE_STEPS; }
+// v9. Step 2 kept coming back empty, in open and allow-list networking
+// alike, while the same check asked for in plain words — "can you connect
+// to my source db" — was written and run by Claude every time. So the
+// rungs no longer hand over a script: they ask, in words, for the check
+// and for one machine-readable line at the end, and Claude writes the code.
+const RESULT_LINE = 'CYGPROBE_RESULT';
 function probeMessage(step, kind) {
-  const driver = kind === 'sqlserver' ? 'pymssql' : kind === 'postgres' ? '"psycopg[binary]"' : '';
   if (step === 'hello') {
     return 'Run this with bash and paste the output verbatim:\n\n```bash\npython3 -c "print(\'CYGPROBE_HELLO\', 2 + 2)"\n```';
   }
   if (step === 'connect') {
-    return 'Now run this Python script with bash and paste its output verbatim. It reads a small config file this session '
-      + 'mounted and checks whether the workspace can open a connection to the server named in it.\n\n```python\n' + probeScript({ login: false }) + '\n```';
+    return 'Can you check whether this workspace can reach my database server? Its host and port are CYG_DB_HOST and CYG_DB_PORT '
+      + 'in the connection file ' + CRED_FILE + '. Just try to open a TCP connection to it with a 10-second timeout; do not log in. '
+      + 'Also get this workspace\'s public IP address from https://' + IP_ECHO_HOST + '. '
+      + 'Finish your reply with one line on its own: ' + RESULT_LINE + ' followed by a JSON object with the keys '
+      + 'host, port, kind ("' + kind + '"), tcp ("open" or "failed"), tcp_error (the error, if it failed) and egress_ip.';
   }
-  return 'Last one: the same check with a login attempt under a made-up account, to confirm the database itself replies '
-    + '(a "login failed" is the expected answer).' + (driver ? ' If the driver is missing, `pip install ' + driver + '` first.' : '')
-    + '\n\n```python\n' + probeScript({ login: true }) + '\n```';
+  const driver = kind === 'postgres' ? 'psycopg (pip install "psycopg[binary]")' : 'pymssql (pip install pymssql)';
+  return 'Thanks. Now please check the database itself answers: log in once with ' + driver + ', using CYG_DB_USER and CYG_DB_PASSWORD '
+    + 'from the same file. They are a made-up test account, so a "login failed" error is the expected answer and means the server replied. '
+    + 'Use a 10-second timeout and try once only. Finish your reply with one line on its own: ' + RESULT_LINE + ' followed by a JSON object with '
+    + 'the keys host, port, kind, tcp, egress_ip (as before) and handshake: "' + (kind === 'postgres' ? 'postgres' : 'sqlserver') + '-replied" if the server '
+    + 'answered the login in any way (including refusing it), or "error: <the error>" if it did not.';
 }
 // Kept for the tests and the page copy: the message that starts a test.
 function probeInstruction(kind) { return probeMessage('hello', kind); }
@@ -1038,14 +967,34 @@ function textsOf(ev) {
     .filter(b => b && b.type === 'text' && typeof b.text === 'string').map(b => b.text);
 }
 const AGENT_TYPES = ['agent.message', 'agent.tool_use', 'agent.tool_result', 'agent.thinking'];
+// The first balanced {...} after the marker, wherever Claude put it: on
+// the same line, after a space or a colon, inside a code block, or spread
+// over several lines.
+function resultFrom(text) {
+  const at = String(text || '').lastIndexOf('CYGPROBE_RESULT');
+  if (at === -1) return null;
+  const start = text.indexOf('{', at);
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) {
+      try { const o = JSON.parse(text.slice(start, i + 1)); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
+    }
+  }
+  return null;
+}
 function pickResult(evs) {
-  for (const types of [['agent.tool_result'], ['agent.message']]) {
-    for (const ev of evs) {
+  // Claude's own closing line first (that is what the rungs ask for), then
+  // anything a command printed.
+  for (const types of [['agent.message'], ['agent.tool_result']]) {
+    for (let k = evs.length - 1; k >= 0; k--) {
+      const ev = evs[k];
       if (types.indexOf(ev.type) === -1) continue;
-      for (const t of textsOf(ev)) {
-        const m = /CYGPROBE_RESULT (\{.*\})/.exec(t);
-        if (m) { try { return JSON.parse(m[1]); } catch (e) { /* keep looking */ } }
-      }
+      for (const t of textsOf(ev)) { const r = resultFrom(t); if (r) return r; }
     }
   }
   return null;
@@ -1329,7 +1278,7 @@ module.exports = {
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
-  validateProbe, probeScript, probeInstruction, probeMessage, probeSteps, probeTurns, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
+  validateProbe, probeInstruction, probeMessage, resultFrom, MOUNT_ROOT, CRED_FILE, probeSteps, probeTurns, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
 };
