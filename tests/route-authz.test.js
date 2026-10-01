@@ -147,6 +147,10 @@ const CALL = {
   // The connectivity test, deliberately: it is the one act that needs an
   // administrator rather than the organisation's allow-list.
   'claude-code-gate': { httpMethod: 'POST', body: JSON.stringify({ act: 'probe', detail: { host: 'db.example.test', port: 1433 } }) },
+  // The Dev Console bridge. Its credential is a bridge pass, not a sign-in:
+  // no pass is a 401, and anything that is not a live pass (an Entra token
+  // included) is refused by the Function App before a query is looked at.
+  'cc-mcp': { httpMethod: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_query', arguments: { sql: 'SELECT 1' } } }) },
 };
 
 async function invoke(name, event) {

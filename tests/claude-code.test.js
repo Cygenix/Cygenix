@@ -8,15 +8,20 @@
  *   2. the policy shape, the permission rows and the audit category;
  *   3. the Azure routes — registration, strict identity, the gate call and
  *      its cache, the caller's key and only theirs;
- *   4. the connectivity test — the session it creates, the result read back,
- *      somebody else's session, cleanup, Anthropic's errors;
- *   5. the console — opening a session (the credential file, the allow-list,
- *      the spend cap, the prompt), messages, polling with redaction and the
- *      cursor, the data-change mode, stop, the list and the replay;
- *   6. the Python probe, run for real against local fake servers;
- *   7. the browser modules — reading host and port out of every connection
- *      string shape, and nothing else;
+ *   4. the database bridge — the agent's MCP server, the workspace that
+ *      reaches no database, the pass and only its hash, Check the bridge,
+ *      redeeming a pass (and every way one is refused), Function App
+ *      connections, the redeem route's own door;
+ *   5. the console — opening a session (the vault, the allow-list, the spend
+ *      cap, the prompt), messages, polling with redaction and the cursor, the
+ *      data-change mode as the bridge sees it, stop revoking the pass, the
+ *      list and the replay;
+ *   6a/7. the server's connection-string parser and the redactor;
+ *   7b. the console module, including the bridge's query blocks;
  *   8. the page and the house rules.
+ *
+ * The bridge's other half — the MCP server that runs the queries — is
+ * pinned in tests/cc-mcp.test.js.
  *
  * Run it:  node tests/claude-code.test.js
  */
@@ -24,9 +29,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const net = require('net');
 const Module = require('module');
-const { execFile } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
@@ -70,8 +73,6 @@ Module.prototype.require = function (id) {
 const GATE = require(path.join(ROOT, 'netlify', 'functions', 'claude-code-gate.js'));
 Module.prototype.require = realRequire;
 
-const P = require(path.join(ROOT, 'public', 'cygenix-cc-probe.js'));
-
 const gateCall = async (act, extra) => {
   AUDITED.length = 0;
   const r = await GATE.handler(Object.assign({ httpMethod: 'POST', headers: { authorization: 'Bearer t' },
@@ -93,7 +94,7 @@ function fakeClient(opts) {
       .slice().sort((a, b) => String(a.processed_at || '~').localeCompare(String(b.processed_at || '~')));
     return pages(rows);
   };
-  let nf = 0, ns = 0;
+  let nf = 0, ns = 0, nv = 0;
   const client = {
     calls, files,
     beta: {
@@ -108,6 +109,13 @@ function fakeClient(opts) {
           calls.push(['environments.create', p]);
           if (o.envCreate409) { o.envs.push({ id: 'env_raced', name: p.name }); const e = new Error('exists'); e.status = 409; throw e; }
           return { id: 'env_new', name: p.name };
+        },
+      },
+      vaults: {
+        create: async (p) => { calls.push(['vaults.create', p]); return { id: 'vlt_' + (++nv) }; },
+        delete: async (id) => { calls.push(['vaults.delete', id]); return {}; },
+        credentials: {
+          create: async (id, p) => { calls.push(['vaults.credentials.create', id, p]); return { id: 'vcrd_' + nv }; },
         },
       },
       files: {
@@ -147,6 +155,8 @@ function fakeContainer() {
     items: {
       upsert: async (doc) => { items.set(doc.id, JSON.parse(JSON.stringify(doc))); return { resource: doc }; },
       query: (q, opts) => ({ fetchAll: async () => {
+        const lid = q.parameters.find(p => p.name === '@lid');
+        if (lid) return { resources: [...items.values()].filter(d => d.bridgeLid === lid.value) };
         const u = q.parameters.find(p => p.name === '@u').value, o = q.parameters.find(p => p.name === '@o').value;
         const n = q.parameters.find(p => p.name === '@n').value;
         const rows = [...items.values()].filter(d => d.userId === u && d.kind === 'session' && d.oid === o)
@@ -206,20 +216,8 @@ const call = async (method, action, extra) => {
   return { status: r.status, body, raw: r.body };
 };
 
-function runPython(script, env) {
-  return new Promise((resolve) => {
-    execFile('python3', ['-c', script], { timeout: 30000, env }, (err, stdout, stderr) => {
-      const m = /CYGPROBE_RESULT (\{.*\})/.exec(stdout || '');
-      resolve({ err, stdout, stderr, result: m ? JSON.parse(m[1]) : null });
-    });
-  });
-}
-function listen(onConn) {
-  return new Promise((resolve) => {
-    const s = net.createServer(onConn);
-    s.listen(0, '127.0.0.1', () => resolve(s));
-  });
-}
+const PASSWORD = 'Tr0ub4dor;x&y';
+const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=svc;Password="' + PASSWORD + '";Encrypt=True';
 
 (async () => {
   console.log('Claude Code — the console\n');
@@ -368,9 +366,11 @@ function listen(onConn) {
     check('ONE route, app.http, agent/claude-code/{action}, function-key level',
       spec.route === 'agent/claude-code/{action}' && spec.authLevel === 'function' && spec.methods.join() === 'GET,POST,OPTIONS');
     const proxy = read('netlify', 'functions', 'data-proxy.js');
-    check('data-proxy already allows the family, so it needed no change',
+    check('data-proxy allows the console family',
       /\^\\\/agent\(\\\/\[A-Za-z0-9_\.-\]\+\)\*\$/.test(proxy)
-      && ['probe', 'session', 'message', 'events', 'mode', 'stop', 'sessions'].every(a => /^\/agent(\/[A-Za-z0-9_.-]+)*$/.test('/agent/claude-code/' + a)));
+      && ['check', 'session', 'message', 'events', 'mode', 'stop', 'sessions'].every(a => /^\/agent(\/[A-Za-z0-9_.-]+)*$/.test('/agent/claude-code/' + a)));
+    check('…but NOT the bridge\'s redeem door, which only the MCP server may knock on',
+      /\/\^\\\/agent\\\/claude-code-bridge\(\\\/\|\$\)\/i/.test(proxy), 'data-proxy.js');
     check('index.js imports the module', /require\('\.\/claude-code'\);/.test(read('azure-function', 'src', 'index.js')));
     check('no function.json folder was created for it', !fs.existsSync(path.join(ROOT, 'azure-function', 'claude-code')));
     check('host.json carries no functionTimeout', !/functionTimeout/.test(read('azure-function', 'host.json')));
@@ -380,20 +380,21 @@ function listen(onConn) {
     check('OPTIONS is a 204', (await H(req('OPTIONS', { action: 'events' }), ctx)).status === 204);
     check('an unknown action is a 404', (await call('GET', 'nonsense')).status === 404);
     check('the wrong method is a 405', (await call('GET', 'message')).status === 405);
-    let r = await call('POST', 'probe', { headers: { 'x-anthropic-key': KEY }, body: {} });
+    let r = await call('POST', 'check', { headers: { 'x-anthropic-key': KEY }, body: {} });
     check('NO TOKEN, NO SERVICE — even with REQUIRE_TOKEN_AUTH off (401)', r.status === 401, r.status);
     CC.deps.verify = async () => { throw new Error('bad signature'); };
-    r = await call('POST', 'probe', { body: {} });
+    r = await call('POST', 'check', { body: {} });
     check('a token that does not verify is a 401 with the reason', r.status === 401 && /bad signature/.test(r.raw), r.raw);
     CC.deps.verify = async () => ({ oid: 'oid-me', email: 'Me@Acme.test' });
-    r = await call('POST', 'probe', { headers: { authorization: 'Bearer x' }, body: { host: 'db.acme.io', port: 1433 } });
+    r = await call('POST', 'check', { headers: { authorization: 'Bearer x' }, body: { connId: 'sconn_tgt1' } });
     check('no Anthropic key is the house 400 (USER_KEY_REQUIRED), and nothing is called',
       r.status === 400 && /USER_KEY_REQUIRED/.test(r.raw) && FETCHED.length === 0 && KEYS_SEEN.length === 0, r.raw);
 
     // The gate.
     CC._reset(); FETCHED = [];
-    GATE_REPLY = { status: 403, body: { error: 'Only an Organisation Owner or Platform Administrator can run the Claude Code connection test.' } };
-    r = await call('POST', 'probe', { body: { host: 'db.acme.io', port: 1433 } });
+    GATE_REPLY = { status: 403, body: { error: 'Only an Organisation Owner or Platform Administrator can do that.' } };
+    SECRETS.sconn_tgt1 = { connString: CONNSTR };
+    r = await call('POST', 'check', { body: { connId: 'sconn_tgt1' } });
     check('the gate is asked, with the CALLER\'S token, and its no is passed on word for word',
       r.status === 403 && /Owner or Platform Administrator/.test(r.raw) && FETCHED[0].init.headers.Authorization === 'Bearer x'
       && FETCHED[0].url === 'https://cygenix.co.uk/.netlify/functions/claude-code-gate', FETCHED[0] && FETCHED[0].url);
@@ -421,263 +422,143 @@ function listen(onConn) {
     delete process.env.CLAUDE_CODE_BUDGET_CENTS;
   }
 
-  /* ── 4. The connectivity test ───────────────────────────────────────── */
-  section('4. The connectivity test');
+  /* ── 4. The bridge: the agent, the pass, the check, redeeming it ────── */
+  section('4. The bridge: the agent, the pass, the check, redeeming it');
   {
-    CC._reset(); FETCHED = []; KEYS_SEEN.length = 0; logs.length = 0;
-    GATE_REPLY = { status: 200, body: { allowed: true } };
-    CLIENT = fakeClient();
-    let r = await call('POST', 'probe', { body: { host: 'https://db.acme.io', port: 1433 } });
-    check('a host with a scheme is refused before anything is asked', r.status === 400 && FETCHED.length === 0);
-    r = await call('POST', 'probe', { body: { host: 'db.acme.io', port: 70000 } });
-    check('so is a port out of range', r.status === 400);
-    const s_id = (rr) => rr.body.sessionId;
-    r = await call('POST', 'probe', { body: { host: 'DB.Acme.io', port: 1433, kind: 'sqlserver', network: 'limited' } });
-    check('a test starts and returns the session id', r.status === 200 && /^sesn_/.test(r.body.sessionId) && r.body.host === 'db.acme.io', r.raw);
-    check('the Anthropic client is built from the caller\'s key and nothing else', KEYS_SEEN.length === 1 && KEYS_SEEN[0] === KEY);
-    const gateBody = JSON.parse(FETCHED[0].init.body);
-    check('the gate is told to record it, with host, port and network', gateBody.act === 'probe' && gateBody.record === 'probe'
-      && gateBody.detail.host === 'db.acme.io' && gateBody.detail.network === 'limited');
-    const created = CLIENT.calls.find(c => c[0] === 'agents.create');
-    check('with no agent in the account, ONE is created', !!created && CLIENT.calls.filter(c => c[0] === 'agents.create').length === 1);
-    const tools = created[1].tools[0];
-    check('the agent has the toolset with web search and fetch switched OFF',
-      tools.type === 'agent_toolset_20260401'
-      && tools.configs.some(c => c.name === 'web_search' && c.enabled === false)
-      && tools.configs.some(c => c.name === 'web_fetch' && c.enabled === false));
-    check('and carries metadata to find it by next time', created[1].metadata.cygenix === 'claude-code' && created[1].metadata.spec === CC.AGENT_SPEC);
-    const env = (CLIENT.calls.find(c => c[0] === 'environments.create') || [])[1] || {};
-    check('THE TEST ENVIRONMENT IS THE CONSOLE\'S SHAPE EXACTLY: the host, the registries, the address echo; package managers off; nothing pre-installed',
-      env.config.type === 'cloud' && env.config.networking.type === 'limited'
-      && env.config.networking.allowed_hosts.join() === 'db.acme.io,pypi.org,files.pythonhosted.org,registry.npmjs.org,api.ipify.org'
-      && env.config.networking.allow_package_managers === false && env.config.networking.allow_mcp_servers === false
-      && !env.config.packages, JSON.stringify(env));
-    check('its name carries the network and a hash, not the database host', /^cygenix-cc-limited-[0-9a-f]{16}$/.test(env.name) && !/acme/.test(env.name)
-      && env.name === CC.environmentName('limited', ['db.acme.io'].concat(CC.PACKAGE_HOSTS, [CC.IP_ECHO_HOST])));
-    const s = (CLIENT.calls.find(c => c[0] === 'sessions.create') || [])[1] || {};
-    check('THE SESSION CARRIES THE SPEND CAP: 600 cents USD (about £5)',
-      s.budget && s.budget.type === 'limit' && s.budget.max_list_cost.amount === '600' && s.budget.max_list_cost.currency === 'USD', JSON.stringify(s.budget));
-    check('it is stamped with the caller and flagged as a test, so nobody else can read it', s.metadata.cyg_oid === 'oid-me' && s.metadata.cyg_probe === '1');
-    check('IT OPENS THE VERY SESSION A CONSOLE OPEN DOES: the console system prompt, the console title, cygenix:console metadata',
-      s.agent.type === 'agent_with_overrides' && s.agent.model.effort === 'medium'
-      && s.agent.system === CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly' })
-      && /Cygenix Dev Console/.test(s.title) && s.metadata.cygenix === 'console', s.title + ' / ' + s.metadata.cygenix);
-    const sent = CLIENT.calls.filter(c => c[0] === 'events.send' && c[1] === s_id(r));
-    check('NO INITIAL EVENTS: the session is created idle and then sent ONE ordinary user message with ONE non-empty text block',
-      !s.initial_events && sent.length === 1 && sent[0][2].events.length === 1 && sent[0][2].events[0].type === 'user.message'
-      && sent[0][2].events[0].content.length === 1 && sent[0][2].events[0].content[0].type === 'text' && sent[0][2].events[0].content[0].text.trim().length > 0, JSON.stringify(sent));
-    const pf = CLIENT.calls.find(c => c[0] === 'files.upload')[1];
-    const pf_id = () => (s.resources[0] || {}).file_id;
-    check('THE TARGET AND A MADE-UP LOGIN TRAVEL AS A db.env AT THE CONSOLE\'S OWN PATH — the same file a console session mounts',
-      pf.file.name === 'db.env' && /CYG_DB_HOST='db\.acme\.io'/.test(pf.file.text) && /CYG_DB_PORT='1433'/.test(pf.file.text) && /CYG_DB_TYPE='sqlserver'/.test(pf.file.text)
-      && /CYG_DB_USER='cygenix_probe'/.test(pf.file.text) && s.resources.length === 1 && s.resources[0].mount_path === CC.CRED_PATH && /^file_/.test(pf_id()), JSON.stringify(s.resources));
-    const ask = sent[0][2].events[0].content[0].text;
-    check('THE FIRST RUNG IS A HELLO LINE: one bash command, no script, no server named — does this session answer at all?',
-      /```bash\npython3 -c "print\('CYGPROBE_HELLO', 2 \+ 2\)"\n```/.test(ask) && ask.indexOf('acme') === -1 && ask.indexOf('import') === -1, ask);
-    check('the start reports the session as running, with the three rungs by name',
-      r.body.status === 'running' && r.body.steps.join() === 'Workspace answers,Connection to the server,Database reply');
-    check('THE TARGET IS NOT ON THE ANTHROPIC METADATA AT ALL: only who may read it and that it is a test', !s.metadata.cyg_host && !s.metadata.cyg_port && !s.metadata.cyg_kind && s.metadata.cyg_oid === 'oid-me' && s.metadata.cyg_probe === '1', JSON.stringify(s.metadata));
-    check('the target is kept in our own store (Cosmos), keyed by the session, with the file id for cleanup', (() => {
-      const d = DB._items.get(s_id(r)); return d && d.kind === 'probe' && d.host === 'db.acme.io' && d.port === 1433 && d.dbKind === 'sqlserver' && d.oid === 'oid-me' && d.fileId === pf_id();
-    })());
-    check('an "Other" server has two rungs — there is no driver to log in with', CC.probeSteps('other').length === 2 && CC.probeSteps('postgres').length === 3);
-    const connectAsk = CC.probeMessage('connect', 'sqlserver');
-    const loginAsk = CC.probeMessage('login', 'sqlserver');
-    check('STEP 2 ASKS IN PLAIN WORDS — no script handed over — for a TCP check and the public IP, naming the mounted file but not the server, ending in one result line',
-      !/```/.test(connectAsk) && /Can you check whether this workspace can reach my database server/.test(connectAsk)
-      && connectAsk.indexOf(CC.CRED_FILE) !== -1 && /CYG_DB_HOST and CYG_DB_PORT/.test(connectAsk) && /do not log in/.test(connectAsk)
-      && /CYGPROBE_RESULT/.test(connectAsk) && /tcp \("open" or "failed"\)/.test(connectAsk) && /egress_ip/.test(connectAsk)
-      && connectAsk.indexOf('acme') === -1 && connectAsk.indexOf('1433') === -1 && !/pymssql|import socket/.test(connectAsk), connectAsk);
-    check('step 3 asks in plain words for one login with the made-up account, says a "login failed" is the expected answer, and names the right driver',
-      !/```/.test(loginAsk) && /pymssql/.test(loginAsk) && /CYG_DB_USER and CYG_DB_PASSWORD/.test(loginAsk) && /login failed/.test(loginAsk)
-      && /try once only/.test(loginAsk) && /sqlserver-replied/.test(loginAsk) && loginAsk.indexOf('acme') === -1
-      && /psycopg\[binary\]/.test(CC.probeMessage('login', 'postgres')) && /postgres-replied/.test(CC.probeMessage('login', 'postgres')));
-    check('THE KEY APPEARS NOWHERE IN WHAT WAS SENT TO ANTHROPIC OR THE GATE',
-      !JSON.stringify(CLIENT.calls).includes(KEY) && !JSON.stringify(FETCHED).includes(KEY));
-    check('the log line carries action, method, status and time — no host, no key',
-      /probe POST status=200 ms=\d+/.test(logs[logs.length - 1]) && logs.every(l => !/acme|sk-ant/.test(l)), logs[logs.length - 1]);
+    CC._reset(); FETCHED = []; KEYS_SEEN.length = 0;
+    GATE_REPLY = { status: 200, body: { allowed: true, tenantId: 'tn_1' } };
+    CLIENT = fakeClient(); DB = fakeContainer();
 
-    const sid = r.body.sessionId;
-    const idle = () => ({ type: 'session.status_idle', stop_reason: { type: 'end_turn' } });
-    const ran = (out) => [{ type: 'agent.tool_use', name: 'bash' }, { type: 'agent.tool_result', content: [{ type: 'text', text: out }] }];
-    const connectLine = 'CYGPROBE_RESULT {"host":"db.acme.io","port":1433,"kind":"sqlserver","dns":["10.0.0.4"],"tcp":"open","tcp_ms":41,"egress_ip":"203.0.113.9"}';
-    const loginLine = 'CYGPROBE_RESULT {"host":"db.acme.io","port":1433,"kind":"sqlserver","dns":["10.0.0.4"],"tcp":"open","handshake":"sqlserver-replied","tcp_ms":39,"egress_ip":"203.0.113.9"}';
-    const sends = () => CLIENT.calls.filter(c => c[0] === 'events.send' && c[1] === sid).map(c => c[2].events[0].content[0].text);
-    // Rung one: the session is still running — nothing to do yet.
-    CLIENT._o.sessions[sid].status = 'running';
-    CLIENT._o.events[sid] = [{ type: 'user.message', content: [{ type: 'text', text: 'hello' }] }];
-    r = await call('GET', 'probe', { query: { sessionId: sid } });
-    check('while a rung runs the poll reports the step and sends nothing', r.body.done === false && r.body.step === 1 && r.body.steps[0].status === 'running' && sends().length === 1, r.raw);
-    // Rung one answered: rung two is sent, in the same session.
-    CLIENT._o.sessions[sid].status = 'idle';
-    CLIENT._o.events[sid].push(...ran('CYGPROBE_HELLO 4\n'), idle());
-    r = await call('GET', 'probe', { query: { sessionId: sid } });
-    check('THE HELLO ANSWERED: rung two (the connect script) is sent as a fresh user message and the poll goes on',
-      r.body.done === false && r.body.step === 2 && r.body.steps[0].status === 'passed' && r.body.steps[1].status === 'running'
-      && sends().length === 2 && /CYG_DB_HOST/.test(sends()[1]) && sends()[1].indexOf('acme') === -1 && !/pymssql/.test(sends()[1]), r.raw);
-    // The same poll again, before the platform has recorded that message: nothing is sent twice.
-    r = await call('GET', 'probe', { query: { sessionId: sid } });
-    check('…and a poll that lands before the message is recorded sends nothing more, and still reports the rung as running',
-      sends().length === 2 && r.body.done === false && r.body.step === 2 && r.body.steps[1].status === 'running', sends().length + ' ' + r.raw);
-    // Rung two answered: rung three sent.
-    CLIENT._o.events[sid].push({ type: 'user.message', content: [{ type: 'text', text: sends()[1] }] }, ...ran('x\n' + connectLine + '\n'), idle());
-    r = await call('GET', 'probe', { query: { sessionId: sid } });
-    check('THE CONNECT SCRIPT ANSWERED: its result is already in hand and rung three (the login) is sent',
-      r.body.done === false && r.body.step === 3 && r.body.result && r.body.result.tcp === 'open' && r.body.result.egress_ip === '203.0.113.9'
-      && sends().length === 3 && /CYG_DB_USER and CYG_DB_PASSWORD/.test(sends()[2]), r.raw);
-    // Rung three answered: done, the login result laid over the connect one.
-    CLIENT._o.events[sid].push({ type: 'user.message', content: [{ type: 'text', text: sends()[2] }] }, ...ran('x\n' + loginLine + '\n'), idle());
-    CLIENT._o.sessions[sid].usage = { list_cost: { amount: '9', currency: 'USD' } };
-    r = await call('GET', 'probe', { query: { sessionId: sid } });
-    check('ALL THREE RUNGS PASSED: the result is read back from the scripts\' own output', r.status === 200 && r.body.done === true
-      && r.body.result.handshake === 'sqlserver-replied' && r.body.result.egress_ip === '203.0.113.9' && r.body.steps.every(st => st.status === 'passed') && r.body.failedStep === null, r.raw);
-    check('with a plain-language verdict and the cost', r.body.verdict.ok === true && /answered/.test(r.body.verdict.text) && r.body.costCents === 9);
-    check('a finished test session is archived (routine cleanup)', CLIENT.calls.some(c => c[0] === 'sessions.archive' && c[1] === sid));
-    check('and nothing more is sent to a finished session', sends().length === 3);
-
-    // The ladder falls off at rung three: the connect result stands, the login is marked not run.
-    const dbProbe = (id, host, port, dbKind) => DB.items.upsert({ id, kind: 'probe', userId: who.email, oid: 'oid-me', host, port, dbKind, network: 'limited', fileId: 'file_' + id, createdAt: '2026-01-01T00:00:00Z' });
-    await dbProbe('sesn_rung3', 'db.acme.io', 1433, 'sqlserver');
-    CLIENT._o.sessions.sesn_rung3 = { id: 'sesn_rung3', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
-    CLIENT._o.events.sesn_rung3 = [
-      { type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, ...ran('CYGPROBE_HELLO 4\n'), idle(),
-      { type: 'user.message', content: [{ type: 'text', text: 'connect' }] }, ...ran(connectLine + '\n'), idle(),
-      { type: 'user.message', content: [{ type: 'text', text: 'login' }] }, { type: 'span.model_request_end', is_error: false, model_usage: { input_tokens: 5000, output_tokens: 0 } }, idle(),
-    ];
-    r = await call('GET', 'probe', { query: { sessionId: 'sesn_rung3' } });
-    check('AN EMPTY TURN AT RUNG THREE: the test is done, the connection result stands, the verdict says the login check did not run',
-      r.body.done === true && r.body.emptyTurn === true && r.body.failedStep && r.body.failedStep.index === 3 && r.body.failedStep.status === 'empty'
-      && r.body.steps.map(st => st.status).join() === 'passed,passed,empty' && r.body.result.tcp === 'open' && r.body.verdict.ok === true
-      && /did not run: Claude returned an empty turn/.test(r.body.verdict.text) && r.body.eventTypes.length > 0, r.raw);
-    // A connection that did NOT open: step 2 is "could not connect", the climb stops, no login is asked for.
-    await dbProbe('sesn_unreach', 'db.acme.io', 14330, 'sqlserver');
-    CLIENT._o.sessions.sesn_unreach = { id: 'sesn_unreach', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
-    CLIENT._o.events.sesn_unreach = [
-      { type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, ...ran('CYGPROBE_HELLO 4\n'), idle(),
-      { type: 'user.message', content: [{ type: 'text', text: 'connect' }] }, ...ran('{"tcp":"failed"}'),
-      { type: 'agent.message', content: [{ type: 'text', text: 'It timed out.\nCYGPROBE_RESULT {"host":"db.acme.io","port":14330,"kind":"sqlserver","tcp":"failed","tcp_error":"TimeoutError: timed out","egress_ip":"34.16.127.185"}' }] }, idle(),
-    ];
-    r = await call('GET', 'probe', { query: { sessionId: 'sesn_unreach' } });
-    check('A CONNECTION THAT DID NOT OPEN: step 2 reads "unreachable", the test stops there, no login is sent, and the verdict says it could not connect',
-      r.body.done === true && r.body.steps.map(st => st.status).join() === 'passed,unreachable,pending'
-      && r.body.failedStep && r.body.failedStep.index === 2 && r.body.failedStep.status === 'unreachable'
-      && r.body.result.tcp === 'failed' && r.body.verdict.ok === false && /could not open a connection/.test(r.body.verdict.text)
-      && !CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === 'sesn_unreach'), r.raw);
-    // ...and at rung one: nothing to show but the rung.
-    await dbProbe('sesn_rung1', 'db.acme.io', 1433, 'other');
-    CLIENT._o.sessions.sesn_rung1 = { id: 'sesn_rung1', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
-    CLIENT._o.events.sesn_rung1 = [{ type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, { type: 'span.model_request_end', is_error: false, model_usage: { output_tokens: 0 } }, idle()];
-    r = await call('GET', 'probe', { query: { sessionId: 'sesn_rung1' } });
-    check('an empty turn at rung one ends it there: no result, two rungs listed for an Other server, nothing further sent',
-      r.body.done === true && r.body.emptyTurn === true && r.body.result === null && r.body.failedStep.index === 1 && r.body.steps.length === 2
-      && r.body.steps[1].status === 'pending' && !CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === 'sesn_rung1'), r.raw);
-    // A hello that ran something else, not the line asked for, is a failed rung, not an empty one.
-    await dbProbe('sesn_odd', 'h.io', 1, 'other');
-    CLIENT._o.sessions.sesn_odd = { id: 'sesn_odd', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
-    CLIENT._o.events.sesn_odd = [{ type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, { type: 'agent.message', content: [{ type: 'text', text: 'I would rather not.' }] }, idle()];
-    r = await call('GET', 'probe', { query: { sessionId: 'sesn_odd' } });
-    check('a rung answered in words but not with its line is "failed", with the words shown', r.body.done === true && r.body.emptyTurn === false
-      && r.body.failedStep.status === 'failed' && r.body.transcript.length === 1 && /rather not/.test(r.body.transcript[0].text), r.raw);
-    await DB.items.upsert({ id: 'sesn_other', kind: 'probe', userId: who.email, oid: 'somebody-else', host: 'x', port: 1, dbKind: 'other', createdAt: '2026-01-01T00:00:00Z' });
-    CLIENT._o.sessions.sesn_other = { id: 'sesn_other', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'somebody-else', cyg_probe: '1' } };
-    r = await call('GET', 'probe', { query: { sessionId: 'sesn_other' } });
-    check('SOMEBODY ELSE\'S TEST IS NOT FOUND (checked in our own store, before Anthropic)', r.status === 404, r.raw);
-    check('an unknown session is a 404', (await call('GET', 'probe', { query: { sessionId: 'sesn_gone00' } })).status === 404);
-    check('a malformed session id is a 400', (await call('GET', 'probe', { query: { sessionId: '../../x' } })).status === 400);
-
-    CLIENT = fakeClient({ agents: [{ id: 'agent_old', metadata: { cygenix: 'claude-code', spec: '0' } }] });
+    // The agent and its workspace.
+    const spec = CC.agentSpec();
+    check('THE AGENT CARRIES THE CYGENIX MCP SERVER, at the site\'s own address',
+      spec.mcp_servers.length === 1 && spec.mcp_servers[0].type === 'url' && spec.mcp_servers[0].name === 'cygenix'
+      && spec.mcp_servers[0].url === 'https://cygenix.co.uk/.netlify/functions/cc-mcp', JSON.stringify(spec.mcp_servers));
+    check('…and its tools run without an approval click, because Cygenix decides what may run',
+      spec.tools.some(t => t.type === 'mcp_toolset' && t.mcp_server_name === 'cygenix' && t.default_config.permission_policy.type === 'always_allow'));
+    check('web search and web fetch stay off',
+      spec.tools[0].configs.every(c => c.enabled === false) && spec.tools[0].configs.map(c => c.name).join() === 'web_search,web_fetch');
+    const tagNow = CC.specTag();
+    process.env.CYGENIX_SITE_URL = 'https://staging.example.test';
+    check('the spec tag carries the address, so an agent pointing somewhere else is updated',
+      CC.specTag() !== tagNow && /^3-[0-9a-f]{8}$/.test(tagNow) && CC.agentSpec().mcp_servers[0].url === 'https://staging.example.test/.netlify/functions/cc-mcp');
+    delete process.env.CYGENIX_SITE_URL;
+    CLIENT = fakeClient({ agents: [{ id: 'agent_old', metadata: { cygenix: 'claude-code', spec: '2' } }] });
+    await CC.ensureAgent(CLIENT, 'tag-a');
+    check('an agent made before the bridge is updated in place, not duplicated',
+      CLIENT.calls.some(c => c[0] === 'agents.update' && c[1] === 'agent_old' && c[2].mcp_servers) && !CLIENT.calls.some(c => c[0] === 'agents.create'));
     CC._reset();
-    await CC.probeStart(who, KEY, { host: 'db.acme.io', port: 1433, kind: 'sqlserver', network: 'open' });
-    check('an existing agent is found, not duplicated — and updated in place when its spec is older',
-      !CLIENT.calls.some(c => c[0] === 'agents.create') && CLIENT.calls.some(c => c[0] === 'agents.update' && c[1] === 'agent_old'));
-    check('the open-networking test gets an unrestricted environment',
-      CLIENT.calls.find(c => c[0] === 'environments.create')[1].config.networking.type === 'unrestricted');
-    const n0 = CLIENT.calls.length;
-    await CC.probeStart(who, KEY, { host: 'db.acme.io', port: 1433, kind: 'sqlserver', network: 'open' });
-    check('a repeat inside ten minutes asks Anthropic for nothing but the file, the session and its message',
-      CLIENT.calls.slice(n0).map(c => c[0]).join() === 'files.upload,sessions.create,events.send', CLIENT.calls.slice(n0).map(c => c[0]).join());
-    CC._reset();
-    CLIENT = fakeClient({ agents: [{ id: 'agent_cur', metadata: { cygenix: 'claude-code', spec: CC.AGENT_SPEC } }], envCreate409: true });
-    await CC.probeStart(who, KEY, { host: 'db2.acme.io', port: 5432, kind: 'postgres', network: 'limited' });
-    check('a race on the environment name (409) uses the winner\'s environment',
-      CLIENT.calls.find(c => c[0] === 'sessions.create')[1].environment_id === 'env_raced');
+    CLIENT = fakeClient({ agents: [{ id: 'agent_cur', metadata: { cygenix: 'claude-code', spec: CC.specTag() } }] });
+    await CC.ensureAgent(CLIENT, 'tag-b');
+    check('…and one already current is left alone', !CLIENT.calls.some(c => c[0] === 'agents.update' || c[0] === 'agents.create'));
+    const cfg = CC.environmentConfig('limited', CC.SESSION_HOSTS);
+    check('THE WORKSPACE REACHES THE TWO REGISTRIES AND THE ADDRESS ECHO, NO DATABASE, AND MAY CALL MCP SERVERS',
+      cfg.networking.type === 'limited' && cfg.networking.allowed_hosts.join() === 'pypi.org,files.pythonhosted.org,registry.npmjs.org,api.ipify.org'
+      && cfg.networking.allow_mcp_servers === true && cfg.networking.allow_package_managers === false, JSON.stringify(cfg));
+    const oldName = 'cygenix-cc-limited-' + require('crypto').createHash('sha256').update('limited|' + CC.SESSION_HOSTS.slice().sort().join(',')).digest('hex').slice(0, 16);
+    check('the environment name is versioned, so one made before the bridge (no MCP allowed) is not reused',
+      /^cygenix-cc-limited-[0-9a-f]{16}$/.test(CC.environmentName('limited', CC.SESSION_HOSTS)) && CC.environmentName('limited', CC.SESSION_HOSTS) !== oldName);
 
-    CLIENT = fakeClient();
-    CLIENT.beta.agents.list = () => { const e = new Error('invalid x-api-key'); e.status = 401; throw e; };
-    CC._reset();
-    r = await call('POST', 'probe', { body: { host: 'db.acme.io', port: 1433 } });
-    check('Anthropic refusing the key is a 401 in words', r.status === 401 && /did not accept your API key/.test(r.raw), r.raw);
-    CLIENT.beta.agents.list = () => { throw new TypeError('boom here'); };
-    CC._reset();
-    r = await call('POST', 'probe', { body: { host: 'db.acme.io', port: 1433 } });
-    check('anything else is a 500 carrying the message AND the stack (house rule)', r.status === 500 && r.body.error === 'boom here' && /claude-code/.test(r.body.stack));
+    // The pass.
+    const p1 = CC.newBridgePass(), p2 = CC.newBridgePass();
+    check('a pass is cyb_<lookup id>.<secret>, new every time, and what is kept is the secret\'s hash',
+      /^cyb_[0-9a-f]{18}\.[A-Za-z0-9_-]{43}$/.test(p1.token) && p1.token !== p2.token
+      && p1.hash === CC.sha256(p1.token.split('.')[1]) && p1.token.indexOf(p1.hash) === -1, p1.token);
+    check('splitPass reads a pass back and refuses anything else',
+      CC.splitPass(p1.token).lid === p1.lid && CC.splitPass(p1.token).secret === p1.token.split('.')[1]
+      && CC.splitPass('cyb_x.y') === null && CC.splitPass(p1.token + 'x') === null && CC.splitPass(null) === null && CC.splitPass(' ' + p1.token) === null);
 
-    check('verdict: DNS failure', /could not resolve/.test(CC.verdict({ host: 'h', dns_error: 'x' }).text));
-    check('verdict: a connection nobody answered a login on is NOT a pass',
-      CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'error: timed out' }).ok === false);
-    check('verdict: with no driver, an open connection is reported as such', CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).ok === true
-      && /driver was not available/.test(CC.verdict({ host: 'h', port: 1, kind: 'sqlserver', tcp: 'open', handshake: 'no-driver' }).text));
-    check('no pre-written probe script is left to hand over', typeof CC.probeScript === 'undefined');
-    // An empty turn — zero output tokens, nothing said or run — is the end, named as such. No retry.
-    await dbProbe('sesn_empty', 'db.acme.io', 1433, 'sqlserver');
-    CLIENT._o.sessions.sesn_empty = { id: 'sesn_empty', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
-    CLIENT._o.events.sesn_empty = [{ id: 'm1', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'run' }] },
-      { id: 'm2', type: 'span.model_request_end', processed_at: '2026-10-01T00:00:01Z', is_error: false, model_usage: { input_tokens: 4000, output_tokens: 0 } },
-      { id: 'm3', type: 'session.status_idle', processed_at: '2026-10-01T00:00:02Z', stop_reason: { type: 'end_turn' } }];
-    r = await call('GET', 'probe', { query: { sessionId: 'sesn_empty' } });
-    check('AN EMPTY TURN ENDS THE TEST — NO RETRY, NO MESSAGE SENT — and is flagged as one from the raw request',
-      r.body.done === true && r.body.retrying === false && r.body.emptyTurn === true && r.body.stopReason === 'end_turn'
-      && !CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === 'sesn_empty') && r.body.eventTypes.length === 3, r.raw);
-    check('a turn that said something is not an empty turn, even at zero tokens on its last request',
-      CC.parseProbeEvents([{ type: 'agent.message', content: [{ type: 'text', text: 'no' }] }, { type: 'span.model_request_end', model_usage: { output_tokens: 0 } }]).emptyTurn === false
-      && CC.parseProbeEvents([{ type: 'span.model_request_end', model_usage: { output_tokens: 0 }, is_error: true }]).emptyTurn === false);
-    check('an idle session that has not been sent its message yet is not finished', (await (async () => {
-      await dbProbe('sesn_fresh', 'db.acme.io', 1433, 'sqlserver');
-      CLIENT._o.sessions.sesn_fresh = { id: 'sesn_fresh', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
-      CLIENT._o.events.sesn_fresh = [];
-      return (await call('GET', 'probe', { query: { sessionId: 'sesn_fresh' } })).body.done;
-    })()) === false);
-    check('each model request in that list carries its output-token count, so nothing-written and reply-lost can be told apart',
-      r.body.eventTypes[1] === 'span.model_request_end:out=0', r.body.eventTypes.join());
-    check('the raw last model request and usage line come back whole, for the page to show',
-      r.body.raw && r.body.raw.modelRequestEnd && r.body.raw.modelRequestEnd.id === 'm2' && r.body.raw.modelRequestEnd.model_usage.input_tokens === 4000
-      && r.body.raw.usage === null, JSON.stringify(r.body.raw));
-    check('with anything key-shaped scrubbed out of it', JSON.stringify(CC.parseProbeEvents([{ type: 'session.usage', note: 'x sk-ant-api03-abcdefghijk y' }]).raw).indexOf('sk-ant') === -1);
-    check('so does the usage line (either field shape)', CC.parseProbeEvents([{ type: 'session.usage', output_tokens: 12 }]).eventTypes[0] === 'session.usage:out=12'
-      && CC.parseProbeEvents([{ type: 'span.model_request_end', usage: { output_tokens: 3 } }]).eventTypes[0] === 'span.model_request_end:out=3');
-    check('verdict: the database answered', CC.verdict({ host: 'h', port: 1, kind: 'postgres', tcp: 'open', handshake: 'postgres-replied' }).ok === true);
-    check('session errors are collected', CC.parseProbeEvents([{ type: 'session.error', error: { type: 'billing_error', message: 'credit balance too low' } }]).errors[0] === 'credit balance too low');
-    const noLine = CC.parseProbeEvents([
-      { type: 'agent.tool_use', name: 'bash', input: { command: 'python3 /tmp/cygprobe.py' } },
-      { type: 'agent.tool_result', is_error: true, content: [{ type: 'text', text: 'Traceback (most recent call last):\n  File "/tmp/cygprobe.py", line 3\nSyntaxError: x' }] },
-      { type: 'agent.message', content: [{ type: 'text', text: 'The script failed to run.' }] },
-      { type: 'session.status_idle', stop_reason: { type: 'end_turn' } },
-    ]);
-    check('WHEN NO RESULT LINE COMES BACK, what the workspace ran, got and said is kept so a person can act on it',
-      noLine.result === null && noLine.transcript.length === 3 && noLine.transcript[0].kind === 'tool' && /cygprobe/.test(noLine.transcript[0].text)
-      && noLine.transcript[1].kind === 'error' && /Traceback/.test(noLine.transcript[1].text) && noLine.transcript[2].kind === 'message');
-    const withheld = CC.parseProbeEvents([
-      { type: 'span.model_request_start' }, { type: 'agent.message', content: [{ type: 'redacted' }] },
-      { type: 'span.model_request_end', is_error: false }, { type: 'session.status_idle', stop_reason: { type: 'end_turn' } }]);
-    check('A REPLY WITHHELD BY THE SAFETY SYSTEM IS NAMED AS SUCH, and every event type is listed',
-      withheld.transcript.length === 1 && withheld.transcript[0].kind === 'refused' && /withheld/.test(withheld.transcript[0].text)
-      && withheld.eventTypes.join() === 'span.model_request_start,agent.message,span.model_request_end,session.status_idle:end_turn', JSON.stringify(withheld));
-    check('the connect step carries the database type it was given', /kind \("other"\)/.test(CC.probeMessage('connect', 'other')));
-    await dbProbe('sesn_noline', 'db.acme.io', 1433, 'sqlserver');
-    CLIENT._o.sessions.sesn_noline = { id: 'sesn_noline', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
-    CLIENT._o.events.sesn_noline = [{ id: 'q0', type: 'user.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'hello' }] },
-      { id: 'q1', type: 'agent.message', processed_at: '2026-10-01T00:00:00Z', content: [{ type: 'text', text: 'I could not run it.' }] },
-      { id: 'q2', type: 'session.status_idle', processed_at: '2026-10-01T00:00:01Z', stop_reason: { type: 'end_turn' } }];
-    r = await call('GET', 'probe', { query: { sessionId: 'sesn_noline' } });
-    check('…and the route returns that transcript only in the no-result case', r.body.done === true && r.body.result === null && r.body.transcript.length === 1 && /could not run/.test(r.body.transcript[0].text));
-    check('the source has no probe-only system prompt, mounted probe file, initial event or retry left in it',
-      !/PROBE_SYSTEM|initial_events|Your previous turn|allowPackageManagers|cyg_host/.test(read('azure-function', 'src', 'claude-code.js')));
+    // Check the bridge.
+    CLIENT = fakeClient(); FETCHED = [];
+    SECRETS.sconn_tgt1 = { connString: CONNSTR };
+    const chkBody = { side: 'src', connId: 'sconn_tgt1', connectionName: 'Source', profileName: 'Demo' };
+    let r = await call('POST', 'check', { body: chkBody });
+    check('CHECK THE BRIDGE: a two-minute pass for that connection, and where to take it',
+      r.status === 200 && /^cyb_/.test(r.body.token) && r.body.mcpUrl === CC.mcpUrl() && r.body.expiresInSeconds === 120, r.raw);
+    const tok = r.body.token;
+    const chk = [...DB._items.values()].find(d => d.kind === 'bridgecheck') || {};
+    check('the check record names the connection, under the caller, and keeps only the hash',
+      chk.id === 'chk_' + CC.splitPass(tok).lid && chk.bridgeHash === CC.sha256(CC.splitPass(tok).secret)
+      && chk.userId === 'me@acme.test' && chk.oid === 'oid-me' && chk.connectionId === 'sconn_tgt1' && chk.side === 'src'
+      && JSON.stringify(chk).indexOf(tok) === -1 && JSON.stringify(chk).indexOf(PASSWORD) === -1, JSON.stringify(chk));
+    check('…asks the gate for plain use, records nothing, and spends nothing with Anthropic',
+      FETCHED.length === 1 && JSON.parse(FETCHED[0].init.body).act === 'use' && !JSON.parse(FETCHED[0].init.body).record
+      && CLIENT.calls.length === 0);
+    r = await call('POST', 'check', { body: { connId: '' } });
+    check('a check with no connection is a 400', r.status === 400);
+    CC._reset();
+    GATE_REPLY = { status: 403, body: { error: 'Not enabled for your role — ask an Owner to enable it in Governance.' } };
+    const before = DB._items.size;
+    r = await call('POST', 'check', { body: chkBody });
+    check('a check the gate refuses is refused, word for word, and issues no pass', r.status === 403 && /Not enabled/.test(r.body.error) && DB._items.size === before);
+    GATE_REPLY = { status: 200, body: { allowed: true, tenantId: 'tn_1' } };
+
+    // Redeeming it.
+    let x = await CC.bridgeRedeem({ token: tok });
+    let b = JSON.parse(x.body);
+    check('REDEEMED, A CHECK PASS GIVES THE ONE CONNECTION, AND IS ALWAYS READ-ONLY',
+      x.status === 200 && b.kind === 'bridgecheck' && b.sessionId === null && b.readOnly === true && b.mode === 'direct'
+      && b.connString === CONNSTR && b.fnUrl === null && b.fnKey === null && b.dbType === 'sqlserver'
+      && b.oid === 'oid-me' && b.email === 'me@acme.test' && b.connectionName === 'Source', x.body);
+    const wrong = tok.slice(0, -1) + (tok.slice(-1) === 'A' ? 'B' : 'A');
+    check('a pass with the wrong secret is a 401', (await CC.bridgeRedeem({ token: wrong })).status === 401);
+    check('a pass nobody issued is a 401', (await CC.bridgeRedeem({ token: CC.newBridgePass().token })).status === 401);
+    check('anything not shaped like a pass is a 401, without a lookup', (await CC.bridgeRedeem({ token: 'Bearer nope' })).status === 401
+      && (await CC.bridgeRedeem({})).status === 401 && (await CC.bridgeRedeem(null)).status === 401);
+    delete SECRETS.sconn_tgt1;
+    x = await CC.bridgeRedeem({ token: tok });
+    check('a connection whose credential has since been deleted is a 409 in words, not a login attempt',
+      x.status === 409 && /no longer saved on the server/.test(x.body), x.body);
+    SECRETS.sconn_tgt1 = { connString: CONNSTR };
+    CC.deps.now = () => Date.now() + 121 * 1000;
+    x = await CC.bridgeRedeem({ token: tok });
+    check('AFTER TWO MINUTES THE CHECK PASS IS REFUSED, and its record tidied away',
+      x.status === 401 && /expired/.test(x.body) && !DB._items.has(chk.id), x.body);
+    CC.deps.now = () => Date.now();
+
+    // Only a session or a check carries a pass; a stopped session's does not work.
+    const sp = CC.newBridgePass();
+    DB._items.set('sesn_ended', { id: 'sesn_ended', kind: 'session', userId: 'me@acme.test', oid: 'oid-me', connectionId: 'sconn_tgt1',
+      connMode: 'direct', status: 'stopped', bridgeLid: sp.lid, bridgeHash: sp.hash, bridgeExp: Date.now() + 3600 * 1000 });
+    x = await CC.bridgeRedeem({ token: sp.token });
+    check('a session that has ended is refused, even if its pass somehow survived', x.status === 401 && /has ended/.test(x.body), x.body);
+    const op = CC.newBridgePass();
+    DB._items.set('sesn_x:0001', { id: 'sesn_x:0001', kind: 'events', userId: 'me@acme.test', oid: 'oid-me', bridgeLid: op.lid, bridgeHash: op.hash, bridgeExp: Date.now() + 3600 * 1000 });
+    check('a pass found on any other kind of record is refused', (await CC.bridgeRedeem({ token: op.token })).status === 401);
+    DB._items.delete('sesn_ended'); DB._items.delete('sesn_x:0001');
+
+    // A Function App connection.
+    SECRETS.sconn_fn = { fnKey: 'fn-key-abc' };
+    r = await call('POST', 'check', { body: { side: 'tgt', connId: 'sconn_fn', connectionName: 'Via Function App', mode: 'azure', fnUrl: 'https://fn.acme.test/api/data?code=leak#x' } });
+    check('a Function App connection can be checked; its query string is dropped', r.status === 200, r.raw);
+    x = await CC.bridgeRedeem({ token: r.body.token });
+    b = JSON.parse(x.body);
+    check('…and redeems to its address and its own key, with no connection string',
+      x.status === 200 && b.mode === 'azure' && b.fnUrl === 'https://fn.acme.test/api/data' && b.fnKey === 'fn-key-abc' && b.connString === null && b.readOnly === true, x.body);
+    delete SECRETS.sconn_fn;
+    r = await call('POST', 'check', { body: { side: 'tgt', connId: 'sconn_fn', mode: 'azure', fnUrl: 'https://cygenix-db-api.example.test/api/data' } });
+    x = await CC.bridgeRedeem({ token: r.body.token });
+    check('the product\'s own Function App needs no saved key: it redeems with none, and the bridge supplies the product key',
+      r.status === 200 && x.status === 200 && JSON.parse(x.body).fnKey === null, x.body);
+    r = await call('POST', 'check', { body: { connId: 'sconn_fn', mode: 'azure', fnUrl: 'http://fn.acme.test/api/data' } });
+    check('a Function App address that is not https is a 400', r.status === 400 && /https/.test(r.body.error), r.raw);
+
+    // The bridge's own door.
+    const bs = ROUTES['claude-code-bridge'] || {};
+    check('THE REDEEM ROUTE IS ITS OWN: agent/claude-code-bridge/{action}, POST, host key only',
+      bs.route === 'agent/claude-code-bridge/{action}' && bs.authLevel === 'function' && bs.methods.join() === 'POST');
+    logs.length = 0;
+    r = await call('POST', 'check', { body: chkBody });
+    const bh = await CC.bridgeHandler(req('POST', { action: 'redeem', body: { token: r.body.token } }), ctx);
+    check('the handler redeems, and logs the status and nothing else',
+      bh.status === 200 && logs.some(l => /redeem status=200/.test(l)) && logs.every(l => l.indexOf(r.body.token) === -1 && l.indexOf(PASSWORD) === -1 && !/acme/.test(l)), logs.join(' | '));
+    check('…an unknown bridge action is a 404, GET a 405', (await CC.bridgeHandler(req('POST', { action: 'list', body: {} }), ctx)).status === 404
+      && (await CC.bridgeHandler(req('GET', { action: 'redeem' }), ctx)).status === 405);
+    check('the console route has no redeem: a pass cannot be redeemed with a user\'s token', (await call('POST', 'redeem', { body: { token: r.body.token } })).status === 404);
   }
 
   /* ── 5. The console ─────────────────────────────────────────────────── */
   section('5. The console: open, talk, poll, allow changes, stop, list, replay');
-  const PASSWORD = 'Tr0ub4dor;x&y';
-  const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=svc;Password="' + PASSWORD + '";Encrypt=True';
   {
     CC._reset(); FETCHED = []; KEYS_SEEN.length = 0; logs.length = 0;
     GATE_REPLY = { status: 200, body: { allowed: true, tenantId: 'tn_1' } };
@@ -691,8 +572,8 @@ function listen(onConn) {
     r = await open({ connId: 'sconn_missing', connectionName: 'Old one' });
     check('a connection whose credential is not on the cloud side says so, in words',
       r.status === 409 && /has not been saved to the cloud/.test(r.body.error) && /Old one/.test(r.body.error), r.raw);
-    r = await open({ connId: 'sconn_fn', connectionName: 'Via Function App' });
-    check('a Function App connection cannot be used, and says why', r.status === 409 && /Function App connection/.test(r.body.error), r.raw);
+    r = await open({ connId: 'sconn_fn', connectionName: 'Via Function App', mode: 'azure', fnUrl: 'ftp://fn.acme.test/api' });
+    check('a Function App connection with an address that is not https is a 400 in words', r.status === 400 && /not a valid https URL/.test(r.body.error), r.raw);
     check('…and none of those asked the gate or Anthropic', FETCHED.length === 0 && CLIENT.calls.length === 0);
 
     r = await open();
@@ -703,38 +584,50 @@ function listen(onConn) {
     check('the gate recorded the start, naming profile, connection and host',
       gb.act === 'use' && gb.record === 'session.start' && gb.detail.profile === 'Demo' && gb.detail.connection === 'Target DEV' && gb.detail.host === 'acme.database.windows.net', JSON.stringify(gb));
     const env = CLIENT.calls.find(c => c[0] === 'environments.create')[1];
-    check('THE WORKSPACE MAY REACH THE DATABASE HOST, THE TWO PACKAGE REGISTRIES AND THE ADDRESS ECHO, NOTHING ELSE',
+    check('THE WORKSPACE MAY REACH THE TWO PACKAGE REGISTRIES AND THE ADDRESS ECHO — NOT THE DATABASE — AND THE BRIDGE',
       env.config.networking.type === 'limited'
-      && env.config.networking.allowed_hosts.join() === 'acme.database.windows.net,pypi.org,files.pythonhosted.org,registry.npmjs.org,api.ipify.org'
-      && env.config.networking.allow_package_managers === false, JSON.stringify(env.config));
-    const up = CLIENT.calls.find(c => c[0] === 'files.upload')[1];
-    check('the credential file is uploaded with the connection\'s parts, shell-sourceable, expiring in a day',
-      up.file.name === 'db.env' && /CYG_DB_TYPE='sqlserver'/.test(up.file.text) && /CYG_DB_HOST='acme\.database\.windows\.net'/.test(up.file.text)
-      && /CYG_DB_NAME='Fin'/.test(up.file.text) && /CYG_DB_USER='svc'/.test(up.file.text)
-      && up.file.text.indexOf("CYG_DB_PASSWORD='" + PASSWORD + "'") !== -1 && up.file.text.indexOf('CYG_DB_CONNSTR=') !== -1
-      && up.expires_in_seconds === 86400, up.file.text);
+      && env.config.networking.allowed_hosts.join() === 'pypi.org,files.pythonhosted.org,registry.npmjs.org,api.ipify.org'
+      && env.config.networking.allow_package_managers === false && env.config.networking.allow_mcp_servers === true, JSON.stringify(env.config));
+    const vc = CLIENT.calls.find(c => c[0] === 'vaults.create')[1];
+    const cred = CLIENT.calls.find(c => c[0] === 'vaults.credentials.create');
+    const sessTok = cred[2].auth.token;
+    check('A VAULT OF ITS OWN holds the bridge pass, as a bearer token for the bridge\'s address only',
+      cred[1] === 'vlt_1' && cred[2].auth.type === 'static_bearer' && cred[2].auth.mcp_server_url === CC.mcpUrl()
+      && /^cyb_[0-9a-f]{18}\.[A-Za-z0-9_-]{43}$/.test(sessTok) && vc.metadata.cyg_oid === 'oid-me' && vc.metadata.cygenix === 'console', JSON.stringify(cred));
     const sc = CLIENT.calls.find(c => c[0] === 'sessions.create')[1];
-    check('the session mounts it read-only at the documented path', sc.resources.length === 1 && sc.resources[0].type === 'file'
-      && sc.resources[0].file_id === 'file_1' && sc.resources[0].mount_path === CC.CRED_PATH);
+    check('THE SESSION GETS THE VAULT AND NO FILES: no database login reaches the workspace',
+      sc.vault_ids.join() === 'vlt_1' && !sc.resources && !CLIENT.calls.some(c => c[0] === 'files.upload'));
     check('with the £5 cap and the owner stamp', sc.budget.max_list_cost.amount === '600' && sc.metadata.cyg_oid === 'oid-me' && sc.metadata.cygenix === 'console');
-    check('THE SYSTEM PROMPT NAMES THE VARIABLES AND NEVER THE VALUES',
-      /CYG_DB_PASSWORD/.test(sc.agent.system) && sc.agent.system.indexOf(PASSWORD) === -1 && sc.agent.system.indexOf('acme.database') === -1);
-    check('it opens read-only, says to show SQL before changing anything, prefers transactions, and never prints the password',
-      /READ-ONLY/.test(sc.agent.system) && /Show SQL or code before running anything that modifies data/.test(sc.agent.system)
-      && /transaction/.test(CC.MODE_TEXT.changes) && /Never print the password/.test(sc.agent.system));
+    check('THE SYSTEM PROMPT SENDS CLAUDE TO THE THREE MCP TOOLS, and names no login, host or file',
+      /ONLY through the "cygenix" MCP tools: list_tables, describe_table and run_query/.test(sc.agent.system)
+      && /Do not try to connect to the database from the workspace/.test(sc.agent.system)
+      && sc.agent.system.indexOf(PASSWORD) === -1 && sc.agent.system.indexOf('acme.database') === -1
+      && !/CYG_DB_|db\.env/.test(sc.agent.system) && sc.agent.system.indexOf(sessTok) === -1, sc.agent.system);
+    check('it opens read-only and says Cygenix enforces it; changes mode says to show SQL first and that destructive statements are refused',
+      /READ-ONLY/.test(sc.agent.system) && /Cygenix enforces it/.test(sc.agent.system) && /at most 1,000 rows/.test(sc.agent.system)
+      && /show the exact SQL/.test(CC.MODE_TEXT.changes) && /DROP, TRUNCATE, and DELETE or UPDATE without a WHERE clause/.test(CC.MODE_TEXT.changes));
     check('it is target-agnostic', !/\b3E\b|Elite|Aderant/.test(sc.agent.system));
     const doc = DB._items.get(sid);
-    check('the session record is in Cosmos under the caller, on /userId, with no secret in it',
+    check('the session record is in Cosmos under the caller, on /userId, with the vault and the pass\'s HASH — never the pass or a secret',
       doc.kind === 'session' && doc.userId === 'me@acme.test' && doc.oid === 'oid-me' && doc.connectionId === 'sconn_tgt1'
-      && doc.fileId === 'file_1' && JSON.stringify(doc).indexOf(PASSWORD) === -1 && JSON.stringify(doc).indexOf('Password=') === -1, JSON.stringify(doc));
+      && doc.vaultId === 'vlt_1' && doc.connMode === 'direct' && doc.bridgeLid === CC.splitPass(sessTok).lid
+      && doc.bridgeHash === CC.sha256(CC.splitPass(sessTok).secret) && doc.bridgeExp > Date.now() + 23 * 3600 * 1000
+      && JSON.stringify(doc).indexOf(sessTok) === -1 && JSON.stringify(doc).indexOf(CC.splitPass(sessTok).secret) === -1
+      && JSON.stringify(doc).indexOf(PASSWORD) === -1 && JSON.stringify(doc).indexOf('Password=') === -1, JSON.stringify(doc));
     check('the key is nowhere in what left this process', !JSON.stringify(CLIENT.calls).includes(KEY) && !JSON.stringify([...DB._items.values()]).includes(KEY));
-    check('the log line carries no message, host or secret', logs.every(l => !/acme|Tr0ub|sk-ant/.test(l)), logs.join(' | '));
+    check('the log line carries no message, host or secret', logs.every(l => !/acme|Tr0ub|sk-ant|cyb_/.test(l)), logs.join(' | '));
+    let red = JSON.parse((await CC.bridgeRedeem({ token: sessTok })).body);
+    check('THE SESSION\'S PASS REDEEMS to its connection, read-only while changes are off',
+      red.ok === true && red.kind === 'session' && red.sessionId === sid && red.connString === CONNSTR && red.readOnly === true
+      && red.profileName === 'Demo' && red.connectionName === 'Target DEV' && red.side === 'tgt' && red.tenantId === 'tn_1', JSON.stringify(red));
 
     CLIENT._o.createFails = true;
+    const nDocs = DB._items.size;
     r = await open();
-    check('when Anthropic cannot open the session, the credential file is deleted again and the error is passed on',
-      r.status === 503 && CLIENT.calls.some(c => c[0] === 'files.delete' && c[1] === 'file_2') && !CLIENT.files.file_2, r.raw);
+    check('when Anthropic cannot open the session, its vault is deleted again, nothing is stored, and the error is passed on',
+      r.status === 503 && CLIENT.calls.some(c => c[0] === 'vaults.delete' && c[1] === 'vlt_2') && DB._items.size === nDocs, r.raw);
     CLIENT._o.createFails = false;
+
 
     // Talking to it.
     r = await call('POST', 'message', { body: { sessionId: sid, text: '' } });
@@ -751,7 +644,7 @@ function listen(onConn) {
     CLIENT._o.sessions[sid].status = 'running';
     CLIENT._o.events[sid] = [
       { id: 'e1', type: 'user.message', processed_at: '2026-09-30T10:00:00.000Z', content: [{ type: 'text', text: 'List the tables' }] },
-      { id: 'e2', type: 'agent.tool_use', processed_at: '2026-09-30T10:00:01.000Z', name: 'bash', input: { command: "set -a; . /workspace/.cygenix/db.env; set +a; python3 -c \"print('" + PASSWORD + "')\"" } },
+      { id: 'e2', type: 'agent.tool_use', processed_at: '2026-09-30T10:00:01.000Z', name: 'bash', input: { command: "python3 -c \"print('" + PASSWORD + "')\"" } },
       { id: 'e3', type: 'agent.tool_result', processed_at: '2026-09-30T10:00:02.000Z', content: [{ type: 'text', text: 'pwd: ' + PASSWORD + '\nconn: ' + CONNSTR + '\nCYG_DB_PASSWORD=' + PASSWORD + '\ntables: 12' }] },
       { id: 'e4', type: 'user.message', processed_at: null, content: [{ type: 'text', text: 'queued' }] },
     ];
@@ -791,8 +684,10 @@ function listen(onConn) {
     check('ALLOWING CHANGES asks the gate for the mutating act and records it, naming profile and connection',
       r.status === 200 && r.body.dataChangesAllowed === true && mg.act === 'changes' && mg.record === 'session.changes-on'
       && mg.detail.profile === 'Demo' && mg.detail.connection === 'Target DEV' && mg.detail.sessionId === sid, JSON.stringify(mg));
-    check('and tells Claude, as a system message', sysm.type === 'system.message' && /CHANGES ALLOWED/.test(sysm.content[0].text) && /Show SQL or code/i.test(sysm.content[0].text.replace('show the exact SQL or code', 'Show SQL or code')));
+    check('and tells Claude, as a system message', sysm.type === 'system.message' && /CHANGES ALLOWED/.test(sysm.content[0].text) && /show the exact SQL/.test(sysm.content[0].text));
     check('the session record says so', DB._items.get(sid).dataChangesAllowed === true);
+    red = JSON.parse((await CC.bridgeRedeem({ token: sessTok })).body);
+    check('AND THE BRIDGE SEES IT AT ONCE: the same pass now redeems with changes allowed', red.readOnly === false, JSON.stringify(red));
     GATE_REPLY = { status: 403, body: { error: 'Your role cannot allow Claude Code to change data.' } };
     CC._reset();
     r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: true } });
@@ -801,19 +696,22 @@ function listen(onConn) {
     r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: false } });
     sysm = CLIENT.calls.filter(c => c[0] === 'events.send').pop()[2].events[0];
     check('switching it off is a plain use, and tells Claude it is read-only again', r.status === 200 && /READ-ONLY/.test(sysm.content[0].text) && DB._items.get(sid).dataChangesAllowed === false);
+    check('…and the bridge is read-only again', JSON.parse((await CC.bridgeRedeem({ token: sessTok })).body).readOnly === true);
 
     // Stop.
     FETCHED = [];
     r = await call('POST', 'stop', { body: { sessionId: sid } });
     const sg = JSON.parse(FETCHED[0].init.body);
-    check('STOP interrupts, archives, deletes the credential file and records it',
+    check('STOP interrupts, archives, deletes the vault and records it',
       r.status === 200 && r.body.status === 'stopped'
       && CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === sid && c[2].events[0].type === 'user.interrupt')
       && CLIENT.calls.some(c => c[0] === 'sessions.archive' && c[1] === sid)
-      && CLIENT.calls.some(c => c[0] === 'files.delete' && c[1] === 'file_1') && !CLIENT.files.file_1
+      && CLIENT.calls.some(c => c[0] === 'vaults.delete' && c[1] === 'vlt_1')
       && sg.record === 'session.stop' && sg.detail.sessionId === sid, JSON.stringify(sg));
     const stoppedDoc = DB._items.get(sid);
-    check('the record is stopped, with an end time and no file id', stoppedDoc.status === 'stopped' && !!stoppedDoc.endedAt && stoppedDoc.fileId === null);
+    check('the record is stopped, with an end time, and the pass is gone from it', stoppedDoc.status === 'stopped' && !!stoppedDoc.endedAt
+      && stoppedDoc.vaultId === null && stoppedDoc.bridgeLid === null && stoppedDoc.bridgeHash === null && stoppedDoc.bridgeExp === null);
+    check('A STOPPED SESSION\'S PASS NO LONGER WORKS', (await CC.bridgeRedeem({ token: sessTok })).status === 401);
     const n1 = CLIENT.calls.length;
     r = await call('GET', 'events', { query: { sessionId: sid } });
     check('POLLING A STOPPED SESSION COSTS NOTHING: done, no Anthropic calls', r.body.done === true && r.body.status === 'stopped' && CLIENT.calls.length === n1);
@@ -828,8 +726,10 @@ function listen(onConn) {
     CLIENT._o.events[sid2] = [{ id: 'x1', type: 'session.error', processed_at: '2026-09-30T11:00:00.000Z', error: { type: 'billing_error', message: 'credit balance too low' } },
       { id: 'x2', type: 'session.status_terminated', processed_at: '2026-09-30T11:00:01.000Z' }];
     r = await call('GET', 'events', { query: { sessionId: sid2 } });
-    check('a session Anthropic ended with an error is reported as error, done, and its file is deleted',
-      r.body.status === 'error' && r.body.done === true && !CLIENT.files.file_3 && DB._items.get(sid2).status === 'error', r.raw);
+    const sid2Vault = CLIENT.calls.filter(c => c[0] === 'vaults.credentials.create').pop()[1];
+    check('a session Anthropic ended with an error is reported as error, done, and its vault is deleted',
+      r.body.status === 'error' && r.body.done === true && CLIENT.calls.some(c => c[0] === 'vaults.delete' && c[1] === sid2Vault)
+      && DB._items.get(sid2).status === 'error' && DB._items.get(sid2).bridgeLid === null, r.raw);
 
     // Somebody else, the list, the replay.
     const other = { ok: true, oid: 'oid-them', email: 'them@acme.test', bearer: 'Bearer y' };
@@ -839,7 +739,8 @@ function listen(onConn) {
     check('the list is the caller\'s sessions, newest first, with no internals',
       r.status === 200 && r.body.sessions.length === 2 && r.body.sessions[0].id === sid2 && r.body.sessions[1].id === sid
       && r.body.sessions[1].title === 'List the tables and row counts using Python' && r.body.sessions[1].status === 'stopped'
-      && !('fileId' in r.body.sessions[0]) && !('cursorAt' in r.body.sessions[0]) && !('oid' in r.body.sessions[0]), r.raw);
+      && !('vaultId' in r.body.sessions[0]) && !('bridgeHash' in r.body.sessions[0]) && !('bridgeLid' in r.body.sessions[0])
+      && !('cursorAt' in r.body.sessions[0]) && !('oid' in r.body.sessions[0]) && !('fnUrl' in r.body.sessions[0]), r.raw);
     r = await call('GET', 'session', { query: { id: sid } });
     check('a past session replays from Cosmos, redacted, without touching Anthropic',
       r.status === 200 && r.body.session.id === sid && r.body.events.length === 6 && r.body.events[2].id === 'e3'
@@ -892,6 +793,17 @@ function listen(onConn) {
     check('a stopped session takes no more files', (await call('POST', 'upload', { body: { sessionId: sid3, name: 'x.csv', contentBase64: csv.toString('base64') } })).status === 409);
     check('…but its outputs can still be listed and fetched for the replay', (await call('GET', 'outputs', { query: { sessionId: sid3 } })).status === 200);
 
+    // A Function App connection opens too.
+    SECRETS.sconn_fn = { fnKey: 'abc' };
+    FETCHED = [];
+    r = await open({ connId: 'sconn_fn', connectionName: 'Via Function App', mode: 'azure', fnUrl: 'https://fn.acme.test/api/data' });
+    const fdoc = DB._items.get(r.body.session && r.body.session.id) || {};
+    check('A FUNCTION APP CONNECTION OPENS A SESSION: the record keeps its address, the gate is told its host',
+      r.status === 200 && fdoc.connMode === 'azure' && fdoc.fnUrl === 'https://fn.acme.test/api/data' && fdoc.dbType === 'sqlserver'
+      && JSON.parse(FETCHED[0].init.body).detail.host === 'fn.acme.test' && JSON.stringify(fdoc).indexOf('abc') === -1, r.raw);
+    await call('POST', 'stop', { body: { sessionId: r.body.session.id } });
+    DB._items.delete(r.body.session.id);
+
     // Chunking.
     const big = { id: 'sesn_big', kind: 'session', userId: 'me@acme.test', oid: 'oid-me', chunkCount: 0, eventCount: 0 };
     const base = Date.parse('2026-09-30T12:00:00Z');
@@ -906,25 +818,6 @@ function listen(onConn) {
       && DB._items.get('sesn_big').eventCount === 450, total + ' / ' + DB._items.get('sesn_big').chunkCount);
   }
 
-  /* ── 6. Reading Claude's result line ──────────────────────────────── */
-  section('6. Reading the CYGPROBE_RESULT line, wherever Claude put it');
-  {
-    const R = CC.resultFrom;
-    check('on one line after a space', R('done\nCYGPROBE_RESULT {"tcp":"open","egress_ip":"1.2.3.4"}').tcp === 'open');
-    check('after a colon, inside a code block', R('Result:\n```\nCYGPROBE_RESULT: {"tcp":"failed","tcp_error":"timed out"}\n```').tcp_error === 'timed out');
-    check('spread over several lines', R('CYGPROBE_RESULT {\n  "host": "h",\n  "port": 14330,\n  "tcp": "open"\n}').port === 14330);
-    check('braces inside a string do not end it early', R('CYGPROBE_RESULT {"tcp":"failed","tcp_error":"bad {thing} here"}').tcp_error === 'bad {thing} here');
-    check('the LAST marker wins when Claude repeats the format first', R('I will print CYGPROBE_RESULT {"tcp":"x"} at the end.\nCYGPROBE_RESULT {"tcp":"open"}').tcp === 'open');
-    check('no marker, no JSON or broken JSON is null, not a crash', R('nothing here') === null && R('CYGPROBE_RESULT and then nothing') === null && R('CYGPROBE_RESULT {"tcp": open}') === null);
-    const parsed = CC.parseProbeEvents([
-      { type: 'user.message', content: [{ type: 'text', text: 'check' }] },
-      { type: 'agent.tool_use', name: 'bash', input: { command: 'python3 x.py' } },
-      { type: 'agent.tool_result', content: [{ type: 'text', text: 'connected' }] },
-      { type: 'agent.message', content: [{ type: 'text', text: 'It connected.\n\nCYGPROBE_RESULT {"host":"h","port":14330,"kind":"other","tcp":"open","egress_ip":"34.1.2.3"}' }] },
-      { type: 'session.status_idle', stop_reason: { type: 'end_turn' } }]);
-    check('a result in Claude\'s closing message is picked up from the event list', parsed.result && parsed.result.tcp === 'open' && parsed.result.egress_ip === '34.1.2.3', JSON.stringify(parsed.result));
-  }
-
   /* ── 6a. The Dev Console reads the form's quoting too ───────────────── */
   section('6a. The Dev Console reads braced and quoted passwords the form writes');
   {
@@ -932,24 +825,15 @@ function listen(onConn) {
     for (const pw of ['ZrsKD+wfr72iEAcoqyFhNvZ4=ovuA1xnZXT3poHYPN8I', 'pa;ss=word', 'a}b', 'sp ace', "it's"]) {
       const cs = B.compose({ engine: 'mssql', host: 'cygenix.database.windows.net', port: '1433', database: 'cygenix', user: 'claude_api', password: pw, encrypt: true });
       const p = CC.parseConn(cs);
-      check('the workspace\'s login file gets the real password: ' + JSON.stringify(pw),
+      check('the server reads the real password the form wrote: ' + JSON.stringify(pw),
         p.ok && p.password === pw && p.user === 'claude_api' && p.host === 'cygenix.database.windows.net' && p.database === 'cygenix', cs + ' -> ' + JSON.stringify(p));
     }
     check('double-quoted values still work, doubled quotes unescaped',
       CC.parseConn('Server=h;Database=d;User Id=u;Password="p;w""x"').password === 'p;w"x');
   }
 
-  /* ── 6b. Where the mounted files really are ─────────────────────────── */
-  section('6b. Mounted files: the real location is what the model is told');
-  {
-    check('the connection file is at /mnt/session/uploads + the mount path', CC.CRED_FILE === '/mnt/session/uploads/workspace/.cygenix/db.env');
-    const sp = CC.systemPrompt({ dbType: 'sqlserver', mode: 'readonly' });
-    check('the console prompt names that location, sources it from there, and says how to find it if it moved',
-      sp.indexOf('read-only file ' + CC.CRED_FILE) !== -1 && sp.indexOf('. ' + CC.CRED_FILE + '; set +a') !== -1 && /find \/ -name db\.env/.test(sp), sp);
-  }
-
   /* ── 7. The parsers ─────────────────────────────────────────────────── */
-  section('7. Reading a connection string — the server\'s parser and the page\'s');
+  section('7. Reading a connection string, and blanking secrets');
   {
     const S = CC.parseConn;
     let x = S('Server=tcp:acme.database.windows.net,1433;Initial Catalog=Fin;User ID=svc;Password="p@ss;w0rd";Encrypt=True');
@@ -960,29 +844,11 @@ function listen(onConn) {
     check('server: libpq keywords', x.ok && x.kind === 'postgres' && x.port === 6432 && x.password === "it's");
     check('server: localhost refused', !S('Server=localhost;Database=x').ok);
     check('server: a named instance keeps the host and the default port', S('Data Source=SQL01\\PROD;Database=x').host === 'sql01');
-    const f = CC.credFile(S('postgresql://u:s3c@pg.acme.io/db'), 'postgresql://u:s3c@pg.acme.io/db');
-    check('the credential file is KEY=\'value\' lines, one per part, plus the whole string',
-      /^CYG_DB_TYPE='postgres'$/m.test(f) && /^CYG_DB_PORT='5432'$/m.test(f) && /^CYG_DB_PASSWORD='s3c'$/m.test(f) && /^CYG_DB_CONNSTR='postgresql:/m.test(f));
     const red = CC.makeRedactor(['s3c', 'postgresql://u:s3c@pg.acme.io/db']);
     check('the redactor blanks by literal, by URL-encoding and by pattern',
       red.string('s3c s3c%20 x=postgresql://u:s3c@pg.acme.io/db Password=other; PWD=z CYG_DB_PASSWORD=\'q\' postgres://a:b@h/d')
         === '•••••• ••••••%20 x=•••••• Password=••••••; PWD=•••••• CYG_DB_PASSWORD=•••••• postgres://a:••••••@h/d',
       red.string('s3c s3c%20 x=postgresql://u:s3c@pg.acme.io/db Password=other; PWD=z CYG_DB_PASSWORD=\'q\' postgres://a:b@h/d'));
-
-    const e = (s, m) => P.endpointOf(s, m);
-    x = e('Server=tcp:acme.database.windows.net,1433;Database=x;User ID=u;Password=hunter2');
-    check('page: Azure SQL ADO string', x.ok && x.host === 'acme.database.windows.net' && x.port === 1433 && x.kind === 'sqlserver');
-    check('page: AND THE PASSWORD IS NOWHERE IN WHAT IS RETURNED', !JSON.stringify(x).includes('hunter2'));
-    x = e('Data Source=SQL01\\PROD;Initial Catalog=x');
-    check('page: a named instance is read, with a note about its port', x.ok && x.host === 'sql01' && x.port === 1433 && /Named instance/.test(x.note));
-    x = e('postgresql://u:secret@pg.acme.io/db');
-    check('page: a postgres URL defaults to 5432', x.ok && x.kind === 'postgres' && x.port === 5432 && !JSON.stringify(x).includes('secret'));
-    check('page: localhost is refused in words', !e('Server=.;Database=x').ok && /this computer/.test(e('Server=localhost;Database=x').why));
-    check('page: a Function App connection says to enter the server by hand', !e('x', 'azure').ok && /Function App/.test(e('x', 'azure').why));
-    check('page: validate refuses scheme, port and path', !!P.validate('https://x.io', 1) && !!P.validate('x.io', 0) && !!P.validate('x.io/db', 1) && P.validate('x.io', 1433) === '');
-    check('page: the firewall sentence is the brief\'s, with the address when known',
-      /Your database may only accept known IP addresses — the Anthropic workspace may need allowing\./.test(P.firewallHelp({}))
-      && /203\.0\.113\.9/.test(P.firewallHelp({ egress_ip: '203.0.113.9' })));
   }
 
   /* ── 7b. The console's reading of a session ─────────────────────────── */
@@ -1015,6 +881,23 @@ function listen(onConn) {
       view.output.length === 3 && view.output[0].kind === 'command' && view.output[0].result && view.output[0].result.table.columns.join() === 'a,b');
     check('a failed tool result is marked, and a refused connection raises the firewall flag', view.output[1].result.kind === 'error' && view.flags.connectionFailure === true);
     check('the spend cap becomes a notice block and a flag', view.output[2].kind === 'notice' && view.flags.budgetReached === true);
+    const bv = M.blocksFrom([
+      { id: 'm1', type: 'agent.mcp_tool_use', name: 'run_query', mcp_server_name: 'cygenix', input: { sql: 'SELECT TOP 5 name FROM sys.tables' } },
+      { id: 'm2', type: 'agent.mcp_tool_result', mcp_tool_use_id: 'm1', is_error: false,
+        content: [{ type: 'text', text: JSON.stringify({ columns: ['name', 'rows'], rows: [['Customer', 1200], ['Note', null]], row_count_returned: 2, truncated: true, total_rows_read: 9 }) }] },
+      { id: 'm3', type: 'agent.mcp_tool_use', name: 'describe_table', input: { schema: 'dbo', table: 'Customer' } },
+      { id: 'm4', type: 'agent.mcp_tool_use', name: 'run_query', input: { sql: 'SELECT 1' } },
+      { id: 'm5', type: 'agent.mcp_tool_result', mcp_tool_use_id: 'm4', is_error: true, content: [{ type: 'text', text: 'The query failed: connect ETIMEDOUT 10.0.0.1:1433' }] },
+    ]);
+    const q1 = bv.output[0];
+    check('THE BRIDGE: a query shows as its SQL, and its answer as a table straight away, NULLs and the cap shown',
+      q1.kind === 'code' && q1.title === 'Query run' && q1.body === 'SELECT TOP 5 name FROM sys.tables'
+      && q1.result && q1.result.title === '2 rows' && q1.result.table.columns.join() === 'name,rows'
+      && q1.result.table.rows[0].join() === 'Customer,1200' && q1.result.table.rows[1][1] === 'NULL' && q1.result.table.truncated === 9, JSON.stringify(q1));
+    check('describe_table is named in words', bv.output[1].title === 'Described dbo.Customer');
+    check('a failed bridge query is marked, and a connection failure raises the help note',
+      bv.output[2].result.kind === 'error' && bv.flags.connectionFailure === true);
+    check('an answer that is not the bridge\'s shape is not a table', M.bridgeTable('not json') === null && M.bridgeTable('{"a":1}') === null);
     check('a "write" shows as code written to a path', M.toolBlock({ id: 'x', name: 'write', input: { path: '/w/a.py', content: 'print(1)' } }).title === 'Wrote /w/a.py');
     check('the status words', M.statusWord('running') === 'Working' && M.statusWord('idle') === 'Idle' && M.statusWord('stopped') === 'Stopped' && M.statusWord('error') === 'Error' && M.statusWord(undefined) === 'No session');
     check('the first-use notice is remembered per user, in one key', !M.noticeDismissed(null, 'a@x') && M.noticeDismissed(M.noticeDismiss('{}', 'a@x'), 'a@x') && !M.noticeDismissed(M.noticeDismiss('{}', 'a@x'), 'b@x'));
@@ -1029,12 +912,13 @@ function listen(onConn) {
   section('8. The page and the house rules');
   {
     const page = read('public', 'claude-code.html');
-    check('the page loads the console module, the probe module, the roles client and the sidebar',
-      /src="\/cygenix-cc-console\.js\?v=/.test(page) && /src="\/cygenix-cc-probe\.js\?v=/.test(page) && /src="\/cygenix-rbac\.js\?v=/.test(page) && /cygenix-sidebar\.js/.test(page));
+    check('the page loads the console module, the roles client and the sidebar — and the old connection test is gone',
+      /src="\/cygenix-cc-console\.js\?v=/.test(page) && /src="\/cygenix-rbac\.js\?v=/.test(page) && /cygenix-sidebar\.js/.test(page)
+      && !/cygenix-cc-probe|id="cc-probe"|CYGPROBE/.test(page) && !fs.existsSync(path.join(ROOT, 'public', 'cygenix-cc-probe.js')));
     check('every Azure post goes through one guard: in flight, 3s apart, reset in its own finally',
       /async function guarded\(name, fn\)\{\s*if \(CS\.busy\[name\]\) return null;/.test(page) && /MIN_GAP_MS = 3000/.test(page)
       && /finally \{ CS\.busy\[name\] = false; render\(\); \}/.test(page) && (page.match(/CS\.busy\[name\] = false/g) || []).length === 1
-      && ["guarded('New session'", "guarded('Send'", "guarded('Stop'", "guarded('Mode'"].every(g => page.indexOf(g) !== -1));
+      && ["guarded('New session'", "guarded('Send'", "guarded('Stop'", "guarded('Mode'", "guarded('Check'"].every(g => page.indexOf(g) !== -1));
     check('polling: every 3s, one in flight, stops when not running, stops on error, stops on Stop',
       /POLL_MS = 3000/.test(page) && /if \(CS\.pollInflight \|\| !CS\.cur \|\| CS\.replay\) return;/.test(page)
       && /if \(r\.status !== 'running'\) \{ stopPolling\(\);/.test(page) && /Lost touch with the session[\s\S]{0,80}stopPolling\(\);/.test(page)
@@ -1049,11 +933,18 @@ function listen(onConn) {
     check('the brief\'s notice, the not-enabled sentence, the toggle note and the firewall help are there, word for word',
       /Runs on your own Anthropic API key and is billed to your Anthropic account\. Code runs in an isolated Anthropic workspace\. You are responsible for changes it makes\./.test(page)
       && /Not enabled for your role — ask an Owner to enable it in Governance\./.test(page)
-      && /When off, Claude is instructed not to change data\. For guaranteed protection, use a read-only database login\./.test(page)
-      && /Your database may only accept known IP addresses — the Anthropic workspace may need allowing\./.test(page));
-    check('the page sends a connection\'s id and names to open a session — never its string',
-      /\{ side: CS\.conn\.side, connId: CS\.conn\.connId, connectionName: CS\.conn\.name,/.test(page) && !/connString/.test(page.split('function csNew')[1].split('function csSend')[0]));
-    check('the connection test is still on the page, for administrators, behind a summary', /<details class="probe" id="cc-probe">/.test(page) && /id="cc-run-limited"/.test(page));
+      && /When off, Cygenix refuses any change to data and runs reads so nothing can be kept\. A read-only database login adds a second lock\./.test(page)
+      && /Claude reaches your database only through Cygenix: the database login never enters the\s+workspace/.test(page)
+      && /Cygenix could not reach the database\. The SQL editor uses the same route, so check the connection there first\./.test(page));
+    const body = page.split('function connBody')[1].split('function csCheck')[0];
+    check('the page sends a connection\'s id, names and Function App address to open a session or a check — never its string or key',
+      /\{ side: CS\.conn\.side, connId: CS\.conn\.connId, connectionName: CS\.conn\.name, mode: CS\.conn\.mode \|\| 'direct',/.test(body)
+      && !/connString|fnKey|password/i.test(body) && /call\('POST', '\/agent\/claude-code\/session', connBody\(\)\)/.test(page));
+    const chk = page.split('function csCheck')[1].split('/* ── Sessions')[0];
+    check('CHECK THE BRIDGE: a button; a pass from the Azure side; SELECT 1 through the bridge with that pass — never the Entra token',
+      /id="cs-check" onclick="csCheck\(\)"/.test(page) && /call\('POST', '\/agent\/claude-code\/check', connBody\(\)\)/.test(chk)
+      && /fetch\(MCP_PATH, \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json', Authorization: 'Bearer ' \+ p\.token \}/.test(chk)
+      && /SELECT 1 AS ok/.test(chk) && /MCP_PATH = '\/\.netlify\/functions\/cc-mcp'/.test(page) && !/getCygenixIdToken/.test(chk));
     check('phase 2: attach and download go through the same guard, and a file over 4 MB is refused before it is read',
       /guarded\('Attach'/.test(page) && /guarded\('Download'/.test(page) && /if \(f\.size > UPLOAD_MAX\)/.test(page) && /UPLOAD_MAX = 4 \* 1024 \* 1024/.test(page));
     check('the page is titled Dev Console and lives at /dev-console, with the old address redirecting',
@@ -1062,7 +953,7 @@ function listen(onConn) {
     const src = read('azure-function', 'src', 'claude-code.js');
     check('the server reads the key only through userAnthropicKey', /userAnthropicKey\(req\)/.test(src) && !/process\.env\.ANTHROPIC_API_KEY/.test(src));
     check('no key or secret literal in any new file',
-      [src, page, read('public', 'cygenix-cc-probe.js'), read('public', 'cygenix-cc-console.js'), read('netlify', 'functions', 'claude-code-gate.js')].every(t => !/sk-ant-[A-Za-z0-9]/.test(t)));
+      [src, page, read('public', 'cygenix-cc-console.js'), read('netlify', 'functions', 'claude-code-gate.js'), read('netlify', 'functions', 'cc-mcp.js')].every(t => !/sk-ant-[A-Za-z0-9]|cyb_[0-9a-f]{18}\./.test(t)));
     check('no 3E names anywhere in it (target-agnostic)', [src, page, read('public', 'cygenix-cc-console.js')].every(t => !/\b3E\b|Elite|Timekeeper|Matter\b/.test(t)));
     check('the menu: Develop holds the SQL editor and Claude Code; the search knows the words; the Assistant knows the page',
       /section: 'Develop', group:'develop'/.test(read('public', 'cygenix-sidebar.js')) && /'claude-code':\s*\['dev console', 'claude code'/.test(read('public', 'cygenix-menu-index.js'))
@@ -1076,18 +967,6 @@ function listen(onConn) {
       /async function readSecret\(oid, connId\)/.test(read('azure-function', 'src', 'conn-secrets.js'))
       && /\['list', 'put', 'delete', 'prune'\]/.test(read('azure-function', 'src', 'conn-secrets.js')));
   }
-  if (false) {
-    const src = read('azure-function', 'src', 'claude-code.js');
-    check('the server reads the key only through userAnthropicKey', /userAnthropicKey\(req\)/.test(src) && !/process\.env\.ANTHROPIC_API_KEY/.test(src));
-    check('no key or secret literal in any new file',
-      [src, read('public', 'cygenix-cc-probe.js'), read('netlify', 'functions', 'claude-code-gate.js')].every(t => !/sk-ant-[A-Za-z0-9]/.test(t)));
-    check('no 3E names in the server (target-agnostic)', !/\b3E\b|Elite|Timekeeper|Matter\b/.test(src));
-    check('the Assistant knows the page', /key: 'claude-code'/.test(read('public', 'cygenix-assistant-actions.js')));
-    check('conn-secrets exposes ONE read, for the verified owner, and nothing new over the wire',
-      /async function readSecret\(oid, connId\)/.test(read('azure-function', 'src', 'conn-secrets.js'))
-      && /\['list', 'put', 'delete', 'prune'\]/.test(read('azure-function', 'src', 'conn-secrets.js')));
-  }
-
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

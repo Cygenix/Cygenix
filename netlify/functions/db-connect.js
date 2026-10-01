@@ -123,6 +123,14 @@ function detectDialect(cs) {
   return 'mssql';
 }
 
+// The Dev Console's MCP bridge (cc-mcp.js) runs Claude's queries down this
+// same road — the same parsers, relay, Entra handling and RBAC gate as the
+// SQL editor — rather than a second copy of it. Nothing here changes
+// behaviour for db-connect's own callers. (Up here, not at the end: these are
+// all hoisted function declarations, and tests/conn-builder.test.js lifts the
+// last functions in this file by source, so the file should end on one.)
+exports.__bridge = { rbacGate, handleMssql, handlePostgres, detectDialect, parseMssqlConnectionString };
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') return err('Method not allowed', null, 405);
@@ -1225,7 +1233,17 @@ async function handlePostgres(action, connectionString, database, body) {
         if (!sqlToRun) return err('sql is required', null, 400);
         if (/^\s*(DROP\s+DATABASE|TRUNCATE\s+TABLE|DELETE\s+FROM\s+\w+\s*$)/i.test(sqlToRun))
           return err('Destructive statement blocked. Use explicit WHERE clauses.', null, 400);
-        const r = await client.query(sqlToRun);
+        // readOnly (the Dev Console bridge): PostgreSQL enforces it itself —
+        // a READ ONLY transaction refuses any write — and it is rolled back
+        // regardless, so nothing a read touched is kept either.
+        let r;
+        if (body.readOnly === true) {
+          await client.query('BEGIN READ ONLY');
+          try { r = await client.query(sqlToRun); }
+          finally { try { await client.query('ROLLBACK'); } catch (e) { /* connection closes below */ } }
+        } else {
+          r = await client.query(sqlToRun);
+        }
         result = {
           success: true,
           rowsAffected: r.rowCount || 0,

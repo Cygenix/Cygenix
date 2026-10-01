@@ -55,8 +55,7 @@
 <script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-drive.js?v=43733ac277" defer></script>
 <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
-<script src="/cygenix-cc-probe.js?v=b48d572481" defer></script>
-<script src="/cygenix-cc-console.js?v=3e088d59a5" defer></script>
+<script src="/cygenix-cc-console.js?v=43dc984b91" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -158,23 +157,9 @@ table.res th{background:var(--bg3);position:sticky;top:0}
 .modal-card h3{font-size:1rem;font-weight:600;margin-bottom:0.5rem}
 .modal-card input{font:inherit;font-size:0.9rem;width:100%;margin-top:0.6rem;padding:0.45rem 0.55rem;border:0.5px solid var(--border2);border-radius:var(--r,6px);background:var(--bg);color:var(--text)}
 .modal-foot{display:flex;justify-content:flex-end;gap:0.6rem;margin-top:1rem}
-/* The connection test, kept for administrators: an Owner or Platform
-   Administrator opens it from the "Not enabled" screen or with #test. */
-details.probe{margin:1.25rem 1.5rem;max-width:980px}
-details.probe>summary{cursor:pointer;font-size:0.9rem;font-weight:600;padding:0.5rem 0}
-.form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0.75rem;margin-top:0.75rem}
-.form label{display:flex;flex-direction:column;gap:0.3rem;font-size:0.78rem;color:var(--text2)}
-.form .wide{grid-column:span 2}
-.form input,.form select{font:inherit;font-size:0.88rem;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--r,6px);padding:0.45rem 0.55rem}
-.actions{display:flex;flex-wrap:wrap;gap:0.6rem;margin-top:1rem}
-.run{border-top:0.5px solid var(--border);padding-top:0.8rem;margin-top:0.8rem}
-.run-head{display:flex;align-items:center;gap:0.6rem;font-size:0.88rem;font-weight:600}
 .pill.ok{background:var(--green-bg);color:var(--green)}
 .pill.bad{background:var(--red-bg);color:var(--red)}
 .pill.busy{background:var(--accent-glow);color:var(--accent)}
-table.facts{border-collapse:collapse;margin-top:0.5rem;font-size:0.84rem;width:100%}
-table.facts td{padding:0.3rem 0.5rem 0.3rem 0;vertical-align:top;border-bottom:0.5px solid var(--border)}
-table.facts td:first-child{color:var(--text2);width:210px}
 .mono{font-family:var(--mono);font-size:0.82rem}
 /* Full screen: hide the shared chrome (rail, masthead, status hairline,
    subnav) and let the console fill the whole window. The console's own
@@ -189,7 +174,7 @@ body.cs-full .drawer{top:52px}
    it here so it does not cover the pane's corner. */
 .cyga-launch{transform:scale(0.8) !important;transform-origin:bottom right !important;opacity:0.72}
 .cyga-launch:hover{opacity:1}
-@media (max-width:900px){.cols{grid-template-columns:1fr;height:auto}.divider{display:none}.col{border-right:0;border-bottom:0.5px solid var(--border)}.col-body{max-height:50vh}.topbar{left:0;height:auto;flex-wrap:wrap;padding:0.4rem 0.75rem}.main{padding-top:110px}.form{grid-template-columns:1fr 1fr}}
+@media (max-width:900px){.cols{grid-template-columns:1fr;height:auto}.divider{display:none}.col{border-right:0;border-bottom:0.5px solid var(--border)}.col-body{max-height:50vh}.topbar{left:0;height:auto;flex-wrap:wrap;padding:0.4rem 0.75rem}.main{padding-top:110px}}
 </style>
 </head>
 <body>
@@ -203,8 +188,9 @@ body.cs-full .drawer{top:52px}
 <div class="topbar">
   <h1><i class="ic ic-robot"></i> Dev Console</h1>
   <select id="cs-conn" aria-label="Connection" onchange="csPickConn()"></select>
+  <button class="btn" id="cs-check" onclick="csCheck()" title="Run SELECT 1 on this connection through the Dev Console's database bridge, without starting a session"><i class="ic ic-check"></i> Check the bridge</button>
   <span class="sw" id="cs-toggle" role="switch" aria-checked="false" tabindex="0" onclick="csToggle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();csToggle()}"
-        title="When off, Claude is instructed not to change data. For guaranteed protection, use a read-only database login.">
+        title="When off, Cygenix refuses any change to data and runs reads so nothing can be kept. A read-only database login adds a second lock.">
     <span class="knob"></span><span>Allow changes to data this session</span>
   </span>
   <span class="spacer"></span>
@@ -257,7 +243,7 @@ body.cs-full .drawer{top:52px}
             <div class="files-head">Written by Claude <a href="#" class="ct-link" onclick="event.preventDefault(); loadOutputs(true)">Refresh</a></div>
             <div id="cs-outputs"><div class="empty">Files Claude saves under /mnt/session/outputs appear here when a turn finishes.</div></div>
           </div>
-          <div id="cs-firewall" class="note warn" hidden>Your database may only accept known IP addresses — the Anthropic workspace may need allowing.</div>
+          <div id="cs-firewall" class="note warn" hidden>Cygenix could not reach the database. The SQL editor uses the same route, so check the connection there first.</div>
           <div id="cs-budget" class="note crit" hidden>This session reached its spend cap and has paused. Start a new session to carry on.</div>
           <div id="cs-note" class="note" hidden></div>
           <div id="cs-output"><div class="empty">Code Claude writes, commands it runs and what comes back appear here.</div></div>
@@ -266,48 +252,6 @@ body.cs-full .drawer{top:52px}
     </div>
   </section>
 
-  <details class="probe" id="cc-probe">
-    <summary>Connection test — can Anthropic's workspace reach a database? (Owner or Platform Administrator)</summary>
-    <section class="card" style="margin-top:0.75rem">
-      <p class="muted">Checks that the workspace can open a connection to a database server and that the server answers, and
-        reports the IP address the workspace connects from. It sends only the server name, port and database type; no user name,
-        password or data leaves this page, and nothing is run against the database.
-        Runs on your own Anthropic API key, costs a few cents, and is capped at US$6.00 (about £5).</p>
-      <div class="form">
-        <label class="wide">Fill from a connection
-          <select id="cc-conn" onchange="ccFillFrom(this.value)">
-            <option value="">Choose…</option>
-            <option value="tgt">Active profile — target</option>
-            <option value="src">Active profile — source</option>
-          </select>
-        </label>
-        <label>Database type
-          <select id="cc-kind">
-            <option value="sqlserver">SQL Server / Azure SQL</option>
-            <option value="postgres">PostgreSQL</option>
-            <option value="other">Other (connection only)</option>
-          </select>
-        </label>
-        <span></span>
-        <label class="wide">Server name
-          <input id="cc-host" type="text" autocomplete="off" spellcheck="false" placeholder="myserver.database.windows.net">
-        </label>
-        <label>Port
-          <input id="cc-port" type="number" min="1" max="65535" value="1433">
-        </label>
-      </div>
-      <div id="cc-fill-note" class="note warn" hidden></div>
-      <div class="actions">
-        <button class="btn primary" id="cc-run-limited" onclick="ccRun('limited')"><i class="ic ic-shield"></i> Test with the Cygenix allow-list</button>
-        <button class="btn" id="cc-run-open" onclick="ccRun('open')"><i class="ic ic-plug"></i> Test with open networking</button>
-      </div>
-      <div id="cc-note" class="note" hidden></div>
-    </section>
-    <section class="card" id="cc-results" hidden>
-      <h2>Results</h2>
-      <div id="cc-runs"></div>
-    </section>
-  </details>
 </main>
 
 <!-- Past sessions -->
@@ -321,8 +265,9 @@ body.cs-full .drawer{top:52px}
   <div class="modal-card">
     <h3 id="cs-notice-title">Before you start</h3>
     <p class="muted">Runs on your own Anthropic API key and is billed to your Anthropic account. Code runs in an isolated Anthropic workspace. You are responsible for changes it makes.</p>
-    <p class="muted" style="margin-top:0.5rem">The workspace receives the database login for the connection you choose, so Claude's code can do
-      whatever that login can. Sessions start read-only. Transcripts are kept by Cygenix with passwords blanked, and by Anthropic.</p>
+    <p class="muted" style="margin-top:0.5rem">Claude reaches your database only through Cygenix: the database login never enters the
+      workspace, Cygenix runs each query, keeps it read-only unless you allow changes, and records every query. Transcripts are kept by
+      Cygenix with passwords blanked, and by Anthropic.</p>
     <div class="modal-foot"><button class="btn primary" id="cs-notice-ok" onclick="csNoticeOk()">I understand</button></div>
   </div>
 </div>
@@ -404,24 +349,22 @@ async function init(){
       : 'Not enabled for your role — ask an Owner to enable it in Governance.';
     // An administrator here for the connection test still needs a key.
     $('cc-key-note').hidden = hasKey();
-    if (cc && cc.canConfigure) $('cc-probe').open = true;
-    renderTop(); pbRenderButtons();
+    renderTop();
     return;
   }
   if (!hasKey()) {
     gate.hidden = false; con.hidden = true;
     $('cc-gate-text').textContent = 'The Dev Console runs on your own Anthropic API key.';
     $('cc-key-note').hidden = false;
-    renderTop(); pbRenderButtons();
+    renderTop();
     return;
   }
   gate.hidden = true; con.hidden = false;
   loadConns();
-  if (location.hash === '#test') $('cc-probe').open = true;
   try {
     if (!CygenixCcConsole.noticeDismissed(localStorage.getItem(CygenixCcConsole.NOTICE_KEY), currentUser())) $('cs-notice').classList.add('open');
   } catch (e) {}
-  render(); pbRenderButtons();
+  render();
   loadSessions();
 }
 function csNoticeOk(){
@@ -445,8 +388,14 @@ function loadConns(){
     var connId = c.connId || ('sconn_live_' + side);
     var name = connName(connId) || (c.connName || '') || (c.source === 'profile' ? connId : 'Live ' + label.toLowerCase() + ' connection');
     var p = c.profileId ? profileOf(c.profileId) : null;
-    if (c.mode === 'azure') { CS.conns.push({ side: side, ok: false, label: label + ' — ' + name, why: 'This connection goes through a Cygenix Function App; Claude Code needs a direct database connection.' }); return; }
+    // A Function App connection works too, now that Claude reaches the
+    // database through Cygenix's bridge rather than connecting itself: the
+    // bridge calls the Function App the way the SQL editor does. Only its
+    // address travels from here; its key is read on the server.
+    var azure = c.mode === 'azure';
+    if (azure && !/^https:\/\//i.test(String(c.fnUrl || ''))) { CS.conns.push({ side: side, ok: false, label: label + ' — ' + name, why: 'This Function App connection has no https address saved.' }); return; }
     CS.conns.push({ side: side, ok: true, connId: connId, name: name, label: label + ' — ' + name,
+      mode: azure ? 'azure' : 'direct', fnUrl: azure ? String(c.fnUrl).split('?')[0] : '',
       profileId: c.profileId || '', profileName: p ? p.name : '', envClass: p ? p.envClass : '' });
   });
   var sel = $('cs-conn');
@@ -462,6 +411,39 @@ function csPickConn(){
   render();
 }
 
+/* What the server is told about the chosen connection: its id and names,
+   and for a Function App its address. Never a connection string or a key. */
+function connBody(){
+  return { side: CS.conn.side, connId: CS.conn.connId, connectionName: CS.conn.name, mode: CS.conn.mode || 'direct',
+    fnUrl: CS.conn.fnUrl || '', profileId: CS.conn.profileId, profileName: CS.conn.profileName, envClass: CS.conn.envClass };
+}
+
+/* ── Check the bridge ─────────────────────────────────────────────────────
+   Asks for a two-minute pass for the chosen connection, then takes it to
+   the bridge itself and runs SELECT 1 — the same road Claude's queries
+   take, without starting a session or spending anything with Anthropic. */
+var MCP_PATH = '/.netlify/functions/cc-mcp';
+function csCheck(){
+  if (!CS.conn) { note('cs-note', 'Choose a connection first.', 'warn'); return; }
+  guarded('Check', async function(){
+    note('cs-note', 'Checking the bridge to "' + CS.conn.name + '"…', 'info');
+    try {
+      var p = await call('POST', '/agent/claude-code/check', connBody());
+      var t0 = Date.now();
+      var res = await fetch(MCP_PATH, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + p.token },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_query', arguments: { sql: 'SELECT 1 AS ok' } } }) });
+      var data = {};
+      try { data = await res.json(); } catch (e) { data = {}; }
+      var out = data.result || {};
+      var text = (out.content && out.content[0] && out.content[0].text) || (data.error && (data.error.message || data.error)) || ('The bridge answered ' + res.status);
+      if (res.ok && out.isError === false) note('cs-note', 'The bridge works: "' + CS.conn.name + '" answered SELECT 1 in ' + (Date.now() - t0) + ' ms.', 'ok');
+      else note('cs-note', 'The bridge could not query "' + CS.conn.name + '": ' + String(typeof text === 'string' ? text : JSON.stringify(text)).replace(/^The query failed: /, ''), 'crit');
+    } catch (e) {
+      note('cs-note', 'Could not check the bridge: ' + e.message, 'crit');
+    }
+  });
+}
+
 /* ── Sessions ────────────────────────────────────────────────────────── */
 function csNew(){
   if (!CS.conn) { note('cs-note', 'Choose a connection with a saved credential first.', 'warn'); return; }
@@ -475,8 +457,7 @@ function csNew(){
     clearScreen();
     note('cs-note', 'Opening a workspace… this usually takes 10 to 30 seconds.', 'info');
     try {
-      var r = await call('POST', '/agent/claude-code/session', { side: CS.conn.side, connId: CS.conn.connId, connectionName: CS.conn.name,
-        profileId: CS.conn.profileId, profileName: CS.conn.profileName, envClass: CS.conn.envClass });
+      var r = await call('POST', '/agent/claude-code/session', connBody());
       CS.cur = r.session; CS.outputsFor = r.session.id;
       CS.cur.connectionName = CS.conn.name; CS.cur.profileName = CS.conn.profileName; CS.cur.envClass = CS.conn.envClass;
       note('cs-note', '');
@@ -722,6 +703,7 @@ function renderTop(){
   $('cs-attach').disabled = !live || !!CS.busy['Attach'];
   $('cs-input').disabled = !live;
   $('cs-conn').disabled = !allowed || !!CS.busy['New session'];
+  $('cs-check').disabled = !allowed || !CS.conn || !!CS.busy['Check'];
   var on = CS.replay ? !!CS.replay.session.dataChangesAllowed : (CS.cur ? !!CS.cur.dataChangesAllowed : CS.wantChanges);
   var tg = $('cs-toggle'); tg.classList.toggle('on', on); tg.setAttribute('aria-checked', on ? 'true' : 'false');
   tg.classList.toggle('disabled', !allowed || !!CS.replay || (!!CS.cur && !live) || !!CS.busy['Mode']);
@@ -782,126 +764,6 @@ function renderDrawer(){
   }).join('');
 }
 
-/* ── The connection test (unchanged from step 1) ─────────────────────── */
-var CC = { starting: false, lastStart: 0, runs: [], polling: {} };
-var GIVE_UP_MS = 5 * 60 * 1000;
-function pbRenderButtons(){
-  var block = CC.starting || !hasKey();
-  $('cc-run-limited').disabled = block;
-  $('cc-run-open').disabled = block;
-}
-function ccFillFrom(side){
-  note('cc-fill-note', '');
-  if (!side) return;
-  var c = window.CygenixActiveConn && CygenixActiveConn.getActiveConnection ? CygenixActiveConn.getActiveConnection(side) : null;
-  if (!c || !c.ok) { note('cc-fill-note', (c && c.why) || 'No ' + (side === 'tgt' ? 'target' : 'source') + ' connection is set on the active profile.', 'warn'); return; }
-  var e = CygenixCcProbe.endpointOf(c.connString, c.mode);
-  if (!e.ok) { note('cc-fill-note', e.why, 'warn'); return; }
-  $('cc-host').value = e.host; $('cc-port').value = e.port; $('cc-kind').value = e.kind;
-  if (e.note) note('cc-fill-note', e.note, 'warn');
-}
-async function ccRun(network){
-  if (CC.starting) return;
-  if (!hasKey()) { pbRenderButtons(); note('cc-note', 'No Anthropic API key is saved in this browser. Add it in Settings → General.', 'warn'); return; }
-  var wait = CC.lastStart + 3000 - Date.now();
-  if (wait > 0) { note('cc-note', 'One moment — a test was started ' + Math.ceil((3000 - wait) / 1000) + 's ago.', 'warn'); return; }
-  var host = $('cc-host').value.trim(), port = Number($('cc-port').value), kind = $('cc-kind').value;
-  var problem = CygenixCcProbe.validate(host, port);
-  if (problem) { note('cc-note', problem, 'warn'); return; }
-  CC.starting = true; CC.lastStart = Date.now(); pbRenderButtons();
-  note('cc-note', 'Starting a test workspace… this usually takes 20 to 60 seconds.', '');
-  try {
-    var r = await call('POST', '/agent/claude-code/probe', { host: host, port: port, kind: kind, network: network });
-    var run = { id: r.sessionId, network: network, host: r.host, port: r.port, status: 'running', startedAt: Date.now() };
-    CC.runs.unshift(run);
-    note('cc-note', '');
-    pbRenderRuns();
-    pbSchedule(run);
-  } catch (e) {
-    note('cc-note', 'The test could not start: ' + e.message, 'crit');
-  } finally {
-    CC.starting = false; pbRenderButtons();
-  }
-}
-function pbSchedule(run){
-  if (CC.polling[run.id]) return;
-  CC.polling[run.id] = { inflight: false, timer: setInterval(function(){ pbPoll(run); }, POLL_MS) };
-}
-function pbStop(run){
-  var p = CC.polling[run.id];
-  if (p) { clearInterval(p.timer); delete CC.polling[run.id]; }
-}
-async function pbPoll(run){
-  var p = CC.polling[run.id];
-  if (!p || p.inflight) return;
-  if (Date.now() - run.startedAt > GIVE_UP_MS) { run.status = 'timeout'; pbStop(run); pbRenderRuns(); return; }
-  p.inflight = true;
-  try {
-    var r = await call('GET', '/agent/claude-code/probe?sessionId=' + encodeURIComponent(run.id));
-    run.result = r.result; run.verdict = r.verdict; run.errors = r.errors || []; run.cost = r.costCents; run.transcript = r.transcript || []; run.eventTypes = r.eventTypes || [];
-    run.raw = r.raw || null;
-    run.retrying = !!r.retrying; run.emptyTurn = !!r.emptyTurn; run.stopReason = r.stopReason || null;
-    run.steps = r.steps || []; run.step = r.step || 0; run.failedStep = r.failedStep || null;
-    if (r.done) { run.status = 'done'; pbStop(run); }
-  } catch (e) {
-    run.status = 'error'; run.error = e.message; pbStop(run);
-  } finally {
-    p.inflight = false;
-    pbRenderRuns();
-  }
-}
-function pbRenderRuns(){
-  $('cc-results').hidden = !CC.runs.length;
-  $('cc-runs').innerHTML = CC.runs.map(function(run){
-    var label = run.network === 'open' ? 'Open networking' : 'Cygenix allow-list';
-    var pill = run.status === 'running' ? '<span class="pill busy">' + (run.step ? 'Step ' + run.step + ' of ' + run.steps.length : 'Working') + '</span>'
-      : run.status === 'error' ? '<span class="pill bad">Error</span>'
-      : run.status === 'timeout' ? '<span class="pill bad">No answer</span>'
-      : run.verdict && run.verdict.ok ? '<span class="pill ok">Reached</span>'
-      : !run.result ? '<span class="pill bad">No result</span>'
-      : '<span class="pill bad">Not reached</span>';
-    var html = '<div class="run"><div class="run-head">' + pill + ' ' + esc(label) + ' — <span class="mono">' + esc(run.host) + ':' + esc(run.port) + '</span></div>';
-    if (run.verdict) html += '<p class="muted" style="margin-top:0.4rem">' + esc(run.verdict.text) + '</p>';
-    if ((run.steps || []).length) {
-      var words = { pending: 'not reached', running: 'running', passed: 'passed', empty: 'empty turn', failed: 'no answer', unreachable: 'could not connect' };
-      html += '<p class="muted mono" style="margin-top:0.4rem">' + run.steps.map(function(st, i){ return (i + 1) + ' ' + esc(st.label) + ': ' + esc(words[st.status] || st.status); }).join(' · ') + '</p>';
-    }
-    var rows = CygenixCcProbe.rows(run.result);
-    if (rows.length) html += '<table class="facts">' + rows.map(function(r){ return '<tr><td>' + esc(r[0]) + '</td><td class="mono">' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>';
-    if (run.cost != null) html += '<p class="muted" style="margin-top:0.4rem">Cost of this test: ' + esc(CygenixCcProbe.costText(run.cost)) + '</p>';
-    if (run.verdict && !run.verdict.ok) html += '<div class="note warn">' + esc(CygenixCcProbe.firewallHelp(run.result)) + '</div>';
-    (run.errors || []).forEach(function(er){ html += '<div class="note crit">' + esc(er) + '</div>'; });
-    if (run.status === 'error') html += '<div class="note crit">' + esc(run.error) + '</div>';
-    if (run.status === 'timeout') html += '<div class="note crit">The test did not report back within 3 minutes. It may still be running in your Anthropic account, where its spend cap applies.</div>';
-    if (run.status === 'done' && run.failedStep && !(run.errors || []).length) {
-      var at = ' at step ' + run.failedStep.index + ' (' + esc(run.failedStep.label) + ')';
-      if (!run.result) html += '<div class="note warn">The workspace stopped' + at + ' without reporting a result. This is not the allow-list: the test did not get as far as trying the connection.</div>';
-      if ((run.transcript || []).length) {
-        html += '<details class="block" open><summary>What the workspace said</summary>' + run.transcript.map(function(t){
-          var label = t.kind === 'tool' ? 'Ran' : t.kind === 'output' ? 'Output' : t.kind === 'error' ? 'Failed' : t.kind === 'refused' ? 'Declined' : 'Claude';
-          return '<div class="res-label">' + esc(label) + '</div><pre>' + esc(t.text || '(nothing)') + '</pre>'; }).join('') + '</details>';
-      } else if (run.emptyTurn) {
-        var mu = run.raw && run.raw.modelRequestEnd && run.raw.modelRequestEnd.model_usage || {};
-        html += '<div class="note crit">Claude\'s turn ended with nothing written' + at + ': ' + esc(String(mu.output_tokens != null ? mu.output_tokens : 0)) + ' output tokens, stop reason '
-          + esc(run.stopReason || 'none') + ', no error reported by Anthropic. This is not a refusal in words and not a script failure: the model was sent the request'
-          + (mu.input_tokens != null || mu.cache_creation_input_tokens != null ? ' (' + esc(String((mu.input_tokens || 0) + (mu.cache_creation_input_tokens || 0) + (mu.cache_read_input_tokens || 0))) + ' input tokens)' : '')
-          + ' and returned an empty turn. The raw events are below.</div>';
-      } else {
-        html += '<div class="note crit">The workspace sent back no reply, no command and no output' + at + '.'
-          + ((run.eventTypes || []).length ? '' : ' If the Azure deploy of the latest change had not finished when this ran, run the test again in a few minutes.') + '</div>';
-      }
-      if ((run.eventTypes || []).length) html += '<p class="muted mono" style="margin-top:0.4rem">Session events: ' + esc(run.eventTypes.join(' › ')) + '</p>';
-    }
-    if (run.status === 'done' && run.raw) {
-      html += '<details class="block"><summary>Raw events <span class="tag">Show details</span></summary>'
-        + '<details class="block"><summary>Last model request, as Anthropic sent it</summary><pre>' + esc(JSON.stringify(run.raw.modelRequestEnd, null, 2)) + '</pre></details>'
-        + '<details class="block"><summary>Session usage</summary><pre>' + esc(JSON.stringify(run.raw.usage, null, 2)) + '</pre></details>'
-        + '</details>';
-    }
-    return html + '</div>';
-  }).join('');
-}
-
 /* ── Full screen, layout, input ──────────────────────────────────────────
    Full screen and the chat/output split are remembered for THIS TAB only
    (sessionStorage), so a refresh keeps them but a new tab starts plain. */
@@ -955,17 +817,13 @@ function clearScreen(){
   CS.replay = null; CS.cur = null; CS.events = []; CS.seen = {}; CS.outputs = []; CS.outputsFor = '';
   CS.filesOpen = false; CS.wantChanges = false;
   var i = $('cs-input'); if (i) { i.value = ''; autoGrow(i); }
-  Object.keys(CC.polling).forEach(function(id){ var p = CC.polling[id]; if (p) clearInterval(p.timer); });
-  CC.polling = {}; CC.runs = []; pbRenderRuns();
-  note('cs-note', ''); note('cc-note', '');
+  note('cs-note', '');
   $('cs-firewall').hidden = true; $('cs-budget').hidden = true;
   $('cs-replay-bar').hidden = true;
   render();
 }
 
 document.addEventListener('DOMContentLoaded', function(){
-  pbRenderButtons();
-  try { if (window.CygenixActiveConn) { $('cc-conn').value = 'tgt'; ccFillFrom('tgt'); } } catch (e) {}
   if (ssGet(FULL_KEY) === '1') applyFull(true);
   var sp = ssGet(SPLIT_KEY); if (sp) applySplit(sp);
   autoGrow($('cs-input'));

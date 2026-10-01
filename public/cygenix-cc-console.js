@@ -119,6 +119,32 @@ function toolBlock(ev) {
   return b;
 }
 
+/* The database bridge (Oct-2026): Claude's queries are MCP tool calls to
+   Cygenix, not commands in the workspace. The call shows its SQL; the
+   answer, which the bridge returns as { columns, rows, ... }, shows as a
+   table straight away rather than as JSON. */
+var BRIDGE_TITLES = { run_query: 'Query run', list_tables: 'Listed tables', describe_table: 'Described a table' };
+function mcpBlock(ev) {
+  var input = ev.input || {};
+  var name = String(ev.name || 'tool');
+  var b = { id: ev.id, kind: 'command', title: BRIDGE_TITLES[name] || name, body: '', toolUseId: ev.id };
+  if (name === 'run_query') { b.kind = 'code'; b.body = String(input.sql || ''); }
+  else if (name === 'describe_table') { b.title = 'Described ' + (input.schema ? input.schema + '.' : '') + (input.table || 'a table'); }
+  else if (name === 'list_tables') { b.title = 'Listed tables' + (input.schema ? ' in ' + input.schema : ''); }
+  else { b.body = JSON.stringify(input, null, 2); }
+  return b;
+}
+function bridgeTable(text) {
+  var j;
+  try { j = JSON.parse(text); } catch (e) { return null; }
+  if (!j || !Array.isArray(j.columns) || !Array.isArray(j.rows)) return null;
+  return {
+    columns: j.columns.map(String),
+    rows: j.rows.map(function (r) { return (r || []).map(function (v) { return v === null || v === undefined ? 'NULL' : String(v); }); }),
+    truncated: j.truncated ? (j.total_rows_read || 0) : 0,
+  };
+}
+
 function blocksFrom(events) {
   var chat = [], output = [], flags = { budgetReached: false, connectionFailure: false, lastStopReason: null, thinking: false };
   var byToolUse = {};
@@ -142,6 +168,17 @@ function blocksFrom(events) {
         var parent = ev.tool_use_id && byToolUse[ev.tool_use_id];
         if (parent) parent.result = rb; else output.push(rb);
         if (looksLikeConnectionFailure(text)) flags.connectionFailure = true;
+        break;
+      }
+      case 'agent.mcp_tool_use': { var mb = mcpBlock(ev); byToolUse[ev.id] = mb; output.push(mb); flags.thinking = false; break; }
+      case 'agent.mcp_tool_result': {
+        var mt = textOf(ev);
+        var mtab = ev.is_error ? null : bridgeTable(mt);
+        var mr = { id: ev.id, kind: ev.is_error ? 'error' : 'result', title: ev.is_error ? 'Failed' : (mtab ? mtab.rows.length + ' row' + (mtab.rows.length === 1 ? '' : 's') : 'Output'),
+                   body: mtab ? '' : mt, table: mtab, toolUseId: ev.mcp_tool_use_id || null };
+        var mp = ev.mcp_tool_use_id && byToolUse[ev.mcp_tool_use_id];
+        if (mp) mp.result = mr; else output.push(mr);
+        if (ev.is_error && looksLikeConnectionFailure(mt)) flags.connectionFailure = true;
         break;
       }
       case 'session.error': {
@@ -196,7 +233,7 @@ function confirmAccepts(spec, typed) {
 
 return {
   STATUS_WORDS: STATUS_WORDS, statusWord: statusWord,
-  textOf: textOf, tableFrom: tableFrom, looksLikeConnectionFailure: looksLikeConnectionFailure,
+  textOf: textOf, tableFrom: tableFrom, looksLikeConnectionFailure: looksLikeConnectionFailure, bridgeTable: bridgeTable, mcpBlock: mcpBlock,
   blocksFrom: blocksFrom, toolBlock: toolBlock,
   NOTICE_KEY: NOTICE_KEY, noticeDismissed: noticeDismissed, noticeDismiss: noticeDismiss,
   confirmSpec: confirmSpec, confirmAccepts: confirmAccepts,

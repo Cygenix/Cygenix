@@ -155,6 +155,10 @@ function agentPathAllowed(p) {
   if (typeof p !== 'string' || !p.startsWith('/')) return false;
   if (p.includes('..') || p.includes('//')) return false;
   const bare = p.split('?')[0];
+  // The Dev Console bridge's redeem route answers with a database
+  // credential for a pass; it is for the MCP server (cc-mcp), which calls
+  // it with this same key server-side, and never for a browser.
+  if (/^\/agent\/claude-code-bridge(\/|$)/i.test(bare)) return false;
   return bare === '/me' || bare === '/narrative' || /^\/agent(\/[A-Za-z0-9_.-]+)*$/.test(bare);
 }
 

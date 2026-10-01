@@ -5,13 +5,16 @@
  *   1. off for the organisation → the plain "not enabled" message, no calls;
  *   2. on but no API key → the message and the Settings link, no calls;
  *   3. allowed → first-use notice, dismissed once and remembered;
+ *   4. Check the bridge → a pass from the Azure side, then SELECT 1 taken
+ *      straight to the MCP bridge with that pass (not the Entra token);
  *   5. New session → Idle; a message → Working → tool blocks, a table, the
  *      redacted output → Idle, and the polling stops;
  *   6/7. the toggle: off → the confirmation; a production profile needs its
  *      name typed; on → the mode call and the notice in the chat;
  *   7. a quick double-click on New session starts one;
  *   8. Stop → Stopped, and no further /events calls;
- *   8. a connection failure in the output raises the firewall note;
+ *   8. a query through the bridge shows its SQL and a table; a bridge query
+ *      that cannot reach the database raises the connection note;
  *   11. the sessions drawer lists the session; a past one replays read-only;
  *   a failing route shows its error once; nothing throws.
  *
@@ -64,7 +67,7 @@ const U = 'you@example.test';
 
   // The stubbed world: a roles record the page asks for, and a fake Azure.
   const world = { outputs: [], me: { oid: 'x', email: U, roles: ['ML'], claudeCode: { enabled: false, roles: ['OW', 'PA'], allowed: false, canChangeData: false, canConfigure: false } },
-    calls: [], sessions: {}, nextEvents: [], failEvents: false, failStop: false };
+    calls: [], sessions: {}, nextEvents: [], failEvents: false, failStop: false, mcp: [], mcpFails: false };
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', async (route) => {
     const u = route.request().url();
@@ -92,6 +95,7 @@ const U = 'you@example.test';
       }
       if (action === 'mode') { world.sessions[body.sessionId].session.dataChangesAllowed = body.dataChangesAllowed; return json(route, { ok: true, dataChangesAllowed: body.dataChangesAllowed }); }
       if (action === 'stop') { if (world.failStop) return json(route, { error: 'boom' }, 500); world.sessions[body.sessionId].session.status = 'stopped'; return json(route, { ok: true, status: 'stopped' }); }
+      if (action === 'check') return json(route, { token: 'cyb_0123456789abcdef01.' + 'A'.repeat(43), mcpUrl: 'https://cygenix.co.uk/.netlify/functions/cc-mcp', expiresInSeconds: 120 });
       if (action === 'sessions') return json(route, { sessions: Object.values(world.sessions).map((x) => x.session).reverse() });
       if (action === 'upload') { const s = world.sessions[body.sessionId]; const up = { fileId: 'file_u' + (s.session.uploads || []).length, name: body.name, path: '/workspace/uploads/' + body.name, size: Buffer.from(body.contentBase64, 'base64').length, at: new Date().toISOString() };
         s.session.uploads = (s.session.uploads || []).concat([up]); return json(route, { upload: up }); }
@@ -100,7 +104,17 @@ const U = 'you@example.test';
       if (action === 'session') { const s = world.sessions[new URL('http://x' + p).searchParams.get('id')]; return s ? json(route, { session: s.session, events: s.events }) : json(route, { error: 'No such session.' }, 404); }
       return json(route, { error: 'unexpected ' + action }, 500);
     }
+    if (/\/\.netlify\/functions\/cc-mcp/.test(u)) {
+      world.mcp.push({ headers: route.request().headers(), body: JSON.parse(route.request().postData() || '{}') });
+      const result = world.mcpFails
+        ? { content: [{ type: 'text', text: 'The query failed: Login failed for user \'claude_api\'.' }], isError: true }
+        : { content: [{ type: 'text', text: JSON.stringify({ columns: ['ok'], rows: [[1]], row_count_returned: 1, truncated: false, ms: 4 }) }], isError: false };
+      return json(route, { jsonrpc: '2.0', id: 1, result });
+    }
     if (/action=whoami/.test(u)) return json(route, { tier: 'pro', tier_status: 'active', role: 'user' });
+    // A save the stub does not confirm reads as a refusal, and the sync
+    // banner it raises would sit over the composer.
+    if (/data-proxy/.test(u) && q.get('action') === 'save') return json(route, { saved: true, updatedAt: new Date().toISOString(), fields: [], ignored: [] });
     if (/data-proxy|netlify\/functions|\/api\//.test(u)) return json(route, {});
     if (u.startsWith('http://localhost:' + PORT)) return route.continue();
     return route.abort();
@@ -174,13 +188,33 @@ const U = 'you@example.test';
   check('status: No session; Stop and Send off', (await text('cs-status')) === 'No session'
     && (await page.evaluate(() => document.getElementById('cs-stop').disabled && document.getElementById('cs-send').disabled)));
 
+  /* 4. Check the bridge. */
+  await page.click('#cs-check');
+  await page.waitForFunction(() => /The bridge works/.test(document.getElementById('cs-note').textContent), null, { timeout: 8000 });
+  const chkCall = calls('check')[0] || { body: {} };
+  check('CHECK THE BRIDGE asks for a pass for the chosen connection, by id — no string, no password',
+    calls('check').length === 1 && chkCall.method === 'POST' && chkCall.body.connId === 'c_tgt' && chkCall.body.mode === 'direct'
+    && !JSON.stringify(chkCall.body).includes('Tr0ub4dor'), JSON.stringify(chkCall.body));
+  const m0 = world.mcp[0] || { headers: {}, body: {} };
+  check('…then runs SELECT 1 through the bridge, carrying THE PASS, not the Entra token',
+    world.mcp.length === 1 && m0.headers.authorization === 'Bearer cyb_0123456789abcdef01.' + 'A'.repeat(43)
+    && m0.body.method === 'tools/call' && m0.body.params.name === 'run_query' && m0.body.params.arguments.sql === 'SELECT 1 AS ok', JSON.stringify(m0));
+  check('…and says so in words', /The bridge works: "Target DEV" answered SELECT 1/.test(await text('cs-note')), await text('cs-note'));
+  await page.waitForTimeout(3100);
+  world.mcpFails = true;
+  await page.click('#cs-check');
+  await page.waitForFunction(() => /could not query/.test(document.getElementById('cs-note').textContent), null, { timeout: 8000 });
+  check('a bridge that cannot log in says why, without the "The query failed" prefix',
+    /The bridge could not query "Target DEV": Login failed for user 'claude_api'\./.test(await text('cs-note')), await text('cs-note'));
+  world.mcpFails = false;
+
   /* 5 + 7. New session, double-clicked. */
   await page.evaluate(() => { csNew(); csNew(); });
   await page.waitForFunction(() => document.getElementById('cs-status').textContent === 'Idle', null, { timeout: 10000 });
   check('A QUICK DOUBLE-CLICK ON NEW SESSION OPENS ONE', calls('session').filter((c) => c.method === 'POST').length === 1);
   const sb = calls('session')[0].body;
   check('it sends the connection id and names — never a connection string or password',
-    sb.connId === 'c_tgt' && sb.connectionName === 'Target DEV' && sb.profileName === 'Demo' && sb.side === 'tgt'
+    sb.connId === 'c_tgt' && sb.connectionName === 'Target DEV' && sb.profileName === 'Demo' && sb.side === 'tgt' && sb.mode === 'direct' && sb.fnUrl === ''
     && !JSON.stringify(world.calls).includes('Tr0ub4dor') && !JSON.stringify(world.calls).includes('acme.database'), JSON.stringify(sb));
   check('the caller\'s key and token ride in the headers', /sk-ant-smoke-key/.test(calls('session')[0].headers['x-anthropic-key']) && /^Bearer /.test(calls('session')[0].headers.authorization));
   check('Idle: Send is on, Stop is OFF (nothing to stop)', (await text('cs-status')) === 'Idle' && (await page.evaluate(() => !document.getElementById('cs-send').disabled && document.getElementById('cs-stop').disabled)));
@@ -189,7 +223,7 @@ const U = 'you@example.test';
   world.nextEvents = [
     { id: 'e1', type: 'agent.tool_use', name: 'write', input: { path: '/workspace/count.py', content: 'import os, pymssql\nprint("hi")' } },
     { id: 'e2', type: 'agent.tool_result', tool_use_id: 'e1', content: [{ type: 'text', text: 'ok' }] },
-    { id: 'e3', type: 'agent.tool_use', name: 'bash', input: { command: 'set -a; . /workspace/.cygenix/db.env; set +a; python3 count.py' } },
+    { id: 'e3', type: 'agent.tool_use', name: 'bash', input: { command: 'python3 count.py' } },
     { id: 'e4', type: 'agent.tool_result', tool_use_id: 'e3', content: [{ type: 'text', text: 'table,rows\nCustomer,1200\nInvoice,48210\n' }] },
   ];
   await page.fill('#cs-input', 'List the tables and row counts using Python');
@@ -246,17 +280,27 @@ const U = 'you@example.test';
   await page.waitForFunction(() => !document.getElementById('cs-toggle').classList.contains('on'), null, { timeout: 5000 });
   check('switching it off needs no confirmation and tells Claude', calls('mode').length === 2 && calls('mode')[1].body.dataChangesAllowed === false && /read-only again/.test(await text('cs-chat')));
 
-  /* 8. A failing connection in the output raises the firewall note. */
+  /* 8. Queries through the bridge; one that cannot reach the database raises the note. */
   world.nextEvents = [
-    { id: 'e7', type: 'agent.tool_use', name: 'bash', input: { command: 'python3 q.py' } },
-    { id: 'e8', type: 'agent.tool_result', tool_use_id: 'e7', is_error: true, content: [{ type: 'text', text: 'pymssql.OperationalError: (20009, b\'DB-Lib error: Unable to connect: Adaptive Server is unavailable or does not exist\')' }] },
+    { id: 'm1', type: 'agent.mcp_tool_use', name: 'run_query', mcp_server_name: 'cygenix', input: { sql: 'SELECT name FROM sys.tables' } },
+    { id: 'm2', type: 'agent.mcp_tool_result', mcp_tool_use_id: 'm1', is_error: false, content: [{ type: 'text', text: JSON.stringify({ columns: ['name'], rows: [['Ledger'], [null]], row_count_returned: 2, truncated: false }) }] },
+    { id: 'e7', type: 'agent.mcp_tool_use', name: 'run_query', mcp_server_name: 'cygenix', input: { sql: 'SELECT 1' } },
+    { id: 'e8', type: 'agent.mcp_tool_result', mcp_tool_use_id: 'e7', is_error: true, content: [{ type: 'text', text: 'The query failed: connect ETIMEDOUT 10.0.0.1:1433' }] },
     { id: 'e9', type: 'session.status_idle', stop_reason: { type: 'end_turn' } },
   ];
   await page.waitForTimeout(3100);
   await page.fill('#cs-input', 'Run the query');
   await page.click('#cs-send');
   await page.waitForFunction(() => !document.getElementById('cs-firewall').hidden, null, { timeout: 8000 });
-  check('A CONNECTION FAILURE RAISES THE FIREWALL HELP', /Your database may only accept known IP addresses — the Anthropic workspace may need allowing\./.test(await text('cs-firewall')));
+  check('A BRIDGE QUERY THAT CANNOT REACH THE DATABASE RAISES THE CONNECTION NOTE',
+    /Cygenix could not reach the database\. The SQL editor uses the same route, so check the connection there first\./.test(await text('cs-firewall')), await text('cs-firewall'));
+  const bq = await page.evaluate(() => {
+    const blocks = Array.from(document.querySelectorAll('#cs-output details.block'));
+    const b = blocks.find((d) => /SELECT name FROM sys\.tables/.test(d.textContent));
+    return b ? { title: b.querySelector('summary').textContent.trim(), cells: Array.from(b.querySelectorAll('table.res td')).map((td) => td.textContent) } : null;
+  });
+  check('A QUERY THROUGH THE BRIDGE shows as "Query run" with its SQL, and its answer as a table (NULL shown)',
+    !!bq && /Query run/.test(bq.title) && bq.cells.join() === 'Ledger,NULL', JSON.stringify(bq));
 
   /* 8. Stop. */
   await page.waitForTimeout(3100);

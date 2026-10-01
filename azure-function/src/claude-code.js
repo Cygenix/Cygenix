@@ -8,8 +8,6 @@
    runs the code; it opens the session, relays the messages, keeps the
    transcript and closes the session. Every route here is one of those.
 
-     POST agent/claude-code/probe     the connectivity test (see below)
-     GET  agent/claude-code/probe     …and its result
      POST agent/claude-code/session   open a session on one connection
      POST agent/claude-code/message   say something to it
      GET  agent/claude-code/events    what has happened since last time
@@ -20,6 +18,9 @@
      POST agent/claude-code/upload    attach a file to the workspace (phase 2)
      GET  agent/claude-code/outputs   the files Claude wrote, and the uploads
      GET  agent/claude-code/download  one of those files, base64
+     POST agent/claude-code/check     a two-minute pass to check the bridge
+     POST agent/claude-code-bridge/redeem   server to server: a pass, for
+                                      the connection it opens (see below)
 
    WHOSE ACCOUNT, WHOSE MONEY
    Everything runs on the CALLER'S Anthropic API key, read from the
@@ -45,19 +46,30 @@
    data changes allowed, a session stopped — are recorded by the gate on the
    organisation's hash-chained trail, which this app cannot write to itself.
 
-   HOW THE WORKSPACE GETS THE DATABASE
-   The connection's credential is unsealed from conn_secrets (the encrypted
-   store the browser syncs to) for the verified owner only, parsed into its
-   parts, written as KEY='value' lines and uploaded as ONE small file that
-   the session mounts read-only at /workspace/.cygenix/db.env. Not the
-   system prompt (which is kept in the session history), and not an
-   environment variable, because a cloud workspace has none to set: the
-   API's only secret mechanism keeps the value out of the sandbox and
-   substitutes it into web requests, and a database login is not a web
-   request. The file is deleted when the session stops or ends, and expires
-   on its own after a day in case that never happens. The owner made this
-   trade knowingly: their own code sees their own password, and if Claude
-   prints it, Anthropic's copy of the session holds it.
+   HOW CLAUDE REACHES THE DATABASE — THE BRIDGE (Oct-2026)
+   It does not connect to it. Anthropic's workspace may only make web
+   connections: SQL Server's and PostgreSQL's ports time out to every
+   destination, a server built to answer on any port included, whatever
+   the environment's networking allows. A day of firewall and router work
+   on a real customer server established that; it is not the customer's
+   network. So the workspace never holds a database login any more.
+
+   Instead the agent has one MCP server, Cygenix's own, on cygenix.co.uk
+   (/.netlify/functions/cc-mcp), and MCP calls are made by Anthropic's
+   platform over HTTPS, which is allowed. Its tools list tables, describe a
+   table and run a query; Cygenix runs each one along the road the SQL
+   editor already uses, enforces "Allow changes to data" itself rather than
+   asking Claude to behave, refuses destructive statements outright, caps
+   the rows, and records every query on the organisation's audit trail.
+
+   Each session gets its own pass: random, shown once to Anthropic's vault
+   (static_bearer, keyed by the MCP URL — never to Claude), stored here only
+   as a SHA-256 hash with a lookup id, a day's expiry and the session it
+   belongs to. Stop or the session ending revokes it and deletes the vault.
+   The MCP server redeems the pass at agent/claude-code-bridge/redeem —
+   host key only, no person behind it — and gets back the connection for
+   that one session and nothing else; the credential is unsealed fresh from
+   conn_secrets each time, so a re-saved password takes effect at once.
 
    WHAT IS KEPT HERE
    Cosmos container claude_code_sessions, partitioned on /userId (the
@@ -68,16 +80,6 @@
    string are replaced with '••••••', by literal and by pattern. The person
    can still see them inside the workspace if they ask; we do not keep them.
 
-   THE CONNECTIVITY TEST
-   Built first, because the documentation left two questions open: can a
-   cloud workspace open a raw TCP connection to a database, and from which
-   address. A throwaway session runs a fixed Python script that resolves the
-   name, opens the socket, speaks the first bytes of the database's own
-   protocol (a SQL Server PRELOGIN packet, a PostgreSQL SSLRequest) so a
-   proxy that accepts every connection cannot pass for a database, and asks
-   api.ipify.org for its public address. No login, no data. It answered the
-   question — the workspace reached the database — and it stays for the
-   next customer's firewall.
    ========================================================================== */
 'use strict';
 
@@ -101,23 +103,26 @@ const boom = (e) => ({ status: 500, headers: CORS,
 const MODEL = () => process.env.CLAUDE_CODE_MODEL || 'claude-opus-5-5';
 // Bump when the agent's configuration below changes; the next call finds
 // the account's agent carrying an older spec and updates it in place.
-const AGENT_SPEC = '2';
+const AGENT_SPEC = '3';
 const AGENT_NAME = 'Cygenix Dev Console';
 const GATE_TTL_MS = 30 * 1000;
 const RESOLVE_TTL_MS = 10 * 60 * 1000;
 const LIST_CAP = 200;               // never walk more than this many agents/environments
 const IP_ECHO_HOST = 'api.ipify.org';
 const PACKAGE_HOSTS = ['pypi.org', 'files.pythonhosted.org', 'registry.npmjs.org'];
-const CRED_PATH = '/workspace/.cygenix/db.env';
 // Where a file mounted at mount_path actually appears in the sandbox. The
 // documentation does not say; every session so far has found a file
 // mounted at /workspace/x under /mnt/session/uploads/workspace/x, and
 // reported the path we gave it as wrong. So the model is told the real
-// location — and, should that ever move, to search for the file by name.
+// location of what the person attaches.
 const MOUNT_ROOT = '/mnt/session/uploads';
 const mountedAt = (p) => MOUNT_ROOT + p;
-const CRED_FILE = mountedAt(CRED_PATH);
-const CRED_TTL_S = 24 * 60 * 60;    // the file expires by itself if a stop never comes
+// The bridge. One MCP server, by this name, at this address.
+const MCP_NAME = 'cygenix';
+const BRIDGE_TTL_MS = 24 * 60 * 60 * 1000;   // a session's pass: a day, or until Stop
+const CHECK_TTL_MS = 2 * 60 * 1000;          // "Check the bridge": two minutes
+const BRIDGE_TOKEN_RE = /^cyb_([0-9a-f]{18})\.([A-Za-z0-9_-]{43})$/;
+function mcpUrl() { return siteUrl() + '/.netlify/functions/cc-mcp'; }
 const CONTAINER = 'claude_code_sessions';
 const EVENT_CHUNK = 200;
 const EVENTS_PER_POLL = 100;
@@ -250,20 +255,34 @@ async function findFirst(page, test) {
 
 // The agent's standing configuration. Web search and fetch are OFF: they run
 // on Anthropic's servers, outside the environment's network allow-list, and
-// a console whose promise is "the workspace reaches your database and the
-// package registries, nothing else" cannot have a side door. The system
-// prompt here is a placeholder; every session overrides it with its own.
+// the console's database reach is the bridge and nothing else. The bridge
+// is the one MCP server, its tools always allowed — the server enforces
+// what may run, so an approval prompt per query would add a click and no
+// safety. The system prompt here is a placeholder; every session overrides
+// it with its own.
+//
+// The spec tag carries the MCP address too, so an agent made when
+// CYGENIX_SITE_URL said something else is updated, not kept pointing at
+// the old one.
+function specTag() {
+  return AGENT_SPEC + '-' + crypto.createHash('sha256').update(mcpUrl()).digest('hex').slice(0, 8);
+}
 function agentSpec() {
   return {
     name: AGENT_NAME,
     model: { id: MODEL() },
     system: 'You work inside Cygenix, a data migration console, on behalf of the signed-in user. '
       + 'Each session tells you what it is for; follow it.',
+    mcp_servers: [{ type: 'url', name: MCP_NAME, url: mcpUrl() }],
     tools: [{
       type: 'agent_toolset_20260401',
       configs: [{ name: 'web_search', enabled: false }, { name: 'web_fetch', enabled: false }],
+    }, {
+      type: 'mcp_toolset',
+      mcp_server_name: MCP_NAME,
+      default_config: { permission_policy: { type: 'always_allow' } },
     }],
-    metadata: { cygenix: 'claude-code', spec: AGENT_SPEC },
+    metadata: { cygenix: 'claude-code', spec: specTag() },
   };
 }
 
@@ -275,7 +294,7 @@ async function ensureAgent(client, tag) {
   let id;
   if (found) {
     id = found.id;
-    if (found.metadata.spec !== AGENT_SPEC) await client.beta.agents.update(id, agentSpec());
+    if (found.metadata.spec !== specTag()) await client.beta.agents.update(id, agentSpec());
   } else {
     id = (await client.beta.agents.create(agentSpec())).id;
   }
@@ -283,16 +302,14 @@ async function ensureAgent(client, tag) {
   return id;
 }
 
-// One environment per network shape. The name carries a hash of the allowed
-// hosts rather than the hosts themselves: it lives in the customer's own
-// account, but a list of their database servers is not a label.
-// The connectivity test uses the same shape, and the same environment for
-// the same host: an earlier version gave it a variant with package managers
-// on and drivers pre-installed, and that was one of the differences under
-// suspicion when its turns came back empty. Package managers stay off; the
-// registries are reachable by name, so pip and npm work all the same.
+// One environment, the same for every session now that no database host is
+// in it: the package registries and the address echo, and the bridge, which
+// a limited environment blocks unless allow_mcp_servers says otherwise (a
+// session would be refused with a 400). The name carries a hash of the
+// shape, with a version, so the environments made before the bridge — no
+// MCP allowed, a database host listed — are left alone, not reused.
 function environmentName(network, hosts) {
-  const h = crypto.createHash('sha256').update(network + '|' + hosts.slice().sort().join(',')).digest('hex').slice(0, 16);
+  const h = crypto.createHash('sha256').update('bridge1|' + network + '|' + hosts.slice().sort().join(',')).digest('hex').slice(0, 16);
   return 'cygenix-cc-' + network + '-' + h;
 }
 function environmentConfig(network, hosts) {
@@ -300,9 +317,10 @@ function environmentConfig(network, hosts) {
     type: 'cloud',
     networking: network === 'open'
       ? { type: 'unrestricted' }
-      : { type: 'limited', allowed_hosts: hosts.slice(), allow_package_managers: false, allow_mcp_servers: false },
+      : { type: 'limited', allowed_hosts: hosts.slice(), allow_package_managers: false, allow_mcp_servers: true },
   };
 }
+const SESSION_HOSTS = PACKAGE_HOSTS.concat([IP_ECHO_HOST]);
 async function ensureEnvironment(client, tag, network, hosts) {
   const name = environmentName(network, hosts);
   const known = remembered(tag, name);
@@ -434,54 +452,33 @@ function parseConn(connString) {
   return out;
 }
 
-// The one file the workspace gets. KEY='value' lines, single-quoted so a
-// shell can source them ( set -a; . the file; set +a ) and a Python one-liner
-// can split them. Every value is the connection's own, nothing invented.
-function shq(v) { return "'" + String(v == null ? '' : v).replace(/'/g, "'\\''") + "'"; }
-function credFile(p, connString) {
-  return [
-    '# Cygenix Dev Console — this session\'s database connection. Read-only.',
-    'CYG_DB_TYPE=' + shq(p.kind),
-    'CYG_DB_HOST=' + shq(p.host),
-    'CYG_DB_PORT=' + shq(p.port),
-    'CYG_DB_NAME=' + shq(p.database),
-    'CYG_DB_USER=' + shq(p.user),
-    'CYG_DB_PASSWORD=' + shq(p.password),
-    'CYG_DB_CONNSTR=' + shq(connString),
-    '',
-  ].join('\n');
-}
-
 // ── The system prompt ────────────────────────────────────────────────────
 // Short, and target-agnostic: nothing here knows which product the
 // database belongs to. Names of things, never their values.
 const MODE_TEXT = {
-  readonly: 'DATA-CHANGE MODE: READ-ONLY. The user has not allowed changes to data in this session. '
-    + 'Run only reads — SELECT statements and read-only scripts. Do not INSERT, UPDATE, DELETE, MERGE, TRUNCATE, '
-    + 'create, alter or drop anything, or run any statement that changes data or schema. If the user asks for a '
-    + 'change, explain that "Allow changes to data this session" is off and ask them to switch it on first.',
+  readonly: 'DATA-CHANGE MODE: READ-ONLY. The user has not allowed changes to data in this session, and Cygenix '
+    + 'enforces it: run_query refuses anything but reads, and runs reads so that nothing they did could be kept. '
+    + 'If the user asks for a change, explain that "Allow changes to data this session" is off and ask them to '
+    + 'switch it on first.',
   changes: 'DATA-CHANGE MODE: CHANGES ALLOWED. The user has allowed changes to data in this session. Before running '
-    + 'anything that modifies data or schema, show the exact SQL or code and say what it will do. Prefer a '
-    + 'transaction for multi-statement changes so a failure part-way leaves nothing half done.',
+    + 'anything that modifies data or schema, show the exact SQL and say what it will do. Cygenix still refuses '
+    + 'destructive statements (DROP, TRUNCATE, and DELETE or UPDATE without a WHERE clause); those are for the SQL '
+    + 'editor, where they go through the organisation\'s approvals.',
 };
 function systemPrompt(o) {
   const kind = o.dbType === 'postgres' ? 'PostgreSQL' : 'SQL Server';
   return [
-    'You are working inside Cygenix, a data migration console, on data migration work for the signed-in user. '
-      + 'You can write and run code in this workspace: Python, Node, shell and SQL.',
-    'The database for this session is ' + kind + '. Its connection details are in the read-only file ' + CRED_FILE
-      + ' (if it is not there, find it with `find / -name db.env -path "*cygenix*" 2>/dev/null`)'
-      + ", as KEY='value' lines: CYG_DB_TYPE, CYG_DB_HOST, CYG_DB_PORT, CYG_DB_NAME, CYG_DB_USER, CYG_DB_PASSWORD and "
-      + 'CYG_DB_CONNSTR (the full connection string). Load them into the environment before running code, for example '
-      + '`set -a; . ' + CRED_FILE + '; set +a`, and read them from the environment in your code.',
-    o.dbType === 'postgres'
-      ? 'psql is installed. From Python use psycopg (pip install "psycopg[binary]"); from Node use pg.'
-      : 'From Python use pymssql (pip install pymssql) — pyodbc needs a driver this workspace cannot download. From Node use mssql.',
-    'The workspace can reach the database host, the Python and npm package registries, and ' + IP_ECHO_HOST
-      + ' (so `curl -s https://' + IP_ECHO_HOST + '` tells the user this workspace\'s public IP address, for a firewall rule) — and nothing else on the network.',
+    'You are working inside Cygenix, a data migration console, on data migration work for the signed-in user.',
+    'The database for this session is ' + kind + '. You reach it ONLY through the "' + MCP_NAME + '" MCP tools: '
+      + 'list_tables, describe_table and run_query. Cygenix runs each query for you and returns the rows. '
+      + 'Do not try to connect to the database from the workspace: there is no login there, and the workspace\'s '
+      + 'network does not allow database connections.',
+    'run_query returns at most 1,000 rows. For anything larger, aggregate or filter in SQL rather than fetching '
+      + 'everything. Write ' + kind + ' SQL, one statement per call; only the first result set is returned.',
+    'You can still write and run Python, Node and shell in the workspace to analyse what the tools return — save a '
+      + 'result to a file, chart it, compare two queries — and files you save under /mnt/session/outputs can be '
+      + 'downloaded by the user. The workspace can reach the Python and npm package registries and nothing else.',
     MODE_TEXT[o.mode === 'changes' ? 'changes' : 'readonly'],
-    'Show SQL or code before running anything that modifies data. Never print the password or the contents of '
-      + CRED_FILE + ' unless the user explicitly asks you to.',
     'Keep replies short and concrete: what you ran, what came back, what it means.',
   ].join('\n\n');
 }
@@ -596,54 +593,102 @@ async function deleteUploads(client, doc) {
   for (const u of (doc.uploads || [])) { await deleteFile(client, u.fileId); u.fileId = null; }
 }
 
-// ── session ──────────────────────────────────────────────────────────────
+// ── The bridge pass ──────────────────────────────────────────────────────
+// cyb_<lookup id>.<secret>. The lookup id finds the one document (a query
+// across partitions, because the MCP server does not know whose it is);
+// only a SHA-256 of the secret is stored, and compared in constant time.
+function sha256(v) { return crypto.createHash('sha256').update(String(v)).digest('hex'); }
+function newBridgePass() {
+  const lid = crypto.randomBytes(9).toString('hex');
+  const secret = crypto.randomBytes(32).toString('base64url');
+  return { lid, token: 'cyb_' + lid + '.' + secret, hash: sha256(secret) };
+}
+function splitPass(token) {
+  const m = BRIDGE_TOKEN_RE.exec(String(token || ''));
+  return m ? { lid: m[1], secret: m[2] } : null;
+}
+function sameHash(a, b) {
+  const x = Buffer.from(String(a || ''), 'utf8'), y = Buffer.from(String(b || ''), 'utf8');
+  return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
+}
+
+// A Function App connection is its base URL (not secret, sent by the page)
+// and a key (secret, in conn_secrets — or none, for the product's own
+// Function App, which the bridge reaches with the product key).
+const FN_URL_RE = /^https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/[^\s]{0,400}$/;
 function str(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 200); }
-async function sessionStart(who, apiKey, body, ctx) {
+
+// The connection a session or a check is for, as far as this app needs to
+// know it: which kind, where, and that a credential exists. Never the
+// credential itself — that is unsealed only when the bridge redeems a pass.
+async function resolveConnection(who, body) {
   const connId = str(body.connId, 100);
-  if (!CONN_ID_RE.test(connId)) return bad(400, 'Choose a connection first.');
-  const side = body.side === 'src' ? 'src' : 'tgt';
+  if (!CONN_ID_RE.test(connId)) return { error: bad(400, 'Choose a connection first.') };
   const names = { profileId: str(body.profileId, 100), profileName: str(body.profileName, 120),
                   connectionName: str(body.connectionName, 120) || connId };
-  const container = await deps.container();
-
+  const side = body.side === 'src' ? 'src' : 'tgt';
+  const mode = body.mode === 'azure' ? 'azure' : 'direct';
   const secret = await deps.readSecret(who.oid, connId);
+  if (!secret.ok && secret.code === 'no-secrets-key') return { error: bad(503, 'The secrets store is not configured on the server (CONN_SECRETS_KEY).') };
+  if (!secret.ok && secret.code === 'undecryptable') return { error: bad(409, 'The saved credential for "' + names.connectionName + '" cannot be opened with the server\'s current key. Save the connection again.') };
+  if (mode === 'azure') {
+    const fnUrl = str(body.fnUrl, 500).replace(/[?#].*$/, '');
+    if (!FN_URL_RE.test(fnUrl)) return { error: bad(400, 'The Function App address for "' + names.connectionName + '" is not a valid https URL.') };
+    let host = '';
+    try { host = new URL(fnUrl).host; } catch (e) { /* the RE already held */ }
+    return { connId, names, side, conn: { mode, fnUrl, dbType: 'sqlserver', dbHost: host, dbName: '' } };
+  }
   if (!secret.ok) {
-    if (secret.code === 'no-secrets-key') return bad(503, 'The secrets store is not configured on the server (CONN_SECRETS_KEY).');
-    if (secret.code === 'undecryptable') return bad(409, 'The saved credential for "' + names.connectionName + '" cannot be opened with the server\'s current key. Save the connection again.');
-    return bad(409, 'The credential for "' + names.connectionName + '" has not been saved to the cloud from this browser. Open Connections, check it is there, and let it sync — then try again.');
+    return { error: bad(409, 'The credential for "' + names.connectionName + '" has not been saved to the cloud from this browser. Open Connections, check it is there, and let it sync — then try again.') };
   }
   if (!secret.bundle.connString) {
-    return bad(409, 'The Dev Console needs a direct database connection. "' + names.connectionName + '" is a '
-      + (secret.bundle.fnKey ? 'Function App connection' : 'stream destination') + ', which the workspace cannot use.');
+    return { error: bad(409, '"' + names.connectionName + '" is a stream destination, not a database the Dev Console can query.') };
   }
   const p = parseConn(secret.bundle.connString);
-  if (!p.ok) return bad(409, p.why);
+  if (!p.ok) return { error: bad(409, p.why) };
+  return { connId, names, side, conn: { mode, fnUrl: '', dbType: p.kind, dbHost: p.host, dbName: p.database } };
+}
 
-  const g = await gate(who, 'use', { record: 'session.start', detail: { profile: names.profileName, connection: names.connectionName, host: p.host } });
+// Revoke a session's pass and delete its vault: nothing can redeem it after.
+async function revokeBridge(client, doc) {
+  if (doc.vaultId) { try { await client.beta.vaults.delete(doc.vaultId); } catch (e) { /* gone already */ } }
+  doc.vaultId = null; doc.bridgeHash = null; doc.bridgeLid = null; doc.bridgeExp = null;
+}
+
+// ── session ──────────────────────────────────────────────────────────────
+async function sessionStart(who, apiKey, body, ctx) {
+  const r = await resolveConnection(who, body);
+  if (r.error) return r.error;
+  const { connId, names, side, conn } = r;
+  const container = await deps.container();
+
+  const g = await gate(who, 'use', { record: 'session.start', detail: { profile: names.profileName, connection: names.connectionName, host: conn.dbHost } });
   if (!g.ok) return g.response;
 
   const client = deps.makeClient(apiKey);
   const tag = keyTag(apiKey);
   const agentId = await ensureAgent(client, tag);
-  const environmentId = await ensureEnvironment(client, tag, 'limited', [p.host].concat(PACKAGE_HOSTS, [IP_ECHO_HOST]));
+  const environmentId = await ensureEnvironment(client, tag, 'limited', SESSION_HOSTS);
 
-  const file = await client.beta.files.upload({
-    file: await deps.toFile(Buffer.from(credFile(p, secret.bundle.connString), 'utf8'), 'db.env'),
-    expires_in_seconds: CRED_TTL_S,
-  });
+  // The pass goes into a vault of its own, for this session only, so
+  // Anthropic presents it to the bridge and Claude never sees it.
+  const pass = newBridgePass();
+  const vault = await client.beta.vaults.create({ display_name: 'Cygenix Dev Console bridge', metadata: { cygenix: 'console', cyg_oid: who.oid } });
   let session;
   try {
+    await client.beta.vaults.credentials.create(vault.id, { display_name: 'Cygenix bridge',
+      auth: { type: 'static_bearer', token: pass.token, mcp_server_url: mcpUrl() } });
     session = await client.beta.sessions.create({
       agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
-               system: systemPrompt({ dbType: p.kind, mode: 'readonly' }) },
+               system: systemPrompt({ dbType: conn.dbType, mode: 'readonly' }) },
       environment_id: environmentId,
       title: 'Cygenix Dev Console — ' + names.connectionName,
       metadata: { cygenix: 'console', cyg_oid: who.oid },
       budget: budget(),
-      resources: [{ type: 'file', file_id: file.id, mount_path: CRED_PATH }],
+      vault_ids: [vault.id],
     });
   } catch (e) {
-    await deleteFile(client, file.id);
+    try { await client.beta.vaults.delete(vault.id); } catch (e2) { /* best effort */ }
     throw e;
   }
   const now = new Date(deps.now()).toISOString();
@@ -651,14 +696,37 @@ async function sessionStart(who, apiKey, body, ctx) {
     id: session.id, kind: 'session', userId: who.email, oid: who.oid, tenantId: g.tenantId || '',
     title: '', status: 'idle', dataChangesAllowed: false,
     profileId: names.profileId, profileName: names.profileName, connectionId: connId,
-    connectionName: names.connectionName, side, dbType: p.kind, dbHost: p.host, dbName: p.database,
+    connectionName: names.connectionName, side, dbType: conn.dbType, dbHost: conn.dbHost, dbName: conn.dbName,
+    connMode: conn.mode, fnUrl: conn.fnUrl,
     createdAt: now, updatedAt: now, endedAt: null,
-    agentId, environmentId, fileId: file.id, model: MODEL(),
+    agentId, environmentId, model: MODEL(),
+    vaultId: vault.id, bridgeLid: pass.lid, bridgeHash: pass.hash, bridgeExp: deps.now() + BRIDGE_TTL_MS,
     cursorAt: null, cursorIds: [], chunkCount: 0, eventCount: 0, costCents: null, stopReason: null,
   };
   await container.items.upsert(doc);
-  ctx.log('[claude-code] session opened ' + session.id + ' db=' + p.kind);
+  ctx.log('[claude-code] session opened ' + session.id + ' db=' + conn.dbType + ' via=' + conn.mode);
   return ok({ session: publicSession(doc) });
+}
+
+// ── check: a two-minute pass for "Check the bridge" ──────────────────────
+// The page takes the pass straight to the MCP server and runs SELECT 1, so
+// the check goes down exactly the road Claude's queries take. A check pass
+// is read-only whatever the person's roles, and good for two minutes.
+async function sessionCheck(who, apiKey, body) {
+  const r = await resolveConnection(who, body);
+  if (r.error) return r.error;
+  const g = await gate(who, 'use');
+  if (!g.ok) return g.response;
+  const container = await deps.container();
+  const pass = newBridgePass();
+  await container.items.upsert({
+    id: 'chk_' + pass.lid, kind: 'bridgecheck', userId: who.email, oid: who.oid, tenantId: g.tenantId || '',
+    connectionId: r.connId, connectionName: r.names.connectionName, profileName: r.names.profileName, side: r.side,
+    dbType: r.conn.dbType, dbHost: r.conn.dbHost, connMode: r.conn.mode, fnUrl: r.conn.fnUrl,
+    bridgeLid: pass.lid, bridgeHash: pass.hash, bridgeExp: deps.now() + CHECK_TTL_MS,
+    createdAt: new Date(deps.now()).toISOString(),
+  });
+  return ok({ token: pass.token, mcpUrl: mcpUrl(), expiresInSeconds: CHECK_TTL_MS / 1000 });
 }
 
 // ── message ──────────────────────────────────────────────────────────────
@@ -709,6 +777,7 @@ async function sessionEvents(who, apiKey, sessionId) {
       const p = parseConn(sec.bundle.connString);
       if (p.ok && p.password) secretsToMask.push(p.password);
     }
+    if (sec.ok && sec.bundle.fnKey) secretsToMask.push(sec.bundle.fnKey);
   } catch (e) { /* patterns only */ }
   const redact = makeRedactor(secretsToMask);
 
@@ -737,8 +806,7 @@ async function sessionEvents(who, apiKey, sessionId) {
   if (remote.status === 'terminated') {
     doc.status = fresh.some(e => e.type === 'session.error') ? 'error' : 'stopped';
     doc.endedAt = doc.endedAt || new Date(deps.now()).toISOString();
-    await deleteFile(client, doc.fileId);
-    doc.fileId = null;
+    await revokeBridge(client, doc);
     await deleteUploads(client, doc);
   } else {
     doc.status = status;
@@ -784,8 +852,7 @@ async function sessionStop(who, apiKey, body) {
   // sent. Either may already have happened on Anthropic's side.
   try { await client.beta.sessions.events.send(doc.id, { events: [{ type: 'user.interrupt' }] }); } catch (e) { /* already over */ }
   try { await client.beta.sessions.archive(doc.id); } catch (e) { /* already archived or gone */ }
-  await deleteFile(client, doc.fileId);
-  doc.fileId = null;
+  await revokeBridge(client, doc);
   await deleteUploads(client, doc);
   doc.status = 'stopped';
   doc.endedAt = new Date(deps.now()).toISOString();
@@ -911,327 +978,67 @@ async function sessionGet(who, sessionId) {
 }
 
 // ── The connectivity test ────────────────────────────────────────────────
-const KINDS = ['sqlserver', 'postgres', 'other'];
-const NETWORKS = ['limited', 'open'];
-
-function validateProbe(body) {
-  const host = String((body && body.host) || '').trim().toLowerCase();
-  const port = Number(body && body.port);
-  const kind = KINDS.indexOf(body && body.kind) !== -1 ? body.kind : 'other';
-  const network = NETWORKS.indexOf(body && body.network) !== -1 ? body.network : 'limited';
-  if (!HOST_RE.test(host)) return { ok: false, error: 'Enter a host name or IPv4 address, without a scheme, port or path.' };
-  if (!Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, error: 'Enter a port between 1 and 65535.' };
-  return { ok: true, host, port, kind, network };
+// ── The bridge redeems a pass (server to server) ─────────────────────────
+// Called by the MCP server on cygenix.co.uk with this app's host key, for a
+// pass Anthropic presented to it. No person is behind this call and nothing
+// in it is trusted but the pass: the answer is the one connection that pass
+// was issued for, for as long as it lives, and nothing else.
+const JSON_ONLY = { 'Content-Type': 'application/json' };
+const reply = (status, body) => ({ status, headers: JSON_ONLY, body: JSON.stringify(body) });
+async function findByLid(container, lid) {
+  const { resources } = await container.items.query({
+    query: 'SELECT * FROM c WHERE c.bridgeLid = @lid',
+    parameters: [{ name: '@lid', value: lid }],
+  }).fetchAll();
+  return (resources || [])[0] || null;
 }
-
-// v6. The console-shaped session (v5) came back empty too: 5,843 input
-// tokens, 0 output. The test is now indistinguishable from a console
-// message except for what the message SAYS, so one click climbs a ladder
-// and reports the rung it fell off: a hello line first (does this
-// session answer at all?), then a connect-only script (DNS, TCP, egress
-// address), then the driver login. Each rung is a fresh user message in
-// the same session, sent only after the previous turn ended with its
-// answer; the first empty turn ends the climb and is named with its rung.
-// A connect result that arrives before the login rung fails is still a
-// result: the firewall question is answered by rung two.
-// v8. Removing the target from the request did not help either: a bare
-// "print 2 + 2" first rung still came back empty, while the SAME message
-// in an ordinary console session returns "4" on the same key and agent.
-// So the fault is not the target at all — it is something in how the test
-// set its session up differently from the console. The fix is to stop
-// being different: the test now opens the very session a console open
-// does. The target and a made-up login travel in a db.env mounted at the
-// console's own path; the system prompt, title and metadata are the
-// console's. Only the first message differs — it is our check, not a
-// person's question. The target is also kept in Cosmos so the later rungs
-// can be built.
-const PROBE_STEPS = [
-  { name: 'hello', label: 'Workspace answers' },
-  { name: 'connect', label: 'Connection to the server' },
-  { name: 'login', label: 'Database reply' },
-];
-function probeSteps(kind) { return kind === 'other' ? PROBE_STEPS.slice(0, 2) : PROBE_STEPS; }
-// v9. Step 2 kept coming back empty, in open and allow-list networking
-// alike, while the same check asked for in plain words — "can you connect
-// to my source db" — was written and run by Claude every time. So the
-// rungs no longer hand over a script: they ask, in words, for the check
-// and for one machine-readable line at the end, and Claude writes the code.
-const RESULT_LINE = 'CYGPROBE_RESULT';
-function probeMessage(step, kind) {
-  if (step === 'hello') {
-    return 'Run this with bash and paste the output verbatim:\n\n```bash\npython3 -c "print(\'CYGPROBE_HELLO\', 2 + 2)"\n```';
-  }
-  if (step === 'connect') {
-    return 'Can you check whether this workspace can reach my database server? Its host and port are CYG_DB_HOST and CYG_DB_PORT '
-      + 'in the connection file ' + CRED_FILE + '. Just try to open a TCP connection to it with a 10-second timeout; do not log in. '
-      + 'Also get this workspace\'s public IP address from https://' + IP_ECHO_HOST + '. '
-      + 'Finish your reply with one line on its own: ' + RESULT_LINE + ' followed by a JSON object with the keys '
-      + 'host, port, kind ("' + kind + '"), tcp ("open" or "failed"), tcp_error (the error, if it failed) and egress_ip.';
-  }
-  const driver = kind === 'postgres' ? 'psycopg (pip install "psycopg[binary]")' : 'pymssql (pip install pymssql)';
-  return 'Thanks. Now please check the database itself answers: log in once with ' + driver + ', using CYG_DB_USER and CYG_DB_PASSWORD '
-    + 'from the same file. They are a made-up test account, so a "login failed" error is the expected answer and means the server replied. '
-    + 'Use a 10-second timeout and try once only. Finish your reply with one line on its own: ' + RESULT_LINE + ' followed by a JSON object with '
-    + 'the keys host, port, kind, tcp, egress_ip (as before) and handshake: "' + (kind === 'postgres' ? 'postgres' : 'sqlserver') + '-replied" if the server '
-    + 'answered the login in any way (including refusing it), or "error: <the error>" if it did not.';
-}
-// Kept for the tests and the page copy: the message that starts a test.
-function probeInstruction(kind) { return probeMessage('hello', kind); }
-
-function textsOf(ev) {
-  return (Array.isArray(ev && ev.content) ? ev.content : [])
-    .filter(b => b && b.type === 'text' && typeof b.text === 'string').map(b => b.text);
-}
-const AGENT_TYPES = ['agent.message', 'agent.tool_use', 'agent.tool_result', 'agent.thinking'];
-// The first balanced {...} after the marker, wherever Claude put it: on
-// the same line, after a space or a colon, inside a code block, or spread
-// over several lines.
-function resultFrom(text) {
-  const at = String(text || '').lastIndexOf('CYGPROBE_RESULT');
-  if (at === -1) return null;
-  const start = text.indexOf('{', at);
-  if (start === -1) return null;
-  let depth = 0, inStr = false, esc = false;
-  for (let i = start; i < text.length; i++) {
-    const c = text[i];
-    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
-    if (c === '"') inStr = true;
-    else if (c === '{') depth++;
-    else if (c === '}' && --depth === 0) {
-      try { const o = JSON.parse(text.slice(start, i + 1)); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
-    }
-  }
-  return null;
-}
-function pickResult(evs) {
-  // Claude's own closing line first (that is what the rungs ask for), then
-  // anything a command printed.
-  for (const types of [['agent.message'], ['agent.tool_result']]) {
-    for (let k = evs.length - 1; k >= 0; k--) {
-      const ev = evs[k];
-      if (types.indexOf(ev.type) === -1) continue;
-      for (const t of textsOf(ev)) { const r = resultFrom(t); if (r) return r; }
-    }
-  }
-  return null;
-}
-// One entry per user message: what was asked and what came back, so the
-// route can climb the ladder and the page can name the rung.
-function probeTurns(events) {
-  const turns = [];
-  let cur = null;
-  events.forEach(ev => {
-    if (ev.type === 'user.message') { cur = { ask: textsOf(ev).join('\n'), events: [] }; turns.push(cur); }
-    else if (cur) cur.events.push(ev);
-  });
-  return turns.map(t => {
-    const said = t.events.some(ev => AGENT_TYPES.indexOf(ev.type) !== -1);
-    const ended = t.events.some(ev => ev.type === 'session.status_idle');
-    const texts = [].concat(...t.events.filter(ev => ev.type === 'agent.tool_result' || ev.type === 'agent.message').map(textsOf));
-    return { ask: t.ask, ended, said, empty: ended && !said, hello: texts.some(x => /CYGPROBE_HELLO 4\b/.test(x)), result: pickResult(t.events) };
-  });
-}
-function parseProbeEvents(events) {
-  const errors = [];
-  const turns = probeTurns(events);
-  // The connect rung's result, with the login rung's laid over it.
-  const results = turns.map(t => t.result).filter(Boolean);
-  const result = results.length ? Object.assign({}, ...results) : null;
-  events.filter(ev => ev.type === 'session.error').forEach(ev => {
-    const er = ev.error || {};
-    errors.push(String(er.message || er.type || 'session error'));
-  });
-  const idle = events.filter(ev => ev.type === 'session.status_idle').pop();
-  // What the workspace said and did, for the case where no result line came
-  // back: without it a person sees "no result" and nothing to act on. No
-  // credential is involved in a test, so nothing here needs blanking.
-  const clip = (t) => String(t || '').replace(/\s+$/, '').slice(-1200);
-  const transcript = [];
-  // Every event type, in order, so an unexpected shape is visible too.
-  // ...with the model's output-token count on each request and on the
-  // usage line: it tells an empty turn with nothing written apart from
-  // one whose reply never reached the event list.
-  const outTok = (ev) => {
-    const u = ev.model_usage || ev.usage || ev;
-    return u && typeof u.output_tokens === 'number' ? ':out=' + u.output_tokens : '';
-  };
-  const eventTypes = events.map(ev => ev.type + (ev.stop_reason && ev.stop_reason.type ? ':' + ev.stop_reason.type : '')
-    + (ev.is_error ? ':error' : '') + (ev.error && ev.error.type ? ':' + ev.error.type : '')
-    + (ev.type === 'span.model_request_end' || ev.type === 'session.usage' ? outTok(ev) : ''));
-  events.forEach(ev => {
-    if (ev.type === 'agent.message') {
-      const blocks = Array.isArray(ev.content) ? ev.content : [];
-      // A reply Anthropic's safety system withheld arrives as a redacted
-      // block and nothing else. Say so, rather than showing a blank.
-      if (blocks.length && blocks.every(b => b && b.type === 'redacted')) {
-        transcript.push({ kind: 'refused', text: 'Claude\'s reply was withheld by Anthropic\'s safety system — the request was declined.' });
-      } else transcript.push({ kind: 'message', text: clip(textsOf(ev).join('\n')) });
-    } else if (ev.type === 'span.model_request_end' && ev.is_error) {
-      transcript.push({ kind: 'error', text: 'A model request failed.' });
-    } else if (ev.type === 'agent.tool_use') {
-      const input = ev.input || {};
-      transcript.push({ kind: 'tool', text: clip(ev.name === 'bash' ? input.command : (ev.name || 'tool') + ' ' + JSON.stringify(input)) });
-    } else if (ev.type === 'agent.tool_result') transcript.push({ kind: ev.is_error ? 'error' : 'output', text: clip(textsOf(ev).join('\n')) });
-  });
-  // The last model request and the usage line, exactly as Anthropic sent
-  // them: our summary has been wrong about what an empty turn holds, so
-  // the page shows the real thing. Scrubbed of anything key-shaped.
-  const raw = scrubKeys({
-    modelRequestEnd: events.filter(ev => ev.type === 'span.model_request_end').pop() || null,
-    usage: events.filter(ev => ev.type === 'session.usage').pop() || null,
-  });
-  // A turn in which the model wrote nothing at all: zero output tokens on
-  // the last request, no error, nothing said or run. Named as such, rather
-  // than folded into "no reply".
-  const mu = raw && raw.modelRequestEnd && raw.modelRequestEnd.model_usage;
-  const last = turns[turns.length - 1];
-  const emptyTurn = !!(last && last.empty && !(raw && raw.modelRequestEnd && raw.modelRequestEnd.is_error) && (!mu || mu.output_tokens === 0));
-  return { result, errors, stopReason: idle && idle.stop_reason ? idle.stop_reason.type : null, transcript: transcript.slice(-12), eventTypes, raw, emptyTurn, turns };
-}
-function scrubKeys(o) {
-  try { return JSON.parse(JSON.stringify(o).replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, '[key]')); }
-  catch (e) { return null; }
-}
-
-function verdict(r) {
-  if (!r) return null;
-  if (r.dns_error) return { ok: false, text: 'The workspace could not resolve ' + r.host + ' (' + r.dns_error + ').' };
-  if (r.tcp !== 'open') return { ok: false, text: 'The workspace could not open a connection to ' + r.host + ':' + r.port + ' (' + (r.tcp_error || 'failed') + ').' };
-  if (r.kind === 'other') return { ok: true, text: 'A connection to ' + r.host + ':' + r.port + ' opened.' };
-  if (/-replied$/.test(r.handshake || '')) return { ok: true, text: 'The database at ' + r.host + ':' + r.port + ' answered.' };
-  if (r.handshake === 'no-driver') return { ok: true, text: 'A connection to ' + r.host + ':' + r.port + ' opened; the database driver was not available in the workspace to confirm a reply.' };
-  if (r.login_skipped) return { ok: true, text: 'A connection to ' + r.host + ':' + r.port + ' opened. The database-reply check did not run: ' + r.login_skipped + '.' };
-  return { ok: false, text: 'A connection opened, but the database did not answer a login attempt on it (' + (r.handshake || 'no reply') + ') — something between the workspace and ' + r.host + ' may be accepting the connection without passing it on.' };
-}
-
-async function probeStart(who, apiKey, body) {
-  const p = validateProbe(body);
-  if (!p.ok) return bad(400, p.error);
-  const g = await gate(who, 'probe', { record: 'probe', detail: { host: p.host, port: p.port, network: p.network } });
-  if (!g.ok) return g.response;
+async function bridgeRedeem(body) {
+  const refused = (why) => reply(401, { error: why });
+  const parts = splitPass(body && body.token);
+  if (!parts) return refused('This bridge pass is not valid.');
   const container = await deps.container();
-  const client = deps.makeClient(apiKey);
-  const tag = keyTag(apiKey);
-  const agentId = await ensureAgent(client, tag);
-  const environmentId = await ensureEnvironment(client, tag, p.network, [p.host].concat(PACKAGE_HOSTS, [IP_ECHO_HOST]));
-  // A console session, to the letter. The target and a made-up login are a
-  // db.env at the console's own path; the prompt, title and metadata are a
-  // console session's. This is the one shape we have seen produce output.
-  const conn = { kind: p.kind, host: p.host, port: p.port, database: '', user: 'cygenix_probe', password: 'cygenix-probe' };
-  const file = await client.beta.files.upload({
-    file: await deps.toFile(Buffer.from(credFile(conn, ''), 'utf8'), 'db.env'), expires_in_seconds: CRED_TTL_S,
+  const doc = await findByLid(container, parts.lid);
+  if (!doc || (doc.kind !== 'session' && doc.kind !== 'bridgecheck') || !sameHash(sha256(parts.secret), doc.bridgeHash)) {
+    return refused('This bridge pass is not valid.');
+  }
+  if (!doc.bridgeExp || doc.bridgeExp < deps.now()) {
+    if (doc.kind === 'bridgecheck') { try { await container.item(doc.id, doc.userId).delete(); } catch (e) { /* tidy only */ } }
+    return refused('This bridge pass has expired. Start a new session or check again.');
+  }
+  if (doc.kind === 'session' && (doc.status === 'stopped' || doc.status === 'error')) {
+    return refused('This Dev Console session has ended.');
+  }
+  // Unsealed fresh every time, so a password saved again since the session
+  // opened takes effect at once, and a deleted one stops the bridge.
+  const sec = await deps.readSecret(doc.oid, doc.connectionId);
+  const mode = doc.connMode === 'azure' ? 'azure' : 'direct';
+  if (mode === 'direct' && !(sec.ok && sec.bundle && sec.bundle.connString)) {
+    return reply(409, { error: 'The credential for "' + (doc.connectionName || doc.connectionId) + '" is no longer saved on the server. Save the connection again.' });
+  }
+  return reply(200, {
+    ok: true, kind: doc.kind, sessionId: doc.kind === 'session' ? doc.id : null,
+    oid: doc.oid, email: doc.userId, tenantId: doc.tenantId || '',
+    connectionId: doc.connectionId, connectionName: doc.connectionName || '', profileName: doc.profileName || '',
+    side: doc.side || '', dbType: doc.dbType || 'sqlserver', mode,
+    connString: mode === 'direct' ? sec.bundle.connString : null,
+    fnUrl: mode === 'azure' ? doc.fnUrl : null,
+    fnKey: mode === 'azure' && sec.ok && sec.bundle ? (sec.bundle.fnKey || null) : null,
+    readOnly: doc.kind === 'bridgecheck' ? true : !doc.dataChangesAllowed,
   });
-  let session;
+}
+async function bridgeHandler(req, ctx) {
+  const action = String((req.params && req.params.action) || '').toLowerCase();
+  if (action !== 'redeem') return reply(404, { error: 'Unknown bridge action: ' + action });
+  if (req.method !== 'POST') return reply(405, { error: 'POST only' });
   try {
-    session = await client.beta.sessions.create({
-      agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
-               system: systemPrompt({ dbType: p.kind, mode: 'readonly' }) },
-      environment_id: environmentId,
-      title: 'Cygenix Dev Console — connection test',
-      metadata: { cygenix: 'console', cyg_oid: who.oid, cyg_probe: '1' },
-      budget: budget(),
-      resources: [{ type: 'file', file_id: file.id, mount_path: CRED_PATH }],
-    });
+    const body = await req.json().catch(() => null);
+    const res = await bridgeRedeem(body || {});
+    // Status only: never the pass, the connection or who it was for.
+    ctx.log('[claude-code-bridge] redeem status=' + res.status);
+    return res;
   } catch (e) {
-    await deleteFile(client, file.id);
-    throw e;
+    return boom(e);
   }
-  const now = new Date(deps.now()).toISOString();
-  try {
-    await container.items.upsert({ id: session.id, kind: 'probe', userId: who.email, oid: who.oid,
-      host: p.host, port: p.port, dbKind: p.kind, network: p.network, fileId: file.id, createdAt: now });
-  } catch (e) { /* the test can still run; the later rungs just cannot rebuild */ }
-  await client.beta.sessions.events.send(session.id, { events: [{ type: 'user.message', content: [{ type: 'text', text: probeMessage('hello', p.kind) }] }] });
-  return ok({ sessionId: session.id, status: 'running', network: p.network, host: p.host, port: p.port, steps: probeSteps(p.kind).map(st => st.label) });
-}
-
-async function probeResult(who, apiKey, sessionId) {
-  if (!SESSION_ID_RE.test(String(sessionId || ''))) return bad(400, 'sessionId is missing or malformed.');
-  const g = await gate(who, 'probe');
-  if (!g.ok) return g.response;
-  const container = await deps.container();
-  let doc = null;
-  try { doc = (await container.item(sessionId, who.email).read()).resource || null; }
-  catch (e) { if (!e || e.code !== 404) throw e; }
-  if (!doc || doc.kind !== 'probe' || doc.oid !== who.oid) return bad(404, 'No such test session.');
-  const client = deps.makeClient(apiKey);
-  let session;
-  try { session = await client.beta.sessions.retrieve(sessionId); }
-  catch (e) { if (e && e.status === 404) return bad(404, 'No such test session.'); throw e; }
-  if (!session.metadata || session.metadata.cyg_oid !== who.oid || session.metadata.cyg_probe !== '1') {
-    return bad(404, 'No such test session.');
-  }
-  const events = [];
-  for await (const ev of client.beta.sessions.events.list(sessionId, { order: 'asc', limit: 100 })) {
-    events.push(ev);
-    if (events.length >= 400) break;
-  }
-  const parsed = parseProbeEvents(events);
-  const p = { host: doc.host || '', port: doc.port || 0, kind: doc.dbKind || 'other' };
-  const steps = probeSteps(p.kind);
-  // Where the climb stands: one turn per rung, in order. The rung under way
-  // is the last turn; a rung passed when its turn ended with its answer.
-  const turns = parsed.turns;
-  const last = turns[turns.length - 1];
-  // Step 2 passes only when the connection OPENED: a result saying it
-  // failed is an answer, but it is "could not connect", and there is no
-  // point asking for a login on a connection that never opened.
-  const passed = (st, t) => !!(t && t.ended && (st.name === 'hello' ? t.hello
-    : st.name === 'connect' ? (t.result && t.result.tcp === 'open') : t.result));
-  const status = steps.map((st, i) => {
-    const t = turns[i];
-    if (!t) return 'pending';
-    if (!t.ended) return 'running';
-    if (passed(st, t)) return 'passed';
-    if (st.name === 'connect' && t.result) return 'unreachable';
-    return t.empty ? 'empty' : 'failed';
-  });
-  // Finished means the turn under way ended: an idle session whose message
-  // has not been recorded yet (the moment between create and send) is not
-  // done. No retry of a rung: an empty turn ends the climb, named as such.
-  let finished = session.status === 'terminated' || parsed.errors.length > 0;
-  let next = null;
-  if (!finished && session.status === 'idle' && last && last.ended) {
-    const i = turns.length - 1;
-    if (i >= steps.length - 1 || status[i] !== 'passed') finished = true;
-    else next = steps[i + 1];
-  }
-  // A poll can land after a rung was sent and before the platform lists
-  // its message; without a memo it would be sent twice. The memo is per
-  // instance, which is where such back-to-back polls come from.
-  let stepNo = turns.length;
-  if (next && remembered(sessionId, 'rung:' + next.name)) { next = null; status[turns.length] = 'running'; stepNo = turns.length + 1; }
-  if (next) {
-    remember(sessionId, 'rung:' + next.name, '1');
-    await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.message', content: [{ type: 'text', text: probeMessage(next.name, p.kind) }] }] });
-    status[turns.length] = 'running';
-    stepNo = turns.length + 1;
-  }
-  // A connect result with the login rung not run is still a result.
-  const result = parsed.result;
-  if (finished && result && result.tcp === 'open' && p.kind !== 'other' && !result.handshake) {
-    const li = steps.findIndex(st => st.name === 'login');
-    result.login_skipped = status[li] === 'empty' ? 'Claude returned an empty turn for it' : status[li] === 'pending' ? 'it was not reached' : 'it did not report';
-  }
-  if (finished && !session.archived_at) {
-    try { await client.beta.sessions.archive(sessionId); } catch (e) { /* ignore */ }
-    await deleteFile(client, doc.fileId);
-  }
-  const cost = session.usage && session.usage.list_cost;
-  const failedAt = finished ? status.findIndex(x => x === 'empty' || x === 'failed' || x === 'unreachable') : -1;
-  return ok({
-    sessionId, status: session.status, done: !!finished, retrying: false,
-    steps: steps.map((st, i) => ({ name: st.name, label: st.label, status: status[i] })),
-    step: stepNo,
-    failedStep: failedAt === -1 ? null : { index: failedAt + 1, name: steps[failedAt].name, label: steps[failedAt].label, status: status[failedAt] },
-    result, verdict: verdict(result), errors: parsed.errors,
-    stopReason: parsed.stopReason,
-    transcript: finished && failedAt !== -1 ? parsed.transcript : [],
-    eventTypes: finished && failedAt !== -1 ? parsed.eventTypes : [],
-    raw: finished ? parsed.raw : null,
-    emptyTurn: !!(finished && failedAt !== -1 && status[failedAt] === 'empty' && parsed.emptyTurn),
-    costCents: cost && cost.amount != null ? Number(cost.amount) : null,
-  });
 }
 
 // Anthropic's own refusals, in words the page can show as they are.
@@ -1246,7 +1053,7 @@ function fromAnthropic(e) {
 
 // ── The route ────────────────────────────────────────────────────────────
 const ACTIONS = {
-  probe:    { GET: (who, key, req) => probeResult(who, key, req.query.get('sessionId')), POST: (who, key, req, body) => probeStart(who, key, body) },
+  check:    { POST: (who, key, req, body) => sessionCheck(who, key, body) },
   session:  { GET: (who, key, req) => sessionGet(who, req.query.get('id')), POST: (who, key, req, body, ctx) => sessionStart(who, key, body, ctx) },
   message:  { POST: (who, key, req, body) => sessionMessage(who, key, body) },
   events:   { GET: (who, key, req) => sessionEvents(who, key, req.query.get('sessionId')) },
@@ -1293,13 +1100,23 @@ app.http('claude-code', {
   handler,
 });
 
+// The bridge's own door: host key only, and data-proxy refuses to forward
+// to it, so the only caller is the MCP server holding the key.
+app.http('claude-code-bridge', {
+  methods: ['POST'],
+  authLevel: 'function',
+  route: 'agent/claude-code-bridge/{action}',
+  handler: bridgeHandler,
+});
+
 module.exports = {
   deps, handler, identify, gate, siteUrl, budget, agentSpec, ensureAgent, ensureEnvironment,
-  environmentName, environmentConfig, parseConn, credFile, systemPrompt, MODE_TEXT, makeRedactor,
+  environmentName, environmentConfig, parseConn, systemPrompt, MODE_TEXT, makeRedactor,
   ourStatus, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
-  validateProbe, probeInstruction, probeMessage, resultFrom, MOUNT_ROOT, CRED_FILE, probeSteps, probeTurns, parseProbeEvents, verdict, probeStart, probeResult, fromAnthropic,
+  sessionCheck, bridgeRedeem, bridgeHandler, newBridgePass, splitPass, sha256, mcpUrl, specTag, resolveConnection,
+  MOUNT_ROOT, MCP_NAME, SESSION_HOSTS, BRIDGE_TTL_MS, CHECK_TTL_MS, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
-  AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CRED_PATH, CONTAINER, EVENT_CHUNK, MASK,
+  AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CONTAINER, EVENT_CHUNK, MASK,
 };
