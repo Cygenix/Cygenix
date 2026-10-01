@@ -238,7 +238,26 @@ check('the engine choice only replaces a port the user has not chosen',
 
    The round-trip below runs against the REAL server parser, lifted from
    db-connect.js, for the same reason the postgres one does.               */
-const serverMssql = new Function(lift('parseMssqlConnectionString') + '\nreturn parseMssqlConnectionString;')();
+const serverMssql = new Function(lift('mssqlKeywordPairs') + '\n' + lift('parseMssqlConnectionString') + '\nreturn parseMssqlConnectionString;')();
+
+/* THE BUG THAT BLOCKED A REAL LOGIN (Oct-2026). The form braces a password
+   holding ';', '=' or '}' — SQL Server's own quoting — and the server's
+   reader kept the braces, so Azure was sent "{password}" and answered
+   "Login failed", which looks exactly like a wrong password. Every awkward
+   password now goes form -> real server reader -> the same password. */
+for (const pw of ['ZrsKD+wfr72iEAcoqyFhNvZ4=ovuA1xnZXT3poHYPN8I', 'pa;ss=word', 'a}b', 'x}}y=z', 'sp ace', 'a&b=c', "it's", 'q"uote']) {
+  const cs = B.compose({ engine: 'mssql', host: 'cygenix.database.windows.net', port: '1433', database: 'cygenix', user: 'claude_api', password: pw, encrypt: true });
+  const cfg = serverMssql(cs);
+  check('the SERVER reads the form\'s password back exactly: ' + JSON.stringify(pw),
+    cfg.password === pw && cfg.user === 'claude_api' && cfg.database === 'cygenix' && cfg.server === 'cygenix.database.windows.net' && cfg.port === 1433,
+    cs + ' -> ' + JSON.stringify(cfg.password));
+}
+check('hand-written quotes are SQL Server\'s too: "..." and \'...\' unwrap, doubled to escape',
+  serverMssql('Server=h;Database=d;User Id=u;Password="p;w""x"').password === 'p;w"x'
+  && serverMssql("Server=h;Database=d;User Id=u;Password='p;w''x'").password === "p;w'x");
+check('an ordinary string still reads as before, & included',
+  serverMssql('Server=h,1444;Database=d;User Id=u;Password=plain&Encrypt=false').password === 'plain'
+  && serverMssql('Server=h,1444;Database=d;User Id=u;Password=plain&Encrypt=false').port === 1444);
 
 const MS_URL = 'mssql://svc_fin:S3cret-pw@fin-dm.database.windows.net:1433/FIN_DM';
 const msUrlF = B.parse(MS_URL);

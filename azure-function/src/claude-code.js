@@ -335,13 +335,27 @@ const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\
 const DEFAULT_PORT = { sqlserver: 1433, postgres: 5432 };
 function dec(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
 // ADO strings separate on ';' — except inside a quoted value, which is how a
-// password that itself contains ';' is written (Password="p;w" or 'p;w').
+// value that itself contains ';' or '=' is written. SQL Server's own form is
+// braces, {p;w=x}, with '}}' for a literal '}'; double and single quotes work
+// too, doubled to escape. The Connections form writes braces whenever a
+// password holds ';', '=' or '}' — and this reader once kept them, so the
+// server was sent "{password}" and refused the login.
 function adoParts(s) {
-  const parts = []; let cur = '', q = '';
-  for (const ch of s) {
-    if (q) { cur += ch; if (ch === q) q = ''; continue; }
-    if (ch === '"' || ch === "'") { q = ch; cur += ch; continue; }
-    if (ch === ';') { parts.push(cur); cur = ''; continue; }
+  const parts = []; let cur = '', close = '', atValue = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (close) {
+      cur += ch;
+      if (ch === close) {
+        if (s[i + 1] === close) { cur += close; i++; } else close = '';
+      }
+      continue;
+    }
+    if (ch === ';') { parts.push(cur); cur = ''; atValue = false; continue; }
+    if (ch === '=' && !atValue) { atValue = true; cur += ch; continue; }
+    if (atValue && !cur.slice(cur.indexOf('=') + 1).trim() && (ch === '{' || ch === '"' || ch === "'")) {
+      close = ch === '{' ? '}' : ch; cur += ch; continue;
+    }
     cur += ch;
   }
   parts.push(cur);
@@ -349,8 +363,10 @@ function adoParts(s) {
 }
 function adoValue(v) {
   const t = v.trim();
-  const m = /^"(.*)"$/s.exec(t) || /^'(.*)'$/s.exec(t);
-  return m ? m[1] : t;
+  if (t.length >= 2 && t[0] === '{' && t[t.length - 1] === '}') return t.slice(1, -1).replace(/\}\}/g, '}');
+  if (t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"') return t.slice(1, -1).replace(/""/g, '"');
+  if (t.length >= 2 && t[0] === "'" && t[t.length - 1] === "'") return t.slice(1, -1).replace(/''/g, "'");
+  return t;
 }
 function parseConn(connString) {
   const s = String(connString || '').trim();

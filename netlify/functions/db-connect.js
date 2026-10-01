@@ -1752,14 +1752,7 @@ function parseMssqlConnectionString(cs, dbOverride) {
     };
   }
 
-  const pairs = {};
-  for (const part of cs.split(/[;&]+/)) {
-    const eq = part.indexOf('=');
-    if (eq < 0) continue;
-    const key = part.slice(0, eq).trim().toLowerCase().replace(/\s+/g, '');
-    const val = part.slice(eq + 1).trim();
-    pairs[key] = val;
-  }
+  const pairs = mssqlKeywordPairs(cs);
 
   const serverRaw = pairs['server'] || pairs['datasource'] || pairs['data source'] || pairs['host'];
   if (!serverRaw) throw new Error('Could not find server/host in connection string. Expected: Server=host;Database=db;User Id=user;Password=pass;');
@@ -1789,6 +1782,47 @@ function parseMssqlConnectionString(cs, dbOverride) {
       requestTimeout: 120000,
     }
   };
+}
+
+/* SQL Server keyword strings, read the way SQL Server writes them. A value
+   holding ';' or '=' is quoted — braces {p;w=x} with '}}' for a literal '}',
+   or double/single quotes doubled to escape — and the quotes are not part of
+   the value. This reader used to keep them: the Connections form braces any
+   password containing ';', '=' or '}', so the server was sent "{password}"
+   and the login failed as if the password were wrong. '&' still separates
+   unquoted pairs, as it always has here. */
+function mssqlKeywordPairs(cs) {
+  const pairs = {};
+  let i = 0;
+  const n = cs.length;
+  while (i < n) {
+    while (i < n && /[;&\s]/.test(cs[i])) i++;
+    const eq = cs.indexOf('=', i);
+    if (eq < 0) break;
+    const key = cs.slice(i, eq).trim().toLowerCase().replace(/\s+/g, '');
+    i = eq + 1;
+    while (i < n && cs[i] === ' ') i++;
+    let val = '';
+    const open = cs[i];
+    if (open === '{' || open === '"' || open === "'") {
+      const close = open === '{' ? '}' : open;
+      i++;
+      while (i < n) {
+        if (cs[i] === close) {
+          if (cs[i + 1] === close) { val += close; i += 2; continue; }
+          i++; break;
+        }
+        val += cs[i++];
+      }
+      while (i < n && cs[i] !== ';' && cs[i] !== '&') i++;
+    } else {
+      const start = i;
+      while (i < n && cs[i] !== ';' && cs[i] !== '&') i++;
+      val = cs.slice(start, i).trim();
+    }
+    if (key) pairs[key] = val;
+  }
+  return pairs;
 }
 
 function parsePostgresConnectionString(cs, dbOverride) {

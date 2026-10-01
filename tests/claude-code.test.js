@@ -925,6 +925,20 @@ function listen(onConn) {
     check('a result in Claude\'s closing message is picked up from the event list', parsed.result && parsed.result.tcp === 'open' && parsed.result.egress_ip === '34.1.2.3', JSON.stringify(parsed.result));
   }
 
+  /* ── 6a. The Dev Console reads the form's quoting too ───────────────── */
+  section('6a. The Dev Console reads braced and quoted passwords the form writes');
+  {
+    const B = require('../public/cygenix-conn-builder.js');
+    for (const pw of ['ZrsKD+wfr72iEAcoqyFhNvZ4=ovuA1xnZXT3poHYPN8I', 'pa;ss=word', 'a}b', 'sp ace', "it's"]) {
+      const cs = B.compose({ engine: 'mssql', host: 'cygenix.database.windows.net', port: '1433', database: 'cygenix', user: 'claude_api', password: pw, encrypt: true });
+      const p = CC.parseConn(cs);
+      check('the workspace\'s login file gets the real password: ' + JSON.stringify(pw),
+        p.ok && p.password === pw && p.user === 'claude_api' && p.host === 'cygenix.database.windows.net' && p.database === 'cygenix', cs + ' -> ' + JSON.stringify(p));
+    }
+    check('double-quoted values still work, doubled quotes unescaped',
+      CC.parseConn('Server=h;Database=d;User Id=u;Password="p;w""x"').password === 'p;w"x');
+  }
+
   /* ── 6b. Where the mounted files really are ─────────────────────────── */
   section('6b. Mounted files: the real location is what the model is told');
   {
