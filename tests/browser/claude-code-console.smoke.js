@@ -319,8 +319,16 @@ const U = 'you@example.test';
   check('the right name turns it on', !(await page2.evaluate(() => document.getElementById('cs-confirm-ok').disabled)));
   await page2.close();
 
+  /* No empty strip: the console starts right under its toolbar. */
+  const gap = () => page.evaluate(() => { window.scrollTo(0, 0); document.scrollingElement.scrollTop = 0; return null; }).then(() => page.waitForTimeout(100)).then(() => page.evaluate(() => Math.round(document.getElementById('cc-console').getBoundingClientRect().top - document.querySelector('.topbar').getBoundingClientRect().bottom)));
+  const g1 = await gap();
+  check('NO EMPTY STRIP under the toolbar', Math.abs(g1) <= 2, g1 + 'px');
+
   /* Full screen and the draggable split, on the first page. */
   await page.evaluate(() => csFull());
+  const g2 = await gap();
+  const top2 = await page.evaluate(() => Math.round(document.querySelector('.topbar').getBoundingClientRect().top));
+  check('…nor in full screen, where the toolbar sits at the very top', Math.abs(g2) <= 2 && top2 === 0, g2 + 'px gap, toolbar at ' + top2);
   check('FULL SCREEN hides the chrome and relabels the button, remembered for the tab',
     await page.evaluate(() => document.body.classList.contains('cs-full') && document.getElementById('cs-full-label').textContent === 'Exit full screen'
       && sessionStorage.getItem('cygenix_cc_full') === '1'));

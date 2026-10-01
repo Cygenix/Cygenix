@@ -86,7 +86,10 @@ body.cyg-collapsed .topbar{left:54px}
 .sw.on .knob::after{left:18px;background:#fff}
 .sw.disabled{opacity:0.5;cursor:not-allowed}
 .cost{font-size:0.75rem;color:var(--text2);white-space:nowrap}
-.main{padding-top:calc(52px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px))}
+/* The body is already padded down for the masthead and hairline
+   (cygenix-console.css), so the console only clears its own 52px toolbar.
+   Adding the masthead again here left an empty strip under the toolbar. */
+.main{padding-top:52px}
 .gate{margin:1.25rem 1.5rem;max-width:760px}
 .card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg,10px);padding:1.1rem 1.25rem;margin-bottom:1rem}
 .card h2{font-size:0.95rem;font-weight:600;margin-bottom:0.5rem}
@@ -176,7 +179,7 @@ table.facts td:first-child{color:var(--text2);width:210px}
 /* Full screen: hide the shared chrome (rail, masthead, status hairline,
    subnav) and let the console fill the whole window. The console's own
    toolbar stays — it holds the Exit full screen button. */
-body.cs-full{padding-left:0 !important}
+body.cs-full{padding-left:0 !important;padding-top:0 !important}
 body.cs-full .cyg-sidebar,body.cs-full .cx-masthead,body.cs-full #cyg-envbar,body.cs-full .cx-subnav,body.cs-full .cyg-mobile-menu-btn{display:none !important}
 body.cs-full .topbar{left:0;top:0}
 body.cs-full .main{padding-top:52px}
@@ -186,7 +189,7 @@ body.cs-full .drawer{top:52px}
    it here so it does not cover the pane's corner. */
 .cyga-launch{transform:scale(0.8) !important;transform-origin:bottom right !important;opacity:0.72}
 .cyga-launch:hover{opacity:1}
-@media (max-width:900px){.cols{grid-template-columns:1fr;height:auto}.divider{display:none}.col{border-right:0;border-bottom:0.5px solid var(--border)}.col-body{max-height:50vh}.topbar{left:0;height:auto;flex-wrap:wrap;padding:0.4rem 0.75rem}.main{padding-top:calc(110px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px))}.form{grid-template-columns:1fr 1fr}}
+@media (max-width:900px){.cols{grid-template-columns:1fr;height:auto}.divider{display:none}.col{border-right:0;border-bottom:0.5px solid var(--border)}.col-body{max-height:50vh}.topbar{left:0;height:auto;flex-wrap:wrap;padding:0.4rem 0.75rem}.main{padding-top:110px}.form{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
