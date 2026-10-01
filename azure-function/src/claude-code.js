@@ -1157,12 +1157,17 @@ async function probeResult(who, apiKey, sessionId) {
   // is the last turn; a rung passed when its turn ended with its answer.
   const turns = parsed.turns;
   const last = turns[turns.length - 1];
-  const passed = (st, t) => !!(t && t.ended && (st.name === 'hello' ? t.hello : t.result));
+  // Step 2 passes only when the connection OPENED: a result saying it
+  // failed is an answer, but it is "could not connect", and there is no
+  // point asking for a login on a connection that never opened.
+  const passed = (st, t) => !!(t && t.ended && (st.name === 'hello' ? t.hello
+    : st.name === 'connect' ? (t.result && t.result.tcp === 'open') : t.result));
   const status = steps.map((st, i) => {
     const t = turns[i];
     if (!t) return 'pending';
     if (!t.ended) return 'running';
     if (passed(st, t)) return 'passed';
+    if (st.name === 'connect' && t.result) return 'unreachable';
     return t.empty ? 'empty' : 'failed';
   });
   // Finished means the turn under way ended: an idle session whose message
@@ -1197,7 +1202,7 @@ async function probeResult(who, apiKey, sessionId) {
     await deleteFile(client, doc.fileId);
   }
   const cost = session.usage && session.usage.list_cost;
-  const failedAt = finished ? status.findIndex(x => x === 'empty' || x === 'failed') : -1;
+  const failedAt = finished ? status.findIndex(x => x === 'empty' || x === 'failed' || x === 'unreachable') : -1;
   return ok({
     sessionId, status: session.status, done: !!finished, retrying: false,
     steps: steps.map((st, i) => ({ name: st.name, label: st.label, status: status[i] })),

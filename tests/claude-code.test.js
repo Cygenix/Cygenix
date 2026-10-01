@@ -549,6 +549,20 @@ function listen(onConn) {
       r.body.done === true && r.body.emptyTurn === true && r.body.failedStep && r.body.failedStep.index === 3 && r.body.failedStep.status === 'empty'
       && r.body.steps.map(st => st.status).join() === 'passed,passed,empty' && r.body.result.tcp === 'open' && r.body.verdict.ok === true
       && /did not run: Claude returned an empty turn/.test(r.body.verdict.text) && r.body.eventTypes.length > 0, r.raw);
+    // A connection that did NOT open: step 2 is "could not connect", the climb stops, no login is asked for.
+    await dbProbe('sesn_unreach', 'db.acme.io', 14330, 'sqlserver');
+    CLIENT._o.sessions.sesn_unreach = { id: 'sesn_unreach', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };
+    CLIENT._o.events.sesn_unreach = [
+      { type: 'user.message', content: [{ type: 'text', text: 'hello' }] }, ...ran('CYGPROBE_HELLO 4\n'), idle(),
+      { type: 'user.message', content: [{ type: 'text', text: 'connect' }] }, ...ran('{"tcp":"failed"}'),
+      { type: 'agent.message', content: [{ type: 'text', text: 'It timed out.\nCYGPROBE_RESULT {"host":"db.acme.io","port":14330,"kind":"sqlserver","tcp":"failed","tcp_error":"TimeoutError: timed out","egress_ip":"34.16.127.185"}' }] }, idle(),
+    ];
+    r = await call('GET', 'probe', { query: { sessionId: 'sesn_unreach' } });
+    check('A CONNECTION THAT DID NOT OPEN: step 2 reads "unreachable", the test stops there, no login is sent, and the verdict says it could not connect',
+      r.body.done === true && r.body.steps.map(st => st.status).join() === 'passed,unreachable,pending'
+      && r.body.failedStep && r.body.failedStep.index === 2 && r.body.failedStep.status === 'unreachable'
+      && r.body.result.tcp === 'failed' && r.body.verdict.ok === false && /could not open a connection/.test(r.body.verdict.text)
+      && !CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === 'sesn_unreach'), r.raw);
     // ...and at rung one: nothing to show but the rung.
     await dbProbe('sesn_rung1', 'db.acme.io', 1433, 'other');
     CLIENT._o.sessions.sesn_rung1 = { id: 'sesn_rung1', status: 'idle', metadata: { cygenix: 'console', cyg_oid: 'oid-me', cyg_probe: '1' }, usage: {} };

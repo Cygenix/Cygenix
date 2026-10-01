@@ -55,7 +55,7 @@
 <script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-drive.js?v=43733ac277" defer></script>
 <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
-<script src="/cygenix-cc-probe.js?v=bc18a9e22a" defer></script>
+<script src="/cygenix-cc-probe.js?v=b48d572481" defer></script>
 <script src="/cygenix-cc-console.js?v=3e088d59a5" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -863,7 +863,7 @@ function pbRenderRuns(){
     var html = '<div class="run"><div class="run-head">' + pill + ' ' + esc(label) + ' — <span class="mono">' + esc(run.host) + ':' + esc(run.port) + '</span></div>';
     if (run.verdict) html += '<p class="muted" style="margin-top:0.4rem">' + esc(run.verdict.text) + '</p>';
     if ((run.steps || []).length) {
-      var words = { pending: 'not reached', running: 'running', passed: 'passed', empty: 'empty turn', failed: 'no answer' };
+      var words = { pending: 'not reached', running: 'running', passed: 'passed', empty: 'empty turn', failed: 'no answer', unreachable: 'could not connect' };
       html += '<p class="muted mono" style="margin-top:0.4rem">' + run.steps.map(function(st, i){ return (i + 1) + ' ' + esc(st.label) + ': ' + esc(words[st.status] || st.status); }).join(' · ') + '</p>';
     }
     var rows = CygenixCcProbe.rows(run.result);

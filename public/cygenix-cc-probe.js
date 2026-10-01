@@ -108,7 +108,10 @@ function rows(result) {
   var out = [];
   if (r.dns) out.push(['Name resolves to', r.dns.join(', ')]);
   if (r.dns_error) out.push(['Name lookup', r.dns_error]);
-  if (r.tcp) out.push(['Connection', r.tcp === 'open' ? 'Opened in ' + r.tcp_ms + ' ms' : 'Failed after ' + r.tcp_ms + ' ms — ' + (r.tcp_error || '')]);
+  // Claude reports the time only sometimes now that it writes the check
+  // itself; leave it out rather than print "undefined ms".
+  var ms = typeof r.tcp_ms === 'number' ? ' ' + r.tcp_ms + ' ms' : '';
+  if (r.tcp) out.push(['Connection', r.tcp === 'open' ? 'Opened' + (ms ? ' in' + ms : '') : 'Failed' + (ms ? ' after' + ms : '') + ' — ' + (r.tcp_error || 'no detail')]);
   if (r.handshake) out.push(['Database reply', r.handshake === 'sqlserver-replied' ? 'SQL Server answered'
     : r.handshake === 'postgres-replied' ? 'PostgreSQL answered' : r.handshake]);
   if (r.egress_ip) out.push(['Workspace IP address', r.egress_ip]);
