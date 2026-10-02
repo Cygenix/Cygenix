@@ -162,6 +162,8 @@ select.map-select:focus{border-color:var(--accent)}
 <script src="/nav.js?v=f37d25db38" defer></script>
 <script src="/cygenix-auth-token.js?v=8ed8e00fad" defer></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
+<!-- Saved table names matched the way SQL Server matches them (case, missing schema). -->
+<script src="/cygenix-object-names.js?v=bdb6b97edb" defer></script>
 </head>
 <body>
 
@@ -461,8 +463,12 @@ async function connectSrc(){
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderSrcDrop('');
     // If in edit mode, restore source table with real columns from schema
+    // Matched the way SQL Server matches it (cygenix-object-names.js): a job
+    // saved as "dbo.stg_client" opens dbo.STG_Client, a name saved without a
+    // schema is found in any schema, two fits are named rather than guessed,
+    // and a name that is not there says so — the connection worked.
     if (pendingEditCfg && pendingEditCfg.srcTable) {
-      const tbl = srcAllTables.find(t => t.value === pendingEditCfg.srcTable || t.label === pendingEditCfg.srcTable);
+      const tbl = otmResolveSaved(srcAllTables, pendingEditCfg.srcTable, 'Source', srcDbName);
       if (tbl) {
         try { await ensureColumnsForTable('src', tbl); } catch(e) { console.warn('[one-to-many] edit-mode restore: could not load columns', e); }
         srcTable = { fullName: tbl.value, schema: tbl.schema, name: tbl.name, columns: tbl.columns||[], rows: [] };
@@ -481,6 +487,30 @@ async function connectSrc(){
     if(_connBusy) _connBusy.done();
     if(btn) { btn.disabled=false; btn.textContent='Retry'; }
   }
+}
+
+// A saved table name → the live table, or null with a message saying why.
+// Same rules as Object Mapping (cygenix-object-names.js explains them):
+// exact text first, then case and a missing schema ignored; more than one
+// fit is listed for the user to pick, never guessed. `quiet` leaves the
+// "not there" message to the caller, which collects several.
+function otmResolveSaved(list, wanted, sideWord, dbName, quiet){
+  if (typeof CygenixObjectNames === 'undefined') {
+    return list.find(t => t.value === wanted || t.label === wanted) || null;
+  }
+  const r = CygenixObjectNames.findObjectByName(list, wanted);
+  otmResolveSaved.last = r;
+  if (r.status === 'exact' || r.status === 'unique') return r.match;
+  if (r.status === 'ambiguous' && !quiet) {
+    showStatus('"' + wanted + '" matches more than one ' + sideWord.toLowerCase() + ' table in ' + dbName + ': '
+      + r.candidates.map(t => t.value).join(', ') + '. Pick the one this job uses from the ' + sideWord + ' table list.', 'err');
+    return null;
+  }
+  if (!quiet) {
+    showStatus('Table "' + wanted + '" isn\'t in ' + dbName + '. Pick it from the ' + sideWord + ' table list.'
+      + (r.close.length ? ' Close matches: ' + r.close.map(t => t.value).join(', ') + '.' : ''), 'err');
+  }
+  return null;
 }
 
 // Lazy-load columns+PKs+FKs for a single table. side = 'src' | 'tgt'. Returns
@@ -555,19 +585,50 @@ async function connectTgt(){
     // If in edit mode, enrich target table cards with real columns + restore saved mappings
     if (pendingEditCfg && pendingEditCfg.targetTables && pendingEditCfg.targetTables.length) {
       let changed = false;
-      targetTables.forEach((tt, ti) => {
-        const schemaEntry = tgtAllTables.find(t => t.value === tt.fullName || t.label === tt.fullName);
-        if (schemaEntry && schemaEntry.columns && schemaEntry.columns.length) {
+      const missingTgt = [];
+      // Sequential, and awaited: the schema list carries no columns when the
+      // backend pages them, so each matched target loads its own here. Before
+      // Oct-2026 this read only what the list already had — which on a paged
+      // backend was nothing, so a reopened job never got its live columns.
+      for (let ti = 0; ti < targetTables.length; ti++) {
+        const tt = targetTables[ti];
+        const schemaEntry = otmResolveSaved(tgtAllTables, tt.fullName, 'Target', tgtDbName, true);
+        if (!schemaEntry) {
+          const last = otmResolveSaved.last;
+          missingTgt.push(last && last.status === 'ambiguous'
+            ? tt.fullName + ' (fits ' + last.candidates.map(t => t.value).join(' and ') + ')'
+            : tt.fullName);
+          continue;
+        }
+        try { await ensureColumnsForTable('tgt', schemaEntry); }
+        catch (e) { console.warn('[one-to-many] edit-mode restore: could not load target columns', e); }
+        // The live spelling, so the next save writes the table's real name.
+        targetTables[ti].fullName = schemaEntry.value;
+        targetTables[ti].schema = schemaEntry.schema;
+        targetTables[ti].name = schemaEntry.name;
+        if (schemaEntry.columns && schemaEntry.columns.length) {
           // Enrich with live column definitions (type, isIdentity, nullable etc.)
           targetTables[ti].columns = schemaEntry.columns;
-          // Restore saved mappings from the edit config (overwrite the empty default)
+          // Restore saved mappings from the edit config (overwrite the empty
+          // default), with column names in the live spelling.
           const savedTT = pendingEditCfg.targetTables[ti];
           if (savedTT && savedTT.mappings && savedTT.mappings.length) {
-            targetTables[ti].mappings = savedTT.mappings.map(m => ({...m}));
+            const rows = savedTT.mappings.map(m => ({...m}));
+            targetTables[ti].mappings = (typeof CygenixObjectNames !== 'undefined')
+              ? CygenixObjectNames.canonicaliseMapping(rows,
+                  (srcTable && srcTable.columns && srcTable.columns.length) ? srcTable.columns : null,
+                  schemaEntry.columns).mapping
+              : rows;
           }
-          changed = true;
         }
-      });
+        changed = true;
+      }
+      // Said once, after the loop, so one missing table does not hide another.
+      if (missingTgt.length) {
+        showStatus('Could not match ' + (missingTgt.length === 1 ? 'target table ' : missingTgt.length + ' target tables ')
+          + 'in ' + tgtDbName + ': ' + missingTgt.join(', ')
+          + '. Pick ' + (missingTgt.length === 1 ? 'it' : 'them') + ' from the Target table list.', 'err');
+      }
       if (changed) {
         renderTargetCards();
         renderSrcColList();

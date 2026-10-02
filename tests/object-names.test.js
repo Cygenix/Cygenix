@@ -121,6 +121,12 @@ section('6. Object Mapping uses the helper, and the messages say the right thing
   check('opening a saved map resolves source and target through omResolveTable',
     /await omResolveTable\('src', srcFull\)/.test(editMode) && /await omResolveTable\('tgt', tgtFull\)/.test(editMode));
   check('…and checks the connection before waiting for tables', /omConnProblem\('src', srcFull\)/.test(editMode));
+  const otm = fs.readFileSync(path.join(__dirname, '..', 'public', 'one-to-many.html'), 'utf8');
+  check('one-to-many.html loads the helper and resolves saved names through it',
+    /\/cygenix-object-names\.js/.test(otm) && /otmResolveSaved\(srcAllTables, pendingEditCfg\.srcTable/.test(otm)
+    && /otmResolveSaved\(tgtAllTables, tt\.fullName/.test(otm)
+    && !/t\.value === pendingEditCfg\.srcTable \|\| t\.label === pendingEditCfg\.srcTable/.test(otm)
+    && !/t\.value === tt\.fullName \|\| t\.label === tt\.fullName/.test(otm));
 
   // Run the message builders and the resolver against a stubbed page.
   const start = app.indexOf('// ── Finding a saved table name in the live list');
