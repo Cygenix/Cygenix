@@ -69,7 +69,6 @@ const CALLBACK_PAGE = 'login.html';
 // Every address a page has ever answered to keeps working — the generator
 // emits a 301 from the file-name form as well as from the previous address.
 const ADDRESS = {
-  'agentive_migration.html':    '/agentive-migration',
   'data_stream.html':           '/data-stream',
   'data_stream_designer.html':  '/data-stream-designer',
   'data_stream_events.html':    '/data-stream-events',
@@ -129,6 +128,13 @@ const LEGACY = [
   // no longer exists for it.
   ['/mapper',             '/object-mapping'],
   ['/mapper.html',        '/object-mapping'],
+  // AI Assist — the Agentive Migration page — was retired in Oct-2026: the
+  // Dev Console does that work now, with the database reached through
+  // Cygenix's bridge and a staging schema to build in. Its address and both
+  // of its file-name forms send old bookmarks there.
+  ['/agentive-migration',      '/dev-console'],
+  ['/agentive_migration',      '/dev-console'],
+  ['/agentive_migration.html', '/dev-console'],
 ];
 
 function pages() {

@@ -51,10 +51,12 @@ for (const sec of NAV) for (const it of sec.items) railKeys.push(it.key);
    mount with these in data-active, dashboard code targets them, the tour
    navigates to them. 'supported', 'project-plan', 'insights',
    'project-summary-document' and 'coworker' are deliberately absent, as
-   before: removed on request, or replaced. */
+   before: removed on request, or replaced. 'agentive-migration' joined them
+   in Oct-2026: AI Assist was retired for the Dev Console, and its address
+   redirects there. */
 const LEGACY_KEYS = ['dashboard','search','project-settings','connections','performance',
   'system-parameters','privacy-security','integrations','object-mapping',
-  'sql-editor','agentive-migration','data-quality','data-cleansing',
+  'sql-editor','data-quality','data-cleansing',
   'validation','jobs','project-builder','server-migration','inventory','task-agent',
   'report-builder','reports','audit','diagnostics','help','accessibility',
   'profiles','schema-explorer','analytics','conversion-templates','data-enrichment',
@@ -75,8 +77,14 @@ check('the rail is seven groups — Plan, Connect, Model, Develop, Run, Quality,
   JSON.stringify(sections) === JSON.stringify(['Plan','Connect','Model','Develop','Run','Quality','Govern'])
   && NAV[0].section === null && NAV[0].items.length === 1 && NAV[0].items[0].key === 'dashboard',
   'got: ' + sections.join(' → '));
-check('and it is sixteen destinations, not thirty',
-  railKeys.length === 16, railKeys.length + ': ' + railKeys.join(','));
+check('and it is seventeen destinations, not thirty',
+  railKeys.length === 17, railKeys.length + ': ' + railKeys.join(','));
+check('MODEL READS: Schema explorer, Templates, Object mapping — Templates is the Conversion Templates page, under its own key',
+  (() => { const m = NAV.find(s => s.section === 'Model'); return m && m.items.map(i => i.label).join() === 'Schema explorer,Templates,Object mapping'
+    && m.items[1].key === 'conversion-templates' && m.items[1].href === '/conversion-templates' && /<svg/.test(m.items[1].icon || ''); })());
+check('AI Assist is gone: no rail item, no tab, no key — and a stale pin for it is dropped and written back',
+  !SB.__findItem('agentive-migration') && !/key:'agentive-migration'/.test(src) && !TABS['object-mapping']
+  && /var RETIRED_PINS = \['agentive-migration'\];/.test(src) && /if \(kept\.length !== list\.length\) \{/.test(src));
 check('Develop holds the SQL editor — moved, same key, same address — and the Dev Console',
   (() => { const d = NAV.find(s => s.section === 'Develop'); const sq = d && d.items[0]; const cc = d && d.items[1];
     return d && d.items.length === 2 && sq.key === 'sql-editor' && sq.href === '/sql-editor' && sq.label === 'SQL editor'
@@ -135,7 +143,7 @@ check('no key lives in two places', dupes.length === 0, dupes.join(', '));
 /* ── 6. Where everything went, per the handoff table ─────────────────────── */
 const under = (rail, key) => (TABS[rail] || []).some(t => t.key === key);
 check('Profiles & integrations: profiles + integrations', under('profiles', 'integrations'));
-check('Object mapping: conversion templates and AI assist as tabs', under('object-mapping', 'conversion-templates') && under('object-mapping', 'agentive-migration'));
+check('Object mapping has no tab strip: Templates is its own row, AI Assist is retired', !TABS['object-mapping']);
 check('Jobs & packages: packages, server migration, analytics', under('jobs', 'project-builder') && under('jobs', 'server-migration') && under('jobs', 'analytics'));
 check('Data stream: store, change events, monitor', under('data-stream', 'data-stream-store') && under('data-stream', 'data-stream-events') && under('data-stream', 'data-stream-monitor'));
 check('Assurance: quality review and validation', under('assurance', 'data-quality') && under('assurance', 'validation'));
@@ -151,14 +159,12 @@ check('Help and Accessibility are still in the account menu, and accessibility k
 check('Search is the masthead field, not a rail item — but the key still resolves',
   !railKeys.includes('search') && SB.__findItem('search') && SB.__findItem('search').view === 'search'
   && /id="cx-mh-search"/.test(src) && /cyg_search_q/.test(src));
-check('AI assist keeps its feature flag on the way into the tab strip',
-  (TABS['object-mapping'].find(t => t.key === 'agentive-migration') || {}).requiresAiEnabled === true);
 check('the Audit log keeps its role gate', (SB.__findItem('audit') || {}).requiresAuditRead === true);
 
 /* ── 7. Every former key lights the right rail item ─────────────────────── */
 const expectRail = {
   'validation':'assurance', 'data-quality':'assurance', 'data-enrichment':'data-cleansing',
-  'conversion-templates':'object-mapping', 'agentive-migration':'object-mapping',
+  'conversion-templates':'conversion-templates', 'object-mapping':'object-mapping',
   'project-builder':'jobs', 'server-migration':'jobs', 'analytics':'jobs',
   'data-stream-store':'data-stream', 'data-stream-events':'data-stream', 'data-stream-monitor':'data-stream',
   'integrations':'profiles', 'reports':'report-builder', 'inventory':'report-builder',

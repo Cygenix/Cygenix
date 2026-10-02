@@ -14,6 +14,9 @@
 /data-analyser.html   /dashboard?goto=connections/import 301!
 /mapper               /object-mapping       301!
 /mapper.html          /object-mapping       301!
+/agentive-migration   /dev-console          301!
+/agentive_migration   /dev-console          301!
+/agentive_migration.html /dev-console          301!
 
 # The sign-in callback. Entra sends the browser back to this exact
 # address with the code in the fragment, so it is served rather than
@@ -24,7 +27,6 @@
 # though the file exists at that path, which is the whole point.
 /about.html               /about                  301!
 /admin.html               /admin                  301!
-/agentive_migration.html  /agentive-migration     301!
 /analytics.html           /analytics              301!
 /assurance.html           /assurance              301!
 /balancing.html           /balancing              301!
@@ -73,7 +75,6 @@
 
 # Pages whose address is not their file name send the file-name form
 # here too, so an address a page used to answer at still works.
-/agentive_migration       /agentive-migration     301!
 /claude-code              /dev-console            301!
 /data_stream              /data-stream            301!
 /data_stream_designer     /data-stream-designer   301!
@@ -90,7 +91,6 @@
 # …and the address serves the file.
 /about                    /about.html             200
 /admin                    /admin.html             200
-/agentive-migration       /agentive_migration.html 200
 /analytics                /analytics.html         200
 /assurance                /assurance.html         200
 /balancing                /balancing.html         200

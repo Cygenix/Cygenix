@@ -109,10 +109,11 @@ const server = http.createServer((req, res) => {
   console.log('Dashboard sidebar — the nav actually changes the view\n');
 
   await open('/dashboard');
-  // Fifteen visible: Claude Code is the sixteenth rail item and stays hidden
+  // Sixteen visible: Claude Code is the seventeenth rail item and stays hidden
   // until the seeded roles record says the organisation has switched it on.
+  // (Templates became its own Model row in Oct-2026.)
   check('the dashboard is served at the extensionless address and the seven-group rail renders',
-    (await page.evaluate(() => document.querySelectorAll('.cyg-nav-item[data-key]').length)) === 15
+    (await page.evaluate(() => document.querySelectorAll('.cyg-nav-item[data-key]').length)) === 16
     && (await page.evaluate(() => Array.from(document.querySelectorAll('.cyg-nav-label')).map(l => l.textContent.trim())
           .filter(l => l !== 'Pinned').join(',')))
        === 'Plan,Connect,Model,Develop,Run,Quality,Govern');

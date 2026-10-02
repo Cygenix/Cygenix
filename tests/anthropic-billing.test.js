@@ -202,7 +202,6 @@ check('and it yields no header at all when there is no key, so the server says "
 for (const [page, what] of [
   ['insights.html', 'profile-classify-subjects'],
   ['data-quality.html', 'quality-suggest-rels'],
-  ['agentive_migration.html', 'agent/migrate'],
   ['report.html', 'narrative'],
 ]) {
   check(page + ' sends the user\'s key with its Claude-backed call (' + what + ')',

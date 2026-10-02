@@ -100,9 +100,16 @@
       { key:'connections', label:'Connections',             view:'connections', icon: iconPlug() },
       { key:'profiles',    label:'Profiles & integrations', href:'/profiles',   icon: iconShield() },
     ]},
+    // Templates (Oct-2026) was the Conversion templates tab under Object
+    // mapping. It is its own destination — a template decides which tables
+    // there are to map — so it has its own row, and the key the page mounts
+    // with (conversion-templates) lights it rather than Object mapping. The
+    // page keeps its own heading, "Conversion Templates"; only the row is
+    // shorter.
     { section: 'Model', group:'model', items: [
-      { key:'schema-explorer', label:'Schema explorer', href:'/schema-explorer', icon: iconGraph() },
-      { key:'object-mapping',  label:'Object mapping',  href:'/object-mapping',  icon: iconArrows() },
+      { key:'schema-explorer',      label:'Schema explorer', href:'/schema-explorer',      icon: iconGraph() },
+      { key:'conversion-templates', label:'Templates',       href:'/conversion-templates', icon: iconTemplate() },
+      { key:'object-mapping',       label:'Object mapping',  href:'/object-mapping',       icon: iconArrows() },
     ]},
     // DEVELOP (Sep-2026): where a person writes and runs things against
     // what Model describes. The SQL editor moved here from Model — same
@@ -148,14 +155,10 @@
       { key:'profiles',     label:'Profiles',     href:'/profiles' },
       { key:'integrations', label:'Integrations', view:'integrations' },
     ],
-    'object-mapping': [
-      { key:'object-mapping',       label:'Object mapping',       href:'/object-mapping' },
-      { key:'conversion-templates', label:'Conversion templates', href:'/conversion-templates' },
-      // AI Assist is an action inside Object Mapping in the redesign, not a
-      // destination. Until that page absorbs it, it stays reachable here and
-      // keeps its feature flag.
-      { key:'agentive-migration',   label:'AI assist',            href:'/agentive-migration', requiresAiEnabled:true },
-    ],
+    // Object mapping has no tab strip any more (Oct-2026): Conversion
+    // templates became the Templates row, and AI Assist was retired — the
+    // Dev Console replaced it, and /agentive-migration redirects there
+    // (scripts/build-routes.js).
     'jobs': [
       { key:'jobs',             label:'Jobs',             view:'jobs' },
       { key:'project-builder',  label:'Packages',         href:'/project-builder' },
@@ -260,6 +263,9 @@
   function iconShield(){       return svg('<path d="M8 2 L3 4 V8 C3 11 5 13 8 14 C11 13 13 11 13 8 V4 Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6 8l1.5 1.5L10.5 7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconIntegrations(){ return svg('<circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 4h4M6 12h4M4 6v4M12 6v4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'); }
   function iconCalendar(){     return svg('<rect x="2" y="3" width="12" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M2 6h12M5 2v2M11 2v2" stroke="currentColor" stroke-width="1.2"/>'); }
+  // A table template: a sheet with a header row and two columns — what a
+  // Conversion Template is, the shape of the tables to build.
+  function iconTemplate(){     return svg('<rect x="2" y="2.5" width="12" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M2 6h12M6.5 6v7.5" stroke="currentColor" stroke-width="1.2"/>'); }
   function iconArrows(){       return svg('<path d="M3 5h8l-2-2M13 11H5l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
   // Three nodes joined by two edges — a schema graph. Deliberately unlike
   // iconArrows (the mapping arrows it sits beside) so the two children of the
@@ -1917,6 +1923,12 @@
 
   var MAX_PINS   = 8;
   var STORE_BASE = 'cygenix_sidebar_pinned_v1';
+  // Destinations that no longer exist. A pin for one would never render and
+  // would hold one of the eight places for ever, so it is dropped — quietly,
+  // and written back so it is gone for good. A pin for a row that is merely
+  // hidden right now (a feature switched off, a role) is NOT here and is
+  // kept: it comes back when the row does.
+  var RETIRED_PINS = ['agentive-migration'];
 
   /* ---------- store (namespaced per signed-in user) ---------------------- */
 
@@ -1929,9 +1941,13 @@
   function getPins() {
     try {
       var raw = JSON.parse(localStorage.getItem(storeKey()) || '[]');
-      return Array.isArray(raw)
-        ? raw.filter(function (k) { return typeof k === 'string'; }).slice(0, MAX_PINS)
-        : [];
+      if (!Array.isArray(raw)) return [];
+      var list = raw.filter(function (k) { return typeof k === 'string'; });
+      var kept = list.filter(function (k) { return RETIRED_PINS.indexOf(k) === -1; });
+      if (kept.length !== list.length) {
+        try { localStorage.setItem(storeKey(), JSON.stringify(kept.slice(0, MAX_PINS))); } catch (e) {}
+      }
+      return kept.slice(0, MAX_PINS);
     } catch (e) { return []; }
   }
 

@@ -213,7 +213,9 @@ var FEATURES = [
 
   { id: 'agentive', label: 'Agentive migration', status: 'beta', minTier: 'pro',
     claims: ['Agentive migration', 'agentive mode'],
-    evidence: 'public/agentive_migration.html, azure-function/src/agent*.js' },
+    // The AI Assist page was retired in Oct-2026; the Dev Console's staging
+    // sessions are where agentive migration work happens now.
+    evidence: 'public/claude-code.html (Dev Console staging sessions), netlify/functions/cc-mcp.js, azure-function/src/conversion-playbook.js' },
 
   { id: 'verification', label: 'Validation and preflight', status: 'ga', minTier: 'starter',
     detail: 'Rule-based validation, preflight rejection forecasting, and per-job verify SQL.',

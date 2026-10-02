@@ -177,9 +177,12 @@
     'diagnostics':       ['diagnostics', 'troubleshoot', 'probe', 'health check', 'debug'],
     'audit':             ['audit', 'trail', 'log', 'history', 'who did what'],
     'task-agent':        ['schedule', 'cron', 'task agent', 'chain'],
+    'conversion-templates': ['conversion templates', 'template', 'staging tables', 'specification', 'modules'],
     'object-mapping':    ['mapping', 'map columns', 'ai mapping'],
     'sql-editor':        ['sql', 'query', 'develop'],
-    'claude-code':       ['dev console', 'claude code', 'claude', 'code', 'python', 'agent', 'script', 'workspace', 'develop', 'console'],
+    // AI Assist (the Agentive Migration page) was retired for the Dev Console,
+    // so its old names find the Dev Console rather than nothing.
+    'claude-code':       ['dev console', 'claude code', 'claude', 'code', 'python', 'agent', 'script', 'workspace', 'develop', 'console', 'ai assist', 'agentive', 'agentive migration'],
   };
 
   /* ── Ranking ───────────────────────────────────────────────────────────────

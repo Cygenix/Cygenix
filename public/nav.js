@@ -264,9 +264,8 @@
 
   function injectNav() {
     // Skip login, index, dashboard and project-builder (these have their own
-    // built-in sidebars), and agentive_migration (it loads cygenix-sidebar.js
-    // — injecting here produced two overlapping sidebars).
-    const skipPages = ['/login','','/dashboard','/project-builder','dashboard','/agentive-migration'];
+    // built-in sidebars).
+    const skipPages = ['/login','','/dashboard','/project-builder','dashboard'];
     if (skipPages.includes(page) || page === '' || document.getElementById('cyg-sidebar')) return;
 
     // Inject CSS

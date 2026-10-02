@@ -199,7 +199,7 @@ var CygenixConnections = (function () {
   // These operate on the whole top-level object. Per-user slicing happens
   // in get()/save()/savedGetAll()/savedSetAll(), not here.
   // Parsed-blob memo: get() sits on render paths and inside polling loops
-  // (agentive_migration's 4s connection watcher), and each call was a full
+  // (connection watchers that poll every few seconds), and each call was a full
   // JSON.parse of the connections blob. The memo keys on the raw string, so
   // any write — ours via writeBlob, or another tab's via the storage event —
   // is picked up simply because the string changed.

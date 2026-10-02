@@ -104,10 +104,14 @@ return [
     body: "Browses both schemas side by side, including relationships it infers rather than reads. "
         + "Start here when you do not yet know what is in a database." },
 
+  { id: 'templates', section: 'Model', title: 'Templates', page: 'conversion-templates',
+    target: '[data-key="conversion-templates"]',
+    body: "Conversion templates decide which target tables each module needs, and in what shape — the staging "
+        + "tables a client builds, and the Dev Console can build for you." },
+
   { id: 'mapping', section: 'Model', title: 'Object mapping', page: 'object-mapping',
     target: '[data-key="object-mapping"]',
-    body: "Where source columns are matched to target columns, with a confidence score on each match. "
-        + "<b>Conversion templates</b> decide which tables exist to be mapped; <b>AI assist</b> drafts "
+    body: "Where source columns are matched to target columns, with a confidence score on each match, "
         + "for you to review before anything runs." },
 
   { id: 'sql', section: 'Develop', title: 'SQL editor', page: 'sql-editor', target: '[data-key="sql-editor"]',

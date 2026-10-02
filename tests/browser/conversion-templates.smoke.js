@@ -199,15 +199,17 @@ const U = 'you@example.test';
     const on = document.querySelector('#cyg-subnav-mount a.on');
     return { items, tabs, on: on ? on.getAttribute('data-key') : null,
       active: (document.querySelector('.cyg-nav-item.active') || {}).getAttribute ? document.querySelector('.cyg-nav-item.active').getAttribute('data-key') : null,
-      hairline: !!document.getElementById('cyg-envbar'), assistant: !!document.getElementById('cygaLaunch'), title: document.title };
+      mount: !!document.getElementById('cyg-subnav-mount'), hairline: !!document.getElementById('cyg-envbar'), assistant: !!document.getElementById('cygaLaunch'), title: document.title };
   });
-  // Conversion Templates is a tab on the Object mapping screen since the
-  // console redesign (Sep-2026): the rail lights Object mapping, the strip
-  // lights this tab, and Object mapping is the tab beside it.
-  check('the rail lights Object mapping and the strip lights Conversion Templates beside it',
-    shell.active === 'object-mapping' && shell.on === 'conversion-templates'
-    && shell.tabs.indexOf('object-mapping') === 0 && shell.tabs.indexOf('conversion-templates') === 1,
-    JSON.stringify({ active: shell.active, on: shell.on, tabs: shell.tabs }));
+  // Conversion Templates was a tab on the Object mapping screen from the
+  // console redesign (Sep-2026) until Oct-2026, when it became its own Model
+  // row, "Templates". The rail lights it, not Object mapping, and the page has
+  // no tab strip at all — not even an empty mount leaving a gap.
+  const order = shell.items.filter((k) => ['schema-explorer', 'conversion-templates', 'object-mapping'].indexOf(k) !== -1);
+  check('the rail lights Templates, between Schema explorer and Object mapping, and there is no tab strip',
+    shell.active === 'conversion-templates' && order.join() === 'schema-explorer,conversion-templates,object-mapping'
+    && shell.tabs.length === 0 && shell.mount === false,
+    JSON.stringify({ active: shell.active, order, tabs: shell.tabs, mount: shell.mount }));
   check('the page opens at its clean address with the sidebar, the status hairline and the Ask Cygenix launcher',
     /Conversion Templates/.test(shell.title) && shell.hairline && shell.assistant && page.url().endsWith('/conversion-templates'));
 

@@ -130,7 +130,6 @@ var PAGES = [
   { key: 'schema-explorer',    label: 'Schema Explorer',    href: '/schema-explorer' },
   { key: 'claude-code',        label: 'Dev Console',        href: '/dev-console' },
   { key: 'sql-editor',         label: 'SQL Editor',         href: '/sql-editor' },
-  { key: 'agentive-migration', label: 'AI Assist',          href: '/agentive-migration' },
   { key: 'jobs',               label: 'All Jobs',           view: 'jobs' },
   { key: 'project-builder',    label: 'Packages',           href: '/project-builder' },
   { key: 'data-stream',        label: 'Data Stream',        href: '/data-stream' },

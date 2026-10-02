@@ -198,13 +198,14 @@ const estimate = (ticks) => ({
 {
   const sb = read('public', 'cygenix-sidebar.js');
   // Conversion Templates is a tab on the Object mapping screen (console
-  // redesign, Sep-2026): the strip leads with Object mapping and Conversion
-  // Templates is the tab directly beside it, with the same clean address.
-  const strip = (/'object-mapping': \[([\s\S]*?)\],/.exec(sb) || [])[1] || '';
-  const i = strip.indexOf("key:'object-mapping'"), j = strip.indexOf("key:'conversion-templates'");
-  check('the tab sits on Object mapping, directly beside it, with a clean href',
-    i >= 0 && j > i && strip.slice(i, j).split('\n').filter(l => /key:'/.test(l)).length === 1
-    && /href:'\/conversion-templates'/.test(strip) && /section: 'Model'[\s\S]*?key:'object-mapping'/.test(sb));
+  // redesign, Sep-2026), and its own rail row since Oct-2026: Templates, in
+  // Model between Schema explorer and Object mapping, with the same clean
+  // address, lit by the page's own key.
+  const model = (/section: 'Model', group:'model', items: \[([\s\S]*?)\]\},/.exec(sb) || [])[1] || '';
+  check('Templates is its own Model row, between Schema explorer and Object mapping, with a clean href',
+    model.indexOf("key:'schema-explorer'") >= 0 && model.indexOf("key:'conversion-templates'") > model.indexOf("key:'schema-explorer'")
+    && model.indexOf("key:'object-mapping'") > model.indexOf("key:'conversion-templates'")
+    && /key:'conversion-templates', label:'Templates',\s+href:'\/conversion-templates'/.test(model));
   const redirects = read('public', '_redirects');
   check('the clean address is generated, and the .html form redirects to it',
     /^\/conversion-templates\s+\/conversion-templates\.html\s+200$/m.test(redirects)

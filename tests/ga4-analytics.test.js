@@ -67,8 +67,8 @@ const MARKETING = [
 
   const unclassified = MARKETING.filter(p => pages.indexOf(p) === -1);
   check('every page named as marketing still exists', unclassified.length === 0, unclassified.join(', '));
-  check('the site still has the pages this file was written against (50: claude-code.html, a console page, left out of MARKETING)',
-    pages.length === 50, 'found ' + pages.length + ' — classify the new one in MARKETING or leave it out deliberately');
+  check('the site still has the pages this file was written against (49: agentive_migration.html retired in Oct-2026)',
+    pages.length === 49, 'found ' + pages.length + ' — classify the new one in MARKETING or leave it out deliberately');
 
   const carries = (p) => /cygenix-ga4\.js/.test(fs.readFileSync(path.join(PUBLIC, p), 'utf8'));
   const missing = MARKETING.filter(p => !carries(p));

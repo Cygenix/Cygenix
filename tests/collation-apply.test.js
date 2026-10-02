@@ -190,7 +190,6 @@ section('6. Blocking a run, on all three paths');
     R.gateWith(scanned()).ok === true && R.gateWith(scanned()).warnings.length === 2);
 
   const PB = read('public', 'project-builder-app.js');
-  const AM = read('public', 'agentive_migration.html');
   const RUN = read('azure-function', 'src', 'run-migration.js');
   // Both of these are ORDERING claims, so each is measured inside the run
   // function itself. Measured over the whole file they would find the
@@ -201,21 +200,19 @@ section('6. Blocking a run, on all three paths');
     /function cygCollationGate\(whatFor\)/.test(PB)
     && runProject.indexOf("cygCollationGate('this migration')") > 0
     && runProject.indexOf("cygCollationGate('this migration')") < runProject.indexOf('isRunning = true'));
-  const startRun = AM.slice(AM.indexOf('async function startRun()'), AM.indexOf('async function cancelRun()'));
-  check('Agentive Migration gates before it starts the agent',
-    /window\.cygCollation\.gate\(\)/.test(startRun)
-    && startRun.indexOf('Collation check blocked this migration') < startRun.indexOf('stopConnectionWatcher()'));
+  // Agentive Migration (AI Assist) gated here too until Oct-2026, when the
+  // page was retired for the Dev Console; its check went with it.
   check('the Task Agent gates before its first statement',
     RUN.indexOf('collationRules.gateWith(collationModel)') > 0
     && RUN.indexOf('collationRules.gateWith(collationModel)') < RUN.indexOf('for (let i = 0; i < stepsToRun.length'));
   check('each refusal names the reasons and where to fix them',
-    /Collation check blocked/.test(PB) && /Collation check blocked/.test(AM) && /Collation check blocked/.test(RUN)
-    && /Collation card/.test(PB) && /Collation card/.test(AM) && /Collation card/.test(RUN));
+    /Collation check blocked/.test(PB) && /Collation check blocked/.test(RUN)
+    && /Collation card/.test(PB) && /Collation card/.test(RUN));
   check('A GATE THAT THROWS NEVER STOPS WORK',
     /catch \(e\) \{\s*\/\/ A gate that throws must not be a gate that stops work\.\s*return true;/.test(PB)
     && /catch \(e\) \{ collGate = \{ ok: true, reasons: \[\], warnings: \[\] \}; \}/.test(RUN));
   check('and the page that gates also loads the rules',
-    /cygenix-collation-rules\.js/.test(AM) && /cygenix-collation-rules\.js/.test(read('public', 'project-builder.html')));
+    /cygenix-collation-rules\.js/.test(read('public', 'project-builder.html')));
 }
 
 /* ── 7. Settings changed → regenerate ───────────────────────────────────── */

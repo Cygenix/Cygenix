@@ -10,7 +10,7 @@
 
      <script src="/cygenix-model.js?v=0c71915777"></script>
      <script src="/cygenix-assistant.js"></script>
-     <script src="/cygenix-assistant-actions.js?v=3bd2678be0"></script>
+     <script src="/cygenix-assistant-actions.js?v=0cb6c7788f"></script>
      <script>CygenixAssistant.registerPage('sql-editor');</script>
 
    WHY TYPED ACTIONS, NOT DOM AUTOMATION
