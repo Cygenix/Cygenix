@@ -154,7 +154,7 @@
   }
   /* Where a row and its load order came from (optional; a template saved
      before these existed has none and loads unchanged):
-       source           'ai' — added by Suggest tables, and not edited since
+       source           'ai' — added by Suggest all / Suggest, and not edited since
                         (shows the AI badge); 'user' — anything else
        aiConfidence     'high' | 'medium' | 'low', with source 'ai'
        aiReason         the one-line reason, with source 'ai'

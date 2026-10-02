@@ -1,29 +1,44 @@
-/* cygenix-template-suggest.js — AI "Suggest tables" for Conversion Templates.
+/* cygenix-template-suggest.js — AI "Suggest all" / "Suggest" for Conversion Templates.
  *
  * WHAT IT DOES
- * Proposes which TARGET tables belong to each in-scope Configurator module,
- * as a preview the person reviews and ticks. It never removes or replaces a
- * table: suggestions are only ever added, and only the ones ticked.
+ * Sorts the TARGET database's tables into the template's modules (business
+ * subject areas), as a preview the person reviews and ticks. It never removes
+ * or replaces a table: suggestions are only ever added, and only the ones
+ * ticked. "Suggest all" runs for every ticked (Include) module; the module
+ * panel's "Suggest" is the same run with one module.
  *
- * HOW A RUN GOES
- *   1. The page's own schema reader (CygenixSchemaGraph — the same reader
- *      Add table uses, so the same connection, and a customer Function URL
- *      never goes near Netlify) supplies every target table name, row count
- *      and foreign key.
- *   2. SHORTLIST: the names go to agent/template-suggest/shortlist in chunks
- *      of at most 1,500, a few modules per call, so every call fits the data
- *      proxy's 26-second limit. Up to 40 candidates come back per module.
- *   3. RANK: once per module, at most three at a time, with the candidates'
- *      columns (read through the same reader) and their FKs in both
- *      directions. Each table comes back high / medium / low with a reason.
- *      A module that fails is reported in the preview; the rest carry on.
- *   4. The preview marks what the module already has as "already added" and
- *      flags a table suggested for, or already in, more than one module as
- *      Shared. High is ticked by default; medium and low are not.
- *   5. APPLY adds the ticked tables through the model's own add path — the
- *      staging name is derived exactly as for a manual add — then fills the
- *      load order from the foreign keys.
- *   Cancel aborts the calls in flight, starts no more, and keeps nothing.
+ * HOW A RUN GOES (Oct-2026)
+ *   1. The page's own schema reader (CygenixSchemaGraph — the same reader Add
+ *      table uses, so the same connection, and a customer Function URL never
+ *      goes near Netlify) supplies every target table, its row count and
+ *      every foreign key; then the columns and primary key of EVERY table,
+ *      six at a time, cached by the reader.
+ *   2. The tables are cut into chunks of 40, alphabetically (so tables that
+ *      share a prefix tend to land together), each table carrying its
+ *      columns, key, and its FK neighbours in both directions.
+ *   3. The chunks go to agent/table-classify/start, which submits them to
+ *      Anthropic's Message Batches API, every chunk with the FULL list of
+ *      modules — so each table is judged against every subject area at once.
+ *      A large database is sent in several parts, each a batch of its own.
+ *   4. The page polls agent/table-classify/status every 15 seconds and
+ *      collects each batch's answers as it finishes (agent/table-classify/
+ *      results). Nothing waits on Claude inside a request, so no call comes
+ *      near the 26 seconds the data proxy allows.
+ *   5. The preview groups the proposals by module — "already added" where the
+ *      module has the table, Shared where it is proposed for, or already in,
+ *      another module — and lists the tables that fit no module, and any
+ *      chunk that failed, with a retry for those tables only. High and
+ *      medium are ticked by default; low is not.
+ *   6. APPLY adds the ticked tables through the model's own add path — the
+ *      staging name is derived exactly as for a manual add — with Claude's
+ *      required yes/no, "Also in: …" in the notes of a shared table, then
+ *      recalculates the load order from the foreign keys.
+ *   Cancel stops polling, cancels the batches still running, and keeps
+ *   nothing.
+ *
+ * The prompt lives in azure-function/src/table-classifier-prompt.js and the
+ * checking of Claude's answer in table-classifier.js; this file never decides
+ * which module a table is in, it only carries the question and the answer.
  *
  * LOAD ORDER, WITHOUT AI
  * Parents before children, from the FK graph over every target table in the
@@ -34,14 +49,15 @@
  *   'ai'   — set here
  *   'auto' — the placeholder the model assigns on any add (row count + 1),
  *            which nobody chose
- * Apply fills rows with no number or an 'auto' one. "Recalculate load order"
- * also overwrites 'ai' ones. A row from before this existed carries no
- * source; its number may have been typed, so it is left alone unless empty.
+ * "Recalculate load order" (and Apply, which runs the same thing) fills rows
+ * with no number, an 'auto' one or an 'ai' one. A row from before this
+ * existed carries no source; its number may have been typed, so it is left
+ * alone unless empty.
  *
  * TARGET-AGNOSTIC: no table names, keywords or module→table maps live here.
  *
- * Node-requirable: the merging, flagging and load-order logic and the
- * orchestration (with the network injected) are tested in
+ * Node-requirable: the chunking, merging, flagging and load-order logic and
+ * the orchestration (with the network injected) are tested in
  * tests/template-suggest.test.js.
  */
 (function (root, factory) {
@@ -52,7 +68,14 @@
 })(typeof window !== 'undefined' ? window : this, function (root) {
   'use strict';
 
-  var CHUNK = 1500, MODULE_BATCH = 8, PER_MODULE = 40, CONCURRENCY = 3, COL_CONCURRENCY = 6;
+  var CHUNK_TABLES = 40;          // matches TABLES_PER_CHUNK in table-classifier-prompt.js
+  var CHUNK_CHARS = 60000;        // a very wide table set gets smaller chunks
+  var PART_CHUNKS = 200;          // chunks per start call (the backend allows 250)
+  var PART_CHARS = 900000;        // and well under Netlify's 6 MB body limit
+  var COL_CONCURRENCY = 6;
+  var POLL_MS = 15000;
+  var STATUS_IDS = 50;
+  var MAX_POLL_FAILURES = 5;
   var STEP = 10;
   var CONF_ORDER = { high: 0, medium: 1, low: 2 };
   var lc = function (s) { return String(s == null ? '' : s).trim().toLowerCase(); };
@@ -192,7 +215,7 @@
     return { set: set, cycles: Object.keys(lo.cycles).length };
   }
 
-  /* ── Shared: which modules each table is in (or suggested for) ───────── */
+  /* ── Shared: which modules each table is in (or proposed for) ────────── */
   function membership(tpl, extra) {
     var map = {};
     var add = function (table, mod) {
@@ -208,54 +231,296 @@
     return (map[lc(table)] || []).filter(function (x) { return x !== mod; });
   }
 
-  /* ── Preview ─────────────────────────────────────────────────────────── */
-  function buildPreview(tpl, modules, ranks) {
-    var groups = modules.map(function (m, i) {
-      var r = ranks[i] || {};
+  /* ── Step 1–2: read the schema and cut it into chunks ─────────────────── */
+  // opts: { graph, columnsOf(table)→Promise<{columns, primaryKeys} | columns[]>,
+  //         onlyTables?: [names], idPrefix?, onProgress, signal }
+  // Resolves { tables, chunks, fks } or { cancelled: true }.
+  function prepare(opts) {
+    var progress = opts.onProgress || function () {};
+    var signal = opts.signal;
+    var graph = opts.graph || { tables: [], edges: [] };
+    var only = null;
+    if (opts.onlyTables) { only = {}; opts.onlyTables.forEach(function (n) { only[lc(n)] = true; }); }
+    var seen = {}, tables = [];
+    (graph.tables || []).forEach(function (t) {
+      var k = lc(t.name);
+      if (!k || seen[k] || (only && !only[k])) return;
+      seen[k] = true;
+      tables.push(t);
+    });
+    if (!tables.length) return Promise.reject(new Error('The target database has no tables to suggest from.'));
+    tables.sort(function (a, b) { return lc(a.name) < lc(b.name) ? -1 : lc(a.name) > lc(b.name) ? 1 : 0; });
+    var fks = edgesByName(graph);
+    var refs = {}, refBy = {};
+    fks.forEach(function (f) {
+      var c = lc(f.child), p = lc(f.parent);
+      (refs[c] = refs[c] || []).indexOf(f.parent) < 0 && refs[c].push(f.parent);
+      (refBy[p] = refBy[p] || []).indexOf(f.child) < 0 && refBy[p].push(f.child);
+    });
+
+    var done = 0;
+    progress('Reading columns (0 of ' + tables.length + ' tables)…', 0, tables.length);
+    return pool(tables, COL_CONCURRENCY, function (t) {
+      return Promise.resolve(opts.columnsOf ? opts.columnsOf(t) : null).then(function (node) {
+        done++;
+        if (done % 10 === 0 || done === tables.length) progress('Reading columns (' + done + ' of ' + tables.length + ' tables)…', done, tables.length);
+        return node;
+      });
+    }, signal).then(function (cols) {
+      if (signal && signal.aborted) return { cancelled: true };
+      var detailed = tables.map(function (t, i) {
+        var r = cols[i], node = r && r.ok ? r.value : null;
+        var list = Array.isArray(node) ? node : (node && node.columns) || null;
+        var pk = node && !Array.isArray(node) && Array.isArray(node.primaryKeys) ? node.primaryKeys : [];
+        return {
+          name: t.name,
+          rows: typeof t.rowCount === 'number' ? t.rowCount : null,
+          columns: (list || []).map(function (c) { return { name: c.name, type: c.dataType || c.type || '' }; }),
+          columnsRead: !!list,
+          pk: pk.map(function (p) { return typeof p === 'string' ? p : (p && p.name) || ''; }).filter(Boolean),
+          refs: refs[lc(t.name)] || [],
+          refBy: refBy[lc(t.name)] || [],
+        };
+      });
+      return { tables: detailed, chunks: makeChunks(detailed, opts.idPrefix || 'c'), fks: fks };
+    });
+  }
+
+  function sizeOf(t) { return JSON.stringify(t).length; }
+  function makeChunks(tables, prefix) {
+    var chunks = [], cur = [], chars = 0;
+    tables.forEach(function (t) {
+      var n = sizeOf(t);
+      if (cur.length && (cur.length >= CHUNK_TABLES || chars + n > CHUNK_CHARS)) {
+        chunks.push(cur); cur = []; chars = 0;
+      }
+      cur.push(t); chars += n;
+    });
+    if (cur.length) chunks.push(cur);
+    return chunks.map(function (c, i) { return { id: prefix + (i + 1), tables: c }; });
+  }
+
+  // Several start calls for a big database, each comfortably inside the
+  // proxy's body limit and the backend's chunk limit.
+  function parts(chunks) {
+    var out = [], cur = [], chars = 0;
+    chunks.forEach(function (c) {
+      var n = JSON.stringify(c).length;
+      if (cur.length && (cur.length >= PART_CHUNKS || chars + n > PART_CHARS)) { out.push(cur); cur = []; chars = 0; }
+      cur.push(c); chars += n;
+    });
+    if (cur.length) out.push(cur);
+    return out;
+  }
+
+  function modulesForWire(modules) {
+    return (modules || []).map(function (m) { return { name: m.name, notes: m.notes || '' }; });
+  }
+
+  /* ── Step 3: submit ───────────────────────────────────────────────────── */
+  // Resolves the run state — everything needed to collect the answers later,
+  // including after a page reload: batch ids and the table NAMES per chunk.
+  function submit(prep, opts) {
+    var post = opts.post || httpPost;
+    var progress = opts.onProgress || function () {};
+    var signal = opts.signal;
+    var list = parts(prep.chunks);
+    var state = { v: 1, modules: modulesForWire(opts.modules), batches: [], tableCount: prep.tables.length, startedAt: Date.now() };
+    var k = 0;
+    function nextPart() {
+      if (signal && signal.aborted) return Promise.resolve(state);
+      if (k >= list.length) return Promise.resolve(state);
+      var part = list[k++];
+      progress('Sending to Claude (part ' + k + ' of ' + list.length + ')…', k - 1, list.length);
+      return post('/agent/table-classify/start', { modules: state.modules, chunks: part }, signal).then(function (d) {
+        state.batches.push({ id: d.batchId, fetched: false,
+          chunks: part.map(function (c) { return { id: c.id, tables: c.tables.map(function (t) { return t.name; }) }; }) });
+        return nextPart();
+      });
+    }
+    return nextPart();
+  }
+
+  /* ── Step 4: poll and collect ─────────────────────────────────────────── */
+  function defaultSleep(ms, signal) {
+    return new Promise(function (resolve) {
+      var t = setTimeout(resolve, ms);
+      if (signal) signal.addEventListener('abort', function () { clearTimeout(t); resolve(); }, { once: true });
+    });
+  }
+  function chunkTotal(state) { return state.batches.reduce(function (n, b) { return n + b.chunks.length; }, 0); }
+
+  // Resolves { outcomes: [chunk outcome…], state } or { cancelled: true }.
+  // A chunk outcome: { id, ok, rows?, unanswered?, error?, tables:[names] }.
+  function collect(state, opts) {
+    var post = opts.post || httpPost;
+    var progress = opts.onProgress || function () {};
+    var signal = opts.signal;
+    var sleep = opts.sleep || defaultSleep;
+    var pollMs = opts.pollMs == null ? POLL_MS : opts.pollMs;
+    var outcomes = opts.outcomes || [];
+    var total = chunkTotal(state);
+    var failures = 0;
+    var names = (state.modules || []).map(function (m) { return m.name; });
+
+    function cancelRest() {
+      var ids = state.batches.filter(function (b) { return !b.fetched; }).map(function (b) { return b.id; });
+      if (ids.length) post('/agent/table-classify/cancel', { batchIds: ids }).catch(function () {});
+      return { cancelled: true };
+    }
+    function fetchBatch(b) {
+      return post('/agent/table-classify/results', { batchId: b.id, modules: names, chunks: b.chunks }, signal).then(function (d) {
+        var byId = {};
+        b.chunks.forEach(function (c) { byId[c.id] = c; });
+        (d && d.chunks || []).forEach(function (o) {
+          if (!byId[o.id]) return;
+          outcomes.push(Object.assign({}, o, { tables: byId[o.id].tables }));
+          delete byId[o.id];
+        });
+        Object.keys(byId).forEach(function (id) { outcomes.push({ id: id, ok: false, error: 'No result came back', tables: byId[id].tables }); });
+        b.fetched = true;
+      });
+    }
+    function round() {
+      if (signal && signal.aborted) return Promise.resolve(cancelRest());
+      var open = state.batches.filter(function (b) { return !b.fetched; });
+      if (!open.length) return Promise.resolve({ outcomes: outcomes, state: state });
+      var ids = open.map(function (b) { return b.id; }).slice(0, STATUS_IDS);
+      return post('/agent/table-classify/status', { batchIds: ids }, signal).then(function (d) {
+        var byId = {};
+        (d && d.batches || []).forEach(function (x) { byId[x.id] = x; });
+        var settled = outcomes.length;
+        open.forEach(function (b) {
+          var x = byId[b.id]; if (!x || !x.counts) return;
+          settled += x.counts.succeeded + x.counts.errored + x.counts.canceled + x.counts.expired;
+        });
+        progress('Classifying: ' + Math.min(settled, total) + ' of ' + total + ' chunk' + (total === 1 ? '' : 's') + ' done…', Math.min(settled, total), total);
+        var ended = open.filter(function (b) { return byId[b.id] && byId[b.id].status === 'ended'; });
+        return ended.reduce(function (p, b) { return p.then(function () { return signal && signal.aborted ? null : fetchBatch(b); }); }, Promise.resolve());
+      }).then(function () { failures = 0; }, function (e) {
+        // A wrong key, a missing batch or a refused request will not get
+        // better by asking again every 15 seconds: stop at once.
+        if (e && (e.status === 400 || e.status === 401 || e.status === 403 || e.status === 404)) throw e;
+        if (++failures >= MAX_POLL_FAILURES) throw e;
+      }).then(function () {
+        if (signal && signal.aborted) return cancelRest();
+        if (!state.batches.some(function (b) { return !b.fetched; })) return { outcomes: outcomes, state: state };
+        return sleep(pollMs, signal).then(round);
+      });
+    }
+    progress('Classifying: 0 of ' + total + ' chunk' + (total === 1 ? '' : 's') + ' done…', 0, total);
+    return round();
+  }
+
+  /* ── Step 5: the preview ──────────────────────────────────────────────── */
+  // modules: [{key, name}] in the order the page lists them.
+  // outcomes: chunk outcomes from collect (several runs' worth after a retry).
+  // keep: optional { 'module|table': checked } from an earlier preview, so a
+  //       retry does not undo the ticks the person already changed.
+  function buildPreview(tpl, modules, outcomes, keep) {
+    var byTable = {}, unassigned = [], failed = [];
+    (outcomes || []).forEach(function (o) {
+      if (!o.ok) { failed.push({ id: o.id, error: o.error || 'Failed', tables: (o.tables || []).slice() }); return; }
+      (o.rows || []).forEach(function (r) { byTable[lc(r.table)] = r; });
+      if (o.unanswered && o.unanswered.length) failed.push({ id: o.id + '-left-out', error: 'Claude left these tables out of its answer', tables: o.unanswered.slice() });
+    });
+    // A table that came back in a later (retried) chunk is no longer failed.
+    failed = failed.map(function (f) {
+      return Object.assign({}, f, { tables: f.tables.filter(function (t) { return !byTable[lc(t)]; }) });
+    }).filter(function (f) { return f.tables.length; });
+
+    var runMods = {};
+    modules.forEach(function (m) { runMods[m.name] = true; });
+    var proposals = [];                     // { table, module, row }
+    Object.keys(byTable).sort().forEach(function (k) {
+      var r = byTable[k];
+      var mods = (r.modules || []).filter(function (m) { return runMods[m]; });
+      if (!mods.length) { unassigned.push({ table: r.table, reason: r.reason || '' }); return; }
+      mods.forEach(function (m) { proposals.push({ table: r.table, module: m, row: r }); });
+    });
+
+    var map = membership(tpl, proposals.map(function (p) { return { table: p.table, module: p.module }; }));
+    var groups = modules.map(function (m) {
       var mod = (tpl.modules || []).filter(function (x) { return x.module === m.name; })[0] || { tables: [] };
       var have = {};
       (mod.tables || []).forEach(function (t) { have[lc(t.targetTable)] = true; });
-      var rows = (r.ranked || []).slice().sort(function (a, b) {
+      var rows = proposals.filter(function (p) { return p.module === m.name; }).map(function (p) {
+        var already = !!have[lc(p.table)];
+        var key = m.name + '|' + lc(p.table);
+        var dflt = !already && (p.row.confidence === 'high' || p.row.confidence === 'medium');
+        return { table: p.table, confidence: p.row.confidence, required: p.row.required !== false, reason: p.row.reason || '',
+          already: already, checked: already ? false : (keep && key in keep ? !!keep[key] : dflt),
+          shared: sharedWith(map, p.table, m.name) };
+      }).sort(function (a, b) {
         return (CONF_ORDER[a.confidence] - CONF_ORDER[b.confidence]) || String(a.table).localeCompare(String(b.table));
-      }).map(function (x) {
-        var already = !!have[lc(x.table)];
-        return { table: x.table, confidence: x.confidence, reason: x.reason || '',
-          already: already, checked: !already && x.confidence === 'high', shared: [] };
       });
-      return { module: m.name, key: m.key, error: r.error || null, rows: rows };
+      return { module: m.name, key: m.key, rows: rows };
     });
-    var extra = [];
-    groups.forEach(function (g) { g.rows.forEach(function (r) { if (!r.already) extra.push({ table: r.table, module: g.module }); }); });
-    var map = membership(tpl, extra);
-    groups.forEach(function (g) { g.rows.forEach(function (r) { r.shared = sharedWith(map, r.table, g.module); }); });
-    return { groups: groups };
+
+    var fresh = {}, freshShared = {}, modsWith = 0;
+    groups.forEach(function (g) {
+      var any = false;
+      g.rows.forEach(function (r) {
+        if (r.already) return;
+        any = true; fresh[lc(r.table)] = true;
+        if (r.shared.length) freshShared[lc(r.table)] = true;
+      });
+      if (any) modsWith++;
+    });
+    return {
+      groups: groups,
+      unassigned: unassigned,
+      failed: failed,
+      summary: { tables: Object.keys(fresh).length, modules: modsWith, shared: Object.keys(freshShared).length,
+        unassigned: unassigned.length, failedTables: failed.reduce(function (n, f) { return n + f.tables.length; }, 0) },
+    };
   }
 
-  /* ── Apply ───────────────────────────────────────────────────────────── */
+  // The ticks in a preview, keyed so buildPreview can carry them over.
+  function ticksOf(preview) {
+    var keep = {};
+    (preview && preview.groups || []).forEach(function (g) {
+      g.rows.forEach(function (r) { if (!r.already) keep[g.module + '|' + lc(r.table)] = !!r.checked; });
+    });
+    return keep;
+  }
+
+  /* ── Step 6: apply ────────────────────────────────────────────────────── */
   function apply(tpl, preview, TM, who, fks) {
-    var added = 0, modulesTouched = 0, addedNames = {};
+    var added = [], modulesTouched = 0;
     preview.groups.forEach(function (g) {
       var n = 0;
       g.rows.forEach(function (r) {
         if (!r.checked || r.already) return;
         // The model's own add: the staging name, prefix and duplicate check
         // are exactly those of a manual add.
-        var t = TM.tmAddTable(tpl, g.module, { targetTable: r.table }, who);
+        var t = TM.tmAddTable(tpl, g.module, { targetTable: r.table, required: r.required !== false }, who);
         if (!t) return;
         t.source = 'ai';
         t.aiConfidence = r.confidence;
         t.aiReason = r.reason;
-        n++; added++; addedNames[lc(r.table)] = true;
+        added.push({ row: t, module: g.module });
+        n++;
       });
       if (n) modulesTouched++;
     });
-    var lo = added ? applyLoadOrder(tpl, fks, 'apply') : { set: 0, cycles: 0 };
+    // Shared is said in the notes of the rows just added, from what the
+    // template now actually holds — not from what was proposed, since some
+    // proposals may have been unticked. Rows that were already there are not
+    // touched: Suggest only ever adds.
     var map = membership(tpl);
-    var shared = Object.keys(addedNames).filter(function (k) { return (map[k] || []).length > 1; }).length;
-    return { added: added, modules: modulesTouched, shared: shared, ordered: lo.set, cycles: lo.cycles };
+    var shared = {};
+    added.forEach(function (a) {
+      var others = sharedWith(map, a.row.targetTable, a.module);
+      if (!others.length) return;
+      shared[lc(a.row.targetTable)] = true;
+      a.row.notes = (a.row.notes ? a.row.notes + ' · ' : '') + 'Also in: ' + others.join(', ');
+    });
+    var lo = added.length ? applyLoadOrder(tpl, fks, 'recalc') : { set: 0, cycles: 0 };
+    return { added: added.length, modules: modulesTouched, shared: Object.keys(shared).length, ordered: lo.set, cycles: lo.cycles };
   }
 
-  /* ── Transport: through the data proxy, as the Agentive page does ────── */
+  /* ── Transport: through the data proxy ───────────────────────────────── */
   var PROXY = '/.netlify/functions/data-proxy';
   function httpPost(path, body, signal) {
     var headers = { 'Content-Type': 'application/json' };
@@ -281,111 +546,47 @@
     });
   }
 
-  /* ── The run ─────────────────────────────────────────────────────────── */
-  // opts: { tpl, modules:[{key,name,notes}], graph, columnsOf(table)→Promise<cols>,
-  //         post(path, body, signal), onProgress(text, done, total), signal }
-  // Resolves { preview, fks, tableCount } or { cancelled:true }. Throws only
-  // when nothing at all could be done (schema empty, every shortlist failed).
+  /* ── The whole run ───────────────────────────────────────────────────── */
+  // opts: { tpl, modules:[{key,name,notes}], graph, columnsOf, post, onProgress,
+  //         onStarted(state), signal, sleep, pollMs, onlyTables, idPrefix,
+  //         outcomes (earlier ones, for a retry), keep (earlier ticks) }
+  // Resolves { preview, outcomes, state, fks, tableCount } or { cancelled:true }.
   function run(opts) {
     var signal = opts.signal;
-    var post = opts.post || httpPost;
-    var progress = opts.onProgress || function () {};
-    var modules = opts.modules || [];
-    var graph = opts.graph || { tables: [], edges: [] };
-    var cancelled = function () { return !!(signal && signal.aborted); };
-
-    var seenName = {}, tables = [];
-    (graph.tables || []).forEach(function (t) {
-      var k = lc(t.name);
-      if (!k || seenName[k]) return;
-      seenName[k] = t;
-      tables.push({ name: t.name, rows: typeof t.rowCount === 'number' ? t.rowCount : null });
-    });
-    if (!tables.length) return Promise.reject(new Error('The target database has no tables to suggest from.'));
-    var fks = edgesByName(graph);
-
-    // Shortlist calls: every chunk × every module batch.
-    var chunks = [], batches = [], calls = [];
-    for (var i = 0; i < tables.length; i += CHUNK) chunks.push(tables.slice(i, i + CHUNK));
-    for (var j = 0; j < modules.length; j += MODULE_BATCH) batches.push(modules.slice(j, j + MODULE_BATCH));
-    chunks.forEach(function (c) { batches.forEach(function (b) { calls.push({ tables: c, modules: b }); }); });
-    var shortlist = {}, slDone = 0, slErrors = [];
-    modules.forEach(function (m) { shortlist[m.key] = []; });
-    progress('Shortlisting…', 0, calls.length);
-
-    return pool(calls, CONCURRENCY, function (c) {
-      return post('/agent/template-suggest/shortlist', { modules: c.modules, tables: c.tables }, signal).then(function (d) {
-        var sl = (d && d.shortlist) || {};
-        c.modules.forEach(function (m) {
-          (sl[m.key] || []).forEach(function (n) {
-            if (shortlist[m.key].length < PER_MODULE && shortlist[m.key].indexOf(n) < 0) shortlist[m.key].push(n);
-          });
-        });
-        slDone++;
-        progress('Shortlisting… (' + slDone + '/' + calls.length + ')', slDone, calls.length);
-      });
-    }, signal).then(function (res) {
-      if (cancelled()) return { cancelled: true };
-      res.forEach(function (r) { if (r && !r.ok) slErrors.push(r.error); });
-      if (slErrors.length === calls.length) throw slErrors[0] || new Error('The shortlist failed.');
-
-      // Rank, three modules at a time.
-      var done = 0;
-      var colCache = {};
-      var columnsFor = function (name) {
-        var k = lc(name);
-        if (!colCache[k]) colCache[k] = Promise.resolve(opts.columnsOf ? opts.columnsOf(seenName[k] || { name: name }) : [])
-          .catch(function () { return []; });
-        return colCache[k];
-      };
-      progress('Ranking… (0/' + modules.length + ')', 0, modules.length);
-      return pool(modules, CONCURRENCY, function (m) {
-        var cands = shortlist[m.key] || [];
-        if (!cands.length) {
-          done++;
-          progress('Ranked ' + m.name + ' (' + done + '/' + modules.length + ')', done, modules.length);
-          return { ranked: [], fks: [] };
+    return prepare(opts).then(function (prep) {
+      if (prep.cancelled || (signal && signal.aborted)) return { cancelled: true };
+      return submit(prep, opts).then(function (state) {
+        if (signal && signal.aborted) {
+          var ids = state.batches.map(function (b) { return b.id; });
+          if (ids.length) (opts.post || httpPost)('/agent/table-classify/cancel', { batchIds: ids }).catch(function () {});
+          return { cancelled: true };
         }
-        progress('Ranking ' + m.name + ' (' + (done + 1) + '/' + modules.length + ')…', done, modules.length);
-        return pool(cands, COL_CONCURRENCY, columnsFor, signal).then(function (cols) {
-          if (cancelled()) return { ranked: [] };
-          var candSet = {};
-          cands.forEach(function (c) { candSet[lc(c)] = true; });
-          var body = { module: m, candidates: cands.map(function (c, k) {
-            var t = seenName[lc(c)] || {};
-            return {
-              name: c,
-              rows: typeof t.rowCount === 'number' ? t.rowCount : null,
-              columns: ((cols[k] && cols[k].ok && cols[k].value) || []).map(function (x) {
-                return { name: x.name, type: x.dataType || x.type || '' };
-              }),
-              fks: fks.filter(function (f) { return lc(f.child) === lc(c) || lc(f.parent) === lc(c); }),
-            };
-          }) };
-          return post('/agent/template-suggest/rank', body, signal);
-        }).then(function (d) {
-          done++;
-          progress('Ranked ' + m.name + ' (' + done + '/' + modules.length + ')', done, modules.length);
-          return d;
-        });
-      }, signal).then(function (ranks) {
-        if (cancelled()) return { cancelled: true };
-        var shaped = ranks.map(function (r) {
-          if (!r) return { ranked: [], error: 'Not run' };
-          if (!r.ok) return { ranked: [], error: (r.error && r.error.message) || 'Failed' };
-          return { ranked: (r.value && r.value.ranked) || [] };
-        });
-        return { preview: buildPreview(opts.tpl, modules, shaped), fks: fks, tableCount: tables.length,
-          shortlistErrors: slErrors.length };
+        if (opts.onStarted) { try { opts.onStarted(state); } catch (e) { /* storage is a convenience */ } }
+        return finish(state, prep.fks, prep.tables.length, opts);
       });
     });
   }
 
+  // Pick up a run whose batches were submitted earlier (a page reload).
+  function resume(state, opts) {
+    return finish(state, edgesByName(opts.graph), state.tableCount || 0, opts);
+  }
+
+  function finish(state, fks, tableCount, opts) {
+    return collect(state, Object.assign({}, opts, { outcomes: (opts.outcomes || []).slice() })).then(function (c) {
+      if (c.cancelled) return c;
+      return { preview: buildPreview(opts.tpl, opts.modules, c.outcomes, opts.keep), outcomes: c.outcomes,
+        state: c.state, fks: fks, tableCount: tableCount };
+    });
+  }
+
   return {
-    run: run, buildPreview: buildPreview, apply: apply, applyLoadOrder: applyLoadOrder,
+    run: run, resume: resume, prepare: prepare, submit: submit, collect: collect,
+    buildPreview: buildPreview, ticksOf: ticksOf, apply: apply, applyLoadOrder: applyLoadOrder,
     computeLoadOrder: computeLoadOrder, membership: membership, sharedWith: sharedWith,
     edgesByName: edgesByName, templateTableNames: templateTableNames, fillable: fillable,
-    httpPost: httpPost, pool: pool,
-    LIMITS: { CHUNK: CHUNK, MODULE_BATCH: MODULE_BATCH, PER_MODULE: PER_MODULE, CONCURRENCY: CONCURRENCY, STEP: STEP },
+    makeChunks: makeChunks, parts: parts, httpPost: httpPost, pool: pool,
+    LIMITS: { CHUNK_TABLES: CHUNK_TABLES, CHUNK_CHARS: CHUNK_CHARS, PART_CHUNKS: PART_CHUNKS, PART_CHARS: PART_CHARS,
+      COL_CONCURRENCY: COL_CONCURRENCY, POLL_MS: POLL_MS, STEP: STEP },
   };
 });

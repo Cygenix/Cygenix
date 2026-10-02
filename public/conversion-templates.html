@@ -151,7 +151,7 @@ table.ct{border-collapse:collapse;width:100%;font-size:12px}
 /* ── Modal ── */
 .ct-modal{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2000;display:none;align-items:center;justify-content:center;padding:1rem}
 .ct-modal.open{display:flex}
-/* ── Suggest tables ── */
+/* ── Suggest all / Suggest ── */
 .ct-link{font-size:11.5px;color:var(--accent);text-decoration:none;white-space:nowrap}
 .ct-link:hover{text-decoration:underline}
 .ct-sg-step{font-size:12.5px;color:var(--text);min-height:1.4em}
@@ -162,7 +162,14 @@ table.ct{border-collapse:collapse;width:100%;font-size:12px}
 .ct-sg-mh .ct-link{font-weight:400}
 .ct-sg-err{font-size:11.5px;color:var(--red);padding:0.3rem 0}
 .ct-sg-none{font-size:11.5px;color:var(--text3);padding:0.3rem 0}
-.ct-sg-row{display:grid;grid-template-columns:22px minmax(140px,1.1fr) 64px 2fr auto;gap:0.5rem;align-items:center;padding:0.28rem 0;border-bottom:0.5px solid var(--border);font-size:12px}
+.ct-sg-row{display:grid;grid-template-columns:22px minmax(140px,1.1fr) 64px 40px 2fr auto;gap:0.5rem;align-items:center;padding:0.28rem 0;border-bottom:0.5px solid var(--border);font-size:12px}
+.ct-sg-sum{font-size:12.5px;color:var(--text);padding:0.2rem 0 0.7rem;border-bottom:0.5px solid var(--border);margin-bottom:0.7rem}
+.ct-sg-fail{border:0.5px solid var(--red);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.8rem;font-size:11.5px;color:var(--text2)}
+.ct-sg-fail b{color:var(--red)}
+.ct-sg-fail ul{margin:0.3rem 0 0.4rem 1rem;padding:0}
+.ct-sg-un summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:0.3rem 0}
+.ct-sg-un li{font-size:11.5px;list-style:none;padding:0.15rem 0;display:grid;grid-template-columns:minmax(140px,1fr) 2fr;gap:0.5rem}
+.ct-sg-un ul{margin:0;padding:0}
 .ct-sg-row.already{opacity:0.55}
 .ct-sg-row .mono{font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ct-sg-reason{color:var(--text2);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -242,10 +249,10 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
       <button class="btn btn-sm" id="ct-stage" onclick="ctOpenStage()" title="Create the staging tables in a database, one at a time — existing tables are skipped and never changed"><i class="ic ic-database"></i> Create staging tables</button>
       <button class="btn btn-sm" id="ct-refresh" onclick="ctRefreshScope(false)" title="Re-read the Configurator estimate and bring the module list into line"><i class="ic ic-sync"></i> Refresh scope</button>
       <button class="btn btn-sm" id="ct-refresh-cols" onclick="ctRefreshColumns()" title="Read each in-scope table's columns from the target database and store them with the template"><i class="ic ic-database"></i> Refresh columns</button>
-      <!-- Suggest tables (AI): proposes target tables for every in-scope
-           module from the live target schema; nothing is added until the
-           preview is reviewed and applied. -->
-      <button class="btn btn-sm" id="ct-suggest-all" onclick="ctSuggest(false)"><i class="ic ic-sparkle"></i> Suggest tables</button>
+      <!-- Suggest all (AI, Oct-2026): sorts every target table into the
+           ticked (Include) modules, judged against all of them at once;
+           nothing is added until the preview is reviewed and applied. -->
+      <button class="btn btn-sm" id="ct-suggest-all" onclick="ctSuggest(false)"><i class="ic ic-sparkle"></i> Suggest all</button>
       <!-- Import / export of the mapping (Sep-2026). Front-end only: the file
            becomes rows in the grid, and Save is still the only thing that
            writes. -->
@@ -397,22 +404,24 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
   </div>
 </div>
 
-<!-- Suggest tables: progress. Cancel stops further calls and keeps nothing. -->
+<!-- Suggest: progress. Cancel stops polling, cancels the batches still
+     running at Anthropic, and keeps nothing. -->
 <div class="ct-modal" id="ct-sg-progress" role="dialog" aria-modal="true" aria-label="Suggesting tables">
-  <div class="ct-modal-card" style="width:min(460px,94vw)">
+  <div class="ct-modal-card" style="width:min(480px,94vw)">
     <div class="ct-modal-head">Suggesting tables</div>
     <div class="ct-modal-body">
       <div id="ct-sg-step" class="ct-sg-step" aria-live="polite">Reading target schema…</div>
       <div class="ct-sg-bar"><span id="ct-sg-fill"></span></div>
-      <div class="muted" style="font-size:11px;margin-top:0.5rem">Nothing is added until you review the suggestions and choose Apply.</div>
+      <div class="muted" style="font-size:11px;margin-top:0.5rem">Claude reads every table's columns and keys and judges each one against all the modules at once. It runs as a batch at Anthropic: usually a few minutes, at most a day. You can close this page — Suggest all picks the run up again when you come back.</div>
+      <div class="muted" style="font-size:11px;margin-top:0.35rem">Nothing is added until you review the suggestions and choose Apply.</div>
     </div>
     <div class="ct-modal-foot"><button class="btn btn-sm" id="ct-sg-cancel" onclick="ctSuggestCancel()">Cancel</button></div>
   </div>
 </div>
 
-<!-- Suggest tables: review. Grouped by module; High ticked by default. -->
+<!-- Suggest: review. Grouped by module; High and Medium ticked by default. -->
 <div class="ct-modal" id="ct-sg-modal" role="dialog" aria-modal="true" aria-label="Review suggested tables">
-  <div class="ct-modal-card" style="width:min(860px,96vw)">
+  <div class="ct-modal-card" style="width:min(900px,96vw)">
     <div class="ct-modal-head">Suggested tables <span class="muted" id="ct-sg-sub" style="font-weight:400;font-size:11.5px"></span>
       <span style="margin-left:auto;display:flex;gap:0.6rem;font-weight:400;font-size:11.5px">
         <a href="#" class="ct-link" onclick="ctSuggestTick(null,true);return false">Tick all</a>
@@ -516,7 +525,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- The target's table list, read the way the Schema Explorer reads it:
      one fetch per connection, cached, filtered in memory. -->
 <script src="/cygenix-schema-graph.js?v=b504389038" defer></script>
-<script src="/cygenix-template-model.js?v=830bf506f0" defer></script>
+<script src="/cygenix-template-model.js?v=18f048b882" defer></script>
 <!-- Import / export rules (pure; the sheet library itself is fetched only
      when Import or Excel export is first used). -->
 <script src="/cygenix-template-io.js?v=d1247c68f8" defer></script>
@@ -531,9 +540,10 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- The Object Mapping bridge: turning a module's staging→target pairs into
      tagged draft jobs, and taking only those back out again. -->
 <script src="/cygenix-template-mapping.js?v=06c6e42487" defer></script>
-<!-- AI "Suggest tables": orchestration, preview, shared flags and the FK load
-     order. The model calls go through the data proxy's /agent/ routes. -->
-<script src="/cygenix-template-suggest.js?v=cff8dc1d50" defer></script>
+<!-- AI "Suggest all" / "Suggest": orchestration, preview, shared flags and the
+     FK load order. The model calls go through the data proxy's /agent/
+     routes to the Function App's table-classifier.js (Batches API). -->
+<script src="/cygenix-template-suggest.js?v=acb21fcd3b" defer></script>
 <script>
 'use strict';
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1030,16 +1040,30 @@ function ctPickManual(){
   if (ctAddTable(v)) { $('ct-pick-manual').value = ''; $('ct-pick-status').textContent = 'Added "' + v + '" (typed).'; }
 }
 
-/* ── Suggest tables (AI) ────────────────────────────────────────────────────
+/* ── Suggest all / Suggest (AI) ─────────────────────────────────────────────
    The orchestration, preview model, shared flags and load order live in
-   cygenix-template-suggest.js; this is the page's half: guards, progress,
-   the review, and applying through the model's own add path.
+   cygenix-template-suggest.js, and the prompt in the Function App's
+   table-classifier-prompt.js; this is the page's half: guards, progress, the
+   review, retry, resume, and applying through the model's own add path.
+
+   WHICH MODULES. "Suggest all" runs for every module that is in scope AND
+   ticked Include — never for an unticked one. The module panel's "Suggest"
+   runs the same thing for the module that is open, ticked or not, because
+   pressing it is the choice.
 
    One run at a time, and never within 3 seconds of the last one started:
    SG.running is set before anything is awaited and cleared only in the
    run's own finally, never by a callback it sets off. Cancel aborts the
-   calls in flight, starts no more, and discards whatever came back. */
-const SG = { running: false, lastAt: 0, ctrl: null, preview: null, fks: null };
+   polling, cancels the batches still running, and keeps nothing.
+
+   RESUME. A run is a set of batches at Anthropic that may take minutes. Its
+   batch ids and the table names per chunk (no columns, nothing secret) are
+   kept in localStorage under SG_RUN_KEY until the suggestions are applied,
+   the person discards them, or they are cancelled — so closing the page, or
+   closing the review, does not throw away answers already paid for. */
+const SG = { running: false, lastAt: 0, ctrl: null, preview: null, fks: null, run: null, outcomes: null };
+const SG_RUN_KEY = 'cygenix_ct_suggest_run_v1';
+function sgActiveModules(){ return (CT.tpl && CT.tpl.modules || []).filter(m => TM.tmModuleActive(m)); }
 function sgBlocker(){
   if (!CT.tpl) return 'Open or create a template first';
   if (isReadOnly()) return 'A published version is frozen — start a new draft from it';
@@ -1050,18 +1074,34 @@ function sgBlocker(){
     return 'Suggest runs on your own Anthropic API key — add it in Settings › General';
   return '';
 }
+function sgLoadRun(){
+  try {
+    const r = JSON.parse(localStorage.getItem(SG_RUN_KEY) || 'null');
+    if (!r || !CT.tpl || r.tplId !== CT.tpl.id || !Array.isArray(r.states) || !r.states.length) return null;
+    // Anthropic keeps batch results for 29 days.
+    if (Date.now() - (r.at || 0) > 28 * 864e5) { sgClearRun(); return null; }
+    return r;
+  } catch (e) { return null; }
+}
+function sgSaveRun(r){ try { localStorage.setItem(SG_RUN_KEY, JSON.stringify(r)); } catch (e) { /* a convenience only */ } }
+function sgClearRun(){ try { localStorage.removeItem(SG_RUN_KEY); } catch (e) {} SG.run = null; }
 function renderSuggestButtons(){
   const why = sgBlocker();
   const mod = selectedModule();
   const all = $('ct-suggest-all'), one = $('ct-suggest-mod');
+  const pending = !why && sgLoadRun();
   if (all) {
-    all.disabled = !!why || SG.running || !!CT.inflight;
-    all.title = why || (SG.running ? 'Suggesting — one moment' : 'Suggest target tables for every in-scope module from the target schema. You review them before anything is added.');
+    const ticked = CT.tpl ? sgActiveModules().length : 0;
+    const allWhy = why || (!pending && !ticked ? 'Tick Include beside the modules to classify first' : '');
+    all.disabled = !!allWhy || SG.running || !!CT.inflight;
+    all.title = allWhy || (SG.running ? 'Suggesting — one moment'
+      : pending ? 'A Suggest run from ' + new Date(pending.at).toLocaleString() + ' is waiting — click to pick it up'
+      : 'Sort every target table into the ' + ticked + ' ticked module' + (ticked === 1 ? '' : 's') + '. You review the suggestions before anything is added.');
   }
   if (one) {
     const perWhy = why || (!mod ? 'Pick a module first' : (mod.inScope === false ? 'This module is no longer in scope' : ''));
     one.disabled = !!perWhy || SG.running || !!CT.inflight;
-    one.title = perWhy || (SG.running ? 'Suggesting — one moment' : 'Suggest target tables for ' + mod.module + ' from the target schema');
+    one.title = perWhy || (SG.running ? 'Suggesting — one moment' : 'Find the target tables that belong to ' + mod.module + ', judging every table');
   }
 }
 function sgProgress(text, done, total){
@@ -1076,45 +1116,95 @@ async function sgGraph(){
   CT.graph = await CygenixSchemaGraph.load('tgt');
   return CT.graph;
 }
-async function ctSuggest(one){
+function sgModsFor(names){
+  return names.map(n => TM.tmFindModule(CT.tpl, n)).filter(Boolean).map(m => ({ key: m.module, name: m.module, notes: m.notes || '' }));
+}
+function sgColumnsOf(t){
+  return CygenixSchemaGraph.columns('tgt', t.schema || 'dbo', t.name).then(n => n ? { columns: n.columns || null, primaryKeys: n.primaryKeys || [] } : null);
+}
+/* The one entry point for a run: a fresh one, a resumed one, or a retry of
+   the tables that failed. `kind` is 'new' | 'resume' | 'retry'. */
+async function sgRun(kind, opts){
   if (SG.running) return;                                   // one run at a time
   if (Date.now() - SG.lastAt < 3000) { note('Please wait a moment before suggesting again.', 'warn'); return; }
   const why = sgBlocker();
   if (why) { note(why, 'warn'); return; }
-  const mods = one
-    ? [selectedModule()].filter(m => m && m.inScope !== false)
-    : (CT.tpl.modules || []).filter(m => m.inScope !== false);
-  if (!mods.length) { note(one ? 'Pick a module that is in scope first.' : 'No modules are in scope — Refresh scope first.', 'warn'); return; }
   SG.running = true; SG.lastAt = Date.now(); SG.ctrl = new AbortController();
   const signal = SG.ctrl.signal;
   renderSuggestButtons();
-  sgProgress('Reading target schema…', 0, 0);
+  $('ct-sg-modal').classList.remove('open');
+  sgProgress(kind === 'resume' ? 'Picking up the earlier run…' : 'Reading target schema…', 0, 0);
   $('ct-sg-progress').classList.add('open');
   try {
     const g = await sgGraph();
     if (signal.aborted) return;
     if (!g || !g.ok) throw new Error('Target database not available (' + ((g && g.reason) || 'no connection') + ')');
-    const res = await CygenixTemplateSuggest.run({
-      tpl: CT.tpl,
-      modules: mods.map(m => ({ key: m.module, name: m.module, notes: m.notes || '' })),
-      graph: g,
-      columnsOf: (t) => CygenixSchemaGraph.columns('tgt', t.schema || 'dbo', t.name).then(n => (n && n.columns) || []),
-      onProgress: sgProgress,
-      signal,
-    });
-    if (signal.aborted || !res || res.cancelled) { note('Suggest cancelled — nothing was added.'); return; }
-    SG.preview = res.preview; SG.fks = res.fks;
+    const run = opts.run;
+    const modules = sgModsFor(run.modules);
+    const base = { tpl: CT.tpl, modules, graph: g, columnsOf: sgColumnsOf, onProgress: sgProgress, signal };
+    let res;
+    if (kind === 'resume') {
+      let outcomes = [];
+      for (const st of run.states) {
+        res = await CygenixTemplateSuggest.resume(st, Object.assign({}, base, { outcomes }));
+        if (!res || res.cancelled) break;
+        outcomes = res.outcomes;
+      }
+    } else {
+      res = await CygenixTemplateSuggest.run(Object.assign({}, base, {
+        onlyTables: opts.onlyTables || null,
+        idPrefix: kind === 'retry' ? 'r' + run.states.length + 'c' : 'c',
+        outcomes: opts.outcomes || [],
+        keep: opts.keep || null,
+        onStarted: (state) => { run.states.push(state); sgSaveRun(run); SG.run = run; },
+      }));
+    }
+    if (signal.aborted || !res || res.cancelled) {
+      // The batches were cancelled; a run record for them is no use.
+      sgClearRun();
+      note('Suggest cancelled — nothing was added.');
+      return;
+    }
+    SG.run = run; SG.preview = res.preview; SG.fks = res.fks; SG.outcomes = res.outcomes;
     $('ct-sg-progress').classList.remove('open');
     sgRenderPreview();
     $('ct-sg-modal').classList.add('open');
-    if (res.shortlistErrors) note('Some of the table list could not be shortlisted (' + res.shortlistErrors + ' call' + (res.shortlistErrors === 1 ? '' : 's') + ' failed); the suggestions below come from the rest.', 'warn');
   } catch (e) {
-    if (!signal.aborted) note('Suggest tables failed: ' + String((e && e.message) || e).slice(0, 240), 'crit');
+    if (!signal.aborted) note('Suggest failed: ' + String((e && e.message) || e).slice(0, 240), 'crit');
   } finally {
     $('ct-sg-progress').classList.remove('open');
     SG.running = false; SG.lastAt = Date.now(); SG.ctrl = null;
     renderSuggestButtons();
   }
+}
+async function ctSuggest(one){
+  if (SG.running) return;
+  if (!one) {
+    const pending = sgLoadRun();
+    if (pending) {
+      const ok = confirm('A Suggest run started ' + new Date(pending.at).toLocaleString() + ' for '
+        + pending.modules.length + ' module' + (pending.modules.length === 1 ? '' : 's') + ' has not been applied yet.\n\n'
+        + 'OK — pick it up (answers already paid for are reused).\nCancel — discard it and start a new run.');
+      if (ok) return sgRun('resume', { run: pending });
+      sgClearRun();
+    }
+  }
+  if (!CT.tpl) return;
+  const mods = one
+    ? [selectedModule()].filter(m => m && m.inScope !== false)
+    : sgActiveModules();
+  if (!mods.length) {
+    note(one ? 'Pick a module that is in scope first.' : 'No modules are ticked — tick Include beside the modules to classify.', 'warn');
+    return;
+  }
+  const run = { v: 1, tplId: CT.tpl.id, projectId: projectId(), at: Date.now(), one: !!one, modules: mods.map(m => m.module), states: [] };
+  return sgRun('new', { run });
+}
+function ctSuggestRetry(){
+  if (!SG.preview || !SG.run || !SG.preview.failed.length) return;
+  const names = [];
+  SG.preview.failed.forEach(f => f.tables.forEach(t => { if (names.indexOf(t) < 0) names.push(t); }));
+  return sgRun('retry', { run: SG.run, onlyTables: names, outcomes: SG.outcomes || [], keep: CygenixTemplateSuggest.ticksOf(SG.preview) });
 }
 function ctSuggestCancel(){
   if (SG.ctrl) SG.ctrl.abort();
@@ -1123,26 +1213,41 @@ function ctSuggestCancel(){
 const SG_CONF = { high: 'ok', medium: 'warn', low: 'info' };
 function sgRenderPreview(){
   const pv = SG.preview; if (!pv) return;
-  let total = 0, checked = 0;
-  $('ct-sg-body').innerHTML = pv.groups.map((g, gi) => {
+  const sm = pv.summary;
+  let checked = 0;
+  pv.groups.forEach(g => g.rows.forEach(r => { if (!r.already && r.checked) checked++; }));
+  const summary = '<div class="ct-sg-sum"><b>' + sm.tables + ' table' + (sm.tables === 1 ? '' : 's') + ' across ' + sm.modules + ' module' + (sm.modules === 1 ? '' : 's')
+    + ', ' + sm.shared + ' shared, ' + sm.unassigned + ' unassigned</b>'
+    + (sm.failedTables ? ' · <span style="color:var(--red)">' + sm.failedTables + ' not classified</span>' : '') + '</div>';
+  const failed = pv.failed.length
+    ? '<div class="ct-sg-fail"><b>Some tables could not be classified.</b> The results below come from the rest.'
+      + '<ul>' + pv.failed.map(f => '<li>' + esc(f.error) + ' — ' + f.tables.length + ' table' + (f.tables.length === 1 ? '' : 's')
+        + ' <span class="muted mono" title="' + esc(f.tables.join(', ')) + '">(' + esc(f.tables.slice(0, 4).join(', ')) + (f.tables.length > 4 ? ', …' : '') + ')</span></li>').join('') + '</ul>'
+      + '<button class="btn btn-sm" id="ct-sg-retry" onclick="ctSuggestRetry()">Retry these ' + sm.failedTables + ' table' + (sm.failedTables === 1 ? '' : 's') + '</button></div>'
+    : '';
+  const groups = pv.groups.map((g, gi) => {
     const fresh = g.rows.filter(r => !r.already);
-    total += fresh.length; checked += fresh.filter(r => r.checked).length;
     return '<div class="ct-sg-mod"><div class="ct-sg-mh">' + esc(g.module)
       + '<span class="muted" style="font-weight:400;font-size:11px">' + fresh.length + ' suggested' + (g.rows.length > fresh.length ? ' · ' + (g.rows.length - fresh.length) + ' already added' : '') + '</span>'
       + (fresh.length ? '<span style="margin-left:auto;display:flex;gap:0.6rem"><a href="#" class="ct-link" onclick="ctSuggestTick(' + gi + ',true);return false">tick all</a>'
           + '<a href="#" class="ct-link" onclick="ctSuggestTick(' + gi + ',false);return false">untick all</a></span>' : '') + '</div>'
-      + (g.error ? '<div class="ct-sg-err">Could not rank this module: ' + esc(g.error) + '</div>' : '')
-      + (!g.error && !g.rows.length ? '<div class="ct-sg-none">Nothing in the target looked like this module.</div>' : '')
+      + (!g.rows.length ? '<div class="ct-sg-none">No table in the target was placed in this module.</div>' : '')
       + g.rows.map((r, ri) => '<label class="ct-sg-row' + (r.already ? ' already' : '') + '">'
           + (r.already ? '<span></span>' : '<input type="checkbox"' + (r.checked ? ' checked' : '') + ' onchange="ctSuggestCheck(' + gi + ',' + ri + ',this.checked)">')
           + '<span class="mono" title="' + esc(r.table) + '">' + esc(r.table) + '</span>'
           + '<span class="chip ' + SG_CONF[r.confidence] + '">' + esc(r.confidence[0].toUpperCase() + r.confidence.slice(1)) + '</span>'
+          + '<span class="chip' + (r.required ? '' : ' info') + '" title="' + (r.required ? 'Required for this module' : 'Optional for this module') + '">' + (r.required ? 'Req' : 'Opt') + '</span>'
           + '<span class="ct-sg-reason" title="' + esc(r.reason) + '">' + (r.already ? 'already added' : esc(r.reason)) + '</span>'
           + (r.shared.length ? '<span class="chip ct-shared" title="' + esc('Also in: ' + r.shared.join(', ')) + '">Shared</span>' : '<span></span>')
           + '</label>').join('')
       + '</div>';
   }).join('');
-  $('ct-sg-sub').textContent = '— ' + total + ' suggested across ' + pv.groups.length + ' module' + (pv.groups.length === 1 ? '' : 's');
+  const un = pv.unassigned.length
+    ? '<details class="ct-sg-un"><summary>Unassigned — ' + pv.unassigned.length + ' table' + (pv.unassigned.length === 1 ? '' : 's') + ' fit none of these modules (left out)</summary><ul>'
+      + pv.unassigned.map(u => '<li><span class="mono">' + esc(u.table) + '</span><span class="ct-sg-reason" title="' + esc(u.reason) + '">' + esc(u.reason) + '</span></li>').join('') + '</ul></details>'
+    : '';
+  $('ct-sg-body').innerHTML = summary + failed + groups + un;
+  $('ct-sg-sub').textContent = '— ' + pv.groups.length + ' module' + (pv.groups.length === 1 ? '' : 's');
   const b = $('ct-sg-apply');
   b.textContent = 'Apply selected (' + checked + ')';
   b.disabled = !checked;
@@ -1157,12 +1262,16 @@ function ctSuggestTick(gi, on){
   SG.preview.groups.forEach((g, i) => { if (gi == null || gi === i) g.rows.forEach(r => { if (!r.already) r.checked = !!on; }); });
   sgRenderPreview();
 }
-function ctSuggestClose(){ $('ct-sg-modal').classList.remove('open'); SG.preview = null; }
+// Closing keeps the run record: Suggest all offers to pick it up again, and
+// the answers come back without asking Claude twice.
+function ctSuggestClose(){ $('ct-sg-modal').classList.remove('open'); SG.preview = null; renderSuggestButtons(); }
 function ctSuggestApply(){
   if (!SG.preview || isReadOnly()) return;
   const pv = SG.preview; SG.preview = null;          // one apply per preview
   $('ct-sg-modal').classList.remove('open');
   const r = CygenixTemplateSuggest.apply(CT.tpl, pv, TM, userName(), SG.fks || []);
+  sgClearRun();
+  renderSuggestButtons();
   if (!r.added) { note('Nothing was added.'); return; }
   touchDirty(); render();
   note('Added ' + r.added + ' table' + (r.added === 1 ? '' : 's') + ' across ' + r.modules + ' module' + (r.modules === 1 ? '' : 's')
@@ -1172,7 +1281,7 @@ function ctSuggestApply(){
 }
 async function ctRecalcLoadOrder(){
   if (!CT.tpl || isReadOnly() || !window.CygenixTemplateSuggest) return;
-  if (!confirm('Recalculate the load order from the foreign keys?\n\nRows with no load order, or one set by Suggest tables, are renumbered parents-first (10, 20, 30…). Numbers you typed or set by moving rows are left alone.')) return;
+  if (!confirm('Recalculate the load order from the foreign keys?\n\nRows with no load order, or one set by Suggest, are renumbered parents-first (10, 20, 30…). Numbers you typed or set by moving rows are left alone.')) return;
   const g = await sgGraph();
   if (!g || !g.ok) { note('Target database not available (' + ((g && g.reason) || 'no connection') + ') — the foreign keys are needed to order the tables.', 'warn'); return; }
   const r = CygenixTemplateSuggest.applyLoadOrder(CT.tpl, CygenixTemplateSuggest.edgesByName(g), 'recalc');

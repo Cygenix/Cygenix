@@ -1,23 +1,24 @@
 /* tests/browser/template-suggest.smoke.js
  * ---------------------------------------------------------------------------
- * AI "Suggest tables" on the real Conversion Templates page, with the target
- * database and the two AI routes stubbed (neutral table names — the feature
- * is target-agnostic, and so is its test).
+ * "Suggest all" (and the module panel's "Suggest") on the real Conversion
+ * Templates page, with the target database and the four batch routes of
+ * agent/table-classify stubbed (neutral table names — the feature is
+ * target-agnostic, and so is its test).
  *
- * Walks the brief's checks that a browser can make:
- *   3. two tables added by hand, then per-module Suggest: both show as
- *      "already added", and nothing is removed by Apply;
- *   4. a table in two modules carries the Shared flag, in the preview and in
- *      the grid;
- *   5. load order filled parents-before-children on new rows; a typed number
- *      is changed neither by Apply nor by Recalculate;
- *   6. editing an AI row clears its badge; the fields survive save + reload;
- *   7. a quick double-click starts one run; Cancel mid-run adds nothing;
- *   8. a failing call shows a readable error, once — no retry storm;
- * plus the buttons' disabled states, the headers the calls carry (the
- * caller's own key and token), and that nothing throws.
- * (Check 2 — a live run against the Demo profile's target — needs a real
- * database and a real key, and is for a person to do.)
+ * The brief's final test, as far as a browser can make it:
+ *   - three modules ticked (one with two tables added by hand, two empty),
+ *     one in scope but NOT ticked; Suggest all; the review dialog — summary,
+ *     already added, defaults (high and medium ticked, low not), Shared,
+ *     Req/Opt, unassigned; Apply; then: the unticked module untouched, the
+ *     hand-added tables still there, the typed load order kept, parents
+ *     before children, "Also in" on the shared table, template unsaved;
+ * plus: every table goes in with its columns and every chunk with every
+ * ticked module; a failed chunk is listed and retried on its own; closing
+ * the review keeps the run and Suggest all picks it up again without a new
+ * batch; a double-click starts one run; Cancel cancels the batch and adds
+ * nothing; a refused key shows one readable error after one call; the
+ * per-module button sends one module; nothing throws.
+ * (A live run against a real target with a real key is for a person to do.)
  *
  * Run it by hand:  node tests/browser/template-suggest.smoke.js
  */
@@ -60,13 +61,15 @@ const server = http.createServer((req, res) => {
   res.end(fs.readFileSync(f));
 });
 
+
 const U = 'you@example.test';
-const TABLES = ['Site', 'SiteAddress', 'AddressType', 'Region', 'Person', 'PersonPhone', 'Invoice', 'InvoiceLine'];
+const TABLES = ['Site', 'SiteAddress', 'AddressType', 'Region', 'Person', 'PersonPhone', 'Invoice', 'InvoiceLine', 'AuditLog', 'Misc'];
 const FKS = [['SiteAddress', 'Site'], ['SiteAddress', 'AddressType'], ['Site', 'Region'], ['Person', 'Region'], ['PersonPhone', 'Person'], ['InvoiceLine', 'Invoice']];
-// What the stubbed model says, per module.
-const RANK = {
-  Addresses: [['Site', 'high'], ['SiteAddress', 'high'], ['AddressType', 'high'], ['Region', 'medium']],
-  Contacts: [['Person', 'high'], ['PersonPhone', 'high'], ['Region', 'high']],
+// What the stubbed classifier says, per table: [modules, confidence, required].
+const ANSWER = {
+  Site: [['Addresses'], 'high', true], SiteAddress: [['Addresses'], 'high', true], AddressType: [['Addresses'], 'medium', false],
+  Region: [['Addresses', 'Contacts'], 'high', true], Person: [['Contacts'], 'high', true], PersonPhone: [['Contacts'], 'low', false],
+  Invoice: [['Billing'], 'high', true], InvoiceLine: [['Billing'], 'high', true], AuditLog: [[], 'high', false], Misc: [[], 'low', false],
 };
 
 (async () => {
@@ -76,7 +79,8 @@ const RANK = {
   const token = 'x.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, preferred_username: U })).toString('base64url') + '.y';
 
   const store = new Map();
-  const ai = { shortlist: 0, rank: 0, headers: [], mode: 'ok', rankDelay: 0 };
+  // ai.mode: 'ok' | 'failOnce' (results fail the first time) | 'slow' (never ends) | 'badkey' (start refused)
+  const ai = { start: [], status: 0, results: 0, cancel: [], headers: [], mode: 'ok', batches: {}, n: 0 };
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', async (route) => {
     const u = route.request().url();
@@ -84,21 +88,33 @@ const RANK = {
     const action = q.get('action') || '';
     const body = (() => { try { return JSON.parse(route.request().postData() || 'null'); } catch (e) { return null; } })();
     if (/action=whoami/.test(u)) return json(route, { tier: 'pro', tier_status: 'active', role: 'user' });
-    if (/data-proxy/.test(u) && /^\/agent\/template-suggest\//.test(q.get('path') || '')) {
+    const agent = q.get('path') || '';
+    if (/data-proxy/.test(u) && /^\/agent\/table-classify\//.test(agent)) {
       const h = route.request().headers();
       ai.headers.push({ key: h['x-anthropic-key'] || '', auth: h.authorization || '' });
-      if (/shortlist$/.test(q.get('path'))) {
-        ai.shortlist++;
-        if (ai.mode === 'fail') return json(route, { error: 'Claude API error (401) — check the API key in Settings' }, 400);
-        const out = {};
-        body.modules.forEach((m) => { out[m.key] = (RANK[m.key] || []).map((x) => x[0]); });
-        if (body.modules.some((m) => m.key === 'Billing')) out.Billing = ['Invoice'];
-        return json(route, { shortlist: out, tableCount: body.tables.length });
+      if (/start$/.test(agent)) {
+        if (ai.mode === 'badkey') { ai.start.push(body); return json(route, { error: 'Claude API error (401) — check the API key in Settings' }, 400); }
+        ai.start.push(body);
+        const id = 'msgbatch_' + (++ai.n);
+        ai.batches[id] = body.chunks;
+        return json(route, { batchId: id, status: 'in_progress', chunkIds: body.chunks.map((c) => c.id) });
       }
-      ai.rank++;
-      if (ai.rankDelay) await new Promise((r) => setTimeout(r, ai.rankDelay));
-      if (body.module.key === 'Billing') return json(route, { error: 'Upstream error (529)' }, 502);
-      return json(route, { ranked: (RANK[body.module.key] || []).map(([t, c]) => ({ table: t, confidence: c, reason: 'columns fit ' + body.module.key })), fks: [] });
+      if (/status$/.test(agent)) {
+        ai.status++;
+        return json(route, { batches: body.batchIds.map((id) => ({ id, status: ai.mode === 'slow' ? 'in_progress' : 'ended',
+          counts: { processing: 0, succeeded: (ai.batches[id] || []).length, errored: 0, canceled: 0, expired: 0 } })) });
+      }
+      if (/results$/.test(agent)) {
+        ai.results++;
+        const failNow = ai.mode === 'failOnce' && !ai.failedOnce;
+        if (failNow) ai.failedOnce = true;
+        const mods = body.modules;
+        return json(route, { chunks: body.chunks.map((c) => failNow
+          ? { id: c.id, ok: false, error: 'Claude could not process this batch of tables (overloaded_error)' }
+          : { id: c.id, ok: true, unanswered: [], rows: c.tables.map((t) => { const a = ANSWER[t];
+              return { table: t, modules: a[0].filter((m) => mods.indexOf(m) >= 0), confidence: a[1], required: a[2], reason: 'columns fit ' + t }; }) }) });
+      }
+      if (/cancel$/.test(agent)) { ai.cancel.push(body.batchIds); return json(route, { cancelled: body.batchIds }); }
     }
     if (/data-proxy/.test(u) && /^template-/.test(action)) {
       if (action === 'template-list') return json(route, { templates: [...store.values()].map((e) => Object.assign({}, e, { doc: undefined })) });
@@ -140,14 +156,16 @@ const RANK = {
       profiles: [{ id: 'DEMO_DEV', name: 'Demo', envClass: 'DEV', status: 'active', srcConnId: 'c_src', tgtConnId: 'c_tgt', createdAt: 1, updatedAt: 1 }],
       settings: { envClasses: ['DEV', 'TEST', 'UAT', 'PRD', 'SANDBOX'], activeProfileId: 'DEMO_DEV', selectedAt: 1 } }));
     localStorage.setItem('cygenix_effort_estimates_v1', JSON.stringify({ active: 'Demo', estimates: { Demo: {
-      v: 1, name: 'Demo', modules: ['Addresses', 'Contacts', 'Billing'],
-      ticks: { 'analysis|Addresses': 1, 'analysis|Contacts': 1, 'analysis|Billing': 1 }, meta: {}, variables: [], rates: {}, tc: {}, data: {} } } }));
+      v: 1, name: 'Demo', modules: ['Addresses', 'Contacts', 'Billing', 'Other'],
+      ticks: { 'analysis|Addresses': 1, 'analysis|Contacts': 1, 'analysis|Billing': 1, 'analysis|Other': 1 }, meta: {}, variables: [], rates: {}, tc: {}, data: {} } } }));
   }, { U, token });
 
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('dialog', (d) => d.accept());
+  let dialogAnswer = true;
+  const dialogs = [];
+  page.on('dialog', (d) => { dialogs.push(d.message()); return dialogAnswer ? d.accept() : d.dismiss(); });
   const open = async () => {
     await page.goto('http://localhost:' + PORT + '/conversion-templates', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => typeof CT !== 'undefined' && !!CT.tpl && !!window.CygenixTemplateSuggest, null, { timeout: 20000 });
@@ -159,132 +177,185 @@ const RANK = {
       ai: !!tr.querySelector('.ct-ai'), shared: (tr.querySelector('.ct-shared') || {}).title || '' };
   }));
   const rowOf = async (name) => (await grid()).find((r) => r.target === name);
+  const tablesIn = (mod) => page.evaluate((m) => (CT.tpl.modules.find((x) => x.module === m) || { tables: [] }).tables.map((t) => t.targetTable), mod);
+  const tableRow = (mod, name) => page.evaluate(([m, n]) => (CT.tpl.modules.find((x) => x.module === m) || { tables: [] }).tables.find((t) => t.targetTable === n) || null, [mod, name]);
   const noteText = () => page.evaluate(() => document.getElementById('ct-note').textContent);
-  const preview = () => page.evaluate(() => Array.from(document.querySelectorAll('#ct-sg-body .ct-sg-mod')).map((m) => ({
-    module: m.querySelector('.ct-sg-mh').firstChild.textContent.trim(),
-    error: (m.querySelector('.ct-sg-err') || {}).textContent || '',
-    rows: Array.from(m.querySelectorAll('.ct-sg-row')).map((r) => ({ table: r.querySelector('.mono').textContent,
-      already: r.classList.contains('already'), checked: !!(r.querySelector('input') || {}).checked,
-      conf: r.querySelector('.chip').textContent, shared: (r.querySelector('.ct-shared') || {}).title || '' })),
-  })));
-  const waitPreview = () => page.waitForSelector('#ct-sg-modal.open', { timeout: 15000 });
+  const preview = () => page.evaluate(() => ({
+    summary: (document.querySelector('#ct-sg-body .ct-sg-sum') || {}).textContent || '',
+    failed: (document.querySelector('#ct-sg-body .ct-sg-fail') || {}).textContent || '',
+    unassigned: (document.querySelector('#ct-sg-body .ct-sg-un') || {}).textContent || '',
+    groups: Array.from(document.querySelectorAll('#ct-sg-body .ct-sg-mod')).map((m) => ({
+      module: m.querySelector('.ct-sg-mh').firstChild.textContent.trim(),
+      rows: Array.from(m.querySelectorAll('.ct-sg-row')).map((r) => ({ table: r.querySelector('.mono').textContent,
+        already: r.classList.contains('already'), checked: !!(r.querySelector('input') || {}).checked,
+        conf: r.querySelectorAll('.chip')[0].textContent, req: r.querySelectorAll('.chip')[1].textContent,
+        shared: (r.querySelector('.ct-shared') || {}).title || '' })) })),
+  }));
+  const waitPreview = () => page.waitForSelector('#ct-sg-modal.open', { timeout: 20000 });
+  const gap = () => page.waitForTimeout(3100);            // the 3-second minimum between runs
 
-  console.log('Conversion Templates — Suggest tables\n');
+  console.log('Conversion Templates — Suggest all\n');
   await open();
-  await page.evaluate(() => { const i = (CT.tpl.modules || []).findIndex(() => true); CT.tpl.modules.forEach((m) => { m.included = true; }); ctSelect('Addresses'); });
+  // Three modules ticked; "Other" stays in scope but unticked.
+  await page.evaluate(() => { CT.tpl.modules.forEach((m) => { m.included = m.module !== 'Other'; }); ctSelect('Addresses'); });
   await page.waitForTimeout(200);
 
   /* ── Buttons ───────────────────────────────────────────────────────────── */
   section('Buttons');
-  let btn = await page.evaluate(() => ({ all: document.getElementById('ct-suggest-all'), one: document.getElementById('ct-suggest-mod') })
-    && ({ all: !document.getElementById('ct-suggest-all').disabled, one: !document.getElementById('ct-suggest-mod').disabled,
-      recalc: getComputedStyle(document.getElementById('ct-recalc')).display !== 'none' }));
-  check('"Suggest tables" on the toolbar and "Suggest" on the module panel are there and live', btn.all && btn.one && btn.recalc, JSON.stringify(btn));
+  const btn = await page.evaluate(() => ({ label: document.getElementById('ct-suggest-all').textContent.trim(), all: !document.getElementById('ct-suggest-all').disabled,
+    one: !document.getElementById('ct-suggest-mod').disabled, title: document.getElementById('ct-suggest-all').title }));
+  check('the toolbar button now reads "Suggest all", and it and the module panel\'s "Suggest" are live', btn.label === 'Suggest all' && btn.all && btn.one, JSON.stringify(btn));
+  check('…its tooltip counts the ticked modules', /3 ticked modules/.test(btn.title), btn.title);
   const noKey = await page.evaluate(() => { const k = localStorage.getItem('cygenix_api_key'); localStorage.removeItem('cygenix_api_key'); renderSuggestButtons();
     const b = document.getElementById('ct-suggest-all'); const r = { disabled: b.disabled, title: b.title }; localStorage.setItem('cygenix_api_key', k); renderSuggestButtons(); return r; });
-  check('without an Anthropic key they are disabled, and the tooltip says why', noKey.disabled && /Anthropic API key/.test(noKey.title), JSON.stringify(noKey));
+  check('without an Anthropic key it is disabled, and the tooltip says why', noKey.disabled && /Anthropic API key/.test(noKey.title), JSON.stringify(noKey));
+  const noTick = await page.evaluate(() => { const was = CT.tpl.modules.map((m) => m.included); CT.tpl.modules.forEach((m) => { m.included = false; }); renderSuggestButtons();
+    const b = document.getElementById('ct-suggest-all'); const r = { disabled: b.disabled, title: b.title }; CT.tpl.modules.forEach((m, i) => { m.included = was[i]; }); renderSuggestButtons(); return r; });
+  check('with no module ticked it is disabled and says to tick Include', noTick.disabled && /Tick Include/.test(noTick.title), JSON.stringify(noTick));
 
-  /* ── 3. Already added; add-only ─────────────────────────────────────────── */
-  section('3. Two tables added by hand, then Suggest for the module');
+  /* ── The final test ────────────────────────────────────────────────────── */
+  section('Three ticked modules (two of them empty), one unticked; Suggest all; review; apply');
   await page.evaluate(() => { ctAddTable('Site'); ctAddTable('SiteAddress'); });
   await page.evaluate(() => { const t = CT.tpl.modules.find((m) => m.module === 'Addresses').tables.find((x) => x.targetTable === 'SiteAddress'); ctPatchTable(t.id, 'loadOrder', '5'); });
-  await page.click('#ct-suggest-mod');
+  await page.click('#ct-suggest-all');
   await waitPreview();
+  const sent = ai.start[0] || { modules: [], chunks: [] };
+  check('ONE batch submitted, with the three TICKED modules only', ai.start.length === 1 && sent.modules.map((m) => m.name).join() === 'Addresses,Contacts,Billing', JSON.stringify(sent.modules));
+  check('EVERY target table went in, with its columns, key and FK neighbours',
+    sent.chunks.reduce((n, c) => n + c.tables.length, 0) === TABLES.length
+    && sent.chunks[0].tables.every((t) => t.columns.length === 2 && t.pk.join() === 'Id')
+    && sent.chunks[0].tables.find((t) => t.name === 'Site').refBy.join() === 'SiteAddress', JSON.stringify(sent.chunks[0].tables[0]));
+  check('every call carried the caller\'s own key and their token', ai.headers.every((h) => h.key === 'sk-ant-test-key' && /^Bearer /.test(h.auth)));
   let pv = await preview();
-  const ad = pv.find((g) => g.module === 'Addresses') || { rows: [] };
-  const pr = (t) => ad.rows.find((r) => r.table === t) || {};
-  check('the preview is grouped by module (one, for the per-module button)', pv.length === 1 && pv[0].module === 'Addresses', JSON.stringify(pv.map((g) => g.module)));
-  check('THE TWO HAND-ADDED TABLES SHOW AS "already added", greyed, with no checkbox', pr('Site').already && pr('SiteAddress').already && !pr('Site').checked);
-  check('High is ticked, Medium is not', pr('AddressType').checked && pr('AddressType').conf === 'High' && !pr('Region').checked && pr('Region').conf === 'Medium');
-  await page.evaluate(() => ctSuggestTick(0, true));
+  const grp = (m) => pv.groups.find((g) => g.module === m) || { rows: [] };
+  const pr = (m, t) => grp(m).rows.find((r) => r.table === t) || {};
+  check('SUMMARY: "6 tables across 3 modules, 1 shared, 2 unassigned"', /6 tables across 3 modules, 1 shared, 2 unassigned/.test(pv.summary), pv.summary);
+  check('grouped by the ticked modules only — "Other" is not in the dialog', pv.groups.map((g) => g.module).join() === 'Addresses,Contacts,Billing', pv.groups.map((g) => g.module).join());
+  check('THE TWO HAND-ADDED TABLES SHOW AS "already added", with no tick box', pr('Addresses', 'Site').already && pr('Addresses', 'SiteAddress').already && !pr('Addresses', 'Site').checked);
+  check('High and Medium ticked, Low not', pr('Addresses', 'Region').checked && pr('Addresses', 'AddressType').checked && pr('Addresses', 'AddressType').conf === 'Medium'
+    && !pr('Contacts', 'PersonPhone').checked && pr('Contacts', 'PersonPhone').conf === 'Low');
+  check('required shows as Req / Opt', pr('Addresses', 'Region').req === 'Req' && pr('Addresses', 'AddressType').req === 'Opt');
+  check('REGION IS SHARED in both modules, each naming the other', /Contacts/.test(pr('Addresses', 'Region').shared) && /Addresses/.test(pr('Contacts', 'Region').shared));
+  check('the unassigned tables are listed and offered nowhere', /Unassigned — 2 tables/.test(pv.unassigned) && /AuditLog/.test(pv.unassigned) && !pv.groups.some((g) => g.rows.some((r) => r.table === 'AuditLog')));
+  const otherBefore = JSON.stringify(await tablesIn('Other'));
   await page.click('#ct-sg-apply');
-  await page.waitForTimeout(200);
-  let g = await grid();
-  check('APPLY REMOVED NOTHING and added the ticked ones', ['Site', 'SiteAddress', 'AddressType', 'Region'].every((n) => g.some((r) => r.target === n)) && g.length === 4, g.map((r) => r.target).join());
-  const at = await rowOf('AddressType');
-  check('an added row\'s staging name is derived exactly as a manual add\'s (prefix)', at.staging === 'STG_AddressType', at.staging);
-  check('added rows carry the AI badge; hand-added ones do not', at.ai && (await rowOf('Region')).ai && !(await rowOf('Site')).ai);
-  const t3 = await noteText();
-  check('the summary says what happened', /^Added 2 tables across 1 module\. \d+ shared\. Load order set on \d+ rows?\./.test(t3), t3);
-  check('the template is marked unsaved, not saved', await page.evaluate(() => CT.dirty === true) && store.size === 0);
-
-  /* ── 5. Load order ─────────────────────────────────────────────────────── */
-  section('5. Load order');
-  const site = await rowOf('Site'), region = await rowOf('Region');
-  check('PARENTS BEFORE CHILDREN on the rows it filled: Region before Site', region.order < site.order && region.order % 10 === 0 && site.order % 10 === 0, region.order + ' / ' + site.order);
-  check('A TYPED LOAD ORDER IS NOT CHANGED BY APPLY', (await rowOf('SiteAddress')).order === 5);
-  await page.click('#ct-recalc');
   await page.waitForTimeout(250);
-  check('…NOR BY RECALCULATE', (await rowOf('SiteAddress')).order === 5);
+  check('APPLY added the ticked tables and removed nothing',
+    (await tablesIn('Addresses')).join() === 'Site,SiteAddress,Region,AddressType' && (await tablesIn('Contacts')).join() === 'Person,Region'
+    && (await tablesIn('Billing')).join() === 'Invoice,InvoiceLine', JSON.stringify([await tablesIn('Addresses'), await tablesIn('Contacts'), await tablesIn('Billing')]));
+  check('THE UNTICKED MODULE IS UNTOUCHED', JSON.stringify(await tablesIn('Other')) === otherBefore && otherBefore === '[]');
+  const at = await rowOf('AddressType');
+  check('staging names derived as for a manual add (prefix)', at.staging === 'STG_AddressType', at.staging);
+  check('required set from the AI; AI badge on added rows, not on hand-added ones',
+    (await tableRow('Addresses', 'AddressType')).required === false && at.ai && !(await rowOf('Site')).ai);
+  check('THE SHARED TABLE SAYS WHERE ELSE IT IS, in its notes', (await tableRow('Addresses', 'Region')).notes === 'Also in: Contacts' && (await tableRow('Contacts', 'Region')).notes === 'Also in: Addresses');
+  const site = await rowOf('Site'), region = await rowOf('Region');
+  check('LOAD ORDER: parents before children', region.order < site.order && (await tableRow('Billing', 'Invoice')).loadOrder < (await tableRow('Billing', 'InvoiceLine')).loadOrder, region.order + ' / ' + site.order);
+  check('A TYPED LOAD ORDER IS KEPT', (await rowOf('SiteAddress')).order === 5);
+  const t1 = await noteText();
+  check('the summary says what happened, and that it is not saved', /^Added 6 tables across 3 modules\. 1 shared\. Load order set on \d+ rows?\..* Not saved yet\.$/.test(t1), t1);
+  check('the template is marked unsaved, not saved', await page.evaluate(() => CT.dirty === true) && store.size === 0);
+  check('the run record is cleared once applied', await page.evaluate(() => localStorage.getItem('cygenix_ct_suggest_run_v1') === null));
 
-  /* ── 4. Shared ─────────────────────────────────────────────────────────── */
-  section('4. Suggest across every in-scope module; Shared');
-  await page.waitForTimeout(3100);                     // the 3-second minimum between runs
-  const before = { sl: ai.shortlist, rk: ai.rank };
+  /* ── Failed chunk, retry, close, resume ────────────────────────────────── */
+  section('A failed chunk is retried on its own; closing keeps the run; Suggest all picks it up');
+  await gap();
+  ai.mode = 'failOnce';
+  const s0 = ai.start.length;
   await page.click('#ct-suggest-all');
   await waitPreview();
   pv = await preview();
-  check('grouped by every in-scope module', pv.map((x) => x.module).join() === 'Addresses,Contacts,Billing', pv.map((x) => x.module).join());
-  const reg = pv.find((x) => x.module === 'Contacts').rows.find((r) => r.table === 'Region');
-  check('REGION IS FLAGGED SHARED IN THE PREVIEW, naming Addresses', !!reg && /Addresses/.test(reg.shared), JSON.stringify(reg));
-  check('a module that failed shows its error, and the others are still there', /Could not rank this module: Upstream error \(529\)/.test(pv.find((x) => x.module === 'Billing').error)
-    && pv.find((x) => x.module === 'Contacts').rows.length === 3);
-  check('rank ran once per module, shortlist once', ai.rank - before.rk === 3 && ai.shortlist - before.sl === 1, (ai.rank - before.rk) + ' / ' + (ai.shortlist - before.sl));
-  check('every AI call carried the caller\'s own key and their token', ai.headers.every((h) => h.key === 'sk-ant-test-key' && /^Bearer /.test(h.auth)));
-  await page.click('#ct-sg-apply');
-  await page.waitForTimeout(200);
-  await page.evaluate(() => ctSelect('Contacts'));
-  await page.waitForTimeout(150);
-  check('REGION SHOWS SHARED IN THE GRID, in Contacts…', /Also in: Addresses/.test((await rowOf('Region')).shared), (await rowOf('Region')).shared);
-  await page.evaluate(() => ctSelect('Addresses'));
-  await page.waitForTimeout(150);
-  check('…and in Addresses', /Also in: Contacts/.test((await rowOf('Region')).shared));
+  check('the failure is listed with its reason, and a Retry button', /Some tables could not be classified/.test(pv.failed) && /overloaded_error/.test(pv.failed)
+    && await page.evaluate(() => !!document.getElementById('ct-sg-retry')), pv.failed);
+  check('…and the summary says how many were not classified', /10 not classified/.test(pv.summary), pv.summary);
+  await gap();
+  await page.click('#ct-sg-retry');
+  await waitPreview();
+  await page.waitForFunction(() => !document.getElementById('ct-sg-retry'), null, { timeout: 15000 }).catch(() => {});
+  pv = await preview();
+  const retryBody = ai.start[ai.start.length - 1];
+  check('RETRY sent only the failed tables, as a new batch', ai.start.length === s0 + 2 && retryBody.chunks.every((c) => /^r1c\d+$/.test(c.id)) && retryBody.chunks[0].tables.length === 10);
+  check('…and the review now has them, with nothing failed', !pv.failed && /2 unassigned/.test(pv.summary), pv.summary);
+  await page.evaluate(() => ctSuggestClose());
+  check('closing the review keeps the run record', await page.evaluate(() => !!localStorage.getItem('cygenix_ct_suggest_run_v1')));
+  check('…and the button says a run is waiting', /is waiting/.test(await page.evaluate(() => document.getElementById('ct-suggest-all').title)));
+  await gap();
+  const s1 = ai.start.length, r1 = ai.results;
+  dialogAnswer = true;
+  await page.click('#ct-suggest-all');
+  await waitPreview();
+  check('SUGGEST ALL ASKS, then PICKS IT UP without submitting anything new', /has not been applied yet/.test(dialogs[dialogs.length - 1] || '') && ai.start.length === s1 && ai.results > r1);
+  await page.evaluate(() => ctSuggestClose());
+  await gap();
+  dialogAnswer = false;                                  // discard it this time
+  ai.mode = 'ok';
+  await page.click('#ct-suggest-all');
+  await waitPreview();
+  dialogAnswer = true;
+  check('…or discards it and starts a new run', ai.start.length === s1 + 1);
+  await page.evaluate(() => ctSuggestClose());
 
-  /* ── 6. Badge, save, reload ───────────────────────────────────────────── */
-  section('6. Editing clears the badge; the fields persist');
-  await page.evaluate(() => { const t = CT.tpl.modules.find((m) => m.module === 'Addresses').tables.find((x) => x.targetTable === 'AddressType'); ctPatchTable(t.id, 'notes', 'checked by me'); });
-  await page.waitForTimeout(100);
-  check('EDITING AN AI ROW CLEARS ITS BADGE', !(await rowOf('AddressType')).ai && (await rowOf('Region')).ai);
+  /* ── Per-module ────────────────────────────────────────────────────────── */
+  section('The module panel\'s Suggest: the same thing with one module');
+  await gap();
+  dialogAnswer = false;                                  // do not resume the closed run
+  await page.evaluate(() => ctSelect('Billing'));
+  await page.click('#ct-suggest-mod');
+  await waitPreview();
+  dialogAnswer = true;
+  const last = ai.start[ai.start.length - 1];
+  pv = await preview();
+  check('one module goes with every table', last.modules.map((m) => m.name).join() === 'Billing' && last.chunks.reduce((n, c) => n + c.tables.length, 0) === TABLES.length);
+  check('the review has that module only, its tables already added', pv.groups.length === 1 && pv.groups[0].rows.every((r) => r.already));
+  await page.evaluate(() => ctSuggestClose());
+
+  /* ── Double-click, cancel ──────────────────────────────────────────────── */
+  section('One run at a time; Cancel cancels the batch and keeps nothing');
+  await page.evaluate(() => { try { localStorage.removeItem('cygenix_ct_suggest_run_v1'); } catch (e) {} });
+  await gap();
+  ai.mode = 'slow';
+  const s2 = ai.start.length;
+  await page.evaluate(() => { ctSuggest(false); ctSuggest(false); });
+  await page.waitForSelector('#ct-sg-progress.open');
+  await page.waitForFunction(() => /Classifying/.test(document.getElementById('ct-sg-step').textContent), null, { timeout: 15000 });
+  check('A QUICK DOUBLE-CLICK STARTS ONE RUN', ai.start.length - s2 === 1, ai.start.length - s2);
+  check('progress reads "Classifying: x of y chunks done…"', /^Classifying: \d+ of \d+ chunks? done…$/.test(await page.evaluate(() => document.getElementById('ct-sg-step').textContent)));
+  const rowsBefore = await page.evaluate(() => CT.tpl.modules.reduce((n, m) => n + m.tables.length, 0));
+  await page.click('#ct-sg-cancel');
+  await page.waitForTimeout(800);
+  const afterCancel = await page.evaluate(() => ({ rows: CT.tpl.modules.reduce((n, m) => n + m.tables.length, 0), preview: document.getElementById('ct-sg-modal').classList.contains('open'),
+    running: SG.running, run: localStorage.getItem('cygenix_ct_suggest_run_v1') }));
+  check('CANCEL: the batch is cancelled at Anthropic', ai.cancel.length === 1 && ai.cancel[0].join() === 'msgbatch_' + ai.n);
+  check('…no preview, nothing added, not stuck running, no run kept', afterCancel.rows === rowsBefore && !afterCancel.preview && !afterCancel.running && !afterCancel.run, JSON.stringify(afterCancel));
+  check('…and it says so', /cancelled — nothing was added/.test(await noteText()));
+
+  /* ── A refused key ─────────────────────────────────────────────────────── */
+  section('A refused key');
+  await gap();
+  ai.mode = 'badkey';
+  const s3 = ai.start.length, st3 = ai.status;
+  await page.click('#ct-suggest-all');
+  await page.waitForTimeout(1200);
+  const t8 = await noteText();
+  check('A READABLE ERROR appears', /Suggest failed: Claude API error \(401\) — check the API key in Settings/.test(t8), t8);
+  check('…after exactly one call — no retries, no polling, no flood', ai.start.length - s3 === 1 && ai.status === st3);
+  check('…and the buttons are usable again', await page.evaluate(() => !SG.running));
+  ai.mode = 'ok';
+
+  /* ── Save, reload ──────────────────────────────────────────────────────── */
+  section('The fields persist');
   await page.evaluate(() => ctSave());
   await page.waitForTimeout(400);
   const saved = [...store.values()][0];
   const savedRegion = saved && saved.doc.modules.find((m) => m.module === 'Addresses').tables.find((t) => t.targetTable === 'Region');
-  check('the saved template carries source, confidence, reason and loadOrderSource',
-    !!savedRegion && savedRegion.source === 'ai' && savedRegion.aiConfidence === 'medium' && /columns fit/.test(savedRegion.aiReason) && savedRegion.loadOrderSource === 'ai', JSON.stringify(savedRegion));
+  check('the saved template carries source, confidence, reason, required, notes and loadOrderSource',
+    !!savedRegion && savedRegion.source === 'ai' && savedRegion.aiConfidence === 'high' && /columns fit/.test(savedRegion.aiReason)
+    && savedRegion.required === true && savedRegion.notes === 'Also in: Contacts' && savedRegion.loadOrderSource === 'ai', JSON.stringify(savedRegion));
   await page.evaluate(() => { try { localStorage.removeItem('cygenix_template_draft_v1::p1'); } catch (e) {} });
   await open();
   await page.evaluate(() => ctSelect('Addresses'));
   await page.waitForTimeout(150);
-  check('AFTER A RELOAD the AI badge and the typed load order are still there', (await rowOf('Region')).ai && (await rowOf('SiteAddress')).order === 5 && !(await rowOf('AddressType')).ai);
-
-  /* ── 7. Double-click, cancel ───────────────────────────────────────────── */
-  section('7. One run at a time; Cancel keeps nothing');
-  await page.waitForTimeout(3100);
-  ai.rankDelay = 600;
-  const sl0 = ai.shortlist;
-  await page.evaluate(() => { ctSuggest(false); ctSuggest(false); });
-  await page.waitForSelector('#ct-sg-progress.open');
-  await page.waitForTimeout(300);
-  check('A QUICK DOUBLE-CLICK STARTS ONE RUN', ai.shortlist - sl0 === 1, ai.shortlist - sl0);
-  const rowsBefore = await page.evaluate(() => CT.tpl.modules.reduce((n, m) => n + m.tables.length, 0));
-  await page.click('#ct-sg-cancel');
-  await page.waitForTimeout(1200);
-  const afterCancel = await page.evaluate(() => ({ rows: CT.tpl.modules.reduce((n, m) => n + m.tables.length, 0), preview: document.getElementById('ct-sg-modal').classList.contains('open'), running: SG.running }));
-  check('CANCEL MID-RUN: no preview, nothing added, not stuck running', afterCancel.rows === rowsBefore && !afterCancel.preview && !afterCancel.running, JSON.stringify(afterCancel));
-  check('…and it says so', /cancelled — nothing was added/.test(await noteText()));
-  ai.rankDelay = 0;
-
-  /* ── 8. A failing call ─────────────────────────────────────────────────── */
-  section('8. A failing call');
-  await page.waitForTimeout(3100);
-  ai.mode = 'fail';
-  const f0 = ai.shortlist, r0 = ai.rank;
-  await page.click('#ct-suggest-all');
-  await page.waitForTimeout(800);
-  const t8 = await noteText();
-  check('A READABLE ERROR appears', /Suggest tables failed: Claude API error \(401\) — check the API key in Settings/.test(t8), t8);
-  check('…after exactly one call — no retries, no flood', ai.shortlist - f0 === 1 && ai.rank === r0, (ai.shortlist - f0) + ' / ' + (ai.rank - r0));
-  check('…and the buttons are usable again', await page.evaluate(() => !SG.running));
+  check('AFTER A RELOAD the AI badge and the typed load order are still there', (await rowOf('Region')).ai && (await rowOf('SiteAddress')).order === 5);
 
   check('nothing threw', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();

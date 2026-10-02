@@ -134,6 +134,8 @@ const SERVER = [
   ['azure-function/src/profile-builder.js', 'profile-build'],
   ['azure-function/src/agent.js', 'agent/migrate'],
   ['azure-function/src/agent-suggest-criteria.js', 'agent/suggest-criteria'],
+  // Conversion Templates' Suggest all: batches submitted on the caller's key.
+  ['azure-function/src/table-classifier.js', 'agent/table-classify/*'],
   // Managed Agents: the agent, environment and session are created in the
   // caller's own Anthropic account, on their key, per request.
   ['azure-function/src/claude-code.js', 'agent/claude-code/probe'],

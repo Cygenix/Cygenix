@@ -18,9 +18,11 @@ require('./profile-builder');
 require('./project-memory');
 require('./agent-dependency-planner');
 require('./agent-scope');
-// Conversion Templates: AI table suggestion (shortlist + rank). Side-effect
-// import registers the two routes, as every module above does.
-require('./template-suggest-tables');
+// Conversion Templates: Suggest all / Suggest — every target table sorted into
+// the ticked modules through the Batches API. Side-effect import registers the
+// four routes, as every module above does. The prompt is in
+// table-classifier-prompt.js.
+require('./table-classifier');
 // Claude Code console on Anthropic Managed Agents — the connectivity test
 // first; see the header of claude-code.js for why it comes first.
 require('./claude-code');

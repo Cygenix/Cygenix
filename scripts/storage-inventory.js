@@ -129,6 +129,7 @@ const CLASSES = {
   'cygenix_conn_warm_v1':              ['C', 'Which profile+connection this session has already warmed, so the Function App is woken once and not once per page (sessionStorage)', 're-warmed next session'],
   'cygenix_profile_finish':            ['C', 'Which saved connection the Connections page should open on to finish a missing credential (sessionStorage; names only)', ''],
   'cygenix_template_last_v1':          ['C', 'Conversion Templates: which template was open last, per project', 'a pointer, not the data'],
+  'cygenix_ct_suggest_run_v1':         ['C', 'Conversion Templates: the Suggest run not yet applied — batch ids and table names per chunk', 'a pointer to batches in the user\'s own Anthropic account; lost means only that the run is not offered for resume'],
   'cygenix_template_draft_v1::*':      ['B', 'Conversion Templates: local mirror of the working draft', 'Cosmos conversion_templates is the truth; the mirror survives a reload before Save'],
 
   // ── Session/identity. Held by MSAL and the auth layer. ───────────────────
