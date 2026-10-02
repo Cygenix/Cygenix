@@ -16,6 +16,13 @@
    only make it worse at it. It is target-agnostic — nothing below names a
    product, a module or a table.
 
+   Oct-2026, second round: when the session was opened with them, the brief
+   also says which template version the session is pinned to, that the
+   target can be read (never written) through the target_* tools, and that
+   the person's Was/Is rules and global Parameters are available through
+   get_translation_rules — and when to use each. With none of them, the
+   brief reads exactly as it did.
+
    The rules that matter for safety are not in here. They are enforced by
    the bridge (netlify/functions/cc-mcp.js and lib/staging-sql.js) whatever
    this text says; the brief only explains them so that Claude works with
@@ -23,9 +30,35 @@
    ========================================================================== */
 'use strict';
 
-function conversionPlaybook(schema, dbType) {
+function conversionPlaybook(schema, dbType, opts) {
   const s = String(schema);
   const sql = dbType === 'postgres' ? 'PostgreSQL' : 'SQL Server';
+  const o = opts || {};
+  const t = o.template;
+  const r = o.rules;
+  const extras = [];
+  if (t && t.name) {
+    extras.push('THE TEMPLATE. This session is pinned to the template "' + t.name + '", version ' + t.version + ' (' + t.kind + '). '
+      + 'get_conversion_template with no template_id reads that one. Say which template and version you are working from in your '
+      + 'first answer and in the report. Use another only if the user asks for it.');
+  }
+  if (o.target) {
+    extras.push('THE TARGET, READ-ONLY. You can read the target database, ' + o.target + ', through target_list_tables, '
+      + 'target_describe_table and target_query. Nothing can be written there — every statement is a read and is rolled back. Use it to '
+      + 'check what the template cannot tell you: the target\'s lookup and reference tables (the codes a column must hold), its real '
+      + 'column definitions, and any data already in it. Before loading a column that the target constrains to a list of codes, read '
+      + 'that list and translate or report source values that are not in it. The data still comes from this database; the target is '
+      + 'for checking only.');
+  }
+  if (r && (r.wasis || r.params)) {
+    extras.push('THE RULES. The user\'s own translation rules are available through get_translation_rules: ' + (r.wasis || 0)
+      + ' Was/Is rule(s) — "this old value in this source table and field becomes this new value" — and ' + (r.params || 0)
+      + ' global Parameter(s), named values written @@Name (cut-off dates, default codes, company ids and the like). Read them before '
+      + 'step 2. Apply every Was/Is rule that matches a source table and field you load from, as a CASE expression in the INSERT ... '
+      + 'SELECT, and use a Parameter\'s value wherever the template notes, the module notes or the user mention it by name or @@token. '
+      + 'Write Parameter values as literal values in your SQL (the @@ form does not run here), and name each rule and Parameter you '
+      + 'applied in the report and in the mapping\'s transform column.');
+  }
   return [
     'THIS IS A STAGING SESSION. The job: build the staging tables described by this project\'s Conversion Template inside the '
       + 'schema "' + s + '" of this ' + sql + ' database, and populate them with the corresponding data found elsewhere in the same '
@@ -37,6 +70,8 @@ function conversionPlaybook(schema, dbType) {
       + 'name in full as ' + s + '.<table>. A statement that changes "' + s + '" runs in a transaction, must not contain comments, '
       + 'and is stopped and undone after about 19 seconds — load big tables in slices (by key range or date). EXEC, MERGE and '
       + 'UPDATE/DELETE through an alias are refused; write UPDATE ' + s + '.<table> SET … FROM ' + s + '.<table> JOIN … instead.',
+
+    ...extras,
 
     'HOW TO GO ABOUT IT:\n'
       + '1. Read the template with get_conversion_template (no arguments first). Tell the user, briefly: which template, how many '
@@ -53,7 +88,8 @@ function conversionPlaybook(schema, dbType) {
       + 'inside the database, never through you. To reload, TRUNCATE TABLE ' + s + '.<table> first. Convert types explicitly where '
       + 'the source and target differ, and prefer TRY_CONVERT/TRY_CAST over a load that fails on one bad row.\n'
       + '6. Check every table you load: rows loaded against rows expected from the source; required-in-target columns that came '
-      + 'out NULL; duplicates on the target\'s key columns; values truncated or that would not convert. Fix what is a mapping '
+      + 'out NULL; duplicates on the target\'s key columns; values truncated or that would not convert'
+      + (o.target ? '; codes that are not in the target\'s lookup tables' : '') + '. Fix what is a mapping '
       + 'mistake; report what is a data problem.\n'
       + '7. Finish with a report, also saved as /mnt/session/outputs/staging-report.md, and the mapping as '
       + '/mnt/session/outputs/staging-mapping.csv (staging table, staging column, source expression, notes): per table, where '

@@ -57,7 +57,17 @@
 <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
 <script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 <script src="/cygenix-conn-builder.js?v=bcd70367b8" defer></script>
-<script src="/cygenix-cc-console.js?v=c14ee6f7ca" defer></script>
+<!-- Oct-2026: a staging session takes the person's Was/Is rules and
+     Parameters with it, read through the modules that own them. -->
+<script src="/cygenix-wasis.js?v=8489727a6c" defer></script>
+<script src="/cygenix-params.js?v=32531717aa" defer></script>
+<!-- Load into target (Oct-2026): the template's pairs, the staging schema's
+     tables and the target's schemas, read with the reader the template page
+     uses; the jobs made the way Conversion Templates makes them. -->
+<script src="/cygenix-schema-graph.js?v=b504389038" defer></script>
+<script src="/cygenix-template-mapping.js?v=06c6e42487" defer></script>
+<script src="/cygenix-staging-handoff.js?v=baed627501" defer></script>
+<script src="/cygenix-cc-console.js?v=9740b5c50f" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -100,6 +110,8 @@ body.cyg-collapsed .topbar{left:54px}
 .stg input{width:6.5rem;padding:0.25rem 0.45rem;font-size:0.8rem;background:var(--bg2);color:var(--text);border:0.5px solid var(--border2);border-radius:6px}
 .stg input:disabled{opacity:0.6}
 .pill.stg{background:var(--amber-bg);color:var(--amber)}
+#cs-template{max-width:15rem;padding:0.25rem 0.45rem;font-size:0.8rem;background:var(--bg2);color:var(--text);border:0.5px solid var(--border2);border-radius:6px}
+#cs-template.warn{border-color:var(--amber);color:var(--amber)}
 .sw{display:inline-flex;align-items:center;gap:0.45rem;font-size:0.8rem;white-space:nowrap;cursor:pointer;user-select:none}
 .sw .knob{width:36px;height:20px;border-radius:10px;background:var(--bg4);border:0.5px solid var(--border2);position:relative;transition:all 0.15s;flex:none}
 .sw .knob::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--text3);transition:all 0.15s}
@@ -217,8 +229,11 @@ body.cs-full .drawer{top:var(--cs-bar-h,52px)}
   </span>
   <label class="stg" id="cs-staging-field" title="Staging schema (optional): a schema in this database where Claude may build and load staging tables from the project's Conversion Template. Everything else stays read-only.">
     <span>Staging</span>
-    <input id="cs-staging" type="text" placeholder="none" maxlength="63" spellcheck="false" autocomplete="off" aria-label="Staging schema" oninput="renderTop()">
+    <input id="cs-staging" type="text" placeholder="none" maxlength="63" spellcheck="false" autocomplete="off" aria-label="Staging schema" oninput="csStagingInput()">
   </label>
+  <!-- Which template version a staging session builds from: chosen here,
+       pinned on the session, and the one Claude reads. -->
+  <select id="cs-template" hidden aria-label="Template" title="The Conversion Template this staging session builds from"></select>
   <span class="pill stg" id="cs-staging-pill" hidden></span>
   <span class="spacer"></span>
   <span class="cost" id="cs-cost"></span>
@@ -266,6 +281,7 @@ body.cs-full .drawer{top:var(--cs-bar-h,52px)}
           <span class="spacer"></span>
           <button class="btn" id="cs-report-btn" onclick="csReport(false)" title="Save this session's conversion report to Reports → Conversion Report. If Claude has not written it yet, Claude is asked to first."><i class="ic ic-doc"></i> Save report</button>
           <button class="btn" id="cs-job-btn" onclick="csJob(false)" title="Save this staging build's load script as a Cygenix job, to run on a schedule in Task Agent. It is checked first: it may write inside the staging schema only."><i class="ic ic-clock"></i> Save as job</button>
+          <button class="btn" id="cs-load-btn" onclick="csLoad()" title="Make the Object Mapping maps that load each staging table into its target table, with their SQL generated, ready to run in Task Agent. Nothing is loaded into the target until you run them."><i class="ic ic-database"></i> Load into target</button>
           <button class="btn" id="cs-files-btn" onclick="csFilesToggle()"><i class="ic ic-folder"></i> Files <span class="tag" id="cs-files-count"></span></button>
         </div>
         <div class="col-body">
@@ -303,6 +319,22 @@ body.cs-full .drawer{top:var(--cs-bar-h,52px)}
     <div class="modal-foot"><button class="btn primary" id="cs-notice-ok" onclick="csNoticeOk()">I understand</button></div>
   </div>
 </div>
+
+<!-- Load into target: what happened, map by map -->
+<div class="modal" id="cs-load" role="dialog" aria-modal="true" aria-labelledby="cs-load-title">
+  <div class="modal-card" style="max-width:720px">
+    <h3 id="cs-load-title">Load into target</h3>
+    <p class="muted" id="cs-load-sum"></p>
+    <div id="cs-load-list" style="max-height:50vh;overflow:auto;margin-top:0.6rem;font-size:0.82rem"></div>
+    <div class="modal-foot">
+      <a class="btn" href="/dashboard#goto=jobs">Open Jobs</a>
+      <a class="btn" href="/dashboard#goto=task-agent">Open Schedules</a>
+      <button class="btn primary" onclick="document.getElementById('cs-load').classList.remove('open')">Close</button>
+    </div>
+  </div>
+</div>
+<!-- Object Mapping runs here, one map at a time, to generate each map's SQL. -->
+<div id="cs-gen-host" aria-hidden="true" style="position:absolute;left:-9999px;top:0;width:1px;height:1px;overflow:hidden"></div>
 
 <!-- The data-change confirmation -->
 <div class="modal" id="cs-confirm" role="dialog" aria-modal="true" aria-labelledby="cs-confirm-title">
@@ -497,26 +529,108 @@ function csNew(){
   if (staging) {
     var why = CygenixCcConsole.stagingNameProblem(staging);
     if (why) { note('cs-note', why, 'warn'); return; }
-    openConfirm(CygenixCcConsole.stagingConfirmSpec({ name: CS.conn.profileName, envClass: CS.conn.envClass }, { name: CS.conn.name, database: CS.conn.database }, staging),
-      function(){ openSession(staging); });
+    if (!CS.tpl.list) { loadTemplates().then(function(){ stagingConfirm(staging); }); return; }
+    stagingConfirm(staging);
     return;
   }
   openSession('');
 }
+// The confirmation names the template version, the target Claude may read
+// and how many rules go with the session, so nothing is a surprise later.
+function stagingConfirm(staging){
+  if (!CS.conn) return;
+  var t = templateChoice(), ref = targetReference(), rules = rulesSnapshot();
+  openConfirm(CygenixCcConsole.stagingConfirmSpec({ name: CS.conn.profileName, envClass: CS.conn.envClass }, { name: CS.conn.name, database: CS.conn.database }, staging,
+    { template: t.picked, target: ref ? { name: ref.connectionName, database: ref.database } : null,
+      rules: { wasis: rules.wasis.length, params: rules.params.length }, warn: t.warn }),
+    function(){ openSession(staging); });
+}
 // The active project, as the Conversion Templates page reads it, so a
 // staging session can find that project's template.
 function activeProjectId(){ try { return localStorage.getItem('cygenix_active_project_id') || 'default'; } catch (e) { return 'default'; } }
+
+/* ── What a staging session is given (Oct-2026) ───────────────────────────
+   The template version (the picker beside the Staging box), the profile's
+   target as a read-only reference, and the person's Was/Is rules and
+   Parameters. All three are said in the confirmation before it starts. */
+CS.tpl = { list: null, loading: false, pending: null, lastAt: 0, error: '' };
+function csStagingInput(){
+  if ($('cs-staging').value.trim() && !CS.tpl.list) loadTemplates();
+  renderTop();
+}
+// One read at a time, never within three seconds of the last. A caller that
+// arrives while a read is in flight is given that read to wait on, so New
+// session pressed straight after typing the schema still names the template
+// in its confirmation instead of saying nothing about it.
+function loadTemplates(){
+  if (CS.tpl.pending) return CS.tpl.pending;
+  if (Date.now() - CS.tpl.lastAt < MIN_GAP_MS) return Promise.resolve();
+  if (!window.CygenixDataApi || !CygenixDataApi.callResult) { CS.tpl.error = 'The data layer did not load.'; return Promise.resolve(); }
+  CS.tpl.loading = true; CS.tpl.lastAt = Date.now();
+  CS.tpl.pending = (async function(){
+    try {
+      var r = await CygenixDataApi.callResult('template-list', { query: { projectId: activeProjectId() } });
+      if (r && r.ok && r.data && Array.isArray(r.data.templates)) { CS.tpl.list = r.data.templates; CS.tpl.error = ''; }
+      else CS.tpl.error = 'Could not list the project\'s templates: ' + ((r && r.error && (r.error.detail || r.error.message)) || 'no answer');
+    } catch (e) {
+      CS.tpl.error = 'Could not list the project\'s templates: ' + e.message;
+    } finally { CS.tpl.loading = false; CS.tpl.pending = null; renderTop(); }
+  })();
+  return CS.tpl.pending;
+}
+function templateChoice(){
+  var c = CygenixCcConsole.templateChoices(CS.tpl.list || [], CS.conn ? CS.conn.profileId : '');
+  var sel = $('cs-template');
+  var picked = sel.value && c.options.some(function(o){ return o.id === sel.value; }) ? sel.value : c.defaultId;
+  var opt = c.options.filter(function(o){ return o.id === picked; })[0] || null;
+  return { choices: c, picked: opt, warn: opt && opt.id === c.defaultId ? c.warn : '' };
+}
+function renderTemplatePicker(){
+  var sel = $('cs-template');
+  var want = !!$('cs-staging').value.trim() && !CS.replay;
+  sel.hidden = !want;
+  if (!want) return;
+  if (!CS.tpl.list) { sel.innerHTML = '<option value="">' + (CS.tpl.loading ? 'Reading templates…' : (CS.tpl.error ? 'Templates could not be read' : 'Templates…')) + '</option>'; sel.title = CS.tpl.error || ''; return; }
+  var t = templateChoice();
+  var keep = t.picked ? t.picked.id : '';
+  sel.innerHTML = t.choices.options.length
+    ? t.choices.options.map(function(o){ return '<option value="' + esc(o.id) + '"' + (o.id === keep ? ' selected' : '') + '>' + esc(o.label) + (o.id === t.choices.defaultId ? ' (default)' : '') + '</option>'; }).join('')
+    : '<option value="">No template in this project</option>';
+  sel.title = t.warn || 'The Conversion Template this staging session builds from';
+  sel.classList.toggle('warn', !!t.warn);
+}
+// The profile's target, if this session is on its source: read-only for Claude.
+function targetReference(){
+  if (!CS.conn || CS.conn.side !== 'src') return null;
+  var t = CS.conns.filter(function(c){ return c.ok && c.side === 'tgt'; })[0];
+  if (!t || t.connId === CS.conn.connId) return null;
+  return { side: 'tgt', connId: t.connId, connectionName: t.name, mode: t.mode || 'direct', fnUrl: t.fnUrl || '', database: t.database || '' };
+}
+function rulesSnapshot(){
+  var wasis = [], params = [];
+  try { wasis = window.CygenixWasis ? CygenixWasis.getRules() : []; } catch (e) { wasis = []; }
+  try { params = window.CygenixParams ? CygenixParams.getParams() : []; } catch (e) { params = []; }
+  return { wasis: Array.isArray(wasis) ? wasis : [], params: Array.isArray(params) ? params : [] };
+}
 function openSession(staging){
   guarded('New session', async function(){
     clearScreen();
     note('cs-note', 'Opening a workspace… this usually takes 10 to 30 seconds.', 'info');
     try {
       var body = connBody(); body.projectId = activeProjectId();
-      if (staging) body.stagingSchema = staging;
+      if (staging) {
+        body.stagingSchema = staging;
+        var t = templateChoice();
+        if (t.picked) body.templateId = t.picked.id;
+        var ref = targetReference();
+        if (ref) body.reference = { side: ref.side, connId: ref.connId, connectionName: ref.connectionName, mode: ref.mode, fnUrl: ref.fnUrl };
+        body.rules = rulesSnapshot();
+      }
       var r = await call('POST', '/agent/claude-code/session', body);
       CS.cur = r.session; CS.outputsFor = r.session.id;
       CS.cur.connectionName = CS.conn.name; CS.cur.profileName = CS.conn.profileName; CS.cur.envClass = CS.conn.envClass;
-      note('cs-note', '');
+      note('cs-note', CS.cur.reference && CS.cur.reference.error ? 'The session opened without the target: ' + CS.cur.reference.error : '',
+        CS.cur.reference && CS.cur.reference.error ? 'warn' : undefined);
       if (CS.cur.stagingSchema) { var inp = $('cs-input'); inp.value = CygenixCcConsole.STAGING_STARTER; autoGrow(inp); }
       loadSessions();
     } catch (e) {
@@ -529,7 +643,7 @@ function csSend(){
   if (!CS.cur || CS.replay || !text) return;
   guarded('Send', async function(){
     try {
-      await postMessage(text);
+      await postChat(text);
       $('cs-input').value = ''; autoGrow($('cs-input'));
       note('cs-note', '');
     } catch (e) {
@@ -538,7 +652,12 @@ function csSend(){
   });
 }
 // Say something to Claude. The caller holds the guard.
-async function postMessage(text){
+// NOT called postMessage: a top-level function declaration in a classic
+// script becomes window.postMessage, and Object Mapping's autosave frame
+// reports back with window.parent.postMessage(...). Under that name, Load
+// into target never heard a frame finish (each map waited out the timeout)
+// and every frame's report was sent to Claude as a chat message.
+async function postChat(text){
   var r = await call('POST', '/agent/claude-code/message', { sessionId: CS.cur.id, text: text });
   CS.cur.status = 'running';
   if (r.title && !CS.cur.title) CS.cur.title = r.title;
@@ -570,7 +689,7 @@ function csReport(auto){
       if (!live) { note('cs-note', 'This session did not write ' + CygenixCcConsole.REPORT_FILE + ', so there is no report to save.', 'warn'); return; }
       if (CS.cur.status === 'running') { note('cs-note', 'Claude is working. Press Save report again when it is idle.', 'warn'); return; }
       CS.reportFor = CS.cur.id;
-      await postMessage(CygenixCcConsole.reportRequest(CS.cur.stagingSchema || ''));
+      await postChat(CygenixCcConsole.reportRequest(CS.cur.stagingSchema || ''));
       note('cs-note', 'Claude is writing the report. It will be saved to Reports → Conversion Report when Claude finishes.', 'info');
     } catch (e) {
       note('cs-note', 'Could not save the report: ' + e.message, 'crit');
@@ -584,6 +703,133 @@ function csReport(auto){
    only — and confirmed by the person, with the database it runs on named.
    As with Save report, Claude is asked for the script once if it has not
    written it, and the save resumes by itself when that turn ends. */
+/* ── Load into target (Oct-2026) ──────────────────────────────────────────
+   After a staging build: the Object Mapping maps that load each staging
+   table into its target table, made and given their SQL in one go. What
+   each table becomes is decided by CygenixStagingHandoff.plan — new maps,
+   the template's untouched drafts pointed at this schema, and NEVER a change
+   to a map somebody worked on. The SQL is generated by Object Mapping
+   itself, in a hidden frame (?autosave=1), one map at a time, exactly as
+   the Jobs page's Bulk Generate SQL does — so the jobs are ordinary jobs,
+   and nothing reaches the target until somebody runs them. */
+var GEN_TIMEOUT_MS = 90000;
+function jobProjectId(){ try { return (localStorage.getItem('cygenix_active_project_id') || '').trim(); } catch (e) { return ''; } }
+function readJobs(){ try { var j = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); return Array.isArray(j) ? j : []; } catch (e) { return []; } }
+function csLoad(){
+  var s = CS.replay ? CS.replay.session : CS.cur;
+  if (!s || !s.stagingSchema) { note('cs-note', 'Load into target follows a staging session: start one with a schema in the Staging box.', 'warn'); return; }
+  if (s.side !== 'src') { note('cs-note', 'This staging schema is in the target database; Load into target moves staging tables from the source.', 'warn'); return; }
+  var src = CS.conns.filter(function(c){ return c.ok && c.side === 'src'; })[0];
+  if (!src || src.connId !== s.connectionId) { note('cs-note', 'Choose the profile this session used first: its source was "' + (s.connectionName || s.connectionId) + '".', 'warn'); return; }
+  if (!window.CygenixStagingHandoff || !window.CygenixSchemaGraph || !window.CygenixDataApi) { note('cs-note', 'The page did not load completely. Refresh it and try again.', 'crit'); return; }
+  guarded('Load', async function(){
+    try {
+      note('cs-note', 'Reading the template, the staging schema "' + s.stagingSchema + '" and the target…', 'info');
+      var tplProject = s.projectId || activeProjectId();
+      var tplId = s.templateRef && s.templateRef.id;
+      if (!tplId) {
+        var lr = await CygenixDataApi.callResult('template-list', { query: { projectId: tplProject } });
+        var d = CygenixCcConsole.defaultTemplate((lr && lr.ok && lr.data && lr.data.templates) || [], s.profileId);
+        tplId = d && d.id;
+      }
+      if (!tplId) { note('cs-note', 'This project has no Conversion Template to load from.', 'warn'); return; }
+      var tr = await CygenixDataApi.callResult('template-get', { query: { id: tplId, projectId: tplProject } });
+      if (!tr || !tr.ok || !tr.data || !tr.data.template) { note('cs-note', 'Could not read the template: ' + ((tr && tr.error && (tr.error.detail || tr.error.message)) || 'not found'), 'crit'); return; }
+      var tpl = tr.data.template;
+      var g = await CygenixSchemaGraph.load('src', { force: true });
+      if (!g || !g.ok) { note('cs-note', 'Could not read the source database (' + ((g && g.reason) || 'no connection') + ').', 'crit'); return; }
+      var lc = function(v){ return String(v == null ? '' : v).toLowerCase(); };
+      var built = (g.tables || []).filter(function(t){ return lc(t.schema) === lc(s.stagingSchema); }).map(function(t){ return t.name; });
+      if (!built.length) { note('cs-note', 'There are no tables in "' + s.stagingSchema + '" yet. Build them in the session first.', 'warn'); return; }
+      var tg = await CygenixSchemaGraph.load('tgt');
+      var tschema = {};
+      ((tg && tg.ok && tg.tables) || []).forEach(function(t){ if (!(lc(t.name) in tschema)) tschema[lc(t.name)] = t.schema; });
+      var planned = CygenixStagingHandoff.plan(tpl, readJobs(), { stagingSchema: s.stagingSchema, projectId: jobProjectId(), built: built,
+        targetSchemaOf: function(name){ return tschema[lc(String(name).split('.').pop())] || 'dbo'; } });
+      if (planned.refused) { note('cs-note', planned.why, 'crit'); return; }
+      var work = planned.counts.create + planned.counts.repoint + planned.counts.regenerate;
+      if (!work) { note('cs-note', 'Nothing to make: ' + (CygenixStagingHandoff.describe(planned) || 'no tables ticked Include on the template') + '.', 'warn'); return; }
+      note('cs-note', '');
+      var kept = planned.rows.filter(function(r){ return r.action === 'keep'; });
+      openConfirm({ title: 'Make the maps that load "' + s.stagingSchema + '" into the target?', okLabel: 'Make ' + work + ' map' + (work === 1 ? '' : 's'),
+        text: 'From template "' + tpl.name + '" v' + tpl.version + ': ' + CygenixStagingHandoff.describe(planned) + '. Object Mapping then generates each map\'s SQL here, '
+          + 'one at a time. Nothing is loaded into the target until you run the jobs in Task Agent.'
+          + (kept.length ? ' Left as they are: ' + kept.slice(0, 6).map(function(r){ return r.targetTable + ' (' + r.why + ')'; }).join('; ') + (kept.length > 6 ? '; and ' + (kept.length - 6) + ' more.' : '') : '') },
+        function(){ csLoadRun(planned, tpl, s); });
+    } catch (e) {
+      note('cs-note', 'Load into target failed: ' + e.message, 'crit');
+    }
+  });
+}
+function csLoadRun(planned, tpl, s){
+  guarded('Generate', async function(){
+    var before = readJobs();
+    var res = CygenixStagingHandoff.apply(tpl, before, planned, { projectId: jobProjectId(), by: currentUser() });
+    try { if (window.CygenixJobProfile) res.jobs.slice(0, res.created).forEach(function(j){ CygenixJobProfile.attach(j, before); }); } catch (e) { /* the map stands without the stamp */ }
+    try { localStorage.setItem('cygenix_jobs', JSON.stringify(res.jobs.slice(0, 100))); }
+    catch (e) { note('cs-note', 'The job store could not be written (' + e.message + '). Nothing was changed.', 'crit'); return; }
+    try {
+      if (window.CygenixAudit) CygenixAudit.record({ action: 'template.map-send', category: 'mapping',
+        target: { type: 'template', id: tpl.id, label: 'Template: ' + (tpl.name || tpl.id) }, projectId: jobProjectId(),
+        summary: 'Load into target from staging schema "' + s.stagingSchema + '": ' + CygenixStagingHandoff.describe(planned),
+        detail: { stagingSchema: s.stagingSchema, created: res.created, repointed: res.repointed, generate: res.toGenerate.length, sessionId: s.id } });
+    } catch (e) { /* recording is best-effort */ }
+    var results = [];
+    var names = {};
+    res.jobs.forEach(function(j){ names[j.id] = j.name; });
+    for (var i = 0; i < res.toGenerate.length; i++) {
+      var id = res.toGenerate[i];
+      note('cs-note', 'Generating SQL ' + (i + 1) + ' of ' + res.toGenerate.length + ': ' + (names[id] || id) + '…', 'info');
+      results.push(await generateOne(id, names[id] || id));
+    }
+    // The parent writes the final list once, so the sync layer pushes the
+    // whole result rather than racing each frame's own write.
+    try { var fresh = localStorage.getItem('cygenix_jobs'); if (fresh != null) localStorage.setItem('cygenix_jobs', fresh); } catch (e) {}
+    var okN = results.filter(function(r){ return r.ok; }).length;
+    note('cs-note', okN + ' of ' + results.length + ' map' + (results.length === 1 ? '' : 's') + ' ready to run' + (okN < results.length ? '; the rest need a look in Object Mapping' : '') + '.', okN === results.length ? 'ok' : 'warn');
+    $('cs-load-sum').textContent = okN + ' of ' + results.length + ' map' + (results.length === 1 ? ' has' : 's have') + ' SQL and ' + (results.length === 1 ? 'is' : 'are')
+      + ' ready to run in Task Agent. ' + CygenixStagingHandoff.describe(planned) + '.';
+    $('cs-load-list').innerHTML = results.map(function(r){
+      return '<div style="display:flex;gap:0.6rem;padding:0.25rem 0;border-bottom:0.5px solid var(--border)"><span style="color:' + (r.ok ? 'var(--green)' : 'var(--red)') + '">' + (r.ok ? 'Ready' : 'Needs a look') + '</span>'
+        + '<a href="/object-mapping?edit=' + encodeURIComponent(r.id) + '" style="flex:1">' + esc(r.name) + '</a><span class="muted">' + esc(r.message) + '</span></div>';
+    }).join('') + planned.rows.filter(function(r){ return r.action === 'keep' || r.action === 'not-built'; }).map(function(r){
+      return '<div style="display:flex;gap:0.6rem;padding:0.25rem 0;border-bottom:0.5px solid var(--border)"><span class="muted">' + (r.action === 'keep' ? 'Left alone' : 'Not built') + '</span>'
+        + '<span style="flex:1">' + esc(r.stagingTable + ' → ' + r.targetTable) + '</span><span class="muted">' + esc(r.why) + '</span></div>';
+    }).join('');
+    $('cs-load').classList.add('open');
+  });
+}
+// One map through Object Mapping's autosave: it restores the map, matches
+// the columns by name (the staging table has the target's), generates the
+// SQL and saves, then says so by postMessage. A frame that never answers is
+// a failure after GEN_TIMEOUT_MS, and the next map starts.
+function generateOne(id, name){
+  return new Promise(function(resolve){
+    var host = $('cs-gen-host');
+    var frame = document.createElement('iframe');
+    var done = false;
+    var timer = null;
+    var onMsg = function(ev){
+      if (ev.origin !== window.location.origin) return;
+      var d = ev.data;
+      if (!d || d.source !== 'cygenix-autosave' || d.jobId !== id) return;
+      finish(d.ok, d.message);
+    };
+    var finish = function(ok, message){
+      if (done) return; done = true;
+      window.removeEventListener('message', onMsg);
+      clearTimeout(timer);
+      try { frame.src = 'about:blank'; frame.remove(); } catch (e) {}
+      resolve({ id: id, name: name, ok: !!ok, message: String(message || (ok ? 'Saved' : 'Failed')) });
+    };
+    window.addEventListener('message', onMsg);
+    timer = setTimeout(function(){ finish(false, 'No answer after ' + Math.round(GEN_TIMEOUT_MS / 1000) + ' seconds'); }, GEN_TIMEOUT_MS);
+    frame.style.width = '64px'; frame.style.height = '64px'; frame.style.border = '0';
+    frame.src = '/object-mapping?edit=' + encodeURIComponent(id) + '&autosave=1';
+    host.appendChild(frame);
+  });
+}
+
 function csJob(auto){
   var s = sessionForFiles();
   if (!s) { note('cs-note', 'Start a session first.', 'warn'); return; }
@@ -599,7 +845,7 @@ function csJob(auto){
         if (!live) { note('cs-note', 'This session did not write ' + CygenixCcConsole.JOB_FILE + ', so there is no load script to save.', 'warn'); return; }
         if (CS.cur.status === 'running') { note('cs-note', 'Claude is working. Press Save as job again when it is idle.', 'warn'); return; }
         CS.jobFor = CS.cur.id;
-        await postMessage(CygenixCcConsole.jobRequest(s.stagingSchema));
+        await postChat(CygenixCcConsole.jobRequest(s.stagingSchema));
         note('cs-note', 'Claude is writing the load script. It will be checked and offered for saving when Claude finishes.', 'info');
         return;
       }
@@ -899,7 +1145,10 @@ function renderTop(){
   tg.classList.toggle('disabled', !allowed || !!CS.replay || (!!CS.cur && !live) || !!CS.busy['Mode'] || !!stg);
   // The field is for the NEXT New session; the pill says what this one is.
   $('cs-staging').disabled = !allowed || !!CS.replay || !!CS.busy['New session'];
-  var sp = $('cs-staging-pill'); sp.hidden = !stg; sp.textContent = stg ? 'Staging: ' + stg : '';
+  var sp = $('cs-staging-pill'); sp.hidden = !stg;
+  var tr = s && s.templateRef ? s.templateRef : null;
+  sp.textContent = stg ? 'Staging: ' + stg + (tr ? ' · ' + tr.name + ' v' + tr.version + (tr.kind === 'draft' ? ' (draft)' : '') : '') : '';
+  renderTemplatePicker();
   // The database, named: the session's (the server's reading) once there is
   // one, else the chosen connection's.
   var b = CygenixCcConsole.dbBanner(s ? { side: s.side, database: s.dbName, server: s.dbHost, connectionName: s.connectionName, stagingSchema: s.stagingSchema }
@@ -907,7 +1156,11 @@ function renderTop(){
   $('cs-db-side').textContent = b.side; $('cs-db-name').textContent = b.name; $('cs-db-detail').textContent = b.detail;
   $('cs-report-btn').disabled = !allowed || !s || !!CS.busy['Report'];
   $('cs-job-btn').disabled = !allowed || !s || !s.stagingSchema || !!CS.busy['Job'];
-  sp.title = stg ? 'Claude may change tables inside "' + stg + '" only; everything else is read-only.' : '';
+  $('cs-load-btn').disabled = !allowed || !s || !s.stagingSchema || s.side !== 'src' || !!CS.busy['Load'] || !!CS.busy['Generate'];
+  sp.title = stg ? 'Claude may change tables inside "' + stg + '" only; everything else is read-only.'
+    + (tr ? ' Template: ' + tr.name + ' v' + tr.version + ' (' + tr.kind + ').' : '')
+    + (s.reference && s.reference.connectionName ? ' Reads the target "' + s.reference.connectionName + '" (read-only).' : '')
+    + (s.rulesCount ? ' ' + s.rulesCount.wasis + ' Was/Is rule(s), ' + s.rulesCount.params + ' Parameter(s).' : '') : '';
 }
 function render(){
   renderTop();

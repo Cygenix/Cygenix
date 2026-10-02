@@ -831,13 +831,15 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     check('…but its outputs can still be listed and fetched for the replay', (await call('GET', 'outputs', { query: { sessionId: sid3 } })).status === 200);
 
     // A Function App connection opens too.
-    SECRETS.sconn_fn = { fnKey: 'abc' };
+    // A key no random hex id can contain by chance ('abc' could, in the
+    // stored pass hash, about one run in seventy).
+    SECRETS.sconn_fn = { fnKey: 'fnkey-SECRET-xyz' };
     FETCHED = [];
     r = await open({ connId: 'sconn_fn', connectionName: 'Via Function App', mode: 'azure', fnUrl: 'https://fn.acme.test/api/data' });
     const fdoc = DB._items.get(r.body.session && r.body.session.id) || {};
     check('A FUNCTION APP CONNECTION OPENS A SESSION: the record keeps its address, the gate is told its host',
       r.status === 200 && fdoc.connMode === 'azure' && fdoc.fnUrl === 'https://fn.acme.test/api/data' && fdoc.dbType === 'sqlserver'
-      && JSON.parse(FETCHED[0].init.body).detail.host === 'fn.acme.test' && JSON.stringify(fdoc).indexOf('abc') === -1, r.raw);
+      && JSON.parse(FETCHED[0].init.body).detail.host === 'fn.acme.test' && JSON.stringify(fdoc).indexOf('fnkey-SECRET-xyz') === -1, JSON.stringify(fdoc));
     await call('POST', 'stop', { body: { sessionId: r.body.session.id } });
     DB._items.delete(r.body.session.id);
 
@@ -1231,7 +1233,11 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     check('the page sends a connection\'s id, names and Function App address to open a session or a check — never its string or key',
       /\{ side: CS\.conn\.side, connId: CS\.conn\.connId, connectionName: CS\.conn\.name, mode: CS\.conn\.mode \|\| 'direct',/.test(body)
       && !/connString|fnKey|password/i.test(body)
-      && /var body = connBody\(\); body\.projectId = activeProjectId\(\);\s*if \(staging\) body\.stagingSchema = staging;\s*var r = await call\('POST', '\/agent\/claude-code\/session', body\);/.test(page));
+      && /var body = connBody\(\); body\.projectId = activeProjectId\(\);\s*if \(staging\) \{\s*body\.stagingSchema = staging;/.test(page)
+      && /var r = await call\('POST', '\/agent\/claude-code\/session', body\);/.test(page)
+      // The target goes as a reference: id, names, mode and address — never its string or key either.
+      && /body\.reference = \{ side: ref\.side, connId: ref\.connId, connectionName: ref\.connectionName, mode: ref\.mode, fnUrl: ref\.fnUrl \};/.test(page)
+      && !/connString|fnKey|password/i.test(page.split('function targetReference')[1].split('function rulesSnapshot')[0]));
     check('WHICH DATABASE, ON THE PAGE: a red-on-yellow banner, filled from the session (the server\'s reading) or the chosen connection; the picker names it too',
       /<div id="cs-dbbar" class="dbbar"/.test(page) && /\.dbbar\{[^}]*background:#fff176;color:#b00000/.test(page)
       && /CygenixCcConsole\.dbBanner\(s \? \{ side: s\.side, database: s\.dbName, server: s\.dbHost/.test(page)
@@ -1278,6 +1284,157 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     check('conn-secrets exposes ONE read, for the verified owner, and nothing new over the wire',
       /async function readSecret\(oid, connId\)/.test(read('azure-function', 'src', 'conn-secrets.js'))
       && /\['list', 'put', 'delete', 'prune'\]/.test(read('azure-function', 'src', 'conn-secrets.js')));
+  }
+
+  /* ── 11. What a staging session is given (Oct-2026) ─────────────────── */
+  section('11. A staging session carries the target (read-only), the Was/Is rules and Parameters, and a pinned template');
+  {
+    CC._reset(); FETCHED = []; logs.length = 0;
+    GATE_REPLY = { status: 200, body: { allowed: true, tenantId: 'tn_1' } };
+    CLIENT = fakeClient(); DB = fakeContainer();
+    SECRETS.sconn_src = { connString: 'Server=tcp:legacy.acme.test,1433;Database=Old;User ID=svc;Password=' + PASSWORD };
+    SECRETS.sconn_tgt = { connString: 'Server=tcp:target.acme.test,1433;Database=Fin;User ID=svc;Password=TgtPass#1' };
+    const TDOCS = {
+      pub_tpl_a_v2: { id: 'pub_tpl_a_v2', templateId: 'tpl_a', kind: 'published', name: 'Finance', version: 2, profileId: 'DEMO', updatedAt: '2026-09-01', doc: { id: 'tpl_a', name: 'Finance', version: 2 } },
+      tpl_a: { id: 'tpl_a', templateId: 'tpl_a', kind: 'draft', name: 'Finance', version: 3, profileId: 'DEMO', updatedAt: '2026-09-20', doc: { id: 'tpl_a', name: 'Finance', version: 3 } },
+    };
+    CC.deps.templates = () => ({
+      items: { query: (q) => ({ fetchAll: async () => ({ resources: q.parameters[0].value === 'proj_1' ? Object.values(TDOCS).map(d => Object.assign({}, d, { doc: undefined })) : [] }) }) },
+      item: (id, pk) => ({ read: async () => ({ resource: pk === 'proj_1' ? TDOCS[id] : null }) }),
+    });
+    const WASIS = [{ id: 'w1', srcTable: 'dbo.Client', srcField: 'Status', oldVal: 'A', newVal: 'Active', desc: 'status codes' },
+      { id: 'w2', srcTable: 'DBO.CLIENT', srcField: 'STATUS', oldVal: 'I', newVal: 'Inactive' }, { id: 'w3', srcTable: 'x', srcField: '', oldVal: 'n', newVal: 'm' }];
+    const PARAMS = [{ name: 'Cut off', code: '@@Cutoff', type: 'date', value: '2018-01-01', desc: 'only since' }, { name: 'Company', code: '@@Co', type: 'number', value: '7' }];
+    const base = { side: 'src', connId: 'sconn_src', connectionName: 'Legacy', profileId: 'DEMO', profileName: 'Demo', projectId: 'proj_1', stagingSchema: 'stg',
+      reference: { side: 'tgt', connId: 'sconn_tgt', connectionName: 'Target DEV', mode: 'direct' }, rules: { wasis: WASIS, params: PARAMS } };
+    const open = (extra) => call('POST', 'session', { body: Object.assign({}, base, extra || {}) });
+
+    let r = await open();
+    check('A STAGING SESSION OPENS WITH ALL THREE', r.status === 200, r.raw);
+    const s = r.body.session, doc = DB._items.get(s.id);
+    check('THE TARGET: kept as a reference — which connection, where — and never its credential',
+      doc.ref && doc.ref.connectionId === 'sconn_tgt' && doc.ref.connectionName === 'Target DEV' && doc.ref.dbName === 'Fin' && doc.ref.mode === 'direct'
+      && JSON.stringify(doc).indexOf('TgtPass#1') === -1, JSON.stringify(doc.ref));
+    check('…and the page is told the reference, by name only', s.reference && s.reference.connectionName === 'Target DEV' && !('connString' in s.reference));
+    check('THE TEMPLATE: pinned when the session opens — the newest published for the profile, by default', doc.templateRef && doc.templateRef.id === 'pub_tpl_a_v2'
+      && doc.templateRef.version === 2 && doc.templateRef.kind === 'published' && s.templateRef.id === 'pub_tpl_a_v2', JSON.stringify(doc.templateRef));
+    const rulesDoc = DB._items.get(s.id + ':rules');
+    check('THE RULES: kept beside the session, in the owner\'s partition, normalised (lower-cased table and field), a rule with no field dropped',
+      rulesDoc && rulesDoc.kind === 'rules' && rulesDoc.userId === 'me@acme.test' && rulesDoc.wasis.length === 2 && rulesDoc.wasis[0].table === 'dbo.client'
+      && rulesDoc.wasis[0].field === 'status' && rulesDoc.wasis[0].from === 'A' && rulesDoc.wasis[0].to === 'Active' && rulesDoc.params.length === 2
+      && rulesDoc.params[0].code === '@@Cutoff' && rulesDoc.params[0].type === 'date', JSON.stringify(rulesDoc));
+    check('…and the session counts them, not carrying them', doc.rulesCount && doc.rulesCount.wasis === 2 && doc.rulesCount.params === 2 && !doc.wasis);
+    const gs = JSON.parse(FETCHED[0].init.body);
+    check('the gate\'s record names the target and the template', gs.detail.reference === 'Target DEV' && gs.detail.template === 'Finance v2 (published)', JSON.stringify(gs.detail));
+    const sys = CLIENT.calls.find(c => c[0] === 'sessions.create')[1].agent.system;
+    check('CLAUDE IS TOLD: the template it is pinned to, the target tools (read-only), and the rules tool — and when to use each',
+      /pinned to the template "Finance", version 2 \(published\)/.test(sys) && /target_list_tables, target_describe_table and target_query/.test(sys)
+      && /Nothing can be written there/.test(sys) && /lookup and reference tables/.test(sys) && /get_translation_rules: 2 Was\/Is rule\(s\)/.test(sys)
+      && /2 global Parameter\(s\)/.test(sys) && /CASE expression/.test(sys) && /codes that are not in the target's lookup tables/.test(sys), sys.slice(0, 400));
+    check('…naming no password of either connection', sys.indexOf(PASSWORD) === -1 && sys.indexOf('TgtPass#1') === -1);
+
+    // The pass: both connections, the rules count, the template.
+    const tok = CLIENT.calls.filter(c => c[0] === 'vaults.credentials.create').pop()[2].auth.token;
+    let x = JSON.parse((await CC.bridgeRedeem({ token: tok })).body);
+    check('THE PASS REDEEMS FOR THE TARGET TOO, unsealed fresh, read by the session\'s own owner',
+      x.reference && x.reference.connectionName === 'Target DEV' && /Database=Fin/.test(x.reference.connString) && x.reference.side === 'tgt'
+      && x.rules.wasis === 2 && x.templateRef.id === 'pub_tpl_a_v2', JSON.stringify(Object.assign({}, x, { connString: '…', reference: x.reference && Object.assign({}, x.reference, { connString: '…' }) })));
+    delete SECRETS.sconn_tgt;
+    x = JSON.parse((await CC.bridgeRedeem({ token: tok })).body);
+    check('…a target credential gone since says so, and the session itself still redeems', x.ok && x.connString && x.reference.error && /no longer saved/.test(x.reference.error) && !x.reference.connString);
+    SECRETS.sconn_tgt = { connString: 'Server=tcp:target.acme.test,1433;Database=Fin;User ID=svc;Password=TgtPass#1' };
+
+    // The rules route.
+    let rr = await CC.bridgeRules({ token: tok });
+    let rb = JSON.parse(rr.body);
+    check('THE RULES ROUTE serves the session\'s own rules by its pass', rr.status === 200 && rb.wasis.length === 2 && rb.params[1].value === '7' && rb.totals.wasis === 3);
+    const rh = await CC.bridgeHandler(req('POST', { action: 'rules', body: { token: tok } }), ctx);
+    check('…through the bridge door, logging only the status', rh.status === 200 && logs.some(l => /rules status=200/.test(l)) && logs.every(l => l.indexOf(tok) === -1));
+    check('…a bad pass is a 401', (await CC.bridgeRules({ token: 'cyb_nope' })).status === 401);
+
+    // The template the bridge reads is the pinned one.
+    let t = JSON.parse((await CC.bridgeTemplate({ token: tok })).body);
+    check('THE BRIDGE READS THE PINNED TEMPLATE', t.chosen.id === 'pub_tpl_a_v2' && t.pinned === true);
+    t = JSON.parse((await CC.bridgeTemplate({ token: tok, templateId: 'tpl_a' })).body);
+    check('…and another only when Claude asks for it by id', t.chosen.id === 'tpl_a' && t.pinned === false);
+    const savedPub = TDOCS.pub_tpl_a_v2; delete TDOCS.pub_tpl_a_v2;
+    t = JSON.parse((await CC.bridgeTemplate({ token: tok })).body);
+    check('a pinned template deleted since: the default instead, and a note saying so', t.chosen.id === 'tpl_a' && /no longer in the project/.test(t.note || ''), JSON.stringify(t).slice(0, 300));
+    TDOCS.pub_tpl_a_v2 = savedPub;
+
+    // Choosing the draft; an unknown id; a plain session; the wrong sides.
+    r = await open({ templateId: 'tpl_a' });
+    check('THE PERSON\'S CHOICE: the draft, when it is chosen', DB._items.get(r.body.session.id).templateRef.id === 'tpl_a' && r.body.session.templateRef.kind === 'draft');
+    FETCHED = [];
+    r = await open({ templateId: 'tpl_nope' });
+    check('a template not in the project is a 404 before anything is asked or spent', r.status === 404 && /No template "tpl_nope"/.test(r.body.error) && FETCHED.length === 0);
+    r = await open({ stagingSchema: '' });
+    const plain = DB._items.get(r.body.session.id);
+    check('A PLAIN SESSION carries none of it — no target, no rules, no template', !plain.ref && !plain.templateRef && !plain.rulesCount && !DB._items.get(r.body.session.id + ':rules'));
+    r = await open({ side: 'tgt' });
+    check('a staging session on the TARGET gets no reference (the target is not read as its own reference)', !DB._items.get(r.body.session.id).ref);
+    r = await open({ reference: { side: 'tgt', connId: 'sconn_src', connectionName: 'Legacy' } });
+    check('…nor does one whose reference is its own connection', !DB._items.get(r.body.session.id).ref);
+    r = await open({ reference: { side: 'tgt', connId: 'sconn_missing', connectionName: 'Nowhere' } });
+    check('a target with no saved credential: the session opens without it, and says why', r.status === 200 && !DB._items.get(r.body.session.id).ref
+      && r.body.session.reference && /has not been saved to the cloud/.test(r.body.session.reference.error), r.raw);
+    r = await open({ rules: { wasis: [], params: [] } });
+    check('no rules at all: nothing stored, no rules tool', !DB._items.get(r.body.session.id).rulesCount && !DB._items.get(r.body.session.id + ':rules'));
+    const big = CC.cleanRules({ wasis: Array.from({ length: 6000 }, (_, i) => ({ srcTable: 't', srcField: 'f', oldVal: 'x'.repeat(300) + i, newVal: 'y' })) }, Date.now());
+    check('the rules are bounded: at most 5,000, and under the size limit, marked truncated', big.wasis.length <= CC.RULES_MAX.WASIS && JSON.stringify(big).length < CC.RULES_MAX.BYTES + 5000 && big.truncated === true);
+
+    // The page's copy of the default choice agrees with the server's.
+    const Mc = require(path.join(ROOT, 'public', 'cygenix-cc-console.js'));
+    const lists = [
+      [{ id: 'd', kind: 'draft', profileId: 'P', version: 1 }, { id: 'p', kind: 'published', profileId: 'Q', version: 5 }],
+      [{ id: 'd', kind: 'draft', profileId: 'Q', version: 1 }, { id: 'p', kind: 'published', profileId: 'Q', version: 5 }],
+      Object.values(TDOCS), [],
+      [{ id: 'a', kind: 'published', profileId: 'P', version: 2, updatedAt: '2026-01-01' }, { id: 'b', kind: 'published', profileId: 'P', version: 2, updatedAt: '2026-02-01' }],
+    ];
+    check('THE PAGE\'S DEFAULT TEMPLATE IS THE SERVER\'S, every case', lists.every(l => ['P', 'DEMO', ''].every(pr => ((Mc.defaultTemplate(l, pr) || {}).id || null) === ((CC.pickTemplate(l, pr) || {}).id || null))));
+    const ch = Mc.templateChoices([
+      { id: 'pub_tpl_a_v2', templateId: 'tpl_a', kind: 'published', name: 'Finance', version: 2, profileId: 'DEMO', updatedAt: '2026-09-01T10:00:00Z', publishedAt: '2026-09-01T10:00:00Z' },
+      { id: 'tpl_a', templateId: 'tpl_a', kind: 'draft', name: 'Finance', version: 3, profileId: 'DEMO', updatedAt: '2026-09-20T10:00:00Z' }], 'DEMO');
+    check('THE WARNING: the draft was edited after the publish, so Claude would read the older published version unless told',
+      ch.defaultId === 'pub_tpl_a_v2' && /has changes that are not published\. Claude will read v2/.test(ch.warn) && ch.options.length === 2 && /v3 draft/.test(ch.options.map(o => o.label).join()));
+    const fresh = Mc.templateChoices([
+      { id: 'pub_tpl_a_v2', templateId: 'tpl_a', kind: 'published', name: 'Finance', version: 2, profileId: 'DEMO', updatedAt: '2026-09-01T10:00:00Z', publishedAt: '2026-09-01T10:00:00Z' },
+      { id: 'tpl_a', templateId: 'tpl_a', kind: 'draft', name: 'Finance', version: 3, profileId: 'DEMO', updatedAt: '2026-09-01T10:00:20Z' }], 'DEMO');
+    check('…but not for the draft a publish writes at once, untouched', fresh.warn === '');
+    const spec = Mc.stagingConfirmSpec({ name: 'Demo', envClass: 'DEV' }, { name: 'Legacy', database: 'Old' }, 'stg',
+      { template: { name: 'Finance', version: 2, kind: 'published' }, target: { name: 'Target DEV', database: 'Fin' }, rules: { wasis: 2, params: 1 }, warn: ch.warn });
+    check('THE CONFIRMATION SAYS ALL OF IT before the session starts: template, target read-only, rules, the warning',
+      /template "Finance" v2 \(published\)/.test(spec.text) && /READ the target, database FIN \(connection "Target DEV"\)/.test(spec.text) && /never change it/.test(spec.text)
+      && /Your 2 Was\/Is rule\(s\) and 1 Parameter\(s\)/.test(spec.text) && /not published/.test(spec.text), spec.text);
+    check('…and reads as before when given nothing extra', Mc.stagingConfirmSpec({ name: 'Demo' }, { name: 'Legacy' }, 'stg').text.indexOf('template') === -1);
+
+    // The page wiring.
+    const page = read('public', 'claude-code.html');
+    check('THE PAGE: a template picker beside Staging, the rules from the modules that own them, the target as a reference',
+      /<select id="cs-template" hidden/.test(page) && /CygenixWasis\.getRules\(\)/.test(page) && /CygenixParams\.getParams\(\)/.test(page)
+      && /<script src="\/cygenix-wasis\.js/.test(page) && /<script src="\/cygenix-params\.js/.test(page)
+      && /if \(t\.picked\) body\.templateId = t\.picked\.id;/.test(page) && /body\.rules = rulesSnapshot\(\);/.test(page));
+    check('…the template list is read once at a time, never within three seconds, and New session waits for a read in flight',
+      /if \(CS\.tpl\.pending\) return CS\.tpl\.pending;/.test(page) && /if \(Date\.now\(\) - CS\.tpl\.lastAt < MIN_GAP_MS\) return Promise\.resolve\(\);/.test(page)
+      && /finally \{ CS\.tpl\.loading = false; CS\.tpl\.pending = null; renderTop\(\); \}/.test(page)
+      && /if \(!CS\.tpl\.list\) \{ loadTemplates\(\)\.then\(function\(\)\{ stagingConfirm\(staging\); \}\); return; \}/.test(page));
+    // A top-level function in a classic script IS a property of window. The
+    // chat sender was once called postMessage, which replaced
+    // window.postMessage: Object Mapping's autosave frames reported to it,
+    // Load into target never heard them finish, and each report went to
+    // Claude as a chat message. No page function may take a window name.
+    // Top level only (column 0, as this page writes them): a var inside a
+    // function is local and harmless.
+    const WINDOW_NAMES = ['postMessage', 'open', 'close', 'stop', 'print', 'alert', 'confirm', 'prompt', 'focus', 'blur', 'find', 'scroll', 'fetch', 'status', 'name', 'length', 'event', 'parent', 'top', 'self', 'frames', 'location', 'history', 'origin'];
+    const shadow = WINDOW_NAMES.filter((n) => new RegExp('^(async\\s+)?function\\s+' + n + '\\s*\\(|^var\\s+' + n + '\\s*[=;]', 'm').test(page));
+    check('NO PAGE FUNCTION OR VARIABLE TAKES A WINDOW NAME — postMessage above all', shadow.length === 0 && /async function postChat\(text\)/.test(page), shadow.join());
+    check('LOAD INTO TARGET: a button, guarded; the plan from CygenixStagingHandoff; a confirmation; SQL generated by Object Mapping\'s own autosave, one map at a time',
+      /id="cs-load-btn" onclick="csLoad\(\)"/.test(page) && /guarded\('Load',/.test(page) && /guarded\('Generate',/.test(page)
+      && /CygenixStagingHandoff\.plan\(tpl, readJobs\(\)/.test(page) && /openConfirm\(\{ title: 'Make the maps that load/.test(page)
+      && /'\/object-mapping\?edit=' \+ encodeURIComponent\(id\) \+ '&autosave=1'/.test(page) && /results\.push\(await generateOne\(id/.test(page)
+      && /if \(ev\.origin !== window\.location\.origin\) return;/.test(page) && /GEN_TIMEOUT_MS = 90000/.test(page));
+    check('…recorded on the audit trail under an action the browser may record', /action: 'template\.map-send', category: 'mapping'/.test(page)
+      && /'template\.map-send':\s*'mapping'/.test(read('netlify', 'functions', 'lib', 'audit-schema.js')));
   }
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

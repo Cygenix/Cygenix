@@ -4682,6 +4682,21 @@ function uniqueJobName(requested, autoName, jobs, currentEditId){
   return base+' ('+i+')';
 }
 
+// The Conversion Template stamp, carried forward on an edit (Oct-2026).
+// saveAsJob rebuilds the record from the form, and the stamp is not on the
+// form, so every save of a map that came from a template quietly dropped
+// it. cygenix-template-mapping.js is explicit that an edit must NOT remove
+// the stamp: it is how unticking a module finds the maps it made (naming
+// the ones somebody has worked on before it removes them), how the
+// template's count of sent maps is kept, and how the Dev Console's Load into
+// target recognises the template's own map rather than treating it as
+// somebody else's and leaving a duplicate beside it.
+function omCarryTemplateStamp(job, jobs){
+  if (!editJobId || job.fromTemplate) return;
+  const prev = (jobs || []).find(j => j && j.id === editJobId);
+  if (prev && prev.fromTemplate && typeof prev.fromTemplate === 'object') job.fromTemplate = Object.assign({}, prev.fromTemplate);
+}
+
 function saveAsJob(){
   if(!srcTable){ alert('Select a source table first.'); return; }
   if(!generatedSQL.insert&&mode==='single'&&!columnMapping.filter(m=>m.tgtCol).length){ alert('Generate SQL first.'); return; }
@@ -4754,6 +4769,7 @@ function saveAsJob(){
     // with the active profile and carries the stored one forward on an edit —
     // this handler rebuilds the job from the form, so without that an edit
     // would silently re-stamp an old job with today's profile.
+    omCarryTemplateStamp(job, jobs);
     try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
     catch(e){ console.warn('[job-profile]', e); }
     // The map's group, for exactly the same reason: this record is rebuilt
@@ -4848,6 +4864,7 @@ function saveAsJob(){
     // with the active profile and carries the stored one forward on an edit —
     // this handler rebuilds the job from the form, so without that an edit
     // would silently re-stamp an old job with today's profile.
+    omCarryTemplateStamp(job, jobs);
     try { if (window.CygenixJobProfile) CygenixJobProfile.attach(job, jobs); }
     catch(e){ console.warn('[job-profile]', e); }
     // The map's group, for exactly the same reason: this record is rebuilt

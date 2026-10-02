@@ -239,19 +239,71 @@ function stagingNameProblem(name) {
   if (/^(dbo|sys|guest|information_schema|public|db_.*|pg_.*)$/i.test(s)) return '"' + s + '" is one of the database\'s own schemas. Use a schema of its own, such as "staging".';
   return '';
 }
-function stagingConfirmSpec(profile, connection, schema) {
+// extra (Oct-2026, optional): { template: {name, version, kind}, target:
+// {name, database}, rules: {wasis, params}, warn } — what the session will be
+// given, said before it starts, so nothing about it is a surprise later.
+function stagingConfirmSpec(profile, connection, schema, extra) {
   var name = (profile && profile.name) || 'the active profile';
   var env = (profile && profile.envClass) || '';
   var db = connection && connection.database ? 'database ' + String(connection.database).toUpperCase() + ' (connection "' + ((connection && connection.name) || '') + '")' : '"' + ((connection && connection.name) || 'the selected connection') + '"';
+  var x = extra || {};
+  var more = [];
+  if (x.template && x.template.name) more.push('Claude builds from the template "' + x.template.name + '" v' + x.template.version + ' (' + x.template.kind + ').');
+  else more.push('No Conversion Template was found for this project.');
+  if (x.target && x.target.name) more.push('Claude can READ the target, ' + (x.target.database ? 'database ' + String(x.target.database).toUpperCase() + ' (connection "' + x.target.name + '")' : '"' + x.target.name + '"') + ', to check lookup values — never change it.');
+  if (x.rules && (x.rules.wasis || x.rules.params)) more.push('Your ' + (x.rules.wasis || 0) + ' Was/Is rule(s) and ' + (x.rules.params || 0) + ' Parameter(s) go with it.');
+  if (x.warn) more.push(x.warn);
   return {
     prod: env === 'PRD',
     title: 'Start a staging session?',
     okLabel: 'Start staging session',
     text: 'Claude will be able to create, load, empty and drop tables inside the schema "' + schema + '" of ' + db
       + ' under profile "' + name + '"' + (env ? ' (' + env + ')' : '')
-      + ', without asking for approvals. Everything else in that database stays read-only. Every statement is recorded in the audit log.',
+      + ', without asking for approvals. Everything else in that database stays read-only. Every statement is recorded in the audit log.'
+      + (extra ? ' ' + more.join(' ') : ''),
     typeToConfirm: env === 'PRD' ? name : '',
   };
+}
+
+/* ── Which template a staging session builds from (Oct-2026) ──────────────
+   The choices the page offers, and the one it picks unasked: the same as
+   the server's pickTemplate (azure-function/src/claude-code.js) — newest
+   published for the profile, then newest draft for it, then the project's
+   newest published, then its newest draft. A COPY: tests/claude-code.test.js
+   holds the two to the same answers. The warning is the case that misled a
+   person: the draft has been edited since it was last published, and the
+   default is the published copy. */
+function defaultTemplate(list, profileId) {
+  var newest = function (xs) { return xs.slice().sort(function (a, b) {
+    return ((Number(b.version) || 0) - (Number(a.version) || 0)) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+  })[0] || null; };
+  var all = list || [];
+  var mine = all.filter(function (t) { return profileId && t.profileId === profileId; });
+  var pub = function (xs) { return xs.filter(function (t) { return t.kind === 'published'; }); };
+  var dr = function (xs) { return xs.filter(function (t) { return t.kind !== 'published'; }); };
+  return newest(pub(mine)) || newest(dr(mine)) || newest(pub(all)) || newest(dr(all));
+}
+var EDIT_GRACE_MS = 2 * 60 * 1000;      // a publish writes the next draft at once; that is not an edit
+function templateChoices(list, profileId) {
+  var all = (list || []).filter(function (t) { return t && t.id; });
+  var def = defaultTemplate(all, profileId);
+  var options = all.slice().sort(function (a, b) {
+    return String(a.name || '').localeCompare(String(b.name || '')) || ((Number(b.version) || 0) - (Number(a.version) || 0))
+      || ((a.kind === 'published' ? 1 : 0) - (b.kind === 'published' ? 1 : 0));
+  }).map(function (t) {
+    return { id: t.id, name: String(t.name || 'Conversion Template'), version: Number(t.version) || 1, kind: t.kind === 'published' ? 'published' : 'draft',
+      label: String(t.name || 'Conversion Template') + ' — v' + (Number(t.version) || 1) + ' ' + (t.kind === 'published' ? 'published' : 'draft') };
+  });
+  var warn = '';
+  if (def && def.kind === 'published') {
+    var draft = all.filter(function (t) { return t.kind !== 'published' && t.templateId && t.templateId === def.templateId; })[0];
+    var pubAt = Date.parse(def.publishedAt || def.updatedAt || '') || 0, draftAt = Date.parse((draft && draft.updatedAt) || '') || 0;
+    if (draft && draftAt > pubAt + EDIT_GRACE_MS) {
+      warn = 'The draft of "' + def.name + '" (v' + draft.version + ') has changes that are not published. Claude will read v' + def.version
+        + ' unless you publish first or choose the draft.';
+    }
+  }
+  return { options: options, defaultId: def ? def.id : '', warn: warn };
 }
 var STAGING_STARTER = 'Build the staging tables from this project\'s Conversion Template and populate them from this database. '
   + 'Start by telling me what the template contains.';
@@ -446,6 +498,7 @@ return {
   textOf: textOf, tableFrom: tableFrom, looksLikeConnectionFailure: looksLikeConnectionFailure, bridgeTable: bridgeTable, mcpBlock: mcpBlock,
   blocksFrom: blocksFrom, toolBlock: toolBlock,
   stagingNameProblem: stagingNameProblem, stagingConfirmSpec: stagingConfirmSpec, STAGING_STARTER: STAGING_STARTER,
+  defaultTemplate: defaultTemplate, templateChoices: templateChoices,
   dbBanner: dbBanner, REPORT_FILE: REPORT_FILE, reportRequest: reportRequest, buildConversionReport: buildConversionReport,
   JOB_FILE: JOB_FILE, JOB_RULES: JOB_RULES, JOB_CAP: JOB_CAP, JOB_GROUP: JOB_GROUP, jobRequest: jobRequest, buildStagingJob: buildStagingJob, addStagingJob: addStagingJob,
   NOTICE_KEY: NOTICE_KEY, noticeDismissed: noticeDismissed, noticeDismiss: noticeDismiss,

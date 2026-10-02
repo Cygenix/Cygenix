@@ -67,6 +67,21 @@
    Function App connection and not the Entra relay, neither of which can be
    cancelled from here.
 
+   THE TARGET, READ-ONLY (Oct-2026)
+   A staging session on the source may carry the profile's target as a
+   reference connection (redeemed with the pass, unsealed fresh like the
+   session's own). target_list_tables, target_describe_table and
+   target_query run against it, and only ever as reads: anything that is not
+   a read is refused before it is sent, and every read runs inside a
+   transaction that is rolled back, as all reads here do. "Allow changes",
+   the staging schema and the session's own connection play no part. Each
+   call is audited under the target's connection name.
+
+   THE RULES (Oct-2026)
+   get_translation_rules serves the Was/Is rules and global Parameters the
+   session was opened with (agent/claude-code-bridge/rules, by the same
+   pass): an overview first, then one table's rules at a time.
+
    THE TEMPLATE
    get_conversion_template reads the project's Conversion Template through
    the Function App (agent/claude-code-bridge/template, with the session's
@@ -356,10 +371,68 @@ const TEMPLATE_TOOL = {
   }, additionalProperties: false },
   annotations: { readOnlyHint: true },
 };
+const TARGET_TOOLS = [
+  {
+    name: 'target_list_tables',
+    title: 'List the target\'s tables',
+    description: 'List the tables and views in the TARGET database (read-only), with schema, type and approximate row count. Optionally only one schema.',
+    inputSchema: { type: 'object', properties: { schema: { type: 'string', description: 'Only this schema.' } }, additionalProperties: false },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'target_describe_table',
+    title: 'Describe a target table',
+    description: 'The columns of one table or view in the TARGET database (read-only): name, type, length, nullable, default, primary key.',
+    inputSchema: { type: 'object', properties: {
+      table: { type: 'string', description: 'Table name; "schema.table" also works.' },
+      schema: { type: 'string', description: 'Schema, if not given in table.' },
+    }, required: ['table'], additionalProperties: false },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'target_query',
+    title: 'Read from the target',
+    description: 'Run one READ-ONLY SQL statement against the TARGET database and return the first result set, up to max_rows rows '
+      + '(default ' + DEFAULT_ROWS + ', at most ' + MAX_ROWS + '). Use it to read lookup and reference tables, check codes and see what is '
+      + 'already there. Anything that is not a read is refused; nothing can be changed in the target from here.',
+    inputSchema: { type: 'object', properties: {
+      sql: { type: 'string', description: 'One read-only SQL statement.' },
+      max_rows: { type: 'integer', minimum: 1, maximum: MAX_ROWS, description: 'Rows to return (default ' + DEFAULT_ROWS + ').' },
+    }, required: ['sql'], additionalProperties: false },
+    annotations: { readOnlyHint: true },
+  },
+];
+const RULES_TOOL = {
+  name: 'get_translation_rules',
+  title: 'Read the Was/Is rules and Parameters',
+  description: 'The user\'s Was/Is translation rules (in a source table\'s field, this old value becomes this new value) and global '
+    + 'Parameters (named values written @@Name, such as cut-off dates or default codes). Call it with no arguments for the overview — '
+    + 'every Parameter and how many rules each source table and field has — then with a table (and optionally a field) for the rules.',
+  inputSchema: { type: 'object', properties: {
+    table: { type: 'string', description: 'A source table name.' },
+    field: { type: 'string', description: 'A field of that table.' },
+  }, additionalProperties: false },
+  annotations: { readOnlyHint: true },
+};
+function hasTarget(ctx) { return !!(ctx.reference && !ctx.reference.error && (ctx.reference.connString || ctx.reference.fnUrl)); }
 function toolsFor(ctx) {
   const list = [TOOLS[0], TOOLS[1], runQueryTool(ctx)];
   if (ctx.projectId) list.push(TEMPLATE_TOOL);
+  if (ctx.reference) list.push(...TARGET_TOOLS);
+  if (ctx.rules) list.push(RULES_TOOL);
   return list;
+}
+// The session as seen through its reference connection: the target's road,
+// the target's name, and read-only whatever the session itself may do.
+function targetCtx(ctx) {
+  const r = ctx.reference || {};
+  const t = Object.assign({}, ctx, {
+    connectionId: r.connectionId, connectionName: r.connectionName, side: r.side || 'tgt', dbType: r.dbType || 'sqlserver',
+    mode: r.mode === 'azure' ? 'azure' : 'direct', connString: r.connString || null, fnUrl: r.fnUrl || null, fnKey: r.fnKey || null,
+    readOnly: true, stagingSchema: '', reference: null,
+  });
+  if (ctx._token) Object.defineProperty(t, '_token', { value: ctx._token, enumerable: false });
+  return t;
 }
 
 function lit(ctx, v) {
@@ -570,8 +643,101 @@ async function templateTool(ctx, args) {
     audit: Object.assign(audit, { outcome: 'allowed', ms, reason: (got.data.chosen && got.data.chosen.id) || undefined }) };
 }
 
+/* ── The Was/Is rules and Parameters ──────────────────────────────────────
+   paramLiteral is the SQL a Parameter stands for, as public/cygenix-params.js
+   formatValue writes it: number unquoted (when it is one), raw as written,
+   text and date quoted with quotes doubled. A COPY; tests/cc-mcp.test.js
+   holds the two to the same answers. */
+function paramLiteral(p) {
+  const raw = p && p.value != null ? String(p.value) : '';
+  let t = p && p.type ? String(p.type).toLowerCase() : '';
+  if (['number', 'text', 'date', 'raw'].indexOf(t) === -1) t = (raw.trim() !== '' && /^-?\d+(\.\d+)?$/.test(raw.trim())) ? 'number' : 'text';
+  if (t === 'number' && /^-?\d+(\.\d+)?$/.test(raw.trim())) return raw.trim();
+  if (t === 'raw') return raw;
+  return "'" + raw.replace(/'/g, "''") + "'";
+}
+async function fetchRules(ctx) {
+  const key = String(deps.env('CYGENIX_DATA_FN_KEY') || '').trim();
+  if (!key) return { error: 'The bridge is not configured on this deployment (CYGENIX_DATA_FN_KEY).' };
+  let res, text;
+  try {
+    res = await deps.fetch(AGENT_ROOT + '/agent/claude-code-bridge/rules?code=' + encodeURIComponent(key), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: ctx._token }), signal: AbortSignal.timeout(10000),
+    });
+    text = await res.text();
+  } catch (e) {
+    return { error: 'Could not reach the rules store: ' + ((e && e.message) || e) };
+  }
+  let data = {};
+  try { data = JSON.parse(text || '{}'); } catch (e) { /* keep {} */ }
+  if (res.status !== 200 || !data.ok) return { error: data.error || ('The rules store answered ' + res.status) };
+  return { data };
+}
+function rulesView(data, args) {
+  const wasis = Array.isArray(data.wasis) ? data.wasis : [];
+  const params = (Array.isArray(data.params) ? data.params : []).map(p => ({ name: p.name || undefined, token: p.code || undefined,
+    type: p.type || undefined, value: p.value, sql: paramLiteral(p), note: p.note || undefined }));
+  const wantT = lc(args.table).replace(/^[\["`]|[\]"`]$/g, ''), wantF = lc(args.field);
+  const bare = (t) => t.split('.').pop();
+  if (!wantT) {
+    const groups = {};
+    wasis.forEach(w => { const k = w.table + '|' + w.field; groups[k] = (groups[k] || 0) + 1; });
+    return JSON.stringify({ parameters: params,
+      was_is: Object.keys(groups).sort().map(k => ({ table: k.split('|')[0], field: k.split('|')[1], rules: groups[k] })),
+      truncated: data.truncated || undefined,
+      next: wasis.length ? 'Call get_translation_rules with a table (and a field) for its rules.' : undefined });
+  }
+  const hit = wasis.filter(w => (w.table === wantT || bare(w.table) === bare(wantT)) && (!wantF || w.field === wantF));
+  let out = hit.map(w => ({ field: w.field, from: w.from, to: w.to, note: w.note || undefined }));
+  let text = JSON.stringify({ table: args.table, field: args.field || undefined, rules: out });
+  while (text.length > MAX_TEXT && out.length > 1) {
+    out = out.slice(0, Math.floor(out.length / 2));
+    text = JSON.stringify({ table: args.table, field: args.field || undefined, rules: out, truncated: true,
+      note: 'Too many to show at once: ask for one field at a time.' });
+  }
+  if (!hit.length) text = JSON.stringify({ table: args.table, field: args.field || undefined, rules: [],
+    note: 'No Was/Is rules for this ' + (wantF ? 'field' : 'table') + '. Call get_translation_rules with no arguments for the tables that have them.' });
+  return text;
+}
+async function rulesTool(ctx, args) {
+  const audit = { tool: 'get_translation_rules', sql: '', write: false };
+  if (!ctx.rules) return { result: textResult('This session was opened without Was/Is rules or Parameters.', true), audit: null };
+  const pol = await consolePolicy(ctx, false);
+  audit.actor = pol.actor; audit.tenant = pol.tenant;
+  if (!pol.ok) return { result: textResult('Refused: ' + pol.why, true), audit: Object.assign(audit, { outcome: 'denied', reason: pol.why }) };
+  const started = deps.now();
+  const got = await fetchRules(ctx);
+  const ms = deps.now() - started;
+  if (got.error) return { result: textResult(got.error, true), audit: Object.assign(audit, { outcome: 'failed', reason: got.error.slice(0, 300), ms }) };
+  return { result: textResult(rulesView(got.data, args), false), audit: Object.assign(audit, { outcome: 'allowed', ms }) };
+}
+
+// The target tools: the same three as the session's own, on the reference
+// connection, and reads only.
+async function targetTool(ctx, name, args) {
+  if (!ctx.reference) return { rpcError: { code: -32602, message: 'Unknown tool: ' + name } };
+  if (!hasTarget(ctx)) return { result: textResult('The target cannot be read in this session: ' + (ctx.reference.error || 'no target connection.'), true), audit: null };
+  const tctx = targetCtx(ctx);
+  const own = name.replace(/^target_/, '').replace(/^query$/, 'run_query');
+  if (own === 'run_query') {
+    const sql = String(args.sql == null ? '' : args.sql);
+    if (sql.trim() && !isReadOnlySql(sql)) {
+      return { result: textResult('Refused: the target is read-only in the Dev Console. target_query runs reads only — load the staging '
+        + 'tables in this session\'s own database with run_query.', true),
+        audit: { tool: name, sql, write: true, outcome: 'denied', reason: 'target is read-only' }, auditCtx: tctx };
+    }
+  }
+  const out = await callTool(tctx, own, args);
+  if (out.audit) out.audit.tool = name;
+  out.auditCtx = tctx;
+  return out;
+}
+
 async function callTool(ctx, name, args) {
   args = args && typeof args === 'object' ? args : {};
+  if (/^target_(list_tables|describe_table|query)$/.test(name)) return targetTool(ctx, name, args);
+  if (name === 'get_translation_rules') return rulesTool(ctx, args);
   const started = deps.now();
   let sql, internal = true;
   if (name === 'list_tables') sql = listTablesSql(ctx, args.schema ? cleanName(args.schema) : '');
@@ -640,13 +806,14 @@ async function recordQuery(ctx, a) {
       severity: a.outcome !== 'allowed' ? 'notice' : (a.write ? (a.staging ? 'notice' : 'high') : 'info'),
       resourceType: ctx.sessionId ? 'claudecode_session' : 'claudecode_check',
       resourceId: ctx.sessionId || ('check:' + ctx.connectionId),
-      summary: (a.write ? (a.staging ? 'Dev Console staging change' : 'Dev Console change') : a.tool === 'get_conversion_template' ? 'Dev Console template read' : 'Dev Console query') + ' on ' + (ctx.connectionName || ctx.connectionId)
+      summary: (a.write ? (a.staging ? 'Dev Console staging change' : 'Dev Console change') : a.tool === 'get_conversion_template' ? 'Dev Console template read'
+        : a.tool === 'get_translation_rules' ? 'Dev Console rules read' : /^target_/.test(a.tool) ? 'Dev Console target read' : 'Dev Console query') + ' on ' + (ctx.connectionName || ctx.connectionId)
         + (a.outcome === 'allowed' ? '' : ' — ' + a.outcome),
       detail: {
         tenantId: (a.tenant && a.tenant.id) || ctx.tenantId || undefined, route: 'cc-mcp',
         tool: a.tool, connection: ctx.connectionName || ctx.connectionId, profile: ctx.profileName || undefined,
         via: ctx.mode, sessionReadOnly: !!ctx.readOnly, write: !!a.write, stagingSchema: ctx.stagingSchema || undefined,
-        sql: a.tool === 'run_query' ? String(a.sql).slice(0, 2000) : undefined,
+        sql: a.tool === 'run_query' || a.tool === 'target_query' ? String(a.sql).slice(0, 2000) : undefined,
         rows: a.rows, rowsAffected: a.write ? a.rowsAffected : undefined, ms: a.ms, reason: a.reason,
       },
     });
@@ -674,13 +841,14 @@ async function handleMessage(ctx, msg) {
         instructions: 'Tools for this Dev Console session\'s one database, "' + (ctx.connectionName || ctx.connectionId) + '" ('
           + (isPostgres(ctx) ? 'PostgreSQL' : 'SQL Server') + '). ' + (ctx.stagingSchema
             ? 'Staging session: changes are allowed inside the schema "' + ctx.stagingSchema + '" only; everything else is read-only.'
-            : 'Changes to data are currently ' + (ctx.readOnly ? 'NOT allowed.' : 'allowed.')),
+            : 'Changes to data are currently ' + (ctx.readOnly ? 'NOT allowed.' : 'allowed.'))
+          + (ctx.reference ? ' The target_* tools read the target, "' + (ctx.reference.connectionName || 'target') + '", read-only.' : ''),
       });
     case 'ping': return rpcResult(msg.id, {});
     case 'tools/list': return rpcResult(msg.id, { tools: toolsFor(ctx) });
     case 'tools/call': {
       const out = await callTool(ctx, String(p.name || ''), p.arguments);
-      await recordQuery(ctx, out.audit);
+      await recordQuery(out.auditCtx || ctx, out.audit);
       if (out.rpcError) return rpcError(msg.id, out.rpcError.code, out.rpcError.message);
       return rpcResult(msg.id, out.result);
     }
@@ -731,6 +899,7 @@ exports.handler = async function (event) {
 };
 
 exports._internals = { deps, redeem, consolePolicy, callTool, handleMessage, refusalFor, wrapReadOnlyMssql, wrapStagingMssql, shape, cell,
+  TARGET_TOOLS, RULES_TOOL, targetCtx, hasTarget, paramLiteral, rulesView, fetchRules,
   toolsFor, runQueryTool, TEMPLATE_TOOL, templateView, templateTables, stagingCreate, sqlType, populateVerdict, moduleActive, STATEMENT_MS, TEMPLATE_TEXT,
   listTablesSql, describeSql, splitTable, fnExecuteUrl, productKeyFor, TOOLS, MAX_ROWS, DEFAULT_ROWS, MAX_TEXT,
   _reset: () => policyCache.clear() };

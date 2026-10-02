@@ -467,6 +467,108 @@ const calls = (kind) => CALLS.filter(c => c[0] === kind);
   q = await call('get_conversion_template', {});
   check('the organisation\'s switch applies to the template read too', q.isError && /switched off/.test(q.text));
 
+
+  /* ── 17. The target, read-only, and the rules (Oct-2026) ───────────────── */
+  section('17. The target, read-only; the Was/Is rules and Parameters');
+  const REF = { connectionId: 'sconn_tgt', connectionName: 'Target PROD', side: 'tgt', dbType: 'sqlserver', mode: 'direct',
+    connString: 'Server=tgt.acme.test;Database=Fin;User Id=u;Password=tp', fnUrl: null, fnKey: null };
+  const SRCSTG = { side: 'src', connectionName: 'Legacy', connString: 'Server=src.acme.test;Database=Old;User Id=u;Password=p', stagingSchema: 'stg',
+    projectId: 'proj_1', readOnly: true, reference: REF, rules: { wasis: 2, params: 2 } };
+  reset(SRCSTG);
+  let lr = JSON.parse((await post(rpc('tools/list'))).body);
+  const names = lr.result.tools.map(t => t.name);
+  check('A SESSION WITH A REFERENCE AND RULES LISTS the three target tools and the rules tool, beside its own',
+    ['list_tables', 'describe_table', 'run_query', 'get_conversion_template', 'target_list_tables', 'target_describe_table', 'target_query', 'get_translation_rules']
+      .every(n => names.indexOf(n) !== -1), names.join());
+  check('…and the target tools say read-only', I.TARGET_TOOLS.every(t => t.annotations.readOnlyHint === true) && /READ-ONLY/.test(I.TARGET_TOOLS[2].description));
+  reset({});
+  lr = JSON.parse((await post(rpc('tools/list'))).body);
+  check('…a session without them lists none of them', !lr.result.tools.some(t => /^target_|get_translation_rules/.test(t.name)));
+
+  reset(SRCSTG);
+  DB = { recordset: [{ code: 'A' }, { code: 'I' }], rowsAffected: 0 };
+  q = await call('target_query', { sql: 'SELECT code FROM dbo.StatusCode' });
+  const mq = calls('handleMssql')[0], gq = calls('rbacGate')[0];
+  check('TARGET_QUERY RUNS A READ ON THE TARGET: through the SQL editor\'s own gate, inside a transaction that is rolled back',
+    !q.isError && q.json.rows.length === 2 && /ROLLBACK TRANSACTION/.test(mq[2]) && /SELECT code FROM dbo\.StatusCode/.test(mq[2]) && gq[4] === 'SELECT code FROM dbo.StatusCode' && !gq[5], q.text);
+  check('…on the TARGET\'s connection, and audited under its name, as a target read', AUDIT.length === 1 && AUDIT[0].detail.connection === 'Target PROD'
+    && AUDIT[0].detail.tool === 'target_query' && /target read on Target PROD/.test(AUDIT[0].summary) && AUDIT[0].detail.write === false && AUDIT[0].detail.sql === 'SELECT code FROM dbo.StatusCode', JSON.stringify(AUDIT[0]));
+  reset(SRCSTG);
+  q = await call('target_query', { sql: 'INSERT INTO dbo.StatusCode (code) VALUES (\'X\')' });
+  check('ANYTHING BUT A READ ON THE TARGET IS REFUSED before it is sent — even in a staging session', q.isError && /target is read-only/.test(q.text)
+    && !calls('handleMssql').length && !calls('rbacGate').length && AUDIT[0].outcome === 'denied' && AUDIT[0].detail.connection === 'Target PROD');
+  reset(SRCSTG);
+  q = await call('target_query', { sql: 'INSERT INTO stg.T (a) SELECT 1' });
+  check('…including a write naming the staging schema: the staging rule is the session\'s own database only', q.isError && /target is read-only/.test(q.text) && !calls('handleMssql').length);
+  reset(SRCSTG);
+  q = await call('target_query', { sql: 'DROP TABLE dbo.Client' });
+  check('…and DROP is refused there as everywhere', q.isError && !calls('handleMssql').length);
+  reset(SRCSTG);
+  q = await call('target_list_tables', {});
+  check('target_list_tables lists the target\'s tables, read the same protected way', !q.isError && /sys\.objects/.test(calls('handleMssql')[0][2]) && AUDIT[0].detail.tool === 'target_list_tables');
+  reset(SRCSTG);
+  q = await call('target_describe_table', { table: 'dbo.Client' });
+  check('target_describe_table describes one', !q.isError && /c\.table_name = N'Client'/.test(calls('handleMssql')[0][2]) && /c\.table_schema = N'dbo'/.test(calls('handleMssql')[0][2]));
+  reset(Object.assign({}, SRCSTG, { reference: { connectionName: 'Target PROD', error: 'The credential for "Target PROD" is no longer saved on the server.' } }));
+  q = await call('target_query', { sql: 'SELECT 1' });
+  check('a target whose credential has gone: the tool says why, and nothing runs', q.isError && /no longer saved/.test(q.text) && !calls('handleMssql').length);
+  reset(SRCSTG); POLICY = { enabled: false, roles: [] };
+  q = await call('target_query', { sql: 'SELECT 1' });
+  check('the organisation\'s switch applies to the target too', q.isError && /switched off/.test(q.text) && !calls('handleMssql').length);
+  reset(Object.assign({}, SRCSTG, { reference: Object.assign({}, REF, { dbType: 'postgres', connString: 'postgres://u:p@tgt/fin' }) }));
+  q = await call('target_query', { sql: 'SELECT code FROM status_code' });
+  const pq = calls('handlePostgres')[0];
+  check('a PostgreSQL target: read-only, no transaction write', !q.isError && pq[3] === true && pq[4] === false, JSON.stringify(pq));
+  reset({});
+  q = await call('target_query', { sql: 'SELECT 1' });
+  check('a session with no reference has no target tools at all', !!q.body.error && /Unknown tool/.test(q.body.error.message));
+  // The session's own run_query is unchanged by having a reference.
+  reset(SRCSTG);
+  q = await call('run_query', { sql: 'SELECT COUNT(*) AS n FROM dbo.Client' });
+  check('the session\'s own run_query still runs on the session\'s own database', !q.isError && AUDIT[0].detail.connection === 'Legacy');
+
+  // The rules.
+  const RULES = { ok: true, wasis: [
+      { table: 'dbo.client', field: 'status', from: 'A', to: 'Active', note: 'status codes' },
+      { table: 'dbo.client', field: 'status', from: 'I', to: 'Inactive' },
+      { table: 'dbo.matter', field: 'type', from: 'L', to: 'Litigation' }],
+    params: [{ name: 'Cut off', code: '@@Cutoff', type: 'date', value: '2018-01-01' }, { name: 'Company', code: '@@Co', type: 'number', value: '7' },
+      { name: 'Who', code: '@@Who', type: 'raw', value: 'SUSER_SNAME()' }, { name: 'Odd', code: '@@Odd', type: 'text', value: "O'Brien" }],
+    totals: { wasis: 3, params: 4 } };
+  let RULES_REPLY = { status: 200, body: RULES };
+  const realFetch = D.fetch;
+  D.fetch = async (url, init) => {
+    if (/claude-code-bridge\/rules/.test(url)) { CALLS.push(['fetch', url, JSON.parse(init.body)]); return { status: RULES_REPLY.status, text: async () => JSON.stringify(RULES_REPLY.body) }; }
+    return realFetch(url, init);
+  };
+  reset(SRCSTG);
+  q = await call('get_translation_rules', {});
+  check('THE OVERVIEW: every Parameter, with the SQL it stands for, and how many rules each source table and field has',
+    !q.isError && q.json.parameters.length === 4 && q.json.parameters[0].token === '@@Cutoff' && q.json.parameters[0].sql === "'2018-01-01'"
+    && q.json.parameters[1].sql === '7' && q.json.parameters[2].sql === 'SUSER_SNAME()' && q.json.parameters[3].sql === "'O''Brien'"
+    && q.json.was_is.length === 2 && q.json.was_is[0].table === 'dbo.client' && q.json.was_is[0].rules === 2, q.text);
+  const rf = calls('fetch').find(c => /claude-code-bridge\/rules/.test(c[1]));
+  check('…read from the Function App with the session\'s own pass and the host key', !!rf && /code=hostkey/.test(rf[1]) && /^cyb_/.test(rf[2].token));
+  check('…audited as a rules read, with no statement', AUDIT[0].detail.tool === 'get_translation_rules' && /rules read/.test(AUDIT[0].summary) && AUDIT[0].detail.sql === undefined);
+  q = await call('get_translation_rules', { table: 'Client' });
+  check('ONE TABLE\'S RULES, found by its bare name too', q.json.rules.length === 2 && q.json.rules[0].from === 'A' && q.json.rules[0].to === 'Active');
+  q = await call('get_translation_rules', { table: 'dbo.Client', field: 'Status' });
+  check('…and one field\'s', q.json.rules.length === 2);
+  q = await call('get_translation_rules', { table: 'dbo.Nope' });
+  check('…a table with none says so', q.json.rules.length === 0 && /No Was\/Is rules/.test(q.json.note));
+  require(path.join(__dirname, '..', 'public', 'cygenix-params.js'));        // attaches itself to the global
+  const P = globalThis.CygenixParams;
+  const ps = [{ type: 'number', value: '7' }, { type: 'number', value: 'abc' }, { type: 'text', value: "a'b" }, { type: 'date', value: '2020-01-01' },
+    { type: 'raw', value: 'GETDATE()' }, { value: '12' }, { value: 'x' }, { type: 'weird', value: '3' }, {}];
+  check('THE BRIDGE\'S paramLiteral IS THE PARAMETERS MODULE\'S formatValue, on every shape', ps.every(p => I.paramLiteral(p) === P.formatValue(p)),
+    ps.map(p => I.paramLiteral(p) + '/' + P.formatValue(p)).join(' '));
+  reset(Object.assign({}, SRCSTG, { rules: null }));
+  q = await call('get_translation_rules', {});
+  check('a session opened without rules says so', q.isError && /without Was\/Is rules/.test(q.text));
+  reset(SRCSTG); RULES_REPLY = { status: 404, body: { error: 'This session was opened without Was/Is rules or Parameters.' } };
+  q = await call('get_translation_rules', {});
+  check('the store\'s refusal is passed on in words', q.isError && /opened without/.test(q.text));
+  D.fetch = realFetch;
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

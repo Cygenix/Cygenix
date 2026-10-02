@@ -24,6 +24,9 @@
      POST agent/claude-code-bridge/template server to server: a session's
                                       pass, for its project's Conversion
                                       Template (staging sessions)
+     POST agent/claude-code-bridge/rules  server to server: a session's pass,
+                                      for the Was/Is rules and Parameters it
+                                      was opened with (staging sessions)
 
    WHOSE ACCOUNT, WHOSE MONEY
    Everything runs on the CALLER'S Anthropic API key, read from the
@@ -86,6 +89,29 @@
    given the staging brief in conversion-playbook.js. The session also
    carries its project, so the bridge can read that project's template — and
    only that project's — through agent/claude-code-bridge/template.
+
+   WHAT A STAGING SESSION IS GIVEN (Oct-2026, second round)
+   Three things a staging build kept having to guess, now handed over when
+   the session opens:
+   - THE TARGET, READ-ONLY. A session works on one database, the source;
+     the target was known only through the template's column list, so
+     Claude could not check that a code it was about to load exists in the
+     target's lookup table. A staging session on the source may now carry
+     the profile's target as a REFERENCE connection. The bridge offers it as
+     target_list_tables / target_describe_table / target_query, and runs
+     nothing but reads on it, rolled back, whatever is asked.
+   - THE RULES. The person's Was/Is translations (old value → new value, per
+     source table and field) and the global Parameters (@@Name tokens) live
+     in the browser and the settings sync; Claude never saw them and worked
+     the translations out again every time. The page sends a snapshot when
+     the session opens; it is kept in a document of its own beside the
+     session (<id>:rules, same partition) and served to the bridge's
+     get_translation_rules.
+   - THE TEMPLATE VERSION. The bridge used to pick "the newest published
+     template for the profile" at read time, so a person editing v4 had
+     Claude building from v3 without being told. The template is now chosen
+     when the session opens — the person's choice, or that same default —
+     pinned on the session, shown on the page, and the one the bridge reads.
 
    WHAT IS KEPT HERE
    Cosmos container claude_code_sessions, partitioned on /userId (the
@@ -161,6 +187,9 @@ const UPLOAD_TTL_S = 7 * 24 * 60 * 60;
 const UPLOADS_PER_SESSION = 50;
 const OUTPUTS_CAP = 100;
 const FILE_ID_RE = /^[A-Za-z0-9_-]{6,128}$/;
+// The Was/Is rules and Parameters a staging session is opened with. Bounded,
+// because they are stored beside the session and served whole to the bridge.
+const RULES_MAX = { WASIS: 5000, PARAMS: 500, FIELD: 400, BYTES: 900000 };
 
 // The spend cap, in US cents as the API wants it: an integer string, > 0.
 function budget() {
@@ -497,14 +526,19 @@ const MODE_TEXT = {
 function systemPrompt(o) {
   const kind = o.dbType === 'postgres' ? 'PostgreSQL' : 'SQL Server';
   if (o.stagingSchema) {
+    const extra = (o.reference ? ', target_list_tables, target_describe_table, target_query' : '') + (o.rules ? ', get_translation_rules' : '');
     return [
       'You are working inside Cygenix, a data migration console, on data migration work for the signed-in user.',
       'The database for this session is ' + kind + '. You reach it ONLY through the "' + MCP_NAME + '" MCP tools: '
-        + 'list_tables, describe_table, run_query and get_conversion_template. Cygenix runs each query for you. Do not try to '
+        + 'list_tables, describe_table, run_query and get_conversion_template' + extra + '. Cygenix runs each query for you. Do not try to '
         + 'connect to the database from the workspace: there is no login there, and its network does not allow it.',
       'run_query returns at most 1,000 rows; aggregate or filter in SQL rather than fetching everything. Only the first result '
         + 'set is returned.',
-      conversionPlaybook(o.stagingSchema, o.dbType),
+      conversionPlaybook(o.stagingSchema, o.dbType, {
+        target: o.reference ? (o.reference.connectionName + (o.reference.dbName ? ' (database ' + o.reference.dbName + ')' : '')) : '',
+        rules: o.rules ? { wasis: o.rules.wasis.length, params: o.rules.params.length } : null,
+        template: o.template || null,
+      }),
       'You can still use Python, Node and shell in the workspace to analyse what the tools return; files saved under '
         + '/mnt/session/outputs can be downloaded by the user.',
     ].join('\n\n');
@@ -581,7 +615,10 @@ function publicSession(doc) {
     connectionName: doc.connectionName || '', side: doc.side || '', dbType: doc.dbType || '',
     dbHost: doc.dbHost || '', dbName: doc.dbName || '', createdAt: doc.createdAt, endedAt: doc.endedAt || null,
     costCents: doc.costCents == null ? null : doc.costCents, eventCount: doc.eventCount || 0,
-    stopReason: doc.stopReason || null, stagingSchema: doc.stagingSchema || '',
+    stopReason: doc.stopReason || null, stagingSchema: doc.stagingSchema || '', projectId: doc.projectId || '',
+    reference: doc.ref ? { connectionName: doc.ref.connectionName, side: doc.ref.side, dbName: doc.ref.dbName || '', dbHost: doc.ref.dbHost || '' }
+      : (doc.refError ? { error: doc.refError } : null),
+    templateRef: doc.templateRef || null, rulesCount: doc.rulesCount || null,
     uploads: (doc.uploads || []).map(u => ({ fileId: u.fileId, name: u.name, path: u.path, size: u.size, at: u.at })),
   };
 }
@@ -727,6 +764,43 @@ function stagingSchemaProblem(name, dbType) {
 }
 const PROJECT_ID_RE = /^[A-Za-z0-9_.:-]{1,100}$/;
 
+// The rules a staging session is opened with, cleaned and bounded. Was/Is
+// rules keep the shape CygenixWasis normalises to (srcTable, srcField lower-
+// cased; oldVal → newVal); a rule with no field is not a rule. Parameters
+// keep name, @@code, type and value.
+function cleanRules(raw, now) {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = (v, n) => String(v == null ? '' : v).slice(0, n || RULES_MAX.FIELD);
+  const inW = Array.isArray(raw.wasis) ? raw.wasis : [], inP = Array.isArray(raw.params) ? raw.params : [];
+  let wasis = inW.slice(0, RULES_MAX.WASIS).map(w => (w && typeof w === 'object') ? {
+    table: s(w.srcTable != null ? w.srcTable : w.table, 256).trim().toLowerCase(),
+    field: s(w.srcField != null ? w.srcField : w.field, 256).trim().toLowerCase(),
+    from: s(w.oldVal != null ? w.oldVal : w.from), to: s(w.newVal != null ? w.newVal : w.to),
+    note: s(w.desc != null ? w.desc : w.note),
+  } : null).filter(w => w && w.field);
+  const params = inP.slice(0, RULES_MAX.PARAMS).map(p => (p && typeof p === 'object') ? {
+    name: s(p.name, 120).trim(), code: s(p.code, 120).trim(), type: s(p.type, 20).trim().toLowerCase(),
+    value: s(p.value), note: s(p.desc != null ? p.desc : (p.description != null ? p.description : p.note)),
+  } : null).filter(p => p && (p.name || p.code));
+  let truncated = inW.length > RULES_MAX.WASIS;
+  while (wasis.length && JSON.stringify({ wasis, params }).length > RULES_MAX.BYTES) { wasis = wasis.slice(0, Math.floor(wasis.length * 0.9)); truncated = true; }
+  if (!wasis.length && !params.length) return null;
+  return { wasis, params, totals: { wasis: inW.length, params: inP.length }, truncated, at: new Date(now).toISOString() };
+}
+const rulesId = (sessionId) => sessionId + ':rules';
+
+// The project's templates, as the bridge lists them.
+const TEMPLATE_FIELDS = 'c.id, c.templateId, c.kind, c.name, c.version, c.status, c.profileId, c.updatedAt';
+async function listProjectTemplates(projectId) {
+  const { resources } = await deps.templates().items.query({
+    query: 'SELECT ' + TEMPLATE_FIELDS + ' FROM c WHERE c.projectId = @p',
+    parameters: [{ name: '@p', value: projectId }],
+  }, { partitionKey: projectId }).fetchAll();
+  return resources || [];
+}
+const templateRefOf = (t) => ({ id: String(t.id), templateId: String(t.templateId || ''), name: String(t.name || ''),
+  version: Number(t.version) || 1, kind: t.kind === 'published' ? 'published' : 'draft' });
+
 // Revoke a session's pass and delete its vault: nothing can redeem it after.
 async function revokeBridge(client, doc) {
   if (doc.vaultId) { try { await client.beta.vaults.delete(doc.vaultId); } catch (e) { /* gone already */ } }
@@ -745,12 +819,51 @@ async function sessionStart(who, apiKey, body, ctx) {
     if (why) return bad(400, why);
     if (conn.mode !== 'direct') return bad(400, 'A staging session needs a connection Cygenix logs in to itself; "' + names.connectionName + '" is a Function App connection.');
   }
+
+  // A staging session on the SOURCE may carry the profile's TARGET as a
+  // read-only reference. Never the other way round, never the same
+  // connection, and never for a plain session. A reference whose credential
+  // cannot be read does not stop the session: it opens without one, and
+  // says so.
+  let ref = null, refError = '';
+  const rb = body.reference;
+  if (stagingSchema && rb && typeof rb === 'object' && side === 'src' && rb.side === 'tgt' && str(rb.connId, 100) !== connId) {
+    const rr = await resolveConnection(who, Object.assign({}, rb, { side: 'tgt', profileId: names.profileId, profileName: names.profileName }));
+    if (rr.error) {
+      let e = {}; try { e = JSON.parse(rr.error.body || '{}'); } catch (x) { /* keep {} */ }
+      refError = e.error || 'The target connection could not be used.';
+    } else {
+      ref = { connectionId: rr.connId, connectionName: rr.names.connectionName, side: 'tgt', mode: rr.conn.mode,
+        fnUrl: rr.conn.fnUrl, dbType: rr.conn.dbType, dbHost: rr.conn.dbHost, dbName: rr.conn.dbName };
+    }
+  }
+
+  // The template a staging session builds from, chosen now and kept: the
+  // one asked for, or the bridge's own default for this profile. A template
+  // asked for by id that is not in the project is a 404 before anything is
+  // spent; a store that cannot be read leaves the choice to the bridge.
+  let templateRef = null;
+  if (stagingSchema && projectId) {
+    const want = str(body.templateId, 200);
+    let list = null;
+    try { list = await listProjectTemplates(projectId); }
+    catch (e) { if (want) return bad(502, 'The Conversion Templates store could not be read: ' + ((e && e.message) || e)); }
+    if (list && list.length) {
+      const chosen = pickTemplate(list, names.profileId, want);
+      if (want && !chosen) return bad(404, 'No template "' + want + '" in this project.');
+      if (chosen) templateRef = templateRefOf(chosen);
+    } else if (want) {
+      return bad(404, 'This project has no Conversion Template yet.');
+    }
+  }
+  const rules = stagingSchema ? cleanRules(body.rules, deps.now()) : null;
   const container = await deps.container();
 
   // A staging session lets Claude change data — inside one schema — so it
   // asks for the changes act, and the trail says which schema, where.
   if (stagingSchema) {
-    const gs = await gate(who, 'changes', { record: 'session.staging', detail: { profile: names.profileName, connection: names.connectionName, host: conn.dbHost, schema: stagingSchema } });
+    const gs = await gate(who, 'changes', { record: 'session.staging', detail: { profile: names.profileName, connection: names.connectionName, host: conn.dbHost, schema: stagingSchema,
+      reference: ref ? ref.connectionName : undefined, template: templateRef ? templateRef.name + ' v' + templateRef.version + ' (' + templateRef.kind + ')' : undefined } });
     if (!gs.ok) return gs.response;
   }
   const g = await gate(who, 'use', { record: 'session.start', detail: { profile: names.profileName, connection: names.connectionName, host: conn.dbHost } });
@@ -771,7 +884,7 @@ async function sessionStart(who, apiKey, body, ctx) {
       auth: { type: 'static_bearer', token: pass.token, mcp_server_url: mcpUrl() } });
     session = await client.beta.sessions.create({
       agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
-               system: systemPrompt({ dbType: conn.dbType, mode: 'readonly', stagingSchema }) },
+               system: systemPrompt({ dbType: conn.dbType, mode: 'readonly', stagingSchema, reference: ref, rules, template: templateRef }) },
       environment_id: environmentId,
       title: 'Cygenix Dev Console — ' + names.connectionName + (stagingSchema ? ' (staging ' + stagingSchema + ')' : ''),
       metadata: { cygenix: 'console', cyg_oid: who.oid },
@@ -789,13 +902,19 @@ async function sessionStart(who, apiKey, body, ctx) {
     profileId: names.profileId, profileName: names.profileName, connectionId: connId,
     connectionName: names.connectionName, side, dbType: conn.dbType, dbHost: conn.dbHost, dbName: conn.dbName,
     connMode: conn.mode, fnUrl: conn.fnUrl, stagingSchema, projectId,
+    ref, refError: refError || null, templateRef,
+    rulesCount: rules ? { wasis: rules.wasis.length, params: rules.params.length, truncated: rules.truncated } : null,
     createdAt: now, updatedAt: now, endedAt: null,
     agentId, environmentId, model: MODEL(),
     vaultId: vault.id, bridgeLid: pass.lid, bridgeHash: pass.hash, bridgeExp: deps.now() + BRIDGE_TTL_MS,
     cursorAt: null, cursorIds: [], chunkCount: 0, eventCount: 0, costCents: null, stopReason: null,
   };
   await container.items.upsert(doc);
-  ctx.log('[claude-code] session opened ' + session.id + ' db=' + conn.dbType + ' via=' + conn.mode + (stagingSchema ? ' staging' : ''));
+  if (rules) {
+    await container.items.upsert(Object.assign({ id: rulesId(session.id), kind: 'rules', userId: who.email, oid: who.oid, sessionId: session.id }, rules));
+  }
+  ctx.log('[claude-code] session opened ' + session.id + ' db=' + conn.dbType + ' via=' + conn.mode + (stagingSchema ? ' staging' : '')
+    + (ref ? ' +reference' : '') + (rules ? ' +rules' : '') + (templateRef ? ' +template' : ''));
   return ok({ session: publicSession(doc) });
 }
 
@@ -1146,7 +1265,40 @@ async function bridgeRedeem(body) {
     readOnly: doc.kind === 'bridgecheck' ? true : !doc.dataChangesAllowed,
     stagingSchema: doc.kind === 'session' ? (doc.stagingSchema || '') : '',
     projectId: doc.kind === 'session' ? (doc.projectId || '') : '',
+    reference: doc.kind === 'session' ? await redeemReference(doc) : null,
+    rules: doc.kind === 'session' && doc.rulesCount ? doc.rulesCount : null,
+    templateRef: doc.kind === 'session' ? (doc.templateRef || null) : null,
   });
+}
+// The target a staging session may read, unsealed fresh like the session's
+// own connection. A credential gone since the session opened is said, not
+// thrown: the session itself still works.
+async function redeemReference(doc) {
+  const r = doc.ref;
+  if (!r || !r.connectionId) return null;
+  const sec = await deps.readSecret(doc.oid, r.connectionId);
+  const mode = r.mode === 'azure' ? 'azure' : 'direct';
+  if (mode === 'direct' && !(sec.ok && sec.bundle && sec.bundle.connString)) {
+    return { connectionName: r.connectionName, error: 'The credential for "' + r.connectionName + '" is no longer saved on the server. Save the connection again.' };
+  }
+  return { connectionId: r.connectionId, connectionName: r.connectionName, side: r.side || 'tgt', dbType: r.dbType || 'sqlserver', mode,
+    connString: mode === 'direct' ? sec.bundle.connString : null,
+    fnUrl: mode === 'azure' ? r.fnUrl : null,
+    fnKey: mode === 'azure' && sec.ok && sec.bundle ? (sec.bundle.fnKey || null) : null };
+}
+
+// ── The session's Was/Is rules and Parameters ────────────────────────────
+async function bridgeRules(body) {
+  const p = await passDoc(body);
+  if (p.response) return p.response;
+  const doc = p.doc;
+  if (doc.kind !== 'session' || !doc.rulesCount) return reply(404, { error: 'This session was opened without Was/Is rules or Parameters.' });
+  const container = await deps.container();
+  let r = null;
+  try { r = (await container.item(rulesId(doc.id), doc.userId).read()).resource || null; }
+  catch (e) { if (!e || e.code !== 404) throw e; }
+  if (!r) return reply(404, { error: 'This session\'s Was/Is rules and Parameters could not be found.' });
+  return reply(200, { ok: true, wasis: r.wasis || [], params: r.params || [], totals: r.totals || null, truncated: !!r.truncated, at: r.at || null });
 }
 
 // ── The session's Conversion Template ───────────────────────────────────
@@ -1157,7 +1309,6 @@ async function bridgeRedeem(body) {
 // newest draft for it; else the newest published, then the newest draft, in
 // the project. The list comes back too, so Claude can say which it used and
 // the person can ask for another.
-const TEMPLATE_FIELDS = 'c.id, c.templateId, c.kind, c.name, c.version, c.status, c.profileId, c.updatedAt';
 function pickTemplate(list, profileId, wanted) {
   if (wanted) return list.find(t => t.id === wanted) || list.filter(t => t.templateId === wanted)
     .sort((a, b) => (a.kind === 'published' ? 0 : 1) - (b.kind === 'published' ? 0 : 1) || (Number(b.version) || 0) - (Number(a.version) || 0))[0] || null;
@@ -1175,27 +1326,33 @@ async function bridgeTemplate(body) {
     return reply(404, { error: 'This session was not opened from a project, so there is no Conversion Template to read.' });
   }
   const tc = deps.templates();
-  const { resources } = await tc.items.query({
-    query: 'SELECT ' + TEMPLATE_FIELDS + ' FROM c WHERE c.projectId = @p',
-    parameters: [{ name: '@p', value: doc.projectId }],
-  }, { partitionKey: doc.projectId }).fetchAll();
-  const list = resources || [];
+  const list = await listProjectTemplates(doc.projectId);
   if (!list.length) return reply(404, { error: 'This project has no Conversion Template yet. Make one on the Conversion Templates page.' });
-  const chosen = pickTemplate(list, doc.profileId, str(body.templateId, 200));
-  if (!chosen) return reply(404, { error: 'No template "' + str(body.templateId, 200) + '" in this project.' });
+  // Asked for by id: exactly that one. Otherwise the one pinned when the
+  // session opened; if that has since been deleted, the default, and a note.
+  const asked = str(body.templateId, 200);
+  const pinned = doc.templateRef && doc.templateRef.id ? doc.templateRef.id : '';
+  let chosen = pickTemplate(list, doc.profileId, asked || pinned);
+  let note = '';
+  if (!chosen && !asked && pinned) {
+    chosen = pickTemplate(list, doc.profileId, '');
+    if (chosen) note = 'The template this session was opened with (' + (doc.templateRef.name || pinned) + ' v' + doc.templateRef.version + ') is no longer in the project; this is the newest one instead.';
+  }
+  if (!chosen) return reply(404, { error: 'No template "' + (asked || pinned) + '" in this project.' });
   let full = null;
   try { full = (await tc.item(chosen.id, doc.projectId).read()).resource || null; }
   catch (e) { if (!e || e.code !== 404) throw e; }
   if (!full || !full.doc) return reply(404, { error: 'The template "' + chosen.name + '" could not be read.' });
-  return reply(200, { ok: true, templates: list, chosen, template: full.doc });
+  return reply(200, Object.assign({ ok: true, templates: list, chosen, template: full.doc, pinned: !asked && !!pinned && chosen.id === pinned }, note ? { note } : {}));
 }
 async function bridgeHandler(req, ctx) {
   const action = String((req.params && req.params.action) || '').toLowerCase();
-  if (action !== 'redeem' && action !== 'template') return reply(404, { error: 'Unknown bridge action: ' + action });
+  if (action !== 'redeem' && action !== 'template' && action !== 'rules') return reply(404, { error: 'Unknown bridge action: ' + action });
   if (req.method !== 'POST') return reply(405, { error: 'POST only' });
   try {
     const body = await req.json().catch(() => null);
-    const res = action === 'template' ? await bridgeTemplate(body || {}) : await bridgeRedeem(body || {});
+    const res = action === 'template' ? await bridgeTemplate(body || {})
+      : action === 'rules' ? await bridgeRules(body || {}) : await bridgeRedeem(body || {});
     // Status only: never the pass, the connection or who it was for.
     ctx.log('[claude-code-bridge] ' + action + ' status=' + res.status);
     return res;
@@ -1279,7 +1436,7 @@ module.exports = {
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
   sessionCheck, bridgeRedeem, bridgeHandler, newBridgePass, splitPass, sha256, mcpUrl, specTag, resolveConnection,
-  bridgeTemplate, pickTemplate, stagingSchemaProblem, conversionPlaybook,
+  bridgeTemplate, pickTemplate, stagingSchemaProblem, conversionPlaybook, bridgeRules, cleanRules, RULES_MAX, redeemReference, listProjectTemplates,
   MOUNT_ROOT, MCP_NAME, SESSION_HOSTS, BRIDGE_TTL_MS, CHECK_TTL_MS, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CONTAINER, EVENT_CHUNK, MASK,
