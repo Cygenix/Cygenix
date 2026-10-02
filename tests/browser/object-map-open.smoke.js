@@ -45,7 +45,12 @@ const TGT={schema:'dbo',name:'Payor',primaryKeys:['PayorID'],foreignKeys:[],colu
   {name:'Client',type:'INT',nullable:true},
   {name:'DisplayName',type:'NVARCHAR(127)',nullable:true},
   {name:'OpenedOn',type:'DATETIME',nullable:true}]};
-const TABLES=[SRC,TGT].map(t=>({schema:t.schema,name:t.name,fullName:t.schema+'.'+t.name,type:'BASE TABLE'}));
+// A second schema holding a table of the same name, so a saved name with no
+// schema ("STG_PAYOR") fits two tables and the page has to ask.
+const SRC2={schema:'stg',name:'STG_Payor',primaryKeys:[],foreignKeys:[],columns:[{name:'PayorID',type:'INT',nullable:true}]};
+const TABLES=[SRC,TGT,SRC2].map(t=>({schema:t.schema,name:t.name,fullName:t.schema+'.'+t.name,type:'BASE TABLE'}));
+// Flipped by the "source disconnected" case below.
+let SRC_DOWN=false;
 
 const JOB_ID='job_tpl_1789722047112_ausrq7';
 
@@ -66,9 +71,10 @@ const JOB_ID='job_tpl_1789722047112_ausrq7';
     if(/db-connect/.test(u)){
       let body={};try{body=JSON.parse(r.request().postData()||'{}');}catch{}
       CALLS.push(body.action||'?');
+      if(SRC_DOWN&&/@src\//.test(JSON.stringify(body)))return r.fulfill({status:500,contentType:'application/json',body:JSON.stringify({success:false,error:'Login failed for user'})});
       if(body.action==='schema-tables')return json(r,{success:true,tables:TABLES});
       if(body.action==='schema-columns'){
-        const t=[SRC,TGT].find(t=>t.schema===body.schemaName&&t.name===body.tableName);
+        const t=[SRC,TGT,SRC2].find(t=>t.schema===body.schemaName&&t.name===body.tableName);
         return json(r,{success:true,table:t||{schema:body.schemaName,name:body.tableName,columns:[],primaryKeys:[],foreignKeys:[]}});
       }
       return json(r,{success:true});
@@ -115,6 +121,22 @@ const JOB_ID='job_tpl_1789722047112_ausrq7';
       target:'dbo.Payor',targetTable:'dbo.Payor',
       columnMapping:[{srcCol:'LegacyRef',tgtCol:'DisplayName',transform:'TRIM',match:'LOW'}],
       created:new Date().toISOString()
+    },{
+      // Oct-2026: saved in a different case from the database, with the
+      // target's schema missing, and its columns in the wrong case too.
+      id:'job_case',name:'stg_payor → payor',jobType:'simple-map',projectId:'p1',
+      source:'dbo.stg_payor',sourceTable:'dbo.stg_payor',
+      target:'PAYOR',targetTable:'PAYOR',
+      columnMapping:[{srcCol:'legacyref',tgtCol:'displayname',transform:'TRIM',match:'LOW'}],
+      created:new Date().toISOString()
+    },{
+      id:'job_typo',name:'typo',jobType:'simple-map',projectId:'p1',
+      source:'dbo.STG_Payr',sourceTable:'dbo.STG_Payr',target:'dbo.Payor',targetTable:'dbo.Payor',
+      columnMapping:[],created:new Date().toISOString()
+    },{
+      id:'job_ambig',name:'ambiguous',jobType:'simple-map',projectId:'p1',
+      source:'STG_PAYOR',sourceTable:'STG_PAYOR',target:'dbo.Payor',targetTable:'dbo.Payor',
+      columnMapping:[],created:new Date().toISOString()
     }]));
   },{U,tok,JOB_ID});
 
@@ -211,6 +233,71 @@ const JOB_ID='job_tpl_1789722047112_ausrq7';
     JSON.stringify(real.mapping));
   check('…and it is not told it was matched by name, because it was not',
     !/by name/.test(real.status),real.status);
+
+  /* ── Oct-2026: names saved in another case, or with no schema ─────────── */
+  const openAndWait=async(id)=>{
+    await page.goto('http://localhost:'+P+'/object-mapping?edit='+id,{waitUntil:'domcontentloaded'});
+    await page.waitForFunction(()=>{
+      const w=document.getElementById('mapping-wrap'), s=document.getElementById('status-bar');
+      return (!!w&&w.style.display==='block'&&document.querySelectorAll('#mapping-tbody tr').length>0)
+        || (s&&/status-err/.test(s.className));
+    },null,{timeout:25000}).catch(()=>{});
+    await page.waitForTimeout(300);
+  };
+  const grid=()=>page.evaluate(()=>({
+    mapping:Array.from(document.querySelectorAll('#mapping-tbody tr')).map(tr=>{
+      const tds=tr.children; const sel=tds[1].querySelector('select'); const tf=tds[2].querySelector('select');
+      return [tds[0].firstElementChild.textContent.trim(), sel?sel.value:'', tf?tf.value:''];
+    }),
+    wrap:(document.getElementById('mapping-wrap')||{}).style?.display,
+    status:(document.getElementById('status-bar')||{}).textContent||'',
+    statusClass:(document.getElementById('status-bar')||{}).className||'',
+    src:(document.getElementById('src-table-input')||{}).value||'',
+    tgt:(document.getElementById('tgt-table-input')||{}).value||'',
+    picks:Array.from(document.querySelectorAll('#status-bar .om-pick-row button')).map(b=>b.textContent),
+  }));
+
+  await openAndWait('job_case');
+  const cs=await grid();
+  check('a map saved as "dbo.stg_payor" → "PAYOR" OPENS against dbo.STG_Payor → dbo.Payor',
+    cs.wrap==='block'&&cs.mapping.length>0&&!/status-err/.test(cs.statusClass),JSON.stringify({status:cs.status,src:cs.src,tgt:cs.tgt}));
+  check('…and its saved column row, also in the wrong case, is restored onto the live columns',
+    cs.mapping.some(m=>m[0]==='DisplayName'&&m[1]==='LegacyRef'&&m[2]==='TRIM')
+    && cs.mapping.filter(m=>m[0].toLowerCase()==='displayname').length===1,JSON.stringify(cs.mapping));
+  check('…with no "not found" and no "reconnect"',!/not found|reconnect/i.test(cs.status),cs.status);
+  // Save it, the ordinary way, and read back what was written.
+  await page.evaluate(()=>{ try{ saveAsJob(); }catch(e){} });
+  await page.waitForTimeout(800);
+  const savedCase=await page.evaluate(()=>(JSON.parse(localStorage.getItem('cygenix_jobs')||'[]').find(j=>j.id==='job_case')||{}));
+  check('saving it writes the live spelling — dbo.STG_Payor → dbo.Payor, DisplayName ← LegacyRef',
+    savedCase.sourceTable==='dbo.STG_Payor'&&savedCase.targetTable==='dbo.Payor'
+    &&(savedCase.columnMapping||[]).some(m=>m.tgtCol==='DisplayName'&&m.srcCol==='LegacyRef'),
+    JSON.stringify({s:savedCase.sourceTable,t:savedCase.targetTable,m:savedCase.columnMapping}));
+
+  await openAndWait('job_typo');
+  const ty=await grid();
+  check('a table that is not there says it is not in SRC, and to pick it from the Source table list',
+    /Table "dbo\.STG_Payr" isn't in SRC\. Pick it from the Source table list\./.test(ty.status),ty.status);
+  check('…names the close match',/Close matches: .*dbo\.STG_Payor/.test(ty.status),ty.status);
+  check('…and does NOT say reconnect, because the connection is fine',!/reconnect/i.test(ty.status),ty.status);
+
+  await openAndWait('job_ambig');
+  await page.waitForFunction(()=>document.querySelectorAll('#status-bar .om-pick-row button').length>0,null,{timeout:15000}).catch(()=>{});
+  const am=await grid();
+  check('"STG_PAYOR" fits dbo.STG_Payor and stg.STG_Payor: the page asks, listing both, and opens neither',
+    /matches more than one source table/.test(am.status)&&am.picks.indexOf('dbo.STG_Payor')>=0&&am.picks.indexOf('stg.STG_Payor')>=0
+    &&am.wrap!=='block',JSON.stringify({status:am.status,picks:am.picks}));
+  await page.evaluate(()=>{ const b=Array.from(document.querySelectorAll('#status-bar .om-pick-row button')).find(b=>b.textContent==='dbo.STG_Payor'); if(b) b.click(); });
+  await page.waitForFunction(()=>{const w=document.getElementById('mapping-wrap');return !!w&&w.style.display==='block';},null,{timeout:15000}).catch(()=>{});
+  const am2=await grid();
+  check('picking dbo.STG_Payor opens the map on it',am2.wrap==='block'&&am2.src==='dbo.STG_Payor'&&am2.picks.length===0,JSON.stringify({src:am2.src,status:am2.status}));
+
+  SRC_DOWN=true;
+  await openAndWait('job_real');
+  const dn=await grid();
+  SRC_DOWN=false;
+  check('with the source connection down, the message still says "Reconnect source DB"',
+    /Reconnect source DB/.test(dn.status)&&/status-err/.test(dn.statusClass),dn.status);
 
   check('no page errors',errs.length===0,errs.join(' | '));
 

@@ -778,7 +778,15 @@ async function ensureColumns(side, table){
   return table;
 }
 
+// The last state each side's banner was set to: 'connecting' | 'ok' | 'err',
+// or absent before the first attempt. The saved-map restore reads it to tell
+// "the connection failed" apart from "the connection works and the table is
+// not in it" — two problems with opposite fixes, which used to share one
+// message telling the user to reconnect.
+const _connState = {};
+
 function setBanner(side, state, text){
+  _connState[side] = state;
   const dot=$('src-dot'); const tDot=$('tgt-dot');
   const lbl = $(side+'-label');
   if(lbl) lbl.textContent = text;
@@ -4907,6 +4915,127 @@ function mirrorJobsToDrive(){
   } catch (_) {}
 }
 
+// ── Finding a saved table name in the live list ──────────────────────────────
+// Oct-2026. Every place below that turns a SAVED table name back into a live
+// table goes through omResolveTable, which asks CygenixObjectNames for the
+// match (cygenix-object-names.js says why, and how the rules were chosen).
+// This used to be `list.find(t => t.value === saved)` in five places: exact
+// text, so "dbo.STG_client" never found "dbo.STG_Client", although SQL Server
+// — and the SQL editor — treat them as one table. The message then blamed the
+// connection, which was fine.
+//
+// What each outcome does here:
+//   exact / unique → open it. The map takes the live spelling the next time
+//                    it is saved, because saving writes the live table's own
+//                    fullName; nothing is written just by opening it.
+//   ambiguous      → ask, in the status bar, with one button per candidate.
+//                    Never guess between stg.Client and dbo.Client.
+//   missing        → say the table is not in that database and offer the near
+//                    names. "Reconnect" is only said when the connection did
+//                    fail or listed nothing (omConnProblem).
+
+const OM_SIDE_WORD = { src: 'Source', tgt: 'Target' };
+
+function omDbName(side){
+  const sch = side === 'src' ? srcSchema : tgtSchema;
+  const conn = side === 'src' ? srcConn : tgtConn;
+  let n = '';
+  try { n = (sch && sch.database) || parseDbName(conn) || ''; } catch(e){}
+  return n || ('the ' + OM_SIDE_WORD[side].toLowerCase() + ' database');
+}
+
+// A reason the table list cannot be trusted to answer "is it there?", or null
+// when the connection is up and listed at least one object. Only these cases
+// say "reconnect".
+function omConnProblem(side, wanted){
+  const list = side === 'src' ? srcAllTables : tgtAllTables;
+  const word = OM_SIDE_WORD[side];
+  const state = _connState[side];
+  if (state === 'err')
+    return word + ' table "' + wanted + '" can\'t be checked — the ' + word.toLowerCase()
+      + ' connection failed. Reconnect ' + word.toLowerCase() + ' DB.';
+  if (state === 'ok' && !list.length)
+    return word + ' table "' + wanted + '" can\'t be checked — the ' + word.toLowerCase()
+      + ' connection returned no tables. Reconnect ' + word.toLowerCase() + ' DB.';
+  return null;
+}
+
+function omMissingMessage(side, wanted, close){
+  const word = OM_SIDE_WORD[side];
+  let msg = 'Table "' + wanted + '" isn\'t in ' + omDbName(side) + '. Pick it from the ' + word + ' table list.';
+  if (close && close.length) msg += ' Close matches: ' + close.map(t => t.fullName || t.value).join(', ') + '.';
+  return msg;
+}
+
+// More than one live table fits the saved name. Show them and wait for a
+// click; resolves with the chosen item, or null if the user cancels.
+function omPickTable(side, wanted, candidates){
+  return new Promise(resolve => {
+    const word = OM_SIDE_WORD[side].toLowerCase();
+    showStatus('"' + wanted + '" matches more than one ' + word + ' table in ' + omDbName(side)
+      + ': ' + candidates.map(t => t.fullName || t.value).join(', ') + '. Pick the one this map uses:', 'err');
+    const bar = $('status-bar');
+    if (!bar) { resolve(null); return; }
+    const row = document.createElement('div');
+    row.className = 'om-pick-row';
+    row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px';
+    candidates.forEach((t, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn btn-ghost btn-sm';
+      b.textContent = t.fullName || t.value;
+      b.dataset.i = String(i);
+      row.appendChild(b);
+    });
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'btn btn-ghost btn-sm'; cancel.textContent = 'Cancel';
+    row.appendChild(cancel);
+    let done = false;
+    row.addEventListener('click', ev => {
+      const b = ev.target.closest('button');
+      if (!b || done) return;
+      done = true;
+      row.remove();
+      if (b === cancel) { showStatus('Not opened — pick the ' + word + ' table from the ' + OM_SIDE_WORD[side] + ' table list.', 'warn'); resolve(null); return; }
+      resolve(candidates[Number(b.dataset.i)] || null);
+    });
+    bar.appendChild(row);
+  });
+}
+
+// The one place a saved name becomes a live table. `quiet` skips the
+// "missing" message for callers that report on their own.
+async function omResolveTable(side, wanted, quiet){
+  const list = side === 'src' ? srcAllTables : tgtAllTables;
+  const res = (typeof CygenixObjectNames !== 'undefined')
+    ? CygenixObjectNames.findObjectByName(list, wanted)
+    : (() => { const m = list.find(t => t.value === wanted || t.label === wanted); return { status: m ? 'exact' : 'missing', match: m || null, candidates: m ? [m] : [], close: [] }; })();
+  if (res.status === 'exact' || res.status === 'unique') return res.match;
+  if (res.status === 'ambiguous') return omPickTable(side, wanted, res.candidates);
+  if (!quiet) showStatus(omConnProblem(side, wanted) || omMissingMessage(side, wanted, res.close), 'err');
+  return null;
+}
+
+// A saved mapping's column names in the live spelling, so every exact
+// comparison further down the page (and there are many) holds.
+function omCanonicalCols(mapping, srcT, tgtT){
+  if (typeof CygenixObjectNames === 'undefined' || !Array.isArray(mapping)) return mapping;
+  return CygenixObjectNames.canonicaliseMapping(mapping,
+    srcT && srcT.columns ? srcT.columns : null,
+    tgtT && tgtT.columns ? tgtT.columns : null).mapping;
+}
+
+// Saved JOINs name their table as text too. Exact or single case-insensitive
+// fits take the live value; anything else is left exactly as saved — a join's
+// SQL still runs, because SQL Server reads the name the same way.
+function omCanonicalJoins(joins){
+  if (!Array.isArray(joins) || typeof CygenixObjectNames === 'undefined') return joins;
+  return joins.map(j => {
+    if (!j || !j.table) return j;
+    const r = CygenixObjectNames.findObjectByName(srcAllTables, j.table);
+    return (r.status === 'unique') ? Object.assign({}, j, { table: r.match.value }) : j;
+  });
+}
+
 // ── Edit mode — load saved job ────────────────────────────────────────────────
 // Async because jobs can be created server-side by the Agentive Migration
 // backend (which writes directly to the user's Cosmos `projects` document).
@@ -4967,6 +5096,11 @@ async function checkEditMode(){
     let attempts=0;
     const tryRestore=setInterval(async ()=>{
       attempts++;
+      // A connection that failed, or answered with no tables at all, will not
+      // get better by waiting — say so now, in the words that fit ("reconnect"),
+      // rather than after twenty seconds of "Schema not loaded".
+      const connWhy = omConnProblem('src', srcFull) || (tgtFull ? omConnProblem('tgt', tgtFull) : null);
+      if(connWhy){ clearInterval(tryRestore); showStatus(connWhy,'err'); return; }
       const srcReady = srcAllTables.length > 0;
       const tgtReady = !tgtFull || tgtAllTables.length > 0;
       if(srcReady && tgtReady){
@@ -4975,20 +5109,18 @@ async function checkEditMode(){
         // For large tables this network round-trip can take several seconds; the
         // old fire-and-forget version raced with the setTimeout below and left
         // tgtTable=null, causing renderMappingTable() to silently bail.
-        const srcT = srcAllTables.find(t=>t.value===srcFull||t.label===srcFull);
-        if(!srcT){ showStatus('Source table "'+srcFull+'" not found — reconnect source DB','err'); return; }
+        // omResolveTable matches the way SQL Server does (case, missing schema)
+        // and asks when more than one table fits; it reports its own failure.
+        const srcT = await omResolveTable('src', srcFull);
+        if(!srcT) return;
         try { await selectTable('src',srcT.value); }
         catch(e){ showStatus('Failed to load source columns for "'+srcFull+'": '+(e.message||e),'err'); return; }
         // Select target table directly (bypass buildMappingIfReady — editJobId is set)
         if(tgtFull && !isOTM){
-          const tgtT = tgtAllTables.find(t=>t.value===tgtFull||t.label===tgtFull);
-          if(tgtT){
-            try { await selectTable('tgt',tgtT.value); }
-            catch(e){ showStatus('Failed to load target columns for "'+tgtFull+'": '+(e.message||e),'err'); return; }
-          } else {
-            showStatus('Target table "'+tgtFull+'" not found — reconnect target DB','err');
-            return;
-          }
+          const tgtT = await omResolveTable('tgt', tgtFull);
+          if(!tgtT) return;
+          try { await selectTable('tgt',tgtT.value); }
+          catch(e){ showStatus('Failed to load target columns for "'+tgtFull+'": '+(e.message||e),'err'); return; }
         }
         // Guard against selectTable silently failing (e.g. columns returned
         // empty). Without this the user saw a blank editor and no message.
@@ -5031,8 +5163,10 @@ async function restoreJobMapping(job,isOTM){
       renderSrcColList();
       if(mode==='single') tryAutoGenSQL();
     });
-    // Overwrite empty state with saved joins after initJoinBuilder resets it
-    window._joinState = job.joinState;
+    // Overwrite empty state with saved joins after initJoinBuilder resets it.
+    // Join table names take the live spelling, so the join shows as the
+    // table it is rather than as text the list does not recognise.
+    window._joinState = omCanonicalJoins(job.joinState);
     // Re-render so the saved joins appear in the UI
     renderJoinBuilder('join-container', otherTables, srcTable);
     $('join-panel').style.display = 'block';
@@ -5043,9 +5177,13 @@ async function restoreJobMapping(job,isOTM){
     // Each saved target needs its columns loaded before we can add it to the
     // OTM UI (which reads t.columns). Do them sequentially so row-counts stay
     // ordered predictably in the cards.
+    // Targets that could not be found are collected and named once at the
+    // end, rather than each overwriting the last message.
+    const otmMissing = [];
     for (const jtt of (job.tables||[])) {
-      const t = tgtAllTables.find(t=>t.value===jtt.name||t.label===jtt.name);
-      if (t && !targetTables.find(tt=>tt.fullName===t.value)) {
+      const t = await omResolveTable('tgt', jtt.name, true);
+      if (!t) { otmMissing.push(jtt.name); continue; }
+      if (!targetTables.find(tt=>tt.fullName===t.value)) {
         try { await ensureColumns('tgt', t); }
         catch(e) { showStatus('Could not load columns for ' + t.fullName + ': ' + e.message, 'err'); continue; }
         addOTMTargetFromTable(t);
@@ -5054,19 +5192,30 @@ async function restoreJobMapping(job,isOTM){
         // Jobs saved before grain existed have none — 'row' is what they did.
         targetTables[ti].grain    = jtt.grain === 'distinct' ? 'distinct' : 'row';
         targetTables[ti].grainKey = Array.isArray(jtt.grainKey) ? jtt.grainKey.slice() : [];
-        if(jtt.pkCol)  targetTables[ti].pkCol=jtt.pkCol;
-        if(jtt.mappings) targetTables[ti].mappings = ensureAllTargetCols(jtt.mappings, targetTables[ti]);
+        if(jtt.pkCol)  targetTables[ti].pkCol = (typeof CygenixObjectNames !== 'undefined') ? CygenixObjectNames.resolveColumnName(targetTables[ti].columns, jtt.pkCol) : jtt.pkCol;
+        if(jtt.mappings) targetTables[ti].mappings = ensureAllTargetCols(omCanonicalCols(jtt.mappings, srcTable, targetTables[ti]), targetTables[ti]);
         if(jtt.fks)    targetTables[ti].fks=jtt.fks;
       }
     }
     renderOTMCards();
     // Regenerate SQL from restored config so it's live-editable
     generateOTMSQL();
+    // These used to be dropped without a word, so the map opened with fewer
+    // targets than it was saved with and nothing said why.
+    if (otmMissing.length){
+      _restoreNote = (otmMissing.length === 1 ? 'Target table "' + otmMissing[0] + '" isn\'t' : otmMissing.length + ' target tables aren\'t')
+        + ' in ' + omDbName('tgt') + (otmMissing.length === 1 ? '' : ' (' + otmMissing.join(', ') + ')')
+        + ' — left out of this map. Add ' + (otmMissing.length === 1 ? 'it' : 'them') + ' from the target table list.';
+    }
   } else {
     // ── Restore single-map ─────────────────────────────────────────────────
-    // tgtTable already selected by checkEditMode — just restore the mapping
+    // tgtTable already selected by checkEditMode — just restore the mapping.
+    // Column names are put into the live spelling first: a row saved as
+    // "clientname" against a column now listed as "ClientName" would
+    // otherwise show as unmapped, and ensureAllTargetCols would add the live
+    // column again beside it.
     if(job.columnMapping?.length){
-      columnMapping = job.columnMapping.map(m=>({...m}));
+      columnMapping = omCanonicalCols(job.columnMapping.map(m=>({...m})), srcTable, tgtTable);
       columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
       $('mapping-wrap').style.display='block';
       $('single-empty').style.display='none';
@@ -6281,8 +6430,9 @@ async function aiJoinHelp(i){
       if(srcReady && tgtReady){
         clearInterval(tryRestore);
         try {
-          const srcT = srcAllTables.find(t =>
-            t.value === d.srcFullName || t.label === d.srcFullName);
+          // Same matching as opening a saved map: case and a missing schema
+          // are ignored, and more than one fit is asked about, not guessed.
+          const srcT = await omResolveTable('src', d.srcFullName, true);
           if(!srcT){
             showStatus('Draft source table "'+d.srcFullName+'" no longer in schema — discarded','err');
             _wipDraftClearInner();
@@ -6300,20 +6450,19 @@ async function aiJoinHelp(i){
               renderSrcColList();
               if(mode==='single') tryAutoGenSQL();
             });
-            window._joinState = d.joinState;
+            window._joinState = omCanonicalJoins(d.joinState);
             renderJoinBuilder('join-container', otherTables, srcTable);
             $('join-panel').style.display = 'block';
           }
 
           if(d.mode === 'single' && d.tgtFullName){
-            const tgtT = tgtAllTables.find(t =>
-              t.value === d.tgtFullName || t.label === d.tgtFullName);
+            const tgtT = await omResolveTable('tgt', d.tgtFullName, true);
             if(!tgtT){
               showStatus('Draft target table "'+d.tgtFullName+'" no longer in schema','err');
             } else {
               await selectTable('tgt', tgtT.value);
               if(Array.isArray(d.columnMapping) && d.columnMapping.length){
-                columnMapping = d.columnMapping.map(m => ({...m}));
+                columnMapping = omCanonicalCols(d.columnMapping.map(m => ({...m})), srcTable, tgtTable);
                 columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
                 $('mapping-wrap').style.display = 'block';
                 $('single-empty').style.display = 'none';
@@ -6323,8 +6472,7 @@ async function aiJoinHelp(i){
             }
           } else if(d.mode === 'otm' && Array.isArray(d.targetTables) && d.targetTables.length){
             for(const stt of d.targetTables){
-              const t = tgtAllTables.find(x =>
-                x.value === stt.name || x.label === stt.name);
+              const t = await omResolveTable('tgt', stt.name, true);
               if(!t) continue;
               if(targetTables.find(tt => tt.fullName === t.value)) continue;
               try { await ensureColumns('tgt', t); }
@@ -6335,7 +6483,7 @@ async function aiJoinHelp(i){
               targetTables[ti].grain    = stt.grain === 'distinct' ? 'distinct' : 'row';
               targetTables[ti].grainKey = Array.isArray(stt.grainKey) ? stt.grainKey.slice() : [];
               if(stt.pkCol)  targetTables[ti].pkCol  = stt.pkCol;
-              if(stt.mappings) targetTables[ti].mappings = ensureAllTargetCols(stt.mappings, targetTables[ti]);
+              if(stt.mappings) targetTables[ti].mappings = ensureAllTargetCols(omCanonicalCols(stt.mappings, srcTable, targetTables[ti]), targetTables[ti]);
               if(stt.fks)    targetTables[ti].fks = stt.fks;
             }
             renderOTMCards();
@@ -6521,12 +6669,13 @@ window.addEventListener('cygenix:job-reverted', (e) => {
     //   • "Source: <fetch error>"     (setBanner — connection refused, auth, etc.)
     //   • "Target: <fetch error>"     (setBanner)
     //   • "Job not found: <id>"
-    //   • "Source table … not found — reconnect source DB"
-    //   • "Target table … not found — reconnect target DB"
+    //   • "Table … isn't in <database>. Pick it from the … table list."
+    //   • "… matches more than one … table" (an unattended save cannot pick)
+    //   • "Source/Target table … can't be checked — … Reconnect … DB."
     //   • "Schema not loaded — check connections and try again"
     //   • "Could not load columns for …"
     // Any of these mean we'll never reach a generated-SQL state, so bail fast.
-    if (lastErrorMsg && /^Source:|^Target:|not configured|not found|Schema not loaded|Could not load|columns never loaded|Failed to load/i.test(lastErrorMsg)){
+    if (lastErrorMsg && /^Source:|^Target:|not configured|not found|isn't in|matches more than one|Reconnect|Schema not loaded|Could not load|columns never loaded|Failed to load/i.test(lastErrorMsg)){
       report(false, shortenErr(lastErrorMsg));
       clearInterval(tick);
       return;
