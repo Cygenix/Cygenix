@@ -925,6 +925,44 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     check('the confirmation names the profile and the connection and says it is recorded', /"Target" under profile "Finance PRD" \(PRD\)/.test(prd.text) && /audit log/.test(prd.text));
   }
 
+  /* ── 5b. The first message of a session ────────────────────────────── */
+  section('5b. The first message: the session counts as working until its turn ends');
+  {
+    CC._reset(); FETCHED = [];
+    GATE_REPLY = { status: 200, body: { allowed: true, tenantId: 'tn_1' } };
+    CLIENT = fakeClient(); DB = fakeContainer();
+    SECRETS.sconn_tgt1 = { connString: CONNSTR };
+    let r = await call('POST', 'session', { body: { side: 'tgt', connId: 'sconn_tgt1', connectionName: 'Target DEV' } });
+    const sid = r.body.session.id;
+    await call('POST', 'message', { body: { sessionId: sid, text: 'What does the template contain?' } });
+    check('sending sets a pending turn on the session', !!DB._items.get(sid).pendingTurn && DB._items.get(sid).pendingTurn.echoed === false);
+    // Anthropic has not picked the message up yet: idle, and only the idle from before it.
+    CLIENT._o.sessions[sid].status = 'idle';
+    CLIENT._o.events[sid] = [{ id: 'i0', type: 'session.status_idle', processed_at: '2026-10-02T09:00:00.000Z', stop_reason: { type: 'end_turn' } }];
+    r = await call('GET', 'events', { query: { sessionId: sid } });
+    check('THE BUG: ANTHROPIC STILL SAYS IDLE RIGHT AFTER THE FIRST MESSAGE — the console now says Working, so the page keeps polling',
+      r.body.status === 'running' && r.body.done === false, JSON.stringify(r.body).slice(0, 200));
+    CLIENT._o.events[sid].push({ id: 'u1', type: 'user.message', processed_at: '2026-10-02T09:00:05.000Z', content: [{ type: 'text', text: 'What does the template contain?' }] });
+    r = await call('GET', 'events', { query: { sessionId: sid } });
+    check('…still Working once the message is echoed but before the turn ends', r.body.status === 'running');
+    CLIENT._o.events[sid].push({ id: 'a1', type: 'agent.message', processed_at: '2026-10-02T09:00:20.000Z', content: [{ type: 'text', text: 'It has 3 modules.' }] },
+      { id: 'i1', type: 'session.status_idle', processed_at: '2026-10-02T09:00:21.000Z', stop_reason: { type: 'end_turn' } });
+    r = await call('GET', 'events', { query: { sessionId: sid } });
+    check('…and Idle when the session goes idle AFTER the echo, with the pending turn cleared',
+      r.body.status === 'idle' && r.body.events.map(e => e.id).join() === 'a1,i1' && !DB._items.get(sid).pendingTurn, r.body.status);
+    await call('POST', 'message', { body: { sessionId: sid, text: 'go on' } });
+    CLIENT._o.sessions[sid].status = 'idle';
+    const t0 = Date.now(); CC.deps.now = () => t0 + CC.PENDING_TURN_MS + 1000;
+    r = await call('GET', 'events', { query: { sessionId: sid } });
+    check('a message never picked up stops counting as working after a few minutes, so nothing spins forever',
+      r.body.status === 'idle' && !DB._items.get(sid).pendingTurn, r.body.status);
+    CC.deps.now = () => Date.now();
+    check('turnStillOwed in isolation: an idle before the echo does not end the turn',
+      CC.turnStillOwed({ pendingTurn: { since: 0, echoed: false } }, [{ type: 'session.status_idle' }, { type: 'user.message' }], 1000) === true
+      && CC.turnStillOwed({ pendingTurn: { since: 0, echoed: false } }, [{ type: 'user.message' }, { type: 'session.status_idle' }], 1000) === false
+      && CC.turnStillOwed({}, [], 0) === false);
+  }
+
   /* ── 9. Staging sessions, on the Azure side ─────────────────────────── */
   section('9. Staging sessions: opening one, the switch, the pass, the template');
   {

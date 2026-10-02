@@ -618,6 +618,23 @@ async function readAllEvents(container, doc) {
 
 // Anthropic's session status, and the stop reason it carried, into the four
 // words the console shows: idle | running | stopped | error.
+// Has the turn a message started ended yet? Read from the events, in order:
+// the message's own echo (user.message) first, then the session going idle
+// after it. An idle that comes before the echo is the session's state from
+// BEFORE the message, and does not count.
+const PENDING_TURN_MS = 3 * 60 * 1000;
+function turnStillOwed(doc, fresh, now) {
+  const p = doc.pendingTurn;
+  if (!p) return false;
+  for (const ev of fresh) {
+    if (ev.type === 'user.message') p.echoed = true;
+    else if (p.echoed && (ev.type === 'session.status_idle' || ev.type === 'session.status_terminated' || ev.type === 'session.error')) {
+      doc.pendingTurn = null; return false;
+    }
+  }
+  if (now - (Number(p.since) || 0) > PENDING_TURN_MS) { doc.pendingTurn = null; return false; }
+  return true;
+}
 function ourStatus(remote, doc) {
   if (doc.status === 'stopped') return 'stopped';
   if (remote === 'terminated') return doc.status === 'error' ? 'error' : 'stopped';
@@ -818,6 +835,13 @@ async function sessionMessage(who, apiKey, body) {
   const client = deps.makeClient(apiKey);
   await client.beta.sessions.events.send(doc.id, { events: [{ type: 'user.message', content: [{ type: 'text', text }] }] });
   doc.status = 'running';
+  // A turn is now owed. Anthropic reports the session "idle" until it has
+  // picked the message up — several seconds on a session's FIRST message,
+  // while its workspace starts — and the page, seeing idle, stopped polling
+  // and showed nothing until the next message. So the session counts as
+  // working until the turn this message started has visibly ended (see
+  // turnStillOwed), or PENDING_TURN_MS passes with no sign of it.
+  doc.pendingTurn = { since: deps.now(), echoed: false };
   if (!doc.title) doc.title = text.replace(/\s+/g, ' ').slice(0, 80);
   doc.updatedAt = new Date(deps.now()).toISOString();
   await container.items.upsert(doc);
@@ -876,8 +900,11 @@ async function sessionEvents(who, apiKey, sessionId) {
   if (idle && idle.stop_reason) doc.stopReason = idle.stop_reason.type || null;
   const cost = remote.usage && remote.usage.list_cost;
   if (cost && cost.amount != null) doc.costCents = Number(cost.amount);
-  const status = ourStatus(remote.status, doc);
+  const owed = turnStillOwed(doc, fresh, deps.now());
+  let status = ourStatus(remote.status, doc);
+  if (status === 'idle' && owed) status = 'running';
   if (remote.status === 'terminated') {
+    doc.pendingTurn = null;
     doc.status = fresh.some(e => e.type === 'session.error') ? 'error' : 'stopped';
     doc.endedAt = doc.endedAt || new Date(deps.now()).toISOString();
     await revokeBridge(client, doc);
@@ -1239,7 +1266,7 @@ app.http('claude-code-bridge', {
 module.exports = {
   deps, handler, identify, gate, siteUrl, budget, agentSpec, ensureAgent, ensureEnvironment,
   environmentName, environmentConfig, parseConn, systemPrompt, MODE_TEXT, makeRedactor,
-  ourStatus, publicSession, chunkId,
+  ourStatus, turnStillOwed, PENDING_TURN_MS, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
   sessionCheck, bridgeRedeem, bridgeHandler, newBridgePass, splitPass, sha256, mcpUrl, specTag, resolveConnection,
