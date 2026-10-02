@@ -139,7 +139,17 @@ function fakeClient(opts) {
         },
         events: {
           list: (id, params) => { calls.push(['events.list', id, params]); return eventPage(o.events[id], params); },
-          send: async (id, p) => { calls.push(['events.send', id, p]); return { events: p.events }; },
+          send: async (id, p) => {
+            calls.push(['events.send', id, p]);
+            // The API's rule (Oct-2026): a system.message must immediately
+            // follow a user message in the same request.
+            (p.events || []).forEach((e, i) => {
+              if (e.type === 'system.message' && !(i > 0 && /^user\.(message|tool_result|custom_tool_result)$|^system\.message$/.test(p.events[i - 1].type))) {
+                const err = new Error('Invalid `system.message` event at events[' + i + ']: `system.message` must immediately follow a `user.message`'); err.status = 400; throw err;
+              }
+            });
+            return { events: p.events };
+          },
         },
       },
     },
@@ -687,13 +697,20 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
 
     // Data changes.
     FETCHED = [];
+    let sends = CLIENT.calls.filter(c => c[0] === 'events.send').length;
     r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: true } });
     const mg = JSON.parse(FETCHED[0].init.body);
-    let sysm = CLIENT.calls.filter(c => c[0] === 'events.send').pop()[2].events[0];
+    check('THE SWITCH SENDS NOTHING TO ANTHROPIC ON ITS OWN — the API refuses a lone system.message, which broke it',
+      r.status === 200 && CLIENT.calls.filter(c => c[0] === 'events.send').length === sends, r.raw);
+    await call('POST', 'message', { body: { sessionId: sid, text: 'Now fix the nulls' } });
+    let sent2 = CLIENT.calls.filter(c => c[0] === 'events.send').pop()[2].events;
+    let sysm = sent2[1];
     check('ALLOWING CHANGES asks the gate for the mutating act and records it, naming profile and connection',
       r.status === 200 && r.body.dataChangesAllowed === true && mg.act === 'changes' && mg.record === 'session.changes-on'
       && mg.detail.profile === 'Demo' && mg.detail.connection === 'Target DEV' && mg.detail.sessionId === sid, JSON.stringify(mg));
-    check('and tells Claude, as a system message', sysm.type === 'system.message' && /CHANGES ALLOWED/.test(sysm.content[0].text) && /show the exact SQL/.test(sysm.content[0].text));
+    check('…and tells Claude with the NEXT message, straight after it, in the same request',
+      sent2.length === 2 && sent2[0].type === 'user.message' && sysm.type === 'system.message' && /CHANGES ALLOWED/.test(sysm.content[0].text) && /show the exact SQL/.test(sysm.content[0].text));
+    check('…once: the note is cleared after it is delivered', !DB._items.get(sid).modeNote);
     check('the session record says so', DB._items.get(sid).dataChangesAllowed === true);
     red = JSON.parse((await CC.bridgeRedeem({ token: sessTok })).body);
     check('AND THE BRIDGE SEES IT AT ONCE: the same pass now redeems with changes allowed', red.readOnly === false, JSON.stringify(red));
@@ -702,9 +719,12 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: true } });
     check('a role the gate refuses cannot switch changes on', r.status === 403 && /cannot allow/.test(r.body.error));
     GATE_REPLY = { status: 200, body: { allowed: true, tenantId: 'tn_1' } };
+    r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: true } });
     r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: false } });
-    sysm = CLIENT.calls.filter(c => c[0] === 'events.send').pop()[2].events[0];
-    check('switching it off is a plain use, and tells Claude it is read-only again', r.status === 200 && /READ-ONLY/.test(sysm.content[0].text) && DB._items.get(sid).dataChangesAllowed === false);
+    await call('POST', 'message', { body: { sessionId: sid, text: 'carry on' } });
+    sent2 = CLIENT.calls.filter(c => c[0] === 'events.send').pop()[2].events;
+    check('switching it off is a plain use, and Claude is told only the LATEST mode (on then off is one note: read-only)',
+      r.status === 200 && sent2.length === 2 && /READ-ONLY/.test(sent2[1].content[0].text) && DB._items.get(sid).dataChangesAllowed === false, JSON.stringify(sent2));
     check('…and the bridge is read-only again', JSON.parse((await CC.bridgeRedeem({ token: sessTok })).body).readOnly === true);
 
     // Stop.
@@ -766,11 +786,18 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
       && r.body.upload.name === 'orders.csv' && r.body.upload.size === csv.length
       && CLIENT.calls.some(c => c[0] === 'files.upload' && c[1].file.name === 'orders.csv' && c[1].file.text === csv.toString() && c[1].expires_in_seconds === 7 * 86400)
       && CLIENT.calls.some(c => c[0] === 'resources.add' && c[1] === sid3 && c[2].type === 'file' && c[2].mount_path === '/workspace/uploads/orders.csv')
-      && CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === sid3 && c[2].events[0].type === 'system.message' && /orders\.csv/.test(c[2].events[0].content[0].text) && /\/mnt\/session\/uploads\/workspace\/uploads\/orders\.csv/.test(c[2].events[0].content[0].text)), r.raw);
+      && !CLIENT.calls.some(c => c[0] === 'events.send' && c[1] === sid3)
+      && /\/mnt\/session\/uploads\/workspace\/uploads\/orders\.csv/.test(DB._items.get(sid3).notes[0]), r.raw);
     check('…and recorded on the session, without the content', DB._items.get(sid3).uploads.length === 1 && DB._items.get(sid3).uploads[0].path === '/mnt/session/uploads/workspace/uploads/orders.csv'
       && JSON.stringify(DB._items.get(sid3)).indexOf('Ann') === -1);
     r = await call('POST', 'upload', { body: { sessionId: sid3, name: 'orders.csv', contentBase64: csv.toString('base64') } });
     check('a second file with the same name gets its own path', r.status === 200 && r.body.upload.mountPath === '/workspace/uploads/orders-2.csv' && r.body.upload.path === '/mnt/session/uploads/workspace/uploads/orders-2.csv', r.raw);
+    await call('POST', 'message', { body: { sessionId: sid3, text: 'Load these' } });
+    const withFiles = CLIENT.calls.filter(c => c[0] === 'events.send' && c[1] === sid3).pop()[2].events;
+    check('BOTH FILES REACH CLAUDE with the next message, each where it REALLY appears, and the notes are then cleared',
+      withFiles.length === 3 && withFiles[0].type === 'user.message' && withFiles.slice(1).every(e => e.type === 'system.message')
+      && /\/mnt\/session\/uploads\/workspace\/uploads\/orders\.csv/.test(withFiles[1].content[0].text)
+      && /orders-2\.csv/.test(withFiles[2].content[0].text) && DB._items.get(sid3).notes.length === 0, JSON.stringify(withFiles).slice(0, 300));
     check('an empty or unreadable file is a 400', (await call('POST', 'upload', { body: { sessionId: sid3, name: 'x', contentBase64: '' } })).status === 400
       && (await call('POST', 'upload', { body: { sessionId: sid3, name: 'x', contentBase64: '@@@' } })).status === 400);
     r = await call('POST', 'upload', { body: { sessionId: sid3, name: 'big.bin', contentBase64: Buffer.alloc(4 * 1024 * 1024 + 1).toString('base64') } });

@@ -820,6 +820,11 @@ async function sessionCheck(who, apiKey, body) {
   return ok({ token: pass.token, mcpUrl: mcpUrl(), expiresInSeconds: CHECK_TTL_MS / 1000 });
 }
 
+// Notes waiting for the next message: the mode first, then the files.
+function heldNotes(doc) {
+  return (doc.modeNote ? [doc.modeNote] : []).concat(Array.isArray(doc.notes) ? doc.notes : []);
+}
+
 // ── message ──────────────────────────────────────────────────────────────
 async function sessionMessage(who, apiKey, body) {
   const text = String(body.text == null ? '' : body.text).trim();
@@ -833,7 +838,14 @@ async function sessionMessage(who, apiKey, body) {
   const g = await gate(who, 'use');
   if (!g.ok) return g.response;
   const client = deps.makeClient(apiKey);
-  await client.beta.sessions.events.send(doc.id, { events: [{ type: 'user.message', content: [{ type: 'text', text }] }] });
+  // Notes for Claude that were held back — the data-change mode, files
+  // attached — go straight after the person's message, in the same request:
+  // the API (Oct-2026) refuses a system.message that does not immediately
+  // follow a user message. They are cleared only once that send succeeds.
+  const notes = heldNotes(doc);
+  await client.beta.sessions.events.send(doc.id, { events: [{ type: 'user.message', content: [{ type: 'text', text }] }]
+    .concat(notes.map(t => ({ type: 'system.message', content: [{ type: 'text', text: t }] }))) });
+  doc.modeNote = null; doc.notes = [];
   doc.status = 'running';
   // A turn is now owed. Anthropic reports the session "idle" until it has
   // picked the message up — several seconds on a session's FIRST message,
@@ -933,9 +945,10 @@ async function sessionMode(who, apiKey, body) {
     ? await gate(who, 'changes', { record: 'session.changes-on', detail: { sessionId: doc.id, profile: doc.profileName, connection: doc.connectionName } })
     : await gate(who, 'use');
   if (!g.ok) return g.response;
-  const client = deps.makeClient(apiKey);
-  await client.beta.sessions.events.send(doc.id, { events: [{ type: 'system.message',
-    content: [{ type: 'text', text: MODE_TEXT[on ? 'changes' : 'readonly'] }] }] });
+  // The bridge enforces the switch from this moment, on every query; Claude
+  // is TOLD with the next message (see heldNotes). Only the latest mode is
+  // kept — switching on and off again before speaking tells it nothing new.
+  doc.modeNote = MODE_TEXT[on ? 'changes' : 'readonly'];
   doc.dataChangesAllowed = on;
   doc.updatedAt = new Date(deps.now()).toISOString();
   await container.items.upsert(doc);
@@ -1010,13 +1023,9 @@ async function sessionUpload(who, apiKey, body) {
     await deleteFile(client, file.id);
     throw e;
   }
-  // Tell Claude where it is, without starting a turn: a system message
-  // waits for the next one. If the API declines it, the page shows the
-  // path and the person can say so themselves.
-  try {
-    await client.beta.sessions.events.send(doc.id, { events: [{ type: 'system.message',
-      content: [{ type: 'text', text: 'The user attached a file: ' + name + ' (' + buf.length + ' bytes), mounted read-only at ' + mountedAt(mountPath) + '.' }] }] });
-  } catch (e) { /* the path is shown to the person */ }
+  // Tell Claude where it is with the next message (see heldNotes); the page
+  // shows the path to the person at once.
+  doc.notes = (doc.notes || []).concat(['The user attached a file: ' + name + ' (' + buf.length + ' bytes), mounted read-only at ' + mountedAt(mountPath) + '.']).slice(-UPLOADS_PER_SESSION);
   const rec = { fileId: file.id, name, path: mountedAt(mountPath), mountPath, size: buf.length, at: new Date(deps.now()).toISOString() };
   doc.uploads = (doc.uploads || []).concat([rec]);
   doc.updatedAt = rec.at;
@@ -1266,7 +1275,7 @@ app.http('claude-code-bridge', {
 module.exports = {
   deps, handler, identify, gate, siteUrl, budget, agentSpec, ensureAgent, ensureEnvironment,
   environmentName, environmentConfig, parseConn, systemPrompt, MODE_TEXT, makeRedactor,
-  ourStatus, turnStillOwed, PENDING_TURN_MS, publicSession, chunkId,
+  ourStatus, turnStillOwed, PENDING_TURN_MS, heldNotes, publicSession, chunkId,
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
   sessionCheck, bridgeRedeem, bridgeHandler, newBridgePass, splitPass, sha256, mcpUrl, specTag, resolveConnection,
