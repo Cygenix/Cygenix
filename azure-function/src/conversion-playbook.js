@@ -61,7 +61,12 @@ function conversionPlaybook(schema, dbType) {
       + '/mnt/session/outputs/conversion-report.json, which Cygenix saves to its Conversion Reports — JSON with exactly these '
       + 'fields: {"template": {"name": "", "version": 0}, "summary": "", "tables": [{"staging_table": "", "target_table": "", '
       + '"source_tables": [""], "rows_loaded": 0, "rows_expected": 0, "status": "loaded | partial | failed | not_loaded", '
-      + '"notes": "", "columns": [{"column": "", "source": "", "transform": "", "notes": ""}]}], "warnings": [""]}.',
+      + '"notes": "", "columns": [{"column": "", "source": "", "transform": "", "notes": ""}]}], "warnings": [""]}. '
+      + 'Finally write /mnt/session/outputs/staging-load.sql, the load as one script that can be saved as a scheduled Cygenix job '
+      + 'and re-run with no one watching: for each staging table, in load order: create it if it is missing (IF OBJECT_ID(...) IS '
+      + 'NULL CREATE TABLE ...), TRUNCATE TABLE it, then INSERT INTO it (...) SELECT ... FROM the source tables. Write every name in '
+      + 'full as ' + s + '.<table>; no comments, no GO, no CREATE SCHEMA (the schema already exists), no USE, no EXEC; it must run as '
+      + 'one batch. Use exactly the statements that loaded the tables.',
 
     'GROUND RULES. Never invent data: a column with no source stays NULL and is listed in the report. Leave identity columns '
       + 'empty unless the template\'s notes say otherwise. Keep the target\'s column names exactly as the template gives them. '

@@ -69,7 +69,7 @@ const U = 'you@example.test';
 
   // The stubbed world: a roles record the page asks for, and a fake Azure.
   const world = { outputs: [], me: { oid: 'x', email: U, roles: ['ML'], claudeCode: { enabled: false, roles: ['OW', 'PA'], allowed: false, canChangeData: false, canConfigure: false } },
-    calls: [], sessions: {}, nextEvents: [], failEvents: false, failStop: false, mcp: [], mcpFails: false, saved: [], reportJson: null };
+    calls: [], sessions: {}, nextEvents: [], failEvents: false, failStop: false, mcp: [], mcpFails: false, saved: [], reportJson: null, checks: [], checkReply: null };
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', async (route) => {
     const u = route.request().url();
@@ -103,10 +103,15 @@ const U = 'you@example.test';
       if (action === 'upload') { const s = world.sessions[body.sessionId]; const up = { fileId: 'file_u' + (s.session.uploads || []).length, name: body.name, path: '/workspace/uploads/' + body.name, size: Buffer.from(body.contentBase64, 'base64').length, at: new Date().toISOString() };
         s.session.uploads = (s.session.uploads || []).concat([up]); return json(route, { upload: up }); }
       if (action === 'outputs') { const s = world.sessions[new URL('http://x' + p).searchParams.get('sessionId')]; return json(route, { outputs: world.outputs, uploads: (s && s.session.uploads) || [] }); }
+      if (action === 'download' && /fileId=file_job/.test(p)) return json(route, { name: 'staging-load.sql', size: 10, contentBase64: Buffer.from('TRUNCATE TABLE staging.STG_addresses; INSERT INTO staging.STG_addresses (Street) SELECT a.Line1 FROM dbo.Address a;').toString('base64') });
       if (action === 'download' && /fileId=file_rep/.test(p)) return json(route, { name: 'conversion-report.json', size: 10, contentBase64: Buffer.from(JSON.stringify(world.reportJson)).toString('base64') });
       if (action === 'download') return json(route, { name: 'counts.csv', size: 24, contentBase64: Buffer.from('table,rows\nCustomer,1200\n').toString('base64') });
       if (action === 'session') { const s = world.sessions[new URL('http://x' + p).searchParams.get('id')]; return s ? json(route, { session: s.session, events: s.events }) : json(route, { error: 'No such session.' }, 404); }
       return json(route, { error: 'unexpected ' + action }, 500);
+    }
+    if (/\/\.netlify\/functions\/cc-staging-check/.test(u)) {
+      world.checks.push({ headers: route.request().headers(), body: JSON.parse(route.request().postData() || '{}') });
+      return json(route, world.checkReply || { ok: true, writes: [{ op: 'TRUNCATE', object: 'staging.STG_addresses' }, { op: 'INSERT INTO', object: 'staging.STG_addresses' }] });
     }
     if (/\/\.netlify\/functions\/reports/.test(u)) {
       world.saved.push({ headers: route.request().headers(), body: JSON.parse(route.request().postData() || '{}') });
@@ -446,6 +451,34 @@ const U = 'you@example.test';
   await page.waitForFunction(() => document.getElementById('cs-note').textContent && !document.getElementById('cs-report-btn').disabled, null, { timeout: 8000 });
   await page.waitForTimeout(800);
   check('pressed again with the file already there, it saves straight away without asking Claude', world.saved.length === 2 && calls('message').length === msgsBefore + 1, world.saved.length);
+
+  /* Save as job: the load script is checked on the server, confirmed, and saved into the project. */
+  world.outputs.push({ id: 'file_job', name: 'staging-load.sql', size: 120, at: new Date().toISOString() });
+  world.checkReply = { ok: false, why: 'UPDATE "dbo.Address" is outside the staging schema "staging".' };
+  await page.waitForTimeout(3100);
+  await page.click('#cs-job-btn');
+  await page.waitForFunction(() => /Not saved/.test(document.getElementById('cs-note').textContent), null, { timeout: 8000 });
+  check('SAVE AS JOB: A SCRIPT THAT FAILS THE STAGING CHECK IS NOT SAVED, and the reason is shown',
+    /does not pass the staging check: UPDATE "dbo\.Address" is outside/.test(await text('cs-note')) && world.checks.length === 1
+    && /^Bearer /.test(world.checks[0].headers.authorization || '') && world.checks[0].body.schema === 'staging' && /TRUNCATE TABLE staging\.STG_addresses/.test(world.checks[0].body.sql)
+    && !(await page.evaluate(() => /Staging load/.test(localStorage.getItem('cygenix_jobs') || ''))), await text('cs-note'));
+  world.checkReply = null;
+  await page.waitForTimeout(3100);
+  await page.click('#cs-job-btn');
+  await page.waitForFunction(() => document.getElementById('cs-confirm').classList.contains('open'), null, { timeout: 8000 });
+  const jc = await page.evaluate(() => ({ title: document.getElementById('cs-confirm-title').textContent, ok: document.getElementById('cs-confirm-ok').textContent, text: document.getElementById('cs-confirm-text').textContent }));
+  check('…a script that passes is confirmed first, naming the job, the group, the database and the tables',
+    jc.title === 'Save the staging load as a job?' && jc.ok === 'Save job' && /"Dev Console staging"/.test(jc.text) && /on database TGT/.test(jc.text)
+    && /loads 1 table: staging\.STG_addresses/.test(jc.text) && /Task Agent/.test(jc.text), JSON.stringify(jc));
+  await page.click('#cs-confirm-ok');
+  await page.waitForFunction(() => /Saved as job/.test(document.getElementById('cs-note').textContent), null, { timeout: 5000 });
+  const stored = await page.evaluate(() => ({ jobs: JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'), projects: JSON.parse(localStorage.getItem('cygenix_projects') || '[]') }));
+  const sj = stored.jobs[0] || {};
+  const grp = ((stored.projects[0] || {}).groups || []).find((g) => g.name === 'Dev Console staging') || { steps: [] };
+  check('…AND SAVED AS AN ORDINARY SQL JOB on the source, in one transaction, in the project\'s "Dev Console staging" group',
+    sj.jobType === 'sql' && sj.connOn === 'target' && /^SET XACT_ABORT ON;\nBEGIN TRANSACTION;\nTRUNCATE TABLE staging\.STG_addresses/.test(sj.sql) && sj.projectId === 'p1'
+    && grp.steps.length === 1 && grp.steps[0].jobId === sj.id && sj.groupId === grp.id && !/Tr0ub4dor/.test(JSON.stringify(stored)), JSON.stringify(sj).slice(0, 300));
+  check('…and says where it went', /Saved as job "Staging load — staging" in Demo → Dev Console staging\. Open Task Agent to schedule it\./.test(await text('cs-note')), await text('cs-note'));
 
   /* PRD needs the name typed. */
   await ctx.addInitScript(() => { try { const s = JSON.parse(localStorage.getItem('cygenix_profiles_v1')); s.profiles[0].envClass = 'PRD'; localStorage.setItem('cygenix_profiles_v1', JSON.stringify(s)); } catch (e) {} });

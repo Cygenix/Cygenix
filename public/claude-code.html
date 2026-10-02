@@ -55,8 +55,9 @@
 <script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-drive.js?v=43733ac277" defer></script>
 <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
+<script src="/cygenix-job-profile.js?v=d1c87b2e27" defer></script>
 <script src="/cygenix-conn-builder.js?v=bcd70367b8" defer></script>
-<script src="/cygenix-cc-console.js?v=2bacd3a919" defer></script>
+<script src="/cygenix-cc-console.js?v=c14ee6f7ca" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -264,6 +265,7 @@ body.cs-full .drawer{top:var(--cs-bar-h,52px)}
         <div class="col-head"><i class="ic ic-tools"></i> Output <span class="tag" id="cs-out-count"></span>
           <span class="spacer"></span>
           <button class="btn" id="cs-report-btn" onclick="csReport(false)" title="Save this session's conversion report to Reports → Conversion Report. If Claude has not written it yet, Claude is asked to first."><i class="ic ic-doc"></i> Save report</button>
+          <button class="btn" id="cs-job-btn" onclick="csJob(false)" title="Save this staging build's load script as a Cygenix job, to run on a schedule in Task Agent. It is checked first: it may write inside the staging schema only."><i class="ic ic-clock"></i> Save as job</button>
           <button class="btn" id="cs-files-btn" onclick="csFilesToggle()"><i class="ic ic-folder"></i> Files <span class="tag" id="cs-files-count"></span></button>
         </div>
         <div class="col-body">
@@ -575,6 +577,70 @@ function csReport(auto){
     }
   });
 }
+/* ── Save as job → Task Agent ─────────────────────────────────────────────
+   The staging load script (staging-load.sql, from the files Claude wrote)
+   becomes an ordinary SQL job in the active project's "Dev Console staging"
+   group. On the way it is checked on the server — inside the staging schema
+   only — and confirmed by the person, with the database it runs on named.
+   As with Save report, Claude is asked for the script once if it has not
+   written it, and the save resumes by itself when that turn ends. */
+function csJob(auto){
+  var s = sessionForFiles();
+  if (!s) { note('cs-note', 'Start a session first.', 'warn'); return; }
+  if (!s.stagingSchema) { note('cs-note', 'Save as job is for staging sessions: start one with a schema in the Staging box.', 'warn'); return; }
+  guarded('Job', async function(){
+    try {
+      var lst = await call('GET', '/agent/claude-code/outputs?sessionId=' + encodeURIComponent(s.id));
+      var f = (lst.outputs || []).filter(function(o){ return o && String(o.name || '').split('/').pop() === CygenixCcConsole.JOB_FILE; })
+        .sort(function(a, b){ return String(b.at || '').localeCompare(String(a.at || '')); })[0];
+      if (!f) {
+        if (auto === true) { note('cs-note', 'Claude finished without writing ' + CygenixCcConsole.JOB_FILE + '. Ask it to, then press Save as job.', 'warn'); return; }
+        var live = !CS.replay && CS.cur && CS.cur.id === s.id && CS.cur.status !== 'stopped' && CS.cur.status !== 'error';
+        if (!live) { note('cs-note', 'This session did not write ' + CygenixCcConsole.JOB_FILE + ', so there is no load script to save.', 'warn'); return; }
+        if (CS.cur.status === 'running') { note('cs-note', 'Claude is working. Press Save as job again when it is idle.', 'warn'); return; }
+        CS.jobFor = CS.cur.id;
+        await postMessage(CygenixCcConsole.jobRequest(s.stagingSchema));
+        note('cs-note', 'Claude is writing the load script. It will be checked and offered for saving when Claude finishes.', 'info');
+        return;
+      }
+      var r = await call('GET', '/agent/claude-code/download?sessionId=' + encodeURIComponent(s.id) + '&fileId=' + encodeURIComponent(f.id));
+      var bin = atob(r.contentBase64 || ''), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var script = new TextDecoder('utf-8').decode(bytes);
+      var tok = typeof window.getCygenixIdToken === 'function' ? window.getCygenixIdToken() : '';
+      var res = await fetch('/.netlify/functions/cc-staging-check', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+        body: JSON.stringify({ sql: script, schema: s.stagingSchema, dbType: s.dbType }) });
+      var chk = {}; try { chk = await res.json(); } catch (e) { chk = {}; }
+      if (!res.ok) throw new Error(chk.error || ('the check answered ' + res.status));
+      if (!chk.ok) { note('cs-note', 'Not saved — the load script does not pass the staging check: ' + chk.why, 'crit'); return; }
+      var built = CygenixCcConsole.buildStagingJob({ sql: script, stagingSchema: s.stagingSchema, dbType: s.dbType, side: s.side, database: s.dbName,
+        server: s.dbHost, connectionName: s.connectionName, sessionId: s.id, writes: chk.writes });
+      var tables = chk.writes.filter(function(w){ return /^INSERT/.test(w.op); }).map(function(w){ return w.object; });
+      openConfirm({ prod: s.envClass === 'PRD', typeToConfirm: s.envClass === 'PRD' ? (s.profileName || '') : '',
+        title: 'Save the staging load as a job?', okLabel: 'Save job',
+        text: 'A SQL job, "' + built.job.name + '", will be added to the active project in the group "' + CygenixCcConsole.JOB_GROUP + '". '
+          + built.note + ' It loads ' + tables.length + ' table' + (tables.length === 1 ? '' : 's') + (tables.length ? ': ' + tables.slice(0, 8).join(', ') + (tables.length > 8 ? '…' : '') : '')
+          + '. Schedule it in Task Agent.' }, function(){ saveJob(built); });
+    } catch (e) {
+      note('cs-note', 'Could not save the job: ' + e.message, 'crit');
+    }
+  });
+}
+// Written the way the SQL editor writes a saved script: the job list and the
+// project's group, both synced to the cloud by the sync layer.
+function saveJob(built){
+  var jobs = [], projects = [];
+  try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch (e) { jobs = []; }
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch (e) { projects = []; }
+  try { if (window.CygenixJobProfile) CygenixJobProfile.attach(built.job, jobs); } catch (e) { /* unstamped is still a job */ }
+  var out = CygenixCcConsole.addStagingJob(jobs, projects, activeProjectId(), built);
+  if (out.error) { note('cs-note', 'Not saved: ' + out.error, 'crit'); return; }
+  try {
+    localStorage.setItem('cygenix_jobs', JSON.stringify(out.jobs));
+    localStorage.setItem('cygenix_projects', JSON.stringify(out.projects));
+  } catch (e) { note('cs-note', 'Could not save the job: ' + e.message, 'crit'); return; }
+  note('cs-note', 'Saved as job "' + out.job.name + '" in ' + out.projectName + ' → ' + out.groupName + '. Open Task Agent to schedule it.', 'ok');
+}
 async function saveReportFile(s, f){
   var r = await call('GET', '/agent/claude-code/download?sessionId=' + encodeURIComponent(s.id) + '&fileId=' + encodeURIComponent(f.id));
   var bin = atob(r.contentBase64 || ''), bytes = new Uint8Array(bin.length);
@@ -634,6 +700,7 @@ async function poll(){
       // The report Claude was asked for: saved once, by this poll, three
       // seconds on so the Report guard's interval holds.
       if (CS.reportFor && CS.reportFor === cur.id) { CS.reportFor = null; setTimeout(function(){ csReport(true); }, 3100); }
+      if (CS.jobFor && CS.jobFor === cur.id) { CS.jobFor = null; setTimeout(function(){ csJob(true); }, 3100); }
     }
   } catch (e) {
     // A readable error, once, and no more polling: a retry storm helps nobody.
@@ -839,6 +906,7 @@ function renderTop(){
     : (CS.conn ? { side: CS.conn.side, database: CS.conn.database, server: CS.conn.server, connectionName: CS.conn.name } : {}));
   $('cs-db-side').textContent = b.side; $('cs-db-name').textContent = b.name; $('cs-db-detail').textContent = b.detail;
   $('cs-report-btn').disabled = !allowed || !s || !!CS.busy['Report'];
+  $('cs-job-btn').disabled = !allowed || !s || !s.stagingSchema || !!CS.busy['Job'];
   sp.title = stg ? 'Claude may change tables inside "' + stg + '" only; everything else is read-only.' : '';
 }
 function render(){

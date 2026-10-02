@@ -71,6 +71,7 @@ Module.prototype.require = function (id) {
   return realRequire.apply(this, arguments);
 };
 const GATE = require(path.join(ROOT, 'netlify', 'functions', 'claude-code-gate.js'));
+const STAGE_CHECK = require(path.join(ROOT, 'netlify', 'functions', 'cc-staging-check.js'));
 Module.prototype.require = realRequire;
 
 const gateCall = async (act, extra) => {
@@ -1068,6 +1069,8 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     const Mc = require(path.join(ROOT, 'public', 'cygenix-cc-console.js'));
     const fieldsOf = (t) => ((/\{"template"[\s\S]*?"warnings": \[""\]\}/.exec(t) || [''])[0].match(/"[a-z_]+":/g) || []).sort().join() || 'none';
     const pb = CC.conversionPlaybook('staging', 'sqlserver');
+    check('THE BRIEF ASKS FOR staging-load.sql UNDER THE SAME RULES the Save as job request gives',
+      /\/mnt\/session\/outputs\/staging-load\.sql/.test(pb) && pb.indexOf(Mc.JOB_RULES.replace('<schema>', 'staging')) !== -1, pb.slice(-600));
     check('THE BRIEF ASKS FOR conversion-report.json WITH EXACTLY THE FIELDS the Save report button reads',
       /\/mnt\/session\/outputs\/conversion-report\.json/.test(pb) && fieldsOf(pb) === fieldsOf(Mc.reportRequest('staging')), fieldsOf(pb) + ' vs ' + fieldsOf(Mc.reportRequest('staging')));
 
@@ -1140,6 +1143,59 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
       && /else if \(body\.transaction === true\) \{\s*await client\.query\('BEGIN'\);/.test(dbc));
   }
 
+  /* ── 10. Save as job ─────────────────────────────────────────────────── */
+  section('10. Save as job: the check, the job, the project');
+  {
+    const M = require(path.join(ROOT, 'public', 'cygenix-cc-console.js'));
+    const stage = async (body, actor, tenant) => {
+      ACTOR = actor || { oid: 'o1', email: 'a@x', roles: ['EN'] };
+      TENANT = tenant || { id: 'tn_1', claudeCode: { enabled: true, roles: ['OW', 'PA', 'EN', 'AU'] } };
+      const r = await STAGE_CHECK.handler({ httpMethod: 'POST', headers: { authorization: 'Bearer t' }, body: JSON.stringify(body) });
+      let b = {}; try { b = JSON.parse(r.body); } catch (e) { /* */ }
+      return { status: r.statusCode, body: b };
+    };
+    const LOAD = "IF OBJECT_ID(N'staging.STG_a', N'U') IS NULL CREATE TABLE [staging].[STG_a] ([x] int NULL); TRUNCATE TABLE staging.STG_a; "
+      + 'INSERT INTO staging.STG_a (x) SELECT a.Id FROM dbo.A a; TRUNCATE TABLE staging.STG_b; INSERT INTO staging.STG_b (y) SELECT b.Name FROM dbo.B b WHERE b.Live = 1;';
+    let r = await stage({ sql: LOAD, schema: 'staging' });
+    check('THE CHECK PASSES A LOAD SCRIPT THAT WRITES INSIDE THE STAGING SCHEMA, listing what it writes',
+      r.status === 200 && r.body.ok === true && r.body.writes.filter(w => /^INSERT/.test(w.op)).map(w => w.object).join() === 'staging.STG_a,staging.STG_b', JSON.stringify(r.body));
+    r = await stage({ sql: LOAD + ' UPDATE dbo.A SET Live = 0 WHERE Id = 1;', schema: 'staging' });
+    check('…and refuses one that writes anywhere else, with the reason', r.status === 200 && r.body.ok === false && /outside the staging schema/.test(r.body.why), JSON.stringify(r.body));
+    r = await stage({ sql: '-- nightly\n' + LOAD, schema: 'staging' });
+    check('…or that carries comments', r.body.ok === false && /Comments/.test(r.body.why));
+    r = await stage({ sql: 'SELECT 1', schema: 'staging' });
+    check('…or that changes nothing', r.body.ok === false && /changes nothing/.test(r.body.why));
+    check('a bad schema, an empty script and GET are refused', (await stage({ sql: LOAD, schema: 'dbo' })).status === 400 && (await stage({ sql: ' ', schema: 'staging' })).status === 400
+      && (await STAGE_CHECK.handler({ httpMethod: 'GET', headers: { authorization: 'Bearer t' } })).statusCode === 405);
+    check('a role the organisation has not let use the Dev Console is refused', (await stage({ sql: LOAD, schema: 'staging' }, { oid: 'o1', roles: ['ML'] })).status === 403
+      && (await stage({ sql: LOAD, schema: 'staging' }, null, { id: 'tn_1', claudeCode: { enabled: false, roles: ['EN'] } })).status === 403);
+    check('…and no token is a 401', (await STAGE_CHECK.handler({ httpMethod: 'POST', headers: {}, body: '{}' })).statusCode === 401);
+
+    const built = M.buildStagingJob({ sql: 'TRUNCATE TABLE staging.STG_a; INSERT INTO staging.STG_a (x) SELECT 1;', stagingSchema: 'staging', dbType: 'sqlserver', side: 'src',
+      database: 'Conversion_DM', server: '86.20.94.140', connectionName: 'Conversion_src', sessionId: 'sesn_1', templateName: 'Demo', now: 1700000000000,
+      writes: [{ op: 'TRUNCATE', object: 'staging.STG_a' }, { op: 'INSERT INTO', object: 'staging.STG_a' }] });
+    check('THE JOB IS AN ORDINARY SQL JOB on the session\'s side, in the SQL editor\'s shape, inside one transaction',
+      built.job.jobType === 'sql' && built.job.type === 'sql' && built.job.connOn === 'source' && built.job.status === 'ready' && built.job.sql === built.job.insertSQL
+      && built.job.sql === 'SET XACT_ABORT ON;\nBEGIN TRANSACTION;\nTRUNCATE TABLE staging.STG_a; INSERT INTO staging.STG_a (x) SELECT 1\n;\nIF @@TRANCOUNT > 0 COMMIT TRANSACTION;'
+      && built.step.jobId === built.job.id && built.step.connOn === 'source' && built.job.name === 'Staging load — staging (Demo)', JSON.stringify(built.job).slice(0, 300));
+    check('…naming the database it was built against, and carrying no connection string',
+      /on database CONVERSION_DM \(connection "Conversion_src"\)/.test(built.note) && built.job.source === '' && built.job.target === ''
+      && built.job.devConsole.database === 'Conversion_DM' && !/Password|Server=/.test(JSON.stringify(built)));
+    check('PostgreSQL wraps it in BEGIN / COMMIT', M.buildStagingJob({ sql: 'TRUNCATE staging.a;', stagingSchema: 'staging', dbType: 'postgres' }).job.sql === 'BEGIN;\nTRUNCATE staging.a\n;\nCOMMIT;');
+    const projects = [{ id: 'p1', name: 'Demo', groups: [{ id: 'g0', name: 'Load', steps: [] }] }];
+    let out = M.addStagingJob([{ id: 'job_old' }], projects, 'p1', built);
+    check('IT GOES INTO THE JOB LIST AND THE PROJECT\'S "Dev Console staging" GROUP, made if missing, nothing else touched',
+      out.jobs.length === 2 && out.jobs[0].projectId === 'p1' && out.jobs[0].groupId === out.projects[0].groups[1].id && out.jobs[1].id === 'job_old'
+      && out.projects[0].groups.length === 2 && out.projects[0].groups[1].name === 'Dev Console staging' && out.projects[0].groups[1].steps[0].jobId === built.job.id
+      && projects[0].groups.length === 1, JSON.stringify(out.projects));
+    out = M.addStagingJob(out.jobs, out.projects, 'p1', M.buildStagingJob({ sql: 'TRUNCATE TABLE staging.b;', stagingSchema: 'staging', now: 1700000000001 }));
+    check('…a second one joins the same group', out.projects[0].groups.length === 2 && out.projects[0].groups[1].steps.length === 2);
+    check('a full job list is refused rather than losing someone\'s oldest job', /already 100 jobs/.test(M.addStagingJob(new Array(100).fill({}), projects, 'p1', built).error));
+    check('…and so is a missing project', /active project was not found/.test(M.addStagingJob([], projects, 'p_nope', built).error));
+    check('the request to Claude names the file and the rules', /\/mnt\/session\/outputs\/staging-load\.sql/.test(M.jobRequest('staging')) && /no comments, no GO, no CREATE SCHEMA/.test(M.jobRequest('staging'))
+      && /staging\.<table>/.test(M.jobRequest('staging')));
+  }
+
   /* ── 8. The page and the house rules ────────────────────────────────── */
   section('8. The page and the house rules');
   {
@@ -1159,6 +1215,7 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
       (page.match(/localStorage\.(get|set)Item\(/g) || []).length
         === (page.match(/localStorage\.(get|set)Item\((CygenixCcConsole\.NOTICE_KEY|'cygenix_app_prefs'|'cygenix_active_user')/g) || []).length
           + (page.match(/localStorage\.getItem\('cygenix_active_project_id'\)/g) || []).length
+          + (page.match(/localStorage\.(get|set)Item\('cygenix_(jobs|projects)'/g) || []).length
       && !/localStorage\.setItem\('cygenix_active_project_id'/.test(page)
       && /FULL_KEY = 'cygenix_cc_full', SPLIT_KEY = 'cygenix_cc_split'/.test(page)
       && (page.match(/ss(Get|Set)\(/g) || []).length === (page.match(/ss(Get|Set)\((FULL_KEY|SPLIT_KEY|k[,)])/g) || []).length
@@ -1180,6 +1237,11 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
       && /CygenixCcConsole\.dbBanner\(s \? \{ side: s\.side, database: s\.dbName, server: s\.dbHost/.test(page)
       && /label: label \+ ' — ' \+ name \+ \(where\.database \? ' · ' \+ where\.database : ''\)/.test(page)
       && /src="\/cygenix-conn-builder\.js\?v=/.test(page) && !/password/i.test(page.split('function loadConns')[1].split('function csPickConn')[0].replace(/never|nothing else/g, '')));
+    check('SAVE AS JOB: guarded, staging sessions only, checked on the server with the person\'s token, confirmed, then saved like the SQL editor saves a script',
+      /guarded\('Job'/.test(page) && /if \(!s\.stagingSchema\) \{ note\(/.test(page) && /fetch\('\/\.netlify\/functions\/cc-staging-check'/.test(page)
+      && /if \(!chk\.ok\) \{ note\('cs-note', 'Not saved/.test(page) && /title: 'Save the staging load as a job\?', okLabel: 'Save job'/.test(page)
+      && /CygenixCcConsole\.addStagingJob\(jobs, projects, activeProjectId\(\), built\)/.test(page) && /CS\.jobFor = null; setTimeout\(function\(\)\{ csJob\(true\); \}, 3100\);/.test(page)
+      && /src="\/cygenix-job-profile\.js\?v=/.test(page));
     check('SAVE REPORT: guarded, takes conversion-report.json, saves through the reports function with the person\'s token, and asks Claude only once',
       /guarded\('Report'/.test(page) && /CygenixCcConsole\.buildConversionReport\(data,/.test(page)
       && /fetch\('\/\.netlify\/functions\/reports', \{ method: 'POST'/.test(page) && /action: 'save', report: built\.report/.test(page)

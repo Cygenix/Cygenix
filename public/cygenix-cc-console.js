@@ -364,6 +364,78 @@ function buildConversionReport(data, ctx) {
   } };
 }
 
+/* ── Save as job: the staging load, on a schedule (Oct-2026) ─────────────
+   Once a staging run is right, the work is a script — rebuild each staging
+   table from the source, in load order — and a script needs no Claude to
+   run again. Claude writes it to /mnt/session/outputs/staging-load.sql; the
+   page has it checked on the server (cc-staging-check: inside the staging
+   schema only, by the same reader the bridge uses) and saves it as an
+   ordinary SQL job, which Task Agent schedules like any other. No API key,
+   no AI and no cost on the night, and the same statements every time. */
+var JOB_FILE = 'staging-load.sql';
+var JOB_RULES = 'for each staging table, in load order: create it if it is missing (IF OBJECT_ID(...) IS NULL CREATE TABLE ...), '
+  + 'TRUNCATE TABLE it, then INSERT INTO it (...) SELECT ... FROM the source tables. Write every name in full as <schema>.<table>; '
+  + 'no comments, no GO, no CREATE SCHEMA (the schema already exists), no USE, no EXEC; it must run as one batch.';
+function jobRequest(schema) {
+  return 'Please write the load script for this staging build to /mnt/session/outputs/' + JOB_FILE + ': one SQL script that rebuilds '
+    + 'every staging table in ' + (schema ? '"' + schema + '"' : 'the staging schema') + ' from the source, so it can be saved as a '
+    + 'scheduled Cygenix job — ' + JOB_RULES.replace('<schema>', schema || '<schema>') + ' Use exactly the statements that produced '
+    + 'the tables you have already loaded. Reply with one line when it is written.';
+}
+var JOB_CAP = 100;   // the store's writers keep the newest 100 (see cygenix-template-mapping.js)
+// The job record, the step for the project's group, and the SQL the
+// scheduler will run: the checked script inside one transaction, so a run
+// that fails part way leaves last night's staging tables as they were.
+function buildStagingJob(o) {
+  var x = o || {};
+  var schema = txt(x.stagingSchema, 64);
+  var body = String(x.sql == null ? '' : x.sql).replace(/;\s*$/, '');
+  var sql = x.dbType === 'postgres'
+    ? 'BEGIN;\n' + body + '\n;\nCOMMIT;'
+    : 'SET XACT_ABORT ON;\nBEGIN TRANSACTION;\n' + body + '\n;\nIF @@TRANCOUNT > 0 COMMIT TRANSACTION;';
+  var connOn = x.side === 'tgt' ? 'target' : 'source';
+  var id = 'job_' + (x.now || Date.now());
+  var name = txt(x.name, 120) || ('Staging load — ' + schema + (x.templateName ? ' (' + txt(x.templateName, 80) + ')' : ''));
+  var where = (x.database ? 'database ' + String(x.database).toUpperCase() : 'the ' + connOn + ' database') + (x.connectionName ? ' (connection "' + txt(x.connectionName, 120) + '")' : '');
+  var note = 'Staging load from the Dev Console: rebuilds ' + (x.writes || []).filter(function (w) { return /^INSERT/.test(w.op); }).length
+    + ' table(s) in "' + schema + '" on ' + where + '. Checked to write inside "' + schema + '" only. Run it with the same profile active.';
+  var job = {
+    id: id, name: name, jobType: 'sql', type: 'sql', projectId: txt(x.projectId, 100), groupId: txt(x.groupId, 100),
+    source: '', target: '', sql: sql, insertSQL: sql, connOn: connOn, status: 'ready', created: new Date(x.now || Date.now()).toISOString(),
+    tables: [], files: [], totalRows: 0, columnMapping: [], wasisRules: [], warnings: [note],
+    devConsole: { sessionId: txt(x.sessionId, 80), stagingSchema: schema, database: txt(x.database, 128), server: txt(x.server, 200),
+      connectionName: txt(x.connectionName, 120), writes: (x.writes || []).slice(0, 500) },
+  };
+  var step = { jobId: id, name: name, type: 'sql', jobType: 'sql', sql: sql, insertSQL: sql, connOn: connOn, srcTable: '', tgtTable: '',
+    status: 'ready', totalRows: 0, columnMapping: [], warnings: [note] };
+  return { job: job, step: step, note: note };
+}
+// Into the jobs list and the project's "Dev Console staging" group, the way
+// the SQL editor saves a script — refusing rather than letting the list's
+// writers drop someone's oldest job to make room.
+var JOB_GROUP = 'Dev Console staging';
+function addStagingJob(jobs, projects, projectId, built) {
+  var list = Array.isArray(jobs) ? jobs.slice() : [];
+  if (list.length >= JOB_CAP) return { error: 'There are already ' + list.length + ' jobs, and the job list keeps ' + JOB_CAP + '. Delete one you no longer need first.' };
+  var projs = Array.isArray(projects) ? projects.slice() : [];
+  var pi = -1;
+  for (var i = 0; i < projs.length; i++) if (projs[i] && projs[i].id === projectId) { pi = i; break; }
+  if (pi === -1) return { error: 'The active project was not found. Choose a project first.' };
+  var proj = JSON.parse(JSON.stringify(projs[pi]));
+  proj.groups = Array.isArray(proj.groups) ? proj.groups : [];
+  var group = null;
+  for (var g = 0; g < proj.groups.length; g++) if (proj.groups[g] && proj.groups[g].name === JOB_GROUP) { group = proj.groups[g]; break; }
+  if (!group) {
+    group = { id: 'grp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: JOB_GROUP, executionMode: 'sequential', collapsed: false, steps: [] };
+    proj.groups.push(group);
+  }
+  group.steps = Array.isArray(group.steps) ? group.steps : [];
+  var job = Object.assign({}, built.job, { projectId: proj.id, groupId: group.id });
+  group.steps.push(built.step);
+  projs[pi] = proj;
+  return { jobs: [job].concat(list), projects: projs, job: job, projectName: proj.name || proj.id, groupName: group.name };
+}
+
 function confirmAccepts(spec, typed) {
   if (!spec.prod) return true;
   return String(typed || '').trim() === String(spec.typeToConfirm || '').trim() && !!spec.typeToConfirm;
@@ -375,6 +447,7 @@ return {
   blocksFrom: blocksFrom, toolBlock: toolBlock,
   stagingNameProblem: stagingNameProblem, stagingConfirmSpec: stagingConfirmSpec, STAGING_STARTER: STAGING_STARTER,
   dbBanner: dbBanner, REPORT_FILE: REPORT_FILE, reportRequest: reportRequest, buildConversionReport: buildConversionReport,
+  JOB_FILE: JOB_FILE, JOB_RULES: JOB_RULES, JOB_CAP: JOB_CAP, JOB_GROUP: JOB_GROUP, jobRequest: jobRequest, buildStagingJob: buildStagingJob, addStagingJob: addStagingJob,
   NOTICE_KEY: NOTICE_KEY, noticeDismissed: noticeDismissed, noticeDismiss: noticeDismiss,
   confirmSpec: confirmSpec, confirmAccepts: confirmAccepts,
 };

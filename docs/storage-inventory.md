@@ -45,13 +45,13 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_datagen_selection` | Which tables the Data Generator had selected, per profile | synced (SYNC_KEYS) | data-generator.html |
 | `cygenix_effort_estimates_v1` | Saved Configurator estimates | NOT SYNCED — WI-1 | project_plan.html |
 | `cygenix_inventory` | Project artifact inventory | synced (SYNC_KEYS) | dashboard-app.js, projects.html, report.html +1 |
-| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | connect.html, cygenix-collation.js, cygenix-diagnostics.js +16 |
+| `cygenix_jobs` | Migration jobs | synced (SYNC_KEYS) | claude-code.html, connect.html, cygenix-collation.js +17 |
 | `cygenix_map_groups` | Object Mapping group names and colours | synced (SYNC_KEYS) | object-mapping-app.js |
 | `cygenix_objmap_wip_` | Object-mapping work in progress | NOT SYNCED — WI-1 | schema_explorer.html |
 | `cygenix_profiles_v1` | Connection profiles | synced (SYNC_KEYS) | cygenix-status-hairline.js, dashboard-app.js |
 | `cygenix_project_connections` | Per-project connection metadata | synced (SYNC_KEYS) | cygenix-cosmos-sync.js, dashboard-app.js |
 | `cygenix_project_settings` | Per-project settings | synced (SYNC_KEYS) | dashboard-app.js |
-| `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, conversion-templates.html, cygenix-assistant-actions.js +9 |
+| `cygenix_projects` | The user’s project list | synced (SYNC_KEYS) | agentive_migration.html, claude-code.html, conversion-templates.html +10 |
 | `cygenix_report` | Generated conversion report | NOT SYNCED — WI-1 | connect.html, dashboard-app.js, project-builder-app.js +2 |
 | `cygenix_report_config` | Report configuration | NOT SYNCED — WI-1 | report.html, report_settings.html |
 | `cygenix_sys_params` | System parameters | synced (SYNC_KEYS) | dashboard-app.js, system-parameters.html |

@@ -151,6 +151,9 @@ const CALL = {
   // no pass is a 401, and anything that is not a live pass (an Entra token
   // included) is refused by the Function App before a query is looked at.
   'cc-mcp': { httpMethod: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_query', arguments: { sql: 'SELECT 1' } } }) },
+  // The staging load check: harmless in itself, but its yes is what the page
+  // shows before saving a job, so it answers only a role that could stage.
+  'cc-staging-check': { httpMethod: 'POST', body: JSON.stringify({ sql: 'TRUNCATE TABLE staging.a', schema: 'staging' }) },
 };
 
 async function invoke(name, event) {
