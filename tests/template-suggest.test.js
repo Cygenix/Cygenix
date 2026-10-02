@@ -117,7 +117,15 @@ const ok = (obj) => ({ result: { type: 'succeeded', message: { stop_reason: 'end
     && /references: Site/.test(prompt) && /referenced by: Note/.test(prompt));
   check('…says when the columns could not be read', /Orphan[\s\S]*could not be read/.test(prompt));
   check('…and cuts a very wide table\'s columns, saying how many more', /\(\+10 more\)/.test(prompt));
-  check('…and asks for one entry per table', /Return one entry for each of the 3 tables above\./.test(prompt));
+  check('…and ends with a checklist of every table, asking for exactly one entry each',
+    /Tables to answer \(3\): SiteAddress, Orphan, Wide/.test(prompt) && /Return exactly one entry for each of these 3 tables — none skipped, none added\./.test(prompt));
+  const hubT = B.cleanChunks([{ id: 'h', tables: [{ name: 'Hub', refBy: Array.from({ length: 40 }, (_, i) => 'C' + i), refByMore: 60, refs: ['P'] }] }]).chunks[0].tables[0];
+  check('FK neighbours: at most 25 named each way, the rest counted — what the page sent plus what the backend trimmed',
+    hubT.refBy.length === 25 && hubT.refByMore === 75 && hubT.refsMore === 0);
+  check('…and the prompt shows the count', /referenced by: C0, [^\n]*\(\+75 more\)/.test(B.chunkPrompt(mods, [hubT])));
+  check('the prompt explains that a large "(+N more)" marks a hub of its own subject area',
+    /\(\+N more\)/.test(PR.CLASSIFY_SYSTEM) && /hub or master table of its own subject area/.test(PR.CLASSIFY_SYSTEM)
+    && /exactly one entry for every table listed under "Tables to answer"/.test(PR.CLASSIFY_SYSTEM));
   const req = B.batchRequest(mods, cc.chunks[0]);
   check('THE BATCH REQUEST: custom_id is the chunk, the prompt file\'s model, system and max_tokens',
     req.custom_id === 'c1' && req.params.model === PR.MODEL && req.params.system === PR.CLASSIFY_SYSTEM && req.params.max_tokens === PR.MAX_TOKENS);
@@ -189,7 +197,18 @@ const ok = (obj) => ({ result: { type: 'succeeded', message: { stop_reason: 'end
   B.deps.client = realClient;
   const src = read('azure-function', 'src', 'table-classifier.js');
   check('the key comes from userAnthropicKey — no key of Cygenix\'s own', /userAnthropicKey\(req\)/.test(src) && !/process\.env\.ANTHROPIC_API_KEY/.test(src));
-  check('logs carry counts, never names, prompts or answers', (src.match(/ctx\.log\(/g) || []).length === 1 && /ctx\.log\('\[table-classify\] ' \+ label \+ ' status=' \+ res\.status \+ ' ms=' \+ \(Date\.now\(\) - started\)\);/.test(src));
+  check('logs carry counts, never names, prompts or answers', (src.match(/ctx\.log\(/g) || []).length === 1
+    && /ctx\.log\('\[table-classify\] ' \+ label \+ ' status=' \+ res\.status \+ ' ms=' \+ \(Date\.now\(\) - started\) \+ summary\);/.test(src)
+    && /res\.summary = 'chunks=' \+ result\.length \+ ' ok=' \+/.test(src) && /delete res\.summary;/.test(src));
+  check('a result says WHY it stopped and how long it was: stopReason and outputTokens',
+    (() => { const r = B.readResult({ result: { type: 'succeeded', message: { stop_reason: 'end_turn', usage: { output_tokens: 1234 },
+      content: [{ type: 'text', text: '{"tables":[]}' }] } } }, { id: 'c1', tables: ['A'] }, ['M']);
+      const m = B.readResult({ result: { type: 'succeeded', message: { stop_reason: 'max_tokens', usage: { output_tokens: 32000 }, content: [] } } }, { id: 'c1', tables: ['A'] }, ['M']);
+      return r.ok && r.stopReason === 'end_turn' && r.outputTokens === 1234 && r.unanswered.join() === 'A'
+        && !m.ok && m.stopReason === 'max_tokens' && m.outputTokens === 32000; })());
+  check('a table named with its schema or brackets still counts as answered, not left out',
+    B.validateChunk({ tables: [{ table: 'dbo.SiteAddress', modules: [], confidence: 'low', required: false, reason: '' },
+      { table: '[Note]', modules: [], confidence: 'low', required: false, reason: '' }] }, ['SiteAddress', 'Note'], ['M']).unanswered.length === 0);
   check('NOTHING IS STORED: no Cosmos, no blob, no file', !/@azure\/cosmos|cosmos|BlobServiceClient|writeFile/i.test(src.replace(/writes nothing to Cosmos/, '')));
 
   /* ── 2. Load order ──────────────────────────────────────────────────────── */
@@ -306,15 +325,20 @@ const ok = (obj) => ({ result: { type: 'succeeded', message: { stop_reason: 'end
       }
       if (/results$/.test(pth)) {
         log.results++;
-        return { chunks: body.chunks.map(c => (o.failChunk && o.failChunk(c)) ? { id: c.id, ok: false, error: 'Claude could not process this batch of tables (overloaded_error)' }
-          : { id: c.id, ok: true, rows: c.tables.map(t => ({ table: t, modules: [t === 'T001' ? 'A' : 'B'], confidence: 'high', required: true, reason: 'r' })), unanswered: [] }) };
+        return { chunks: body.chunks.map(c => {
+          if (o.failChunk && o.failChunk(c)) return { id: c.id, ok: false, error: 'Claude could not process this batch of tables (overloaded_error)' };
+          const answered = (o.answerOnly && o.answerOnly(c)) || c.tables;
+          return { id: c.id, ok: true, stopReason: 'end_turn', outputTokens: 100,
+            rows: answered.map(t => ({ table: t, modules: [t === 'T001' ? 'A' : 'B'], confidence: 'high', required: true, reason: 'r' })),
+            unanswered: c.tables.filter(t => answered.indexOf(t) < 0) };
+        }) };
       }
       if (/cancel$/.test(pth)) { log.cancel.push(body.batchIds); return { cancelled: body.batchIds }; }
       throw new Error('unexpected ' + pth);
     };
     return { post, log };
   }
-  const fb = fakeBackend({ failChunk: (c) => c.id === 'c2' });
+  const fb = fakeBackend();
   const progress = [];
   const started = [];
   const out = await S.run({ tpl: tpl2, modules: mods3, graph, columnsOf, post: fb.post, pollMs: 0, sleep: async () => {},
@@ -333,24 +357,58 @@ const ok = (obj) => ({ result: { type: 'succeeded', message: { stop_reason: 'end
     started.length === 1 && started[0].batches[0].id === 'b1' && typeof started[0].batches[0].chunks[0].tables[0] === 'string');
   check('progress: reading columns, then "Classifying: x of y chunks done…"',
     progress.some(t => /^Reading columns \(\d+ of 130 tables\)…$/.test(t)) && progress.some(t => t === 'Classifying: 4 of 4 chunks done…'), progress.slice(-3).join(' | '));
-  check('ONE FAILED CHUNK IS KEPT APART with its tables; the rest are in the preview',
-    out.preview.failed.length === 1 && out.preview.failed[0].tables.length === 40 && out.preview.summary.tables === 90, JSON.stringify(out.preview.summary));
+  check('every table classified, nothing failed', out.preview.failed.length === 0 && out.preview.summary.tables === N);
   check('FKs are translated from schema keys to table names for the load order', out.fks.length === 1 && out.fks[0].child === 'T002' && out.fks[0].parent === 'T001');
 
-  // Retry: only the failed tables, merged with what came back before.
-  const failedNames = out.preview.failed[0].tables;
+  // A chunk that fails outright is split and re-sent automatically.
+  const fbS = fakeBackend({ failChunk: (c) => c.id === 'c2' });
+  const progS = [], savedS = [];
+  const outS = await S.run({ tpl: tpl2, modules: mods3, graph, columnsOf, post: fbS.post, pollMs: 0, sleep: async () => {},
+    onProgress: (t) => progS.push(t), onState: (st) => savedS.push(st.batches.length) });
+  const reSent = fbS.log.start[1] || { chunks: [] };
+  const c2 = fbS.log.start[0].chunks[1].tables.map(t => t.name);
+  check('AUTO SPLIT: the failed chunk\'s 40 tables go again as a new batch of two halves, alphabetical',
+    fbS.log.start.length === 2 && reSent.chunks.map(c => c.id).join() === 's1c1,s1c2'
+    && reSent.chunks[0].tables.map(t => t.name).join() === c2.slice(0, 20).join() && reSent.chunks[1].tables.map(t => t.name).join() === c2.slice(20).join(), JSON.stringify(reSent.chunks.map(c => c.id)));
+  check('…with the same modules', reSent.modules.map(m => m.name).join() === 'A,B,C');
+  check('…the answers are merged: every table classified, nothing failed', outS.preview.failed.length === 0 && outS.preview.summary.tables === N, JSON.stringify(outS.preview.summary));
+  check('…the progress says so', progS.indexOf('Classifying: 4 of 4 chunks done · re-sending 40 tables in 2 smaller chunks…') >= 0, progS.filter(t => /re-sending/.test(t)).join(' | '));
+  check('…and the re-send batch is in the run state, handed over for resume', outS.state.batches.length === 2 && savedS.indexOf(2) >= 0 && outS.state.splitRounds === 1);
+
+  // Tables that keep failing: split down, at most three rounds, then kept apart.
+  const fbK = fakeBackend({ failChunk: (c) => c.tables.indexOf('T045') >= 0 });
+  const outK = await S.run({ tpl: tpl2, modules: mods3, graph, columnsOf, post: fbK.post, pollMs: 0, sleep: async () => {} });
+  const keptApart = outK.preview.failed.reduce((a, f) => a.concat(f.tables), []);
+  check('THREE ROUNDS, halving each time (40 → 20 → 10 → 5), then the rest is kept apart',
+    fbK.log.start.length === 4 && fbK.log.start.slice(1).map(st => st.chunks.map(c => c.tables.length).join('+')).join(' | ') === '20+20 | 10+10 | 5+5'
+    && keptApart.join() === 'T041,T042,T043,T044,T045', fbK.log.start.slice(1).map(st => st.chunks.map(c => c.tables.length).join('+')).join(' | ') + ' / ' + keptApart.join());
+  check('…everything else is classified exactly once', outK.preview.summary.tables === N - 5);
+  check('never halved below five: a group under ten goes whole', S.halves(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']).length === 1 && S.halves(Array.from({ length: 10 }, (_, i) => 'x' + i)).length === 2);
+
+  // The manual Retry: only the failed tables, in chunks of at most 20.
+  const failedNames = keptApart;
   const fb2 = fakeBackend();
   const again = await S.run({ tpl: tpl2, modules: mods3, graph, columnsOf, post: fb2.post, pollMs: 0, sleep: async () => {},
-    onlyTables: failedNames, idPrefix: 'r1c', outcomes: out.outcomes, keep: S.ticksOf(out.preview) });
-  check('RETRY SENDS ONLY THE FAILED TABLES', fb2.log.start[0].chunks.reduce((n2, c) => n2 + c.tables.length, 0) === 40
+    onlyTables: failedNames, idPrefix: 'r1c', chunkTables: S.LIMITS.RETRY_CHUNK, outcomes: outK.outcomes, keep: S.ticksOf(outK.preview) });
+  check('RETRY SENDS ONLY THE FAILED TABLES', fb2.log.start[0].chunks.reduce((n2, c) => n2 + c.tables.length, 0) === 5
     && fb2.log.start[0].chunks.every(c => /^r1c\d+$/.test(c.id)) && fb2.log.start[0].chunks[0].tables.every(t => failedNames.indexOf(t.name) >= 0));
   check('…and the merged preview has every table and no failures', again.preview.failed.length === 0 && again.preview.summary.tables === N);
+  const big = await S.prepare({ graph, columnsOf, onlyTables: graph.tables.slice(0, 50).map(t => t.name), chunkTables: S.LIMITS.RETRY_CHUNK });
+  check('the Retry chunk size is 20', S.LIMITS.RETRY_CHUNK === 20 && big.chunks.map(c => c.tables.length).join() === '20,20,10');
 
   // Resume: only collects.
   const fb3 = fakeBackend();
   const st3 = await S.submit({ tables: [], chunks: [{ id: 'c1', tables: [{ name: 'T001' }] }] }, { modules: mods3, post: fb3.post });
   const resumed = await S.resume(st3, { tpl: tpl2, modules: mods3, graph, post: fb3.post, pollMs: 0, sleep: async () => {} });
   check('RESUME collects the submitted batch without submitting again', fb3.log.start.length === 1 && resumed.preview.groups[0].rows[0].table === 'T001');
+  const fb7 = fakeBackend({ failChunk: (c) => c.id === 'c2' });
+  const split = await S.run({ tpl: tpl2, modules: mods3, graph, columnsOf, post: fb7.post, pollMs: 0, sleep: async () => {} });
+  const saved = JSON.parse(JSON.stringify(split.state));     // as localStorage would hold it
+  const r0 = fb7.log.results;
+  const back = await S.resume(saved, { tpl: tpl2, modules: mods3, graph, post: fb7.post, pollMs: 0, sleep: async () => {} });
+  check('RESUME AFTER A RE-SEND collects every batch again — the re-sends included — and submits nothing',
+    saved.batches.every(b => b.fetched) && fb7.log.results - r0 === 2 && fb7.log.start.length === 2
+    && back.preview.summary.tables === N && back.preview.failed.length === 0, (fb7.log.results - r0) + ' / ' + JSON.stringify(back.preview.summary));
 
   // A refused key stops the polling at once.
   const e401 = Object.assign(new Error('Claude API error (401) — check the API key in Settings'), { status: 400 });
@@ -375,6 +433,41 @@ const ok = (obj) => ({ result: { type: 'succeeded', message: { stop_reason: 'end
   // A large database goes in several parts.
   const many = Array.from({ length: 250 }, (_, i) => ({ id: 'c' + i, tables: [{ name: 'T' + i }] }));
   check('more than 200 chunks are sent in several start calls', S.parts(many).length === 2 && S.parts(many)[0].length === 200);
+
+  /* ── 4b. FK hubs: weighted chunks, capped lists, a short answer re-sent ── */
+  section('4b. A schema with FK hubs: 120 tables, 20 adjacent ones each referenced by 80 others');
+  const names120 = Array.from({ length: 120 }, (_, i) => 'Q' + String(i + 1).padStart(3, '0'));
+  const hubs = names120.slice(40, 60);                    // Q041…Q060, alphabetically adjacent
+  const others = names120.filter(n => hubs.indexOf(n) < 0);
+  const edges120 = [];
+  hubs.forEach(h => others.slice(0, 80).forEach(c => edges120.push({ from: 'dbo.' + c, to: 'dbo.' + h, fromColumn: h + 'Id', toColumn: 'Id' })));
+  const g120 = { ok: true, tables: names120.map(n => ({ schema: 'dbo', name: n, key: 'dbo.' + n, rowCount: 10 })), edges: edges120 };
+  const prep120 = await S.prepare({ graph: g120, columnsOf: async () => ({ columns: [{ name: 'Id', dataType: 'int' }], primaryKeys: ['Id'] }) });
+  check('NO CHUNK EXCEEDS THE WEIGHTED LIMIT of 40 units', prep120.chunks.every(c => S.unitsOf(c) <= S.LIMITS.CHUNK_TABLES),
+    prep120.chunks.map(c => c.tables.length + '/' + S.unitsOf(c)).join(' '));
+  check('a hub counts as three: no chunk holds more than 13 hubs', prep120.chunks.every(c => c.tables.filter(t => hubs.indexOf(t.name) >= 0).length <= 13)
+    && S.weightOf(prep120.tables.find(t => t.name === 'Q041')) === 3 && S.weightOf(prep120.tables.find(t => t.name === 'Q001')) === 1);
+  check('…and the chunking stays alphabetical', prep120.chunks.map(c => c.tables.map(t => t.name)).reduce((a, b) => a.concat(b), []).join() === names120.join());
+  check('NO TABLE\'S FK LISTS EXCEED 25 NAMES', prep120.tables.every(t => t.refs.length <= 25 && t.refBy.length <= 25));
+  const q41 = prep120.tables.find(t => t.name === 'Q041');
+  check('…a hub carries 25 names plus the count of the rest, sorted by name', q41.refBy.length === 25 && q41.refByMore === 55 && q41.refBy[0] === 'Q001');
+  check('…and a table under the cap carries no count', prep120.tables.find(t => t.name === 'Q001').refsMore === 0 && prep120.tables.find(t => t.name === 'Q001').refs.length === 20);
+  // One chunk of 40 comes back with ONE table answered — the failure seen on a real target.
+  let shortOnce = false;
+  const fbH = fakeBackend({ answerOnly: (c) => { if (!shortOnce && c.tables.length === 40) { shortOnce = true; return c.tables.slice(0, 1); } return null; } });
+  const outH = await S.run({ tpl: tpl2, modules: mods3, graph: g120, columnsOf: async () => ({ columns: [], primaryKeys: [] }), post: fbH.post, pollMs: 0, sleep: async () => {} });
+  check('A RESULT MISSING 39 TABLES IS SPLIT INTO TWO RE-SENDS (20 + 19)',
+    fbH.log.start.length === 2 && fbH.log.start[1].chunks.map(c => c.tables.length).join('+') === '20+19', fbH.log.start.slice(1).map(st => st.chunks.map(c => c.tables.length).join('+')).join());
+  const seen120 = {};
+  outH.preview.groups.forEach(gr => gr.rows.forEach(r => { seen120[r.table] = (seen120[r.table] || 0) + 1; }));
+  outH.preview.unassigned.forEach(u => { seen120[u.table] = (seen120[u.table] || 0) + 1; });
+  check('…and the merged output contains every table exactly once', names120.every(n => seen120[n] === 1) && Object.keys(seen120).length === 120 && outH.preview.failed.length === 0);
+
+  // Pacing: two posts never closer than the gap.
+  const times = [];
+  const pp = S.pacer(async () => { times.push(Date.now()); return {}; }, 50, (ms) => new Promise(r => setTimeout(r, ms)));
+  await pp('/a', {}); await pp('/b', {}); await pp('/c', {});
+  check('EVERY POST IS PACED: at least the minimum gap between two', times[1] - times[0] >= 45 && times[2] - times[1] >= 45 && S.LIMITS.MIN_GAP_MS === 3000);
 
   /* ── 5. Target-agnostic ─────────────────────────────────────────────────── */
   section('5. No hardcoded tables or module→table maps');

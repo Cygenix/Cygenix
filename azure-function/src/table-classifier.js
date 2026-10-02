@@ -68,7 +68,7 @@ const LIMITS = {
   CHUNKS: 250,              // requests per start call (the page splits bigger runs)
   TABLES_PER_CHUNK: 80,     // the page sends TABLES_PER_CHUNK (40); this is the ceiling
   COLUMNS: 150,             // columns per table written into the prompt
-  RELATED: 30,              // FK neighbours per direction written into the prompt
+  RELATED: 25,              // FK neighbours per direction named in the prompt; the rest are counted
   BATCHES: 50,              // batch ids per status / cancel call
   NAME: 256,
   MODULE_NAME: 120,
@@ -126,13 +126,22 @@ function cleanTable(t) {
     ? { name: str(c.name, 128), type: str(c.type || c.dataType, 40) } : { name: str(c, 128), type: '' })
     .filter(c => c.name);
   const names = (a) => (Array.isArray(a) ? a : []).map(x => str(x, 128)).filter(Boolean);
+  const count = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : 0);
+  // FK neighbours: at most RELATED named per direction, the rest as a count.
+  // A hub table (one most of a subject area points at) can have hundreds of
+  // "referenced by" names; listed in full they swamped the request and the
+  // answer came back with most of the chunk missing (Oct-2026). The page
+  // already caps and counts; this holds the line for any other caller.
+  const refs = names(t.refs), refBy = names(t.refBy);
   return {
     name, rows,
     columns: cols,
     columnsRead: t.columnsRead !== false,
     pk: names(t.pk),
-    refs: names(t.refs).slice(0, LIMITS.RELATED),
-    refBy: names(t.refBy).slice(0, LIMITS.RELATED),
+    refs: refs.slice(0, LIMITS.RELATED),
+    refsMore: count(t.refsMore) + Math.max(0, refs.length - LIMITS.RELATED),
+    refBy: refBy.slice(0, LIMITS.RELATED),
+    refByMore: count(t.refByMore) + Math.max(0, refBy.length - LIMITS.RELATED),
   };
 }
 
@@ -165,12 +174,16 @@ function chunkPrompt(modules, tables) {
     return '### ' + t.name + (t.rows != null ? '  (' + t.rows + ' rows)' : '')
       + (t.pk.length ? '\n  primary key: ' + t.pk.join(', ') : '')
       + '\n  columns: ' + (t.columnsRead ? (cols || '(none)') + more : '(could not be read — judge from the name and relationships)')
-      + (t.refs.length ? '\n  references: ' + t.refs.join(', ') : '')
-      + (t.refBy.length ? '\n  referenced by: ' + t.refBy.join(', ') : '');
+      + (t.refs.length ? '\n  references: ' + t.refs.join(', ') + (t.refsMore ? ' (+' + t.refsMore + ' more)' : '') : '')
+      + (t.refBy.length ? '\n  referenced by: ' + t.refBy.join(', ') + (t.refByMore ? ' (+' + t.refByMore + ' more)' : '') : '');
   }).join('\n\n');
+  // The closing checklist names every table again: an answer that stops
+  // early, or skips the ones that seemed obvious, has a list to check
+  // itself against.
   return 'Modules (' + modules.length + '):\n' + mods
     + '\n\nTables in this batch (' + tables.length + '):\n\n' + body
-    + '\n\nReturn one entry for each of the ' + tables.length + ' tables above.';
+    + '\n\nTables to answer (' + tables.length + '): ' + tables.map(t => t.name).join(', ')
+    + '\n\nReturn exactly one entry for each of these ' + tables.length + ' tables — none skipped, none added.';
 }
 
 function batchRequest(modules, chunk) {
@@ -211,8 +224,16 @@ function validateChunk(parsed, tableNames, moduleNames) {
   const arr = parsed && Array.isArray(parsed.tables) ? parsed.tables : (Array.isArray(parsed) ? parsed : []);
   const rows = [], seen = new Set();
   let dropped = 0;
+  // A name written with a schema or brackets ("dbo.X", "[X]") is the same
+  // table; without this it was dropped and the table reported as left out.
+  const lookup = (raw) => {
+    const t = String(raw || '').trim().toLowerCase();
+    if (tIdx.has(t)) return tIdx.get(t);
+    const bare = t.split('.').pop().replace(/^[\["`]|[\]"`]$/g, '');
+    return tIdx.get(bare) || null;
+  };
   for (const r of arr) {
-    const real = r && tIdx.get(String(r.table || '').trim().toLowerCase());
+    const real = r && lookup(r.table);
     if (!real) { dropped++; continue; }
     if (seen.has(real)) continue;
     seen.add(real);
@@ -235,20 +256,26 @@ function validateChunk(parsed, tableNames, moduleNames) {
   return { rows, unanswered, dropped };
 }
 
-// What one batch result means for the chunk it belongs to.
+// What one batch result means for the chunk it belongs to. Every succeeded
+// result also carries why the answer stopped (stopReason) and how long it was
+// (outputTokens), and how many names in it matched nothing we sent
+// (dropped) — so a chunk that comes back short says whether it was cut off,
+// skipped tables, or misnamed them, instead of leaving that to guesswork.
 function readResult(res, chunk, moduleNames) {
   const r = res && res.result;
   if (!r) return { id: chunk.id, ok: false, error: 'No result came back for this batch of tables' };
   if (r.type === 'succeeded') {
     const msg = r.message || {};
-    if (msg.stop_reason === 'refusal') return { id: chunk.id, ok: false, error: 'Claude declined this batch of tables' };
-    if (msg.stop_reason === 'max_tokens') return { id: chunk.id, ok: false, error: 'The answer was cut off before the end — retry' };
+    const facts = { stopReason: msg.stop_reason || null,
+      outputTokens: (msg.usage && Number.isFinite(msg.usage.output_tokens)) ? msg.usage.output_tokens : null };
+    if (msg.stop_reason === 'refusal') return Object.assign({ id: chunk.id, ok: false, error: 'Claude declined this batch of tables' }, facts);
+    if (msg.stop_reason === 'max_tokens') return Object.assign({ id: chunk.id, ok: false, error: 'The answer was cut off before the end' }, facts);
     const text = (msg.content || []).filter(b => b && b.type === 'text').map(b => b.text).join('');
     try {
       const v = validateChunk(parseModelJson(text), chunk.tables, moduleNames);
-      return { id: chunk.id, ok: true, rows: v.rows, unanswered: v.unanswered, dropped: v.dropped };
+      return Object.assign({ id: chunk.id, ok: true, rows: v.rows, unanswered: v.unanswered, dropped: v.dropped }, facts);
     } catch (e) {
-      return { id: chunk.id, ok: false, error: e.message };
+      return Object.assign({ id: chunk.id, ok: false, error: e.message }, facts);
     }
   }
   if (r.type === 'errored') {
@@ -330,7 +357,15 @@ async function resultsHandler(body, client) {
     const chunk = byId.get(res && res.custom_id);
     if (chunk) out.set(chunk.id, readResult(res, chunk, modules));
   }
-  return ok({ chunks: chunks.map(c => out.get(c.id) || readResult(null, c, modules)) });
+  const result = chunks.map(c => out.get(c.id) || readResult(null, c, modules));
+  const res = ok({ chunks: result });
+  // For the log line: counts and stop reasons only — never names.
+  const short = result.filter(c => c.ok && c.unanswered && c.unanswered.length).length;
+  res.summary = 'chunks=' + result.length + ' ok=' + result.filter(c => c.ok).length + ' short=' + short
+    + ' maxTokens=' + result.filter(c => c.stopReason === 'max_tokens').length
+    + ' dropped=' + result.reduce((n, c) => n + (c.dropped || 0), 0)
+    + ' outTokensMax=' + result.reduce((n, c) => Math.max(n, c.outputTokens || 0), 0);
+  return res;
 }
 
 async function cancelHandler(body, client) {
@@ -369,8 +404,10 @@ function register(name, route, handler, label) {
         if (!body || typeof body !== 'object') return bad(400, 'Invalid JSON body');
         const started = Date.now();
         const res = await handler(body, deps.client(keyCheck.key));
+        const summary = res.summary ? ' ' + res.summary : '';
+        delete res.summary;
         // Counts only — never names, notes, prompts or answers.
-        ctx.log('[table-classify] ' + label + ' status=' + res.status + ' ms=' + (Date.now() - started));
+        ctx.log('[table-classify] ' + label + ' status=' + res.status + ' ms=' + (Date.now() - started) + summary);
         return res;
       } catch (e) {
         return apiError(e) || boom(e);

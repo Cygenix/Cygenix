@@ -79,7 +79,7 @@ const ANSWER = {
   const token = 'x.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, preferred_username: U })).toString('base64url') + '.y';
 
   const store = new Map();
-  // ai.mode: 'ok' | 'failOnce' (results fail the first time) | 'slow' (never ends) | 'badkey' (start refused)
+  // ai.mode: 'ok' | 'failInvoice' (any chunk holding Invoice fails, every time) | 'slow' (never ends) | 'badkey' (start refused)
   const ai = { start: [], status: 0, results: 0, cancel: [], headers: [], mode: 'ok', batches: {}, n: 0 };
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', async (route) => {
@@ -106,10 +106,8 @@ const ANSWER = {
       }
       if (/results$/.test(agent)) {
         ai.results++;
-        const failNow = ai.mode === 'failOnce' && !ai.failedOnce;
-        if (failNow) ai.failedOnce = true;
         const mods = body.modules;
-        return json(route, { chunks: body.chunks.map((c) => failNow
+        return json(route, { chunks: body.chunks.map((c) => (ai.mode === 'failInvoice' && c.tables.indexOf('Invoice') >= 0)
           ? { id: c.id, ok: false, error: 'Claude could not process this batch of tables (overloaded_error)' }
           : { id: c.id, ok: true, unanswered: [], rows: c.tables.map((t) => { const a = ANSWER[t];
               return { table: t, modules: a[0].filter((m) => mods.indexOf(m) >= 0), confidence: a[1], required: a[2], reason: 'columns fit ' + t }; }) }) });
@@ -191,7 +189,11 @@ const ANSWER = {
         conf: r.querySelectorAll('.chip')[0].textContent, req: r.querySelectorAll('.chip')[1].textContent,
         shared: (r.querySelector('.ct-shared') || {}).title || '' })) })),
   }));
-  const waitPreview = () => page.waitForSelector('#ct-sg-modal.open', { timeout: 20000 });
+  // Generous: every post is paced three seconds after the last, and a run
+  // that re-sends makes several rounds of them.
+  const waitPreview = () => page.waitForSelector('#ct-sg-modal.open', { timeout: 120000 });
+  const watchSteps = () => page.evaluate(() => { window.__steps = []; const el = document.getElementById('ct-sg-step');
+    new MutationObserver(() => window.__steps.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true }); });
   const gap = () => page.waitForTimeout(3100);            // the 3-second minimum between runs
 
   console.log('Conversion Templates — Suggest all\n');
@@ -258,24 +260,37 @@ const ANSWER = {
   check('the run record is cleared once applied', await page.evaluate(() => localStorage.getItem('cygenix_ct_suggest_run_v1') === null));
 
   /* ── Failed chunk, retry, close, resume ────────────────────────────────── */
-  section('A failed chunk is retried on its own; closing keeps the run; Suggest all picks it up');
+  section('A short chunk is split and re-sent by itself; what still fails is retried by hand; closing keeps the run');
   await gap();
-  ai.mode = 'failOnce';
+  ai.mode = 'failInvoice';
   const s0 = ai.start.length;
+  await watchSteps();
   await page.click('#ct-suggest-all');
   await waitPreview();
   pv = await preview();
-  check('the failure is listed with its reason, and a Retry button', /Some tables could not be classified/.test(pv.failed) && /overloaded_error/.test(pv.failed)
-    && await page.evaluate(() => !!document.getElementById('ct-sg-retry')), pv.failed);
-  check('…and the summary says how many were not classified', /10 not classified/.test(pv.summary), pv.summary);
+  const steps = await page.evaluate(() => window.__steps || []);
+  check('THE FAILED CHUNK WAS SPLIT AND RE-SENT AUTOMATICALLY: three more batches, halves first (5 + 5), then the stubborn half',
+    ai.start.length - s0 === 4 && ai.start[s0 + 1].chunks.map((c) => c.tables.length).join('+') === '5+5'
+    && ai.start[s0 + 2].chunks.map((c) => c.tables.length).join('+') === '5' && ai.start[s0 + 3].chunks.map((c) => c.tables.length).join('+') === '5',
+    ai.start.slice(s0).map((st) => st.chunks.map((c) => c.tables.length).join('+')).join(' | '));
+  check('…and the progress said it was re-sending, not stuck', steps.some((t) => /^Classifying: \d+ of \d+ chunks? done · re-sending 10 tables in 2 smaller chunks…$/.test(t)), steps.filter((t) => /re-sending/.test(t)).join(' | '));
+  check('the re-send batches are in the saved run, for resume', await page.evaluate(() => JSON.parse(localStorage.getItem('cygenix_ct_suggest_run_v1')).states[0].batches.length === 4));
+  check('what still failed is listed once, with its reason, and a Retry button', /Some tables could not be classified/.test(pv.failed) && /overloaded_error/.test(pv.failed)
+    && (pv.failed.match(/— 5 tables/g) || []).length === 1 && await page.evaluate(() => !!document.getElementById('ct-sg-retry')), pv.failed);
+  check('…the summary says how many were not classified, in red', /5 not classified/.test(pv.summary), pv.summary);
+  const billing = await page.evaluate(() => { const m = Array.from(document.querySelectorAll('#ct-sg-body .ct-sg-mod')).find((x) => /^Billing/.test(x.textContent)); return m ? m.textContent : ''; });
+  check('A MODULE LEFT WITH NOTHING SAYS WHY: "No suggestions — 5 tables could not be classified; retry them before applying."',
+    /No suggestions — 5 tables could not be classified; retry them before applying\./.test(billing), billing);
   await gap();
+  ai.mode = 'ok';
   await page.click('#ct-sg-retry');
   await waitPreview();
-  await page.waitForFunction(() => !document.getElementById('ct-sg-retry'), null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => !document.getElementById('ct-sg-retry'), null, { timeout: 60000 }).catch(() => {});
   pv = await preview();
   const retryBody = ai.start[ai.start.length - 1];
-  check('RETRY sent only the failed tables, as a new batch', ai.start.length === s0 + 2 && retryBody.chunks.every((c) => /^r1c\d+$/.test(c.id)) && retryBody.chunks[0].tables.length === 10);
-  check('…and the review now has them, with nothing failed', !pv.failed && /2 unassigned/.test(pv.summary), pv.summary);
+  check('RETRY sent only the failed tables, as a new batch, in chunks of at most 20', ai.start.length === s0 + 5 && retryBody.chunks.every((c) => /^r1c\d+$/.test(c.id) && c.tables.length <= 20)
+    && retryBody.chunks.reduce((n, c) => n + c.tables.length, 0) === 5);
+  check('…and the review now has them, with nothing failed', !pv.failed && /2 unassigned/.test(pv.summary) && !/No suggestions/.test(await page.evaluate(() => document.getElementById('ct-sg-body').textContent)), pv.summary);
   await page.evaluate(() => ctSuggestClose());
   check('closing the review keeps the run record', await page.evaluate(() => !!localStorage.getItem('cygenix_ct_suggest_run_v1')));
   check('…and the button says a run is waiting', /is waiting/.test(await page.evaluate(() => document.getElementById('ct-suggest-all').title)));
@@ -284,7 +299,8 @@ const ANSWER = {
   dialogAnswer = true;
   await page.click('#ct-suggest-all');
   await waitPreview();
-  check('SUGGEST ALL ASKS, then PICKS IT UP without submitting anything new', /has not been applied yet/.test(dialogs[dialogs.length - 1] || '') && ai.start.length === s1 && ai.results > r1);
+  check('SUGGEST ALL ASKS, then PICKS IT UP without submitting anything new — every batch, the re-sends included',
+    /has not been applied yet/.test(dialogs[dialogs.length - 1] || '') && ai.start.length === s1 && ai.results - r1 === 5, (ai.start.length - s1) + ' / ' + (ai.results - r1));
   await page.evaluate(() => ctSuggestClose());
   await gap();
   dialogAnswer = false;                                  // discard it this time

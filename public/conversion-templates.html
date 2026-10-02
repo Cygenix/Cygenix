@@ -543,7 +543,7 @@ table.ct-prev{border-collapse:collapse;width:100%;font-size:11.5px}
 <!-- AI "Suggest all" / "Suggest": orchestration, preview, shared flags and the
      FK load order. The model calls go through the data proxy's /agent/
      routes to the Function App's table-classifier.js (Batches API). -->
-<script src="/cygenix-template-suggest.js?v=acb21fcd3b" defer></script>
+<script src="/cygenix-template-suggest.js?v=9338eebb9a" defer></script>
 <script>
 'use strict';
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1141,7 +1141,10 @@ async function sgRun(kind, opts){
     if (!g || !g.ok) throw new Error('Target database not available (' + ((g && g.reason) || 'no connection') + ')');
     const run = opts.run;
     const modules = sgModsFor(run.modules);
-    const base = { tpl: CT.tpl, modules, graph: g, columnsOf: sgColumnsOf, onProgress: sgProgress, signal };
+    // onState: a run that splits a short chunk and re-sends it adds batches
+    // to its state; saving them is what lets a reload pick those up too.
+    const base = { tpl: CT.tpl, modules, graph: g, columnsOf: sgColumnsOf, onProgress: sgProgress, signal,
+      onState: () => { sgSaveRun(run); } };
     let res;
     if (kind === 'resume') {
       let outcomes = [];
@@ -1154,6 +1157,8 @@ async function sgRun(kind, opts){
       res = await CygenixTemplateSuggest.run(Object.assign({}, base, {
         onlyTables: opts.onlyTables || null,
         idPrefix: kind === 'retry' ? 'r' + run.states.length + 'c' : 'c',
+        // The manual Retry sends the tables in chunks of at most 20, not one.
+        chunkTables: kind === 'retry' ? CygenixTemplateSuggest.LIMITS.RETRY_CHUNK : null,
         outcomes: opts.outcomes || [],
         keep: opts.keep || null,
         onStarted: (state) => { run.states.push(state); sgSaveRun(run); SG.run = run; },
@@ -1231,7 +1236,11 @@ function sgRenderPreview(){
       + '<span class="muted" style="font-weight:400;font-size:11px">' + fresh.length + ' suggested' + (g.rows.length > fresh.length ? ' · ' + (g.rows.length - fresh.length) + ' already added' : '') + '</span>'
       + (fresh.length ? '<span style="margin-left:auto;display:flex;gap:0.6rem"><a href="#" class="ct-link" onclick="ctSuggestTick(' + gi + ',true);return false">tick all</a>'
           + '<a href="#" class="ct-link" onclick="ctSuggestTick(' + gi + ',false);return false">untick all</a></span>' : '') + '</div>'
-      + (!g.rows.length ? '<div class="ct-sg-none">No table in the target was placed in this module.</div>' : '')
+      // A module left with nothing while tables are still unclassified is
+      // the case that hid a whole subject area once: say so where it shows.
+      + (!fresh.length && sm.failedTables
+          ? '<div class="ct-sg-err">No suggestions — ' + sm.failedTables + ' table' + (sm.failedTables === 1 ? '' : 's') + ' could not be classified; retry them before applying.</div>'
+          : (!g.rows.length ? '<div class="ct-sg-none">No table in the target was placed in this module.</div>' : ''))
       + g.rows.map((r, ri) => '<label class="ct-sg-row' + (r.already ? ' already' : '') + '">'
           + (r.already ? '<span></span>' : '<input type="checkbox"' + (r.checked ? ' checked' : '') + ' onchange="ctSuggestCheck(' + gi + ',' + ri + ',this.checked)">')
           + '<span class="mono" title="' + esc(r.table) + '">' + esc(r.table) + '</span>'
