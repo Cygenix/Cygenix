@@ -80,7 +80,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cyg_goto` | Cross-page navigation intent | — | connect.html, cygenix-menu-index.js, cygenix-sidebar.js +3 |
 | `cyg_search_q` | A query typed in the masthead, handed to the Search view once | — | cygenix-sidebar.js, dashboard-app.js |
 | `cygenix_active_project` | Legacy project pointer | — | agentive_migration.html, connect.html, cygenix-cosmos-sync.js +2 |
-| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, conversion-templates.html +17 |
+| `cygenix_active_project_id` | Which project is open | a pointer, not the data | agentive_migration.html, analytics-app.js, claude-code.html +18 |
 | `cygenix_active_user` | Signed-in user tag | — | agentive_migration.html, claude-code.html, cygenix-active-conn.js +7 |
 | `cygenix_analyst_name` | Analyst name for reports | — | projects.html |
 | `cygenix_app_prefs` | Theme and app preferences | — | admin.html, agentive_migration.html, analytics.html +35 |

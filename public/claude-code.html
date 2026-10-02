@@ -55,7 +55,7 @@
 <script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-drive.js?v=43733ac277" defer></script>
 <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
-<script src="/cygenix-cc-console.js?v=43dc984b91" defer></script>
+<script src="/cygenix-cc-console.js?v=1a1a8dc906" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -64,7 +64,7 @@
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:216px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
-.topbar{position:fixed;top:calc(var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;left:216px;height:52px;display:flex;align-items:center;gap:0.6rem;padding:0 1rem;border-bottom:0.5px solid var(--border);background:var(--bg);z-index:20}
+.topbar{position:fixed;top:calc(var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;left:216px;min-height:52px;display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem 0.5rem;padding:0.45rem 1rem;box-sizing:border-box;border-bottom:0.5px solid var(--border);background:var(--bg);z-index:20}
 body.cyg-collapsed .topbar{left:54px}
 .topbar h1{font-size:0.95rem;font-weight:600;display:flex;align-items:center;gap:0.45rem;white-space:nowrap}
 .topbar select{font:inherit;font-size:0.82rem;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--r,6px);padding:0.32rem 0.45rem;max-width:260px}
@@ -78,6 +78,20 @@ body.cyg-collapsed .topbar{left:54px}
 .pill.idle{background:var(--green-bg);color:var(--green)}
 .pill.stopped{background:var(--bg3);color:var(--text2)}
 .pill.error{background:var(--red-bg);color:var(--red)}
+.stg{display:inline-flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--text2);white-space:nowrap}
+.stg[hidden]{display:none}
+/* The toolbar wraps onto a second row when the window is too narrow for it,
+   rather than pushing its last buttons off the edge (which it did at 1440px
+   with the sidebar open once the staging field arrived). Everything below it
+   is placed by --cs-bar-h, its measured height, kept current by a
+   ResizeObserver; 52px is the single-row height and the fallback. The two
+   least-used buttons are icons, their names kept for screen readers and
+   tooltips, so that one row is still the usual case. */
+.btn.icon{padding-left:0.5rem;padding-right:0.5rem}
+.vh{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.stg input{width:6.5rem;padding:0.25rem 0.45rem;font-size:0.8rem;background:var(--bg2);color:var(--text);border:0.5px solid var(--border2);border-radius:6px}
+.stg input:disabled{opacity:0.6}
+.pill.stg{background:var(--amber-bg);color:var(--amber)}
 .sw{display:inline-flex;align-items:center;gap:0.45rem;font-size:0.8rem;white-space:nowrap;cursor:pointer;user-select:none}
 .sw .knob{width:36px;height:20px;border-radius:10px;background:var(--bg4);border:0.5px solid var(--border2);position:relative;transition:all 0.15s;flex:none}
 .sw .knob::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--text3);transition:all 0.15s}
@@ -88,7 +102,7 @@ body.cyg-collapsed .topbar{left:54px}
 /* The body is already padded down for the masthead and hairline
    (cygenix-console.css), so the console only clears its own 52px toolbar.
    Adding the masthead again here left an empty strip under the toolbar. */
-.main{padding-top:52px}
+.main{padding-top:var(--cs-bar-h,52px)}
 .gate{margin:1.25rem 1.5rem;max-width:760px}
 .card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg,10px);padding:1.1rem 1.25rem;margin-bottom:1rem}
 .card h2{font-size:0.95rem;font-weight:600;margin-bottom:0.5rem}
@@ -102,7 +116,7 @@ body.cyg-collapsed .topbar{left:54px}
    is a CSS variable the divider drags and the tab remembers; the output
    pane takes the rest. Each pane scrolls on its own and the pair fills the
    window height so the page itself never scrolls. */
-.cols{display:grid;grid-template-columns:var(--cs-chat,40%) 6px minmax(0,1fr);height:calc(100vh - 52px - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));min-height:420px}
+.cols{display:grid;grid-template-columns:var(--cs-chat,40%) 6px minmax(0,1fr);height:calc(100vh - var(--cs-bar-h,52px) - var(--cx-masthead-h,0px) - var(--cyg-hairline-h,0px));min-height:420px}
 .col{display:flex;flex-direction:column;min-width:0;border-right:0.5px solid var(--border);overflow:hidden}
 .col:last-child{border-right:0}
 .divider{cursor:col-resize;background:var(--border);position:relative}
@@ -141,7 +155,7 @@ table.res th{background:var(--bg3);position:sticky;top:0}
 .file .n{font-family:var(--mono);font-size:0.78rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .file .sz{color:var(--text2);font-size:0.74rem;white-space:nowrap}
 /* Sessions drawer and the two modals */
-.drawer{position:fixed;top:calc(52px + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;bottom:0;width:360px;max-width:92vw;background:var(--bg2);border-left:0.5px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,0.08);transform:translateX(100%);transition:transform 0.18s;z-index:30;display:flex;flex-direction:column}
+.drawer{position:fixed;top:calc(var(--cs-bar-h,52px) + var(--cx-masthead-h,0px) + var(--cyg-hairline-h,0px));right:0;bottom:0;width:360px;max-width:92vw;background:var(--bg2);border-left:0.5px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,0.08);transform:translateX(100%);transition:transform 0.18s;z-index:30;display:flex;flex-direction:column}
 .drawer.open{transform:none}
 .drawer-head{display:flex;align-items:center;justify-content:space-between;padding:0.7rem 1rem;border-bottom:0.5px solid var(--border);font-weight:600;font-size:0.9rem}
 .drawer-list{flex:1;overflow:auto;padding:0.5rem}
@@ -167,9 +181,9 @@ table.res th{background:var(--bg3);position:sticky;top:0}
 body.cs-full{padding-left:0 !important;padding-top:0 !important}
 body.cs-full .cyg-sidebar,body.cs-full .cx-masthead,body.cs-full #cyg-envbar,body.cs-full .cx-subnav,body.cs-full .cyg-mobile-menu-btn{display:none !important}
 body.cs-full .topbar{left:0;top:0}
-body.cs-full .main{padding-top:52px}
-body.cs-full .cols{height:calc(100vh - 52px)}
-body.cs-full .drawer{top:52px}
+body.cs-full .main{padding-top:var(--cs-bar-h,52px)}
+body.cs-full .cols{height:calc(100vh - var(--cs-bar-h,52px))}
+body.cs-full .drawer{top:var(--cs-bar-h,52px)}
 /* The Ask Cygenix launcher sits bottom-right, over the Output pane; shrink
    it here so it does not cover the pane's corner. */
 .cyga-launch{transform:scale(0.8) !important;transform-origin:bottom right !important;opacity:0.72}
@@ -191,15 +205,20 @@ body.cs-full .drawer{top:52px}
   <button class="btn" id="cs-check" onclick="csCheck()" title="Run SELECT 1 on this connection through the Dev Console's database bridge, without starting a session"><i class="ic ic-check"></i> Check the bridge</button>
   <span class="sw" id="cs-toggle" role="switch" aria-checked="false" tabindex="0" onclick="csToggle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();csToggle()}"
         title="When off, Cygenix refuses any change to data and runs reads so nothing can be kept. A read-only database login adds a second lock.">
-    <span class="knob"></span><span>Allow changes to data this session</span>
+    <span class="knob"></span><span>Allow changes</span>
   </span>
+  <label class="stg" id="cs-staging-field" title="Staging schema (optional): a schema in this database where Claude may build and load staging tables from the project's Conversion Template. Everything else stays read-only.">
+    <span>Staging</span>
+    <input id="cs-staging" type="text" placeholder="none" maxlength="63" spellcheck="false" autocomplete="off" aria-label="Staging schema" oninput="renderTop()">
+  </label>
+  <span class="pill stg" id="cs-staging-pill" hidden></span>
   <span class="spacer"></span>
   <span class="cost" id="cs-cost"></span>
   <span class="pill" id="cs-status">No session</span>
   <button class="btn primary" id="cs-new" onclick="csNew()"><i class="ic ic-plus"></i> New session</button>
   <button class="btn danger" id="cs-stop" onclick="csStop()" disabled><i class="ic ic-stop"></i> Stop</button>
-  <button class="btn" id="cs-sessions-btn" onclick="csDrawer(true)"><i class="ic ic-clock"></i> Sessions</button>
-  <button class="btn" id="cs-full" onclick="csFull()" title="Fill the window, hiding the sidebar and header (Esc to exit)"><i class="ic ic-fullscreen"></i> <span id="cs-full-label">Full screen</span></button>
+  <button class="btn icon" id="cs-sessions-btn" onclick="csDrawer(true)" title="Past sessions"><i class="ic ic-clock"></i><span class="vh">Sessions</span></button>
+  <button class="btn icon" id="cs-full" onclick="csFull()" title="Fill the window, hiding the sidebar and header (Esc to exit)"><i class="ic ic-fullscreen"></i><span class="vh" id="cs-full-label">Full screen</span></button>
 </div>
 
 <main class="main">
@@ -453,14 +472,31 @@ function csNew(){
   if (CS.cur && CS.cur.status === 'running' && !CS.replay) {
     if (!window.confirm('This session is still working. Start a new one and clear the screen? The current session keeps running and stays in Sessions.')) return;
   }
+  var staging = $('cs-staging').value.trim();
+  if (staging) {
+    var why = CygenixCcConsole.stagingNameProblem(staging);
+    if (why) { note('cs-note', why, 'warn'); return; }
+    openConfirm(CygenixCcConsole.stagingConfirmSpec({ name: CS.conn.profileName, envClass: CS.conn.envClass }, CS.conn, staging),
+      function(){ openSession(staging); });
+    return;
+  }
+  openSession('');
+}
+// The active project, as the Conversion Templates page reads it, so a
+// staging session can find that project's template.
+function activeProjectId(){ try { return localStorage.getItem('cygenix_active_project_id') || 'default'; } catch (e) { return 'default'; } }
+function openSession(staging){
   guarded('New session', async function(){
     clearScreen();
     note('cs-note', 'Opening a workspace… this usually takes 10 to 30 seconds.', 'info');
     try {
-      var r = await call('POST', '/agent/claude-code/session', connBody());
+      var body = connBody(); body.projectId = activeProjectId();
+      if (staging) body.stagingSchema = staging;
+      var r = await call('POST', '/agent/claude-code/session', body);
       CS.cur = r.session; CS.outputsFor = r.session.id;
       CS.cur.connectionName = CS.conn.name; CS.cur.profileName = CS.conn.profileName; CS.cur.envClass = CS.conn.envClass;
       note('cs-note', '');
+      if (CS.cur.stagingSchema) { var inp = $('cs-input'); inp.value = CygenixCcConsole.STAGING_STARTER; autoGrow(inp); }
       loadSessions();
     } catch (e) {
       note('cs-note', 'Could not open a session: ' + e.message, 'crit');
@@ -551,13 +587,20 @@ function mergeEvents(list){
 var CONFIRM = null;
 function csToggle(){
   if (CS.replay || CS.busy['Mode']) return;
+  if (CS.cur && CS.cur.stagingSchema) { note('cs-note', 'This is a staging session: Claude may change tables inside "' + CS.cur.stagingSchema + '" and nothing else, so this switch does not apply.', 'info'); return; }
   var on = CS.cur ? !CS.cur.dataChangesAllowed : !CS.wantChanges;
   var cc = CS.me && CS.me.claudeCode;
   if (on && cc && cc.canChangeData === false) { note('cs-note', 'Your role cannot allow Claude Code to change data.', 'warn'); return; }
   if (!on) { applyMode(false); return; }
   var conn = CS.cur ? { name: CS.cur.connectionName } : CS.conn;
   var prof = CS.cur ? { name: CS.cur.profileName, envClass: CS.cur.envClass } : (CS.conn ? { name: CS.conn.profileName, envClass: CS.conn.envClass } : null);
-  CONFIRM = CygenixCcConsole.confirmSpec(prof, conn);
+  openConfirm(CygenixCcConsole.confirmSpec(prof, conn), function(){ applyMode(true); });
+}
+// One confirmation dialog, for allowing changes and for a staging session.
+function openConfirm(spec, then){
+  CONFIRM = spec; CONFIRM.then = then;
+  $('cs-confirm-title').textContent = spec.title || 'Allow changes to data this session?';
+  $('cs-confirm-ok').textContent = spec.okLabel || 'Allow changes';
   $('cs-confirm-text').textContent = CONFIRM.text;
   $('cs-confirm-prod').hidden = !CONFIRM.prod;
   var inp = $('cs-confirm-input'); inp.hidden = !CONFIRM.prod; inp.value = ''; inp.placeholder = CONFIRM.prod ? CONFIRM.typeToConfirm : '';
@@ -572,8 +615,9 @@ function csConfirmRender(){
 function csConfirmClose(yes){
   $('cs-confirm').classList.remove('open');
   if (!yes || !CONFIRM || !CygenixCcConsole.confirmAccepts(CONFIRM, $('cs-confirm-input').value)) { CONFIRM = null; return; }
+  var then = CONFIRM.then;
   CONFIRM = null;
-  applyMode(true);
+  if (then) then();
 }
 function applyMode(on){
   if (!CS.cur) { CS.wantChanges = on; render(); return; }
@@ -706,7 +750,12 @@ function renderTop(){
   $('cs-check').disabled = !allowed || !CS.conn || !!CS.busy['Check'];
   var on = CS.replay ? !!CS.replay.session.dataChangesAllowed : (CS.cur ? !!CS.cur.dataChangesAllowed : CS.wantChanges);
   var tg = $('cs-toggle'); tg.classList.toggle('on', on); tg.setAttribute('aria-checked', on ? 'true' : 'false');
-  tg.classList.toggle('disabled', !allowed || !!CS.replay || (!!CS.cur && !live) || !!CS.busy['Mode']);
+  var stg = s && s.stagingSchema ? s.stagingSchema : '';
+  tg.classList.toggle('disabled', !allowed || !!CS.replay || (!!CS.cur && !live) || !!CS.busy['Mode'] || !!stg);
+  // The field is for the NEXT New session; the pill says what this one is.
+  $('cs-staging').disabled = !allowed || !!CS.replay || !!CS.busy['New session'];
+  var sp = $('cs-staging-pill'); sp.hidden = !stg; sp.textContent = stg ? 'Staging: ' + stg : '';
+  sp.title = stg ? 'Claude may change tables inside "' + stg + '" only; everything else is read-only.' : '';
 }
 function render(){
   renderTop();
@@ -770,9 +819,21 @@ function renderDrawer(){
 var FULL_KEY = 'cygenix_cc_full', SPLIT_KEY = 'cygenix_cc_split';
 function ssGet(k){ try { return sessionStorage.getItem(k); } catch (e) { return null; } }
 function ssSet(k, v){ try { sessionStorage.setItem(k, v); } catch (e) {} }
+// The toolbar's height, for everything placed below it (see the CSS).
+function trackBar(){
+  var bar = document.querySelector('.topbar');
+  if (!bar) return;
+  var set = function(){ document.documentElement.style.setProperty('--cs-bar-h', Math.ceil(bar.getBoundingClientRect().height) + 'px'); };
+  set();
+  if (window.ResizeObserver) new ResizeObserver(set).observe(bar);
+  else window.addEventListener('resize', set);
+}
 function applyFull(on){
   document.body.classList.toggle('cs-full', !!on);
-  var lbl = $('cs-full-label'); if (lbl) lbl.textContent = on ? 'Exit full screen' : 'Full screen';
+  // An icon beside the sidebar; spelled out in full screen, where there is
+  // room and where the way back has to be obvious.
+  var lbl = $('cs-full-label'); if (lbl) { lbl.textContent = on ? 'Exit full screen' : 'Full screen'; lbl.className = on ? '' : 'vh'; }
+  var btn = $('cs-full'); if (btn) btn.title = on ? 'Exit full screen (Esc)' : 'Fill the window, hiding the sidebar and header (Esc to exit)';
 }
 function csFull(){
   var on = !document.body.classList.contains('cs-full');
@@ -824,6 +885,7 @@ function clearScreen(){
 }
 
 document.addEventListener('DOMContentLoaded', function(){
+  trackBar();
   if (ssGet(FULL_KEY) === '1') applyFull(true);
   var sp = ssGet(SPLIT_KEY); if (sp) applySplit(sp);
   autoGrow($('cs-input'));

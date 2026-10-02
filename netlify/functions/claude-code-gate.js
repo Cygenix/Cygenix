@@ -52,15 +52,18 @@ const reply = (statusCode, data) => ({ statusCode, headers: HEADERS, body: JSON.
 const ACTS = {
   probe:   { action: 'claudecode.configure', mutating: true,  policy: false, records: ['probe'] },
   use:     { action: 'claudecode.use',       mutating: false, policy: true,  records: ['session.start', 'session.stop'] },
-  changes: { action: 'claudecode.use',       mutating: true,  policy: true,  records: ['session.changes-on'] },
+  changes: { action: 'claudecode.use',       mutating: true,  policy: true,  records: ['session.changes-on', 'session.staging'] },
 };
 // Handing a database login to an agent is worth a notice; telling the agent
 // it may change the data is worth more than one.
-const RECORD_SEVERITY = { 'session.changes-on': 'high' };
+// A staging session (Oct-2026) is a session that may change one schema from
+// its first message, so it is recorded like changes being allowed, naming the
+// schema.
+const RECORD_SEVERITY = { 'session.changes-on': 'high', 'session.staging': 'high' };
 
 // Only these keys of a caller's detail reach the audit trail, and only as
 // short strings — the gate is asked by a server, but it is still input.
-const DETAIL_KEYS = ['host', 'port', 'network', 'sessionId', 'profile', 'connection'];
+const DETAIL_KEYS = ['host', 'port', 'network', 'sessionId', 'profile', 'connection', 'schema'];
 function cleanDetail(d) {
   const out = {};
   if (!d || typeof d !== 'object') return out;

@@ -16,6 +16,8 @@
  *   8. a query through the bridge shows its SQL and a table; a bridge query
  *      that cannot reach the database raises the connection note;
  *   11. the sessions drawer lists the session; a past one replays read-only;
+ *   a staging session: the schema field, its confirmation, the project and
+ *      schema sent, the pill, the suggested first message, the switch off;
  *   a failing route shows its error once; nothing throws.
  *
  * Run it by hand:  node tests/browser/claude-code-console.smoke.js
@@ -80,7 +82,7 @@ const U = 'you@example.test';
       world.calls.push({ action, method: route.request().method(), body, path: p, headers: route.request().headers() });
       if (action === 'session' && route.request().method() === 'POST') {
         const id = 'sesn_' + String(Object.keys(world.sessions).length + 1).padStart(6, '0');
-        const s = { id, title: '', status: 'idle', dataChangesAllowed: false, connectionName: body.connectionName, profileName: body.profileName, createdAt: new Date().toISOString(), costCents: 0 };
+        const s = { id, title: '', status: 'idle', dataChangesAllowed: false, connectionName: body.connectionName, profileName: body.profileName, createdAt: new Date().toISOString(), costCents: 0, stagingSchema: body.stagingSchema || '' };
         world.sessions[id] = { session: s, events: [] };
         return json(route, { session: s });
       }
@@ -185,6 +187,17 @@ const U = 'you@example.test';
   check('dismissed once, the notice is remembered for this user', !(await page.evaluate(() => document.getElementById('cs-notice').classList.contains('open'))));
   const opts = await page.evaluate(() => Array.from(document.getElementById('cs-conn').options).map((o) => o.textContent + (o.disabled ? ' (off)' : '')));
   check('the picker lists the active profile\'s connections, target first', opts[0] === 'Target — Target DEV' && opts[1] === 'Source — Legacy', opts.join(' | '));
+  const fits = () => page.evaluate(() => {
+    const w = document.documentElement.clientWidth;
+    return Array.from(document.querySelectorAll('.topbar > *')).filter((el) => el.offsetParent !== null)
+      .filter((el) => { const r = el.getBoundingClientRect(); return r.right > w + 1 || r.left < 0; }).map((el) => el.id || el.className);
+  });
+  const widths = () => page.evaluate(() => Array.from(document.querySelectorAll('.topbar > *')).filter((el) => el.offsetParent !== null)
+    .map((el) => (el.id || el.className) + ':' + Math.round(el.getBoundingClientRect().width)).join(' '));
+  let off = await fits();
+  check('EVERY TOOLBAR CONTROL IS ON SCREEN at 1440px, staging field included', off.length === 0, off.join() + ' — ' + (await widths()));
+  const oneRow = await page.evaluate(() => Math.round(document.querySelector('.topbar').getBoundingClientRect().height));
+  check('…on one row, before a session', oneRow <= 53, oneRow + 'px');
   check('status: No session; Stop and Send off', (await text('cs-status')) === 'No session'
     && (await page.evaluate(() => document.getElementById('cs-stop').disabled && document.getElementById('cs-send').disabled)));
 
@@ -345,6 +358,43 @@ const U = 'you@example.test';
   await page.waitForTimeout(7000);
   check('a failing result read shows its error once and stops — no retry storm',
     /rate-limiting/.test(await text('cs-note')) && calls('events').length === pollsFail, calls('events').length - pollsFail);
+
+  /* A staging session. */
+  world.failEvents = false;
+  page.on('dialog', (d) => d.accept());              // "still working — start a new one?"
+  await page.waitForTimeout(3100);
+  await page.fill('#cs-staging', 'dbo');
+  const postsBefore = calls('session').filter((c) => c.method === 'POST').length;
+  await page.click('#cs-new');
+  await page.waitForTimeout(300);
+  check('a staging schema that is the database\'s own is refused on the page, before any call',
+    /own schemas/.test(await text('cs-note')) && calls('session').filter((c) => c.method === 'POST').length === postsBefore, await text('cs-note'));
+  await page.fill('#cs-staging', 'staging');
+  await page.click('#cs-new');
+  await page.waitForFunction(() => document.getElementById('cs-confirm').classList.contains('open'), null, { timeout: 5000 });
+  const sc = await page.evaluate(() => ({ title: document.getElementById('cs-confirm-title').textContent, ok: document.getElementById('cs-confirm-ok').textContent,
+    text: document.getElementById('cs-confirm-text').textContent }));
+  check('STARTING A STAGING SESSION ASKS FIRST, saying what it allows and where',
+    sc.title === 'Start a staging session?' && sc.ok === 'Start staging session' && /inside the schema "staging" of "Target DEV" under profile "Demo" \(DEV\)/.test(sc.text)
+    && /stays read-only/.test(sc.text), JSON.stringify(sc));
+  await page.click('#cs-confirm-ok');
+  await page.waitForFunction(() => !document.getElementById('cs-staging-pill').hidden, null, { timeout: 8000 });
+  const sb2 = calls('session').filter((c) => c.method === 'POST').pop().body;
+  check('…it sends the schema and the active project with the connection — still no secret',
+    sb2.stagingSchema === 'staging' && sb2.projectId === 'p1' && sb2.connId === 'c_tgt' && !JSON.stringify(sb2).includes('Tr0ub4dor'), JSON.stringify(sb2));
+  check('…the pill says it is a staging session, the field stays free for the NEXT session, and the first message is suggested, not sent',
+    (await text('cs-staging-pill')) === 'Staging: staging' && !(await page.evaluate(() => document.getElementById('cs-staging').disabled))
+    && /Conversion Template/.test(await page.evaluate(() => document.getElementById('cs-input').value))
+    && (await page.evaluate(() => document.getElementById('cs-toggle').classList.contains('disabled'))), await text('cs-staging-pill'));
+  off = await fits();
+  await page.evaluate(() => { window.scrollTo(0, 0); document.scrollingElement.scrollTop = 0; });
+  await page.waitForTimeout(100);
+  const under = await page.evaluate(() => Math.round(document.getElementById('cc-console').getBoundingClientRect().top - document.querySelector('.topbar').getBoundingClientRect().bottom));
+  check('…and with the staging pill showing everything is still on screen, the console starting right under the toolbar however tall it is',
+    off.length === 0 && Math.abs(under) <= 2, off.join() + ' gap ' + under + ' — ' + (await widths()));
+  const modes = calls('mode').length;
+  await page.evaluate(() => csToggle());
+  check('…and the "Allow changes" switch explains it does not apply, calling nothing', /This is a staging session/.test(await text('cs-note')) && calls('mode').length === modes);
 
   /* PRD needs the name typed. */
   await ctx.addInitScript(() => { try { const s = JSON.parse(localStorage.getItem('cygenix_profiles_v1')); s.profiles[0].envClass = 'PRD'; localStorage.setItem('cygenix_profiles_v1', JSON.stringify(s)); } catch (e) {} });

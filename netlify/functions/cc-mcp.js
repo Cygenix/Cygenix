@@ -43,10 +43,41 @@
    - Every tools/call is recorded on the organisation's hash-chained audit
      trail as claudecode.query: who, which connection, read or write, the
      statement (redacted by the audit schema), rows, time — and refusals.
+
+   STAGING SESSIONS (Oct-2026)
+   A session may be opened with a staging schema, for building the staging
+   tables a Conversion Template describes inside the connected database and
+   loading them from the rest of it. The owner's rule: free inside that
+   schema, read-only everywhere else. So in a staging session:
+   - a read runs exactly as above, protected;
+   - a write runs only if lib/staging-sql.js shows that every object it
+     writes to is <staging>.<table> (or a #temp / @table that dies with the
+     call). Inside the schema, DROP and TRUNCATE are allowed — rebuilding
+     staging is the point — and the organisation's approval guardrail is
+     not asked for (rbacGate's stagingSchema option; the role and
+     environment check still decide, and the write is still audited);
+   - the write runs in a transaction — SQL Server with XACT_ABORT ON, so a
+     cancel rolls it back — and every statement, read or write, is
+     cancelled ON THE SERVER after STATEMENT_MS, a little inside the time
+     this function has, so a slow load is stopped and undone rather than
+     left running behind a caller that gave up. Claude is told to load in
+     slices when that happens;
+   - "Allow changes to data" plays no part: the schema is the permission.
+   A staging session needs a connection Cygenix logs in to itself: not a
+   Function App connection and not the Entra relay, neither of which can be
+   cancelled from here.
+
+   THE TEMPLATE
+   get_conversion_template reads the project's Conversion Template through
+   the Function App (agent/claude-code-bridge/template, with the session's
+   own pass, so it is always that session's project): the overview first,
+   then a module or a table at a time with its columns and a CREATE TABLE
+   for the staging schema built the way the template page builds its DDL.
    ========================================================================== */
 'use strict';
 
 const { can, detectDestructive, isReadOnlySql } = require('./lib/rbac');
+const stagingSql = require('./lib/staging-sql');
 const { orgStore, resolveActor, appendAudit, loadAll } = require('./lib/org-store');
 const tenancy = require('./lib/tenancy');
 
@@ -61,6 +92,8 @@ const DEFAULT_ROWS = 200;
 const MAX_TEXT = 90000;            // under the 100,000 characters Anthropic inlines
 const MAX_SQL = 100000;
 const QUERY_BUDGET_MS = 21000;     // answer before Netlify's 26 seconds do
+const STATEMENT_MS = 19000;        // and cancel the statement on the server before that
+const TEMPLATE_TEXT = 60000;       // a template page of tables, under MAX_TEXT with room for the wrapper
 const POLICY_TTL_MS = 30 * 1000;
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
@@ -135,6 +168,17 @@ function wrapReadOnlyMssql(sql) {
 }
 function isPostgres(ctx) { return ctx.dbType === 'postgres'; }
 
+// A staging write: all of it or none of it. XACT_ABORT ON makes SQL Server
+// roll the transaction back on an error AND on the cancel that STATEMENT_MS
+// sends, which is what turns "stopped after 19 seconds" into "nothing kept".
+// CREATE SCHEMA must be the first statement of its batch, so it is sent as
+// it is; on its own it is atomic anyway.
+function wrapStagingMssql(sql) {
+  const body = String(sql).replace(/;\s*$/, '');
+  if (/^\s*CREATE\s+SCHEMA\b/i.test(body)) return body;
+  return 'SET XACT_ABORT ON;\nBEGIN TRANSACTION;\n' + body + '\n;\nIF @@TRANCOUNT > 0 COMMIT TRANSACTION;';
+}
+
 function productKeyFor(fnUrl) {
   try {
     const want = new URL(PRODUCT_DB_API).host.toLowerCase();
@@ -160,22 +204,31 @@ function withBudget(promise) {
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
-async function runDirect(ctx, sql, readOnly) {
+// how: 'read' (protected, rolled back), 'write' (as sent), 'staging' (a
+// write lib/staging-sql.js has already checked).
+async function runDirect(ctx, sql, how) {
   const bridge = deps.bridge();
   const cs = ctx.connString;
   const dialect = bridge.detectDialect(cs);
+  const staging = how === 'staging';
+  if (staging && dialect !== 'postgres' && bridge.viaRelay(cs)) {
+    return { error: 'This connection is reached through the Azure relay, which cannot stop a statement part way, so the Dev Console will not write staging tables over it. Use a connection with its own login.' };
+  }
   // The SQL editor's own gate, as the session's owner: environment
-  // classification, role grants, Production approvals, write auditing.
-  const gate = await bridge.rbacGate({ oid: ctx.oid, email: ctx.email }, 'execute', dialect, cs, null, { sql });
+  // classification, role grants, Production approvals, write auditing — the
+  // approvals lifted only for a checked staging write.
+  const gate = await bridge.rbacGate({ oid: ctx.oid, email: ctx.email }, 'execute', dialect, cs, null, { sql },
+    staging ? { stagingSchema: ctx.stagingSchema } : undefined);
   if (gate.denied) {
     let d = {};
     try { d = JSON.parse(gate.denied.body || '{}'); } catch (e) { /* keep {} */ }
     return { error: (d.error || 'Not permitted.') + (d.hint ? ' ' + d.hint : '') + (gate.denied.statusCode === 428
       ? ' The Dev Console cannot wait for approvals; run this one in the SQL editor.' : '') };
   }
+  const readOnly = how === 'read';
   const res = dialect === 'postgres'
-    ? await bridge.handlePostgres('execute', cs, null, { sql, readOnly })
-    : await bridge.handleMssql('execute', cs, null, { sql: readOnly ? wrapReadOnlyMssql(sql) : sql });
+    ? await bridge.handlePostgres('execute', cs, null, { sql, readOnly, transaction: staging, timeoutMs: STATEMENT_MS })
+    : await bridge.handleMssql('execute', cs, null, { sql: readOnly ? wrapReadOnlyMssql(sql) : staging ? wrapStagingMssql(sql) : sql, timeoutMs: STATEMENT_MS });
   let data = {};
   try { data = JSON.parse(res.body || '{}'); } catch (e) { /* keep {} */ }
   if (res.statusCode !== 200 || data.success === false) {
@@ -184,7 +237,9 @@ async function runDirect(ctx, sql, readOnly) {
   return { recordset: data.recordset || [], rowsAffected: data.rowsAffected || 0 };
 }
 
-async function runFunctionApp(ctx, sql, readOnly) {
+async function runFunctionApp(ctx, sql, how) {
+  const readOnly = how === 'read';
+  if (how === 'staging') return { error: 'A staging session cannot write through a Function App connection.' };
   let res, text;
   try {
     res = await deps.fetch(fnExecuteUrl(ctx.fnUrl, ctx.fnKey), {
@@ -204,9 +259,9 @@ async function runFunctionApp(ctx, sql, readOnly) {
   return { recordset: data.recordset || [], rowsAffected: data.rowsAffected || 0 };
 }
 
-async function runSql(ctx, sql, readOnly) {
+async function runSql(ctx, sql, how) {
   try {
-    return await withBudget(ctx.mode === 'azure' ? runFunctionApp(ctx, sql, readOnly) : runDirect(ctx, sql, readOnly));
+    return await withBudget(ctx.mode === 'azure' ? runFunctionApp(ctx, sql, how) : runDirect(ctx, sql, how));
   } catch (e) {
     return { error: ((e && e.message) || String(e)) + (e && e.hint ? ' ' + e.hint : '') };
   }
@@ -273,6 +328,40 @@ const TOOLS = [
   },
 ];
 
+// run_query says what this session may do; a staging session says it differently.
+function runQueryTool(ctx) {
+  if (!ctx.stagingSchema) return TOOLS[2];
+  const sch = ctx.stagingSchema;
+  return Object.assign({}, TOOLS[2], {
+    description: 'Run SQL against this session\'s database and return the first result set, up to max_rows rows (default '
+      + DEFAULT_ROWS + ', at most ' + MAX_ROWS + '). This is a STAGING session: anything may be created, loaded, emptied or dropped '
+      + 'inside the schema "' + sch + '" — always write names in full as ' + sch + '.<table> — and everything else in the database is '
+      + 'read-only. A statement that changes "' + sch + '" runs in a transaction and must not contain comments; one that writes '
+      + 'anywhere else, or that cannot be checked (EXEC, MERGE, an UPDATE or DELETE through an alias), is refused with the reason. '
+      + 'Every statement is stopped after ' + Math.round(STATEMENT_MS / 1000) + ' seconds and anything it changed is undone, so load '
+      + 'large tables in slices (by key range or date).',
+  });
+}
+const TEMPLATE_TOOL = {
+  name: 'get_conversion_template',
+  title: 'Read the Conversion Template',
+  description: 'Read this project\'s Conversion Template: which staging tables to build and the target tables they mirror. Call it '
+    + 'first with no arguments for the overview (modules, tables, load order). Then call it with a module, or a table, for the '
+    + 'columns — name, type, required in the target, identity — and a CREATE TABLE statement for the staging schema. The staging '
+    + 'tables take the target\'s column names and types exactly, every column nullable; the data comes from this database.',
+  inputSchema: { type: 'object', properties: {
+    module: { type: 'string', description: 'One module, by name.' },
+    table: { type: 'string', description: 'One table, by staging or target name.' },
+    template_id: { type: 'string', description: 'A different template from the list the overview gives.' },
+  }, additionalProperties: false },
+  annotations: { readOnlyHint: true },
+};
+function toolsFor(ctx) {
+  const list = [TOOLS[0], TOOLS[1], runQueryTool(ctx)];
+  if (ctx.projectId) list.push(TEMPLATE_TOOL);
+  return list;
+}
+
 function lit(ctx, v) {
   const s = String(v).replace(/'/g, "''");
   return isPostgres(ctx) ? "'" + s + "'" : "N'" + s + "'";
@@ -330,6 +419,157 @@ function refusalFor(sql) {
 
 function textResult(text, isError) { return { content: [{ type: 'text', text }], isError: !!isError }; }
 
+/* ── The Conversion Template, for Claude ─────────────────────────────────
+   sqlType, populateVerdict and moduleActive are COPIES of the functions of
+   the same names in public/cygenix-template-spec.js, which builds the
+   template page's workbook and DDL. They are copied rather than required
+   because that file lives outside this function's folder; tests/cc-mcp.test.js
+   holds the copies to the originals on every column shape the template
+   stores. If you change one, change the other. */
+const LENGTH_TYPES = ['char', 'varchar', 'nchar', 'nvarchar', 'binary', 'varbinary'];
+const PRECISION_SCALE_TYPES = ['decimal', 'numeric', 'dec'];
+const PRECISION_ONLY_TYPES = ['datetime2', 'datetimeoffset', 'time'];
+function sqlType(col) {
+  const c = col || {};
+  const t = String(c.dataType || c.type || '').trim().toLowerCase();
+  if (!t) return '';
+  if (t.indexOf('(') > 0) return t;
+  if (LENGTH_TYPES.indexOf(t) !== -1 && c.maxLength != null) {
+    let len = Number(c.maxLength);
+    if (len === -1) return t + '(max)';
+    if (t === 'nvarchar' || t === 'nchar') len = Math.floor(len / 2) || len;
+    return t + '(' + len + ')';
+  }
+  if (PRECISION_SCALE_TYPES.indexOf(t) !== -1 && c.precision != null) return t + '(' + c.precision + ',' + (c.scale == null ? 0 : c.scale) + ')';
+  if (PRECISION_ONLY_TYPES.indexOf(t) !== -1 && c.scale != null) return t + '(' + c.scale + ')';
+  return t;
+}
+function populateVerdict(col) {
+  const c = col || {};
+  if (c.isIdentity) return 'No — identity';
+  if (c.isComputed) return 'No — computed';
+  return c.isNullable === false ? 'Required' : 'Optional';
+}
+function moduleActive(m) { return !!m && m.inScope !== false && !!m.included; }
+
+const qb = (n) => '[' + String(n).replace(/]/g, ']]') + ']';
+const qd = (n) => '"' + String(n).replace(/"/g, '""') + '"';
+// The staging table's CREATE, the way the template page writes its DDL:
+// the target's columns and types, every one NULL, computed columns left out,
+// no keys, no defaults, no identity — and no comments, which a staging write
+// may not carry.
+function stagingCreate(ctx, table) {
+  const cols = (table.columns || []).filter(c => c && !c.isComputed && c.name);
+  if (!cols.length || !ctx.stagingSchema) return null;
+  const sch = ctx.stagingSchema;
+  if (isPostgres(ctx)) {
+    return 'CREATE TABLE IF NOT EXISTS ' + qd(sch) + '.' + qd(table.stagingTable) + ' (' + cols.map(c => qd(c.name) + ' ' + sqlType(c) + ' NULL').join(', ') + ')';
+  }
+  return "IF OBJECT_ID(N'" + (sch + '.' + table.stagingTable).replace(/'/g, "''") + "', N'U') IS NULL CREATE TABLE "
+    + qb(sch) + '.' + qb(table.stagingTable) + ' (' + cols.map(c => qb(c.name) + ' ' + sqlType(c) + ' NULL').join(', ') + ')';
+}
+
+function templateTables(tpl) {
+  const mods = Array.isArray(tpl && tpl.modules) ? tpl.modules : [];
+  let active = mods.filter(moduleActive);
+  let note = '';
+  if (!active.length) {
+    active = mods.filter(m => m && m.inScope !== false);
+    if (active.length) note = 'No module is ticked "Include" on this template yet, so every module in scope is shown.';
+  }
+  return { note, modules: active.map(m => ({
+    module: String(m.module || ''),
+    tables: (Array.isArray(m.tables) ? m.tables : []).slice().sort((a, b) =>
+      (Number(a.loadOrder) || 0) - (Number(b.loadOrder) || 0) || String(a.targetTable).localeCompare(String(b.targetTable))),
+  })) };
+}
+const lc = (v) => String(v == null ? '' : v).trim().toLowerCase();
+
+function templateView(ctx, data, args) {
+  const tpl = data.template || {};
+  const head = {
+    template: { id: data.chosen && data.chosen.id, name: tpl.name, version: tpl.version, status: tpl.status,
+      target_type: tpl.targetType || undefined, profile: tpl.profileId || undefined },
+    other_templates: (data.templates || []).filter(t => !data.chosen || t.id !== data.chosen.id)
+      .slice(0, 20).map(t => ({ template_id: t.id, name: t.name, version: t.version, kind: t.kind, profile: t.profileId || undefined })),
+    staging_schema: ctx.stagingSchema || null,
+  };
+  const { note, modules } = templateTables(tpl);
+  if (note) head.note = note;
+  const wantModule = lc(args.module), wantTable = lc(args.table);
+
+  if (!wantModule && !wantTable) {
+    head.modules = modules.map(m => ({ module: m.module, tables: m.tables.map(t => ({
+      staging_table: t.stagingTable, target_table: t.targetTable, load_order: Number(t.loadOrder) || 0,
+      required: t.required !== false, columns: (t.columns || []).length, notes: t.notes || undefined })) }));
+    head.next = 'Call get_conversion_template with a module or a table for its columns and CREATE TABLE.';
+    return JSON.stringify(head);
+  }
+  let picked = [];
+  modules.forEach(m => m.tables.forEach(t => {
+    if ((wantModule && lc(m.module) === wantModule) || (wantTable && (lc(t.stagingTable) === wantTable || lc(t.targetTable) === wantTable))) {
+      picked.push({ module: m.module, t });
+    }
+  }));
+  if (!picked.length) {
+    return JSON.stringify(Object.assign(head, { error: 'No ' + (wantTable ? 'table "' + args.table + '"' : 'module "' + args.module + '"')
+      + ' in this template. Call get_conversion_template with no arguments for the list.' }));
+  }
+  const out = [], left = [];
+  let size = JSON.stringify(head).length;
+  picked.forEach(({ module, t }) => {
+    const entry = {
+      module, staging_table: t.stagingTable, target_table: t.targetTable, load_order: Number(t.loadOrder) || 0,
+      required: t.required !== false, notes: t.notes || undefined,
+      columns: (t.columns || []).map(c => ({ name: c.name, type: sqlType(c), required_in_target: c.isNullable === false,
+        identity: !!c.isIdentity || undefined, computed: !!c.isComputed || undefined, primary_key: !!c.isPrimaryKey || undefined,
+        populate: populateVerdict(c) })),
+      create_table: stagingCreate(ctx, t) || undefined,
+    };
+    if (!entry.columns.length) entry.note = 'The template has no column detail for this table yet: read the target\'s columns on the template page first.';
+    const n = JSON.stringify(entry).length;
+    if (out.length && size + n > TEMPLATE_TEXT) { left.push(t.stagingTable); return; }
+    out.push(entry); size += n;
+  });
+  head.tables = out;
+  if (left.length) head.not_shown = { tables: left, why: 'Too much for one answer: ask for these one table at a time.' };
+  if (isPostgres(ctx)) head.types_note = 'Column types are the target\'s as recorded in the template; adjust any PostgreSQL does not have.';
+  return JSON.stringify(head);
+}
+
+async function fetchTemplate(ctx, templateId) {
+  const key = String(deps.env('CYGENIX_DATA_FN_KEY') || '').trim();
+  if (!key) return { error: 'The bridge is not configured on this deployment (CYGENIX_DATA_FN_KEY).' };
+  let res, text;
+  try {
+    res = await deps.fetch(AGENT_ROOT + '/agent/claude-code-bridge/template?code=' + encodeURIComponent(key), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: ctx._token, templateId: templateId || '' }), signal: AbortSignal.timeout(10000),
+    });
+    text = await res.text();
+  } catch (e) {
+    return { error: 'Could not reach the Conversion Templates store: ' + ((e && e.message) || e) };
+  }
+  let data = {};
+  try { data = JSON.parse(text || '{}'); } catch (e) { /* keep {} */ }
+  if (res.status !== 200 || !data.ok) return { error: data.error || ('The template store answered ' + res.status) };
+  return { data };
+}
+
+async function templateTool(ctx, args) {
+  const audit = { tool: 'get_conversion_template', sql: '', write: false };
+  if (!ctx.projectId) return { result: textResult('This session was not opened from a project, so it has no Conversion Template.', true), audit: null };
+  const pol = await consolePolicy(ctx, false);
+  audit.actor = pol.actor; audit.tenant = pol.tenant;
+  if (!pol.ok) return { result: textResult('Refused: ' + pol.why, true), audit: Object.assign(audit, { outcome: 'denied', reason: pol.why }) };
+  const started = deps.now();
+  const got = await fetchTemplate(ctx, args.template_id ? String(args.template_id).slice(0, 200) : '');
+  const ms = deps.now() - started;
+  if (got.error) return { result: textResult(got.error, true), audit: Object.assign(audit, { outcome: 'failed', reason: got.error.slice(0, 300), ms }) };
+  return { result: textResult(templateView(ctx, got.data, args), false),
+    audit: Object.assign(audit, { outcome: 'allowed', ms, reason: (got.data.chosen && got.data.chosen.id) || undefined }) };
+}
+
 async function callTool(ctx, name, args) {
   args = args && typeof args === 'object' ? args : {};
   const started = deps.now();
@@ -339,6 +579,8 @@ async function callTool(ctx, name, args) {
     const t = splitTable(args);
     if (!t.table) return { result: textResult('describe_table needs a table name.', true), audit: null };
     sql = describeSql(ctx, t.schema, t.table);
+  } else if (name === 'get_conversion_template') {
+    return templateTool(ctx, args);
   } else if (name === 'run_query') {
     internal = false;
     sql = String(args.sql == null ? '' : args.sql);
@@ -350,21 +592,40 @@ async function callTool(ctx, name, args) {
 
   const reads = internal || isReadOnlySql(sql);
   const audit = { tool: name, sql, write: !reads };
-  const refusal = internal ? '' : refusalFor(sql);
-  if (refusal) return { result: textResult(refusal, true), audit: Object.assign(audit, { outcome: 'denied', reason: 'destructive or USE' }) };
-  if (!reads && ctx.readOnly) {
-    return { result: textResult('Refused: this changes data, and "Allow changes to data this session" is off. Ask the user to '
-      + 'switch it on at the top of the Dev Console if they want this to run.', true),
-      audit: Object.assign(audit, { outcome: 'denied', reason: 'session is read-only' }) };
+  // A staging session's writes answer to the staging rule and nothing else;
+  // its reads, and every other session's statements, to the rules above.
+  const staging = !reads && !!ctx.stagingSchema;
+  if (staging) {
+    const chk = stagingSql.checkStagingWrite(sql, { schema: ctx.stagingSchema, dialect: isPostgres(ctx) ? 'postgres' : 'sqlserver' });
+    if (!chk.ok) {
+      return { result: textResult('Refused: ' + chk.why, true), audit: Object.assign(audit, { outcome: 'denied', reason: 'staging: ' + chk.why.slice(0, 200), staging: true }) };
+    }
+    audit.staging = true;
+  } else {
+    const refusal = internal ? '' : refusalFor(sql);
+    if (refusal) return { result: textResult(refusal, true), audit: Object.assign(audit, { outcome: 'denied', reason: 'destructive or USE' }) };
+    if (!reads && ctx.readOnly) {
+      return { result: textResult('Refused: this changes data, and the "Allow changes" switch is off for this session. Ask the user to '
+        + 'switch it on at the top of the Dev Console if they want this to run.', true),
+        audit: Object.assign(audit, { outcome: 'denied', reason: 'session is read-only' }) };
+    }
   }
   const pol = await consolePolicy(ctx, !reads);
   audit.actor = pol.actor; audit.tenant = pol.tenant;
   if (!pol.ok) return { result: textResult('Refused: ' + pol.why, true), audit: Object.assign(audit, { outcome: 'denied', reason: pol.why }) };
 
   const maxRows = Math.max(1, Math.min(MAX_ROWS, parseInt(args.max_rows, 10) || (internal ? MAX_ROWS : DEFAULT_ROWS)));
-  const r = await runSql(ctx, sql, reads);
+  const r = await runSql(ctx, sql, reads ? 'read' : staging ? 'staging' : 'write');
   const ms = deps.now() - started;
-  if (r.error) return { result: textResult('The query failed: ' + r.error, true), audit: Object.assign(audit, { outcome: 'failed', reason: r.error.slice(0, 300), ms }) };
+  if (r.error) {
+    let msg = 'The query failed: ' + r.error;
+    if (/^Cancelled after/.test(r.error)) {
+      msg += staging
+        ? ' Nothing it changed was kept — it ran in a transaction that was rolled back. Load this in slices (by key range or date) so each statement finishes in time.'
+        : ' Narrow it — filter, aggregate, or TOP/LIMIT — and try again.';
+    }
+    return { result: textResult(msg, true), audit: Object.assign(audit, { outcome: 'failed', reason: r.error.slice(0, 300), ms }) };
+  }
   const text = shape(r.recordset, maxRows, reads ? { ms } : { rows_affected: r.rowsAffected, ms });
   return { result: textResult(text, false), audit: Object.assign(audit, { outcome: 'allowed', rows: (r.recordset || []).length, rowsAffected: r.rowsAffected, ms }) };
 }
@@ -376,15 +637,15 @@ async function recordQuery(ctx, a) {
     await deps.appendAudit(store, {
       actorOid: ctx.oid, actorEmail: ctx.email, effectiveRoles: (a.actor && a.actor.roles) || [],
       action: 'claudecode.query', outcome: a.outcome,
-      severity: a.outcome !== 'allowed' ? 'notice' : (a.write ? 'high' : 'info'),
+      severity: a.outcome !== 'allowed' ? 'notice' : (a.write ? (a.staging ? 'notice' : 'high') : 'info'),
       resourceType: ctx.sessionId ? 'claudecode_session' : 'claudecode_check',
       resourceId: ctx.sessionId || ('check:' + ctx.connectionId),
-      summary: (a.write ? 'Dev Console change' : 'Dev Console query') + ' on ' + (ctx.connectionName || ctx.connectionId)
+      summary: (a.write ? (a.staging ? 'Dev Console staging change' : 'Dev Console change') : a.tool === 'get_conversion_template' ? 'Dev Console template read' : 'Dev Console query') + ' on ' + (ctx.connectionName || ctx.connectionId)
         + (a.outcome === 'allowed' ? '' : ' — ' + a.outcome),
       detail: {
         tenantId: (a.tenant && a.tenant.id) || ctx.tenantId || undefined, route: 'cc-mcp',
         tool: a.tool, connection: ctx.connectionName || ctx.connectionId, profile: ctx.profileName || undefined,
-        via: ctx.mode, sessionReadOnly: !!ctx.readOnly, write: !!a.write,
+        via: ctx.mode, sessionReadOnly: !!ctx.readOnly, write: !!a.write, stagingSchema: ctx.stagingSchema || undefined,
         sql: a.tool === 'run_query' ? String(a.sql).slice(0, 2000) : undefined,
         rows: a.rows, rowsAffected: a.write ? a.rowsAffected : undefined, ms: a.ms, reason: a.reason,
       },
@@ -411,11 +672,12 @@ async function handleMessage(ctx, msg) {
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'cygenix', title: 'Cygenix database bridge', version: '1.0.0' },
         instructions: 'Tools for this Dev Console session\'s one database, "' + (ctx.connectionName || ctx.connectionId) + '" ('
-          + (isPostgres(ctx) ? 'PostgreSQL' : 'SQL Server') + '). Changes to data are currently '
-          + (ctx.readOnly ? 'NOT allowed.' : 'allowed.'),
+          + (isPostgres(ctx) ? 'PostgreSQL' : 'SQL Server') + '). ' + (ctx.stagingSchema
+            ? 'Staging session: changes are allowed inside the schema "' + ctx.stagingSchema + '" only; everything else is read-only.'
+            : 'Changes to data are currently ' + (ctx.readOnly ? 'NOT allowed.' : 'allowed.')),
       });
     case 'ping': return rpcResult(msg.id, {});
-    case 'tools/list': return rpcResult(msg.id, { tools: TOOLS });
+    case 'tools/list': return rpcResult(msg.id, { tools: toolsFor(ctx) });
     case 'tools/call': {
       const out = await callTool(ctx, String(p.name || ''), p.arguments);
       await recordQuery(ctx, out.audit);
@@ -450,6 +712,9 @@ exports.handler = async function (event) {
     return httpReply(pass.status, { error: pass.error }, pass.status === 401 ? { 'WWW-Authenticate': 'Bearer error="invalid_token"' } : undefined);
   }
   const ctx = pass.ctx;
+  // The pass itself, for the template read, which the Function App scopes to
+  // this session's project by the same pass. Never logged or audited.
+  Object.defineProperty(ctx, '_token', { value: m[1], enumerable: false });
 
   const batch = Array.isArray(body);
   const replies = [];
@@ -465,6 +730,7 @@ exports.handler = async function (event) {
   return httpReply(200, batch ? replies : replies[0]);
 };
 
-exports._internals = { deps, redeem, consolePolicy, callTool, handleMessage, refusalFor, wrapReadOnlyMssql, shape, cell,
+exports._internals = { deps, redeem, consolePolicy, callTool, handleMessage, refusalFor, wrapReadOnlyMssql, wrapStagingMssql, shape, cell,
+  toolsFor, runQueryTool, TEMPLATE_TOOL, templateView, templateTables, stagingCreate, sqlType, populateVerdict, moduleActive, STATEMENT_MS, TEMPLATE_TEXT,
   listTablesSql, describeSql, splitTable, fnExecuteUrl, productKeyFor, TOOLS, MAX_ROWS, DEFAULT_ROWS, MAX_TEXT,
   _reset: () => policyCache.clear() };

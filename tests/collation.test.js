@@ -328,7 +328,7 @@ check('a finding carries the module labels rather than raw ids',
   const exec = FN.slice(FN.indexOf("case 'execute': {"), FN.indexOf("case 'fetch-page': {"));
   check('the Netlify execute action now binds parameters, as the Azure one already did',
     /Array\.isArray\(body\.params\) \? body\.params : \[\]/.test(exec) && /rq\.input\(prm\.name, prm\.value\)/.test(exec)
-    && /const r = await rq\.query\(sqlToRun\)/.test(exec));
+    && /\br = await rq\.query\(sqlToRun\)/.test(exec));
   check('and the two backends bind them the same way, so a query is portable between the two paths',
     /rq\.input\(prm\.name, prm\.value\)/.test(AZ) && /Array\.isArray\(body\.params\) \? body\.params : \[\]/.test(AZ));
   check('the destructive-statement guard on execute is untouched',

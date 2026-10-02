@@ -21,6 +21,9 @@
      POST agent/claude-code/check     a two-minute pass to check the bridge
      POST agent/claude-code-bridge/redeem   server to server: a pass, for
                                       the connection it opens (see below)
+     POST agent/claude-code-bridge/template server to server: a session's
+                                      pass, for its project's Conversion
+                                      Template (staging sessions)
 
    WHOSE ACCOUNT, WHOSE MONEY
    Everything runs on the CALLER'S Anthropic API key, read from the
@@ -71,6 +74,19 @@
    that one session and nothing else; the credential is unsealed fresh from
    conn_secrets each time, so a re-saved password takes effect at once.
 
+   STAGING SESSIONS (Oct-2026)
+   A session may be opened with a staging schema, to build the staging
+   tables a Conversion Template describes inside the connected database and
+   load them from the rest of it. The rule the owner agreed: free inside that
+   schema, read-only everywhere else. The bridge enforces it
+   (lib/staging-sql.js); here the schema name is checked, opening such a
+   session asks the gate for the CHANGES act and records
+   claudecode.session.staging at high severity, the "Allow changes" switch is
+   refused for the session (the schema is the permission), and Claude is
+   given the staging brief in conversion-playbook.js. The session also
+   carries its project, so the bridge can read that project's template — and
+   only that project's — through agent/claude-code-bridge/template.
+
    WHAT IS KEPT HERE
    Cosmos container claude_code_sessions, partitioned on /userId (the
    verified email, the house convention): one document per session, and the
@@ -88,6 +104,7 @@ const { app } = require('@azure/functions');
 const { userAnthropicKey } = require('./user-anthropic-key');
 const { verifyJwt } = require('./entra-auth');
 const connSecrets = require('./conn-secrets');
+const { conversionPlaybook } = require('./conversion-playbook');
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -170,8 +187,20 @@ function realContainer() {
   return _ensured.then(() => db.container(CONTAINER));
 }
 
+// The Conversion Templates container — the one index.js serves the template
+// page from, partitioned on /projectId. Read here, never written, and never
+// created: if it is missing the error names it.
+function realTemplates() {
+  if (!_cosmos) {
+    const { CosmosClient } = require('@azure/cosmos');
+    _cosmos = new CosmosClient({ endpoint: process.env.COSMOS_ENDPOINT, key: process.env.COSMOS_KEY });
+  }
+  return _cosmos.database(process.env.COSMOS_DATABASE || 'cygenix').container('conversion_templates');
+}
+
 // ── Dependencies (swapped in tests) ──────────────────────────────────────
 const deps = {
+  templates: realTemplates,
   verify: verifyJwt,
   fetch: (...a) => fetch(...a),
   makeClient: (apiKey) => {
@@ -458,7 +487,7 @@ function parseConn(connString) {
 const MODE_TEXT = {
   readonly: 'DATA-CHANGE MODE: READ-ONLY. The user has not allowed changes to data in this session, and Cygenix '
     + 'enforces it: run_query refuses anything but reads, and runs reads so that nothing they did could be kept. '
-    + 'If the user asks for a change, explain that "Allow changes to data this session" is off and ask them to '
+    + 'If the user asks for a change, explain that the "Allow changes" switch at the top of the Dev Console is off and ask them to '
     + 'switch it on first.',
   changes: 'DATA-CHANGE MODE: CHANGES ALLOWED. The user has allowed changes to data in this session. Before running '
     + 'anything that modifies data or schema, show the exact SQL and say what it will do. Cygenix still refuses '
@@ -467,6 +496,19 @@ const MODE_TEXT = {
 };
 function systemPrompt(o) {
   const kind = o.dbType === 'postgres' ? 'PostgreSQL' : 'SQL Server';
+  if (o.stagingSchema) {
+    return [
+      'You are working inside Cygenix, a data migration console, on data migration work for the signed-in user.',
+      'The database for this session is ' + kind + '. You reach it ONLY through the "' + MCP_NAME + '" MCP tools: '
+        + 'list_tables, describe_table, run_query and get_conversion_template. Cygenix runs each query for you. Do not try to '
+        + 'connect to the database from the workspace: there is no login there, and its network does not allow it.',
+      'run_query returns at most 1,000 rows; aggregate or filter in SQL rather than fetching everything. Only the first result '
+        + 'set is returned.',
+      conversionPlaybook(o.stagingSchema, o.dbType),
+      'You can still use Python, Node and shell in the workspace to analyse what the tools return; files saved under '
+        + '/mnt/session/outputs can be downloaded by the user.',
+    ].join('\n\n');
+  }
   return [
     'You are working inside Cygenix, a data migration console, on data migration work for the signed-in user.',
     'The database for this session is ' + kind + '. You reach it ONLY through the "' + MCP_NAME + '" MCP tools: '
@@ -539,7 +581,7 @@ function publicSession(doc) {
     connectionName: doc.connectionName || '', side: doc.side || '', dbType: doc.dbType || '',
     dbHost: doc.dbHost || '', dbName: doc.dbName || '', createdAt: doc.createdAt, endedAt: doc.endedAt || null,
     costCents: doc.costCents == null ? null : doc.costCents, eventCount: doc.eventCount || 0,
-    stopReason: doc.stopReason || null,
+    stopReason: doc.stopReason || null, stagingSchema: doc.stagingSchema || '',
     uploads: (doc.uploads || []).map(u => ({ fileId: u.fileId, name: u.name, path: u.path, size: u.size, at: u.at })),
   };
 }
@@ -649,6 +691,25 @@ async function resolveConnection(who, body) {
   return { connId, names, side, conn: { mode, fnUrl: '', dbType: p.kind, dbHost: p.host, dbName: p.database } };
 }
 
+// The staging schema's name. A COPY of stagingSchemaProblem in
+// netlify/functions/lib/staging-sql.js, which the bridge checks again on
+// every write; tests/claude-code.test.js holds the two to the same answers.
+// If you change one, change the other.
+const STAGING_SCHEMA_RE = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
+const RESERVED_SCHEMAS = ['dbo', 'sys', 'guest', 'information_schema', 'public', 'pg_catalog', 'pg_toast', 'pg_temp'];
+function stagingSchemaProblem(name, dbType) {
+  const s = String(name == null ? '' : name);
+  if (!s) return 'Give the staging schema a name.';
+  if (!STAGING_SCHEMA_RE.test(s)) return 'A staging schema name is letters, digits and underscores, starting with a letter, up to 63 characters.';
+  const low = s.toLowerCase();
+  if (RESERVED_SCHEMAS.indexOf(low) !== -1 || /^db_/.test(low) || /^pg_/.test(low)) {
+    return '"' + s + '" is one of the database\'s own schemas. Choose a schema of its own for staging, such as "staging".';
+  }
+  if (dbType === 'postgres' && s !== low) return 'In PostgreSQL, use a lower-case staging schema name ("' + low + '"), so that it means the same thing quoted or not.';
+  return '';
+}
+const PROJECT_ID_RE = /^[A-Za-z0-9_.:-]{1,100}$/;
+
 // Revoke a session's pass and delete its vault: nothing can redeem it after.
 async function revokeBridge(client, doc) {
   if (doc.vaultId) { try { await client.beta.vaults.delete(doc.vaultId); } catch (e) { /* gone already */ } }
@@ -660,8 +721,21 @@ async function sessionStart(who, apiKey, body, ctx) {
   const r = await resolveConnection(who, body);
   if (r.error) return r.error;
   const { connId, names, side, conn } = r;
+  const projectId = PROJECT_ID_RE.test(str(body.projectId, 100)) ? str(body.projectId, 100) : '';
+  const stagingSchema = str(body.stagingSchema, 100);
+  if (stagingSchema) {
+    const why = stagingSchemaProblem(stagingSchema, conn.dbType);
+    if (why) return bad(400, why);
+    if (conn.mode !== 'direct') return bad(400, 'A staging session needs a connection Cygenix logs in to itself; "' + names.connectionName + '" is a Function App connection.');
+  }
   const container = await deps.container();
 
+  // A staging session lets Claude change data — inside one schema — so it
+  // asks for the changes act, and the trail says which schema, where.
+  if (stagingSchema) {
+    const gs = await gate(who, 'changes', { record: 'session.staging', detail: { profile: names.profileName, connection: names.connectionName, host: conn.dbHost, schema: stagingSchema } });
+    if (!gs.ok) return gs.response;
+  }
   const g = await gate(who, 'use', { record: 'session.start', detail: { profile: names.profileName, connection: names.connectionName, host: conn.dbHost } });
   if (!g.ok) return g.response;
 
@@ -680,9 +754,9 @@ async function sessionStart(who, apiKey, body, ctx) {
       auth: { type: 'static_bearer', token: pass.token, mcp_server_url: mcpUrl() } });
     session = await client.beta.sessions.create({
       agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
-               system: systemPrompt({ dbType: conn.dbType, mode: 'readonly' }) },
+               system: systemPrompt({ dbType: conn.dbType, mode: 'readonly', stagingSchema }) },
       environment_id: environmentId,
-      title: 'Cygenix Dev Console — ' + names.connectionName,
+      title: 'Cygenix Dev Console — ' + names.connectionName + (stagingSchema ? ' (staging ' + stagingSchema + ')' : ''),
       metadata: { cygenix: 'console', cyg_oid: who.oid },
       budget: budget(),
       vault_ids: [vault.id],
@@ -697,14 +771,14 @@ async function sessionStart(who, apiKey, body, ctx) {
     title: '', status: 'idle', dataChangesAllowed: false,
     profileId: names.profileId, profileName: names.profileName, connectionId: connId,
     connectionName: names.connectionName, side, dbType: conn.dbType, dbHost: conn.dbHost, dbName: conn.dbName,
-    connMode: conn.mode, fnUrl: conn.fnUrl,
+    connMode: conn.mode, fnUrl: conn.fnUrl, stagingSchema, projectId,
     createdAt: now, updatedAt: now, endedAt: null,
     agentId, environmentId, model: MODEL(),
     vaultId: vault.id, bridgeLid: pass.lid, bridgeHash: pass.hash, bridgeExp: deps.now() + BRIDGE_TTL_MS,
     cursorAt: null, cursorIds: [], chunkCount: 0, eventCount: 0, costCents: null, stopReason: null,
   };
   await container.items.upsert(doc);
-  ctx.log('[claude-code] session opened ' + session.id + ' db=' + conn.dbType + ' via=' + conn.mode);
+  ctx.log('[claude-code] session opened ' + session.id + ' db=' + conn.dbType + ' via=' + conn.mode + (stagingSchema ? ' staging' : ''));
   return ok({ session: publicSession(doc) });
 }
 
@@ -825,6 +899,9 @@ async function sessionMode(who, apiKey, body) {
   if (s.error) return s.error;
   const doc = s.doc;
   if (doc.status === 'stopped' || doc.status === 'error') return bad(409, 'This session has ended.');
+  if (doc.stagingSchema) {
+    return bad(409, 'This is a staging session: Claude may change tables inside "' + doc.stagingSchema + '" and nothing else, so the "Allow changes" switch does not apply.');
+  }
   const g = on
     ? await gate(who, 'changes', { record: 'session.changes-on', detail: { sessionId: doc.id, profile: doc.profileName, connection: doc.connectionName } })
     : await gate(who, 'use');
@@ -992,8 +1069,9 @@ async function findByLid(container, lid) {
   }).fetchAll();
   return (resources || [])[0] || null;
 }
-async function bridgeRedeem(body) {
-  const refused = (why) => reply(401, { error: why });
+// The document a live pass belongs to, or the 401 that says why not.
+async function passDoc(body) {
+  const refused = (why) => ({ response: reply(401, { error: why }) });
   const parts = splitPass(body && body.token);
   if (!parts) return refused('This bridge pass is not valid.');
   const container = await deps.container();
@@ -1008,6 +1086,12 @@ async function bridgeRedeem(body) {
   if (doc.kind === 'session' && (doc.status === 'stopped' || doc.status === 'error')) {
     return refused('This Dev Console session has ended.');
   }
+  return { doc };
+}
+async function bridgeRedeem(body) {
+  const p = await passDoc(body);
+  if (p.response) return p.response;
+  const doc = p.doc;
   // Unsealed fresh every time, so a password saved again since the session
   // opened takes effect at once, and a deleted one stops the bridge.
   const sec = await deps.readSecret(doc.oid, doc.connectionId);
@@ -1024,17 +1108,60 @@ async function bridgeRedeem(body) {
     fnUrl: mode === 'azure' ? doc.fnUrl : null,
     fnKey: mode === 'azure' && sec.ok && sec.bundle ? (sec.bundle.fnKey || null) : null,
     readOnly: doc.kind === 'bridgecheck' ? true : !doc.dataChangesAllowed,
+    stagingSchema: doc.kind === 'session' ? (doc.stagingSchema || '') : '',
+    projectId: doc.kind === 'session' ? (doc.projectId || '') : '',
   });
+}
+
+// ── The session's Conversion Template ───────────────────────────────────
+// For the bridge's get_conversion_template. The project is the SESSION'S,
+// stored when it was opened — nothing the caller sends can point it at
+// another. Which template, when the project has several: the one asked for
+// by id; else the newest published one for the session's profile; else the
+// newest draft for it; else the newest published, then the newest draft, in
+// the project. The list comes back too, so Claude can say which it used and
+// the person can ask for another.
+const TEMPLATE_FIELDS = 'c.id, c.templateId, c.kind, c.name, c.version, c.status, c.profileId, c.updatedAt';
+function pickTemplate(list, profileId, wanted) {
+  if (wanted) return list.find(t => t.id === wanted) || list.filter(t => t.templateId === wanted)
+    .sort((a, b) => (a.kind === 'published' ? 0 : 1) - (b.kind === 'published' ? 0 : 1) || (Number(b.version) || 0) - (Number(a.version) || 0))[0] || null;
+  const newest = (xs) => xs.slice().sort((a, b) => (Number(b.version) || 0) - (Number(a.version) || 0)
+    || String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0] || null;
+  const mine = list.filter(t => profileId && t.profileId === profileId);
+  return newest(mine.filter(t => t.kind === 'published')) || newest(mine.filter(t => t.kind !== 'published'))
+    || newest(list.filter(t => t.kind === 'published')) || newest(list.filter(t => t.kind !== 'published'));
+}
+async function bridgeTemplate(body) {
+  const p = await passDoc(body);
+  if (p.response) return p.response;
+  const doc = p.doc;
+  if (doc.kind !== 'session' || !doc.projectId) {
+    return reply(404, { error: 'This session was not opened from a project, so there is no Conversion Template to read.' });
+  }
+  const tc = deps.templates();
+  const { resources } = await tc.items.query({
+    query: 'SELECT ' + TEMPLATE_FIELDS + ' FROM c WHERE c.projectId = @p',
+    parameters: [{ name: '@p', value: doc.projectId }],
+  }, { partitionKey: doc.projectId }).fetchAll();
+  const list = resources || [];
+  if (!list.length) return reply(404, { error: 'This project has no Conversion Template yet. Make one on the Conversion Templates page.' });
+  const chosen = pickTemplate(list, doc.profileId, str(body.templateId, 200));
+  if (!chosen) return reply(404, { error: 'No template "' + str(body.templateId, 200) + '" in this project.' });
+  let full = null;
+  try { full = (await tc.item(chosen.id, doc.projectId).read()).resource || null; }
+  catch (e) { if (!e || e.code !== 404) throw e; }
+  if (!full || !full.doc) return reply(404, { error: 'The template "' + chosen.name + '" could not be read.' });
+  return reply(200, { ok: true, templates: list, chosen, template: full.doc });
 }
 async function bridgeHandler(req, ctx) {
   const action = String((req.params && req.params.action) || '').toLowerCase();
-  if (action !== 'redeem') return reply(404, { error: 'Unknown bridge action: ' + action });
+  if (action !== 'redeem' && action !== 'template') return reply(404, { error: 'Unknown bridge action: ' + action });
   if (req.method !== 'POST') return reply(405, { error: 'POST only' });
   try {
     const body = await req.json().catch(() => null);
-    const res = await bridgeRedeem(body || {});
+    const res = action === 'template' ? await bridgeTemplate(body || {}) : await bridgeRedeem(body || {});
     // Status only: never the pass, the connection or who it was for.
-    ctx.log('[claude-code-bridge] redeem status=' + res.status);
+    ctx.log('[claude-code-bridge] ' + action + ' status=' + res.status);
     return res;
   } catch (e) {
     return boom(e);
@@ -1116,6 +1243,7 @@ module.exports = {
   sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
   sessionCheck, bridgeRedeem, bridgeHandler, newBridgePass, splitPass, sha256, mcpUrl, specTag, resolveConnection,
+  bridgeTemplate, pickTemplate, stagingSchemaProblem, conversionPlaybook,
   MOUNT_ROOT, MCP_NAME, SESSION_HOSTS, BRIDGE_TTL_MS, CHECK_TTL_MS, fromAnthropic,
   _reset: () => { gateCache.clear(); resolved.clear(); },
   AGENT_SPEC, IP_ECHO_HOST, PACKAGE_HOSTS, CONTAINER, EVENT_CHUNK, MASK,

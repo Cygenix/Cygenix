@@ -32,6 +32,8 @@ let GATE = null;              // rbacGate's answer; null = allowed
 let FN_REPLY = null;
 let AUDIT = [];
 let AUDIT_THROWS = false;
+let RELAY = false;            // the connection goes through the Entra relay
+let TEMPLATE_REPLY = null;    // what the Function App's template read answers
 
 const ctxFor = (over) => Object.assign({
   ok: true, kind: 'session', sessionId: 'sesn_1', oid: 'oid-me', email: 'me@acme.test', tenantId: 'tn_1',
@@ -47,6 +49,10 @@ D.fetch = async (url, init) => {
     const r = REDEEM;
     return { status: r.status, text: async () => JSON.stringify(r.body) };
   }
+  if (/claude-code-bridge\/template/.test(url)) {
+    const r = TEMPLATE_REPLY || { status: 404, body: { error: 'This project has no Conversion Template yet.' } };
+    return { status: r.status, text: async () => JSON.stringify(r.body) };
+  }
   const r = FN_REPLY || { status: 200, body: { success: true, recordset: [{ v: 1 }], rowsAffected: 0 } };
   return { status: r.status, ok: r.status >= 200 && r.status < 300, text: async () => (typeof r.body === 'string' ? r.body : JSON.stringify(r.body)) };
 };
@@ -57,20 +63,23 @@ D.resolveTenant = async () => ({ tenant: { id: 'tn_1', claudeCode: POLICY } });
 D.appendAudit = async (store, evt) => { if (AUDIT_THROWS) throw new Error('blob down'); AUDIT.push(evt); return {}; };
 D.bridge = () => ({
   detectDialect: (cs) => (/^postgres/i.test(cs) ? 'postgres' : 'mssql'),
-  rbacGate: async (authed, action, dialect, cs, database, body) => { CALLS.push(['rbacGate', authed, action, dialect, body.sql]); return GATE || { guardrail: null }; },
+  viaRelay: () => RELAY,
+  rbacGate: async (authed, action, dialect, cs, database, body, opts) => { CALLS.push(['rbacGate', authed, action, dialect, body.sql, opts]); return GATE || { guardrail: null }; },
   handleMssql: async (action, cs, database, body) => {
-    CALLS.push(['handleMssql', action, body.sql]);
+    CALLS.push(['handleMssql', action, body.sql, body.timeoutMs]);
+    if (DB.error) return { statusCode: 500, body: JSON.stringify({ error: DB.error }) };
     if (DB.error) return { statusCode: 500, body: JSON.stringify({ error: DB.error }) };
     return { statusCode: 200, body: JSON.stringify({ success: true, recordset: DB.recordset, rowsAffected: DB.rowsAffected }) };
   },
   handlePostgres: async (action, cs, database, body) => {
-    CALLS.push(['handlePostgres', action, body.sql, body.readOnly]);
+    CALLS.push(['handlePostgres', action, body.sql, body.readOnly, body.transaction, body.timeoutMs]);
     return { statusCode: 200, body: JSON.stringify({ success: true, recordset: DB.recordset, rowsAffected: DB.rowsAffected }) };
   },
 });
 
 const reset = (redeemCtx) => {
   CALLS = []; AUDIT = []; AUDIT_THROWS = false; GATE = null; FN_REPLY = null; DB = { recordset: [{ n: 1 }], rowsAffected: 0 };
+  RELAY = false; TEMPLATE_REPLY = null;
   ROLES = ['EN']; POLICY = { enabled: true, roles: ['OW', 'PA', 'ML', 'EN'] };
   ENV = { CYGENIX_DATA_FN_KEY: 'hostkey', AZURE_FUNCTION_KEY: 'productkey' };
   REDEEM = { status: 200, body: ctxFor(redeemCtx) };
@@ -160,7 +169,7 @@ const calls = (kind) => CALLS.filter(c => c[0] === kind);
   reset();
   q = await call('run_query', { sql: "UPDATE dbo.customers SET name = 'X' WHERE id = 1" });
   check('A WRITE IN A READ-ONLY SESSION IS REFUSED, saying which switch, and nothing runs',
-    q.isError && /Allow changes to data this session/.test(q.text) && calls('handleMssql').length === 0 && calls('rbacGate').length === 0, q.text);
+    q.isError && /"Allow changes" switch is off/.test(q.text) && calls('handleMssql').length === 0 && calls('rbacGate').length === 0, q.text);
   check('…and the refusal is recorded too', AUDIT[0].outcome === 'denied' && AUDIT[0].detail.reason === 'session is read-only' && AUDIT[0].detail.write === true);
   for (const sneaky of ['SELECT * INTO dbo.copy FROM dbo.customers', 'WITH x AS (SELECT 1 a) INSERT INTO t SELECT a FROM x', 'EXEC dbo.purge', 'SELECT 1; DELETE FROM t WHERE id = 1']) {
     reset();
@@ -298,6 +307,165 @@ const calls = (kind) => CALLS.filter(c => c[0] === kind);
   check('THE REDEEM ROUTE IS NOT FORWARDED, whatever the caller holds', pr.statusCode === 400 && /Unsupported path/.test(pr.body), pr.statusCode);
   const ok2 = await proxy.handler({ httpMethod: 'POST', headers: {}, queryStringParameters: { path: '/agent/claude-code/session' }, body: '{}' });
   check('…while the Dev Console\'s own routes still are (refused later for want of a key or token, not the path)', !/Unsupported path/.test(ok2.body || ''));
+
+  section('14. Every statement is cancelled on the server before the function gives up');
+  reset();
+  await call('run_query', { sql: 'SELECT 1' });
+  check('a read carries the server-side time limit, inside the bridge\'s own budget',
+    calls('handleMssql')[0][3] === I.STATEMENT_MS && I.STATEMENT_MS < 21000 && I.STATEMENT_MS >= 15000, calls('handleMssql')[0][3]);
+  reset(); DB.error = 'Cancelled after 19 seconds: the statement took too long and was stopped on the server.';
+  q = await call('run_query', { sql: 'SELECT COUNT(*) FROM dbo.big' });
+  check('a cancelled read says to narrow it', q.isError && /Narrow it/.test(q.text), q.text);
+
+  section('15. A staging session');
+  const STG = { stagingSchema: 'staging', projectId: 'proj_1', readOnly: true };
+  reset(STG);
+  r = await post(rpc('tools/list'));
+  let tl = JSON.parse(r.body).result.tools;
+  const rq = tl.find(t => t.name === 'run_query');
+  check('tools/list offers the template tool, and run_query describes the staging rule',
+    tl.map(t => t.name).join() === 'list_tables,describe_table,run_query,get_conversion_template'
+    && /inside the schema "staging"/.test(rq.description) && /everything else in the database is read-only/.test(rq.description), tl.map(t => t.name).join());
+  r = await post(rpc('initialize', { protocolVersion: '2025-06-18' }));
+  check('initialize says it is a staging session', /Staging session: changes are allowed inside the schema "staging" only/.test(JSON.parse(r.body).result.instructions));
+  reset({ projectId: '' });
+  r = await post(rpc('tools/list'));
+  check('a session with no project has no template tool', JSON.parse(r.body).result.tools.length === 3);
+
+  reset(STG);
+  q = await call('run_query', { sql: 'INSERT INTO staging.Matter (Number) SELECT m.Num FROM dbo.Matters m' });
+  const sg = calls('rbacGate')[0], sm = calls('handleMssql')[0];
+  check('A STAGING WRITE RUNS although "Allow changes" is off', !q.isError && calls('handleMssql').length === 1, q.text);
+  check('…through the SQL editor\'s gate, asking it to lift the approvals for THIS schema only',
+    sg && sg[5] && sg[5].stagingSchema === 'staging' && sg[4] === 'INSERT INTO staging.Matter (Number) SELECT m.Num FROM dbo.Matters m', JSON.stringify(sg && sg[5]));
+  check('…inside a transaction with XACT_ABORT, so a cancel undoes it, with the time limit',
+    /^SET XACT_ABORT ON;\nBEGIN TRANSACTION;\nINSERT INTO staging\.Matter/.test(sm[2]) && /IF @@TRANCOUNT > 0 COMMIT TRANSACTION;$/.test(sm[2]) && sm[3] === I.STATEMENT_MS, sm[2]);
+  check('…and is on the trail as a staging change, at notice, naming the schema',
+    AUDIT[0].outcome === 'allowed' && AUDIT[0].severity === 'notice' && AUDIT[0].detail.stagingSchema === 'staging' && AUDIT[0].detail.write === true
+    && /staging change/.test(AUDIT[0].summary), JSON.stringify(AUDIT[0]));
+  reset(STG);
+  q = await call('run_query', { sql: 'CREATE SCHEMA staging' });
+  check('CREATE SCHEMA is sent on its own (it must be first in its batch)', !q.isError && calls('handleMssql')[0][2] === 'CREATE SCHEMA staging', calls('handleMssql')[0] && calls('handleMssql')[0][2]);
+  reset(STG);
+  q = await call('run_query', { sql: 'TRUNCATE TABLE staging.Matter' });
+  check('TRUNCATE inside the staging schema runs — rebuilding staging is the point', !q.isError && calls('handleMssql').length === 1, q.text);
+  reset(STG);
+  q = await call('run_query', { sql: 'DROP TABLE staging.Matter' });
+  check('…and so does DROP TABLE', !q.isError && calls('handleMssql').length === 1, q.text);
+  reset(STG);
+  q = await call('run_query', { sql: 'UPDATE dbo.Matters SET Open = 0 WHERE Id = 1' });
+  check('A WRITE ANYWHERE ELSE IS REFUSED with the reason, never reaching the gate or the database',
+    q.isError && /outside the staging schema "staging"/.test(q.text) && calls('rbacGate').length === 0 && calls('handleMssql').length === 0, q.text);
+  check('…and the refusal is on the trail', AUDIT[0].outcome === 'denied' && /^staging: /.test(AUDIT[0].detail.reason), JSON.stringify(AUDIT[0]));
+  reset(STG);
+  q = await call('run_query', { sql: 'INSERT INTO staging.t SELECT 1 DELETE FROM dbo.x WHERE 1 = 1' });
+  check('a second write hidden after the staging one is refused', q.isError && calls('handleMssql').length === 0, q.text);
+  reset(STG);
+  q = await call('run_query', { sql: 'SELECT TOP 5 * FROM dbo.Matters' });
+  check('a READ in a staging session is still wrapped and rolled back, and asks for no exemption',
+    !q.isError && /ROLLBACK TRANSACTION/.test(calls('handleMssql')[0][2]) && !calls('rbacGate')[0][5], q.text);
+  reset(STG);
+  q = await call('run_query', { sql: 'USE master' });
+  check('USE is still refused', q.isError && /USE/.test(q.text) && calls('handleMssql').length === 0);
+  reset(STG); DB.error = 'Cancelled after 19 seconds: the statement took too long and was stopped on the server.';
+  q = await call('run_query', { sql: 'INSERT INTO staging.big SELECT * FROM dbo.big' });
+  check('A CANCELLED STAGING LOAD SAYS NOTHING WAS KEPT, and to load in slices', q.isError && /Nothing it changed was kept/.test(q.text) && /slices/.test(q.text), q.text);
+  reset(STG); RELAY = true;
+  q = await call('run_query', { sql: 'INSERT INTO staging.t SELECT 1' });
+  check('a staging write over the Entra relay (which cannot be cancelled) is refused before the gate', q.isError && /relay/.test(q.text) && calls('rbacGate').length === 0, q.text);
+  reset(Object.assign({}, STG, { mode: 'azure', connString: null, fnUrl: 'https://customer-fn.azurewebsites.net/api/db', fnKey: 'k' }));
+  q = await call('run_query', { sql: 'INSERT INTO staging.t SELECT 1' });
+  check('…and so is one through a Function App', q.isError && /Function App/.test(q.text) && calls('fetch').filter(c => !/redeem/.test(c[1])).length === 0, q.text);
+  reset(Object.assign({}, STG, { dbType: 'postgres', connString: 'postgres://u:p@h/db', stagingSchema: 'staging' }));
+  q = await call('run_query', { sql: 'INSERT INTO staging.t (a) SELECT a FROM public.x' });
+  const pgc = calls('handlePostgres')[0];
+  check('PostgreSQL: a staging write runs in a transaction with the time limit, unwrapped text',
+    !q.isError && pgc[2] === 'INSERT INTO staging.t (a) SELECT a FROM public.x' && pgc[3] === false && pgc[4] === true && pgc[5] === I.STATEMENT_MS, JSON.stringify(pgc));
+  check('the wrapper is what it says', I.wrapStagingMssql('INSERT INTO staging.t SELECT 1;') === 'SET XACT_ABORT ON;\nBEGIN TRANSACTION;\nINSERT INTO staging.t SELECT 1\n;\nIF @@TRANCOUNT > 0 COMMIT TRANSACTION;'
+    && I.wrapStagingMssql('  create schema staging') === '  create schema staging');
+
+  section('16. The Conversion Template');
+  const spec = require(path.join(__dirname, '..', 'public', 'cygenix-template-spec.js'));
+  const shapes = [
+    { dataType: 'nvarchar', maxLength: 128 }, { dataType: 'nvarchar', maxLength: -1 }, { dataType: 'nchar', maxLength: 2 },
+    { dataType: 'varchar', maxLength: 50 }, { dataType: 'varbinary', maxLength: -1 }, { dataType: 'decimal', precision: 18, scale: 2 },
+    { dataType: 'numeric', precision: 9 }, { dataType: 'datetime2', scale: 7 }, { dataType: 'time', scale: 0 }, { dataType: 'int' },
+    { dataType: 'INT' }, { type: 'bit' }, { dataType: 'decimal(10,4)' }, {}, { dataType: 'uniqueidentifier' },
+  ];
+  check('THE BRIDGE\'S sqlType IS THE TEMPLATE PAGE\'S, on every column shape', shapes.every(c => I.sqlType(c) === spec.sqlType(c)),
+    shapes.map(c => I.sqlType(c) + '/' + spec.sqlType(c)).join(' '));
+  const verdicts = [{ isIdentity: true }, { isComputed: true }, { isNullable: false }, { isNullable: true }, {}];
+  check('…and so are populateVerdict and moduleActive', verdicts.every(c => I.populateVerdict(c) === spec.populateVerdict(c))
+    && [{ inScope: true, included: true }, { inScope: false, included: true }, { included: false }, {}, null].every(m => I.moduleActive(m) === spec.moduleActive(m)));
+
+  const TPL = { id: 'tpl_1', name: 'Finance', version: 2, status: 'published', profileId: 'DEMO', modules: [
+    { module: 'Billing', inScope: true, included: true, tables: [
+      { stagingTable: 'Invoice', targetTable: 'Invoice', loadOrder: 2, required: true, notes: 'one row per bill', columns: [
+        { name: 'InvIndex', dataType: 'int', isNullable: false, isIdentity: true, isPrimaryKey: true },
+        { name: 'InvNumber', dataType: 'nvarchar', maxLength: 64, isNullable: false },
+        { name: 'Total', dataType: 'decimal', precision: 18, scale: 2, isNullable: true },
+        { name: 'Calc', dataType: 'int', isComputed: true } ] },
+      { stagingTable: 'Client', targetTable: 'Client', loadOrder: 1, columns: [{ name: 'Name', dataType: 'nvarchar', maxLength: 200 }] } ] },
+    { module: 'Time', inScope: true, included: false, tables: [{ stagingTable: 'Timecard', targetTable: 'Timecard', columns: [] }] },
+  ] };
+  const TEMPLATES = [{ id: 'pub_tpl_1_v2', templateId: 'tpl_1', kind: 'published', name: 'Finance', version: 2, profileId: 'DEMO' },
+    { id: 'tpl_1', templateId: 'tpl_1', kind: 'draft', name: 'Finance', version: 3, profileId: 'DEMO' }];
+  reset(STG); TEMPLATE_REPLY = { status: 200, body: { ok: true, templates: TEMPLATES, chosen: TEMPLATES[0], template: TPL } };
+  q = await call('get_conversion_template', {});
+  const tf = calls('fetch').find(c => /claude-code-bridge\/template/.test(c[1]));
+  check('THE OVERVIEW: the template, the others, the modules ticked for publish, tables in load order',
+    !q.isError && q.json.template.id === 'pub_tpl_1_v2' && q.json.template.version === 2 && q.json.other_templates.length === 1
+    && q.json.modules.length === 1 && q.json.modules[0].module === 'Billing'
+    && q.json.modules[0].tables.map(t => t.staging_table).join() === 'Client,Invoice' && q.json.modules[0].tables[1].columns === 4
+    && q.json.staging_schema === 'staging' && /module or a table/.test(q.json.next), q.text.slice(0, 400));
+  check('…read from the Function App with the host key and THE SESSION\'S OWN PASS, nothing else',
+    tf && /\/agent\/claude-code-bridge\/template\?code=hostkey$/.test(tf[1]) && tf[2].token === 'cyb_' + 'a'.repeat(18) + '.' + 'b'.repeat(43) && tf[2].templateId === '', tf && JSON.stringify(tf[2]));
+  check('…and recorded as a template read, without the pass', AUDIT[0].action === 'claudecode.query' && AUDIT[0].detail.tool === 'get_conversion_template'
+    && /template read/.test(AUDIT[0].summary) && JSON.stringify(AUDIT).indexOf('b'.repeat(43)) === -1, JSON.stringify(AUDIT[0]));
+  q = await call('get_conversion_template', { table: 'invoice' });
+  const inv = q.json.tables && q.json.tables[0];
+  check('A TABLE: its columns, typed as the template page types them, required and identity marked',
+    inv && inv.staging_table === 'Invoice' && inv.columns.map(c => c.name + ':' + c.type).join() === 'InvIndex:int,InvNumber:nvarchar(32),Total:decimal(18,2),Calc:int'
+    && inv.columns[0].identity === true && inv.columns[0].populate === 'No — identity' && inv.columns[1].required_in_target === true
+    && inv.columns[1].populate === 'Required' && inv.notes === 'one row per bill', q.text.slice(0, 500));
+  check('…with a CREATE TABLE for the staging schema: every column NULL, the computed one left out',
+    inv.create_table === "IF OBJECT_ID(N'staging.Invoice', N'U') IS NULL CREATE TABLE [staging].[Invoice] ([InvIndex] int NULL, [InvNumber] nvarchar(32) NULL, [Total] decimal(18,2) NULL)", inv.create_table);
+  const stagingSql = require(path.join(__dirname, '..', 'netlify', 'functions', 'lib', 'staging-sql.js'));
+  check('AND THAT CREATE TABLE PASSES THE STAGING CHECK it will meet', stagingSql.checkStagingWrite(inv.create_table, { schema: 'staging', dialect: 'sqlserver' }).ok === true);
+  q = await call('get_conversion_template', { module: 'Billing' });
+  check('a module gives all its tables', q.json.tables.length === 2 && q.json.tables[0].staging_table === 'Client');
+  q = await call('get_conversion_template', { module: 'Nope' });
+  check('an unknown module says so and how to find the list', /No module "Nope"/.test(q.json.error));
+  await call('get_conversion_template', { template_id: 'tpl_1' });
+  check('another template is asked for by id', calls('fetch').filter(c => /template/.test(c[1])).pop()[2].templateId === 'tpl_1');
+
+  reset(Object.assign({}, STG, { dbType: 'postgres', connString: 'postgres://u:p@h/db' }));
+  TEMPLATE_REPLY = { status: 200, body: { ok: true, templates: TEMPLATES, chosen: TEMPLATES[0], template: TPL } };
+  q = await call('get_conversion_template', { table: 'Client' });
+  check('PostgreSQL: a CREATE TABLE IF NOT EXISTS in its quoting, that passes its check, and a note about types',
+    q.json.tables[0].create_table === 'CREATE TABLE IF NOT EXISTS "staging"."Client" ("Name" nvarchar(100) NULL)'
+    && stagingSql.checkStagingWrite(q.json.tables[0].create_table, { schema: 'staging', dialect: 'postgres' }).ok === true && /adjust/.test(q.json.types_note), q.text);
+
+  const NONE = JSON.parse(JSON.stringify(TPL)); NONE.modules.forEach(m => { m.included = false; });
+  reset(STG); TEMPLATE_REPLY = { status: 200, body: { ok: true, templates: TEMPLATES, chosen: TEMPLATES[1], template: NONE } };
+  q = await call('get_conversion_template', {});
+  check('a draft with nothing ticked "Include" shows every module in scope, and says so',
+    q.json.modules.length === 2 && /No module is ticked/.test(q.json.note), q.text.slice(0, 300));
+  const BIG = { modules: [{ module: 'M', inScope: true, included: true, tables: [] }] };
+  for (let i = 0; i < 60; i++) BIG.modules[0].tables.push({ stagingTable: 'T' + i, targetTable: 'T' + i, columns: Array.from({ length: 40 }, (x, k) => ({ name: 'Column_' + k + '_with_a_long_name', dataType: 'nvarchar', maxLength: 400 })) });
+  reset(STG); TEMPLATE_REPLY = { status: 200, body: { ok: true, templates: [], chosen: { id: 'x' }, template: BIG } };
+  q = await call('get_conversion_template', { module: 'M' });
+  check('A MODULE TOO BIG FOR ONE ANSWER is cut, naming the tables left to ask for one at a time',
+    q.text.length < I.MAX_TEXT && q.json.tables.length < 60 && q.json.not_shown.tables.length === 60 - q.json.tables.length && /one table at a time/.test(q.json.not_shown.why), q.text.length);
+  reset(STG);
+  q = await call('get_conversion_template', {});
+  check('a project with no template says so', q.isError && /no Conversion Template yet/.test(q.text));
+  reset({ projectId: '' });
+  q = await call('get_conversion_template', {});
+  check('a session with no project says so, and nothing is fetched', q.isError && /not opened from a project/.test(q.text) && !calls('fetch').some(c => /template/.test(c[1])));
+  reset(STG); POLICY = { enabled: false, roles: [] };
+  q = await call('get_conversion_template', {});
+  check('the organisation\'s switch applies to the template read too', q.isError && /switched off/.test(q.text));
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

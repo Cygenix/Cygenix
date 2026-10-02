@@ -279,6 +279,15 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     ACTOR = { oid: 'o1', roles: ['MB'] };
     check('a Member is never admitted, whatever the list says',
       (TENANT = { id: 't', claudeCode: { enabled: true, roles: ['OW', 'PA', 'ML', 'EN', 'AU', 'MB'] } }, (await gateCall('use')).status === 403));
+    TENANT = { id: 'tn_1', claudeCode: { enabled: true, roles: ['OW', 'PA', 'EN', 'AU'] } };
+    ACTOR = { oid: 'o1', roles: ['EN'] };
+    r = await gateCall('changes', { record: 'session.staging', detail: { profile: 'Demo', connection: 'Legacy', host: 'db.acme.io', schema: 'staging', secret: 'x' } });
+    check('A STAGING SESSION IS ON THE TRAIL at HIGH severity, naming the schema (and nothing it was not asked for)',
+      r.status === 200 && AUDITED[0].action === 'claudecode.session.staging' && AUDITED[0].severity === 'high'
+      && AUDITED[0].detail.schema === 'staging' && AUDITED[0].detail.connection === 'Legacy' && !('secret' in AUDITED[0].detail), JSON.stringify(AUDITED[0]));
+    check('…it is recorded only under the changes act', (await gateCall('use', { record: 'session.staging' })).status === 400);
+    ACTOR = { oid: 'o1', roles: ['AU'] };
+    check('…so a role that cannot change data cannot open one', (await gateCall('changes', { record: 'session.staging' })).status === 403);
     check('an unknown act is a 400', (await gateCall('nonsense')).status === 400);
     const anon = await GATE.handler({ httpMethod: 'POST', headers: {}, body: '{"act":"probe"}' });
     check('no token is a 401', anon.statusCode === 401);
@@ -900,12 +909,134 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     check('an answer that is not the bridge\'s shape is not a table', M.bridgeTable('not json') === null && M.bridgeTable('{"a":1}') === null);
     check('a "write" shows as code written to a path', M.toolBlock({ id: 'x', name: 'write', input: { path: '/w/a.py', content: 'print(1)' } }).title === 'Wrote /w/a.py');
     check('the status words', M.statusWord('running') === 'Working' && M.statusWord('idle') === 'Idle' && M.statusWord('stopped') === 'Stopped' && M.statusWord('error') === 'Error' && M.statusWord(undefined) === 'No session');
+    check('STAGING: the name is checked before the round trip', M.stagingNameProblem('') === '' && M.stagingNameProblem('staging') === ''
+      && /letters, digits/.test(M.stagingNameProblem('my stage')) && /own schemas/.test(M.stagingNameProblem('dbo')) && /own schemas/.test(M.stagingNameProblem('DB_OWNER')));
+    const st = M.stagingConfirmSpec({ name: 'Finance PRD', envClass: 'PRD' }, { name: 'Legacy' }, 'staging');
+    check('…the staging confirmation says what it allows, where, without approvals, and a PRD profile is named back',
+      st.prod && st.typeToConfirm === 'Finance PRD' && st.title === 'Start a staging session?' && st.okLabel === 'Start staging session'
+      && /inside the schema "staging" of "Legacy" under profile "Finance PRD" \(PRD\)/.test(st.text) && /without asking for approvals/.test(st.text)
+      && /Everything else in that database stays read-only/.test(st.text) && /audit log/.test(st.text) && !M.confirmAccepts(st, 'finance'));
+    check('…and the suggested first message asks for the template first', /Conversion Template/.test(M.STAGING_STARTER) && /what the template contains/.test(M.STAGING_STARTER));
     check('the first-use notice is remembered per user, in one key', !M.noticeDismissed(null, 'a@x') && M.noticeDismissed(M.noticeDismiss('{}', 'a@x'), 'a@x') && !M.noticeDismissed(M.noticeDismiss('{}', 'a@x'), 'b@x'));
     const prd = M.confirmSpec({ name: 'Finance PRD', envClass: 'PRD' }, { name: 'Target' });
     check('A PRODUCTION PROFILE MUST BE NAMED BACK; a DEV one is a plain yes',
       prd.prod && prd.typeToConfirm === 'Finance PRD' && !M.confirmAccepts(prd, 'finance') && M.confirmAccepts(prd, ' Finance PRD ')
       && !M.confirmSpec({ name: 'Demo', envClass: 'DEV' }, {}).prod && M.confirmAccepts(M.confirmSpec({ name: 'Demo', envClass: 'DEV' }, {}), ''));
     check('the confirmation names the profile and the connection and says it is recorded', /"Target" under profile "Finance PRD" \(PRD\)/.test(prd.text) && /audit log/.test(prd.text));
+  }
+
+  /* ── 9. Staging sessions, on the Azure side ─────────────────────────── */
+  section('9. Staging sessions: opening one, the switch, the pass, the template');
+  {
+    CC._reset(); FETCHED = []; KEYS_SEEN.length = 0; logs.length = 0;
+    GATE_REPLY = { status: 200, body: { allowed: true, tenantId: 'tn_1' } };
+    CLIENT = fakeClient(); DB = fakeContainer();
+    SECRETS.sconn_src = { connString: 'Server=tcp:legacy.acme.test,1433;Database=Old;User ID=svc;Password=' + PASSWORD };
+    const openStg = (extra) => call('POST', 'session', { body: Object.assign({ side: 'src', connId: 'sconn_src', connectionName: 'Legacy',
+      profileId: 'DEMO', profileName: 'Demo', projectId: 'proj_1', stagingSchema: 'staging' }, extra || {}) });
+
+    // The two copies of the name rule.
+    const lib = require(path.join(ROOT, 'netlify', 'functions', 'lib', 'staging-sql.js'));
+    const names = ['staging', 'Stage_1', '', 'dbo', 'DBO', 'sys', 'guest', 'INFORMATION_SCHEMA', 'public', 'pg_catalog', 'db_owner', 'pg_x',
+      'my stage', '1st', 'a.b', 'x'.repeat(63), 'x'.repeat(64), 'Staging', "o'neil", '[x]'];
+    check('THE AZURE AND BRIDGE COPIES OF THE SCHEMA-NAME RULE AGREE, in both dialects',
+      names.every(n => ['sqlserver', 'postgres'].every(d => CC.stagingSchemaProblem(n, d) === lib.stagingSchemaProblem(n, d))),
+      names.filter(n => CC.stagingSchemaProblem(n, 'postgres') !== lib.stagingSchemaProblem(n, 'postgres')).join());
+
+    let r = await openStg({ stagingSchema: 'dbo' });
+    check('a staging schema that is one of the database\'s own is a 400, before anything is asked', r.status === 400 && /own schemas/.test(r.body.error) && FETCHED.length === 0, r.raw);
+    r = await openStg({ stagingSchema: 'my stage' });
+    check('…so is one that is not a plain name', r.status === 400 && /letters, digits/.test(r.body.error));
+    SECRETS.sconn_fnx = { fnKey: 'k' };
+    r = await openStg({ connId: 'sconn_fnx', mode: 'azure', fnUrl: 'https://fn.acme.test/api/data' });
+    check('…and a Function App connection cannot be a staging session', r.status === 400 && /logs in to itself/.test(r.body.error) && FETCHED.length === 0, r.raw);
+
+    r = await openStg();
+    check('A STAGING SESSION OPENS', r.status === 200 && r.body.session.stagingSchema === 'staging', r.raw);
+    const sid = r.body.session.id;
+    const g1 = JSON.parse(FETCHED[0].init.body), g2 = JSON.parse(FETCHED[1].init.body);
+    check('…having asked the gate for the CHANGES act and recorded the staging start with the schema, then the ordinary start',
+      g1.act === 'changes' && g1.record === 'session.staging' && g1.detail.schema === 'staging' && g1.detail.connection === 'Legacy'
+      && g2.act === 'use' && g2.record === 'session.start', JSON.stringify([g1, g2]));
+    const doc = DB._items.get(sid);
+    check('the record keeps the schema and the project', doc.stagingSchema === 'staging' && doc.projectId === 'proj_1' && doc.dataChangesAllowed === false);
+    const sc = CLIENT.calls.find(c => c[0] === 'sessions.create')[1];
+    check('CLAUDE IS GIVEN THE STAGING BRIEF: the job, the rule, the order of work, the mapping to agree before loading, the report',
+      /THIS IS A STAGING SESSION/.test(sc.agent.system) && /inside the\s+schema "staging"/.test(sc.agent.system)
+      && /get_conversion_template/.test(sc.agent.system) && /Wait for them to agree/.test(sc.agent.system)
+      && /INSERT INTO staging\.<table>/.test(sc.agent.system) && /staging-report\.md/.test(sc.agent.system) && /staging-mapping\.csv/.test(sc.agent.system)
+      && /Never invent data/.test(sc.agent.system) && /slices/.test(sc.agent.system) && !/DATA-CHANGE MODE/.test(sc.agent.system), sc.agent.system.slice(0, 300));
+    check('…which names no secret, host or product', sc.agent.system.indexOf(PASSWORD) === -1 && !/legacy\.acme/.test(sc.agent.system)
+      && !/\b3E\b|Elite|Aderant|Timekeeper/.test(CC.conversionPlaybook('staging', 'sqlserver')));
+    check('the session title says it is staging', /\(staging staging\)$/.test(sc.title));
+
+    r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: true } });
+    check('THE "ALLOW CHANGES" SWITCH IS REFUSED in a staging session — the schema is the permission', r.status === 409 && /staging session/.test(r.body.error), r.raw);
+
+    const tok = CLIENT.calls.find(c => c[0] === 'vaults.credentials.create')[2].auth.token;
+    let x = JSON.parse((await CC.bridgeRedeem({ token: tok })).body);
+    check('the pass redeems with the staging schema and the project, and read-only outside it', x.stagingSchema === 'staging' && x.projectId === 'proj_1' && x.readOnly === true, JSON.stringify(x));
+    r = await call('POST', 'check', { body: { connId: 'sconn_src', connectionName: 'Legacy' } });
+    x = JSON.parse((await CC.bridgeRedeem({ token: r.body.token })).body);
+    check('a check pass carries no staging schema and no project', x.stagingSchema === '' && x.projectId === '');
+
+    // The template.
+    const TDOCS = {
+      pub_tpl_a_v2: { id: 'pub_tpl_a_v2', templateId: 'tpl_a', kind: 'published', name: 'A', version: 2, profileId: 'DEMO', updatedAt: '2026-09-01', doc: { id: 'tpl_a', name: 'A', version: 2 } },
+      tpl_a: { id: 'tpl_a', templateId: 'tpl_a', kind: 'draft', name: 'A', version: 3, profileId: 'DEMO', updatedAt: '2026-09-20', doc: { id: 'tpl_a', name: 'A', version: 3 } },
+      tpl_b: { id: 'tpl_b', templateId: 'tpl_b', kind: 'draft', name: 'B', version: 1, profileId: 'OTHER', updatedAt: '2026-09-25', doc: { id: 'tpl_b', name: 'B' } },
+    };
+    const TQ = [];
+    CC.deps.templates = () => ({
+      items: { query: (q, o) => ({ fetchAll: async () => { TQ.push([q, o]); const p = q.parameters[0].value; return { resources: p === 'proj_1' ? Object.values(TDOCS).map(d => Object.assign({}, d, { doc: undefined })) : [] }; } }) },
+      item: (id, pk) => ({ read: async () => ({ resource: pk === 'proj_1' ? TDOCS[id] : null }) }),
+    });
+    let t = await CC.bridgeTemplate({ token: tok });
+    let tb = JSON.parse(t.body);
+    check('THE TEMPLATE: the newest PUBLISHED one for the session\'s profile, beating a newer draft, with the list',
+      t.status === 200 && tb.chosen.id === 'pub_tpl_a_v2' && tb.template.version === 2 && tb.templates.length === 3, t.body);
+    check('…read from the session\'s own project, in its partition', TQ[0][0].parameters[0].value === 'proj_1' && TQ[0][1].partitionKey === 'proj_1');
+    t = await CC.bridgeTemplate({ token: tok, templateId: 'tpl_b' });
+    check('another one by id', JSON.parse(t.body).chosen.id === 'tpl_b');
+    t = await CC.bridgeTemplate({ token: tok, templateId: 'tpl_a' });
+    check('an envelope id is exact: the draft\'s own id gives the draft', JSON.parse(t.body).chosen.id === 'tpl_a');
+    check('…and a bare template id with no envelope of that id prefers its published copy',
+      CC.pickTemplate([{ id: 'pub_tpl_z_v1', templateId: 'tpl_z', kind: 'published', version: 1 }, { id: 'pub_tpl_z_v2', templateId: 'tpl_z', kind: 'published', version: 2 }], 'P', 'tpl_z').id === 'pub_tpl_z_v2');
+    t = await CC.bridgeTemplate({ token: tok, templateId: 'tpl_nope' });
+    check('an unknown id is a 404 in words', t.status === 404 && /No template "tpl_nope"/.test(JSON.parse(t.body).error));
+    check('pickTemplate: draft for the profile when nothing is published, else the project\'s newest',
+      CC.pickTemplate([{ id: 'd', kind: 'draft', profileId: 'P', version: 1 }, { id: 'p', kind: 'published', profileId: 'Q', version: 5 }], 'P').id === 'd'
+      && CC.pickTemplate([{ id: 'd', kind: 'draft', profileId: 'Q', version: 1 }, { id: 'p', kind: 'published', profileId: 'Q', version: 5 }], 'P').id === 'p');
+    t = await CC.bridgeTemplate({ token: r.body.token });
+    check('a check pass has no template (404)', t.status === 404 && /not opened from a project/.test(t.body));
+    check('a bad pass is a 401', (await CC.bridgeTemplate({ token: 'cyb_nope' })).status === 401);
+    r = await openStg({ projectId: 'proj_empty', stagingSchema: '' });
+    const emptyTok = CLIENT.calls.filter(c => c[0] === 'vaults.credentials.create').pop()[2].auth.token;
+    t = await CC.bridgeTemplate({ token: emptyTok });
+    check('a project with no template says to make one', t.status === 404 && /no Conversion Template yet/.test(t.body));
+    r = await openStg({ projectId: "x' OR 1=1 --", stagingSchema: '' });
+    check('a project id that is not a plain id is not stored', DB._items.get(r.body.session.id).projectId === '');
+    logs.length = 0;
+    const th = await CC.bridgeHandler(req('POST', { action: 'template', body: { token: tok } }), ctx);
+    check('the bridge door serves the template action, logging only the status', th.status === 200 && logs.some(l => /template status=200/.test(l)) && logs.every(l => l.indexOf(tok) === -1));
+    await call('POST', 'stop', { body: { sessionId: sid } });
+    check('once the session stops, its template cannot be read with its pass', (await CC.bridgeTemplate({ token: tok })).status === 401);
+
+    // db-connect: the exemption is not reachable from a request, and the time limit only shortens.
+    const dbc = read('netlify', 'functions', 'db-connect.js');
+    check('DB-CONNECT: the HTTP handler calls rbacGate with six arguments — the staging exemption is the bridge\'s alone',
+      /const gate = await rbacGate\(authed, action, dialect, connectionString, database, body\);/.test(dbc)
+      && /async function rbacGate\(authed, action, dialect, connectionString, database, body, opts\)/.test(dbc)
+      && /const requirement = stagingSchema \? null : tenancy\.requirementFor\(tenant\.guardrails, act\);/.test(dbc)
+      && /guardrailExempt: stagingSchema \? 'dev-console staging schema' : undefined/.test(dbc));
+    const tf = new Function(dbc.slice(dbc.indexOf('function timeoutFrom('), dbc.indexOf('function parseMssqlConnectionString(')) + '\nreturn timeoutFrom;')();
+    check('…and timeoutMs is whole seconds-ish, at least one, always under the drivers\' two minutes',
+      tf({ timeoutMs: 19000 }) === 19000 && tf({ timeoutMs: 999 }) === 0 && tf({ timeoutMs: 120000 }) === 0 && tf({ timeoutMs: '19000' }) === 19000
+      && tf({ timeoutMs: 1.5 }) === 0 && tf({}) === 0 && tf(null) === 0);
+    check('…SQL Server cancels the request on a timer; PostgreSQL sets statement_timeout on its own throwaway client and can wrap a transaction',
+      /timer = setTimeout\(\(\) => \{ cancelled = true; try \{ rq\.cancel\(\); \}/.test(dbc)
+      && /if \(limit\) await client\.query\('SET statement_timeout = ' \+ limit\);/.test(dbc)
+      && /else if \(body\.transaction === true\) \{\s*await client\.query\('BEGIN'\);/.test(dbc));
   }
 
   /* ── 8. The page and the house rules ────────────────────────────────── */
@@ -926,6 +1057,8 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     check('NO TRANSCRIPT TOUCHES BROWSER STORAGE — localStorage only the notice, theme and active user; sessionStorage only the per-tab full-screen and split',
       (page.match(/localStorage\.(get|set)Item\(/g) || []).length
         === (page.match(/localStorage\.(get|set)Item\((CygenixCcConsole\.NOTICE_KEY|'cygenix_app_prefs'|'cygenix_active_user')/g) || []).length
+          + (page.match(/localStorage\.getItem\('cygenix_active_project_id'\)/g) || []).length
+      && !/localStorage\.setItem\('cygenix_active_project_id'/.test(page)
       && /FULL_KEY = 'cygenix_cc_full', SPLIT_KEY = 'cygenix_cc_split'/.test(page)
       && (page.match(/ss(Get|Set)\(/g) || []).length === (page.match(/ss(Get|Set)\((FULL_KEY|SPLIT_KEY|k[,)])/g) || []).length
       && (page.match(/sessionStorage\.(get|set|remove)Item\(/g) || []).length === (page.match(/sessionStorage\.(get|set|remove)Item\((k|v|FULL_KEY|SPLIT_KEY)/g) || []).length
@@ -939,7 +1072,14 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     const body = page.split('function connBody')[1].split('function csCheck')[0];
     check('the page sends a connection\'s id, names and Function App address to open a session or a check — never its string or key',
       /\{ side: CS\.conn\.side, connId: CS\.conn\.connId, connectionName: CS\.conn\.name, mode: CS\.conn\.mode \|\| 'direct',/.test(body)
-      && !/connString|fnKey|password/i.test(body) && /call\('POST', '\/agent\/claude-code\/session', connBody\(\)\)/.test(page));
+      && !/connString|fnKey|password/i.test(body)
+      && /var body = connBody\(\); body\.projectId = activeProjectId\(\);\s*if \(staging\) body\.stagingSchema = staging;\s*var r = await call\('POST', '\/agent\/claude-code\/session', body\);/.test(page));
+    check('STAGING ON THE PAGE: a schema field, its own confirmation, the switch refused in such a session, a pill, and a suggested first message',
+      /<input id="cs-staging" type="text"/.test(page) && /CygenixCcConsole\.stagingConfirmSpec\(/.test(page) && /openConfirm\(CygenixCcConsole\.confirmSpec\(prof, conn\)/.test(page)
+      && /if \(CS\.cur && CS\.cur\.stagingSchema\) \{ note\('cs-note', 'This is a staging session/.test(page)
+      && /id="cs-staging-pill"/.test(page) && /CygenixCcConsole\.STAGING_STARTER/.test(page)
+      && /\$\('cs-staging'\)\.disabled = !allowed \|\| !!CS\.replay \|\| !!CS\.busy\['New session'\];/.test(page)
+      && /--cs-bar-h/.test(page) && /new ResizeObserver\(set\)\.observe\(bar\)/.test(page) && /\.main\{padding-top:var\(--cs-bar-h,52px\)\}/.test(page) && /guarded\('New session'/.test(page.split('function openSession')[1] || ''));
     const chk = page.split('function csCheck')[1].split('/* ── Sessions')[0];
     check('CHECK THE BRIDGE: a button; a pass from the Azure side; SELECT 1 through the bridge with that pass — never the Entra token',
       /id="cs-check" onclick="csCheck\(\)"/.test(page) && /call\('POST', '\/agent\/claude-code\/check', connBody\(\)\)/.test(chk)

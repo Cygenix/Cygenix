@@ -129,7 +129,7 @@ function detectDialect(cs) {
 // behaviour for db-connect's own callers. (Up here, not at the end: these are
 // all hoisted function declarations, and tests/conn-builder.test.js lifts the
 // last functions in this file by source, so the file should end on one.)
-exports.__bridge = { rbacGate, handleMssql, handlePostgres, detectDialect, parseMssqlConnectionString };
+exports.__bridge = { rbacGate, handleMssql, handlePostgres, detectDialect, parseMssqlConnectionString, viaRelay: (cs) => shouldRelay('mssql', parseMssqlConnectionString(cs)) };
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
@@ -222,7 +222,17 @@ const RBAC_ACTION = {
   'diag-probe': 'connection.test', 'diag-temp-table': 'connection.test',
 };
 
-async function rbacGate(authed, action, dialect, connectionString, database, body) {
+// opts is NOT reachable from an HTTP request — the handler above calls this
+// with six arguments. Its one option, stagingSchema, is passed only by the
+// Dev Console bridge (cc-mcp.js), and only for a statement
+// lib/staging-sql.js has already shown writes to nothing but that schema's
+// tables. It lifts the organisation's approval guardrail for that statement
+// alone — the owner's rule is "free inside the staging schema" — and leaves
+// everything else as it is: the role and environment check still decides,
+// the write is still audited (fail-closed on Production), and the audit
+// entry says which schema and why no approval was asked for.
+async function rbacGate(authed, action, dialect, connectionString, database, body, opts) {
+  const stagingSchema = opts && typeof opts.stagingSchema === 'string' ? opts.stagingSchema : '';
   const store = orgStore();
   const actor = await resolveActor(store, authed, authed);
 
@@ -299,7 +309,7 @@ async function rbacGate(authed, action, dialect, connectionString, database, bod
     // what it says: not refused, unfinished — here is what is missing.
     const { tenant } = await tenancy.resolveTenant(store, actor, (await loadAll(store)).users);
     const act = { policyAction, resourceId: connKey(server, db), environment, sql: sqlText, mutating: true, destructive };
-    const requirement = tenancy.requirementFor(tenant.guardrails, act);
+    const requirement = stagingSchema ? null : tenancy.requirementFor(tenant.guardrails, act);
 
     if (requirement) {
       const hash = tenancy.actHash(act);
@@ -360,7 +370,9 @@ async function rbacGate(authed, action, dialect, connectionString, database, bod
                (destructive.length ? ' — ' + destructive.length + ' destructive statement(s)' : ''),
       detail: { ...base.detail, tenantId: tenant.id,
                 approvalId: guardrail && guardrail.approvalId || undefined,
-                destructive: destructive.length ? destructive : undefined } },
+                destructive: destructive.length ? destructive : undefined,
+                stagingSchema: stagingSchema || undefined,
+                guardrailExempt: stagingSchema ? 'dev-console staging schema' : undefined } },
       { required: environment === 'PROD' });
     if (!guardrail && (environment === 'PROD' || environment === 'STAGING')) {
       // Nothing to enforce for this tenant, but the analysis is still worth
@@ -757,7 +769,25 @@ async function handleMssql(action, connectionString, database, body) {
         for (const prm of (Array.isArray(body.params) ? body.params : [])) {
           if (prm && typeof prm.name === 'string') rq.input(prm.name, prm.value);
         }
-        const r = await rq.query(sqlToRun);
+        // timeoutMs (Oct-2026, the Dev Console bridge): cancel the statement
+        // on the server after this long rather than leave it running behind a
+        // caller that has stopped waiting. SQL Server has no per-statement
+        // timeout of its own and the pool's requestTimeout is per pool, so this
+        // is the driver's cancel — an attention signal — on a timer. Only
+        // ever SHORTER than the pool's two minutes, so a caller cannot use it
+        // to run longer. The relay has no cancel and is left as it was.
+        const limit = timeoutFrom(body);
+        let cancelled = false, timer = null;
+        if (limit && typeof rq.cancel === 'function') {
+          timer = setTimeout(() => { cancelled = true; try { rq.cancel(); } catch (e) { /* already finished */ } }, limit);
+        }
+        let r;
+        try { r = await rq.query(sqlToRun); }
+        catch (e) {
+          if (cancelled) throw new Error('Cancelled after ' + Math.round(limit / 1000) + ' seconds: the statement took too long and was stopped on the server.');
+          throw e;
+        }
+        finally { if (timer) clearTimeout(timer); }
         // Unbounded SELECTs used to be buffered whole and then die at
         // Netlify's 6MB response cap with a generic 502. Cap the rows and
         // say the result was truncated so the editor can tell the user.
@@ -1236,11 +1266,20 @@ async function handlePostgres(action, connectionString, database, body) {
         // readOnly (the Dev Console bridge): PostgreSQL enforces it itself —
         // a READ ONLY transaction refuses any write — and it is rolled back
         // regardless, so nothing a read touched is kept either.
+        // timeoutMs: PostgreSQL's own statement_timeout, on this call's own
+        // connection (a fresh client, closed below), so it reaches nobody else.
+        // transaction (the bridge's staging writes): all of it or none of it.
+        const limit = timeoutFrom(body);
+        if (limit) await client.query('SET statement_timeout = ' + limit);
         let r;
         if (body.readOnly === true) {
           await client.query('BEGIN READ ONLY');
           try { r = await client.query(sqlToRun); }
           finally { try { await client.query('ROLLBACK'); } catch (e) { /* connection closes below */ } }
+        } else if (body.transaction === true) {
+          await client.query('BEGIN');
+          try { r = await client.query(sqlToRun); await client.query('COMMIT'); }
+          catch (e) { try { await client.query('ROLLBACK'); } catch (e2) { /* connection closes below */ } throw e; }
         } else {
           r = await client.query(sqlToRun);
         }
@@ -1713,6 +1752,13 @@ async function diagTempTablePostgres(client) {
 // ═════════════════════════════════════════════════════════════════════════════
 // CONNECTION STRING PARSERS
 // ═════════════════════════════════════════════════════════════════════════════
+
+// A caller's statement time limit: whole milliseconds, at least a second,
+// and below the drivers' own two minutes — or nothing.
+function timeoutFrom(body) {
+  const n = Number(body && body.timeoutMs);
+  return Number.isInteger(n) && n >= 1000 && n < 120000 ? n : 0;
+}
 
 function parseMssqlConnectionString(cs, dbOverride) {
   cs = cs.trim();

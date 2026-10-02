@@ -226,6 +226,35 @@ function confirmSpec(profile, connection) {
     typeToConfirm: env === 'PRD' ? name : '',
   };
 }
+/* A staging session (Oct-2026) may change one schema from its first
+   message, without the organisation's approvals, so it is confirmed before
+   it is opened, the same way — a production profile named back — and says
+   exactly what it allows. The name is checked loosely here only to catch a
+   typo before the round trip; the server decides. */
+var STAGING_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
+function stagingNameProblem(name) {
+  var s = String(name == null ? '' : name).trim();
+  if (!s) return '';
+  if (!STAGING_NAME_RE.test(s)) return 'A staging schema name is letters, digits and underscores, starting with a letter.';
+  if (/^(dbo|sys|guest|information_schema|public|db_.*|pg_.*)$/i.test(s)) return '"' + s + '" is one of the database\'s own schemas. Use a schema of its own, such as "staging".';
+  return '';
+}
+function stagingConfirmSpec(profile, connection, schema) {
+  var name = (profile && profile.name) || 'the active profile';
+  var env = (profile && profile.envClass) || '';
+  return {
+    prod: env === 'PRD',
+    title: 'Start a staging session?',
+    okLabel: 'Start staging session',
+    text: 'Claude will be able to create, load, empty and drop tables inside the schema "' + schema + '" of "'
+      + ((connection && connection.name) || 'the selected connection') + '" under profile "' + name + '"' + (env ? ' (' + env + ')' : '')
+      + ', without asking for approvals. Everything else in that database stays read-only. Every statement is recorded in the audit log.',
+    typeToConfirm: env === 'PRD' ? name : '',
+  };
+}
+var STAGING_STARTER = 'Build the staging tables from this project\'s Conversion Template and populate them from this database. '
+  + 'Start by telling me what the template contains.';
+
 function confirmAccepts(spec, typed) {
   if (!spec.prod) return true;
   return String(typed || '').trim() === String(spec.typeToConfirm || '').trim() && !!spec.typeToConfirm;
@@ -235,6 +264,7 @@ return {
   STATUS_WORDS: STATUS_WORDS, statusWord: statusWord,
   textOf: textOf, tableFrom: tableFrom, looksLikeConnectionFailure: looksLikeConnectionFailure, bridgeTable: bridgeTable, mcpBlock: mcpBlock,
   blocksFrom: blocksFrom, toolBlock: toolBlock,
+  stagingNameProblem: stagingNameProblem, stagingConfirmSpec: stagingConfirmSpec, STAGING_STARTER: STAGING_STARTER,
   NOTICE_KEY: NOTICE_KEY, noticeDismissed: noticeDismissed, noticeDismiss: noticeDismiss,
   confirmSpec: confirmSpec, confirmAccepts: confirmAccepts,
 };
