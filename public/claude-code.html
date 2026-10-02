@@ -55,7 +55,8 @@
 <script src="/cygenix-sync-banner.js?v=d63aeac047" defer></script>
 <script src="/cygenix-drive.js?v=43733ac277" defer></script>
 <script src="/cygenix-drive-store.js?v=992cee4850" defer></script>
-<script src="/cygenix-cc-console.js?v=1a1a8dc906" defer></script>
+<script src="/cygenix-conn-builder.js?v=bcd70367b8" defer></script>
+<script src="/cygenix-cc-console.js?v=2bacd3a919" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -80,6 +81,12 @@ body.cyg-collapsed .topbar{left:54px}
 .pill.error{background:var(--red-bg);color:var(--red)}
 .stg{display:inline-flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--text2);white-space:nowrap}
 .stg[hidden]{display:none}
+/* Which database the console is on, in type nobody can miss — red on
+   yellow, the way the person who asked for it marks a live database. */
+.dbbar{display:flex;align-items:baseline;gap:0.75rem;flex-wrap:wrap;padding:0.45rem 1rem;background:#fff176;color:#b00000;border-bottom:0.5px solid var(--border)}
+.dbbar .db-side{font-size:0.72rem;font-weight:700;letter-spacing:0.08em}
+.dbbar .db-name{font-size:1.35rem;font-weight:700;letter-spacing:0.02em;line-height:1.2}
+.dbbar .db-detail{font-size:0.8rem;color:#5a0000}
 /* The toolbar wraps onto a second row when the window is too narrow for it,
    rather than pushing its last buttons off the edge (which it did at 1440px
    with the sidebar open once the staging field arrived). Everything below it
@@ -232,6 +239,9 @@ body.cs-full .drawer{top:var(--cs-bar-h,52px)}
   </section>
 
   <section id="cc-console" hidden>
+    <div id="cs-dbbar" class="dbbar" role="status" aria-live="polite" title="The database Claude's queries run on">
+      <span class="db-side" id="cs-db-side"></span><span class="db-name" id="cs-db-name"></span><span class="db-detail" id="cs-db-detail"></span>
+    </div>
     <div id="cs-replay-bar" class="replay-bar" hidden>
       <i class="ic ic-eye"></i> <span id="cs-replay-text">Replaying a past session, read-only.</span>
       <button class="btn" onclick="csReplayBack()">Back to the current session</button>
@@ -253,6 +263,7 @@ body.cs-full .drawer{top:var(--cs-bar-h,52px)}
       <div class="col">
         <div class="col-head"><i class="ic ic-tools"></i> Output <span class="tag" id="cs-out-count"></span>
           <span class="spacer"></span>
+          <button class="btn" id="cs-report-btn" onclick="csReport(false)" title="Save this session's conversion report to Reports → Conversion Report. If Claude has not written it yet, Claude is asked to first."><i class="ic ic-doc"></i> Save report</button>
           <button class="btn" id="cs-files-btn" onclick="csFilesToggle()"><i class="ic ic-folder"></i> Files <span class="tag" id="cs-files-count"></span></button>
         </div>
         <div class="col-body">
@@ -413,7 +424,14 @@ function loadConns(){
     // address travels from here; its key is read on the server.
     var azure = c.mode === 'azure';
     if (azure && !/^https:\/\//i.test(String(c.fnUrl || ''))) { CS.conns.push({ side: side, ok: false, label: label + ' — ' + name, why: 'This Function App connection has no https address saved.' }); return; }
-    CS.conns.push({ side: side, ok: true, connId: connId, name: name, label: label + ' — ' + name,
+    // The database and host, read here from the saved string to NAME them
+    // on screen — nothing else of it is kept, and none of it is sent.
+    var where = { database: '', server: '', engine: azure ? 'mssql' : '' };
+    if (!azure && c.connString && window.CygenixConnBuilder) {
+      try { var pc = CygenixConnBuilder.parse(c.connString); where = { database: pc.database || '', server: pc.host || '', engine: pc.engine || '' }; } catch (e) { /* named by the connection only */ }
+    }
+    CS.conns.push({ side: side, ok: true, connId: connId, name: name, label: label + ' — ' + name + (where.database ? ' · ' + where.database : ''),
+      database: where.database, server: where.server, engine: where.engine,
       mode: azure ? 'azure' : 'direct', fnUrl: azure ? String(c.fnUrl).split('?')[0] : '',
       profileId: c.profileId || '', profileName: p ? p.name : '', envClass: p ? p.envClass : '' });
   });
@@ -450,12 +468,13 @@ function csCheck(){
       var p = await call('POST', '/agent/claude-code/check', connBody());
       var t0 = Date.now();
       var res = await fetch(MCP_PATH, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + p.token },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_query', arguments: { sql: 'SELECT 1 AS ok' } } }) });
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_query', arguments: { sql: CS.conn.engine === 'postgres' ? 'SELECT current_database() AS db' : 'SELECT DB_NAME() AS db' } } }) });
       var data = {};
       try { data = await res.json(); } catch (e) { data = {}; }
       var out = data.result || {};
       var text = (out.content && out.content[0] && out.content[0].text) || (data.error && (data.error.message || data.error)) || ('The bridge answered ' + res.status);
-      if (res.ok && out.isError === false) note('cs-note', 'The bridge works: "' + CS.conn.name + '" answered SELECT 1 in ' + (Date.now() - t0) + ' ms.', 'ok');
+      var dbn = ''; try { dbn = String(JSON.parse(text).rows[0][0] || ''); } catch (e) { dbn = ''; }
+      if (res.ok && out.isError === false) note('cs-note', 'The bridge works: "' + CS.conn.name + '" is database ' + (dbn ? dbn.toUpperCase() : '(unnamed)') + ', answered in ' + (Date.now() - t0) + ' ms.', 'ok');
       else note('cs-note', 'The bridge could not query "' + CS.conn.name + '": ' + String(typeof text === 'string' ? text : JSON.stringify(text)).replace(/^The query failed: /, ''), 'crit');
     } catch (e) {
       note('cs-note', 'Could not check the bridge: ' + e.message, 'crit');
@@ -476,7 +495,7 @@ function csNew(){
   if (staging) {
     var why = CygenixCcConsole.stagingNameProblem(staging);
     if (why) { note('cs-note', why, 'warn'); return; }
-    openConfirm(CygenixCcConsole.stagingConfirmSpec({ name: CS.conn.profileName, envClass: CS.conn.envClass }, CS.conn, staging),
+    openConfirm(CygenixCcConsole.stagingConfirmSpec({ name: CS.conn.profileName, envClass: CS.conn.envClass }, { name: CS.conn.name, database: CS.conn.database }, staging),
       function(){ openSession(staging); });
     return;
   }
@@ -508,18 +527,71 @@ function csSend(){
   if (!CS.cur || CS.replay || !text) return;
   guarded('Send', async function(){
     try {
-      var r = await call('POST', '/agent/claude-code/message', { sessionId: CS.cur.id, text: text });
+      await postMessage(text);
       $('cs-input').value = ''; autoGrow($('cs-input'));
-      CS.cur.status = 'running';
-      if (r.title && !CS.cur.title) CS.cur.title = r.title;
-      // Shown at once; the server's echo of it is deduplicated by id later.
-      CS.events.push({ id: 'local-' + Date.now(), type: 'user.message', content: [{ type: 'text', text: text }], local: true });
       note('cs-note', '');
-      startPolling();
     } catch (e) {
       note('cs-note', 'Could not send: ' + e.message, 'crit');
     }
   });
+}
+// Say something to Claude. The caller holds the guard.
+async function postMessage(text){
+  var r = await call('POST', '/agent/claude-code/message', { sessionId: CS.cur.id, text: text });
+  CS.cur.status = 'running';
+  if (r.title && !CS.cur.title) CS.cur.title = r.title;
+  // Shown at once; the server's echo of it is deduplicated by id later.
+  CS.events.push({ id: 'local-' + Date.now(), type: 'user.message', content: [{ type: 'text', text: text }], local: true });
+  startPolling();
+}
+
+/* ── Save report → Reports › Conversion Report ────────────────────────────
+   Takes conversion-report.json from the files Claude wrote, turns it into
+   the document Projects → Execute saves (CygenixCcConsole.buildConversionReport)
+   and saves it through the same reports function. If Claude has not written
+   it yet and the session is idle, Claude is asked to, and the save happens
+   by itself when that turn ends (CS.reportFor, cleared by the poll that acts
+   on it, before it acts). */
+// auto: the save that follows Claude writing the report. It never asks
+// Claude again — a turn that ends without the file says so and stops.
+function csReport(auto){
+  var s = sessionForFiles();
+  if (!s) { note('cs-note', 'Start a session first.', 'warn'); return; }
+  guarded('Report', async function(){
+    try {
+      var lst = await call('GET', '/agent/claude-code/outputs?sessionId=' + encodeURIComponent(s.id));
+      var f = (lst.outputs || []).filter(function(o){ return o && String(o.name || '').split('/').pop() === CygenixCcConsole.REPORT_FILE; })
+        .sort(function(a, b){ return String(b.at || '').localeCompare(String(a.at || '')); })[0];
+      if (f) { await saveReportFile(s, f); return; }
+      if (auto === true) { note('cs-note', 'Claude finished without writing ' + CygenixCcConsole.REPORT_FILE + '. Ask it to, then press Save report.', 'warn'); return; }
+      var live = !CS.replay && CS.cur && CS.cur.id === s.id && CS.cur.status !== 'stopped' && CS.cur.status !== 'error';
+      if (!live) { note('cs-note', 'This session did not write ' + CygenixCcConsole.REPORT_FILE + ', so there is no report to save.', 'warn'); return; }
+      if (CS.cur.status === 'running') { note('cs-note', 'Claude is working. Press Save report again when it is idle.', 'warn'); return; }
+      CS.reportFor = CS.cur.id;
+      await postMessage(CygenixCcConsole.reportRequest(CS.cur.stagingSchema || ''));
+      note('cs-note', 'Claude is writing the report. It will be saved to Reports → Conversion Report when Claude finishes.', 'info');
+    } catch (e) {
+      note('cs-note', 'Could not save the report: ' + e.message, 'crit');
+    }
+  });
+}
+async function saveReportFile(s, f){
+  var r = await call('GET', '/agent/claude-code/download?sessionId=' + encodeURIComponent(s.id) + '&fileId=' + encodeURIComponent(f.id));
+  var bin = atob(r.contentBase64 || ''), bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  var data;
+  try { data = JSON.parse(new TextDecoder('utf-8').decode(bytes)); }
+  catch (e) { throw new Error(CygenixCcConsole.REPORT_FILE + ' is not valid JSON. Ask Claude to write it again.'); }
+  var built = CygenixCcConsole.buildConversionReport(data, { sessionId: s.id, projectId: activeProjectId(), userEmail: currentUser(),
+    connectionName: s.connectionName, server: s.dbHost, database: s.dbName, dbType: s.dbType, stagingSchema: s.stagingSchema, startedAt: s.createdAt });
+  if (built.error) throw new Error(built.error);
+  var tok = typeof window.getCygenixIdToken === 'function' ? window.getCygenixIdToken() : '';
+  var res = await fetch('/.netlify/functions/reports', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+    body: JSON.stringify({ action: 'save', report: built.report }) });
+  var out = {}; try { out = await res.json(); } catch (e) { out = {}; }
+  if (!res.ok) throw new Error(out.error || ('the reports service answered ' + res.status));
+  note('cs-note', 'Saved to Reports → Conversion Report: ' + built.report.tables.length + ' table' + (built.report.tables.length === 1 ? '' : 's')
+    + ', ' + Number(built.report.totalRows).toLocaleString() + ' rows.', 'ok');
 }
 function csStop(){
   if (!CS.cur || CS.replay) return;
@@ -556,7 +628,13 @@ async function poll(){
     mergeEvents(r.events || []);
     var wasRunning = cur.status === 'running';
     cur.status = r.status; cur.costCents = r.costCents; cur.dataChangesAllowed = !!r.dataChangesAllowed;
-    if (r.status !== 'running') { stopPolling(); if (wasRunning) loadOutputs(false); }
+    if (r.status !== 'running') {
+      stopPolling();
+      if (wasRunning) loadOutputs(false);
+      // The report Claude was asked for: saved once, by this poll, three
+      // seconds on so the Report guard's interval holds.
+      if (CS.reportFor && CS.reportFor === cur.id) { CS.reportFor = null; setTimeout(function(){ csReport(true); }, 3100); }
+    }
   } catch (e) {
     // A readable error, once, and no more polling: a retry storm helps nobody.
     note('cs-note', 'Lost touch with the session: ' + e.message, 'crit');
@@ -755,6 +833,12 @@ function renderTop(){
   // The field is for the NEXT New session; the pill says what this one is.
   $('cs-staging').disabled = !allowed || !!CS.replay || !!CS.busy['New session'];
   var sp = $('cs-staging-pill'); sp.hidden = !stg; sp.textContent = stg ? 'Staging: ' + stg : '';
+  // The database, named: the session's (the server's reading) once there is
+  // one, else the chosen connection's.
+  var b = CygenixCcConsole.dbBanner(s ? { side: s.side, database: s.dbName, server: s.dbHost, connectionName: s.connectionName, stagingSchema: s.stagingSchema }
+    : (CS.conn ? { side: CS.conn.side, database: CS.conn.database, server: CS.conn.server, connectionName: CS.conn.name } : {}));
+  $('cs-db-side').textContent = b.side; $('cs-db-name').textContent = b.name; $('cs-db-detail').textContent = b.detail;
+  $('cs-report-btn').disabled = !allowed || !s || !!CS.busy['Report'];
   sp.title = stg ? 'Claude may change tables inside "' + stg + '" only; everything else is read-only.' : '';
 }
 function render(){

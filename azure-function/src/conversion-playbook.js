@@ -57,7 +57,11 @@ function conversionPlaybook(schema, dbType) {
       + 'mistake; report what is a data problem.\n'
       + '7. Finish with a report, also saved as /mnt/session/outputs/staging-report.md, and the mapping as '
       + '/mnt/session/outputs/staging-mapping.csv (staging table, staging column, source expression, notes): per table, where '
-      + 'the data came from, rows loaded, columns left empty and why, and the problems found.',
+      + 'the data came from, rows loaded, columns left empty and why, and the problems found. Write the same results as '
+      + '/mnt/session/outputs/conversion-report.json, which Cygenix saves to its Conversion Reports — JSON with exactly these '
+      + 'fields: {"template": {"name": "", "version": 0}, "summary": "", "tables": [{"staging_table": "", "target_table": "", '
+      + '"source_tables": [""], "rows_loaded": 0, "rows_expected": 0, "status": "loaded | partial | failed | not_loaded", '
+      + '"notes": "", "columns": [{"column": "", "source": "", "transform": "", "notes": ""}]}], "warnings": [""]}.',
 
     'GROUND RULES. Never invent data: a column with no source stays NULL and is listed in the report. Leave identity columns '
       + 'empty unless the template\'s notes say otherwise. Keep the target\'s column names exactly as the template gives them. '

@@ -242,18 +242,127 @@ function stagingNameProblem(name) {
 function stagingConfirmSpec(profile, connection, schema) {
   var name = (profile && profile.name) || 'the active profile';
   var env = (profile && profile.envClass) || '';
+  var db = connection && connection.database ? 'database ' + String(connection.database).toUpperCase() + ' (connection "' + ((connection && connection.name) || '') + '")' : '"' + ((connection && connection.name) || 'the selected connection') + '"';
   return {
     prod: env === 'PRD',
     title: 'Start a staging session?',
     okLabel: 'Start staging session',
-    text: 'Claude will be able to create, load, empty and drop tables inside the schema "' + schema + '" of "'
-      + ((connection && connection.name) || 'the selected connection') + '" under profile "' + name + '"' + (env ? ' (' + env + ')' : '')
+    text: 'Claude will be able to create, load, empty and drop tables inside the schema "' + schema + '" of ' + db
+      + ' under profile "' + name + '"' + (env ? ' (' + env + ')' : '')
       + ', without asking for approvals. Everything else in that database stays read-only. Every statement is recorded in the audit log.',
     typeToConfirm: env === 'PRD' ? name : '',
   };
 }
 var STAGING_STARTER = 'Build the staging tables from this project\'s Conversion Template and populate them from this database. '
   + 'Start by telling me what the template contains.';
+
+/* ── Which database, said loudly (Oct-2026) ──────────────────────────────
+   A person ran a staging build on the wrong database: the picker said
+   "Source — Conversion_src" and nothing said which DATABASE that was. The
+   banner names it in large type, from the server's own reading of the
+   connection once a session is open, and from the browser's reading of the
+   saved string before that — the database and host only, never the rest. */
+function dbBanner(info) {
+  var i = info || {};
+  var side = i.side === 'src' ? 'SOURCE' : i.side === 'tgt' ? 'TARGET' : '';
+  var db = String(i.database || '').trim();
+  var where = [];
+  if (i.server) where.push('on ' + String(i.server).replace(/^tcp:/i, ''));
+  if (i.connectionName) where.push('connection "' + i.connectionName + '"');
+  if (i.stagingSchema) where.push('staging schema "' + i.stagingSchema + '"');
+  return {
+    side: side,
+    name: db ? db.toUpperCase() : (i.connectionName ? String(i.connectionName) : 'No connection chosen'),
+    known: !!db,
+    detail: where.join(' · ') + (db || !i.connectionName ? '' : (where.length ? ' · ' : '') + 'database chosen by the Function App'),
+  };
+}
+
+/* ── The Conversion Report from a staging session ─────────────────────────
+   Claude writes /mnt/session/outputs/conversion-report.json in the shape
+   below (the staging brief asks it to at the end; the Save report button asks
+   again if it has not). The page turns it into the same document Projects →
+   Execute saves, so it lists, opens and prints in Reports → Conversion Report
+   like any other run. Everything Claude wrote is treated as text and numbers
+   and cut to size: it is a report, not instructions. */
+var REPORT_FILE = 'conversion-report.json';
+function reportRequest(schema) {
+  return 'Please write the conversion report for this session to /mnt/session/outputs/' + REPORT_FILE + ', as JSON with exactly '
+    + 'these fields: {"template": {"name": "", "version": 0}, "summary": "a short paragraph", "tables": [{"staging_table": "", '
+    + '"target_table": "", "source_tables": ["schema.table"], "rows_loaded": 0, "rows_expected": 0, "status": "loaded | partial | failed | '
+    + 'not_loaded", "notes": "", "columns": [{"column": "", "source": "the source expression, or empty if none", "transform": "", '
+    + '"notes": ""}]}], "warnings": [""]}. One entry per staging table in ' + (schema ? '"' + schema + '"' : 'the staging schema')
+    + ', in load order; count rows_loaded from the table itself. Reply with one line when it is written.';
+}
+var REPORT_STATUS = { loaded: 'passed', partial: 'passed', failed: 'failed', not_loaded: 'skipped' };
+function txt(v, max) { return String(v == null ? '' : v).slice(0, max || 500); }
+function num(v) { var n = Number(v); return isFinite(n) && n >= 0 ? Math.floor(n) : 0; }
+function buildConversionReport(data, ctx) {
+  var d = data && typeof data === 'object' ? data : null;
+  if (!d || !Array.isArray(d.tables)) return { error: 'The report file is not in the expected shape (no "tables" list).' };
+  var c = ctx || {};
+  var tpl = d.template && typeof d.template === 'object' ? d.template : {};
+  var schema = txt(c.stagingSchema, 64);
+  var full = function (t) { return schema ? schema + '.' + t : t; };
+  var now = new Date(c.now || Date.now()).toISOString();
+  var system = c.dbType === 'postgres' ? 'PostgreSQL' : 'Microsoft SQL Server / Azure SQL';
+  var tables = d.tables.slice(0, 500).map(function (t) {
+    var status = REPORT_STATUS[txt(t && t.status, 20)] ? txt(t.status, 20) : 'loaded';
+    return {
+      staging: txt(t && t.staging_table, 128), target: txt(t && t.target_table, 128),
+      sources: (Array.isArray(t && t.source_tables) ? t.source_tables : []).slice(0, 20).map(function (x) { return txt(x, 200); }),
+      loaded: num(t && t.rows_loaded), expected: num(t && t.rows_expected), status: status, notes: txt(t && t.notes, 2000),
+      columns: (Array.isArray(t && t.columns) ? t.columns : []).slice(0, 500).map(function (k) {
+        return { column: txt(k && k.column, 128), source: txt(k && k.source, 1000), transform: txt(k && k.transform, 1000), notes: txt(k && k.notes, 500) };
+      }),
+    };
+  }).filter(function (t) { return t.staging; });
+  var mappings = [];
+  tables.forEach(function (t) {
+    t.columns.forEach(function (k) {
+      mappings.push({ srcCol: k.source, srcTable: t.sources[0] || '', tgtCol: k.column, tgtTable: full(t.staging), tgtType: '',
+        transform: k.transform ? 'EXPR' : 'NONE', transformExpr: k.transform || null, literalValue: '', fixedValue: '',
+        wasisRules: null, wasisCount: 0, notes: k.notes });
+    });
+  });
+  var totalRows = tables.reduce(function (n, t) { return n + t.loaded; }, 0);
+  var failed = tables.filter(function (t) { return t.status === 'failed'; }).length;
+  var warnings = (Array.isArray(d.warnings) ? d.warnings : []).slice(0, 100).map(function (w) { return txt(w, 500); }).filter(Boolean);
+  tables.forEach(function (t) {
+    if (t.status === 'partial' || t.status === 'failed' || t.status === 'not_loaded') warnings.push(full(t.staging) + ': ' + t.status.replace('_', ' ') + (t.notes ? ' — ' + t.notes : ''));
+  });
+  return { report: {
+    id: 'devc_' + txt(c.sessionId, 80) + '_' + Date.parse(now),
+    projectName: txt(c.projectName, 200) || (txt(tpl.name, 160) ? txt(tpl.name, 160) + ' — staging build' : 'Staging build'), projectId: txt(c.projectId, 100),
+    userName: txt(c.userName, 200), userEmail: txt(c.userEmail, 200), organisation: 'Cygenix',
+    reportKind: 'dev-console-staging',
+    summary: txt(d.summary, 4000),
+    sourceTable: tables.length === 1 ? (tables[0].sources[0] || '') : '',
+    sourceSystem: system, sourceFriendlyName: txt(c.connectionName, 200), sourceServer: txt(c.server, 200), sourceDatabase: txt(c.database, 200),
+    targetTable: '', targetSystem: system + ' — staging schema "' + schema + '"',
+    targetFriendlyName: (txt(tpl.name, 200) || 'Conversion Template') + (tpl.version ? ' v' + num(tpl.version) : ''),
+    targetServer: txt(c.server, 200), targetDatabase: txt(c.database, 200) + (schema ? ' (' + schema + ')' : ''),
+    authMethod: 'Dev Console bridge',
+    totalRows: totalRows, insertedRows: totalRows, errors: failed, rowsBefore: 0, rowsAfter: totalRows,
+    columnMapping: mappings, columnsMapped: mappings.filter(function (m) { return m.srcCol; }).length,
+    wasisRules: [], wasisRuleCount: 0, wasisColCount: 0, paramUsage: [], paramUsageCount: 0, paramUsageParamCount: 0,
+    warnings: warnings,
+    startedAt: txt(c.startedAt, 40) || now, completedAt: now,
+    isProjectReport: true,
+    steps: tables.map(function (t) {
+      return { jobId: '', name: full(t.staging) + (t.target ? ' → ' + t.target : ''), type: 'migration', status: REPORT_STATUS[t.status],
+        log: (t.sources.length ? 'From ' + t.sources.join(', ') + '. ' : '') + (t.expected ? t.loaded + ' of ' + t.expected + ' expected rows. ' : '') + t.notes,
+        srcTable: t.sources.join(', '), tgtTable: full(t.staging), rowsInserted: t.loaded, stagingTable: full(t.staging),
+        srcWhere: '', startedAt: null, finishedAt: null, durationMs: null, connOn: 'source', reconResult: null };
+    }),
+    tables: tables.map(function (t) {
+      return { name: full(t.staging), sourceRows: t.expected || t.loaded, insertedRows: t.loaded, errors: t.status === 'failed' ? 1 : 0,
+        cols: t.columns.length, srcTable: t.sources.join(', '), status: t.status === 'loaded' ? 'success' : t.status === 'failed' ? 'failed' : 'partial' };
+    }),
+    reconciliation: [],
+    devConsole: { sessionId: txt(c.sessionId, 80), stagingSchema: schema, template: { name: txt(tpl.name, 200), version: num(tpl.version) } },
+  } };
+}
 
 function confirmAccepts(spec, typed) {
   if (!spec.prod) return true;
@@ -265,6 +374,7 @@ return {
   textOf: textOf, tableFrom: tableFrom, looksLikeConnectionFailure: looksLikeConnectionFailure, bridgeTable: bridgeTable, mcpBlock: mcpBlock,
   blocksFrom: blocksFrom, toolBlock: toolBlock,
   stagingNameProblem: stagingNameProblem, stagingConfirmSpec: stagingConfirmSpec, STAGING_STARTER: STAGING_STARTER,
+  dbBanner: dbBanner, REPORT_FILE: REPORT_FILE, reportRequest: reportRequest, buildConversionReport: buildConversionReport,
   NOTICE_KEY: NOTICE_KEY, noticeDismissed: noticeDismissed, noticeDismiss: noticeDismiss,
   confirmSpec: confirmSpec, confirmAccepts: confirmAccepts,
 };

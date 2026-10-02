@@ -69,7 +69,7 @@ const U = 'you@example.test';
 
   // The stubbed world: a roles record the page asks for, and a fake Azure.
   const world = { outputs: [], me: { oid: 'x', email: U, roles: ['ML'], claudeCode: { enabled: false, roles: ['OW', 'PA'], allowed: false, canChangeData: false, canConfigure: false } },
-    calls: [], sessions: {}, nextEvents: [], failEvents: false, failStop: false, mcp: [], mcpFails: false };
+    calls: [], sessions: {}, nextEvents: [], failEvents: false, failStop: false, mcp: [], mcpFails: false, saved: [], reportJson: null };
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route('**', async (route) => {
     const u = route.request().url();
@@ -82,7 +82,8 @@ const U = 'you@example.test';
       world.calls.push({ action, method: route.request().method(), body, path: p, headers: route.request().headers() });
       if (action === 'session' && route.request().method() === 'POST') {
         const id = 'sesn_' + String(Object.keys(world.sessions).length + 1).padStart(6, '0');
-        const s = { id, title: '', status: 'idle', dataChangesAllowed: false, connectionName: body.connectionName, profileName: body.profileName, createdAt: new Date().toISOString(), costCents: 0, stagingSchema: body.stagingSchema || '' };
+        const s = { id, title: '', status: 'idle', dataChangesAllowed: false, connectionName: body.connectionName, profileName: body.profileName, createdAt: new Date().toISOString(), costCents: 0, stagingSchema: body.stagingSchema || '',
+          side: body.side, dbName: 'tgt', dbHost: 'acme.database.windows.net', dbType: 'sqlserver' };
         world.sessions[id] = { session: s, events: [] };
         return json(route, { session: s });
       }
@@ -102,15 +103,20 @@ const U = 'you@example.test';
       if (action === 'upload') { const s = world.sessions[body.sessionId]; const up = { fileId: 'file_u' + (s.session.uploads || []).length, name: body.name, path: '/workspace/uploads/' + body.name, size: Buffer.from(body.contentBase64, 'base64').length, at: new Date().toISOString() };
         s.session.uploads = (s.session.uploads || []).concat([up]); return json(route, { upload: up }); }
       if (action === 'outputs') { const s = world.sessions[new URL('http://x' + p).searchParams.get('sessionId')]; return json(route, { outputs: world.outputs, uploads: (s && s.session.uploads) || [] }); }
+      if (action === 'download' && /fileId=file_rep/.test(p)) return json(route, { name: 'conversion-report.json', size: 10, contentBase64: Buffer.from(JSON.stringify(world.reportJson)).toString('base64') });
       if (action === 'download') return json(route, { name: 'counts.csv', size: 24, contentBase64: Buffer.from('table,rows\nCustomer,1200\n').toString('base64') });
       if (action === 'session') { const s = world.sessions[new URL('http://x' + p).searchParams.get('id')]; return s ? json(route, { session: s.session, events: s.events }) : json(route, { error: 'No such session.' }, 404); }
       return json(route, { error: 'unexpected ' + action }, 500);
+    }
+    if (/\/\.netlify\/functions\/reports/.test(u)) {
+      world.saved.push({ headers: route.request().headers(), body: JSON.parse(route.request().postData() || '{}') });
+      return json(route, { id: 'rpt_1', savedCount: 1, prunedCount: 0 });
     }
     if (/\/\.netlify\/functions\/cc-mcp/.test(u)) {
       world.mcp.push({ headers: route.request().headers(), body: JSON.parse(route.request().postData() || '{}') });
       const result = world.mcpFails
         ? { content: [{ type: 'text', text: 'The query failed: Login failed for user \'claude_api\'.' }], isError: true }
-        : { content: [{ type: 'text', text: JSON.stringify({ columns: ['ok'], rows: [[1]], row_count_returned: 1, truncated: false, ms: 4 }) }], isError: false };
+        : { content: [{ type: 'text', text: JSON.stringify({ columns: ['db'], rows: [['tgt']], row_count_returned: 1, truncated: false, ms: 4 }) }], isError: false };
       return json(route, { jsonrpc: '2.0', id: 1, result });
     }
     if (/action=whoami/.test(u)) return json(route, { tier: 'pro', tier_status: 'active', role: 'user' });
@@ -186,7 +192,7 @@ const U = 'you@example.test';
   await open();
   check('dismissed once, the notice is remembered for this user', !(await page.evaluate(() => document.getElementById('cs-notice').classList.contains('open'))));
   const opts = await page.evaluate(() => Array.from(document.getElementById('cs-conn').options).map((o) => o.textContent + (o.disabled ? ' (off)' : '')));
-  check('the picker lists the active profile\'s connections, target first', opts[0] === 'Target — Target DEV' && opts[1] === 'Source — Legacy', opts.join(' | '));
+  check('the picker lists the active profile\'s connections, target first, each with its database', opts[0] === 'Target — Target DEV · tgt' && opts[1] === 'Source — Legacy · s', opts.join(' | '));
   const fits = () => page.evaluate(() => {
     const w = document.documentElement.clientWidth;
     return Array.from(document.querySelectorAll('.topbar > *')).filter((el) => el.offsetParent !== null)
@@ -201,6 +207,21 @@ const U = 'you@example.test';
   check('status: No session; Stop and Send off', (await text('cs-status')) === 'No session'
     && (await page.evaluate(() => document.getElementById('cs-stop').disabled && document.getElementById('cs-send').disabled)));
 
+  /* Which database, before a session: from the chosen connection. */
+  const banner = () => page.evaluate(() => ({ side: document.getElementById('cs-db-side').textContent, name: document.getElementById('cs-db-name').textContent,
+    detail: document.getElementById('cs-db-detail').textContent, bg: getComputedStyle(document.getElementById('cs-dbbar')).backgroundColor,
+    fg: getComputedStyle(document.getElementById('cs-db-name')).color, size: parseFloat(getComputedStyle(document.getElementById('cs-db-name')).fontSize) }));
+  let bb = await banner();
+  check('THE DATABASE IS NAMED IN RED ON YELLOW, large: side, database, host and connection',
+    bb.side === 'TARGET' && bb.name === 'TGT' && /on acme\.database\.windows\.net/.test(bb.detail) && /connection "Target DEV"/.test(bb.detail)
+    && bb.bg === 'rgb(255, 241, 118)' && bb.fg === 'rgb(176, 0, 0)' && bb.size >= 20, JSON.stringify(bb));
+  check('…and the picker names the database too', opts[0] === 'Target — Target DEV · tgt' || (await page.evaluate(() => document.getElementById('cs-conn').options[0].textContent)) === 'Target — Target DEV · tgt',
+    await page.evaluate(() => document.getElementById('cs-conn').options[0].textContent));
+  await page.selectOption('#cs-conn', '1');
+  bb = await banner();
+  check('…and changes the moment another connection is picked', bb.side === 'SOURCE' && bb.name === 'S' && /src\.example\.test/.test(bb.detail), JSON.stringify(bb));
+  await page.selectOption('#cs-conn', '0');
+
   /* 4. Check the bridge. */
   await page.click('#cs-check');
   await page.waitForFunction(() => /The bridge works/.test(document.getElementById('cs-note').textContent), null, { timeout: 8000 });
@@ -211,8 +232,8 @@ const U = 'you@example.test';
   const m0 = world.mcp[0] || { headers: {}, body: {} };
   check('…then runs SELECT 1 through the bridge, carrying THE PASS, not the Entra token',
     world.mcp.length === 1 && m0.headers.authorization === 'Bearer cyb_0123456789abcdef01.' + 'A'.repeat(43)
-    && m0.body.method === 'tools/call' && m0.body.params.name === 'run_query' && m0.body.params.arguments.sql === 'SELECT 1 AS ok', JSON.stringify(m0));
-  check('…and says so in words', /The bridge works: "Target DEV" answered SELECT 1/.test(await text('cs-note')), await text('cs-note'));
+    && m0.body.method === 'tools/call' && m0.body.params.name === 'run_query' && m0.body.params.arguments.sql === 'SELECT DB_NAME() AS db', JSON.stringify(m0));
+  check('…and says WHICH DATABASE answered', /The bridge works: "Target DEV" is database TGT, answered in \d+ ms/.test(await text('cs-note')), await text('cs-note'));
   await page.waitForTimeout(3100);
   world.mcpFails = true;
   await page.click('#cs-check');
@@ -375,7 +396,7 @@ const U = 'you@example.test';
   const sc = await page.evaluate(() => ({ title: document.getElementById('cs-confirm-title').textContent, ok: document.getElementById('cs-confirm-ok').textContent,
     text: document.getElementById('cs-confirm-text').textContent }));
   check('STARTING A STAGING SESSION ASKS FIRST, saying what it allows and where',
-    sc.title === 'Start a staging session?' && sc.ok === 'Start staging session' && /inside the schema "staging" of "Target DEV" under profile "Demo" \(DEV\)/.test(sc.text)
+    sc.title === 'Start a staging session?' && sc.ok === 'Start staging session' && /inside the schema "staging" of database TGT \(connection "Target DEV"\) under profile "Demo" \(DEV\)/.test(sc.text)
     && /stays read-only/.test(sc.text), JSON.stringify(sc));
   await page.click('#cs-confirm-ok');
   await page.waitForFunction(() => !document.getElementById('cs-staging-pill').hidden, null, { timeout: 8000 });
@@ -395,6 +416,36 @@ const U = 'you@example.test';
   const modes = calls('mode').length;
   await page.evaluate(() => csToggle());
   check('…and the "Allow changes" switch explains it does not apply, calling nothing', /This is a staging session/.test(await text('cs-note')) && calls('mode').length === modes);
+  bb = await banner();
+  check('IN THE SESSION, THE BANNER IS THE SERVER\'S READING, with the staging schema', bb.name === 'TGT' && /staging schema "staging"/.test(bb.detail), JSON.stringify(bb));
+
+  /* Save report: Claude has not written it, so it is asked; when the turn ends it is saved by itself. */
+  world.outputs = [];
+  world.reportJson = { template: { name: 'Demo Conversion Template', version: 2 }, summary: 'Two tables loaded.', warnings: [],
+    tables: [{ staging_table: 'STG_addresses', target_table: 'addresses', source_tables: ['dbo.Address'], rows_loaded: 2600, rows_expected: 2600, status: 'loaded',
+      columns: [{ column: 'Street', source: 'a.Line1', transform: '', notes: '' }] },
+      { staging_table: 'STG_client', target_table: 'client', source_tables: ['dbo.Client'], rows_loaded: 121, rows_expected: 121, status: 'loaded', columns: [] }] };
+  await page.waitForTimeout(3100);
+  const msgsBefore = calls('message').length;
+  world.nextEvents = [{ id: 'r1', type: 'agent.message', content: [{ type: 'text', text: 'The report is written.' }] }, { id: 'r2', type: 'session.status_idle', stop_reason: { type: 'end_turn' } }];
+  await page.click('#cs-report-btn');
+  await page.waitForFunction(() => /Claude is writing the report/.test(document.getElementById('cs-note').textContent), null, { timeout: 8000 });
+  const ask = calls('message')[msgsBefore];
+  check('SAVE REPORT, NOTHING WRITTEN YET: Claude is asked once, for conversion-report.json',
+    calls('message').length === msgsBefore + 1 && /conversion-report\.json/.test(ask.body.text) && /"rows_loaded"/.test(ask.body.text), ask && ask.body.text.slice(0, 120));
+  world.outputs = [{ id: 'file_rep', name: 'conversion-report.json', size: 900, at: new Date().toISOString() }];
+  await page.waitForFunction(() => /Saved to Reports → Conversion Report/.test(document.getElementById('cs-note').textContent), null, { timeout: 15000 });
+  const sv = world.saved[0] || { body: {}, headers: {} };
+  check('…AND WHEN CLAUDE FINISHES IT IS SAVED to the reports function, with the person\'s token, in the Conversion Report shape',
+    world.saved.length === 1 && sv.body.action === 'save' && /^Bearer /.test(sv.headers.authorization || '') && sv.body.report.isProjectReport === true
+    && sv.body.report.totalRows === 2721 && sv.body.report.steps.length === 2 && sv.body.report.tables[0].name === 'staging.STG_addresses'
+    && sv.body.report.sourceDatabase === 'tgt' && sv.body.report.projectId === 'p1' && sv.body.report.devConsole.stagingSchema === 'staging', JSON.stringify(sv.body).slice(0, 400));
+  check('…and says so with the numbers', /2 tables, 2,721 rows/.test(await text('cs-note')), await text('cs-note'));
+  await page.waitForTimeout(3100);
+  await page.click('#cs-report-btn');
+  await page.waitForFunction(() => document.getElementById('cs-note').textContent && !document.getElementById('cs-report-btn').disabled, null, { timeout: 8000 });
+  await page.waitForTimeout(800);
+  check('pressed again with the file already there, it saves straight away without asking Claude', world.saved.length === 2 && calls('message').length === msgsBefore + 1, world.saved.length);
 
   /* PRD needs the name typed. */
   await ctx.addInitScript(() => { try { const s = JSON.parse(localStorage.getItem('cygenix_profiles_v1')); s.profiles[0].envClass = 'PRD'; localStorage.setItem('cygenix_profiles_v1', JSON.stringify(s)); } catch (e) {} });

@@ -944,6 +944,37 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
       && /inside the schema "staging" of "Legacy" under profile "Finance PRD" \(PRD\)/.test(st.text) && /without asking for approvals/.test(st.text)
       && /Everything else in that database stays read-only/.test(st.text) && /audit log/.test(st.text) && !M.confirmAccepts(st, 'finance'));
     check('…and the suggested first message asks for the template first', /Conversion Template/.test(M.STAGING_STARTER) && /what the template contains/.test(M.STAGING_STARTER));
+    const bn = M.dbBanner({ side: 'src', database: 'Conversion_DM', server: 'tcp:86.20.94.140', connectionName: 'Conversion_src', stagingSchema: 'staging' });
+    check('THE DATABASE BANNER: side, the database in capitals, then host, connection and staging schema',
+      bn.side === 'SOURCE' && bn.name === 'CONVERSION_DM' && bn.known && bn.detail === 'on 86.20.94.140 · connection "Conversion_src" · staging schema "staging"', JSON.stringify(bn));
+    check('…a Function App connection, whose database the app chooses, says so; nothing chosen says so',
+      M.dbBanner({ side: 'tgt', connectionName: 'Cloud' }).name === 'Cloud' && /chosen by the Function App/.test(M.dbBanner({ side: 'tgt', connectionName: 'Cloud' }).detail)
+      && M.dbBanner({}).name === 'No connection chosen');
+    check('the staging confirmation names the DATABASE too',
+      /inside the schema "staging" of database CONVERSION_DM \(connection "Legacy"\)/.test(M.stagingConfirmSpec({ name: 'Demo', envClass: 'DEV' }, { name: 'Legacy', database: 'Conversion_DM' }, 'staging').text));
+    check('the report request names the file and every field the report needs',
+      /\/mnt\/session\/outputs\/conversion-report\.json/.test(M.reportRequest('staging')) && ['staging_table', 'target_table', 'source_tables', 'rows_loaded', 'rows_expected', 'status', 'columns', 'source', 'transform', 'warnings', 'summary']
+        .every(k => M.reportRequest('staging').indexOf('"' + k + '"') !== -1));
+    const RJ = { template: { name: 'Demo Conversion Template', version: 2 }, summary: 'Loaded two tables.', warnings: ['Phone numbers were free text.'],
+      tables: [{ staging_table: 'STG_addresses', target_table: 'addresses', source_tables: ['dbo.Address'], rows_loaded: 2600, rows_expected: 2600, status: 'loaded',
+        columns: [{ column: 'Street', source: 'a.Line1', transform: '', notes: '' }, { column: 'Phone', source: '', transform: '', notes: 'no source' }] },
+        { staging_table: 'STG_client', target_table: 'client', source_tables: ['dbo.Client', 'dbo.Party'], rows_loaded: 100, rows_expected: 121, status: 'partial',
+          notes: '21 rows had no party', columns: [{ column: 'Name', source: 'c.Name', transform: 'LTRIM(RTRIM(c.Name))' }] },
+        { staging_table: '', rows_loaded: 5 }, { staging_table: 'STG_x', status: 'exploded', rows_loaded: -4 }] };
+    const built = M.buildConversionReport(RJ, { sessionId: 'sesn_9', projectId: 'p1', userEmail: 'a@x', connectionName: 'Conversion_src',
+      server: '86.20.94.140', database: 'Conversion_DM', dbType: 'sqlserver', stagingSchema: 'staging', startedAt: '2026-10-02T09:00:00.000Z', now: Date.parse('2026-10-02T10:00:00Z') }).report;
+    check('A SAVED REPORT HAS THE SHAPE Projects → Execute SAVES: steps, tables, column mapping, totals, source and target',
+      built.isProjectReport === true && built.steps.length === 3 && built.tables.length === 3 && built.totalRows === 2700 && built.errors === 0
+      && built.steps[0].type === 'migration' && built.steps[0].status === 'passed' && built.steps[0].tgtTable === 'staging.STG_addresses' && built.steps[0].rowsInserted === 2600
+      && built.tables[1].status === 'partial' && built.tables[1].sourceRows === 121 && built.tables[1].srcTable === 'dbo.Client, dbo.Party'
+      && built.columnMapping.length === 3 && built.columnsMapped === 2 && built.columnMapping[2].transform === 'EXPR' && built.columnMapping[2].transformExpr === 'LTRIM(RTRIM(c.Name))'
+      && built.sourceDatabase === 'Conversion_DM' && built.targetDatabase === 'Conversion_DM (staging)' && built.projectName === 'Demo Conversion Template — staging build'
+      && built.targetFriendlyName === 'Demo Conversion Template v2' && built.projectId === 'p1' && built.reportKind === 'dev-console-staging', JSON.stringify(built).slice(0, 600));
+    check('…an unnamed table is dropped, an unknown status reads as loaded, a negative count as nought, and partial tables become warnings',
+      !built.steps.some(x => /^staging\. →|^staging\.$/.test(x.name)) && built.tables[2].insertedRows === 0 && built.tables[2].status === 'success'
+      && built.warnings.length === 2 && /STG_client: partial — 21 rows had no party/.test(built.warnings[1]), JSON.stringify(built.warnings));
+    check('…and a file that is not the report is refused in words', /not in the expected shape/.test(M.buildConversionReport({ rows: [] }, {}).error)
+      && /not in the expected shape/.test(M.buildConversionReport(null, {}).error));
     check('the first-use notice is remembered per user, in one key', !M.noticeDismissed(null, 'a@x') && M.noticeDismissed(M.noticeDismiss('{}', 'a@x'), 'a@x') && !M.noticeDismissed(M.noticeDismiss('{}', 'a@x'), 'b@x'));
     const prd = M.confirmSpec({ name: 'Finance PRD', envClass: 'PRD' }, { name: 'Target' });
     check('A PRODUCTION PROFILE MUST BE NAMED BACK; a DEV one is a plain yes',
@@ -1034,6 +1065,11 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     check('…which names no secret, host or product', sc.agent.system.indexOf(PASSWORD) === -1 && !/legacy\.acme/.test(sc.agent.system)
       && !/\b3E\b|Elite|Aderant|Timekeeper/.test(CC.conversionPlaybook('staging', 'sqlserver')));
     check('the session title says it is staging', /\(staging staging\)$/.test(sc.title));
+    const Mc = require(path.join(ROOT, 'public', 'cygenix-cc-console.js'));
+    const fieldsOf = (t) => ((/\{"template"[\s\S]*?"warnings": \[""\]\}/.exec(t) || [''])[0].match(/"[a-z_]+":/g) || []).sort().join() || 'none';
+    const pb = CC.conversionPlaybook('staging', 'sqlserver');
+    check('THE BRIEF ASKS FOR conversion-report.json WITH EXACTLY THE FIELDS the Save report button reads',
+      /\/mnt\/session\/outputs\/conversion-report\.json/.test(pb) && fieldsOf(pb) === fieldsOf(Mc.reportRequest('staging')), fieldsOf(pb) + ' vs ' + fieldsOf(Mc.reportRequest('staging')));
 
     r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: true } });
     check('THE "ALLOW CHANGES" SWITCH IS REFUSED in a staging session — the schema is the permission', r.status === 409 && /staging session/.test(r.body.error), r.raw);
@@ -1117,7 +1153,7 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
       && ["guarded('New session'", "guarded('Send'", "guarded('Stop'", "guarded('Mode'", "guarded('Check'"].every(g => page.indexOf(g) !== -1));
     check('polling: every 3s, one in flight, stops when not running, stops on error, stops on Stop',
       /POLL_MS = 3000/.test(page) && /if \(CS\.pollInflight \|\| !CS\.cur \|\| CS\.replay\) return;/.test(page)
-      && /if \(r\.status !== 'running'\) \{ stopPolling\(\);/.test(page) && /Lost touch with the session[\s\S]{0,80}stopPolling\(\);/.test(page)
+      && /if \(r\.status !== 'running'\) \{\s*stopPolling\(\);/.test(page) && /Lost touch with the session[\s\S]{0,80}stopPolling\(\);/.test(page)
       && /guarded\('Stop', async function\(\)\{\s*stopPolling\(\);/.test(page) && (page.match(/CS\.pollInflight = false/g) || []).length === 1);
     check('NO TRANSCRIPT TOUCHES BROWSER STORAGE — localStorage only the notice, theme and active user; sessionStorage only the per-tab full-screen and split',
       (page.match(/localStorage\.(get|set)Item\(/g) || []).length
@@ -1139,6 +1175,15 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
       /\{ side: CS\.conn\.side, connId: CS\.conn\.connId, connectionName: CS\.conn\.name, mode: CS\.conn\.mode \|\| 'direct',/.test(body)
       && !/connString|fnKey|password/i.test(body)
       && /var body = connBody\(\); body\.projectId = activeProjectId\(\);\s*if \(staging\) body\.stagingSchema = staging;\s*var r = await call\('POST', '\/agent\/claude-code\/session', body\);/.test(page));
+    check('WHICH DATABASE, ON THE PAGE: a red-on-yellow banner, filled from the session (the server\'s reading) or the chosen connection; the picker names it too',
+      /<div id="cs-dbbar" class="dbbar"/.test(page) && /\.dbbar\{[^}]*background:#fff176;color:#b00000/.test(page)
+      && /CygenixCcConsole\.dbBanner\(s \? \{ side: s\.side, database: s\.dbName, server: s\.dbHost/.test(page)
+      && /label: label \+ ' — ' \+ name \+ \(where\.database \? ' · ' \+ where\.database : ''\)/.test(page)
+      && /src="\/cygenix-conn-builder\.js\?v=/.test(page) && !/password/i.test(page.split('function loadConns')[1].split('function csPickConn')[0].replace(/never|nothing else/g, '')));
+    check('SAVE REPORT: guarded, takes conversion-report.json, saves through the reports function with the person\'s token, and asks Claude only once',
+      /guarded\('Report'/.test(page) && /CygenixCcConsole\.buildConversionReport\(data,/.test(page)
+      && /fetch\('\/\.netlify\/functions\/reports', \{ method: 'POST'/.test(page) && /action: 'save', report: built\.report/.test(page)
+      && /if \(auto === true\) \{ note\(/.test(page) && /CS\.reportFor = null; setTimeout\(function\(\)\{ csReport\(true\); \}, 3100\);/.test(page));
     check('STAGING ON THE PAGE: a schema field, its own confirmation, the switch refused in such a session, a pill, and a suggested first message',
       /<input id="cs-staging" type="text"/.test(page) && /CygenixCcConsole\.stagingConfirmSpec\(/.test(page) && /openConfirm\(CygenixCcConsole\.confirmSpec\(prof, conn\)/.test(page)
       && /if \(CS\.cur && CS\.cur\.stagingSchema\) \{ note\('cs-note', 'This is a staging session/.test(page)
@@ -1149,7 +1194,7 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     check('CHECK THE BRIDGE: a button; a pass from the Azure side; SELECT 1 through the bridge with that pass — never the Entra token',
       /id="cs-check" onclick="csCheck\(\)"/.test(page) && /call\('POST', '\/agent\/claude-code\/check', connBody\(\)\)/.test(chk)
       && /fetch\(MCP_PATH, \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json', Authorization: 'Bearer ' \+ p\.token \}/.test(chk)
-      && /SELECT 1 AS ok/.test(chk) && /MCP_PATH = '\/\.netlify\/functions\/cc-mcp'/.test(page) && !/getCygenixIdToken/.test(chk));
+      && /SELECT DB_NAME\(\) AS db/.test(chk) && /SELECT current_database\(\) AS db/.test(chk) && /is database ' \+/.test(chk) && /MCP_PATH = '\/\.netlify\/functions\/cc-mcp'/.test(page) && !/getCygenixIdToken/.test(chk));
     check('phase 2: attach and download go through the same guard, and a file over 4 MB is refused before it is read',
       /guarded\('Attach'/.test(page) && /guarded\('Download'/.test(page) && /if \(f\.size > UPLOAD_MAX\)/.test(page) && /UPLOAD_MAX = 4 \* 1024 \* 1024/.test(page));
     check('the page is titled Dev Console and lives at /dev-console, with the old address redirecting',
