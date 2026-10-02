@@ -1058,11 +1058,11 @@ function ctPickManual(){
 
    RESUME. A run is a set of batches at Anthropic that may take minutes. Its
    batch ids and the table names per chunk (no columns, nothing secret) are
-   kept in localStorage under SG_RUN_KEY until the suggestions are applied,
+   kept in localStorage under cygenix_ct_suggest_run_v1 (written out in
+   full at each call, so scripts/storage-inventory.js can see it) until the suggestions are applied,
    the person discards them, or they are cancelled — so closing the page, or
    closing the review, does not throw away answers already paid for. */
 const SG = { running: false, lastAt: 0, ctrl: null, preview: null, fks: null, run: null, outcomes: null };
-const SG_RUN_KEY = 'cygenix_ct_suggest_run_v1';
 function sgActiveModules(){ return (CT.tpl && CT.tpl.modules || []).filter(m => TM.tmModuleActive(m)); }
 function sgBlocker(){
   if (!CT.tpl) return 'Open or create a template first';
@@ -1076,15 +1076,15 @@ function sgBlocker(){
 }
 function sgLoadRun(){
   try {
-    const r = JSON.parse(localStorage.getItem(SG_RUN_KEY) || 'null');
+    const r = JSON.parse(localStorage.getItem('cygenix_ct_suggest_run_v1') || 'null');
     if (!r || !CT.tpl || r.tplId !== CT.tpl.id || !Array.isArray(r.states) || !r.states.length) return null;
     // Anthropic keeps batch results for 29 days.
     if (Date.now() - (r.at || 0) > 28 * 864e5) { sgClearRun(); return null; }
     return r;
   } catch (e) { return null; }
 }
-function sgSaveRun(r){ try { localStorage.setItem(SG_RUN_KEY, JSON.stringify(r)); } catch (e) { /* a convenience only */ } }
-function sgClearRun(){ try { localStorage.removeItem(SG_RUN_KEY); } catch (e) {} SG.run = null; }
+function sgSaveRun(r){ try { localStorage.setItem('cygenix_ct_suggest_run_v1', JSON.stringify(r)); } catch (e) { /* a convenience only */ } }
+function sgClearRun(){ try { localStorage.removeItem('cygenix_ct_suggest_run_v1'); } catch (e) {} SG.run = null; }
 function renderSuggestButtons(){
   const why = sgBlocker();
   const mod = selectedModule();

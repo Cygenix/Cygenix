@@ -72,7 +72,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_sql_editor_draft` | Editor draft text | transient | cygenix-assistant-actions.js, data-stream-designer-app.js, data-stream-store-app.js |
 | `cygenix_wiped_snapshot` | Recovery snapshot after a wipe | recovery aid | cygenix-cosmos-sync.js |
 
-## C — Preference — per-viewer convenience (31)
+## C — Preference — per-viewer convenience (32)
 
 | Key | What it holds | Server source of truth | Written by |
 |---|---|---|---|
@@ -86,6 +86,7 @@ mechanism that stops an unclassified key being added quietly.
 | `cygenix_app_prefs` | Theme and app preferences | — | admin.html, analytics.html, assurance.html +34 |
 | `cygenix_client_name` | Client name for reports | — | projects.html |
 | `cygenix_conn_mode` | Connection mode (direct/function) | — | connect.html |
+| `cygenix_ct_suggest_run_v1` | Conversion Templates: the Suggest run not yet applied — batch ids and table names per chunk | a pointer to batches in the user's own Anthropic account; lost means only that the run is not offered for resume | conversion-templates.html |
 | `cygenix_current_project_id` | Legacy project pointer | — | data-quality.html |
 | `cygenix_entra_account` | MSAL account record | — | connections.js, cygenix-api.js, cygenix-cosmos-sync.js +10 |
 | `cygenix_expires` | Session expiry marker | — | cygenix-auth-token.js, login.html, project-manager.js |
@@ -110,4 +111,4 @@ mechanism that stops an unclassified key being added quietly.
 
 ---
 
-_66 classified key(s) across `public/`._
+_67 classified key(s) across `public/`._
