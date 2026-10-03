@@ -260,6 +260,7 @@ body.cs-full .drawer{top:var(--cs-bar-h,52px)}
     </div>
     <div id="cs-replay-bar" class="replay-bar" hidden>
       <i class="ic ic-eye"></i> <span id="cs-replay-text">Replaying a past session, read-only.</span>
+      <button class="btn primary" id="cs-resume-btn" onclick="csResume()" hidden title="Make this the active session and carry on the conversation. Allow changes starts off.">Continue this session</button>
       <button class="btn" onclick="csReplayBack()">Back to the current session</button>
     </div>
     <div class="cols">
@@ -500,20 +501,28 @@ function csCheck(){
     note('cs-note', 'Checking the bridge to "' + CS.conn.name + '"…', 'info');
     try {
       var p = await call('POST', '/agent/claude-code/check', connBody());
-      var t0 = Date.now();
-      var res = await fetch(MCP_PATH, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + p.token },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_query', arguments: { sql: CS.conn.engine === 'postgres' ? 'SELECT current_database() AS db' : 'SELECT DB_NAME() AS db' } } }) });
-      var data = {};
-      try { data = await res.json(); } catch (e) { data = {}; }
-      var out = data.result || {};
-      var text = (out.content && out.content[0] && out.content[0].text) || (data.error && (data.error.message || data.error)) || ('The bridge answered ' + res.status);
-      var dbn = ''; try { dbn = String(JSON.parse(text).rows[0][0] || ''); } catch (e) { dbn = ''; }
-      if (res.ok && out.isError === false) note('cs-note', 'The bridge works: "' + CS.conn.name + '" is database ' + (dbn ? dbn.toUpperCase() : '(unnamed)') + ', answered in ' + (Date.now() - t0) + ' ms.', 'ok');
-      else note('cs-note', 'The bridge could not query "' + CS.conn.name + '": ' + String(typeof text === 'string' ? text : JSON.stringify(text)).replace(/^The query failed: /, ''), 'crit');
+      var pr = await bridgeProbe(p.token, CS.conn.engine === 'postgres' ? 'postgres' : 'sqlserver');
+      if (pr.ok) note('cs-note', 'The bridge works: "' + CS.conn.name + '" is database ' + (pr.db ? pr.db.toUpperCase() : '(unnamed)') + ', answered in ' + pr.ms + ' ms.', 'ok');
+      else note('cs-note', 'The bridge could not query "' + CS.conn.name + '": ' + pr.why, 'crit');
     } catch (e) {
       note('cs-note', 'Could not check the bridge: ' + e.message, 'crit');
     }
   });
+}
+// One query through the bridge with a check pass — the road Claude's
+// queries take. Used by Check the bridge, and before a past session is
+// continued. The caller holds the guard.
+async function bridgeProbe(token, dbType){
+  var t0 = Date.now();
+  var res = await fetch(MCP_PATH, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_query', arguments: { sql: dbType === 'postgres' ? 'SELECT current_database() AS db' : 'SELECT DB_NAME() AS db' } } }) });
+  var data = {};
+  try { data = await res.json(); } catch (e) { data = {}; }
+  var out = data.result || {};
+  var text = (out.content && out.content[0] && out.content[0].text) || (data.error && (data.error.message || data.error)) || ('The bridge answered ' + res.status);
+  var dbn = ''; try { dbn = String(JSON.parse(text).rows[0][0] || ''); } catch (e) { dbn = ''; }
+  if (res.ok && out.isError === false) return { ok: true, db: dbn, ms: Date.now() - t0 };
+  return { ok: false, why: String(typeof text === 'string' ? text : JSON.stringify(text)).replace(/^The query failed: /, '') };
 }
 
 /* ── Sessions ────────────────────────────────────────────────────────── */
@@ -1117,11 +1126,67 @@ async function csOpenSession(id){
     CS.outputs = []; CS.outputsFor = '';
     csDrawer(false);
     if (CS.filesOpen) loadOutputs(true);
-    $('cs-replay-text').textContent = 'Replaying "' + (r.session.title || r.session.id) + '" — read-only.';
+    $('cs-replay-text').textContent = 'Replaying "' + (r.session.title || r.session.id) + '" — read-only.' + (canResume() ? ' Continue it to carry on the conversation.' : '');
     render();
   } catch (e) { note('cs-note', 'Could not load that session: ' + e.message, 'crit'); }
 }
 function csReplayBack(){ CS.replay = null; render(); }
+
+/* ── Continue a past session (Oct-2026) ───────────────────────────────────
+   Replay used to be the end of the road: the box was locked here, and the
+   server had no way back into a session — a stopped one is archived at
+   Anthropic for good, and every session's database pass lapses after a day.
+   Continue makes the replayed session the active one, after three checks:
+   the connection it used is still saved (here, then on the server), and it
+   answers a query through the bridge. Any of them failing leaves the replay
+   read-only and says why. The server then either carries on in the same
+   Anthropic session or opens a new workspace with the conversation rebuilt
+   as Claude's context; "Allow changes" is OFF either way, and the resume is
+   on the audit trail. New messages go to the SAME session record. */
+function canResume(){
+  return !!(CS.me && CS.me.claudeCode && CS.me.claudeCode.allowed) && hasKey();
+}
+function csResume(){
+  if (!CS.replay || !canResume()) return;
+  var s = CS.replay.session;
+  if (CS.cur && CS.cur.status === 'running' && CS.cur.id !== s.id) {
+    if (!window.confirm('The current session is still working. Continue the past one instead? The current session keeps running and stays in Sessions.')) return;
+  }
+  guarded('Resume', async function(){
+    var name = s.connectionName || s.connectionId || 'its connection';
+    // 1. Still saved here? A live (unsaved) connection has no entry to look for.
+    if (s.connectionId && !/^sconn_live_/.test(s.connectionId) && window.CygenixConnections && CygenixConnections.savedGetById) {
+      var saved = null;
+      try { saved = CygenixConnections.savedGetById(s.connectionId); } catch (e) { saved = null; }
+      if (!saved) { note('cs-note', 'This session can\'t be continued: its connection "' + name + '" has been deleted. It stays read-only here.', 'crit'); return; }
+    }
+    try {
+      // 2. Still saved on the server, and 3. still answering.
+      note('cs-note', 'Checking that "' + name + '" is still reachable…', 'info');
+      var chk = await call('POST', '/agent/claude-code/resume', { sessionId: s.id, step: 'check' });
+      var pr = await bridgeProbe(chk.token, chk.dbType || s.dbType);
+      if (!pr.ok) { note('cs-note', 'This session can\'t be continued: "' + name + '" is not answering (' + pr.why + '). It stays read-only here.', 'crit'); return; }
+      if (!CS.replay || CS.replay.session.id !== s.id) return;      // the person moved on meanwhile
+      note('cs-note', 'Continuing the session… if its workspace has closed, a new one opens, which takes 10 to 30 seconds.', 'info');
+      var r = await call('POST', '/agent/claude-code/resume', { sessionId: s.id, step: 'go' });
+      stopPolling();
+      var past = CS.replay.events || [];
+      CS.cur = r.session;
+      CS.cur.envClass = (profileOf(r.session.profileId) || {}).envClass || '';
+      CS.events = past.concat(r.events || []);
+      CS.seen = {};
+      CS.events.forEach(function(ev){ if (ev && ev.id) CS.seen[ev.id] = true; });
+      CS.replay = null;
+      CS.wantChanges = false;
+      CS.outputs = []; CS.outputsFor = '';
+      if (CS.filesOpen) loadOutputs(true);
+      note('cs-note', 'Continued' + (r.workspace === 'new' ? ' in a new workspace' : '') + '. "Allow changes" is off — switch it on again if you need it.', 'ok');
+      loadSessions();
+    } catch (e) {
+      note('cs-note', 'Could not continue this session: ' + e.message, 'crit');
+    }
+  });
+}
 
 /* ── Rendering ───────────────────────────────────────────────────────── */
 function renderTop(){
@@ -1167,6 +1232,7 @@ function render(){
   var events = CS.replay ? CS.replay.events : CS.events;
   var s = CS.replay ? CS.replay.session : CS.cur;
   $('cs-replay-bar').hidden = !CS.replay;
+  var rb = $('cs-resume-btn'); rb.hidden = !CS.replay || !canResume(); rb.disabled = !!CS.busy['Resume'];
   var view = CygenixCcConsole.blocksFrom(events);
   var chat = $('cs-chat');
   if (!view.chat.length) chat.innerHTML = '<div class="empty">' + (s ? 'Ask Claude for what you need — for example, "List the tables and row counts using Python".' : 'Start a session, then ask Claude for what you need.') + '</div>';

@@ -16,6 +16,10 @@
  *   8. a query through the bridge shows its SQL and a table; a bridge query
  *      that cannot reach the database raises the connection note;
  *   11. the sessions drawer lists the session; a past one replays read-only;
+ *   11b. Continue this session: refused while the database does not answer
+ *      or the connection is deleted (staying read-only, saying why); then the
+ *      past session becomes the active one — its conversation kept, the
+ *      notice shown, "Allow changes" off — and a new message goes to it;
  *   a staging session: the schema field, its confirmation, the project and
  *      schema sent, the pill, the suggested first message, the switch off;
  *   a failing route shows its error once; nothing throws.
@@ -82,7 +86,7 @@ const U = 'you@example.test';
       world.calls.push({ action, method: route.request().method(), body, path: p, headers: route.request().headers() });
       if (action === 'session' && route.request().method() === 'POST') {
         const id = 'sesn_' + String(Object.keys(world.sessions).length + 1).padStart(6, '0');
-        const s = { id, title: '', status: 'idle', dataChangesAllowed: false, connectionName: body.connectionName, profileName: body.profileName, createdAt: new Date().toISOString(), costCents: 0, stagingSchema: body.stagingSchema || '',
+        const s = { id, title: '', status: 'idle', dataChangesAllowed: false, connectionId: body.connId, connectionName: body.connectionName, profileName: body.profileName, createdAt: new Date().toISOString(), costCents: 0, stagingSchema: body.stagingSchema || '',
           side: body.side, dbName: 'tgt', dbHost: 'acme.database.windows.net', dbType: 'sqlserver' };
         world.sessions[id] = { session: s, events: [] };
         return json(route, { session: s });
@@ -98,6 +102,14 @@ const U = 'you@example.test';
       }
       if (action === 'mode') { world.sessions[body.sessionId].session.dataChangesAllowed = body.dataChangesAllowed; return json(route, { ok: true, dataChangesAllowed: body.dataChangesAllowed }); }
       if (action === 'stop') { if (world.failStop) return json(route, { error: 'boom' }, 500); world.sessions[body.sessionId].session.status = 'stopped'; return json(route, { ok: true, status: 'stopped' }); }
+      if (action === 'resume' && body.step === 'check') return json(route, { token: 'cyb_abcdef0123456789ab.' + 'B'.repeat(43), mcpUrl: 'https://cygenix.co.uk/.netlify/functions/cc-mcp', expiresInSeconds: 120, dbType: 'sqlserver', connectionName: 'Target DEV' });
+      if (action === 'resume') {
+        const rs = world.sessions[body.sessionId].session;
+        rs.status = 'idle'; rs.dataChangesAllowed = false; rs.resumeCount = (rs.resumeCount || 0) + 1;
+        return json(route, { session: rs, workspace: 'new', reason: 'stopped', events: [
+          { id: 'cyg_resume_1', type: 'system.message', cygenix: 'resume', content: [{ type: 'text', text: 'Resumed — previous workspace files are no longer available.' }] },
+          { id: 'cyg_resume_2', type: 'system.message', cygenix: 'resume', content: [{ type: 'text', text: 'The earlier workspace was closed when the session was stopped, so this one is new. Claude has the whole earlier conversation (2 turns).' }] }] });
+      }
       if (action === 'check') return json(route, { token: 'cyb_0123456789abcdef01.' + 'A'.repeat(43), mcpUrl: 'https://cygenix.co.uk/.netlify/functions/cc-mcp', expiresInSeconds: 120 });
       if (action === 'sessions') return json(route, { sessions: Object.values(world.sessions).map((x) => x.session).reverse() });
       if (action === 'upload') { const s = world.sessions[body.sessionId]; const up = { fileId: 'file_u' + (s.session.uploads || []).length, name: body.name, path: '/workspace/uploads/' + body.name, size: Buffer.from(body.contentBase64, 'base64').length, at: new Date().toISOString() };
@@ -369,6 +381,53 @@ const U = 'you@example.test';
     && calls('session').some((c) => c.method === 'GET'));
   check('and the replay came from the server, not this browser',
     await page.evaluate(() => !Object.keys(localStorage).some((k) => /transcript|cc_events|cc_session/.test(k))));
+
+  /* 11b. Continue this session. */
+  const resumes = () => calls('resume');
+  const replayId = await page.evaluate(() => CS.replay.session.id);
+  check('THE REPLAY BAR OFFERS "Continue this session" beside "Back to the current session"',
+    await page.evaluate(() => !document.getElementById('cs-resume-btn').hidden && document.getElementById('cs-resume-btn').textContent === 'Continue this session'
+      && /Continue it to carry on/.test(document.getElementById('cs-replay-text').textContent)));
+  await page.click('#cs-replay-bar .btn:not(.primary)');
+  check('"Back to the current session" still works', await page.evaluate(() => document.getElementById('cs-replay-bar').hidden && !CS.replay));
+  await page.evaluate((id) => csOpenSession(id), replayId);
+  await page.waitForFunction(() => !document.getElementById('cs-replay-bar').hidden, null, { timeout: 5000 });
+  world.mcpFails = true;
+  await page.click('#cs-resume-btn');
+  await page.waitForFunction(() => /can't be continued/.test(document.getElementById('cs-note').textContent), null, { timeout: 8000 });
+  check('A DATABASE THAT DOES NOT ANSWER: it stays read-only and says why — and the session is not continued',
+    /is not answering \(Login failed for user 'claude_api'\.\)\. It stays read-only here\./.test(await text('cs-note'))
+    && (await page.evaluate(() => !!CS.replay && document.getElementById('cs-input').disabled))
+    && resumes().length === 1 && resumes()[0].body.step === 'check' && world.mcp.pop().headers.authorization === 'Bearer cyb_abcdef0123456789ab.' + 'B'.repeat(43), await text('cs-note'));
+  world.mcpFails = false;
+  await page.waitForTimeout(3100);
+  await page.evaluate(() => { window.__sg = CygenixConnections.savedGetById; CygenixConnections.savedGetById = () => null; });
+  await page.click('#cs-resume-btn');
+  await page.waitForTimeout(300);
+  check('A DELETED CONNECTION: it stays read-only, says so, and asks the server nothing',
+    /its connection "Target DEV" has been deleted\. It stays read-only here\./.test(await text('cs-note')) && resumes().length === 1
+    && (await page.evaluate(() => !!CS.replay)), await text('cs-note'));
+  await page.evaluate(() => { CygenixConnections.savedGetById = window.__sg; });
+  await page.waitForTimeout(3100);
+  await page.click('#cs-resume-btn');
+  await page.waitForFunction(() => !CS.replay && document.getElementById('cs-replay-bar').hidden, null, { timeout: 8000 });
+  check('CONTINUED: checked first, then continued — two calls, for this session',
+    resumes().length === 3 && resumes()[1].body.step === 'check' && resumes()[2].body.step === 'go' && resumes().every((c) => c.body.sessionId === replayId));
+  check('…IT IS NOW THE ACTIVE SESSION: the box and Send work, the earlier conversation is still on screen, with the notice',
+    (await page.evaluate(() => !document.getElementById('cs-input').disabled && !document.getElementById('cs-send').disabled && CS.cur.id))=== replayId
+    && /List the tables and row counts/.test(await text('cs-chat')) && /Resumed — previous workspace files are no longer available\./.test(await text('cs-chat')));
+  check('…"ALLOW CHANGES" IS OFF, and the page says so', (await page.evaluate(() => !document.getElementById('cs-toggle').classList.contains('on') && CS.cur.dataChangesAllowed === false))
+    && /"Allow changes" is off/.test(await text('cs-note')), await text('cs-note'));
+  await page.waitForTimeout(3100);
+  world.nextEvents = [{ id: 'rz1', type: 'agent.message', content: [{ type: 'text', text: 'Earlier I listed the tables and counted their rows.' }] },
+    { id: 'rz2', type: 'session.status_idle', stop_reason: { type: 'end_turn' } }];
+  await page.fill('#cs-input', 'What did you check earlier?');
+  await page.click('#cs-send');
+  await page.waitForFunction(() => /Earlier I listed the tables/.test(document.getElementById('cs-chat').textContent), null, { timeout: 8000 });
+  const msg = calls('message').pop();
+  check('A NEW MESSAGE GOES TO THE SAME SESSION, and the answer appears under the old conversation',
+    msg.body.sessionId === replayId && msg.body.text === 'What did you check earlier?' && /List the tables and row counts/.test(await text('cs-chat')));
+  await page.waitForFunction(() => document.getElementById('cs-status').textContent === 'Idle', null, { timeout: 8000 });
 
   /* A failing route. */
   await page.evaluate(() => csReplayBack());

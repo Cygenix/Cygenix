@@ -15,6 +15,8 @@
      POST agent/claude-code/stop      interrupt it and close it
      GET  agent/claude-code/sessions  the caller's past sessions
      GET  agent/claude-code/session   one past session, for read-only replay
+     POST agent/claude-code/resume    continue a past session (step 'check',
+                                      then step 'go'; see CONTINUING below)
      POST agent/claude-code/upload    attach a file to the workspace (phase 2)
      GET  agent/claude-code/outputs   the files Claude wrote, and the uploads
      GET  agent/claude-code/download  one of those files, base64
@@ -113,6 +115,33 @@
      when the session opens — the person's choice, or that same default —
      pinned on the session, shown on the page, and the one the bridge reads.
 
+   CONTINUING A PAST SESSION (Oct-2026)
+   The Sessions list used to replay a past session read-only, and nothing
+   else: the page locked the message box, and the server had no way back in.
+   A stopped session is ARCHIVED at Anthropic — permanent and read-only — and
+   every session's database pass expires a day after it opens, so unlocking
+   the box alone would have sent messages Claude could not act on. Now:
+   - step 'check': the owner (loadSession finds nobody else's session), with
+     the Dev Console allowed (the gate), whose connection is still saved on
+     the server, gets a two-minute check pass for that connection; the page
+     takes it to the bridge and runs SELECT 1. A connection that is gone, or
+     does not answer, keeps the session read-only, and says why.
+   - step 'go': "Allow changes" is OFF again, whatever it was, and Claude is
+     told with the next message; the resume is on the organisation's trail
+     (claudecode.session.resume, and session.staging again for a staging
+     session); the session gets a fresh pass. Then EITHER the Anthropic
+     session is still idle and carries on — the pass is rotated in its own
+     vault and Claude remembers everything — OR it cannot take a message
+     (archived, ended, gone, or paused at its spend cap) and a NEW workspace
+     is opened under the SAME session record: the stored transcript is
+     rebuilt as context (claude-code-resume.js — the oldest turns condensed
+     if it is too long, and said), and the chat says "Resumed — previous
+     workspace files are no longer available."
+   The Cosmos document keeps its id for life, so the history list shows one
+   continuous session; the Anthropic session it currently talks to is
+   doc.remoteId (absent: the id itself), and every earlier one is kept in
+   doc.remoteIds so the files Claude wrote in them can still be downloaded.
+
    WHAT IS KEPT HERE
    Cosmos container claude_code_sessions, partitioned on /userId (the
    verified email, the house convention): one document per session, and the
@@ -131,6 +160,7 @@ const { userAnthropicKey } = require('./user-anthropic-key');
 const { verifyJwt } = require('./entra-auth');
 const connSecrets = require('./conn-secrets');
 const { conversionPlaybook } = require('./conversion-playbook');
+const resumeKit = require('./claude-code-resume');
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -598,6 +628,11 @@ function makeRedactor(secrets) {
 
 // ── Session documents ────────────────────────────────────────────────────
 const chunkId = (sessionId, n) => sessionId + ':' + String(n).padStart(4, '0');
+// The Anthropic session a document talks to now, and every one it has used.
+// A continued session may have moved to a new workspace (see CONTINUING).
+const remoteOf = (doc) => doc.remoteId || doc.id;
+const remotesOf = (doc) => [doc.id].concat(Array.isArray(doc.remoteIds) ? doc.remoteIds : [], doc.remoteId ? [doc.remoteId] : [])
+  .filter((v, i, a) => v && a.indexOf(v) === i);
 async function loadSession(container, who, sessionId) {
   if (!SESSION_ID_RE.test(String(sessionId || ''))) return { error: bad(400, 'sessionId is missing or malformed.') };
   let doc = null;
@@ -619,6 +654,7 @@ function publicSession(doc) {
     reference: doc.ref ? { connectionName: doc.ref.connectionName, side: doc.ref.side, dbName: doc.ref.dbName || '', dbHost: doc.ref.dbHost || '' }
       : (doc.refError ? { error: doc.refError } : null),
     templateRef: doc.templateRef || null, rulesCount: doc.rulesCount || null,
+    resumedAt: doc.resumedAt || null, resumeCount: doc.resumeCount || 0,
     uploads: (doc.uploads || []).map(u => ({ fileId: u.fileId, name: u.name, path: u.path, size: u.size, at: u.at })),
   };
 }
@@ -878,9 +914,9 @@ async function sessionStart(who, apiKey, body, ctx) {
   // Anthropic presents it to the bridge and Claude never sees it.
   const pass = newBridgePass();
   const vault = await client.beta.vaults.create({ display_name: 'Cygenix Dev Console bridge', metadata: { cygenix: 'console', cyg_oid: who.oid } });
-  let session;
+  let session, cred;
   try {
-    await client.beta.vaults.credentials.create(vault.id, { display_name: 'Cygenix bridge',
+    cred = await client.beta.vaults.credentials.create(vault.id, { display_name: 'Cygenix bridge',
       auth: { type: 'static_bearer', token: pass.token, mcp_server_url: mcpUrl() } });
     session = await client.beta.sessions.create({
       agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
@@ -906,7 +942,7 @@ async function sessionStart(who, apiKey, body, ctx) {
     rulesCount: rules ? { wasis: rules.wasis.length, params: rules.params.length, truncated: rules.truncated } : null,
     createdAt: now, updatedAt: now, endedAt: null,
     agentId, environmentId, model: MODEL(),
-    vaultId: vault.id, bridgeLid: pass.lid, bridgeHash: pass.hash, bridgeExp: deps.now() + BRIDGE_TTL_MS,
+    vaultId: vault.id, credId: (cred && cred.id) || null, bridgeLid: pass.lid, bridgeHash: pass.hash, bridgeExp: deps.now() + BRIDGE_TTL_MS,
     cursorAt: null, cursorIds: [], chunkCount: 0, eventCount: 0, costCents: null, stopReason: null,
   };
   await container.items.upsert(doc);
@@ -928,6 +964,11 @@ async function sessionCheck(who, apiKey, body) {
   const g = await gate(who, 'use');
   if (!g.ok) return g.response;
   const container = await deps.container();
+  return ok(await issueCheckPass(container, who, g, r));
+}
+// A two-minute, read-only pass for one resolved connection: for "Check the
+// bridge", and for the reachability test before a session is continued.
+async function issueCheckPass(container, who, g, r) {
   const pass = newBridgePass();
   await container.items.upsert({
     id: 'chk_' + pass.lid, kind: 'bridgecheck', userId: who.email, oid: who.oid, tenantId: g.tenantId || '',
@@ -936,7 +977,7 @@ async function sessionCheck(who, apiKey, body) {
     bridgeLid: pass.lid, bridgeHash: pass.hash, bridgeExp: deps.now() + CHECK_TTL_MS,
     createdAt: new Date(deps.now()).toISOString(),
   });
-  return ok({ token: pass.token, mcpUrl: mcpUrl(), expiresInSeconds: CHECK_TTL_MS / 1000 });
+  return { token: pass.token, mcpUrl: mcpUrl(), expiresInSeconds: CHECK_TTL_MS / 1000, dbType: r.conn.dbType, connectionName: r.names.connectionName };
 }
 
 // Notes waiting for the next message: the mode first, then the files.
@@ -962,7 +1003,7 @@ async function sessionMessage(who, apiKey, body) {
   // the API (Oct-2026) refuses a system.message that does not immediately
   // follow a user message. They are cleared only once that send succeeds.
   const notes = heldNotes(doc);
-  await client.beta.sessions.events.send(doc.id, { events: [{ type: 'user.message', content: [{ type: 'text', text }] }]
+  await client.beta.sessions.events.send(remoteOf(doc), { events: [{ type: 'user.message', content: [{ type: 'text', text }] }]
     .concat(notes.map(t => ({ type: 'system.message', content: [{ type: 'text', text: t }] }))) });
   doc.modeNote = null; doc.notes = [];
   doc.status = 'running';
@@ -993,7 +1034,7 @@ async function sessionEvents(who, apiKey, sessionId) {
   const client = deps.makeClient(apiKey);
 
   let remote;
-  try { remote = await client.beta.sessions.retrieve(doc.id); }
+  try { remote = await client.beta.sessions.retrieve(remoteOf(doc)); }
   catch (e) { if (e && e.status === 404) return bad(404, 'Anthropic no longer has this session.'); throw e; }
 
   // The secret again, only to know what to blank out. Its absence is not an
@@ -1014,7 +1055,7 @@ async function sessionEvents(who, apiKey, sessionId) {
   if (doc.cursorAt) params['created_at[gte]'] = doc.cursorAt;
   const fresh = [];
   const seenAtCursor = new Set(doc.cursorIds || []);
-  for await (const ev of client.beta.sessions.events.list(doc.id, params)) {
+  for await (const ev of client.beta.sessions.events.list(remoteOf(doc), params)) {
     if (!ev || !ev.processed_at) continue;          // still queued; it comes round again
     if (doc.cursorAt && ev.processed_at === doc.cursorAt && seenAtCursor.has(ev.id)) continue;
     fresh.push(redact.event(ev));
@@ -1030,7 +1071,7 @@ async function sessionEvents(who, apiKey, sessionId) {
   const idle = fresh.filter(e => e.type === 'session.status_idle').pop();
   if (idle && idle.stop_reason) doc.stopReason = idle.stop_reason.type || null;
   const cost = remote.usage && remote.usage.list_cost;
-  if (cost && cost.amount != null) doc.costCents = Number(cost.amount);
+  if (cost && cost.amount != null) doc.costCents = Number(cost.amount) + (Number(doc.costPrior) || 0);
   const owed = turnStillOwed(doc, fresh, deps.now());
   let status = ourStatus(remote.status, doc);
   if (status === 'idle' && owed) status = 'running';
@@ -1086,8 +1127,8 @@ async function sessionStop(who, apiKey, body) {
   const client = deps.makeClient(apiKey);
   // Interrupt, then archive: nothing more can run and nothing more can be
   // sent. Either may already have happened on Anthropic's side.
-  try { await client.beta.sessions.events.send(doc.id, { events: [{ type: 'user.interrupt' }] }); } catch (e) { /* already over */ }
-  try { await client.beta.sessions.archive(doc.id); } catch (e) { /* already archived or gone */ }
+  try { await client.beta.sessions.events.send(remoteOf(doc), { events: [{ type: 'user.interrupt' }] }); } catch (e) { /* already over */ }
+  try { await client.beta.sessions.archive(remoteOf(doc)); } catch (e) { /* already archived or gone */ }
   await revokeBridge(client, doc);
   await deleteUploads(client, doc);
   doc.status = 'stopped';
@@ -1095,6 +1136,182 @@ async function sessionStop(who, apiKey, body) {
   doc.updatedAt = doc.endedAt;
   await container.items.upsert(doc);
   return ok({ ok: true, status: 'stopped' });
+}
+
+
+// ── resume: continue a past session ──────────────────────────────────────
+// See CONTINUING A PAST SESSION in the header.
+const RESUME_LOCK_MS = 60 * 1000;
+const RESUMED_NEW = 'Resumed — previous workspace files are no longer available.';
+const RESUMED_SAME = 'Resumed — continuing in the same workspace, with its files.';
+const RESUME_WHY = {
+  stopped: 'The earlier workspace was closed when the session was stopped, so this one is new.',
+  ended: 'The earlier workspace had ended, so this one is new.',
+  gone: 'Anthropic no longer has the earlier workspace, so this one is new.',
+  budget: 'The earlier workspace had reached its spend cap, so this one is new, with a cap of its own.',
+};
+// The connection a stored session was opened on, from the session's OWN
+// record — nothing the page sends can point a continued session elsewhere.
+function connBodyOf(doc) {
+  return { connId: doc.connectionId, side: doc.side, mode: doc.connMode === 'azure' ? 'azure' : 'direct', fnUrl: doc.fnUrl || '',
+    profileId: doc.profileId, profileName: doc.profileName, connectionName: doc.connectionName };
+}
+function cannotContinue(res) {
+  let e = {}; try { e = JSON.parse(res.body || '{}'); } catch (x) { /* keep {} */ }
+  return bad(res.status, 'This session can\'t be continued: ' + (e.error || 'its connection could not be used.') + ' It stays read-only.');
+}
+// A new pass, into the session's own vault: the credential is updated in
+// place (its id is kept from when the session opened; older sessions find
+// it by listing the vault).
+async function rotatePass(client, doc, pass) {
+  let credId = doc.credId || null;
+  if (!credId) {
+    for await (const c of client.beta.vaults.credentials.list(doc.vaultId)) { if (c && c.id && !c.archived_at) { credId = c.id; break; } }
+  }
+  if (credId) {
+    await client.beta.vaults.credentials.update(credId, { vault_id: doc.vaultId, auth: { type: 'static_bearer', token: pass.token } });
+  } else {
+    credId = (await client.beta.vaults.credentials.create(doc.vaultId, { display_name: 'Cygenix bridge',
+      auth: { type: 'static_bearer', token: pass.token, mcp_server_url: mcpUrl() } })).id;
+  }
+  doc.credId = credId;
+}
+// A new workspace for an old session: the old one closed for good, the
+// transcript rebuilt as context. Returns the context stats.
+async function openFreshWorkspace(client, apiKey, container, doc, remote, pass) {
+  if (remote && !remote.archived_at && remote.status !== 'terminated') {
+    try { await client.beta.sessions.archive(remoteOf(doc)); } catch (e) { /* already closed */ }
+  }
+  await revokeBridge(client, doc);
+  await deleteUploads(client, doc);
+  const tag = keyTag(apiKey);
+  const agentId = await ensureAgent(client, tag);
+  const environmentId = await ensureEnvironment(client, tag, 'limited', SESSION_HOSTS);
+  let rules = null;
+  if (doc.rulesCount) {
+    try { rules = (await container.item(rulesId(doc.id), doc.userId).read()).resource || null; }
+    catch (e) { if (!e || e.code !== 404) throw e; }
+  }
+  const base = systemPrompt({ dbType: doc.dbType, mode: 'readonly', stagingSchema: doc.stagingSchema || '', reference: doc.ref || null,
+    rules: rules && Array.isArray(rules.wasis) ? rules : null, template: doc.templateRef || null });
+  const tail = 'THIS WORKSPACE IS NEW. The session was continued after a break in a fresh workspace: files you wrote or the user '
+    + 'attached earlier are not on disk any more (the user can still download what you saved to /mnt/session/outputs). '
+    + (doc.stagingSchema ? '' : 'Data-change mode is read-only now, whatever it was before; the user switches it on again if they need it. ');
+  const rc = resumeKit.resumeContext(await readAllEvents(container, doc), { budget: resumeKit.SYSTEM_MAX - base.length - tail.length - 10 });
+  const vault = await client.beta.vaults.create({ display_name: 'Cygenix Dev Console bridge', metadata: { cygenix: 'console', cyg_oid: doc.oid } });
+  let session, cred;
+  try {
+    cred = await client.beta.vaults.credentials.create(vault.id, { display_name: 'Cygenix bridge',
+      auth: { type: 'static_bearer', token: pass.token, mcp_server_url: mcpUrl() } });
+    session = await client.beta.sessions.create({
+      agent: { type: 'agent_with_overrides', id: agentId, model: { id: MODEL(), effort: 'medium' },
+               system: base + '\n\n' + tail + (rc.text ? '\n\n' + rc.text : '') },
+      environment_id: environmentId,
+      title: 'Cygenix Dev Console — ' + doc.connectionName + (doc.stagingSchema ? ' (staging ' + doc.stagingSchema + ')' : '') + ' (continued)',
+      metadata: { cygenix: 'console', cyg_oid: doc.oid, cyg_session: doc.id },
+      budget: budget(),
+      vault_ids: [vault.id],
+    });
+  } catch (e) {
+    try { await client.beta.vaults.delete(vault.id); } catch (e2) { /* best effort */ }
+    throw e;
+  }
+  doc.remoteIds = remotesOf(doc);
+  doc.remoteId = session.id;
+  doc.agentId = agentId; doc.environmentId = environmentId; doc.model = MODEL();
+  doc.vaultId = vault.id; doc.credId = (cred && cred.id) || null;
+  doc.cursorAt = null; doc.cursorIds = [];
+  doc.uploads = []; doc.notes = []; doc.modeNote = null;
+  // The spend so far stays on the record: the new workspace's cost is added
+  // to it (sessionEvents), not shown instead of it.
+  doc.costPrior = (Number(doc.costPrior) || 0) + (Number(doc.costCents) || 0);
+  return rc.stats;
+}
+async function sessionResume(who, apiKey, body, ctx) {
+  const step = body.step === 'go' ? 'go' : 'check';
+  const container = await deps.container();
+  // Only the owner: anybody else's session is not found, as for replay.
+  const s = await loadSession(container, who, body.sessionId);
+  if (s.error) return s.error;
+  const doc = s.doc;
+  // The connection must still be saved on the server — checked again on
+  // 'go', so a page that skipped 'check' gains nothing.
+  const r = await resolveConnection(who, connBodyOf(doc));
+  if (r.error) return cannotContinue(r.error);
+
+  if (step === 'check') {
+    const g = await gate(who, 'use');
+    if (!g.ok) return g.response;
+    return ok(await issueCheckPass(container, who, g, r));
+  }
+
+  if (doc.resumingAt && deps.now() - Number(doc.resumingAt) < RESUME_LOCK_MS) {
+    return bad(409, 'This session is already being continued. Wait a moment, then open it again from Sessions.');
+  }
+  const client = deps.makeClient(apiKey);
+  // Can the Anthropic session take another message? Asking costs nothing.
+  let remote = null, why = '';
+  if (doc.status === 'stopped') why = 'stopped';
+  else if (doc.status === 'error') why = 'ended';
+  else {
+    try { remote = await client.beta.sessions.retrieve(remoteOf(doc)); }
+    catch (e) { if (!e || e.status !== 404) throw e; why = 'gone'; }
+    if (remote && (remote.status === 'terminated' || remote.archived_at)) why = 'ended';
+    else if (remote && doc.stopReason === 'budget_reached') why = 'budget';
+    else if (remote && !doc.vaultId) why = 'gone';
+  }
+
+  // Who may: as for a new session. A staging session lets Claude change
+  // tables in its schema again, so it asks for the changes act and is on
+  // the trail at high severity, as when it opened.
+  const detail = { sessionId: doc.id, profile: doc.profileName, connection: doc.connectionName, host: doc.dbHost, workspace: why ? 'new' : 'same' };
+  if (doc.stagingSchema) {
+    const gs = await gate(who, 'changes', { record: 'session.staging', detail: Object.assign({ schema: doc.stagingSchema, resumed: true }, detail) });
+    if (!gs.ok) return gs.response;
+  }
+  const g = await gate(who, 'use', { record: 'session.resume', detail });
+  if (!g.ok) return g.response;
+
+  doc.resumingAt = deps.now();
+  await container.items.upsert(doc);
+  try {
+    const pass = newBridgePass();
+    let stats = null;
+    if (!why) {
+      try { await rotatePass(client, doc, pass); }
+      catch (e) { if (!e || e.status !== 404) throw e; why = 'gone'; }
+    }
+    if (why) stats = await openFreshWorkspace(client, apiKey, container, doc, remote, pass);
+    doc.bridgeLid = pass.lid; doc.bridgeHash = pass.hash; doc.bridgeExp = deps.now() + BRIDGE_TTL_MS;
+    // "Allow changes" is OFF again, whatever it was. In the same workspace
+    // Claude is told with the next message (heldNotes); a new workspace's
+    // instructions already say read-only.
+    doc.dataChangesAllowed = false;
+    if (!why) {
+      if (!doc.stagingSchema) doc.modeNote = MODE_TEXT.readonly;
+      doc.notes = (Array.isArray(doc.notes) ? doc.notes : []).concat(['The user has continued this session after a break (last activity '
+        + (doc.updatedAt || 'unknown') + '). Anything you were in the middle of has stopped; carry on from the next message.']);
+    }
+    doc.status = 'idle'; doc.endedAt = null; doc.stopReason = null; doc.pendingTurn = null;
+    const at = new Date(deps.now()).toISOString();
+    doc.resumedAt = at; doc.resumeCount = (doc.resumeCount || 0) + 1;
+    // What the person sees in the chat, kept in the transcript like any
+    // event, and marked so a later rebuild does not replay it to Claude.
+    const say = (n, text) => ({ id: 'cyg_resume_' + deps.now() + '_' + n, type: 'system.message', cygenix: 'resume', processed_at: at, content: [{ type: 'text', text }] });
+    const notices = [say(1, why ? RESUMED_NEW : RESUMED_SAME)];
+    if (why) notices.push(say(2, [RESUME_WHY[why], resumeKit.contextNotice(stats)].filter(Boolean).join(' ')));
+    await appendEvents(container, doc, notices);
+    doc.resumingAt = null;
+    doc.updatedAt = at;
+    await container.items.upsert(doc);
+    ctx.log('[claude-code] session resumed ' + doc.id + ' workspace=' + (why ? 'new reason=' + why : 'same')
+      + (stats ? ' turns=' + stats.turns + ' verbatim=' + stats.verbatim + ' condensed=' + stats.condensed + ' omitted=' + stats.omitted : ''));
+    return ok({ session: publicSession(doc), events: notices, workspace: why ? 'new' : 'same', reason: why || null, context: stats });
+  } catch (e) {
+    doc.resumingAt = null;
+    try { await container.items.upsert(doc); } catch (e2) { /* the lock lapses by itself */ }
+    throw e;
+  }
 }
 
 // ── upload ───────────────────────────────────────────────────────────────
@@ -1137,7 +1354,7 @@ async function sessionUpload(who, apiKey, body) {
   const file = await client.beta.files.upload({ file: await deps.toFile(buf, name), expires_in_seconds: UPLOAD_TTL_S });
   const mountPath = uniquePath(doc, name);
   try {
-    await client.beta.sessions.resources.add(doc.id, { type: 'file', file_id: file.id, mount_path: mountPath });
+    await client.beta.sessions.resources.add(remoteOf(doc), { type: 'file', file_id: file.id, mount_path: mountPath });
   } catch (e) {
     await deleteFile(client, file.id);
     throw e;
@@ -1153,11 +1370,16 @@ async function sessionUpload(who, apiKey, body) {
 }
 
 // ── outputs, download ────────────────────────────────────────────────────
-async function listOutputs(client, sessionId) {
+// A continued session may have written files in more than one workspace;
+// all of them are its outputs. The current workspace's are listed first.
+async function listOutputs(client, doc) {
   const out = [];
-  for await (const f of client.beta.files.list({ scope_id: sessionId, betas: ['managed-agents-2026-04-01'] })) {
-    out.push({ id: f.id, name: f.filename, size: f.size_bytes, at: f.created_at });
-    if (out.length >= OUTPUTS_CAP) break;
+  const ids = remotesOf(doc).reverse();
+  for (const sid of ids) {
+    for await (const f of client.beta.files.list({ scope_id: sid, betas: ['managed-agents-2026-04-01'] })) {
+      out.push({ id: f.id, name: f.filename, size: f.size_bytes, at: f.created_at });
+      if (out.length >= OUTPUTS_CAP) return out;
+    }
   }
   return out;
 }
@@ -1168,7 +1390,7 @@ async function sessionOutputs(who, apiKey, sessionId) {
   const g = await gate(who, 'use');
   if (!g.ok) return g.response;
   const client = deps.makeClient(apiKey);
-  return ok({ outputs: await listOutputs(client, s.doc.id), uploads: publicSession(s.doc).uploads });
+  return ok({ outputs: await listOutputs(client, s.doc), uploads: publicSession(s.doc).uploads });
 }
 async function sessionDownload(who, apiKey, sessionId, fileId) {
   if (!FILE_ID_RE.test(String(fileId || ''))) return bad(400, 'fileId is missing or malformed.');
@@ -1180,7 +1402,7 @@ async function sessionDownload(who, apiKey, sessionId, fileId) {
   const client = deps.makeClient(apiKey);
   // Only a file that belongs to THIS session — one Claude wrote for it, or
   // one the person attached to it — ever comes back through here.
-  const outputs = await listOutputs(client, s.doc.id);
+  const outputs = await listOutputs(client, s.doc);
   const own = outputs.find(f => f.id === fileId) || (s.doc.uploads || []).filter(u => u.fileId === fileId).map(u => ({ id: u.fileId, name: u.name, size: u.size }))[0];
   if (!own) return bad(404, 'No such file in this session.');
   if (own.size != null && own.size > DOWNLOAD_MAX) return bad(413, '"' + own.name + '" is ' + (own.size / 1048576).toFixed(1) + ' MB; files up to 8 MB can be downloaded here.');
@@ -1379,6 +1601,7 @@ const ACTIONS = {
   events:   { GET: (who, key, req) => sessionEvents(who, key, req.query.get('sessionId')) },
   mode:     { POST: (who, key, req, body) => sessionMode(who, key, body) },
   stop:     { POST: (who, key, req, body) => sessionStop(who, key, body) },
+  resume:   { POST: (who, key, req, body, ctx) => sessionResume(who, key, body, ctx) },
   sessions: { GET: (who) => sessionList(who) },
   upload:   { POST: (who, key, req, body) => sessionUpload(who, key, body) },
   outputs:  { GET: (who, key, req) => sessionOutputs(who, key, req.query.get('sessionId')) },
@@ -1433,7 +1656,7 @@ module.exports = {
   deps, handler, identify, gate, siteUrl, budget, agentSpec, ensureAgent, ensureEnvironment,
   environmentName, environmentConfig, parseConn, systemPrompt, MODE_TEXT, makeRedactor,
   ourStatus, turnStillOwed, PENDING_TURN_MS, heldNotes, publicSession, chunkId,
-  sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet,
+  sessionStart, sessionMessage, sessionEvents, sessionMode, sessionStop, sessionList, sessionGet, sessionResume, remoteOf, remotesOf, RESUMED_NEW, RESUMED_SAME,
   sessionUpload, sessionOutputs, sessionDownload, safeName, uniquePath, decodeBase64, UPLOAD_DIR, UPLOAD_MAX, DOWNLOAD_MAX,
   sessionCheck, bridgeRedeem, bridgeHandler, newBridgePass, splitPass, sha256, mcpUrl, specTag, resolveConnection,
   bridgeTemplate, pickTemplate, stagingSchemaProblem, conversionPlaybook, bridgeRules, cleanRules, RULES_MAX, redeemReference, listProjectTemplates,

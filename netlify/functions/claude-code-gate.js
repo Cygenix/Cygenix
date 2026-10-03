@@ -30,8 +30,14 @@
 //                  mutating act, which the Auditor's R grant refuses
 //   record         optional: the name of the event this call IS, to be
 //                  written to the trail on a yes — 'probe', 'session.start',
-//                  'session.stop' (with act 'use') or 'session.changes-on'
-//                  (with act 'changes'). Filed as claudecode.<name>.
+//                  'session.stop', 'session.resume' (with act 'use') or
+//                  'session.changes-on', 'session.staging' (with act
+//                  'changes'). Filed as claudecode.<name>. A past session
+//                  continued from the Sessions list (Oct-2026) is
+//                  session.resume, naming whether it carried on in the same
+//                  workspace or a new one; "Allow changes" is off again
+//                  after it, so switching it back on is a session.changes-on
+//                  of its own.
 //
 // 200 { allowed: true, roles, tenantId }        — go ahead
 // 403 { error, reason }                         — no, with a sentence a user
@@ -51,7 +57,7 @@ const reply = (statusCode, data) => ({ statusCode, headers: HEADERS, body: JSON.
 
 const ACTS = {
   probe:   { action: 'claudecode.configure', mutating: true,  policy: false, records: ['probe'] },
-  use:     { action: 'claudecode.use',       mutating: false, policy: true,  records: ['session.start', 'session.stop'] },
+  use:     { action: 'claudecode.use',       mutating: false, policy: true,  records: ['session.start', 'session.stop', 'session.resume'] },
   changes: { action: 'claudecode.use',       mutating: true,  policy: true,  records: ['session.changes-on', 'session.staging'] },
 };
 // Handing a database login to an agent is worth a notice; telling the agent
@@ -63,7 +69,9 @@ const RECORD_SEVERITY = { 'session.changes-on': 'high', 'session.staging': 'high
 
 // Only these keys of a caller's detail reach the audit trail, and only as
 // short strings — the gate is asked by a server, but it is still input.
-const DETAIL_KEYS = ['host', 'port', 'network', 'sessionId', 'profile', 'connection', 'schema'];
+// 'workspace' and 'resumed' (Oct-2026) say how a past session was continued:
+// in the same workspace or a new one, and that a staging grant is a resume.
+const DETAIL_KEYS = ['host', 'port', 'network', 'sessionId', 'profile', 'connection', 'schema', 'workspace', 'resumed'];
 function cleanDetail(d) {
   const out = {};
   if (!d || typeof d !== 'object') return out;

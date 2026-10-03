@@ -117,6 +117,8 @@ function fakeClient(opts) {
         delete: async (id) => { calls.push(['vaults.delete', id]); return {}; },
         credentials: {
           create: async (id, p) => { calls.push(['vaults.credentials.create', id, p]); return { id: 'vcrd_' + nv }; },
+          update: async (id, p) => { calls.push(['vaults.credentials.update', id, p]); if (o.vaultGone) { const e = new Error('nf'); e.status = 404; throw e; } return { id }; },
+          list: (vid) => { calls.push(['vaults.credentials.list', vid]); return pages(o.vaultGone ? [] : [{ id: 'vcrd_listed' }]); },
         },
       },
       files: {
@@ -1261,7 +1263,8 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
     const chk = page.split('function csCheck')[1].split('/* ── Sessions')[0];
     check('CHECK THE BRIDGE: a button; a pass from the Azure side; SELECT 1 through the bridge with that pass — never the Entra token',
       /id="cs-check" onclick="csCheck\(\)"/.test(page) && /call\('POST', '\/agent\/claude-code\/check', connBody\(\)\)/.test(chk)
-      && /fetch\(MCP_PATH, \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json', Authorization: 'Bearer ' \+ p\.token \}/.test(chk)
+      && /bridgeProbe\(p\.token,/.test(chk)
+      && /fetch\(MCP_PATH, \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json', Authorization: 'Bearer ' \+ token \}/.test(chk)
       && /SELECT DB_NAME\(\) AS db/.test(chk) && /SELECT current_database\(\) AS db/.test(chk) && /is database ' \+/.test(chk) && /MCP_PATH = '\/\.netlify\/functions\/cc-mcp'/.test(page) && !/getCygenixIdToken/.test(chk));
     check('phase 2: attach and download go through the same guard, and a file over 4 MB is refused before it is read',
       /guarded\('Attach'/.test(page) && /guarded\('Download'/.test(page) && /if \(f\.size > UPLOAD_MAX\)/.test(page) && /UPLOAD_MAX = 4 \* 1024 \* 1024/.test(page));
@@ -1435,6 +1438,224 @@ const CONNSTR = 'Server=tcp:acme.database.windows.net,1433;Database=Fin;User ID=
       && /if \(ev\.origin !== window\.location\.origin\) return;/.test(page) && /GEN_TIMEOUT_MS = 90000/.test(page));
     check('…recorded on the audit trail under an action the browser may record', /action: 'template\.map-send', category: 'mapping'/.test(page)
       && /'template\.map-send':\s*'mapping'/.test(read('netlify', 'functions', 'lib', 'audit-schema.js')));
+  }
+
+  section('12. Continuing a past session: the checks, the same workspace or a new one, Allow changes off, one record');
+  {
+    CC._reset(); FETCHED = []; logs.length = 0;
+    GATE_REPLY = { status: 200, body: { allowed: true, tenantId: 'tn_1' } };
+    CLIENT = fakeClient(); DB = fakeContainer();
+    SECRETS.sconn_tgt1 = { connString: CONNSTR };
+    const R = require(path.join(ROOT, 'azure-function', 'src', 'claude-code-resume.js'));
+    const gates = () => FETCHED.filter(f => /claude-code-gate/.test(f.url)).map(f => JSON.parse(f.init.body));
+    const ev = (id, type, extra, t) => Object.assign({ id, type, processed_at: '2026-10-01T10:00:' + String(t).padStart(2, '0') + 'Z' }, extra);
+    const txt = (s) => [{ type: 'text', text: s }];
+
+    // A session with a conversation in it, and changes allowed.
+    let r = await call('POST', 'session', { body: { side: 'tgt', connId: 'sconn_tgt1', connectionName: 'Target DEV', profileId: 'DEMO', profileName: 'Demo' } });
+    const sid = r.body.session.id;
+    await call('POST', 'message', { body: { sessionId: sid, text: 'How many open invoices are there?' } });
+    CLIENT._o.events[sid] = [
+      ev('e1', 'user.message', { content: txt('How many open invoices are there?') }, 1),
+      ev('e2', 'agent.mcp_tool_use', { name: 'run_query', input: { sql: 'SELECT COUNT(*) AS n FROM dbo.Invoice WHERE Status = \'O\'' } }, 2),
+      ev('e3', 'agent.mcp_tool_result', { mcp_tool_use_id: 'e2', content: txt(JSON.stringify({ columns: ['n'], rows: [[4127]] })) }, 3),
+      ev('e4', 'agent.message', { content: txt('There are 4,127 open invoices. I propose archiving the ones older than 2019.') }, 4),
+      ev('e5', 'session.status_idle', { stop_reason: { type: 'end_turn' } }, 5),
+    ];
+    await call('GET', 'events', { query: { sessionId: sid } });
+    await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: true } });
+    const firstTok = CLIENT.calls.find(c => c[0] === 'vaults.credentials.create')[2].auth.token;
+    check('(set-up) a session with a conversation, changes allowed', DB._items.get(sid).dataChangesAllowed === true && DB._items.get(sid).eventCount === 5);
+
+    // Step 1: check.
+    FETCHED = []; let n0 = CLIENT.calls.length;
+    r = await call('POST', 'resume', { body: { sessionId: sid, step: 'check' } });
+    check('CHECK: the owner gets a two-minute check pass for THE SESSION\'S OWN connection, to try through the bridge',
+      r.status === 200 && /^cyb_/.test(r.body.token) && r.body.mcpUrl === CC.mcpUrl() && r.body.dbType === 'sqlserver' && r.body.expiresInSeconds === 120, r.raw);
+    let red = JSON.parse((await CC.bridgeRedeem({ token: r.body.token })).body);
+    check('…which redeems READ-ONLY to that connection', red.ok && red.kind === 'bridgecheck' && red.connectionId === 'sconn_tgt1' && red.readOnly === true, JSON.stringify(red).slice(0, 200));
+    check('…asks the gate for use, records nothing, and spends nothing with Anthropic',
+      gates().every(g => g.act === 'use' && !g.record) && CLIENT.calls.length === n0);
+
+    // Somebody else, and a deleted connection: read-only, said.
+    CC.deps.verify = async () => ({ oid: 'oid-other', email: 'other@acme.test' });
+    r = await call('POST', 'resume', { body: { sessionId: sid, step: 'go' } });
+    check('SOMEBODY ELSE CANNOT CONTINUE IT: not found, as for replay', r.status === 404 && /No such session/.test(r.body.error), r.raw);
+    CC.deps.verify = async () => ({ oid: 'oid-me', email: 'Me@Acme.test' });
+    const kept = SECRETS.sconn_tgt1; delete SECRETS.sconn_tgt1;
+    FETCHED = []; n0 = CLIENT.calls.length;
+    r = await call('POST', 'resume', { body: { sessionId: sid, step: 'check' } });
+    const r2 = await call('POST', 'resume', { body: { sessionId: sid, step: 'go' } });
+    check('A CONNECTION THAT IS GONE: both steps refuse, in words, and say it stays read-only',
+      r.status === 409 && r2.status === 409 && /can't be continued/.test(r.body.error) && /Target DEV/.test(r.body.error) && /stays read-only/.test(r2.body.error), r.raw);
+    check('…before the gate or Anthropic is asked', FETCHED.length === 0 && CLIENT.calls.length === n0 && DB._items.get(sid).dataChangesAllowed === true);
+    SECRETS.sconn_tgt1 = kept;
+
+    // Step 2, while the Anthropic session is still idle: the same workspace.
+    FETCHED = []; n0 = CLIENT.calls.length;
+    r = await call('POST', 'resume', { body: { sessionId: sid, step: 'go' } });
+    const doc1 = DB._items.get(sid);
+    check('GO, STILL IDLE AT ANTHROPIC: it carries on in the SAME workspace, under the same id',
+      r.status === 200 && r.body.workspace === 'same' && r.body.session.id === sid && !doc1.remoteId && r.body.session.status === 'idle', r.raw);
+    check('"ALLOW CHANGES" IS OFF AGAIN, and Claude is told with the next message',
+      r.body.session.dataChangesAllowed === false && doc1.dataChangesAllowed === false && doc1.modeNote === CC.MODE_TEXT.readonly
+      && doc1.notes.some(t => /continued this session after a break/.test(t)));
+    const upd = CLIENT.calls.slice(n0).find(c => c[0] === 'vaults.credentials.update');
+    check('A FRESH PASS, rotated in the session\'s own vault', !!upd && upd[1] === 'vcrd_1' && upd[2].vault_id === 'vlt_1' && upd[2].auth.type === 'static_bearer'
+      && /^cyb_/.test(upd[2].auth.token) && upd[2].auth.token !== firstTok && doc1.bridgeExp > Date.now() + 23 * 3600e3, JSON.stringify(upd));
+    check('…the old pass no longer redeems, the new one does — read-only', (await CC.bridgeRedeem({ token: firstTok })).status === 401
+      && JSON.parse((await CC.bridgeRedeem({ token: upd[2].auth.token })).body).readOnly === true);
+    check('…no new Anthropic session', !CLIENT.calls.slice(n0).some(c => c[0] === 'sessions.create'));
+    check('THE RESUME IS ON THE TRAIL, naming the workspace', gates().some(g => g.act === 'use' && g.record === 'session.resume' && g.detail.sessionId === sid && g.detail.workspace === 'same'), JSON.stringify(gates()));
+    check('the chat says so, and the notice is kept in the transcript', r.body.events.length === 1 && r.body.events[0].content[0].text === CC.RESUMED_SAME && doc1.eventCount === 6);
+    r = await call('POST', 'message', { body: { sessionId: sid, text: 'What did you check earlier?' } });
+    const sent = CLIENT.calls.filter(c => c[0] === 'events.send').pop();
+    check('A NEW MESSAGE GOES TO THE SAME SESSION, with the read-only note after it',
+      r.status === 200 && sent[1] === sid && sent[2].events[0].text === undefined && sent[2].events[0].content[0].text === 'What did you check earlier?'
+      && sent[2].events.some(e => e.type === 'system.message' && /READ-ONLY/.test(e.content[0].text)), JSON.stringify(sent));
+    r = await call('POST', 'mode', { body: { sessionId: sid, dataChangesAllowed: true } });
+    check('switching changes back on is its own audited act', r.status === 200 && gates().some(g => g.act === 'changes' && g.record === 'session.changes-on'));
+
+    // Stopped: a new workspace, the conversation as context.
+    await call('POST', 'stop', { body: { sessionId: sid } });
+    CLIENT._o.events[sid].push(ev('e6', 'user.message', { content: txt('What did you check earlier?') }, 10),
+      ev('e7', 'agent.message', { content: txt('I counted open invoices: 4,127.') }, 11));
+    FETCHED = []; n0 = CLIENT.calls.length;
+    r = await call('POST', 'resume', { body: { sessionId: sid, step: 'go' } });
+    const doc2 = DB._items.get(sid);
+    const sc = CLIENT.calls.slice(n0).find(c => c[0] === 'sessions.create');
+    check('GO, STOPPED: a NEW workspace, because Anthropic archives a stopped session for good',
+      r.status === 200 && r.body.workspace === 'new' && r.body.reason === 'stopped' && !!sc && doc2.remoteId && doc2.remoteId !== sid, r.raw);
+    check('…UNDER THE SAME SESSION RECORD: same id, idle again, the old workspace remembered for its files',
+      r.body.session.id === sid && doc2.status === 'idle' && doc2.endedAt === null && doc2.remoteIds.indexOf(sid) !== -1 && doc2.cursorAt === null);
+    const sys = sc[1].agent.system;
+    check('CLAUDE IS GIVEN THE CONVERSATION: what was asked, the query it ran, what came back, what it proposed',
+      /THE CONVERSATION SO FAR/.test(sys) && /USER: How many open invoices are there\?/.test(sys)
+      && /CLAUDE CALLED run_query: SELECT COUNT\(\*\) AS n FROM dbo\.Invoice/.test(sys) && /IT RETURNED: .*4127/.test(sys)
+      && /I propose archiving the ones older than 2019/.test(sys), sys.slice(-1500));
+    check('…told the workspace is new, and that it is read-only again', /THIS WORKSPACE IS NEW/.test(sys) && /Data-change mode is read-only now/.test(sys) && /READ-ONLY/.test(sys));
+    check('…and none of Cygenix\'s own notices are replayed to it as if it had said them', sys.indexOf(CC.RESUMED_SAME) === -1);
+    check('…no secret in what Claude is given', sys.indexOf(PASSWORD) === -1 && sys.indexOf('acme.database') === -1 && !/cyb_/.test(sys));
+    check('…with its own vault, pass and spend cap, stamped with the session it continues',
+      sc[1].vault_ids.length === 1 && sc[1].vault_ids[0] === doc2.vaultId && sc[1].budget.max_list_cost.amount === '600' && sc[1].metadata.cyg_session === sid);
+    check('the chat says EXACTLY "Resumed — previous workspace files are no longer available.", and why',
+      r.body.events[0].content[0].text === 'Resumed — previous workspace files are no longer available.'
+      && /closed when the session was stopped/.test(r.body.events[1].content[0].text) && /whole earlier conversation/.test(r.body.events[1].content[0].text), JSON.stringify(r.body.events));
+    check('the trail says it moved', gates().some(g => g.record === 'session.resume' && g.detail.workspace === 'new'));
+    r = await call('POST', 'message', { body: { sessionId: sid, text: 'Carry on.' } });
+    check('NEW MESSAGES GO TO THE NEW WORKSPACE, under the same record', CLIENT.calls.filter(c => c[0] === 'events.send').pop()[1] === doc2.remoteId);
+    CLIENT._o.events[doc2.remoteId] = [ev('n1', 'agent.message', { content: txt('Carrying on.') }, 30)];
+    r = await call('GET', 'events', { query: { sessionId: sid } });
+    check('…the poll reads the new workspace and appends to the same transcript',
+      r.status === 200 && r.body.events.length === 1 && CLIENT.calls.filter(c => c[0] === 'events.list').pop()[1] === doc2.remoteId);
+    r = await call('GET', 'session', { query: { id: sid } });
+    check('THE HISTORY IS ONE CONTINUOUS SESSION: old turns, the notices, the new turn',
+      r.body.events.some(e => e.id === 'e1') && r.body.events.some(e => e.cygenix === 'resume') && r.body.events.some(e => e.id === 'n1'));
+    r = await call('GET', 'sessions');
+    check('…and one entry in the list', r.body.sessions.filter(x => x.id === sid).length === 1 && r.body.sessions.length === 1 && r.body.sessions[0].resumeCount === 2);
+    CLIENT._o.outputs = { [sid]: [{ id: 'file_old', filename: 'old.csv', size_bytes: 3 }], [doc2.remoteId]: [{ id: 'file_new', filename: 'new.csv', size_bytes: 3 }] };
+    r = await call('GET', 'outputs', { query: { sessionId: sid } });
+    check('the files Claude wrote in EITHER workspace can still be downloaded', r.body.outputs.map(o => o.id).sort().join() === 'file_new,file_old', r.raw);
+
+    // A lock against two continues at once.
+    const d3 = DB._items.get(sid); d3.resumingAt = Date.now(); DB._items.set(sid, d3);
+    r = await call('POST', 'resume', { body: { sessionId: sid, step: 'go' } });
+    check('two continues at once: the second is refused', r.status === 409 && /already being continued/.test(r.body.error));
+    d3.resumingAt = null; DB._items.set(sid, d3);
+
+    // Idle at Anthropic, but its vault is gone; and paused at the spend cap.
+    r = await call('POST', 'session', { body: { side: 'tgt', connId: 'sconn_tgt1', connectionName: 'Target DEV', profileId: 'DEMO', profileName: 'Demo' } });
+    const vsid = r.body.session.id;
+    CLIENT._o.vaultGone = true;
+    r = await call('POST', 'resume', { body: { sessionId: vsid, step: 'go' } });
+    check('IDLE, BUT ITS PASS CANNOT BE RENEWED: a new workspace rather than a session Claude cannot query from',
+      r.status === 200 && r.body.workspace === 'new' && r.body.reason === 'gone' && DB._items.get(vsid).remoteId, r.raw);
+    CLIENT._o.vaultGone = false;
+    r = await call('POST', 'session', { body: { side: 'tgt', connId: 'sconn_tgt1', connectionName: 'Target DEV', profileId: 'DEMO', profileName: 'Demo' } });
+    const bsid = r.body.session.id;
+    const bd = DB._items.get(bsid); bd.stopReason = 'budget_reached'; bd.costCents = 600; DB._items.set(bsid, bd);
+    r = await call('POST', 'resume', { body: { sessionId: bsid, step: 'go' } });
+    check('PAUSED AT ITS SPEND CAP: a new workspace with a cap of its own, and the chat says why',
+      r.status === 200 && r.body.reason === 'budget' && /spend cap/.test(r.body.events[1].content[0].text), r.raw);
+    CLIENT._o.events[DB._items.get(bsid).remoteId] = [];
+    CLIENT._o.sessions[DB._items.get(bsid).remoteId].usage = { list_cost: { amount: '25', currency: 'USD' } };
+    r = await call('GET', 'events', { query: { sessionId: bsid } });
+    check('…and the spend so far stays on the record, the new workspace\'s added to it', r.body.costCents === 625, r.raw);
+
+    // A staging session asks for the changes act again.
+    r = await call('POST', 'session', { body: { side: 'tgt', connId: 'sconn_tgt1', connectionName: 'Target DEV', profileId: 'DEMO', profileName: 'Demo', stagingSchema: 'stg' } });
+    const ssid = r.body.session.id;
+    await call('POST', 'stop', { body: { sessionId: ssid } });
+    FETCHED = []; n0 = CLIENT.calls.length;
+    r = await call('POST', 'resume', { body: { sessionId: ssid, step: 'go' } });
+    const ssys = CLIENT.calls.slice(n0).find(c => c[0] === 'sessions.create')[1].agent.system;
+    check('A STAGING SESSION, CONTINUED, asks for the changes act again and is on the trail at the staging record',
+      r.status === 200 && gates().some(g => g.act === 'changes' && g.record === 'session.staging' && g.detail.resumed === true && g.detail.schema === 'stg'), JSON.stringify(gates()));
+    check('…keeps its staging brief and does not claim the schema is read-only', /get_conversion_template/.test(ssys) && !/Data-change mode is read-only now/.test(ssys));
+
+    // The gate knows the record.
+    ACTOR = { oid: 'o1', email: 'a@x', roles: ['OW'] };
+    TENANT = { id: 'tn_1', claudeCode: { enabled: true } };
+    const gr = await gateCall('use', { record: 'session.resume', detail: { sessionId: 's1', workspace: 'new', profile: 'Demo' } });
+    const ga = AUDITED.find(a => a.action === 'claudecode.session.resume') || {};
+    check('THE NETLIFY GATE FILES claudecode.session.resume, saying which workspace',
+      gr.status === 200 && ga.outcome === 'allowed' && ga.resourceType === 'claudecode_session' && ga.resourceId === 's1' && ga.detail.workspace === 'new', JSON.stringify(gr) + JSON.stringify(AUDITED));
+    const gs = await gateCall('changes', { record: 'session.staging', detail: { sessionId: 's2', schema: 'stg', resumed: true } });
+    check('…and a continued staging session at high severity, marked as a resume',
+      gs.status === 200 && AUDITED[0].action === 'claudecode.session.staging' && AUDITED[0].severity === 'high' && AUDITED[0].detail.resumed === 'true', JSON.stringify(AUDITED));
+    check('a record the gate does not know is still refused', (await gateCall('use', { record: 'session.wipe' })).status === 400);
+  }
+
+  section('12b. The conversation, rebuilt as context');
+  {
+    const R = require(path.join(ROOT, 'azure-function', 'src', 'claude-code-resume.js'));
+    const txt = (s) => [{ type: 'text', text: s }];
+    const turn = (i, big) => [
+      { id: 'u' + i, type: 'user.message', content: txt('Question ' + i + ' — ' + 'q'.repeat(50)) },
+      { id: 't' + i, type: 'agent.mcp_tool_use', name: 'run_query', input: { sql: 'SELECT ' + i + ' FROM dbo.T' + i } },
+      { id: 'r' + i, type: 'agent.mcp_tool_result', mcp_tool_use_id: 't' + i, content: txt(JSON.stringify({ columns: ['x'], rows: Array.from({ length: big ? 900 : 2 }, (_, k) => [k]) })) },
+      { id: 'a' + i, type: 'agent.message', content: txt('Answer ' + i + ' ' + 'a'.repeat(600)) },
+      { id: 'i' + i, type: 'session.status_idle' },
+    ];
+    let small = R.resumeContext([].concat(turn(1), turn(2)), { budget: 50000 });
+    check('A SHORT CONVERSATION IS GIVEN WHOLE', small.stats.turns === 2 && small.stats.verbatim === 2 && !small.stats.condensed && /--- Turn 1 ---/.test(small.text) && /Answer 2/.test(small.text));
+    check('…and the chat line says so', /whole earlier conversation \(2 turns\)/.test(R.contextNotice(small.stats)));
+    const many = []; for (let i = 1; i <= 120; i++) many.push(...turn(i, i % 10 === 0));
+    many.splice(5, 0, { id: 'cyg', type: 'system.message', cygenix: 'resume', content: txt('Resumed — X') });
+    const big = R.resumeContext(many, { budget: 30000 });
+    check('A LONG ONE FITS THE ALLOWANCE', big.text.length <= 30000, big.text.length);
+    check('…THE NEWEST TURNS WORD FOR WORD, the oldest condensed or left out — and counted, not lost silently',
+      big.stats.turns === 120 && big.stats.verbatim >= 1 && big.stats.condensed > 0 && big.stats.verbatim + big.stats.condensed + big.stats.omitted === 120
+      && /--- Turn 120 ---/.test(big.text) && /Answer 120 a{600}/.test(big.text), JSON.stringify(big.stats));
+    check('…a condensed turn keeps the question, the query and its outcome, and the start of the reply',
+      /Turn \d+ \(condensed\)\. The user asked: "Question \d+/.test(big.text) && /Claude called: run_query \[SELECT \d+ FROM dbo\.T\d+\] → 2 rows/.test(big.text));
+    check('…the context and the chat both say what was condensed and left out',
+      (big.stats.omitted ? /left out to fit/.test(big.text) : true) && /condensed to one paragraph each/.test(big.text)
+      && /too long to give Claude in full/.test(R.contextNotice(big.stats)) && /condensed/.test(R.contextNotice(big.stats)), R.contextNotice(big.stats));
+    check('Cygenix\'s own notices are not replayed', big.text.indexOf('Resumed — X') === -1 && R.turnsOf(many).length === 120);
+    const huge = R.resumeContext(turn(1, true), { budget: 50000 });
+    check('a long tool result is cut, and the cut is said', /more characters not kept/.test(huge.text) && huge.stats.resultsCut === 1 && /1 long result shortened/.test(R.contextNotice(huge.stats)));
+    check('nothing at all is nothing', R.resumeContext([], {}).text === '' && R.contextNotice(R.resumeContext([], {}).stats) === '');
+  }
+
+  section('12c. The page: Continue on the replay bar');
+  {
+    const page = read('public', 'claude-code.html');
+    const fn = page.split('function csResume')[1].split('/* ── Rendering')[0];
+    check('A "Continue this session" BUTTON beside "Back to the current session"',
+      /id="cs-resume-btn" onclick="csResume\(\)" hidden[^>]*>Continue this session<\/button>\s*<button class="btn" onclick="csReplayBack\(\)">Back to the current session<\/button>/.test(page));
+    check('…shown only to someone allowed to use the Dev Console, with a key', /rb\.hidden = !CS\.replay \|\| !canResume\(\)/.test(page)
+      && /function canResume\(\)\{\s*return !!\(CS\.me && CS\.me\.claudeCode && CS\.me\.claudeCode\.allowed\) && hasKey\(\);/.test(page));
+    check('ONE GUARDED ACTION: in flight once, three seconds apart', /guarded\('Resume', async function\(\)\{/.test(fn));
+    check('THREE CHECKS BEFORE IT CAN SEND: the connection still saved here, then on the server, then a query through the bridge',
+      /CygenixConnections\.savedGetById\(s\.connectionId\)/.test(fn) && /has been deleted\. It stays read-only here\./.test(fn)
+      && fn.indexOf("step: 'check'") < fn.indexOf('bridgeProbe(chk.token') && fn.indexOf('bridgeProbe(chk.token') < fn.indexOf("step: 'go'")
+      && /is not answering \(' \+ pr\.why \+ '\)\. It stays read-only here\./.test(fn));
+    check('THEN IT IS THE ACTIVE SESSION: the replayed conversation kept, the notices added, replay off, Allow changes off',
+      /CS\.cur = r\.session;/.test(fn) && /CS\.events = past\.concat\(r\.events \|\| \[\]\);/.test(fn) && /CS\.replay = null;/.test(fn)
+      && /CS\.wantChanges = false;/.test(fn) && /"Allow changes" is off/.test(fn));
+    check('"Back to the current session" still does what it did', /function csReplayBack\(\)\{ CS\.replay = null; render\(\); \}/.test(page));
+    check('Check the bridge and Continue share one probe', (page.match(/bridgeProbe\(/g) || []).length === 3);
   }
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
